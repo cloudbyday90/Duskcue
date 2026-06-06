@@ -123,6 +123,8 @@ These documents apply to every phase. Consult them when making implementation de
 
 **Goal:** Server boots, connects to PostgreSQL, runs migrations, serves API with middleware stack.
 
+**Prerequisites:** Phase 1 complete. Phase 2 complete (migrations applied to a running PostgreSQL instance).
+
 **Authoritative docs:**
 
 | Doc | What to build from it |
@@ -133,6 +135,13 @@ These documents apply to every phase. Consult them when making implementation de
 | [ERROR_HANDLING.md](docs/design/ERROR_HANDLING.md) | `AppError` + `IntoResponse`, RFC 9457 Problem Details |
 | [API_CONVENTIONS.md](docs/design/API_CONVENTIONS.md) | Router assembly, CORS, rate limiting (`governor`), pagination extractors |
 | [SECURITY.md](docs/security/SECURITY.md) | Security headers as Tower middleware (HSTS, CSP, X-Frame-Options) |
+
+**Context from Phase 1:**
+
+- `config.rs` already implements `CliArgs`, `BootstrapConfig`, and `build_bootstrap_config()` — Task 1 below is partially done; needs `RuntimeConfig` loading from DB and `AppState` wiring
+- `main.rs` already implements graceful shutdown with `with_graceful_shutdown()` and double-signal protection — needs upgrade to `CancellationToken` + `TaskTracker` per MEMORY.md (Task 8)
+- `router.rs` already implements `build_router()` with `/health` — needs middleware stack and domain routers added (Tasks 4, 6)
+- `state.rs`, `error.rs`, `middleware.rs`, `extractors.rs` are license-header stubs — need full implementation
 
 **Tasks:**
 
@@ -585,9 +594,9 @@ These documents apply to every phase. Consult them when making implementation de
 ## Dependency Graph
 
 ```
-Phase 1: Scaffolding
+Phase 1: Scaffolding (COMPLETE — aaedc05)
     ↓
-Phase 2: Database Schema
+Phase 2: Database Schema (NEXT)
     ↓
 Phase 3: Core Server Infrastructure
     ↓

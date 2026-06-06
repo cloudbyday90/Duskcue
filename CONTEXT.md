@@ -20,6 +20,12 @@ Every feature or domain follows the same three-phase process:
 - `docs/governance/` — governance documents
 - `docs/branding/` — branding and UI documents
 
+**Documentation maintenance rules** — when completing a build phase:
+1. Update [BUILD_ORDER.md](BUILD_ORDER.md) — mark the phase complete with commit hash, what was built, key decisions, and deferred items; annotate the next phase with prerequisites and context from the just-completed phase
+2. Update [PROJECT.md](PROJECT.md) — update the Current Implementation Status table; add any new resolved decisions to Open Questions; update any section summaries that the implementation affects
+3. Update domain-specific MDs — add implementation notes or decisions to the relevant authoritative document (e.g., MEMORY.md for allocator/shutdown decisions, CONFIGURATION.md for config struct changes, PROJECT_STRUCTURE.md for workspace dependency changes)
+4. Cross-reference — ensure decisions documented in one MD are referenced from related MDs (e.g., TLS backend decision in MEMORY.md should be noted in PROJECT.md Open Questions)
+
 **Phase 3 — Implement.** Proceed with high-quality code changes reflecting the explored recommendations. Wire up all module declarations, follow the domain five-file pattern, and ensure the project compiles.
 
 ## Research Tools
