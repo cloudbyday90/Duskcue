@@ -496,10 +496,12 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase | Status | Commit |
 |---|---|---|
 | Phase 1: Project Scaffolding | **Complete** | `aaedc05` |
-| Phase 2: Database Schema | Not started | — |
+| Phase 2: Database Schema | **Complete** | pending |
 | Phase 3–16 | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
+
+**Phase 2 delivered:** 15 migration files covering all domains from DATABASE.md — core media, trakt integration, activity analytics, playback, auth, system, cross-cutting concerns (extensions, audit, FTS), seed data, analytics security, migration domain, quality domain, overlays/collections, segments/storyboards. All migrations use idempotent patterns (`IF NOT EXISTS`, `DO $$ ... $$`). Not yet verified against a live PostgreSQL instance. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
 
 ## Open Questions
 

@@ -72,58 +72,58 @@ These documents apply to every phase. Consult them when making implementation de
 
 ---
 
-## Phase 2 — Database Schema (NEXT)
+## Phase 2 — Database Schema (COMPLETE)
 
-**Goal:** All migrations applied. PostgreSQL tables exist for every domain.
+**Committed:** `pending` on `main`
 
-**Prerequisites:** Phase 1 complete. A running PostgreSQL instance is required — either local install, Docker container, or cloud-managed. The server binary connects but does not yet manage PG lifecycle.
+**What was built:**
 
-**Authoritative docs:**
+15 migration files covering all domains in DATABASE.md:
 
-| Doc | What to build from it |
+| File | Tables Created |
 |---|---|
-| [DATABASE.md](docs/design/DATABASE.md) | **Primary** — Full DDL for all tables, indexes, constraints, triggers |
-| [MIGRATION_STRATEGY.md](docs/design/MIGRATION_STRATEGY.md) | Migration naming convention, idempotency rules, append-only policy |
-| [DATABASE_MAINTENANCE.md](docs/operations/DATABASE_MAINTENANCE.md) | Per-table autovacuum tuning, `fillfactor=85` on `user_item_data` |
+| `20260530_030000_create_core_media_tables.sql` | `libraries`, `library_paths`, `media_items`, `movies`, `series`, `seasons`, `episodes`, `media_files`, `subtitle_files`, `subtitle_ocr_cache`, `subtitle_sync_data`, `genres`, `media_genres`, `tags`, `media_tags`, `people`, `media_credits`, `artwork` |
+| `20260530_030100_create_trakt_integration.sql` | `users` (stub), `trakt_accounts`, `trakt_sync_state` |
+| `20260530_030200_create_activity_analytics.sql` | `play_sessions` (partitioned), `play_session_streams`, `play_events` (partitioned), `user_trust_events`, `user_trust_scores` |
+| `20260530_030300_create_playback_domain.sql` | `user_item_data` (fillfactor=85), `bookmarks`, `playlists`, `playlist_items` |
+| `20260530_040000_create_auth_domain.sql` | `streaming_policies`, `users` ALTER (13 columns added), `user_passkeys`, `user_totp`, `user_capabilities`, `user_library_access`, `user_sessions`, `api_keys`, `invitations`, `device_linking_codes`, `reauth_codes` |
+| `20260530_050000_create_system_domain.sql` | `server_config`, `scheduled_tasks`, `scheduled_task_runs`, `notification_types`, `notifications`, `user_notification_preferences` |
+| `20260530_060000_create_cross_cutting_concerns.sql` | `pg_trgm` + `pgstattuple` extensions, `audit_log` (partitioned) |
+| `20260530_060100_create_audit_triggers.sql` | `audit_trigger_fn()` + 10 audit triggers |
+| `20260530_060200_create_full_text_search.sql` | `rebuild_media_search_vector()` + 4 search triggers + trigram index |
+| `20260530_070000_seed_default_data.sql` | Default `server_config` row, 5 streaming policies, 11 notification types, 18 scheduled tasks |
+| `20260530_070100_create_analytics_security.sql` | `user_location_history` + 6 per-table autovacuum overrides |
+| `20260530_070200_create_migration_domain.sql` | `migration_sources`, `migration_user_mapping`, `migration_import_log` |
+| `20260530_070300_create_quality_domain.sql` | `device_profiles`, `device_capability_tests`, `client_network_reports`, `qoe_reports` |
+| `20260530_070400_create_overlays_collections.sql` | `overlay_definitions`, `artwork_overlay_state`, `artwork` ALTER (`is_locked`, `source_type`), `collections`, `collection_items`, `collection_templates` |
+| `20260530_070500_create_segments_storyboards.sql` | `media_segments`, `media_fingerprints`, `storyboards` |
 
-**Context from Phase 1:**
+**Key decisions made during implementation:**
 
-- `crates/db/` exists as a stub with sqlx dependency wired in workspace Cargo.toml
-- `server/migrations/` directory needs to be created
-- `BootstrapConfig.database_url` is already parsed and available for sqlx connection
-- The 14-step startup sequence (CONFIGURATION.md) runs migrations at step 9 — this will be implemented in Phase 3
-- Phase 2 is purely migration files; no Rust code changes needed beyond possibly a `sqlx.toml` config
+- All migrations use idempotent patterns (`IF NOT EXISTS`, `DO $$ ... $$`) per MIGRATION_STRATEGY.md
+- `users` created as minimal stub in migration 2 (trakt dependency), expanded to full auth schema via idempotent `ALTER TABLE` in migration 5 — `DO $$` blocks check `information_schema.columns` before each ADD COLUMN
+- `streaming_policies` created before `users` ALTER in migration 5 because `users.streaming_policy_id` references it
+- `play_sessions` and `play_events` include June/July 2026 initial partitions; `audit_log` includes same; application-level partition management creates future partitions
+- `user_item_data` includes `fillfactor = 85` directly in `CREATE TABLE` (not a separate ALTER) for clean initial creation
+- Autovacuum tuning applied in migration 11 alongside `user_location_history` (both are analytics security concerns from DATABASE_MAINTENANCE.md)
+- `artwork` ALTER (`is_locked`, `source_type`) placed in overlay migration 14 since those columns serve the overlay compositing engine
+- Partitioned table indexes created on parent tables only (PG propagates to partitions)
+- Index creation uses `IF NOT EXISTS` throughout for re-run safety
+- Scheduled tasks use uniform INSERT with `ON CONFLICT (name) DO NOTHING` + separate UPDATE statements for `interval_seconds` values
 
-**Tasks:**
+**Not yet verified (requires running PostgreSQL):**
 
-1. Create migration files in timestamp order per DATABASE.md table groups:
-   - `20260530_030000_create_core_media_tables.sql` — `libraries`, `media_items`, `movies`, `series`, `seasons`, `episodes`, `media_files`, `subtitle_files`, `artwork`, `genres`, `tags`, `people`, `credits`
-   - `20260530_030100_create_trakt_integration.sql` — `trakt_accounts`, `trakt_sync_state`
-   - `20260530_030200_create_activity_analytics.sql` — `play_sessions`, `play_session_streams`, `play_events`, `user_trust_events`, `user_trust_scores`
-   - `20260530_030300_create_playback_domain.sql` — `user_item_data`, `bookmarks`, `playlists`, `playlist_items`
-   - `20260530_040000_create_auth_domain.sql` — `users`, `user_passkeys`, `user_totp`, `user_capabilities`, `user_library_access`, `user_sessions`, `api_keys`, `invitations`, `device_linking_codes`, `reauth_codes`, `streaming_policies`
-   - `20260530_050000_create_system_domain.sql` — `server_config`, `scheduled_tasks`, `scheduled_task_runs`, `notification_types`, `notifications`, `user_notification_preferences`
-   - `20260530_060000_create_cross_cutting_concerns.sql` — soft delete columns, partitioning
-   - `20260530_060100_create_audit_triggers.sql` — audit log trigger functions
-   - `20260530_060200_create_full_text_search.sql` — search_vector triggers, GIN indexes
-   - `20260530_070000_seed_default_data.sql` — default `server_config` row, notification types, streaming policies, scheduled tasks
-2. Add migration for analytics security tables: `user_location_history`
-3. Add migration for migration domain tables: `migration_sources`, `migration_user_mapping`, `migration_import_log`
-4. Add migration for quality domain tables: `device_profiles`, `device_capability_tests`, `client_network_reports`, `qoe_reports`
-5. Add migration for overlay/collection tables: `overlay_definitions`, `artwork_overlay_state`, `collections`, `collection_items`, `collection_templates`
-6. Add migration for segment/storyboard tables: `media_segments`, `media_fingerprints`, `storyboards`
-7. Apply per-table autovacuum tuning from DATABASE_MAINTENANCE.md
-8. Set `fillfactor=85` on `user_item_data`
-
-**Verification:** `cargo sqlx migrate run` succeeds. All tables exist. `server_config` has single default row.
+- `cargo sqlx migrate run` has not been executed against a live database
+- All `CREATE TABLE`, index, trigger, and constraint DDL is syntactically derived from DATABASE.md but untested against PG18
+- Seed data correctness depends on FK references resolving at application time
 
 ---
 
-## Phase 3 — Core Server Infrastructure
+## Phase 3 — Core Server Infrastructure (NEXT)
 
 **Goal:** Server boots, connects to PostgreSQL, runs migrations, serves API with middleware stack.
 
-**Prerequisites:** Phase 1 complete. Phase 2 complete (migrations applied to a running PostgreSQL instance).
+**Prerequisites:** Phase 1 complete. Phase 2 complete (migrations created; a running PostgreSQL instance is required for verification).
 
 **Authoritative docs:**
 
@@ -596,9 +596,9 @@ These documents apply to every phase. Consult them when making implementation de
 ```
 Phase 1: Scaffolding (COMPLETE — aaedc05)
     ↓
-Phase 2: Database Schema (NEXT)
+Phase 2: Database Schema (COMPLETE — 15 migrations)
     ↓
-Phase 3: Core Server Infrastructure
+Phase 3: Core Server Infrastructure (NEXT)
     ↓
 Phase 4: Auth & Users
     ↓

@@ -357,6 +357,24 @@ This matches Classifarr's fail-fast philosophy. It is better to have a server th
 | **Language** | ESM (Node.js) | Rust |
 | **Embedded** | No (filesystem) | Yes (compiled into binary) |
 
+## Implementation Notes
+
+Phase 2 produced 15 migration files in `server/migrations/` following the naming convention and idempotency rules documented above.
+
+**Idempotency patterns used:**
+
+- `CREATE TABLE ... IF NOT EXISTS` on all table creation
+- `CREATE INDEX IF NOT EXISTS` on all indexes
+- `DO $$ ... IF NOT EXISTS ... END $$` blocks for `ALTER TABLE ADD COLUMN` (queries `information_schema.columns` before each ADD)
+- `INSERT ... ON CONFLICT (key) DO NOTHING` for all seed data
+- `CREATE EXTENSION IF NOT EXISTS` for `pg_trgm` and `pgstattuple`
+
+**Circular dependency resolution:** The `users` table is created as a minimal stub (id + timestamps only) in `20260530_030100_create_trakt_integration.sql` because `trakt_accounts` references it. The full auth schema (13 additional columns) is added via idempotent ALTER in `20260530_040000_create_auth_domain.sql`. The `streaming_policies` table is created before the ALTER because `users.streaming_policy_id` references it.
+
+**Partitioned tables:** `play_sessions`, `play_events`, and `audit_log` are range-partitioned by month. Initial partitions for June and July 2026 are pre-created. Future partition creation is handled by the `partition_management` scheduled task (seeded in `20260530_070000_seed_default_data.sql`).
+
+**sqlx.toml configuration:** `server/sqlx.toml` sets `database-url-var = "DUSKCUE_DATABASE_URL"` and `migrations-dir = "migrations"`, matching the conventions documented above.
+
 ## Research Sources
 
 - sqlx 0.9.0 CHANGELOG — Released May 6, 2026: https://docs.rs/crate/sqlx/latest/source/CHANGELOG.md
