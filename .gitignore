@@ -1,0 +1,14 @@
+/target
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+.env
+node_modules/
+/dist
+/.svelte-kit
+/build
+.cache/
+*.db
+*.db-journal

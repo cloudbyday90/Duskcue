@@ -1,0 +1,49 @@
+# Duskcue — Self-hosted media streaming server
+# Copyright (C) 2026 Duskcue Contributors
+#
+# This program is free software: licensed under AGPL-3.0
+# See LICENSE file for details.
+
+[workspace]
+resolver = "3"
+members = [
+    "server",
+    "crates/types",
+    "crates/db",
+    "clients/desktop/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0"
+
+[workspace.dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "set-header"] }
+governor = "0.6"
+nonzero_ext = "0.3"
+rusqlite = { version = "0.32", features = ["bundled"] }
+rustls = "0.23"
+tokio-rustls = "0.26"
+ring = "0.17"
+maxminddb = { version = "0.28", features = ["mmap"] }
+validator = { version = "0.20", features = ["derive"] }
+tokio-process-tools = "0.11"
+landlock = "0.4"
+seccompiler = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.9", features = ["postgres", "runtime-tokio", "uuid", "chrono", "json"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+toml = "0.8"
+reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+config = "0.15"
+clap = { version = "4", features = ["derive"] }

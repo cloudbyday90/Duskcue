@@ -1,0 +1,41 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  "mcp": {
+    "kindly-web-search": {
+      "type": "local",
+      "command": [
+        "uvx",
+        "--from",
+        "git+https://github.com/Shelpuk-AI-Technology-Consulting/kindly-web-search-mcp-server",
+        "kindly-web-search-mcp-server",
+        "start-mcp-server"
+      ],
+      "enabled": true,
+      "description": "Web search capabilities using SearXNG as the backend",
+      "env": {
+        "SEARXNG_BASE_URL": "${SEARXNG_BASE_URL}",
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}",
+        "KINDLY_BROWSER_EXECUTABLE_PATH": "${KINDLY_BROWSER_EXECUTABLE_PATH:C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe}",
+        "KINDLY_TOOL_TOTAL_TIMEOUT_SECONDS": "180",
+        "KINDLY_WEB_SEARCH_MAX_CONCURRENCY": "3"
+      },
+      "timeout": 60000,
+      "retry": {
+        "max_attempts": 3,
+        "backoff_ms": 1000
+      }
+    },
+    "context7": {
+      "type": "remote",
+      "url": "https://mcp.context7.com/mcp",
+      "enabled": true,
+      "description": "Context7 AI-powered context and analysis services",
+      "timeout": 60000,
+      "retry": {
+        "max_attempts": 3,
+        "backoff_ms": 1000
+      }
+    }
+  }
+}

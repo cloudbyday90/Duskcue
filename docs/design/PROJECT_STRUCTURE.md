@@ -1,0 +1,836 @@
+# Project Structure
+
+## Overview
+
+This document defines the monorepo layout for the entire platform — Rust server, SvelteKit web client, Tauri desktop wrapper, and Flutter mobile client. It covers Cargo workspace design, SvelteKit module conventions, and how the components relate.
+
+## Monorepo Layout
+
+```
+project/
+├── Cargo.toml                    # Workspace root (virtual manifest)
+├── Cargo.lock                    # Single lockfile for all Rust crates
+├── docker-compose.yml            # Production: single-container with embedded PostgreSQL
+├── .env.example                  # Environment variable template
+├── Dockerfile                    # Multi-stage Alpine build (x86_64 + ARM64)
+├── docker/
+│   └── entrypoint.sh             # PUID/PGID user creation, privilege drop
+├── .gitignore
+├── CHANGELOG.md
+├── PROJECT.md
+├── DATABASE.md
+├── ERROR_HANDLING.md
+├── BACKUP_RECOVERY.md
+├── MIGRATION_STRATEGY.md
+├── DOCKER_DEPLOYMENT.md
+├── OS_HARDENING.md
+├── API_SECURITY.md
+│
+├── server/                       # Rust server (main crate)
+│   ├── Cargo.toml
+│   ├── sqlx.toml                 # sqlx-cli configuration
+│   ├── migrations/               # Timestamp-based SQL migrations
+│   │   ├── 20260530_030000_create_core_media_tables.sql
+│   │   ├── 20260530_030100_create_trakt_integration.sql
+│   │   ├── 20260530_030200_create_activity_analytics.sql
+│   │   ├── 20260530_030300_create_playback_domain.sql
+│   │   ├── 20260530_040000_create_auth_domain.sql
+│   │   ├── 20260530_050000_create_system_domain.sql
+│   │   ├── 20260530_060000_create_cross_cutting_concerns.sql
+│   │   ├── 20260530_060100_create_audit_triggers.sql
+│   │   ├── 20260530_060200_create_full_text_search.sql
+│   │   └── 20260530_070000_seed_default_data.sql
+│   └── src/
+│       ├── main.rs               # Entry point: config → DB → migrate → serve
+│       ├── lib.rs                # App builder, Router assembly, AppState
+│       ├── config.rs             # Bootstrap config (TOML/ENV), AppState construction
+│       ├── state.rs              # AppState struct, Clone impl, RateLimitState, GeoIP (ArcSwap), HW accel cache
+│       ├── error.rs              # Unified AppError + IntoResponse
+│       ├── extractors.rs         # Custom Axum extractors (AuthenticatedUser, PaginationParams, DeviceProfile, etc.)
+│       ├── middleware.rs         # Tower middleware setup (logging, CORS, rate limiting via governor)
+│       ├── router.rs             # Top-level router assembly, merges domain routers
+│       │
+│       ├── db/                   # Database layer (sqlx queries)
+│       │   ├── mod.rs
+│       │   └── models/           # Row structs, FromRow derives
+│       │       ├── mod.rs
+│       │       ├── user.rs
+│       │       ├── library.rs
+│       │       ├── media_item.rs
+│       │       ├── media_file.rs
+│       │       ├── play_session.rs
+│       │       ├── server_config.rs
+│       │       ├── scheduled_task.rs
+│       │       ├── subtitle.rs
+│       │       ├── artwork.rs
+│       │       ├── collection.rs
+│       │       ├── segment.rs
+│       │       ├── storyboard.rs
+│       │       ├── overlay.rs
+│       │       ├── device_profile.rs
+│       │       └── migration.rs
+│       │
+│       ├── domains/              # Domain modules (one per business domain)
+│       │   ├── mod.rs
+│       │   ├── auth/             # Authentication & authorization
+│       │   │   ├── mod.rs        # Router assembly
+│       │   │   ├── handlers.rs   # Axum route handlers
+│       │   │   ├── service.rs    # Business logic
+│       │   │   ├── error.rs      # Domain error enum
+│       │   │   └── types.rs      # Request/response DTOs
+│       │   │
+│       │   ├── users/            # User management
+│       │   │   ├── mod.rs
+│       │   │   ├── handlers.rs
+│       │   │   ├── service.rs
+│       │   │   ├── error.rs
+│       │   │   └── types.rs
+│       │   │
+│       │   ├── libraries/        # Library management
+│       │   │   ├── mod.rs
+│       │   │   ├── handlers.rs
+│       │   │   ├── service.rs
+│       │   │   ├── error.rs
+│       │   │   └── types.rs
+│       │   │
+│       │   ├── media/            # Media items, files, metadata
+│       │   │   ├── mod.rs
+│       │   │   ├── handlers.rs
+│       │   │   ├── service.rs
+│       │   │   ├── error.rs
+│       │   │   └── types.rs
+│       │   │
+│       │   ├── playback/         # Play sessions, bookmarks, playlists
+│       │   │   ├── mod.rs
+│       │   │   ├── handlers.rs
+│       │   │   ├── service.rs
+│       │   │   ├── error.rs
+│       │   │   └── types.rs
+│       │   │
+│       │   ├── analytics/        # Activity, trust scores, Tautulli-style
+│       │   │   ├── mod.rs
+│       │   │   ├── handlers.rs
+│       │   │   ├── service.rs
+│       │   │   ├── error.rs
+│       │   │   └── types.rs
+│       │   │
+│       │   ├── trakt/            # Trakt.tv native integration
+│       │   │   ├── mod.rs
+│       │   │   ├── handlers.rs
+│       │   │   ├── service.rs
+│       │   │   ├── error.rs
+│       │   │   └── types.rs
+│       │   │
+│       │   ├── system/           # Server config, scheduled tasks, notifications
+│       │   │   ├── mod.rs
+│       │   │   ├── handlers.rs
+│       │   │   ├── service.rs
+│       │   │   ├── error.rs
+│       │   │   └── types.rs
+│       │   │
+│       │   └── backup/           # Backup coordination, WAL-G integration
+│       │       ├── mod.rs
+│       │       ├── handlers.rs
+│       │       ├── service.rs
+│       │       ├── error.rs
+│       │       └── types.rs
+│       │
+│       │   ├── migration/         # Platform migration (Plex/Jellyfin/Emby watch data import)
+│       │   │   ├── mod.rs
+│       │   │   ├── handlers.rs
+│       │   │   ├── service.rs
+│       │   │   ├── error.rs       # MIGR_001–010
+│       │   │   └── types.rs
+│       │   │
+│       │   ├── subtitles/         # Subtitle discovery, conversion, sync, fetching
+│       │   │   ├── mod.rs
+│       │   │   ├── handlers.rs
+│       │   │   ├── service.rs
+│       │   │   ├── error.rs       # SUB_001–006
+│       │   │   └── types.rs
+│       │   │
+│       │   ├── quality/           # Device profiles, network assessment, transcoding decisions
+│       │   │   ├── mod.rs
+│       │   │   ├── handlers.rs
+│       │   │   ├── service.rs
+│       │   │   ├── error.rs       # QUALITY_001–012
+│       │   │   └── types.rs
+│       │   │
+│       │   ├── overlays/          # Overlay compositing, badge/text/backdrop overlays
+│       │   │   ├── mod.rs
+│       │   │   ├── handlers.rs
+│       │   │   ├── service.rs
+│       │   │   ├── error.rs       # OVERLAY_001–006
+│       │   │   └── types.rs
+│       │   │
+│       │   ├── collections/       # Static, dynamic, smart collections; builders
+│       │   │   ├── mod.rs
+│       │   │   ├── handlers.rs
+│       │   │   ├── service.rs
+│       │   │   ├── error.rs       # COLL_001–008
+│       │   │   └── types.rs
+│       │   │
+│       │   ├── segments/          # Intro/credit/recap/preview detection
+│       │   │   ├── mod.rs
+│       │   │   ├── handlers.rs
+│       │   │   ├── service.rs
+│       │   │   ├── error.rs       # SEGMENT error codes
+│       │   │   └── types.rs
+│       │   │
+│       │   ├── storyboards/       # Seek preview thumbnails (WebVTT + WebP sprites)
+│       │   │   ├── mod.rs
+│       │   │   ├── handlers.rs
+│       │   │   ├── service.rs
+│       │   │   ├── error.rs
+│       │   │   └── types.rs
+│       │   │
+│       │   └── search/            # Full-text search coordination
+│       │       ├── mod.rs
+│       │       ├── handlers.rs
+│       │       ├── service.rs
+│       │       ├── error.rs
+│       │       └── types.rs
+│       │
+│       ├── services/             # Cross-domain services
+│       │   ├── mod.rs
+│       │   ├── scheduler.rs      # Scheduled task runner
+│       │   ├── transcoding.rs    # FFmpeg integration (tokio-process-tools, -progress pipe:1)
+│       │   ├── metadata.rs       # TMDB/TVDB metadata fetching
+│       │   ├── notifications.rs  # Notification dispatch
+│       │   ├── search.rs         # Full-text search coordination
+│       │   ├── security.rs       # TLS (rustls), HMAC signing (ring), security headers
+│       │   ├── subtitles.rs      # OCR (PaddleOCR bridge), sync correction, fetching
+│       │   ├── quality.rs        # Device capability probing, network assessment
+│       │   ├── overlays.rs       # Compositing pipeline (image + ab_glyph + resvg)
+│       │   ├── collections.rs    # Builder engine, external API polling, template import
+│       │   ├── segments.rs       # Chromaprint, black frame, silence detection
+│       │   ├── storyboards.rs    # FFmpeg thumbnail extraction, WebP sprite generation
+│       │   ├── geoip.rs          # MaxMind GeoLite2 MMDB lookups (maxminddb + ArcSwap)
+│       │   └── sandbox.rs        # FFmpeg per-process sandboxing (landlock + seccompiler)
+│       │
+│       └── workers/              # Background task definitions
+│           ├── mod.rs
+│           ├── library_scanner.rs
+│           ├── metadata_refresh.rs
+│           ├── partition_manager.rs
+│           ├── backup_runner.rs
+│           ├── trakt_sync.rs
+│           ├── soft_delete_purge.rs
+│           ├── segment_detector.rs
+│           ├── storyboard_generator.rs
+│           ├── overlay_compositor.rs
+│           ├── collection_sync.rs
+│           ├── geoip_updater.rs
+│           ├── subtitle_processor.rs
+│           ├── reindex_maintenance.rs
+│           └── disk_space_check.rs
+│
+├── crates/                       # Shared Rust crates (workspace members)
+│   ├── types/                    # Shared types, DTOs, error definitions
+│   │   ├── Cargo.toml
+│   │   └── src/
+│   │       ├── lib.rs
+│   │       ├── error.rs          # Error code registry (AUTH_001, MEDIA_001, etc.)
+│   │       └── config.rs         # ServerConfig structs (network, backup, etc.)
+│   │
+│   └── db/                       # Shared database types and query helpers
+│       ├── Cargo.toml
+│       └── src/
+│           ├── lib.rs
+│           └── models/           # Re-exported row models (mirrors server/db/models/)
+│
+├── clients/                      # Client applications
+│   ├── web/                      # SvelteKit web client
+│   │   ├── package.json          # "type": "module" for ESM
+│   │   ├── svelte.config.js
+│   │   ├── vite.config.js
+│   │   ├── src/
+│   │   │   ├── routes/           # SvelteKit file-based routing
+│   │   │   │   ├── +layout.svelte
+│   │   │   │   ├── +page.svelte
+│   │   │   │   ├── auth/
+│   │   │   │   │   ├── login/+page.svelte
+│   │   │   │   │   ├── setup/+page.svelte
+│   │   │   │   │   └── link/+page.svelte     # Device linking
+│   │   │   │   ├── libraries/
+│   │   │   │   │   ├── +page.svelte
+│   │   │   │   │   └── [id]/+page.svelte
+│   │   │   │   ├── media/
+│   │   │   │   │   ├── +page.svelte
+│   │   │   │   │   └── [id]/+page.svelte
+│   │   │   │   ├── settings/
+│   │   │   │   │   ├── +page.svelte           # Server overview
+│   │   │   │   │   ├── users/+page.svelte
+│   │   │   │   │   ├── libraries/+page.svelte
+│   │   │   │   │   ├── backups/+page.svelte
+│   │   │   │   │   ├── subtitles/+page.svelte
+│   │   │   │   │   ├── quality/+page.svelte
+│   │   │   │   │   ├── overlays/+page.svelte
+│   │   │   │   │   ├── collections/+page.svelte
+│   │   │   │   │   ├── migration/+page.svelte  # Migration wizard
+│   │   │   │   │   ├── security/+page.svelte
+│   │   │   │   │   └── storage/+page.svelte
+│   │   │   │   ├── dashboard/+page.svelte
+│   │   │   │   ├── analytics/+page.svelte
+│   │   │   │   ├── search/+page.svelte
+│   │   │   │   └── collections/+page.svelte
+│   │   │   │
+│   │   │   ├── lib/
+│   │   │   │   ├── api/          # API client layer (ESM modules)
+│   │   │   │   │   ├── index.js  # Barrel export
+│   │   │   │   │   ├── core.js   # HTTP client (fetch wrapper)
+│   │   │   │   │   ├── auth.js   # Auth endpoints
+│   │   │   │   │   ├── users.js
+│   │   │   │   │   ├── libraries.js
+│   │   │   │   │   ├── media.js
+│   │   │   │   │   ├── playback.js
+│   │   │   │   │   ├── analytics.js
+│   │   │   │   │   ├── trakt.js
+│   │   │   │   │   ├── settings.js
+│   │   │   │   │   ├── search.js
+│   │   │   │   │   ├── subtitles.js
+│   │   │   │   │   ├── quality.js
+│   │   │   │   │   ├── overlays.js
+│   │   │   │   │   ├── collections.js
+│   │   │   │   │   ├── segments.js
+│   │   │   │   │   ├── migration.js
+│   │   │   │   │   └── storyboards.js
+│   │   │   │   │
+│   │   │   │   ├── stores/       # Svelte stores
+│   │   │   │   │   ├── auth.js
+│   │   │   │   │   ├── user.js
+│   │   │   │   │   ├── libraries.js
+│   │   │   │   │   ├── player.js
+│   │   │   │   │   ├── notifications.js
+│   │   │   │   │   ├── subtitles.js
+│   │   │   │   │   ├── quality.js
+│   │   │   │   │   └── collections.js
+│   │   │   │   │
+│   │   │   │   ├── components/   # Reusable UI components
+│   │   │   │   │   ├── MediaCard.svelte
+│   │   │   │   │   ├── Player.svelte
+│   │   │   │   │   ├── SearchBar.svelte
+│   │   │   │   │   ├── NotificationToast.svelte
+│   │   │   │   │   ├── SkipButton.svelte
+│   │   │   │   │   ├── SeekPreview.svelte
+│   │   │   │   │   ├── OverlayEditor.svelte
+│   │   │   │   │   ├── CollectionGrid.svelte
+│   │   │   │   │   └── SubtitleSelector.svelte
+│   │   │   │   │
+│   │   │   │   ├── composables/  # Reusable logic (Svelte actions/runes)
+│   │   │   │   │   ├── useInfiniteScroll.js
+│   │   │   │   │   ├── useMediaQuery.js
+│   │   │   │   │   └── useWebSocket.js
+│   │   │   │   │
+│   │   │   │   └── utils/        # Utility functions
+│   │   │   │       ├── format.js
+│   │   │   │       └── constants.js
+│   │   │   │
+│   │   │   └── app.html
+│   │   │
+│   │   ├── static/               # Static assets (favicons, etc.)
+│   │   └── tests/                # Vitest + Playwright tests
+│   │       ├── unit/
+│   │       └── e2e/
+│   │
+│   ├── desktop/                  # Tauri 2 desktop wrapper
+│   │   ├── package.json          # "type": "module" for ESM
+│   │   ├── vite.config.js        # Shared config referencing ../web/vite.config.js
+│   │   ├── src-tauri/
+│   │   │   ├── Cargo.toml
+│   │   │   ├── tauri.conf.json
+│   │   │   ├── capabilities/
+│   │   │   │   └── default.json
+│   │   │   └── src/
+│   │   │       ├── main.rs
+│   │   │       └── lib.rs        # Tauri commands (system tray, file dialogs, deeplinks)
+│   │   └── src/                  # Imports from ../web/src/ (SvelteKit shared code)
+│   │       ├── app.html          # Tauri-specific shell (no SSR)
+│   │       └── routes/           # Re-exports web client routes
+│   │
+│   └── mobile/                   # Flutter mobile client
+│       ├── pubspec.yaml
+│       ├── lib/
+│       │   ├── main.dart
+│       │   ├── api/              # API client
+│       │   ├── models/           # Data models
+│       │   ├── screens/          # UI screens
+│       │   ├── widgets/          # Reusable widgets
+│       │   ├── services/         # Business logic services
+│       │   ├── stores/           # State management
+│       │   └── utils/
+│       └── test/
+│
+├── scripts/                      # Development and CI scripts
+│   ├── dev.sh                    # Start all services for development
+│   ├── migrate.sh                # Run database migrations
+│   └── seed.sh                   # Seed development data
+│
+└── docs/                         # Additional documentation
+    ├── api/                      # OpenAPI specs, endpoint docs
+    └── development/              # Setup guides, contributing
+```
+
+## Cargo Workspace Configuration
+
+### Root `Cargo.toml`
+
+```toml
+[workspace]
+resolver = "3"
+members = [
+    "server",
+    "crates/types",
+    "crates/db",
+    "clients/desktop/src-tauri",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0"
+
+[workspace.dependencies]
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "set-header"] }
+governor = "0.6"
+nonzero_ext = "0.3"
+rusqlite = { version = "0.32", features = ["bundled"] }
+rustls = "0.23"
+tokio-rustls = "0.26"
+ring = "0.17"
+maxminddb = { version = "0.28", features = ["mmap"] }
+validator = { version = "0.20", features = ["derive"] }
+tokio-process-tools = "0.11"
+landlock = "0.4"
+seccompiler = "0.4"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sqlx = { version = "0.9", features = ["postgres", "runtime-tokio", "uuid", "chrono", "json"] }
+uuid = { version = "1", features = ["v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+toml = "0.8"
+```
+
+### Dependency Flow
+
+```
+clients/desktop/src-tauri  →  server (for shared types via crates/types)
+server                     →  crates/types, crates/db
+crates/db                  →  crates/types, sqlx
+crates/types               →  serde, uuid, chrono (no sqlx dependency)
+```
+
+`crates/types` has zero database dependencies — it only contains serializable DTOs, error code constants, and config struct definitions. This keeps the Tauri desktop crate lightweight.
+
+## Rust Server Module Conventions
+
+### Domain Module Pattern
+
+Every domain follows the same five-file pattern:
+
+| File | Purpose | Exports |
+|---|---|---|
+| `mod.rs` | Assembles the domain's `Router`, re-exports | `pub fn router() -> Router` |
+| `handlers.rs` | Axum route handler functions | `pub async fn list_items(...)` |
+| `service.rs` | Business logic, database queries | `pub async fn get_item(...)` |
+| `error.rs` | Domain error enum with `#[error(...)]` | `pub enum LibraryError` |
+| `types.rs` | Request/response DTOs, query params | `pub struct CreateLibraryRequest` |
+
+### Handler → Service → Database Layering
+
+```
+handlers.rs          → service.rs          → db/models/
+(HTTP in/out)          (business logic)       (SQL queries)
+                        
+Axum extractors       Validates input         sqlx::query_as!
+JSON serialization    Enforces rules          FromRow derives
+Error mapping         Coordinates deps        Transaction management
+```
+
+Handlers are thin — they extract parameters, call the service, and return the result. Business logic lives in service files. SQL queries live in service files or the `db/models` layer.
+
+### `mod.rs` Router Assembly
+
+```rust
+// server/src/domains/libraries/mod.rs
+pub use self::{error::LibraryError, handlers::*, types::*};
+
+pub fn router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route("/api/v1/libraries", get(list).post(create))
+        .route("/api/v1/libraries/{id}", get(get_one).delete(delete))
+        .route("/api/v1/libraries/{id}/scan", post(scan))
+        .with_state(state)
+}
+```
+
+### `router.rs` — Top-Level Assembly
+
+```rust
+// server/src/router.rs
+pub fn build_router(state: AppState) -> Router {
+    Router::new()
+        .merge(auth::router(state.clone()))
+        .merge(users::router(state.clone()))
+        .merge(libraries::router(state.clone()))
+        .merge(media::router(state.clone()))
+        .merge(playback::router(state.clone()))
+        .merge(analytics::router(state.clone()))
+        .merge(trakt::router(state.clone()))
+        .merge(system::router(state.clone()))
+        .merge(backup::router(state.clone()))
+        .merge(migration::router(state.clone()))
+        .merge(subtitles::router(state.clone()))
+        .merge(quality::router(state.clone()))
+        .merge(overlays::router(state.clone()))
+        .merge(collections::router(state.clone()))
+        .merge(segments::router(state.clone()))
+        .merge(storyboards::router(state.clone()))
+        .merge(search::router(state.clone()))
+        .merge(system::admin_router(state.clone()))  // /api/v1/admin/* — requires can_manage_server
+        .route("/health", get(health_check))
+        .layer(middleware_stack())
+}
+```
+
+### Response DTO Pattern (Three-Type)
+
+Every domain uses three distinct types per entity (see [API_SECURITY.md](../security/API_SECURITY.md) for full policy):
+
+| Type | File | Traits | Purpose |
+|---|---|---|---|
+| `XxxRow` | `db/models/*.rs` | `FromRow`, no `Serialize` | Database model — never sent to clients |
+| `XxxRequest` | `domains/*/types.rs` | `Deserialize`, `Validate` | Inbound request — only user-writable fields |
+| `XxxResponse` | `domains/*/types.rs` | `Serialize` | Outbound response — only safe fields |
+
+## Web Client Conventions (SvelteKit + ESM)
+
+### ESM Configuration
+
+`package.json`:
+```json
+{
+    "type": "module"
+}
+```
+
+All JavaScript/TypeScript files use `import`/`export` syntax exclusively. No `require()`, no `module.exports`.
+
+### API Client Layer Pattern
+
+Each API module exports named functions — one function per endpoint. Vue components and stores never call `fetch` directly.
+
+```javascript
+// src/lib/api/libraries.js
+import { getDataRequest, postDataRequest } from './core.js';
+
+export async function listLibraries(params = {}) {
+    return getDataRequest('/api/v1/libraries', params);
+}
+
+export async function getLibrary(id) {
+    return getDataRequest(`/api/v1/libraries/${id}`);
+}
+
+export async function createLibrary(data) {
+    return postDataRequest('/api/v1/libraries', data);
+}
+
+export async function scanLibrary(id) {
+    return postDataRequest(`/api/v1/libraries/${id}/scan`);
+}
+```
+
+```javascript
+// src/lib/api/core.js
+import { getAuthHeaders } from './auth.js';
+
+const API_BASE = '/api/v1';
+
+export async function getDataRequest(path, params = {}) {
+    const url = new URL(API_BASE + path, window.location.origin);
+    Object.entries(params).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+            url.searchParams.set(key, value);
+        }
+    });
+    const response = await fetch(url, {
+        headers: { ...getAuthHeaders() },
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw error;
+    }
+    return response.json();
+}
+
+export async function postDataRequest(path, data) {
+    const response = await fetch(API_BASE + path, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            ...getAuthHeaders(),
+        },
+        body: JSON.stringify(data),
+    });
+    if (!response.ok) {
+        const error = await response.json();
+        throw error;
+    }
+    return response;
+}
+```
+
+### Barrel Export
+
+```javascript
+// src/lib/api/index.js
+export * from './auth.js';
+export * from './users.js';
+export * from './libraries.js';
+export * from './media.js';
+export * from './playback.js';
+export * from './analytics.js';
+export * from './trakt.js';
+export * from './settings.js';
+export * from './search.js';
+export * from './subtitles.js';
+export * from './quality.js';
+export * from './overlays.js';
+export * from './collections.js';
+export * from './segments.js';
+export * from './migration.js';
+export * from './storyboards.js';
+```
+
+### Store Pattern
+
+```javascript
+// src/lib/stores/libraries.js
+import { writable, derived } from 'svelte/store';
+import { listLibraries } from '../api/libraries.js';
+
+function createLibrariesStore() {
+    const { subscribe, set, update } = writable({
+        items: [],
+        loading: false,
+        error: null,
+    });
+
+    return {
+        subscribe,
+        async fetch() {
+            update(state => ({ ...state, loading: true, error: null }));
+            try {
+                const data = await listLibraries();
+                set({ items: data, loading: false, error: null });
+            } catch (error) {
+                set({ items: [], loading: false, error });
+            }
+        },
+    };
+}
+
+export const libraries = createLibrariesStore();
+```
+
+## Why This Structure
+
+### Why Cargo Workspace (not separate repos)
+
+| Factor | Monorepo + Workspace | Separate Repos |
+|---|---|---|
+| **Shared types** | Single source of truth across server + Tauri | Duplicate type definitions |
+| **Atomic changes** | Server API change + client update in one PR | Coordinated cross-repo PRs |
+| **Build consistency** | Single `Cargo.lock`, same dependency versions | Dependency drift between repos |
+| **CI simplicity** | One pipeline, one checkout | N pipelines, version coordination |
+| **Refactoring** | `cargo refactor` touches all crates | Manual cross-repo updates |
+| **Overhead** | One `cargo build` compiles all crates | N independent build systems |
+
+### Why Domain Modules (not flat files)
+
+| Factor | Domain Modules | Flat Structure |
+|---|---|---|
+| **Coupling** | Each domain is self-contained | All handlers share one error.rs, one types.rs |
+| **Team scaling** | One dev owns one domain | Merge conflicts in shared files |
+| **Testing** | Test one domain in isolation | Must import everything |
+| **Code review** | PRs touch 1-2 domain dirs | PRs touch scattered files |
+
+### Why Five-File Domain Pattern
+
+The handler → service → model split ensures:
+- **Handlers** are pure HTTP translation (no business logic)
+- **Service** files are testable without Axum (no HTTP types)
+- **Models** are pure data (no behavior)
+- **Errors** are domain-specific (typed, not catch-all strings)
+- **Types** are the API contract (separate from database models)
+
+### Why Separate `crates/types`
+
+The Tauri desktop app needs access to shared types (API response shapes, error codes, config structs) without pulling in the entire server + sqlx + tokio. `crates/types` is a zero-dependency crate (only `serde`, `uuid`, `chrono`) that both the server and Tauri can import.
+
+### Why Desktop Reuses Web Client
+
+The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`clients/web/`) rather than duplicating UI code. This works because:
+
+- **Same framework** — Tauri 2 renders SvelteKit in a webview; identical code runs in both browser and desktop
+- **Shared `src/routes/`** — desktop `src/routes/` re-exports web client routes; no SSR needed (Tauri uses static adapter)
+- **Native shell only** — `src-tauri/src/lib.rs` adds system tray, file dialogs, and deeplinks; everything else is the web client
+- **Single API client** — both web and desktop use the same `src/lib/api/` layer against the same REST API
+- **One change propagates** — UI fix in `clients/web/` appears in desktop on next build
+
+## Development Workflow
+
+### Server Development
+
+```bash
+# Start PostgreSQL (Docker)
+docker compose up -d postgres
+
+# Run migrations
+cargo run -p server -- migrate
+
+# Start server with hot reload
+cargo watch -x 'run -p server'
+```
+
+### Web Client Development
+
+```bash
+# Start SvelteKit dev server (proxies API to running server)
+cd clients/web
+npm install
+npm run dev
+```
+
+### Desktop Client Development
+
+```bash
+# Start Tauri + SvelteKit dev
+cd clients/desktop
+npm install
+npm run tauri dev
+```
+
+### Full Stack Development
+
+```bash
+# Terminal 1: Database
+docker compose up -d
+
+# Terminal 2: Server
+cargo watch -x 'run -p server'
+
+# Terminal 3: Web client
+cd clients/web && npm run dev
+```
+
+## Docker Build
+
+The Dockerfile is a multi-stage build producing **multi-arch images** (x86_64 + ARM64) on **Alpine Linux**. Uses Docker cross-compilation strategy — the build stage runs on the native x86_64 runner but cross-compiles for both architectures via `cargo-zigbuild`.
+
+```dockerfile
+# syntax=docker/dockerfile:1
+
+# Stage 1: Build (runs on native platform, cross-compiles for target)
+FROM --platform=$BUILDPLATFORM rust:1.87-alpine AS builder
+
+ARG BUILDPLATFORM
+ARG TARGETPLATFORM
+ARG TARGETARCH
+
+RUN apk add --no-cache musl-dev pkgconf openssl-dev openssl-libs-static \
+    && case "$TARGETARCH" in \
+        amd64)  rustup target add x86_64-unknown-linux-musl ;; \
+        arm64)  rustup target add aarch64-unknown-linux-musl ;; \
+    esac
+
+WORKDIR /build
+COPY Cargo.toml Cargo.lock ./
+COPY server/ server/
+COPY crates/ crates/
+
+RUN case "$TARGETARCH" in \
+        amd64)  cargo build --release --target x86_64-unknown-linux-musl -p server ;; \
+        arm64)  cargo build --release --target aarch64-unknown-linux-musl -p server ;; \
+    esac
+
+# Stage 2: Runtime (minimal Alpine + embedded PostgreSQL)
+FROM alpine:3.22
+
+# PostgreSQL 18 runtime + contrib extensions + privilege-drop utilities
+# Strip setuid/setgid binaries (CIS Docker Benchmark 4.8)
+RUN apk add --no-cache ca-certificates ffmpeg su-exec shadow \
+        postgresql18 postgresql18-contrib \
+    && find / -perm /6000 -type f -exec chmod a-s {} \; 2>/dev/null || true
+
+ARG TARGETARCH
+COPY --from=builder /build/target/*/release/server /usr/local/bin/duskcue
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
+
+ENV DUSKCUE_DATA_DIR=/data
+EXPOSE 48027
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:48027/health || exit 1
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
+```
+
+**Key additions from embedded PostgreSQL strategy:**
+- `postgresql18 postgresql18-contrib` — embedded PG runtime inside the container
+- `su-exec shadow` — privilege drop + user management (PUID/PGID pattern)
+- `find / -perm /6000 -exec chmod a-s {} \;` — strips setuid/setgid binaries (Classifarr pattern)
+- `HEALTHCHECK` baked into image — `wget` for health endpoint; `start_period: 30s` accounts for PG init + migration
+- `ENTRYPOINT` points to entrypoint script — handles PG lifecycle + privilege drop
+
+**Entrypoint script** (`docker/entrypoint.sh`):
+- Creates runtime user from `PUID`/`PGID` environment variables (defaults to 1000:1000)
+- Checks `DUSKCUE_DATABASE_URL`: if set, skips embedded PG (external mode); if unset, manages PG lifecycle (embedded mode)
+- Embedded mode: `initdb` → `pg_ctl start` → `pg_isready` wait → `createdb` → export `DATABASE_URL`
+- PG listens on Unix socket only (`/var/run/postgresql` tmpfs); trust auth; `data_checksums=on`
+- Drops privileges via `su-exec` before executing the server binary
+- Full entrypoint script is documented in [DOCKER_DEPLOYMENT.md](../operations/DOCKER_DEPLOYMENT.md)
+
+**Build command (produces multi-platform manifest):**
+```bash
+docker buildx build --platform linux/amd64,linux/arm64 -t duskcue:latest .
+```
+
+**CI workflow (GitHub Actions):**
+```yaml
+- uses: docker/setup-qemu-action@v4
+- uses: docker/setup-buildx-action@v4
+- uses: docker/build-push-action@v6
+  with:
+    platforms: linux/amd64,linux/arm64
+    push: true
+    tags: duskcue:latest
+```
+
+Key decisions:
+- **Alpine 3.22 base image** — pin minor version (not patch); auto-tracks security patches; 14 default packages; musl libc. Full rationale in [OS_HARDENING.md](../operations/OS_HARDENING.md)
+- **Docker Engine >= v28.0.0 recommended** (v29.4.3+ ideal) — mitigates CVE-2026-31431 (Copy Fail). Full version matrix in [OS_HARDENING.md](../operations/OS_HARDENING.md)
+- **Cross-compilation strategy** — build stage pinned to `$BUILDPLATFORM` (runs on x86_64 runner, no QEMU emulation); Rust cross-compiles to the target arch; much faster than QEMU emulation
+- **musl static linking** — both architectures produce fully self-contained binaries with no runtime library dependencies
+- **FFmpeg in runtime image** — required for transcoding and ffprobe; Alpine's `ffmpeg` package supports both architectures
+- **No PostgreSQL in image** — database runs separately (Docker Compose sidecar or external)
+- **Single Dockerfile** — one Dockerfile produces both variants via `BUILDPLATFORM`/`TARGETPLATFORM` build args
+- **`cargo-zigbuild` alternative** — for CI pipelines that don't use Docker cross-comp, `cargo-zigbuild` 0.22 can cross-compile outside of Docker using Zig as the linker
+
+## Research Sources
+
+- Rust Cargo Workspaces — The Rust Programming Language Book: https://doc.rust-lang.org/book/ch14-03-cargo-workspaces.html
+- Rust Cargo Workspaces: Organising Multi-Crate Projects (November 2025): https://medium.com/@ashusk_1790/rust-cargo-workspaces-organising-multi-crate-projects-3e67aed55b6b
+- Rust for Backend Development: Complete Axum Guide 2026 (February 2026): https://rustify.rs/articles/rust-backend-development-axum-2026
+- Build a Desktop App with Tauri v2 in 2026 (March 2026): https://rustify.rs/articles/rust-tauri-v2-desktop-app-tutorial-2026
+- GitButler — Tauri + Svelte + Rust production reference: https://github.com/gitbutlerapp/gitbutler
+- Tauri + SvelteKit community experience: https://github.com/orgs/tauri-apps/discussions/6423
+- Svelte Best Practices (official): https://svelte.dev/docs/svelte/best-practices
+- Rust Production Habits: The 12 Core Configurations (March 2026): https://medium.com/@monikasinghall713/rust-production-habits-the-12-core-configurations-i-always-start-with-4d4ebac81eda

@@ -1,0 +1,17 @@
+# Duskcue — Self-hosted media streaming server
+# Copyright (C) 2026 Duskcue Contributors
+#
+# This program is free software: licensed under AGPL-3.0
+# See LICENSE file for details.
+
+[package]
+name = "duskcue-desktop"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+duskcue-types = { path = "../../crates/types" }
+tauri = "2"
+serde.workspace = true
+serde_json.workspace = true
