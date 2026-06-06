@@ -794,4 +794,19 @@ Common alternatives considered:
 - Environment validation (`development`/`staging`/`production`)
 - `set_override_option` for optional `database_url` field
 
-**Phase 3 (planned):** The runtime config layer, `AppState`, and the 14-step startup sequence will be implemented as part of Core Server Infrastructure. The `state.rs`, `error.rs`, `middleware.rs`, and `extractors.rs` files currently contain license headers only.
+**Phase 3 (in progress):** The runtime config layer and `AppState` are partially implemented in `server/src/state.rs`:
+
+- `AppState` struct with `Clone` — holds `PgPool`, `Arc<ArcSwap<RuntimeConfig>>`, `BootstrapConfig`
+- `RuntimeConfig` struct with all 21 fields matching `server_config` table columns
+- 6 fully-defined sub-configs: `AuthConfig` (with `RateLimitConfig`, `NetworkMode`), `SecurityConfig` (with `TlsConfig`, `StreamSigningConfig`, `VpnDetectionConfig`, `AcmeChallengeType`), `QualityConfig`, `SubtitleConfig`, `ResourceLimitsConfig`
+- 6 placeholder sub-configs with `Default`: `NetworkConfig`, `TranscodingConfig`, `MetadataConfig`, `NotificationConfig`, `BackupConfig`, `IntegrationsConfig`, `LoggingConfig`, `StorageConfig`, `MaintenanceConfig`, `CpuConfig` — expanded in their respective domain phases
+- `load_runtime_config(pool)` — queries `server_config` table, deserializes JSONB columns with `unwrap_or_default()` fallback, returns `RuntimeConfig::default()` for empty table (first-run)
+- `AppState::reload_runtime_config()` — atomic swap via `ArcSwap` for admin API config changes
+- `arc-swap` v1.9.1 added as workspace dependency for lock-free config reads
+- Environment detection wired: `set_environment()` in `error.rs` uses `OnceLock<String>` set during `AppState` construction
+
+**Not yet implemented:**
+
+- 14-step startup sequence in `main.rs` — Task 7
+- Admin API endpoint (`PUT /api/v1/server/config`) that triggers `reload_runtime_config()` — Phase 13
+- `error.rs`, `middleware.rs`, `extractors.rs` files — other Phase 3 tasks

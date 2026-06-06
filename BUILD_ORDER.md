@@ -119,7 +119,7 @@ These documents apply to every phase. Consult them when making implementation de
 
 ---
 
-## Phase 3 — Core Server Infrastructure (NEXT)
+## Phase 3 — Core Server Infrastructure (IN PROGRESS)
 
 **Goal:** Server boots, connects to PostgreSQL, runs migrations, serves API with middleware stack.
 
@@ -143,11 +143,44 @@ These documents apply to every phase. Consult them when making implementation de
 - `router.rs` already implements `build_router()` with `/health` — needs middleware stack and domain routers added (Tasks 4, 6)
 - `state.rs`, `error.rs`, `middleware.rs`, `extractors.rs` are license-header stubs — need full implementation
 
+**What has been built so far (Tasks 3, 2):**
+
+| File | Purpose |
+|---|---|
+| `server/src/error.rs` | `FieldError` (per-field validation), `ProblemDetail` (RFC 9457 response struct), `AppError` (unified error enum with 11 variants), `IntoResponse` impl with environment-aware detail, `Retry-After` headers, structured tracing, `From<anyhow::Error>` |
+| `server/src/lib.rs` | Added `pub mod error;` and `pub mod state;` module declarations |
+| `server/src/state.rs` | `AppState` with `PgPool`, `ArcSwap<RuntimeConfig>`, `BootstrapConfig`; `RuntimeConfig` with 21 sub-config fields; `load_runtime_config()` DB loader; 6 fully-defined sub-configs (`AuthConfig`, `SecurityConfig`, `QualityConfig`, `SubtitleConfig`, `ResourceLimitsConfig`, `RateLimitConfig`); 6 placeholder sub-configs for future phases |
+
+**Key decisions from Task 3 (error.rs):**
+
+- Generic variants only for Phase 3 — `NotFound`, `BadRequest`, `Conflict`, `Unauthorized`, `Forbidden`, `UnprocessableEntity`, `ServiceUnavailable`, `GatewayTimeout`, `Validation` (VALID_001), `RateLimited`, `Internal`; domain-specific variants (`Auth`, `Database`, `Library`, etc.) added as each domain module is built (Phase 4+)
+- `is_development_env()` now reads from `OnceLock<String>` global set by `AppState::new()`, falls back to `DUSKCUE_ENVIRONMENT` env var if not yet initialized — wires error.rs to `BootstrapConfig.environment` without creating a circular dependency
+- `get_trace_id()` generates UUID v7 (project uses UUID v7 throughout; no `v4` feature enabled in workspace)
+- `Retry-After` values: `0` for rate limits (client should respect `Retry-After` from governor headers), `30` for gateway timeout, `60` for service unavailable
+- All 5xx errors sanitize detail to `"Internal server error"` in non-development environments per ERROR_HANDLING.md
+- `tracing::error!` logs every error with trace_id, error_code, status, and display message at the `IntoResponse` boundary
+
+**Key decisions from Task 2 (state.rs):**
+
+- `AppState` derives `Clone` — `PgPool` is internally `Arc`'d, `RuntimeConfig` wrapped in `Arc<ArcSwap<T>>` for lock-free reads and atomic swaps, `BootstrapConfig` is `Clone`
+- `ArcSwap<RuntimeConfig>` chosen over `RwLock` for the read-heavy, rarely-written config pattern — lock-free reads, atomic swaps on admin API changes (`reload_runtime_config()`)
+- 6 sub-configs fully defined from CONFIGURATION.md: `AuthConfig` (with `RateLimitConfig`, `NetworkMode`), `SecurityConfig` (with `TlsConfig`, `StreamSigningConfig`, `VpnDetectionConfig`, `AcmeChallengeType`), `QualityConfig`, `SubtitleConfig`, `ResourceLimitsConfig`
+- 6 placeholder sub-configs as empty structs with `Default`: `NetworkConfig`, `TranscodingConfig`, `MetadataConfig`, `NotificationConfig`, `BackupConfig`, `IntegrationsConfig`, `LoggingConfig`, `StorageConfig`, `MaintenanceConfig`, `CpuConfig` — expanded in their respective phases
+- `load_runtime_config()` uses `sqlx::Row::try_get()` with graceful fallbacks — empty JSONB `{}` deserializes to defaults via `serde_json::from_value().unwrap_or_default()`; returns `RuntimeConfig::default()` when `server_config` table is empty (first-run)
+- `set_environment()` in error.rs uses `OnceLock<String>` — called in `AppState::new()` and `AppState::new_with_config()`, replaces direct env var reads for environment detection
+- `arc-swap` v1.9.1 added to workspace dependencies
+
+**Not yet implemented (deferred to later tasks/phases):**
+
+- Rate limiter instances (governor `RateLimiter`) — Task 4 (middleware.rs) will create them from `RuntimeConfig.auth.rate_limits`
+- Provider registry — Phase 6 (metadata providers) will add `ProviderRegistry` to `AppState`
+- Domain-specific sub-config expansion — each domain phase expands its placeholder struct with real fields
+
 **Tasks:**
 
 1. Implement `config.rs` — parse bootstrap TOML + ENV + CLI via `config-rs` + `clap`
-2. Implement `state.rs` — `AppState` with `PgPool`, rate limit state, provider registry, config handles
-3. Implement `error.rs` — unified `AppError` enum with RFC 9457 `IntoResponse`
+2. ~~Implement `state.rs` — `AppState` with `PgPool`, rate limit state, provider registry, config handles~~ **DONE**
+3. ~~Implement `error.rs` — unified `AppError` enum with RFC 9457 `IntoResponse`~~ **DONE**
 4. Implement `middleware.rs` — Tower stack: logging, CORS, rate limiting, security headers, compression
 5. Implement `extractors.rs` — `AuthenticatedUser`, `PaginationParams`, `AdminOnly`
 6. Implement `router.rs` — top-level router assembly merging all domain routers

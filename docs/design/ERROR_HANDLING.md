@@ -678,6 +678,19 @@ Valid values: `development`, `staging`, `production`. Default: `production`.
 10. **Environment-aware detail** — 500+ errors hide internal messages in production; development/staging include `debug_detail` with the full error chain. Controlled by `server_config.security.environment`
 11. **Retry-After on external failures** — 503 and 504 responses include a `Retry-After` header so clients know when to retry
 
+## Implementation Notes
+
+### Phase 3 — error.rs (Task 3)
+
+`server/src/error.rs` implements the application-layer `AppError` enum and RFC 9457 response format. Implemented with generic variants only; domain-specific variants (`Auth(#[from] AuthError)`, `Database(#[from] DbError)`, etc.) will be added as each domain module is built in Phases 4–14.
+
+**Implemented variants:** `NotFound`, `BadRequest`, `Conflict`, `Unauthorized`, `Forbidden`, `UnprocessableEntity`, `ServiceUnavailable`, `GatewayTimeout`, `Validation` (carries `Vec<FieldError>` + optional `instance` for `VALID_001`), `RateLimited` (carries error code string), `Internal` (wraps `anyhow::Error`).
+
+**Deferred decisions:**
+- `is_development_env()` reads from `OnceLock<String>` global set by `AppState::new()` (via `set_environment()`), falling back to `DUSKCUE_ENVIRONMENT` env var if not yet initialized. Wired in Phase 3, Task 2 (`state.rs`).
+- `get_trace_id()` generates UUID v7 per error. Request-span propagation via `tracing` spans can be enhanced when middleware is implemented (Phase 3, Task 4).
+- Domain `From` impls will be added as each domain's `error.rs` is created (Phase 4+).
+
 ## Research Sources
 
 - Caroline Morton — Error Handling in Rust: anyhow and thiserror (January 2026)
