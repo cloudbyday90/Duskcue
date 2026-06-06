@@ -14,3 +14,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use axum::{routing::get, Json, Router};
+use serde_json::{json, Value};
+
+async fn health_check() -> Json<Value> {
+    Json(json!({ "status": "ok" }))
+}
+
+pub fn build_router() -> Router {
+    Router::new().route("/health", get(health_check))
+}

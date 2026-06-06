@@ -37,5 +37,9 @@ toml.workspace = true
 reqwest.workspace = true
 config.workspace = true
 clap.workspace = true
+tokio-util.workspace = true
+mimalloc.workspace = true
+tracing-appender.workspace = true
+dirs.workspace = true
 duskcue-types = { path = "../crates/types" }
 duskcue-db = { path = "../crates/db" }
