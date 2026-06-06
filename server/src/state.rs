@@ -23,6 +23,7 @@ use sqlx::{PgPool, Row};
 
 use crate::config::BootstrapConfig;
 use crate::error::set_environment;
+use crate::middleware::RateLimitState;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthConfig {
@@ -396,6 +397,7 @@ pub struct AppState {
     pub pool: PgPool,
     pub runtime_config: Arc<ArcSwap<RuntimeConfig>>,
     pub bootstrap: BootstrapConfig,
+    pub rate_limits: Arc<RateLimitState>,
 }
 
 impl AppState {
@@ -405,6 +407,7 @@ impl AppState {
             pool,
             runtime_config: Arc::new(ArcSwap::from_pointee(RuntimeConfig::default())),
             bootstrap,
+            rate_limits: Arc::new(RateLimitState::from_defaults()),
         }
     }
 
@@ -414,10 +417,12 @@ impl AppState {
         runtime_config: RuntimeConfig,
     ) -> Self {
         set_environment(bootstrap.environment.clone());
+        let rate_limits = RateLimitState::new(&runtime_config.auth.rate_limits);
         Self {
             pool,
             runtime_config: Arc::new(ArcSwap::from_pointee(runtime_config)),
             bootstrap,
+            rate_limits: Arc::new(rate_limits),
         }
     }
 
