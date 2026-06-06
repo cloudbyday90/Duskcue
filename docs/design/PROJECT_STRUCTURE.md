@@ -398,8 +398,8 @@ tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip",
 governor = "0.6"
 nonzero_ext = "0.3"
 rusqlite = { version = "0.32", features = ["bundled"] }
-rustls = "0.23"
-tokio-rustls = "0.26"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 ring = "0.17"
 maxminddb = { version = "0.28", features = ["mmap"] }
 validator = { version = "0.20", features = ["derive"] }
@@ -416,7 +416,16 @@ anyhow = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 toml = "0.8"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+config = "0.15"
+clap = { version = "4", features = ["derive", "env"] }
+tokio-util = "0.7"
+mimalloc = "0.1"
+tracing-appender = "0.2"
+dirs = "6"
 ```
+
+**TLS backend note:** `rustls`, `tokio-rustls`, and `reqwest` use the `ring` crypto backend instead of the default `aws-lc-rs`. The `aws-lc-sys` crate requires NASM and CMake on Windows, which are not present in standard development environments. `ring` is pure Rust + precompiled assembly, builds everywhere, and is the same library used by `ring` 0.17 for HMAC signing. This is a workspace-level decision that applies to all workspace members.
 
 ### Dependency Flow
 

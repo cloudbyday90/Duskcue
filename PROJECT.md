@@ -491,6 +491,16 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 - **3 new tables** — `migration_sources`, `migration_user_mapping`, `migration_import_log`
 - **10 MIGR error codes** (MIGR_001–MIGR_010)
 
+## Current Implementation Status
+
+| Phase | Status | Commit |
+|---|---|---|
+| Phase 1: Project Scaffolding | **Complete** | `aaedc05` |
+| Phase 2: Database Schema | Not started | — |
+| Phase 3–16 | Not started | — |
+
+**Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
+
 ## Open Questions
 
 - [x] Final product name — **Duskcue**
@@ -542,6 +552,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 - [x] API security — OWASP API Top 10 coverage; input validation; BOLA prevention; SSRF prevention; response DTO separation; admin endpoint isolation; dependency auditing; supply chain hardening; full design in API_SECURITY.md
 - [x] Analytics security — impossible travel detection; IP geolocation (MaxMind GeoLite2); trust scoring; false positive suppression; full design in ANALYTICS_SECURITY.md
 - [x] Metadata provider integration — TMDB v3 primary; TVDB/Fanart.tv/OMDb supplementary; SubDL primary subtitles; trait-based abstraction; encrypted API keys; graceful degradation; full design in METADATA_PROVIDERS.md
+- [x] TLS crypto backend — **ring** (not aws-lc-rs). `rustls`, `tokio-rustls`, and `reqwest` configured with `default-features = false` + `features = ["ring"]` to avoid `aws-lc-sys` which requires NASM on Windows. See workspace `Cargo.toml`.
 - [ ] Live TV tuner hardware support
 
 ## Database Design Decisions

@@ -782,3 +782,16 @@ Common alternatives considered:
 **"File is source of truth, sync to DB"** — Adds complexity for no gain. The DB is already our config store, has an audit trail, and is editable from the web UI. A file sync layer would be fragile.
 
 **"ENV vars for everything (Twelve-Factor)"** — The Twelve-Factor App recommends env vars for all config. This works for cloud-native services, but a self-hosted Duskcue has dozens of settings (transcode paths, hardware accel, backup retention, notification SMTP). A TOML file is more practical for the initial connection, and the web UI is more practical for everything else. ENV vars are available as an override for Docker.
+
+## Implementation Status
+
+**Phase 1 (complete):** The bootstrap config layer is fully implemented in `server/src/config.rs`:
+
+- `CliArgs` struct with clap derive, all six fields with `DUSKCUE_` env var support
+- `BootstrapConfig` struct with serde Deserialize
+- `build_bootstrap_config()` function with config-rs layered merge
+- Platform-aware `data_dir` defaults (Windows/macOS/Linux)
+- Environment validation (`development`/`staging`/`production`)
+- `set_override_option` for optional `database_url` field
+
+**Phase 3 (planned):** The runtime config layer, `AppState`, and the 14-step startup sequence will be implemented as part of Core Server Infrastructure. The `state.rs`, `error.rs`, `middleware.rs`, and `extractors.rs` files currently contain license headers only.

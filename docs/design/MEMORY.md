@@ -97,6 +97,48 @@ An admin-only endpoint `GET /api/v1/debug/alloc` exposes current allocator stats
 
 ---
 
+## TLS Crypto Backend: ring (not aws-lc-rs)
+
+### Decision
+
+The workspace uses `ring` as the crypto backend for `rustls`, `tokio-rustls`, and `reqwest` instead of the default `aws-lc-rs`.
+
+### Why Not aws-lc-rs
+
+`aws-lc-sys` (the native dependency of `aws-lc-rs`) requires:
+- NASM assembler (not installed by default on Windows)
+- CMake build system
+- MSVC environment variables (`VCINSTALLDIR`, `LIB`, `INCLUDE`) set in the shell
+
+On a standard Windows development environment (Rust via scoop, MSVC Build Tools installed but not in a VS Developer Command Prompt), `aws-lc-sys` compilation fails with missing NASM and unset MSVC variables. This blocks all development on Windows.
+
+### Why ring
+
+| Factor | ring | aws-lc-rs |
+|---|---|---|
+| Build prerequisites | None (precompiled assembly) | NASM + CMake + MSVC env |
+| Windows support | Builds out of the box | Requires VS Developer Command Prompt |
+| Performance | Excellent (BoringSSL-derived) | Slightly better on modern hardware |
+| Security audit | Extensive (BoringSSL lineage) | Extensive (AWS-maintained) |
+| rustls default | Was default before 0.23 | Default since rustls 0.23 |
+| HMAC signing | Same library (`ring` 0.17) | Different library |
+| ARM64 support | First-class | First-class |
+
+### Implementation
+
+All three crates configured in workspace `Cargo.toml`:
+
+```toml
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
+ring = "0.17"
+```
+
+Using the same `ring` library for both TLS and HMAC signing (SECURITY.md) keeps the crypto dependency tree minimal.
+
+---
+
 ## cgroup-Aware Memory Detection
 
 ### Problem

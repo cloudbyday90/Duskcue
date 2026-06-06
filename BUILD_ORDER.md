@@ -34,40 +34,49 @@ These documents apply to every phase. Consult them when making implementation de
 
 ---
 
-## Phase 1 — Project Scaffolding
+## Phase 1 — Project Scaffolding (COMPLETE)
 
-**Goal:** Working Cargo workspace, SvelteKit project, and Docker skeleton. Server compiles and responds to `/health`.
+**Committed:** `aaedc05` on `main`
 
-**Authoritative docs:**
+**What was built:**
 
-| Doc | What to build from it |
+| File | Purpose |
 |---|---|
-| [PROJECT_STRUCTURE.md](docs/design/PROJECT_STRUCTURE.md) | Full monorepo tree — Cargo workspace root, `server/`, `crates/types/`, `crates/db/`, `clients/web/`, `clients/desktop/`, `clients/mobile/` |
-| [CONFIGURATION.md](docs/operations/CONFIGURATION.md) | Bootstrap config struct (`TOML` + `ENV` + `CLI`), `AppState` construction |
-| [DATABASE.md](docs/design/DATABASE.md) | `sqlx.toml` configuration for sqlx-cli 0.9 |
-| [MIGRATION_STRATEGY.md](docs/design/MIGRATION_STRATEGY.md) | sqlx-cli setup, timestamp-based migration naming |
+| `server/src/main.rs` | Entry point — mimalloc allocator, clap CLI parse, bootstrap config via config-rs, tracing-subscriber init, TcpListener on port 48027, graceful shutdown with double-signal protection (AtomicBool) |
+| `server/src/lib.rs` | Module declarations — `pub mod config; pub mod router;` |
+| `server/src/config.rs` | `CliArgs` (clap derive with `DUSKCUE_` env vars), `BootstrapConfig` (serde Deserialize), `build_bootstrap_config()` merging defaults -> TOML -> env -> CLI, platform-aware `data_dir` defaults, environment validation |
+| `server/src/router.rs` | `build_router()` with GET `/health` returning `{"status":"ok"}` |
+| `Cargo.toml` | Workspace root with resolver 3, all shared dependency versions, `ring` TLS backend |
+| `Cargo.lock` | Generated lockfile for all workspace crates |
 
-**Tasks:**
+**Key decisions made during implementation:**
 
-1. Initialize Cargo workspace with `resolver = "3"`, workspace members per PROJECT_STRUCTURE.md
-2. Create `server/` crate with `main.rs`, `lib.rs`, `config.rs`, `state.rs`, `error.rs`, `router.rs`, `middleware.rs`, `extractors.rs`
-3. Create `crates/types/` — shared types with `serde`, `uuid`, `chrono` only (zero DB dependencies)
-4. Create `crates/db/` — shared DB types with sqlx dependency
-5. Create `clients/web/` — SvelteKit project with `"type": "module"`, `vite.config.js`, `svelte.config.js`
-6. Create `clients/desktop/` — Tauri 2 wrapper with `src-tauri/` pointing to web client
-7. Create `clients/mobile/` — Flutter project skeleton
-8. Create `docker/entrypoint.sh` — PUID/PGID user creation, privilege drop
-9. Create `Dockerfile` — multi-stage Alpine build per DOCKER_DEPLOYMENT.md
-10. Wire up `/health` endpoint — returns `{"status": "ok"}` on port 48027
-11. Create `server/migrations/` directory with sqlx-cli config
+- Minimal Phase 1 scope — only `main.rs`, `lib.rs`, `config.rs`, `router.rs` implemented; `state.rs`, `error.rs`, `middleware.rs`, `extractors.rs` remain license-header stubs deferred to Phase 3
+- `rustls`/`tokio-rustls`/`reqwest` switched to `ring` crypto backend (avoids `aws-lc-sys` which requires NASM on Windows — not available in standard dev environments)
+- `mimalloc` global allocator excluded on MSVC (`#[cfg(not(target_env = "msvc"))]`)
+- Graceful shutdown uses `with_graceful_shutdown()` with `tokio::select!` for SIGINT + SIGTERM; `CancellationToken` + `TaskTracker` pattern deferred to Phase 3 per MEMORY.md
+- Cross-platform signal handling: `#[cfg(unix)]` for SIGTERM, `std::future::pending()` fallback on non-Unix
+- `set_override_option` used for optional `database_url` field (config-rs API correctness)
+- `clap` `env` feature enabled for `DUSKCUE_` environment variable support
+- Workspace deps added: `tokio-util`, `mimalloc`, `tracing-appender`, `dirs`
 
-**Verification:** `cargo build` succeeds, `cargo test` passes, `clients/web/` runs `npm run dev`, `/health` returns 200.
+**Not yet implemented (deferred):**
+
+- `clients/web/` (SvelteKit) — Phase 8
+- `clients/desktop/` (Tauri) — Phase 16
+- `clients/mobile/` (Flutter) — Phase 16
+- `docker/entrypoint.sh` — Phase 15
+- `Dockerfile` — Phase 15
+- `server/migrations/` — Phase 2
+- `crates/types/` and `crates/db/` exist as stubs only
 
 ---
 
-## Phase 2 — Database Schema
+## Phase 2 — Database Schema (NEXT)
 
 **Goal:** All migrations applied. PostgreSQL tables exist for every domain.
+
+**Prerequisites:** Phase 1 complete. A running PostgreSQL instance is required — either local install, Docker container, or cloud-managed. The server binary connects but does not yet manage PG lifecycle.
 
 **Authoritative docs:**
 
@@ -76,6 +85,14 @@ These documents apply to every phase. Consult them when making implementation de
 | [DATABASE.md](docs/design/DATABASE.md) | **Primary** — Full DDL for all tables, indexes, constraints, triggers |
 | [MIGRATION_STRATEGY.md](docs/design/MIGRATION_STRATEGY.md) | Migration naming convention, idempotency rules, append-only policy |
 | [DATABASE_MAINTENANCE.md](docs/operations/DATABASE_MAINTENANCE.md) | Per-table autovacuum tuning, `fillfactor=85` on `user_item_data` |
+
+**Context from Phase 1:**
+
+- `crates/db/` exists as a stub with sqlx dependency wired in workspace Cargo.toml
+- `server/migrations/` directory needs to be created
+- `BootstrapConfig.database_url` is already parsed and available for sqlx connection
+- The 14-step startup sequence (CONFIGURATION.md) runs migrations at step 9 — this will be implemented in Phase 3
+- Phase 2 is purely migration files; no Rust code changes needed beyond possibly a `sqlx.toml` config
 
 **Tasks:**
 
