@@ -173,7 +173,7 @@ fn build_bootstrap_config(cli: CliArgs) -> BootstrapConfig {
         .add_source(Config::try_from(&BootstrapDefaults::default()).unwrap())
         .add_source(config::File::from(config_path).required(false))
         .add_source(
-            config::Environment::with_prefix("MEDIA_SERVER")
+            config::Environment::with_prefix("DUSKCUE")
                 .prefix_separator("_")
                 .separator("_")
         )
