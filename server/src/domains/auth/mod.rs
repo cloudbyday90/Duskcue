@@ -49,5 +49,6 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/api/v1/user/passkeys/{id}", delete(handlers::passkey_delete))
         .route("/api/v1/invitations", get(handlers::list_invitations).post(handlers::create_invitation))
         .route("/api/v1/invitations/{id}", delete(handlers::revoke_invitation))
+        .route("/api/v1/invitations/{id}/resend", post(handlers::resend_invitation))
         .with_state(state)
 }

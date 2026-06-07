@@ -498,7 +498,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 1: Project Scaffolding | **Complete** | `aaedc05` |
 | Phase 2: Database Schema | **Complete** | `dd3f201` |
 | Phase 3: Core Server Infrastructure | **Complete** | — |
-| Phase 4: Auth & Users | **In Progress** (Tasks 1–2 complete) | — |
+| Phase 4: Auth & Users | **In Progress** (Tasks 1–3 complete) | — |
 | Phase 5–16 | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
@@ -507,7 +507,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 
 **Phase 3 complete:** All 12 tasks done. See [BUILD_ORDER.md](BUILD_ORDER.md) Phase 3 for full details.
 
-**Phase 4 in progress:** Tasks 1–2 complete. Task 1: `domains/auth/` five-file pattern with 22 routes, `AuthError` enum (23 variants), runtime-sqlx service layer with PBKDF2 password hashing and session token generation, `AppError::Auth` variant. Task 2: `webauthn-rs` server-side Relying Party library with 8 service functions (passkey registration/authentication, challenge management), 6 handlers replacing `todo!()` stubs, `DashMap` challenge store in `AppState`. Remaining: Tasks 3–11 (invite codes, sessions, capabilities, device linking, re-auth, users CRUD, extractor wiring, capability middleware). See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
+**Phase 4 in progress:** Tasks 1–3 complete. Task 1: `domains/auth/` five-file pattern with 22 routes, `AuthError` enum (23 variants), runtime-sqlx service layer with PBKDF2 password hashing and session token generation, `AppError::Auth` variant. Task 2: `webauthn-rs` server-side Relying Party library with 8 service functions (passkey registration/authentication, challenge management), 6 handlers replacing `todo!()` stubs, `DashMap` challenge store in `AppState`. Task 3: Invite code CRUD — `generate_invite_code()` (base-20, 24 chars, ~103 bits entropy), `create_invitation`, `list_invitations`, `revoke_invitation`, `resend_invitation` (regenerates code); resend route added; `can_manage_users` capability check inline. Remaining: Tasks 4–11 (sessions, capabilities, device linking, re-auth, users CRUD, extractor wiring, capability middleware). See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
 
 ## Open Questions
 

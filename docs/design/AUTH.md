@@ -660,3 +660,15 @@ Uses `webauthn-rs` (by kanidm) — a mature, security-audited server-side Relyin
 - Registration state (`PasskeyRegistration`) and authentication state (`PasskeyAuthentication`) are serialized to JSON and stored in a transient in-memory `DashMap` keyed by challenge ID with 5-minute TTL
 - Each challenge is single-use — consumed on `finish` and removed from the map
 - Alternative DB storage considered but in-memory is sufficient for single-instance deployment; multi-instance would require a shared store (Redis/PG) — deferred to future horizontal scaling work
+
+### Invite Code System (Task 3)
+
+Invite code CRUD implements the admin-side operations from AUTH.md Invite Management endpoints. The user-side authentication flow (`POST /api/v1/auth/invite`) was already implemented in Task 1 via `authenticate_invite_code()`.
+
+**Code generation:** `generate_invite_code()` uses `rand::rng()` with `random_range(0..20)` per character over the base-20 set `BCDFGHJKLMNPQRSTVWXZ`. Format: `mv_invite-` + 24 chars grouped as `XXXX-XXXX-XXXX-XXXX-XXXX-XXXX`. The `code_prefix` column stores the first 4 base-20 characters (after stripping prefix and dashes) for admin UI identification.
+
+**Resend regenerates:** `resend_invitation()` generates a new code and updates `code_hash` + `code_prefix`, resetting `use_count` to 0. The original code is immediately invalidated. Rationale: only the SHA-256 hash is stored, so the original code cannot be retrieved.
+
+**SMTP delivery deferred:** Both `create_invitation` and `resend_invitation` log an info message that SMTP is not yet configured. The full code is returned in the API response so admins can manually share it. Email delivery will be implemented when SMTP configuration is added (Phase 13).
+
+**Revocation limitation:** `revoke_invitation` sets `is_revoked = true` but does not terminate existing sessions. AUTH.md specifies "all sessions from that code are terminated," but `user_sessions` lacks an `invitation_id` column. Full session termination on revocation requires a migration — deferred to a future enhancement.

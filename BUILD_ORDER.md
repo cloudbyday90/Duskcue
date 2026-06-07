@@ -348,7 +348,7 @@ These documents apply to every phase. Consult them when making implementation de
 
 1. ~~Create `server/src/domains/auth/` — five-file pattern~~ **DONE**
 2. ~~Implement WebAuthn registration and authentication flows~~ **DONE**
-3. Implement invite code system — admin creates invite, user registers with code
+3. ~~Implement invite code system — admin creates invite, user registers with code~~ **DONE**
 4. Implement `user_sessions` — session creation, validation, revocation
 5. Implement `user_capabilities` — capability-based access control checks
 6. Implement device linking — RFC 8628 device code flow
@@ -410,6 +410,26 @@ These documents apply to every phase. Consult them when making implementation de
 - **Authentication counter update** — After successful authentication, `sign_count` updated in `user_passkeys` from `AuthenticationResult::counter()`
 - **User verification on finish** — `passkey_register_finish` validates that the authenticated user's ID matches the challenge's stored user_id, preventing one user from completing another's registration
 - **`webauthn-rs` v0.6.1-dev** — Pre-release version; latest available on crates.io as of June 2026; MSRV 1.88.0; MPL-2.0 license
+
+**What was built for Task 3:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/auth/service.rs` | Added 4 invite code service functions: `generate_invite_code`, `create_invitation`, `list_invitations`, `revoke_invitation`, `resend_invitation`; `CreateInvitationParams` struct to avoid clippy `too_many_arguments`; `extract_code_prefix` helper |
+| `server/src/domains/auth/handlers.rs` | Replaced `todo!()` stubs with working handlers: `list_invitations`, `create_invitation`, `revoke_invitation`; added new `resend_invitation` handler; all check `can_manage_users` capability inline |
+| `server/src/domains/auth/mod.rs` | Added `POST /api/v1/invitations/{id}/resend` route |
+
+**Key decisions from Task 3:**
+
+- **Base-20 character set** — `BCDFGHJKLMNPQRSTVWXZ` (consonants only, no ambiguous chars per RFC 8628 Section 6.1); 24 random characters → ~103 bits entropy; formatted as `mv_invite-BCDK-MJHT-WDJB-NPQR-STVW-XZBC` with 4-char dash-separated groups
+- **Code generation** — `generate_invite_code()` uses `rand::rng()` with `random_range(0..20)` per character; `extract_code_prefix()` strips prefix and dashes, takes first 4 chars for `code_prefix` column
+- **Create returns full code** — `InvitationResponse.code` is `Some(full_code)` only on creation; `list_invitations` returns `code: None` (admin sees only `code_prefix`)
+- **Resend regenerates code** — `resend_invitation()` generates a new code, updates `code_hash` + `code_prefix`, resets `use_count` to 0; original code is invalidated. Rationale: we only store the SHA-256 hash, so the original code cannot be retrieved; generating a fresh code is more secure than trying to resend the same one
+- **SMTP delivery deferred** — `create_invitation` and `resend_invitation` log an info message that SMTP is not yet implemented; email delivery will be added when SMTP configuration is implemented (Phase 13 system operations)
+- **Capability check inline** — All invitation handlers check `can_manage_users` inline since `AdminOnly` extractor checks `can_manage_server`; Task 11 will create a proper `require_capability()` middleware
+- **Revocation marks code only** — `revoke_invitation` sets `is_revoked = true` but does not terminate existing sessions. AUTH.md specifies "all sessions from that code are terminated," but `user_sessions` lacks an `invitation_id` column to link sessions to their originating invite code. Full session termination on revocation requires a migration adding `invitation_id` to `user_sessions` — deferred to a future enhancement
+- **`CreateInvitationParams` struct** — Introduced to satisfy clippy `too_many_arguments` (10 params → 2 params); handler constructs the struct from validated `CreateInvitationRequest` fields with defaults (`role: "member"`, `max_uses: 1`, `has_all_library_access: false`)
+- **No new workspace dependencies** — invite code generation uses existing `rand` 0.9; hashing uses existing `ring::digest::SHA256`
 
 ---
 
@@ -816,7 +836,7 @@ Phase 2: Database Schema (COMPLETE — 15 migrations)
     ↓
 Phase 3: Core Server Infrastructure (COMPLETE — 12 tasks)
     ↓
-Phase 4: Auth & Users (NEXT)
+Phase 4: Auth & Users (IN PROGRESS — Tasks 1–3 complete)
     ↓
 Phase 5: Libraries & Media ──────────────────────────────┐
     ↓                                                      │

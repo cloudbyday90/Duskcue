@@ -942,3 +942,229 @@ pub static ALL_CAPABILITIES: &[&str] = &[
     "can_share_content",
     "can_remote_control",
 ];
+
+const BASE20_CHARS: &[u8] = b"BCDFGHJKLMNPQRSTVWXZ";
+
+pub fn generate_invite_code() -> String {
+    let mut rng = rand::rng();
+    let chars: Vec<u8> = (0..24)
+        .map(|_| {
+            let idx: usize = rng.random_range(0..BASE20_CHARS.len());
+            BASE20_CHARS[idx]
+        })
+        .collect();
+
+    let raw = String::from_utf8(chars).unwrap();
+    let formatted: String = raw
+        .as_bytes()
+        .chunks(4)
+        .map(|chunk| std::str::from_utf8(chunk).unwrap())
+        .collect::<Vec<_>>()
+        .join("-");
+
+    format!("mv_invite-{}", formatted)
+}
+
+fn extract_code_prefix(full_code: &str) -> String {
+    let stripped = full_code.strip_prefix("mv_invite-").unwrap_or(full_code);
+    let no_dashes: String = stripped.chars().filter(|c| *c != '-').collect();
+    no_dashes[..4].to_string()
+}
+
+pub struct CreateInvitationParams {
+    pub admin_user_id: Uuid,
+    pub email: String,
+    pub display_name: Option<String>,
+    pub role: String,
+    pub capabilities: Vec<String>,
+    pub library_ids: Vec<Uuid>,
+    pub has_all_library_access: bool,
+    pub max_uses: i32,
+    pub expires_at: Option<DateTime<Utc>>,
+}
+
+pub async fn create_invitation(
+    pool: &sqlx::PgPool,
+    params: CreateInvitationParams,
+) -> Result<(String, InvitationResponse), AuthError> {
+    let raw_code = generate_invite_code();
+    let code_hash = sha256_hex(&raw_code);
+    let code_prefix = extract_code_prefix(&raw_code);
+
+    let capabilities_json = serde_json::to_value(&params.capabilities).unwrap_or_default();
+    let library_ids_json = serde_json::to_value(&params.library_ids).unwrap_or_default();
+
+    let row = sqlx::query(
+        r#"
+        INSERT INTO invitations (
+            created_by_user_id, code_hash, code_prefix, email, display_name,
+            role, capabilities, library_ids, has_all_library_access,
+            max_uses, expires_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        RETURNING id, code_prefix, email, display_name, role, max_uses,
+                  use_count, expires_at, is_revoked, created_at
+        "#,
+    )
+    .bind(params.admin_user_id)
+    .bind(&code_hash)
+    .bind(&code_prefix)
+    .bind(&params.email)
+    .bind(&params.display_name)
+    .bind(&params.role)
+    .bind(&capabilities_json)
+    .bind(&library_ids_json)
+    .bind(params.has_all_library_access)
+    .bind(params.max_uses)
+    .bind(params.expires_at)
+    .fetch_one(pool)
+    .await?;
+
+    let invitation_id: Uuid = row.get("id");
+    let resp = InvitationResponse {
+        id: invitation_id,
+        code: Some(raw_code.clone()),
+        code_prefix: row.get("code_prefix"),
+        email: row.get("email"),
+        display_name: row.try_get("display_name").ok(),
+        role: row.get("role"),
+        max_uses: row.get("max_uses"),
+        use_count: row.get("use_count"),
+        expires_at: row.try_get("expires_at").ok(),
+        is_revoked: row.get("is_revoked"),
+        created_at: row.get("created_at"),
+    };
+
+    Ok((raw_code, resp))
+}
+
+pub async fn list_invitations(
+    pool: &sqlx::PgPool,
+) -> Result<(Vec<InvitationResponse>, i64), AuthError> {
+    let count_row = sqlx::query("SELECT count(*) as cnt FROM invitations")
+        .fetch_one(pool)
+        .await?;
+    let total: i64 = count_row.get("cnt");
+
+    let rows = sqlx::query(
+        r#"
+        SELECT id, code_prefix, email, display_name, role, max_uses,
+               use_count, expires_at, is_revoked, created_at
+        FROM invitations
+        ORDER BY created_at DESC
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let items = rows
+        .iter()
+        .map(|row| InvitationResponse {
+            id: row.get("id"),
+            code: None,
+            code_prefix: row.get("code_prefix"),
+            email: row.get("email"),
+            display_name: row.try_get("display_name").ok(),
+            role: row.get("role"),
+            max_uses: row.get("max_uses"),
+            use_count: row.get("use_count"),
+            expires_at: row.try_get("expires_at").ok(),
+            is_revoked: row.get("is_revoked"),
+            created_at: row.get("created_at"),
+        })
+        .collect();
+
+    Ok((items, total))
+}
+
+pub async fn revoke_invitation(
+    pool: &sqlx::PgPool,
+    invitation_id: Uuid,
+) -> Result<InvitationResponse, AuthError> {
+    let row = sqlx::query(
+        r#"
+        UPDATE invitations SET is_revoked = true
+        WHERE id = $1 AND is_revoked = false
+        RETURNING id, code_prefix, email, display_name, role, max_uses,
+                  use_count, expires_at, is_revoked, created_at
+        "#,
+    )
+    .bind(invitation_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AuthError::InviteCodeRevoked)?;
+
+    Ok(InvitationResponse {
+        id: row.get("id"),
+        code: None,
+        code_prefix: row.get("code_prefix"),
+        email: row.get("email"),
+        display_name: row.try_get("display_name").ok(),
+        role: row.get("role"),
+        max_uses: row.get("max_uses"),
+        use_count: row.get("use_count"),
+        expires_at: row.try_get("expires_at").ok(),
+        is_revoked: row.get("is_revoked"),
+        created_at: row.get("created_at"),
+    })
+}
+
+pub async fn resend_invitation(
+    pool: &sqlx::PgPool,
+    invitation_id: Uuid,
+) -> Result<InvitationResponse, AuthError> {
+    let existing = sqlx::query(
+        r#"
+        SELECT id, code_hash, code_prefix, email, display_name, role, max_uses,
+               use_count, expires_at, is_revoked, created_at
+        FROM invitations
+        WHERE id = $1
+        "#,
+    )
+    .bind(invitation_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AuthError::InviteCodeInvalid)?;
+
+    let is_revoked: bool = existing.get("is_revoked");
+    if is_revoked {
+        return Err(AuthError::InviteCodeRevoked);
+    }
+
+    let new_code = generate_invite_code();
+    let new_hash = sha256_hex(&new_code);
+    let new_prefix = extract_code_prefix(&new_code);
+
+    let row = sqlx::query(
+        r#"
+        UPDATE invitations SET code_hash = $2, code_prefix = $3, use_count = 0
+        WHERE id = $1
+        RETURNING id, code_prefix, email, display_name, role, max_uses,
+                  use_count, expires_at, is_revoked, created_at
+        "#,
+    )
+    .bind(invitation_id)
+    .bind(&new_hash)
+    .bind(&new_prefix)
+    .fetch_one(pool)
+    .await?;
+
+    tracing::info!(
+        invitation_id = %invitation_id,
+        email = %row.get::<String, _>("email"),
+        "invite code regenerated for resend (SMTP delivery not yet implemented)"
+    );
+
+    Ok(InvitationResponse {
+        id: row.get("id"),
+        code: Some(new_code),
+        code_prefix: row.get("code_prefix"),
+        email: row.get("email"),
+        display_name: row.try_get("display_name").ok(),
+        role: row.get("role"),
+        max_uses: row.get("max_uses"),
+        use_count: row.get("use_count"),
+        expires_at: row.try_get("expires_at").ok(),
+        is_revoked: row.get("is_revoked"),
+        created_at: row.get("created_at"),
+    })
+}

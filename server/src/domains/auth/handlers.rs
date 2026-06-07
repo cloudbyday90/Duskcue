@@ -424,23 +424,108 @@ pub async fn passkey_delete(
 }
 
 pub async fn list_invitations(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
 ) -> Result<Json<InvitationListResponse>, AppError> {
-    todo!("Task 3: Invitation listing");
+    if !user.capabilities.iter().any(|c| c == "can_manage_users") {
+        return Err(AppError::Auth(AuthError::InsufficientCapabilities {
+            required: vec!["can_manage_users".to_string()],
+        }));
+    }
+
+    let (items, total) = service::list_invitations(&state.pool).await?;
+
+    Ok(Json(InvitationListResponse { items, total }))
 }
 
 pub async fn create_invitation(
-    State(_state): State<AppState>,
-    Json(_req): Json<CreateInvitationRequest>,
-) -> Result<Json<InvitationResponse>, AppError> {
-    todo!("Task 3: Invitation creation");
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<CreateInvitationRequest>,
+) -> Result<(axum::http::StatusCode, Json<InvitationResponse>), AppError> {
+    if !user.capabilities.iter().any(|c| c == "can_manage_users") {
+        return Err(AppError::Auth(AuthError::InsufficientCapabilities {
+            required: vec!["can_manage_users".to_string()],
+        }));
+    }
+
+    req.validate().map_err(|e| {
+        AppError::Validation {
+            errors: e
+                .field_errors()
+                .into_iter()
+                .flat_map(|(field, errors)| {
+                    errors.iter().map(move |err| crate::error::FieldError {
+                        field: field.to_string(),
+                        code: err.code.to_string(),
+                        message: err
+                            .message
+                            .as_ref()
+                            .map(|m| m.to_string())
+                            .unwrap_or_default(),
+                    })
+                })
+                .collect(),
+            instance: Some("/api/v1/invitations".to_string()),
+        }
+    })?;
+
+    let role = req
+        .role
+        .unwrap_or_else(|| "member".to_string());
+
+    let capabilities = req.capabilities.unwrap_or_default();
+    let library_ids = req.library_ids.unwrap_or_default();
+    let has_all_library_access = req.has_all_library_access.unwrap_or(false);
+    let max_uses = req.max_uses.unwrap_or(1);
+
+    let (_raw_code, invitation) = service::create_invitation(
+        &state.pool,
+        service::CreateInvitationParams {
+            admin_user_id: user.user_id,
+            email: req.email,
+            display_name: req.display_name,
+            role,
+            capabilities,
+            library_ids,
+            has_all_library_access,
+            max_uses,
+            expires_at: req.expires_at,
+        },
+    )
+    .await?;
+
+    Ok((axum::http::StatusCode::CREATED, Json(invitation)))
 }
 
 pub async fn revoke_invitation(
-    State(_state): State<AppState>,
-    axum::extract::Path(_invitation_id): axum::extract::Path<uuid::Uuid>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    todo!("Task 3: Invitation revocation");
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    axum::extract::Path(invitation_id): axum::extract::Path<uuid::Uuid>,
+) -> Result<Json<InvitationResponse>, AppError> {
+    if !user.capabilities.iter().any(|c| c == "can_manage_users") {
+        return Err(AppError::Auth(AuthError::InsufficientCapabilities {
+            required: vec!["can_manage_users".to_string()],
+        }));
+    }
+
+    let invitation = service::revoke_invitation(&state.pool, invitation_id).await?;
+    Ok(Json(invitation))
+}
+
+pub async fn resend_invitation(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    axum::extract::Path(invitation_id): axum::extract::Path<uuid::Uuid>,
+) -> Result<Json<InvitationResponse>, AppError> {
+    if !user.capabilities.iter().any(|c| c == "can_manage_users") {
+        return Err(AppError::Auth(AuthError::InsufficientCapabilities {
+            required: vec!["can_manage_users".to_string()],
+        }));
+    }
+
+    let invitation = service::resend_invitation(&state.pool, invitation_id).await?;
+    Ok(Json(invitation))
 }
 
 fn extract_device_info(
