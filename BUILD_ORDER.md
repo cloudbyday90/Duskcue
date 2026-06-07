@@ -217,6 +217,21 @@ These documents apply to every phase. Consult them when making implementation de
 - Security headers applied via iteration over `Vec<SetResponseHeaderLayer>` from `build_security_headers()` — avoids variadic layer composition
 - main.rs updated to create `PgPool` and `AppState` before calling `build_router` — minimal change (not the full 14-step sequence, which is Task 7); requires `DUSKCUE_DATABASE_URL` or exits with clear error message
 
+**Key decisions from Task 7 (main.rs — 14-step startup):**
+
+- Full 14-step startup sequence from CONFIGURATION.md implemented in `main()`: parse CLI → build BootstrapConfig → init logging → validate database_url → acquire lockfile (stub) → connect PG → validate PG settings → run migrations → load RuntimeConfig → check auth state → start scheduled tasks (stub) → bind HTTP → ready
+- PgPoolOptions configured per MEMORY.md: `max_connections(20)`, `min_connections(2)`, `acquire_timeout(5s)`, `max_lifetime(30min)`, `idle_timeout(10min)`, `after_connect` sets `application_name = 'duskcue'`
+- Database connection retry per CONFIGURATION.md fail-fast rules: 3 attempts, 5s interval between retries; each failure logged at WARN with attempt number
+- Migrations run via `sqlx::migrate!()` macro (compile-time embedded) — reads `server/migrations/` directory at build time; requires `migrate` + `sqlx-toml` features on sqlx
+- `sqlx.toml` fixed: removed invalid `migrations-dir` field from `[common]` section (not a recognized sqlx config field; the `migrate!()` macro defaults to `./migrations`)
+- PostgreSQL settings validation implemented per MEMORY.md: queries `pg_settings` for `fsync`, `full_page_writes`, `data_checksums`, `wal_level`; logs WARN for each mismatch; non-blocking (never prevents startup); failures to query are also non-blocking (WARN level)
+- Runtime config loaded via existing `load_runtime_config(&pool)` from state.rs; `AppState::new_with_config()` used (not `AppState::new()`) so rate limits are initialized from DB config, not defaults
+- Auth setup state checked: if `config.is_setup_mode()`, logs WARN that only setup endpoints will be accessible — provides clear operator feedback
+- Stubs for remaining Tasks 8–12: lockfile acquisition logs info (Task 11 will implement PID-file check); scheduled task runner logs "not yet implemented" (Phase 5); graceful shutdown keeps existing `with_graceful_shutdown(shutdown_signal())` pattern (Task 8 will upgrade to CancellationToken + TaskTracker); logging keeps existing bootstrap-level `tracing_subscriber::fmt()` (Task 9 will add file appender + ErrorLayer)
+- `database_url` missing provides actionable error message: prints example connection string and all three configuration methods (CLI, env var, config.toml)
+- All `unwrap_or_else` exits use `std::process::exit(1)` — consistent exit code for all startup failures
+- `sqlx` workspace deps updated: added `migrate` and `sqlx-toml` features
+
 **Tasks:**
 
 1. ~~Implement `config.rs` — parse bootstrap TOML + ENV + CLI via `config-rs` + `clap`~~ **DONE** (bootstrap config in `config.rs`; `RuntimeConfig` DB loading in `state.rs` Task 2; `AppState` wiring in Tasks 2/4)
@@ -225,8 +240,7 @@ These documents apply to every phase. Consult them when making implementation de
 4. ~~Implement `middleware.rs` — Tower stack: logging, CORS, rate limiting, security headers, compression~~ **DONE**
 5. ~~Implement `extractors.rs` — `AuthenticatedUser`, `PaginationParams`, `AdminOnly`~~ **DONE**
 6. ~~Implement `router.rs` — top-level router assembly merging all domain routers~~ **DONE**
-7. Implement `main.rs` — 14-step startup sequence from CONFIGURATION.md:
-   - Parse CLI → load config → acquire lockfile → connect DB → validate PG settings → run migrations → load `server_config` → check auth state → start scheduled tasks → start HTTP server → ready
+7. ~~Implement `main.rs` — 14-step startup sequence from CONFIGURATION.md~~ **DONE**
 8. Implement graceful shutdown per MEMORY.md:
    - SIGINT + SIGTERM handling via CancellationToken
    - Double-signal protection (`std::process::exit(1)`)
@@ -235,7 +249,7 @@ These documents apply to every phase. Consult them when making implementation de
 9. Wire up `tracing` subscriber — pretty console + JSON file via `tracing-appender`
 10. Wire up Prometheus `/metrics` endpoint
 11. Implement startup lockfile at `/data/.duskcue.lock`
-12. Implement PG settings validation (fsync, data_checksums, wal_level — warn only)
+12. Implement PG settings validation (fsync, data_checksums, wal_level — warn only) — *basic implementation included in Task 7; Task 12 may expand with more thorough checks*
 
 **Verification:** Server boots, connects to PG, runs migrations, `/health` returns 200, `/metrics` returns Prometheus format, SIGTERM triggers graceful shutdown with PG checkpoint.
 

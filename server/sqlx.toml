@@ -6,4 +6,3 @@
 
 [common]
 database-url-var = "DUSKCUE_DATABASE_URL"
-migrations-dir = "migrations"

@@ -408,7 +408,7 @@ landlock = "0.4"
 seccompiler = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-sqlx = { version = "0.9", features = ["postgres", "runtime-tokio", "uuid", "chrono", "json"] }
+sqlx = { version = "0.9", features = ["postgres", "runtime-tokio", "uuid", "chrono", "json", "migrate", "sqlx-toml"] }
 uuid = { version = "1", features = ["v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
 thiserror = "2"
@@ -423,6 +423,7 @@ tokio-util = "0.7"
 mimalloc = "0.1"
 tracing-appender = "0.2"
 dirs = "6"
+arc-swap = "1"
 ```
 
 **TLS backend note:** `rustls`, `tokio-rustls`, and `reqwest` use the `ring` crypto backend instead of the default `aws-lc-rs`. The `aws-lc-sys` crate requires NASM and CMake on Windows, which are not present in standard development environments. `ring` is pure Rust + precompiled assembly, builds everywhere, and is the same library used by `ring` 0.17 for HMAC signing. This is a workspace-level decision that applies to all workspace members.

@@ -805,8 +805,20 @@ Common alternatives considered:
 - `arc-swap` v1.9.1 added as workspace dependency for lock-free config reads
 - Environment detection wired: `set_environment()` in `error.rs` uses `OnceLock<String>` set during `AppState` construction
 
+**Phase 3 — 14-step startup sequence (Task 7, complete):** The startup sequence is implemented in `server/src/main.rs`:
+
+- PgPoolOptions configured per MEMORY.md: `max_connections(20)`, `min_connections(2)`, `acquire_timeout(5s)`, `max_lifetime(30min)`, `idle_timeout(10min)`, `after_connect` sets `application_name = 'duskcue'`
+- Database connection retry: 3 attempts, 5s interval between retries
+- Automatic schema migration via `sqlx::migrate!()` (compile-time embedded from `server/migrations/`)
+- PostgreSQL settings validation: queries `pg_settings` for `fsync`, `full_page_writes`, `data_checksums`, `wal_level`; logs WARN for mismatches; non-blocking
+- Runtime config loaded from `server_config` table via `load_runtime_config()`; `AppState::new_with_config()` initializes rate limits from DB config
+- Auth setup state checked: if `setup_complete = false`, logs WARN about setup mode
+- `sqlx` workspace features updated: added `migrate` and `sqlx-toml`
+
 **Not yet implemented:**
 
-- 14-step startup sequence in `main.rs` — Task 7
+- Startup lockfile (`/data/.duskcue.lock`) — Task 11
+- Full tracing subscriber (file appender + ErrorLayer) — Task 9
+- Prometheus `/metrics` endpoint — Task 10
+- Graceful shutdown upgrade (CancellationToken + TaskTracker) — Task 8
 - Admin API endpoint (`PUT /api/v1/server/config`) that triggers `reload_runtime_config()` — Phase 13
-- `error.rs`, `middleware.rs`, `extractors.rs` files — other Phase 3 tasks
