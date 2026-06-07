@@ -105,9 +105,9 @@ pub fn build_router(state: AppState) -> Router<AppState> {
                 state.clone(),
                 metrics_subnet_guard,
             )),
-        );
+        )
+        .merge(crate::domains::auth::router(state.clone()));
 
-    // Phase 4: .merge(crate::domains::auth::router())
     // Phase 4: .merge(crate::domains::users::router())
     // Phase 5: .merge(crate::domains::libraries::router())
     // Phase 5: .merge(crate::domains::media::router())

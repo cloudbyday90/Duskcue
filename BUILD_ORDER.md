@@ -346,7 +346,7 @@ These documents apply to every phase. Consult them when making implementation de
 
 **Tasks:**
 
-1. Create `server/src/domains/auth/` — five-file pattern
+1. ~~Create `server/src/domains/auth/` — five-file pattern~~ **DONE**
 2. Implement WebAuthn registration and authentication flows
 3. Implement invite code system — admin creates invite, user registers with code
 4. Implement `user_sessions` — session creation, validation, revocation
@@ -359,6 +359,32 @@ These documents apply to every phase. Consult them when making implementation de
 11. Implement `require_capability()` middleware for admin endpoints
 
 **Verification:** Admin creates invite code, new user registers with passkey, user session is created, authenticated requests succeed, unauthorized requests return 401, admin-only endpoints require `can_manage_server`.
+
+**What was built for Task 1:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/auth/mod.rs` | Module declarations + router assembly with 22 routes |
+| `server/src/domains/auth/error.rs` | `AuthError` enum with 23 variants covering AUTH_001–AUTH_022 |
+| `server/src/domains/auth/types.rs` | Request/response DTOs (`SetupRequest`, `PasswordLoginRequest`, `InviteAuthRequest`, `SessionResponse`, `UserSummary`, etc.), `LoginUser`, `ValidatedSession`, `UserSession`, `UserCapabilities`, `DeviceInfo` |
+| `server/src/domains/auth/service.rs` | Service layer with runtime `sqlx::query`: `validate_session`, `resolve_capabilities`, `create_session`, `setup_owner`, `is_setup_complete`, `revoke_session`, `revoke_all_sessions`, `list_user_sessions`, `authenticate_invite_code`, `get_user_for_login`, `reset_login_failures`, `user_count`, password hash/verify via `ring::pbkdf2`, session token generation via `rand` 0.9 |
+| `server/src/domains/auth/handlers.rs` | Working handlers for `setup`, `auth_invite`, `auth_login`, `auth_logout`, `auth_logout_all`, `list_user_sessions`, `delete_user_session`; `todo!()` stubs for WebAuthn, TOTP, device linking, re-auth, passkey management, invitation CRUD |
+| `server/src/error.rs` | Added `AppError::Auth(#[from] AuthError)` variant + `auth_error_to_http()` mapping all 22 error codes |
+| `server/src/lib.rs` | Added `pub mod domains;` |
+| `server/src/domains/mod.rs` | Added `pub mod auth;` |
+| `server/src/router.rs` | Merged auth router via `.merge(crate::domains::auth::router(state.clone()))` |
+| `Cargo.toml` | Added `rand = "0.9"` to workspace deps |
+| `server/Cargo.toml` | Added `rand.workspace = true` |
+
+**Key decisions from Task 1:**
+
+- Runtime `sqlx::query` over compile-time `sqlx::query!` — no running PostgreSQL available for macro expansion; avoids `DATABASE_URL` requirement at build time
+- `AppError::Auth(#[from] AuthError)` variant added to central error enum per ERROR_HANDLING.md domain-specific variant pattern — `auth_error_to_http()` in error.rs maps all 22 auth error codes to HTTP status codes
+- Password hashing: PBKDF2-HMAC-SHA256 with 600,000 iterations via `ring::pbkdf2` (AUTH.md specifies Argon2id; initial implementation uses PBKDF2 to avoid adding `argon2` dependency — `ring` already in workspace. See [AUTH.md](docs/design/AUTH.md) Implementation Notes section for rationale and migration path; [SECURITY.md](docs/security/SECURITY.md) references `argon2` for password hashing)
+- Session tokens: 32 random bytes hex-encoded via `rand` 0.9; token stored as SHA-256 hash in DB
+- Module visibility: `pub mod` for all four sub-files in auth/mod.rs; explicit `handlers::fn_name` in router to avoid glob import conflicts (`list_user_sessions` exists in both service and handlers)
+- `validator` 0.20 API: `.code` and `.message` are public fields (not methods); `.field_errors()` returns `HashMap` requiring `.into_iter()` before `.flat_map()`
+- WebAuthn crate deferred to Task 2 — service layer abstracted so crate choice is encapsulated; recommended `passkey-auth` (pure Rust, no OpenSSL, aligns with `ring`/`rustls` workspace strategy)
 
 ---
 

@@ -15,6 +15,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 pub mod config;
+pub mod domains;
 pub mod error;
 pub mod extractors;
 pub mod lockfile;

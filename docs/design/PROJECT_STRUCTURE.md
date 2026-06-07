@@ -429,6 +429,7 @@ arc-swap = "1"
 metrics = "0.24"
 metrics-exporter-prometheus = "0.18"
 ipnet = "2"
+rand = "0.9"
 ```
 
 **TLS backend note:** `rustls`, `tokio-rustls`, and `reqwest` use the `ring` crypto backend instead of the default `aws-lc-rs`. The `aws-lc-sys` crate requires NASM and CMake on Windows, which are not present in standard development environments. `ring` is pure Rust + precompiled assembly, builds everywhere, and is the same library used by `ring` 0.17 for HMAC signing. This is a workspace-level decision that applies to all workspace members.

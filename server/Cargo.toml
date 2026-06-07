@@ -47,5 +47,6 @@ metrics.workspace = true
 metrics-exporter-prometheus.workspace = true
 ipnet.workspace = true
 sysinfo.workspace = true
+rand.workspace = true
 duskcue-types = { path = "../crates/types" }
 duskcue-db = { path = "../crates/db" }

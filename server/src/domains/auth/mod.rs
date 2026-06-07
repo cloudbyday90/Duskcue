@@ -14,3 +14,40 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod error;
+pub mod handlers;
+pub mod service;
+pub mod types;
+
+pub use error::AuthError;
+
+use axum::routing::{delete, get, post};
+use axum::Router;
+
+use crate::state::AppState;
+
+pub fn router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route("/api/v1/setup", post(handlers::setup))
+        .route("/api/v1/auth/invite", post(handlers::auth_invite))
+        .route("/api/v1/auth/login", post(handlers::auth_login))
+        .route("/api/v1/auth/logout", post(handlers::auth_logout))
+        .route("/api/v1/auth/logout-all", post(handlers::auth_logout_all))
+        .route("/api/v1/auth/webauthn/start", post(handlers::webauthn_start))
+        .route("/api/v1/auth/webauthn/finish", post(handlers::webauthn_finish))
+        .route("/api/v1/auth/totp", post(handlers::totp_verify))
+        .route("/api/v1/auth/reauth", post(handlers::reauth))
+        .route("/api/v1/auth/reauth/request", post(handlers::reauth_request))
+        .route("/api/v1/device/code", post(handlers::device_code))
+        .route("/api/v1/device/token", post(handlers::device_token))
+        .route("/api/v1/device/verify", post(handlers::device_verify))
+        .route("/api/v1/user/sessions", get(handlers::list_user_sessions))
+        .route("/api/v1/user/sessions/{id}", delete(handlers::delete_user_session))
+        .route("/api/v1/user/passkeys", get(handlers::passkey_list))
+        .route("/api/v1/user/passkeys/register/start", post(handlers::passkey_register_start))
+        .route("/api/v1/user/passkeys/register/finish", post(handlers::passkey_register_finish))
+        .route("/api/v1/user/passkeys/{id}", delete(handlers::passkey_delete))
+        .route("/api/v1/invitations", get(handlers::list_invitations).post(handlers::create_invitation))
+        .route("/api/v1/invitations/{id}", delete(handlers::revoke_invitation))
+        .with_state(state)
+}

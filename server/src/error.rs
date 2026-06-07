@@ -86,6 +86,9 @@ pub enum AppError {
     #[error("gateway timeout: {0}")]
     GatewayTimeout(String),
 
+    #[error(transparent)]
+    Auth(#[from] crate::domains::auth::AuthError),
+
     #[error("internal server error")]
     Internal(#[source] anyhow::Error),
 }
@@ -93,6 +96,10 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code, detail): (StatusCode, &str, Cow<'_, str>) = match &self {
+            AppError::Auth(e) => {
+                let (s, c, d) = auth_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", Cow::Borrowed(msg.as_str())),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", Cow::Borrowed(msg.as_str())),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, "CONFLICT", Cow::Borrowed(msg.as_str())),
@@ -187,4 +194,37 @@ fn is_development_env() -> bool {
         .get()
         .map(|v| v == "development")
         .unwrap_or_else(|| std::env::var("DUSKCUE_ENVIRONMENT").map(|v| v == "development").unwrap_or(false))
+}
+
+fn auth_error_to_http(err: &crate::domains::auth::AuthError) -> (StatusCode, &'static str, String) {
+    use crate::domains::auth::AuthError;
+    use axum::http::StatusCode;
+
+    match err {
+        AuthError::PasskeyNotFound => (StatusCode::UNAUTHORIZED, "AUTH_001", "Passkey not found".into()),
+        AuthError::InvalidSignature => (StatusCode::UNAUTHORIZED, "AUTH_002", "Invalid passkey signature".into()),
+        AuthError::TotpFailed => (StatusCode::UNAUTHORIZED, "AUTH_003", "TOTP verification failed".into()),
+        AuthError::AccountLocked { .. } => (StatusCode::FORBIDDEN, "AUTH_004", "Account locked".into()),
+        AuthError::SessionExpired => (StatusCode::UNAUTHORIZED, "AUTH_005", "Session expired".into()),
+        AuthError::InvalidCredentials => (StatusCode::UNAUTHORIZED, "AUTH_006", "Invalid credentials".into()),
+        AuthError::InsufficientCapabilities { .. } => (StatusCode::FORBIDDEN, "AUTH_007", "Insufficient capabilities".into()),
+        AuthError::ApiKeyInvalid => (StatusCode::UNAUTHORIZED, "AUTH_008", "API key invalid or revoked".into()),
+        AuthError::InviteCodeInvalid => (StatusCode::UNAUTHORIZED, "AUTH_009", "Invite code invalid or expired".into()),
+        AuthError::InviteCodeRevoked => (StatusCode::UNAUTHORIZED, "AUTH_010", "Invite code revoked".into()),
+        AuthError::InviteCodeUseLimitExceeded => (StatusCode::UNAUTHORIZED, "AUTH_011", "Invite code use limit exceeded".into()),
+        AuthError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "AUTH_012", "Too many failed attempts".into()),
+        AuthError::DeviceLinkingExpired => (StatusCode::BAD_REQUEST, "AUTH_013", "Device linking code expired".into()),
+        AuthError::DeviceLinkingDenied => (StatusCode::BAD_REQUEST, "AUTH_014", "Device linking denied by user".into()),
+        AuthError::DeviceLinkingPending => (StatusCode::BAD_REQUEST, "AUTH_013", "Authorization pending".into()),
+        AuthError::DeviceLinkingSlowDown => (StatusCode::BAD_REQUEST, "AUTH_013", "Slow down".into()),
+        AuthError::ReauthCodeInvalid => (StatusCode::UNAUTHORIZED, "AUTH_015", "Re-authentication code invalid or expired".into()),
+        AuthError::ReauthRateLimited => (StatusCode::TOO_MANY_REQUESTS, "AUTH_016", "Too many re-auth code requests".into()),
+        AuthError::SetupAlreadyComplete => (StatusCode::CONFLICT, "AUTH_017", "Setup already complete".into()),
+        AuthError::SetupRequired => (StatusCode::SERVICE_UNAVAILABLE, "AUTH_018", "Setup required".into()),
+        AuthError::WebauthnChallengeExpired => (StatusCode::UNAUTHORIZED, "AUTH_019", "WebAuthn challenge expired".into()),
+        AuthError::WebauthnRegistrationFailed { .. } => (StatusCode::BAD_REQUEST, "AUTH_020", "WebAuthn registration failed".into()),
+        AuthError::WebauthnAuthenticationFailed { .. } => (StatusCode::UNAUTHORIZED, "AUTH_021", "WebAuthn authentication failed".into()),
+        AuthError::PasswordTooWeak => (StatusCode::UNPROCESSABLE_ENTITY, "AUTH_022", "Password does not meet requirements".into()),
+        AuthError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
+    }
 }

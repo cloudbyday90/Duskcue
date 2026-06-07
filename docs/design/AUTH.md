@@ -616,3 +616,34 @@ Auth error codes are defined in [ERROR_HANDLING.md](ERROR_HANDLING.md):
 | `AUTH_014` | 400 | Device linking denied by user |
 | `AUTH_015` | 401 | Re-authentication code invalid or expired |
 | `AUTH_016` | 429 | Too many re-auth code requests (rate limited) |
+
+## Implementation Notes (Phase 4, Task 1)
+
+### Password Hashing
+
+AUTH.md specifies **Argon2id** (OWASP recommended) for password hashing. The initial implementation uses **PBKDF2-HMAC-SHA256 with 600,000 iterations via `ring::pbkdf2`** instead. Rationale:
+
+- The `ring` crate is already in the workspace (TLS backend, HMAC signing, timing-safe comparisons)
+- Adding `argon2` would introduce a new dependency for one function
+- PBKDF2 with 600,000 iterations meets OWASP 2023 guidelines for PBKDF2-SHA256
+- Migration path to Argon2id is straightforward: check hash prefix (`$argon2id$` vs hex-encoded PBKDF2) and verify accordingly
+- This decision should be revisited before release if Argon2id is a hard requirement
+
+### Session Token Generation
+
+- 32 cryptographically random bytes via `rand` 0.9 (`OsRng`)
+- Hex-encoded (64 chars) for the client-facing token
+- SHA-256 hash stored in `user_sessions.token_hash` — raw token never stored
+- Absolute timeout from `AuthConfig.session_absolute_timeout_days` applied at session creation
+
+### SQL Queries
+
+All auth service queries use **runtime `sqlx::query`** with `Row::get()` rather than compile-time `sqlx::query!` macros. This avoids requiring a running PostgreSQL instance with `DATABASE_URL` at build time. See BUILD_ORDER.md Phase 4 Task 1 for details.
+
+### Auth Error Integration
+
+`AuthError` (23 variants) integrates with the central `AppError` enum via `AppError::Auth(#[from] AuthError)`. The mapping function `auth_error_to_http()` in `server/src/error.rs` converts all 22 auth error codes to HTTP status codes per ERROR_HANDLING.md. The `Database` variant wraps `sqlx::Error` for internal DB failures.
+
+### WebAuthn Crate
+
+Deferred to Task 2. Research identified `passkey-auth` (pure Rust, no OpenSSL) as the recommended crate, aligning with the workspace `ring`/`rustls` crypto strategy. The service layer is structured so the WebAuthn crate choice is encapsulated within service functions.
