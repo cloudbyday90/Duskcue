@@ -817,7 +817,6 @@ Common alternatives considered:
 
 **Not yet implemented:**
 
-- Startup lockfile (`/data/.duskcue.lock`) — Task 11
 - Full tracing subscriber (file appender + ErrorLayer) — Task 9
 - Prometheus `/metrics` endpoint — Task 10
 - Graceful shutdown upgrade (CancellationToken + TaskTracker) — Task 8

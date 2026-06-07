@@ -151,7 +151,8 @@ These documents apply to every phase. Consult them when making implementation de
 | `server/src/lib.rs` | Added `pub mod error;`, `pub mod state;`, `pub mod middleware;` module declarations |
 | `server/src/state.rs` | `AppState` with `PgPool`, `ArcSwap<RuntimeConfig>`, `BootstrapConfig`, `Arc<RateLimitState>`; `RuntimeConfig` with 21 sub-config fields; `load_runtime_config()` DB loader; 6 fully-defined sub-configs (`AuthConfig`, `SecurityConfig`, `QualityConfig`, `SubtitleConfig`, `ResourceLimitsConfig`, `RateLimitConfig`); 6 placeholder sub-configs for future phases |
 | `server/src/middleware.rs` | `RateLimitState` with 5 governor keyed rate limiters; `rate_limit_global()` middleware; `build_cors_layer()`, `build_security_headers()`, `build_compression_layer()`, `build_set_request_id_layer()`; `UuidV7RequestId` MakeRequestId implementation |
-| `server/src/extractors.rs` | `AuthenticatedUser` extractor (cookie + Bearer token extraction, session validation stub for Phase 4); `PaginationParams` enum with `Cursor`/`Offset` variants, full validation per API_CONVENTIONS.md; `AdminOnly` extractor requiring `can_manage_server` capability; `SortOrder` enum |
+ | `server/src/extractors.rs` | `AuthenticatedUser` extractor (cookie + Bearer token extraction, session validation stub for Phase 4); `PaginationParams` enum with `Cursor`/`Offset` variants, full validation per API_CONVENTIONS.md; `AdminOnly` extractor requiring `can_manage_server` capability; `SortOrder` enum |
+ | `server/src/lockfile.rs` | `Lockfile` struct with PID-file acquire/release; `LockfileError` enum; stale lockfile detection via `sysinfo` process liveness check; `Drop` impl for crash cleanup safety net |
 
 **Key decisions from Task 3 (error.rs):**
 
@@ -273,7 +274,20 @@ These documents apply to every phase. Consult them when making implementation de
 - Metric names use underscores (`http_requests_total`, `http_request_duration`) following Prometheus naming conventions; the design doc uses dots but `metrics-exporter-prometheus` renders underscores
 - `AppState::new()` and `AppState::new_with_config()` signatures updated to accept `PrometheusHandle` parameter
 - `metrics` v0.24, `metrics-exporter-prometheus` v0.18, `ipnet` v2 added to workspace dependencies
-- `/metrics` endpoint excluded from HTTP metrics tracking via path check — prevents self-referential metrics scrape noise
+ - `/metrics` endpoint excluded from HTTP metrics tracking via path check — prevents self-referential metrics scrape noise
+
+**Key decisions from Task 11 (startup lockfile):**
+
+ - `server/src/lockfile.rs` — cross-cutting infrastructure module, not a domain module
+ - `Lockfile` struct with `acquire(data_dir)` and `release()` methods; `Drop` impl as safety net for crash cleanup (best-effort since SIGKILL won't trigger Drop)
+ - `LockfileError` enum: `AlreadyRunning { pid }`, `Read(io::Error)`, `InvalidContent` — uses `thiserror` consistent with project error conventions
+ - On startup: if lockfile exists and PID is alive → fail with clear message; if PID is dead → remove stale lockfile and continue
+ - PID liveness check via `sysinfo` crate (0.34) — uses `refresh_processes(ProcessesToUpdate::Some(&[pid]))` to check only the specific PID, avoiding full system scan
+ - `sysinfo` chosen over `libc::kill(pid, 0)` or Windows `OpenProcess` — cross-platform, no `unsafe` code, already designated in MEMORY.md for the memory watchdog
+ - Unreadable/corrupt lockfile treated same as stale — removed with warning, startup continues
+ - `postmaster.pid` check (step 1 of MEMORY.md Startup Lockfile) deferred to Phase 15 (embedded PostgreSQL) — not relevant for external PG mode
+ - `sysinfo` v0.34.2 added to workspace dependencies
+ - Lockfile removed explicitly in shutdown Phase 3 (`lockfile.release()`) and via `Drop` as safety net — `released` flag prevents double-removal
 
 **Tasks:**
 
@@ -290,9 +304,9 @@ These documents apply to every phase. Consult them when making implementation de
    - 3-phase: Signal → Drain 30s → Cleanup 90s
    - PG Fast mode checkpoint
   9. ~~Wire up `tracing` subscriber — pretty console + JSON file via `tracing-appender`~~ **DONE**
-  10. ~~Wire up Prometheus `/metrics` endpoint~~ **DONE**
-  11. Implement startup lockfile at `/data/.duskcue.lock`
-12. Implement PG settings validation (fsync, data_checksums, wal_level — warn only) — *basic implementation included in Task 7; Task 12 may expand with more thorough checks*
+   10. ~~Wire up Prometheus `/metrics` endpoint~~ **DONE**
+   11. ~~Implement startup lockfile at `/data/.duskcue.lock`~~ **DONE**
+   12. Implement PG settings validation (fsync, data_checksums, wal_level — warn only) — *basic implementation included in Task 7; Task 12 may expand with more thorough checks*
 
 **Verification:** Server boots, connects to PG, runs migrations, `/health` returns 200, `/metrics` returns Prometheus format, SIGTERM triggers graceful shutdown with PG checkpoint.
 

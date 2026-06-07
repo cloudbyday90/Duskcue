@@ -26,6 +26,7 @@ use std::time::Duration;
 
 use clap::Parser;
 use duskcue::config::{build_bootstrap_config, CliArgs};
+use duskcue::lockfile::Lockfile;
 use duskcue::logging::init_logging;
 use duskcue::logging::init_metrics;
 use duskcue::router::build_router;
@@ -179,7 +180,11 @@ async fn main() {
     };
 
     tracing::info!("Acquiring startup lockfile");
-    tracing::info!("Startup lockfile acquired");
+    let mut lockfile = Lockfile::acquire(&bootstrap.data_dir).unwrap_or_else(|e| {
+        tracing::error!(error = %e, "Failed to acquire startup lockfile");
+        eprintln!("{e}");
+        std::process::exit(1);
+    });
 
     tracing::info!("Connecting to PostgreSQL");
     let pool = connect_with_retry(&database_url).await.unwrap_or_else(|e| {
@@ -272,5 +277,7 @@ async fn main() {
     }
 
     tracing::info!("Removing startup lockfile");
+    lockfile.release();
+
     tracing::info!("Shutdown complete");
 }

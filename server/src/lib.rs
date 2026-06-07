@@ -17,6 +17,7 @@
 pub mod config;
 pub mod error;
 pub mod extractors;
+pub mod lockfile;
 pub mod logging;
 pub mod middleware;
 pub mod router;
