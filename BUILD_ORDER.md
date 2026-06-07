@@ -74,7 +74,7 @@ These documents apply to every phase. Consult them when making implementation de
 
 ## Phase 2 — Database Schema (COMPLETE)
 
-**Committed:** `pending` on `main`
+**Committed:** `dd3f201` on `main`
 
 **What was built:**
 
