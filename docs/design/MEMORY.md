@@ -768,22 +768,40 @@ Detect misconfigured PostgreSQL settings that compromise data defensibility. Thi
 
 ### Checked Settings
 
-| Setting | Expected | Warning Message |
-|---|---|---|
-| `fsync` | `on` | "fsync is disabled — committed transactions may be lost on crash. Set fsync=on in postgresql.conf." |
-| `full_page_writes` | `on` | "full_page_writes is disabled — torn pages may cause corruption after crash. Set full_page_writes=on." |
-| `data_checksums` | `on` | "data_checksums is disabled — silent corruption will not be detected. Reinitialize with initdb --data-checksums." |
-| `wal_level` | `replica` or higher | "wal_level is '{actual}' — PITR and WAL-G backups will not work. Set wal_level=replica." |
+| Setting | Expected | Category | Warning Message |
+|---|---|---|---|
+| `fsync` | `on` | Data safety | "fsync is disabled — committed transactions may be lost on crash. Set fsync=on in postgresql.conf." |
+| `full_page_writes` | `on` | Data safety | "full_page_writes is disabled — torn pages may cause corruption after crash. Set full_page_writes=on." |
+| `synchronous_commit` | `on` | Data safety | "synchronous_commit is off — acknowledged commits may be lost on crash. Set synchronous_commit=on." |
+| `data_checksums` | `on` | Data integrity | "data_checksums is disabled — silent corruption will not be detected. Reinitialize with initdb --data-checksums." |
+| `wal_level` | `replica` or `logical` | Recovery | "wal_level is '{actual}' — PITR and WAL-G backups will not work. Set wal_level=replica." |
+
+### Version Check
+
+The server queries `current_setting('server_version')` and logs the major version at `INFO`. DATABASE.md targets PostgreSQL 18 for native `uuidv7()` support. If the detected version is below 18, a `WARN` is emitted noting that features may be unavailable.
+
+### Scope
+
+Settings validated are limited to **data safety and integrity** — values that, if misconfigured, could cause data loss, corruption, or failed recovery. Performance tuning parameters (`shared_buffers`, `work_mem`, `max_connections`, `random_page_cost`, etc.) are intentionally excluded because:
+
+1. They are workload- and hardware-dependent — no single value is universally correct
+2. Our embedded PG configures them optimally via the entrypoint script
+3. External PG is the DBA's responsibility; performance warnings would be noise
+4. The startup check philosophy is "warn about things that can cause data loss, not things that make queries slower"
 
 ### Implementation
 
 ```sql
+SELECT current_setting('server_version');
+
 SELECT name, setting
 FROM pg_settings
-WHERE name IN ('fsync', 'full_page_writes', 'data_checksums', 'wal_level');
+WHERE name IN ('fsync', 'full_page_writes', 'synchronous_commit', 'data_checksums', 'wal_level');
 ```
 
-Results are checked against expected values. Mismatches log a `WARN` with the specific setting and remediation. Settings are checked once at startup (after DB connection) and not re-checked during runtime — they require a PG restart to change.
+Results are checked against expected values. Mismatches log a `WARN` with the specific setting and remediation. A warning counter tracks total issues; the summary log distinguishes "all checks passed" from "validated with N warning(s)."
+
+Settings are checked once at startup (after DB connection) and not re-checked during runtime — they require a PG restart to change.
 
 **For embedded PostgreSQL**: These settings are configured by the entrypoint script and should never be wrong. The validation catches manual `postgresql.conf` edits by advanced users.
 

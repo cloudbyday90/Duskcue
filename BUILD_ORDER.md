@@ -119,7 +119,9 @@ These documents apply to every phase. Consult them when making implementation de
 
 ---
 
-## Phase 3 — Core Server Infrastructure (IN PROGRESS)
+## Phase 3 — Core Server Infrastructure (COMPLETE)
+
+**Committed:** `d71eea5` on `main`
 
 **Goal:** Server boots, connects to PostgreSQL, runs migrations, serves API with middleware stack.
 
@@ -289,6 +291,15 @@ These documents apply to every phase. Consult them when making implementation de
  - `sysinfo` v0.34.2 added to workspace dependencies
  - Lockfile removed explicitly in shutdown Phase 3 (`lockfile.release()`) and via `Drop` as safety net — `released` flag prevents double-removal
 
+**Key decisions from Task 12 (PG settings validation expansion):**
+
+ - Expanded from 4 to 5 data-safety settings: added `synchronous_commit` (required for crash recovery guarantees per MEMORY.md, PROJECT.md, RELEASE_ENGINEERING.md, BACKUP_RECOVERY.md)
+ - Added PostgreSQL version detection via `current_setting('server_version')` — logs INFO with version string; WARN if major version < 18 (DATABASE.md targets PG18 for native `uuidv7()`)
+ - Scope limited to data safety/integrity only — performance settings (`shared_buffers`, `work_mem`, `max_connections`, etc.) intentionally excluded because they are workload-dependent and the embedded PG configures them optimally
+ - Warning counter tracks total issues across version check + settings check; summary log distinguishes "all checks passed" from "validated with N warning(s)"
+ - Single `pg_settings` query with all 5 settings — avoids multiple round-trips
+ - No new workspace dependencies — uses existing `sqlx::query_scalar` for version, existing `sqlx::Row` for settings
+
 **Tasks:**
 
 1. ~~Implement `config.rs` — parse bootstrap TOML + ENV + CLI via `config-rs` + `clap`~~ **DONE** (bootstrap config in `config.rs`; `RuntimeConfig` DB loading in `state.rs` Task 2; `AppState` wiring in Tasks 2/4)
@@ -306,7 +317,7 @@ These documents apply to every phase. Consult them when making implementation de
   9. ~~Wire up `tracing` subscriber — pretty console + JSON file via `tracing-appender`~~ **DONE**
    10. ~~Wire up Prometheus `/metrics` endpoint~~ **DONE**
    11. ~~Implement startup lockfile at `/data/.duskcue.lock`~~ **DONE**
-   12. Implement PG settings validation (fsync, data_checksums, wal_level — warn only) — *basic implementation included in Task 7; Task 12 may expand with more thorough checks*
+    12. ~~Implement PG settings validation — expanded from Task 7 basic implementation~~ **DONE**
 
 **Verification:** Server boots, connects to PG, runs migrations, `/health` returns 200, `/metrics` returns Prometheus format, SIGTERM triggers graceful shutdown with PG checkpoint.
 
@@ -315,6 +326,15 @@ These documents apply to every phase. Consult them when making implementation de
 ## Phase 4 — Authentication & Users
 
 **Goal:** Users can register, log in with passkeys, manage sessions, and have capability-based access.
+
+**Prerequisites:** Phase 3 complete. `AuthenticatedUser` extractor in `extractors.rs` has session token extraction (cookie + Bearer) with validation stub returning `Unauthorized` — Phase 4 must wire the actual `user_sessions` table lookup. `AdminOnly` extractor checks `can_manage_server` capability — Phase 4 must populate capabilities from DB. Rate limit tiers (`ip_auth`, `user_authenticated`, `user_admin`) exist in `RateLimitState` — Phase 4 applies them to auth endpoints.
+
+**Context from Phase 3:**
+
+- `AppState` provides `PgPool` for session/user queries, `ArcSwap<RuntimeConfig>` for `AuthConfig` (network_mode, session timeouts, invite code settings)
+- `error.rs` has generic `Unauthorized` and `Forbidden` variants — Phase 4 may add domain-specific `Auth` variant
+- Middleware stack applies rate limiting, security headers, and CORS — auth endpoints inherit all middleware
+- `lockfile.rs` pattern (five-file: mod/error/types/service/handlers) is the reference for domain module structure
 
 **Authoritative docs:**
 
@@ -743,9 +763,9 @@ Phase 1: Scaffolding (COMPLETE — aaedc05)
     ↓
 Phase 2: Database Schema (COMPLETE — 15 migrations)
     ↓
-Phase 3: Core Server Infrastructure (NEXT)
+Phase 3: Core Server Infrastructure (COMPLETE — 12 tasks)
     ↓
-Phase 4: Auth & Users
+Phase 4: Auth & Users (NEXT)
     ↓
 Phase 5: Libraries & Media ──────────────────────────────┐
     ↓                                                      │

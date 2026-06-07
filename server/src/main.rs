@@ -114,8 +114,32 @@ async fn connect_with_retry(database_url: &str) -> Result<sqlx::PgPool, sqlx::Er
 }
 
 async fn validate_pg_settings(pool: &sqlx::PgPool) {
+    let mut warnings = 0u32;
+
+    match sqlx::query_scalar::<_, String>("SELECT current_setting('server_version')")
+        .fetch_one(pool)
+        .await
+    {
+        Ok(version) => {
+            tracing::info!(version = %version, "PostgreSQL server version");
+            if let Some(major) = version.split('.').next().and_then(|v| v.parse::<u32>().ok())
+                && major < 18
+            {
+                tracing::warn!(
+                    current = major,
+                    target = 18,
+                    "PostgreSQL version {major} is below target version 18 — features like native uuidv7() may not be available"
+                );
+                warnings += 1;
+            }
+        }
+        Err(e) => {
+            tracing::warn!("Could not determine PostgreSQL version: {e}");
+        }
+    }
+
     let result = sqlx::query(
-        "SELECT name, setting FROM pg_settings WHERE name IN ('fsync', 'full_page_writes', 'data_checksums', 'wal_level')"
+        "SELECT name, setting FROM pg_settings WHERE name IN ('fsync', 'full_page_writes', 'synchronous_commit', 'data_checksums', 'wal_level')"
     )
     .fetch_all(pool)
     .await;
@@ -128,20 +152,32 @@ async fn validate_pg_settings(pool: &sqlx::PgPool) {
                 match name {
                     "fsync" if setting != "on" => {
                         tracing::warn!("PostgreSQL fsync is disabled — committed transactions may be lost on crash. Set fsync=on in postgresql.conf.");
+                        warnings += 1;
                     }
                     "full_page_writes" if setting != "on" => {
                         tracing::warn!("PostgreSQL full_page_writes is disabled — torn pages may cause corruption after crash. Set full_page_writes=on.");
+                        warnings += 1;
+                    }
+                    "synchronous_commit" if setting != "on" => {
+                        tracing::warn!("PostgreSQL synchronous_commit is off — acknowledged commits may be lost on crash. Set synchronous_commit=on.");
+                        warnings += 1;
                     }
                     "data_checksums" if setting != "on" => {
                         tracing::warn!("PostgreSQL data_checksums is disabled — silent corruption will not be detected. Reinitialize with initdb --data-checksums.");
+                        warnings += 1;
                     }
                     "wal_level" if setting != "replica" && setting != "logical" => {
                         tracing::warn!("PostgreSQL wal_level is '{setting}' — PITR and WAL-G backups will not work. Set wal_level=replica.");
+                        warnings += 1;
                     }
                     _ => {}
                 }
             }
-            tracing::info!("PostgreSQL settings validated");
+            if warnings == 0 {
+                tracing::info!("PostgreSQL settings validated — all checks passed");
+            } else {
+                tracing::warn!("PostgreSQL settings validated with {warnings} warning(s) — review recommendations above");
+            }
         }
         Err(e) => {
             tracing::warn!("Could not validate PostgreSQL settings: {e}");
