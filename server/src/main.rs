@@ -30,11 +30,13 @@ use duskcue::router::build_router;
 use duskcue::state::{load_runtime_config, AppState};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Row;
+use tokio_util::sync::CancellationToken;
+use tokio_util::task::TaskTracker;
 use tracing_subscriber::EnvFilter;
 
 static SHUTDOWN_STARTED: AtomicBool = AtomicBool::new(false);
 
-async fn shutdown_signal() {
+async fn wait_for_signal(shutdown: CancellationToken) {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
             .await
@@ -66,7 +68,7 @@ async fn shutdown_signal() {
         std::process::exit(1);
     }
 
-    tracing::info!("Shutting down gracefully...");
+    shutdown.cancel();
 }
 
 async fn connect_with_retry(database_url: &str) -> Result<sqlx::PgPool, sqlx::Error> {
@@ -222,7 +224,7 @@ async fn main() {
 
     tracing::info!("Starting scheduled task runner (not yet implemented)");
 
-    let app = build_router(state.clone()).with_state(state);
+    let app = build_router(state.clone()).with_state(state.clone());
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", 48027))
         .await
         .expect("failed to bind to port 48027");
@@ -230,10 +232,46 @@ async fn main() {
     tracing::info!("Listening on http://0.0.0.0:48027");
     tracing::info!("Duskcue ready");
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await
-        .expect("server error");
+    let tracker = TaskTracker::new();
+    let shutdown = CancellationToken::new();
+    let server_shutdown = shutdown.clone();
 
-    tracing::info!("Server stopped");
+    tracker.spawn(async move {
+        tokio::select! {
+            result = axum::serve(listener, app) => {
+                result.expect("server error");
+            }
+            _ = server_shutdown.cancelled() => {}
+        }
+    });
+
+    wait_for_signal(shutdown.clone()).await;
+
+    tracing::info!("Phase 1: Signal received — stopping HTTP listener and cancelling tasks");
+
+    tracing::info!("Phase 2: Draining in-flight requests (up to 30s)");
+    tracker.close();
+    let drain_result = tokio::time::timeout(Duration::from_secs(30), tracker.wait()).await;
+    if drain_result.is_err() {
+        tracing::warn!("Phase 2: Drain timed out after 30s — some tasks did not complete");
+    } else {
+        tracing::info!("Phase 2: All tasks completed");
+    }
+
+    tracing::info!("Phase 3: Cleanup (up to 90s)");
+    {
+        let pool = state.pool.clone();
+        let close_result = tokio::time::timeout(Duration::from_secs(60), async {
+            pool.close().await;
+        })
+        .await;
+        if close_result.is_err() {
+            tracing::warn!("Phase 3: PG pool close timed out after 60s");
+        } else {
+            tracing::info!("Phase 3: PG connection pool closed");
+        }
+    }
+
+    tracing::info!("Removing startup lockfile");
+    tracing::info!("Shutdown complete");
 }

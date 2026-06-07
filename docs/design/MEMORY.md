@@ -332,24 +332,20 @@ use tokio_util::task::TaskTracker;
 
 static SHUTDOWN_STARTED: AtomicBool = AtomicBool::new(false);
 
-async fn run_server(shutdown: CancellationToken, tracker: TaskTracker) {
-    let listener = TcpListener::bind(("0.0.0.0", 48027)).await.unwrap();
-
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown.cancelled())
-        .await
-        .unwrap();
-
-    tracker.close();
-    tracker.wait().await;
-}
-
 #[tokio::main]
 async fn main() {
     let shutdown = CancellationToken::new();
     let tracker = TaskTracker::new();
+    let server_shutdown = shutdown.clone();
 
-    tokio::spawn(run_server(shutdown.clone(), tracker.clone()));
+    tracker.spawn(async move {
+        tokio::select! {
+            result = axum::serve(listener, app) => {
+                result.expect("server error");
+            }
+            _ = server_shutdown.cancelled() => {}
+        }
+    });
 
     let mut sigterm = signal::unix::signal(SignalKind::terminate()).unwrap();
 
@@ -369,19 +365,31 @@ async fn main() {
 
     shutdown.cancel();
 
-    let deadline = tokio::time::timeout(
+    tracing::info!("Phase 2: Draining in-flight requests (up to 30s)");
+    tracker.close();
+    let drain_result = tokio::time::timeout(
         Duration::from_secs(30),
         tracker.wait(),
     ).await;
 
-    if deadline.is_err() {
-        tracing::warn!("Phase 2 drain timed out");
+    if drain_result.is_err() {
+        tracing::warn!("Phase 2: Drain timed out after 30s");
     }
 
-    // Phase 3: cleanup (PG pool close, embedded PG stop, lockfile removal)
-    // handled by drop order + explicit pg_ctl -m fast stop for embedded mode
+    tracing::info!("Phase 3: Cleanup (up to 90s)");
+    {
+        let close_result = tokio::time::timeout(Duration::from_secs(60), async {
+            pool.close().await;
+        })
+        .await;
+        if close_result.is_err() {
+            tracing::warn!("Phase 3: PG pool close timed out after 60s");
+        }
+    }
 }
 ```
+
+**Implementation note:** The server task uses `tokio::select!` with `server_shutdown.cancelled()` instead of `with_graceful_shutdown(shutdown.cancelled())` because `CancellationToken::cancelled()` borrows `&self`, producing a non-`'static` future that cannot be passed to `with_graceful_shutdown` (which requires `F: Future<Output = ()> + Send + 'static`). Wrapping the server in `tokio::select!` inside the spawned task achieves the same effect — when the token is cancelled, the server future is dropped, stopping the accept loop.
 
 ---
 

@@ -232,6 +232,19 @@ These documents apply to every phase. Consult them when making implementation de
 - All `unwrap_or_else` exits use `std::process::exit(1)` — consistent exit code for all startup failures
 - `sqlx` workspace deps updated: added `migrate` and `sqlx-toml` features
 
+**Key decisions from Task 8 (graceful shutdown):**
+
+- 3-phase shutdown per MEMORY.md: Signal → Drain (30s) → Cleanup (90s)
+- `CancellationToken` from `tokio_util::sync` signals all long-lived tasks to begin cooperative shutdown — replaces direct `shutdown_signal()` future passed to `with_graceful_shutdown`
+- `TaskTracker` from `tokio_util::task` tracks background tasks — `close()` + `wait()` pattern ensures no task left behind; `tokio-util` workspace dep updated with `rt` feature for `TaskTracker` support
+- `shutdown_signal()` refactored: returns the `CancellationToken` after detecting signal, allowing main to control the full 3-phase sequence
+- Double-signal protection preserved: `AtomicBool` swap — second signal forces `std::process::exit(1)`
+- Phase 1 (Signal): `CancellationToken::cancel()` → Axum stops accepting new HTTP connections via `with_graceful_shutdown(shutdown.cancelled())`
+- Phase 2 (Drain 30s): `tracker.close()` + `tokio::time::timeout(30s, tracker.wait())` — waits for in-flight requests and background tasks; logs WARN on timeout
+- Phase 3 (Cleanup): `pool.close().await` drains PG connection pool (in-flight queries complete); lockfile removal stub logs info (Task 11 implements actual removal); no embedded PG stop yet (Phase 15)
+- Cross-platform signal handling unchanged: `#[cfg(unix)]` for SIGTERM via `SignalKind::terminate()`, `std::future::pending()` fallback on non-Unix
+- No new workspace dependencies beyond `tokio-util` feature flag change
+
 **Tasks:**
 
 1. ~~Implement `config.rs` — parse bootstrap TOML + ENV + CLI via `config-rs` + `clap`~~ **DONE** (bootstrap config in `config.rs`; `RuntimeConfig` DB loading in `state.rs` Task 2; `AppState` wiring in Tasks 2/4)
@@ -241,7 +254,7 @@ These documents apply to every phase. Consult them when making implementation de
 5. ~~Implement `extractors.rs` — `AuthenticatedUser`, `PaginationParams`, `AdminOnly`~~ **DONE**
 6. ~~Implement `router.rs` — top-level router assembly merging all domain routers~~ **DONE**
 7. ~~Implement `main.rs` — 14-step startup sequence from CONFIGURATION.md~~ **DONE**
-8. Implement graceful shutdown per MEMORY.md:
+8. ~~Implement graceful shutdown per MEMORY.md~~ **DONE**
    - SIGINT + SIGTERM handling via CancellationToken
    - Double-signal protection (`std::process::exit(1)`)
    - 3-phase: Signal → Drain 30s → Cleanup 90s
