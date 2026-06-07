@@ -17,6 +17,7 @@
 use std::net::IpAddr;
 use std::num::NonZeroU32;
 use std::sync::Arc;
+use std::time::Instant;
 
 use axum::extract::Request;
 use axum::http::{HeaderName, HeaderValue, header};
@@ -27,6 +28,7 @@ use governor::{
     clock::DefaultClock,
     state::keyed::DefaultKeyedStateStore,
 };
+use metrics::{counter, histogram};
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::request_id::{MakeRequestId, RequestId, SetRequestIdLayer};
@@ -207,4 +209,46 @@ pub fn build_security_headers(network_mode: &NetworkMode) -> Vec<SetResponseHead
 
 pub fn build_compression_layer() -> CompressionLayer {
     CompressionLayer::new()
+}
+
+pub async fn track_http_metrics(request: Request, next: Next) -> Response {
+    let path = request.uri().path().to_owned();
+
+    if path == "/metrics" {
+        return next.run(request).await;
+    }
+
+    let method = request.method().clone();
+    let start = Instant::now();
+
+    let response = next.run(request).await;
+
+    let latency = start.elapsed().as_secs_f64();
+    let status = response.status().as_u16().to_string();
+
+    counter!("http_requests_total", "method" => method.to_string(), "status" => status).increment(1);
+    histogram!("http_request_duration", "method" => method.to_string()).record(latency);
+
+    response
+}
+
+pub async fn metrics_subnet_guard(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, AppError> {
+    let ip = extract_client_ip(&request).unwrap_or(IpAddr::from([0, 0, 0, 1]));
+
+    let is_allowed = state
+        .metrics_allowed_subnets
+        .iter()
+        .any(|subnet| subnet.contains(&ip));
+
+    if !is_allowed {
+        return Err(AppError::Forbidden(
+            "Metrics endpoint access denied".to_string(),
+        ));
+    }
+
+    Ok(next.run(request).await)
 }

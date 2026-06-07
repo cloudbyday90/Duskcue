@@ -27,6 +27,7 @@ use std::time::Duration;
 use clap::Parser;
 use duskcue::config::{build_bootstrap_config, CliArgs};
 use duskcue::logging::init_logging;
+use duskcue::logging::init_metrics;
 use duskcue::router::build_router;
 use duskcue::state::{load_runtime_config, AppState};
 use sqlx::postgres::PgPoolOptions;
@@ -163,6 +164,9 @@ async fn main() {
         "Duskcue starting"
     );
 
+    let metrics_handle = init_metrics();
+    tracing::info!("Prometheus metrics recorder initialized");
+
     let database_url = match bootstrap.database_url.as_deref() {
         Some(url) => url.to_string(),
         None => {
@@ -206,7 +210,7 @@ async fn main() {
             std::process::exit(1);
         });
 
-    let state = AppState::new_with_config(pool, bootstrap, runtime_config);
+    let state = AppState::new_with_config(pool, bootstrap, runtime_config, metrics_handle);
     tracing::info!("Runtime configuration loaded");
 
     {

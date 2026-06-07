@@ -16,6 +16,7 @@
 
 use std::path::Path;
 
+use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_appender::rolling::{RollingFileAppender, Rotation};
 use tracing_error::ErrorLayer;
@@ -51,4 +52,15 @@ pub fn init_logging(log_level: &str, data_dir: &Path) -> WorkerGuard {
         .init();
 
     guard
+}
+
+pub fn init_metrics() -> PrometheusHandle {
+    PrometheusBuilder::new()
+        .set_buckets_for_metric(
+            Matcher::Full("http_request_duration".to_string()),
+            &[0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0],
+        )
+        .expect("failed to set histogram buckets")
+        .install_recorder()
+        .expect("failed to install Prometheus metrics recorder")
 }

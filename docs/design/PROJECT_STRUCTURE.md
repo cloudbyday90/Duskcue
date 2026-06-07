@@ -47,9 +47,9 @@ project/
 │       ├── state.rs              # AppState struct, Clone impl, RateLimitState, GeoIP (ArcSwap), HW accel cache
 │       ├── error.rs              # Unified AppError + IntoResponse
 │       ├── extractors.rs         # Custom Axum extractors (AuthenticatedUser, PaginationParams, DeviceProfile, etc.)
-│       ├── middleware.rs         # Tower middleware setup (logging, CORS, rate limiting via governor)
-│       ├── logging.rs            # Tracing subscriber init (pretty console + JSON file + ErrorLayer)
-│       ├── router.rs             # Top-level router assembly, merges domain routers
+│       ├── middleware.rs         # Tower middleware (logging, CORS, rate limiting, HTTP metrics, metrics subnet guard)
+│       ├── logging.rs            # Tracing subscriber init + Prometheus metrics recorder init
+│       ├── router.rs             # Top-level router assembly (/health, /metrics), merges domain routers
 │       │
 │       ├── db/                   # Database layer (sqlx queries)
 │       │   ├── mod.rs
@@ -395,7 +395,7 @@ license = "AGPL-3.0"
 axum = "0.8"
 tokio = { version = "1", features = ["full"] }
 tower = "0.5"
-tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "set-header"] }
+tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip", "set-header", "request-id"] }
 governor = "0.6"
 nonzero_ext = "0.3"
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -420,12 +420,15 @@ toml = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 config = "0.15"
 clap = { version = "4", features = ["derive", "env"] }
-tokio-util = "0.7"
+tokio-util = { version = "0.7", features = ["rt"] }
 mimalloc = "0.1"
 tracing-appender = "0.2"
 tracing-error = "0.2"
 dirs = "6"
 arc-swap = "1"
+metrics = "0.24"
+metrics-exporter-prometheus = "0.18"
+ipnet = "2"
 ```
 
 **TLS backend note:** `rustls`, `tokio-rustls`, and `reqwest` use the `ring` crypto backend instead of the default `aws-lc-rs`. The `aws-lc-sys` crate requires NASM and CMake on Windows, which are not present in standard development environments. `ring` is pure Rust + precompiled assembly, builds everywhere, and is the same library used by `ring` 0.17 for HMAC signing. This is a workspace-level decision that applies to all workspace members.

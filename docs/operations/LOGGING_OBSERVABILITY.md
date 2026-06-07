@@ -595,10 +595,28 @@ The server exposes the data (metrics endpoint, JSON logs, optional OTel traces).
 - `LoggingConfig` in `state.rs` expanded from empty placeholder to full struct with `level`, `max_file_size_mb`, `max_files`, `format` fields
 - `tracing-error` v0.2.1 added to workspace dependencies
 
+### Phase 3 (Task 10) — Prometheus Metrics Endpoint
+
+**Module:** `server/src/logging.rs` (init_metrics), `server/src/middleware.rs` (track_http_metrics, metrics_subnet_guard), `server/src/router.rs` (/metrics route)
+
+**What was implemented:**
+
+- `init_metrics() -> PrometheusHandle` in `logging.rs` — installs the global `metrics` recorder via `PrometheusBuilder::new().install_recorder()`; returns a `PrometheusHandle` for the `/metrics` route handler; custom histogram buckets for `http_request_duration` (5ms to 10s)
+- `/metrics` GET endpoint in `router.rs` — returns Prometheus text format via `state.metrics_handle.render()`; subnet-guarded by `metrics_subnet_guard` middleware
+- `track_http_metrics` middleware in `middleware.rs` — records `http_requests_total` (counter, labels: method, status) and `http_request_duration` (histogram, label: method) for all requests except `/metrics` (avoids self-referential metrics)
+- `metrics_subnet_guard` middleware in `middleware.rs` — checks client IP against `state.metrics_allowed_subnets` (parsed `IpNet` CIDRs); returns 403 Forbidden for disallowed IPs; uses same `extract_client_ip` logic as rate limiter (X-Forwarded-For → X-Real-IP → ConnectInfo → fallback)
+- `NetworkConfig` expanded from empty placeholder to include `allowed_metrics_subnets: Vec<String>` — defaults to `["127.0.0.1/32", "::1/128"]` (localhost only); parsed to `Vec<IpNet>` at startup and stored as `Arc<Vec<IpNet>>` in `AppState`
+- `PrometheusHandle` added to `AppState` — `Clone`-able handle for rendering metrics
+- `metrics` v0.24, `metrics-exporter-prometheus` v0.18, `ipnet` v2 added to workspace dependencies
+- Metrics recorder installed at startup step 3 (after logging init, before router build) — ensures all subsequent operations emit metrics
+- HTTP metrics middleware placed between TraceLayer and CorsLayer in the middleware stack — all requests tracked (including rate-limited 429s), within trace span context
+
 **Deferred:**
 
 - Runtime config hot-reload — `LoggingConfig` fields (level, max_files, format) loaded from DB at step 9 but not yet wired to subscriber reload; requires `tracing-subscriber::reload` layer
 - `max_file_size_mb` — stored in config but `tracing-appender` only supports time-based rotation (DAILY); retained for future custom rotation or documentation accuracy
 - PII sanitization layer — custom `tracing-subscriber` layer for email masking, IP truncation, session ID truncation; deferred to Phase 13
-- Prometheus `/metrics` endpoint — Task 10
 - OpenTelemetry layer — `otel` Cargo feature flag; deferred until admin demand warrants it
+- Additional metric categories (playback, library, database, system, transcode, analytics, trakt) — added incrementally in each domain phase
+- `allowed_metrics_subnets` admin API for runtime updates — subnet list is fixed at startup; reload on `reload_runtime_config()` deferred to admin API implementation
+- Response body size histogram — `http_response_body_size` metric deferred to Phase 7 (streaming) when body sizes become relevant

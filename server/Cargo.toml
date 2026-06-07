@@ -43,5 +43,8 @@ tracing-appender.workspace = true
 tracing-error.workspace = true
 dirs.workspace = true
 arc-swap.workspace = true
+metrics.workspace = true
+metrics-exporter-prometheus.workspace = true
+ipnet.workspace = true
 duskcue-types = { path = "../crates/types" }
 duskcue-db = { path = "../crates/db" }

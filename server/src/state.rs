@@ -15,9 +15,12 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
+use ipnet::IpNet;
+use metrics_exporter_prometheus::PrometheusHandle;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
 
@@ -295,8 +298,21 @@ impl Default for ResourceLimitsConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct NetworkConfig {}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NetworkConfig {
+    pub allowed_metrics_subnets: Vec<String>,
+}
+
+impl Default for NetworkConfig {
+    fn default() -> Self {
+        Self {
+            allowed_metrics_subnets: vec![
+                "127.0.0.1/32".to_string(),
+                "::1/128".to_string(),
+            ],
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TranscodingConfig {}
@@ -414,16 +430,21 @@ pub struct AppState {
     pub runtime_config: Arc<ArcSwap<RuntimeConfig>>,
     pub bootstrap: BootstrapConfig,
     pub rate_limits: Arc<RateLimitState>,
+    pub metrics_handle: PrometheusHandle,
+    pub metrics_allowed_subnets: Arc<Vec<IpNet>>,
 }
 
 impl AppState {
-    pub fn new(pool: PgPool, bootstrap: BootstrapConfig) -> Self {
+    pub fn new(pool: PgPool, bootstrap: BootstrapConfig, metrics_handle: PrometheusHandle) -> Self {
         set_environment(bootstrap.environment.clone());
+        let subnets = parse_metrics_subnets(&NetworkConfig::default().allowed_metrics_subnets);
         Self {
             pool,
             runtime_config: Arc::new(ArcSwap::from_pointee(RuntimeConfig::default())),
             bootstrap,
             rate_limits: Arc::new(RateLimitState::from_defaults()),
+            metrics_handle,
+            metrics_allowed_subnets: Arc::new(subnets),
         }
     }
 
@@ -431,14 +452,18 @@ impl AppState {
         pool: PgPool,
         bootstrap: BootstrapConfig,
         runtime_config: RuntimeConfig,
+        metrics_handle: PrometheusHandle,
     ) -> Self {
         set_environment(bootstrap.environment.clone());
         let rate_limits = RateLimitState::new(&runtime_config.auth.rate_limits);
+        let subnets = parse_metrics_subnets(&runtime_config.network.allowed_metrics_subnets);
         Self {
             pool,
             runtime_config: Arc::new(ArcSwap::from_pointee(runtime_config)),
             bootstrap,
             rate_limits: Arc::new(rate_limits),
+            metrics_handle,
+            metrics_allowed_subnets: Arc::new(subnets),
         }
     }
 
@@ -446,6 +471,20 @@ impl AppState {
         self.runtime_config.store(Arc::new(new_config));
         tracing::info!("Runtime configuration reloaded");
     }
+}
+
+fn parse_metrics_subnets(subnets: &[String]) -> Vec<IpNet> {
+    subnets
+        .iter()
+        .filter_map(|s| {
+            IpNet::from_str(s)
+                .map_err(|e| {
+                    tracing::warn!(subnet = %s, error = %e, "Invalid metrics subnet, skipping");
+                    e
+                })
+                .ok()
+        })
+        .collect()
 }
 
 pub async fn load_runtime_config(pool: &PgPool) -> Result<RuntimeConfig, sqlx::Error> {

@@ -260,6 +260,21 @@ These documents apply to every phase. Consult them when making implementation de
 - `max_file_size_mb` stored in config but not used by `tracing-appender` (only supports time-based rotation); retained for future custom rotation or documentation accuracy
 - `tracing-error` v0.2.1 added to workspace dependencies
 
+**Key decisions from Task 10 (Prometheus /metrics endpoint):**
+
+- `init_metrics()` in `logging.rs` — installs global `metrics` recorder via `PrometheusBuilder::new().install_recorder()`, returns `PrometheusHandle` for the route handler; custom histogram buckets for `http_request_duration` (5ms, 10ms, 25ms, 50ms, 100ms, 250ms, 500ms, 1s, 2.5s, 5s, 10s)
+- `/metrics` GET endpoint in `router.rs` — returns Prometheus text format via `state.metrics_handle.render()`; subnet-guarded by `metrics_subnet_guard` middleware
+- `track_http_metrics` middleware — records `http_requests_total` (counter, labels: method, status) and `http_request_duration` (histogram, label: method) for all requests except `/metrics` (avoids self-referential metrics)
+- `metrics_subnet_guard` middleware — checks client IP against `state.metrics_allowed_subnets` (parsed `IpNet` CIDRs); returns 403 Forbidden for disallowed IPs; uses same `extract_client_ip` logic as rate limiter
+- `NetworkConfig` expanded from empty placeholder to include `allowed_metrics_subnets: Vec<String>` — defaults to `["127.0.0.1/32", "::1/128"]` (localhost only); parsed to `Vec<IpNet>` at startup via `parse_metrics_subnets()` with invalid CIDR warnings
+- `PrometheusHandle` and `Arc<Vec<IpNet>>` added to `AppState` — handle for rendering metrics, subnets for access control
+- Metrics recorder installed at startup step 3 (after logging init, before router build) — all subsequent operations emit metrics
+- HTTP metrics middleware placed between TraceLayer and CorsLayer in the middleware stack — all requests tracked (including rate-limited 429s), within trace span context
+- Metric names use underscores (`http_requests_total`, `http_request_duration`) following Prometheus naming conventions; the design doc uses dots but `metrics-exporter-prometheus` renders underscores
+- `AppState::new()` and `AppState::new_with_config()` signatures updated to accept `PrometheusHandle` parameter
+- `metrics` v0.24, `metrics-exporter-prometheus` v0.18, `ipnet` v2 added to workspace dependencies
+- `/metrics` endpoint excluded from HTTP metrics tracking via path check — prevents self-referential metrics scrape noise
+
 **Tasks:**
 
 1. ~~Implement `config.rs` — parse bootstrap TOML + ENV + CLI via `config-rs` + `clap`~~ **DONE** (bootstrap config in `config.rs`; `RuntimeConfig` DB loading in `state.rs` Task 2; `AppState` wiring in Tasks 2/4)
@@ -274,9 +289,9 @@ These documents apply to every phase. Consult them when making implementation de
    - Double-signal protection (`std::process::exit(1)`)
    - 3-phase: Signal → Drain 30s → Cleanup 90s
    - PG Fast mode checkpoint
- 9. ~~Wire up `tracing` subscriber — pretty console + JSON file via `tracing-appender`~~ **DONE**
-10. Wire up Prometheus `/metrics` endpoint
-11. Implement startup lockfile at `/data/.duskcue.lock`
+  9. ~~Wire up `tracing` subscriber — pretty console + JSON file via `tracing-appender`~~ **DONE**
+  10. ~~Wire up Prometheus `/metrics` endpoint~~ **DONE**
+  11. Implement startup lockfile at `/data/.duskcue.lock`
 12. Implement PG settings validation (fsync, data_checksums, wal_level — warn only) — *basic implementation included in Task 7; Task 12 may expand with more thorough checks*
 
 **Verification:** Server boots, connects to PG, runs migrations, `/health` returns 200, `/metrics` returns Prometheus format, SIGTERM triggers graceful shutdown with PG checkpoint.

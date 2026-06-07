@@ -29,7 +29,8 @@ use tracing::Level;
 
 use crate::middleware::{
     build_compression_layer, build_cors_layer, build_security_headers,
-    build_set_request_id_layer, rate_limit_global, REQUEST_ID_HEADER,
+    build_set_request_id_layer, metrics_subnet_guard, rate_limit_global, track_http_metrics,
+    REQUEST_ID_HEADER,
 };
 use crate::state::AppState;
 
@@ -58,6 +59,10 @@ async fn health_check(State(state): State<AppState>) -> Json<Value> {
         "database": db_status,
         "uptime_seconds": uptime,
     }))
+}
+
+async fn metrics_handler(State(state): State<AppState>) -> String {
+    state.metrics_handle.render()
 }
 
 pub fn build_router(state: AppState) -> Router<AppState> {
@@ -92,7 +97,15 @@ pub fn build_router(state: AppState) -> Router<AppState> {
 
     drop(config);
 
-    let mut router: Router<AppState> = Router::new().route("/health", get(health_check));
+    let mut router: Router<AppState> = Router::new()
+        .route("/health", get(health_check))
+        .route(
+            "/metrics",
+            get(metrics_handler).layer(axum::middleware::from_fn_with_state(
+                state.clone(),
+                metrics_subnet_guard,
+            )),
+        );
 
     // Phase 4: .merge(crate::domains::auth::router())
     // Phase 4: .merge(crate::domains::users::router())
@@ -123,6 +136,7 @@ pub fn build_router(state: AppState) -> Router<AppState> {
 
     router = router
         .layer(cors_layer)
+        .layer(axum::middleware::from_fn(track_http_metrics))
         .layer(trace_layer)
         .layer(propagate_request_id)
         .layer(set_request_id);
