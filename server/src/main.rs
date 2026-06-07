@@ -26,6 +26,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use clap::Parser;
 use duskcue::config::{build_bootstrap_config, CliArgs};
 use duskcue::router::build_router;
+use duskcue::state::AppState;
+use sqlx::PgPool;
 use tracing_subscriber::EnvFilter;
 
 static SHUTDOWN_STARTED: AtomicBool = AtomicBool::new(false);
@@ -86,7 +88,21 @@ async fn main() {
         bootstrap.environment
     );
 
-    let app = build_router();
+    let database_url = bootstrap.database_url.as_deref().unwrap_or_else(|| {
+        eprintln!("DUSKCUE_DATABASE_URL is required");
+        std::process::exit(1);
+    });
+
+    let pool = PgPool::connect(database_url)
+        .await
+        .unwrap_or_else(|e| {
+            eprintln!("Failed to connect to database: {e}");
+            std::process::exit(1);
+        });
+
+    let state = AppState::new(pool, bootstrap);
+
+    let app = build_router(state.clone()).with_state(state);
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", 48027))
         .await
         .expect("failed to bind to port 48027");

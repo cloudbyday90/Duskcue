@@ -14,13 +14,118 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use axum::{routing::get, Json, Router};
-use serde_json::{json, Value};
+use std::sync::OnceLock;
+use std::time::Instant;
 
-async fn health_check() -> Json<Value> {
-    Json(json!({ "status": "ok" }))
+use axum::extract::State;
+use axum::http::HeaderName;
+use axum::routing::get;
+use axum::Router;
+use axum::Json;
+use serde_json::{json, Value};
+use tower_http::request_id::PropagateRequestIdLayer;
+use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
+use tracing::Level;
+
+use crate::middleware::{
+    build_compression_layer, build_cors_layer, build_security_headers,
+    build_set_request_id_layer, rate_limit_global, REQUEST_ID_HEADER,
+};
+use crate::state::AppState;
+
+static START_TIME: OnceLock<Instant> = OnceLock::new();
+
+async fn health_check(State(state): State<AppState>) -> Json<Value> {
+    let db_status = match sqlx::query("SELECT 1").execute(&state.pool).await {
+        Ok(_) => "connected",
+        Err(_) => "disconnected",
+    };
+
+    let status = if db_status == "connected" {
+        "healthy"
+    } else {
+        "degraded"
+    };
+
+    let uptime = START_TIME
+        .get()
+        .map(|t| t.elapsed().as_secs())
+        .unwrap_or(0);
+
+    Json(json!({
+        "status": status,
+        "version": env!("CARGO_PKG_VERSION"),
+        "database": db_status,
+        "uptime_seconds": uptime,
+    }))
 }
 
-pub fn build_router() -> Router {
-    Router::new().route("/health", get(health_check))
+pub fn build_router(state: AppState) -> Router<AppState> {
+    let _ = START_TIME.set(Instant::now());
+
+    let config = state.runtime_config.load();
+
+    let set_request_id = build_set_request_id_layer();
+    let propagate_request_id = PropagateRequestIdLayer::new(HeaderName::from_static(
+        REQUEST_ID_HEADER,
+    ));
+
+    let trace_layer = TraceLayer::new_for_http()
+        .make_span_with(
+            DefaultMakeSpan::new()
+                .level(Level::INFO)
+                .include_headers(false),
+        )
+        .on_response(
+            DefaultOnResponse::new()
+                .level(Level::INFO)
+                .latency_unit(tower_http::LatencyUnit::Millis),
+        );
+
+    let cors_layer = build_cors_layer(
+        &config.auth.network_mode,
+        &config.security.allowed_origins,
+    );
+
+    let compression_layer = build_compression_layer();
+    let security_headers = build_security_headers(&config.auth.network_mode);
+
+    drop(config);
+
+    let mut router: Router<AppState> = Router::new().route("/health", get(health_check));
+
+    // Phase 4: .merge(crate::domains::auth::router())
+    // Phase 4: .merge(crate::domains::users::router())
+    // Phase 5: .merge(crate::domains::libraries::router())
+    // Phase 5: .merge(crate::domains::media::router())
+    // Phase 7: .merge(crate::domains::playback::router())
+    // Phase 7: .merge(crate::domains::quality::router())
+    // Phase 9: .merge(crate::domains::subtitles::router())
+    // Phase 10: .merge(crate::domains::segments::router())
+    // Phase 10: .merge(crate::domains::storyboards::router())
+    // Phase 11: .merge(crate::domains::analytics::router())
+    // Phase 11: .merge(crate::domains::trakt::router())
+    // Phase 12: .merge(crate::domains::overlays::router())
+    // Phase 12: .merge(crate::domains::collections::router())
+    // Phase 13: .merge(crate::domains::system::router())
+    // Phase 14: .merge(crate::domains::migration::router())
+
+    router = router
+        .layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit_global,
+        ))
+        .layer(compression_layer);
+
+    for header_layer in security_headers {
+        router = router.layer(header_layer);
+    }
+
+    router = router
+        .layer(cors_layer)
+        .layer(trace_layer)
+        .layer(propagate_request_id)
+        .layer(set_request_id);
+
+    router
 }
