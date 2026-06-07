@@ -498,7 +498,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 1: Project Scaffolding | **Complete** | `aaedc05` |
 | Phase 2: Database Schema | **Complete** | `dd3f201` |
 | Phase 3: Core Server Infrastructure | **Complete** | — |
-| Phase 4: Auth & Users | **In Progress** (Task 1 complete) | — |
+| Phase 4: Auth & Users | **In Progress** (Tasks 1–2 complete) | — |
 | Phase 5–16 | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
@@ -507,7 +507,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 
 **Phase 3 complete:** All 12 tasks done. See [BUILD_ORDER.md](BUILD_ORDER.md) Phase 3 for full details.
 
-**Phase 4 in progress:** Task 1 complete. `domains/auth/` five-file pattern created with 22 routes, `AuthError` enum (23 variants), runtime-sqlx service layer with PBKDF2 password hashing and session token generation, `AppError::Auth` variant in central error enum. Remaining: Tasks 2–11 (WebAuthn, invite codes, sessions, capabilities, device linking, re-auth, users CRUD, extractor wiring, capability middleware). See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
+**Phase 4 in progress:** Tasks 1–2 complete. Task 1: `domains/auth/` five-file pattern with 22 routes, `AuthError` enum (23 variants), runtime-sqlx service layer with PBKDF2 password hashing and session token generation, `AppError::Auth` variant. Task 2: `webauthn-rs` server-side Relying Party library with 8 service functions (passkey registration/authentication, challenge management), 6 handlers replacing `todo!()` stubs, `DashMap` challenge store in `AppState`. Remaining: Tasks 3–11 (invite codes, sessions, capabilities, device linking, re-auth, users CRUD, extractor wiring, capability middleware). See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
 
 ## Open Questions
 
@@ -561,6 +561,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 - [x] Analytics security — impossible travel detection; IP geolocation (MaxMind GeoLite2); trust scoring; false positive suppression; full design in ANALYTICS_SECURITY.md
 - [x] Metadata provider integration — TMDB v3 primary; TVDB/Fanart.tv/OMDb supplementary; SubDL primary subtitles; trait-based abstraction; encrypted API keys; graceful degradation; full design in METADATA_PROVIDERS.md
 - [x] TLS crypto backend — **ring** (not aws-lc-rs). `rustls`, `tokio-rustls`, and `reqwest` configured with `default-features = false` + `features = ["ring"]` to avoid `aws-lc-sys` which requires NASM on Windows. See workspace `Cargo.toml`.
+- [x] WebAuthn server library — **webauthn-rs** (kanidm, server-side Relying Party); `passkey-auth` rejected (client-side only, not suitable for server). See [AUTH.md](docs/design/AUTH.md) WebAuthn Crate section.
 - [ ] Live TV tuner hardware support
 
 ## Database Design Decisions

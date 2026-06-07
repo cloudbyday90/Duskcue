@@ -44,7 +44,7 @@ project/
 │       ├── main.rs               # Entry point: config → DB → migrate → serve
 │       ├── lib.rs                # App builder, Router assembly, AppState
 │       ├── config.rs             # Bootstrap config (TOML/ENV), AppState construction
-│       ├── state.rs              # AppState struct, Clone impl, RateLimitState, GeoIP (ArcSwap), HW accel cache
+│       ├── state.rs              # AppState struct, Clone impl, RateLimitState, GeoIP (ArcSwap), HW accel cache, Webauthn (Arc), WebauthnChallenge (DashMap)
 │       ├── error.rs              # Unified AppError + IntoResponse
 │       ├── extractors.rs         # Custom Axum extractors (AuthenticatedUser, PaginationParams, DeviceProfile, etc.)
 │       ├── middleware.rs         # Tower middleware (logging, CORS, rate limiting, HTTP metrics, metrics subnet guard)
@@ -430,6 +430,10 @@ metrics = "0.24"
 metrics-exporter-prometheus = "0.18"
 ipnet = "2"
 rand = "0.9"
+webauthn-rs = { version = "0.6.1-dev", features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
+dashmap = "5.5"
+url = "2"
+base64 = "0.22"
 ```
 
 **TLS backend note:** `rustls`, `tokio-rustls`, and `reqwest` use the `ring` crypto backend instead of the default `aws-lc-rs`. The `aws-lc-sys` crate requires NASM and CMake on Windows, which are not present in standard development environments. `ring` is pure Rust + precompiled assembly, builds everywhere, and is the same library used by `ring` 0.17 for HMAC signing. This is a workspace-level decision that applies to all workspace members.

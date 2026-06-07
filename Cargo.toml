@@ -58,3 +58,7 @@ metrics-exporter-prometheus = "0.18"
 ipnet = "2"
 sysinfo = "0.34"
 rand = "0.9"
+webauthn-rs = { version = "0.6.1-dev", features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
+dashmap = "5.5"
+url = "2"
+base64 = "0.22"

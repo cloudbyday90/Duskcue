@@ -17,6 +17,7 @@
 use axum::extract::State;
 use axum::http::HeaderMap;
 use axum::Json;
+use sqlx::Row;
 use validator::Validate;
 
 use crate::error::AppError;
@@ -169,17 +170,68 @@ pub async fn auth_logout_all(
 }
 
 pub async fn webauthn_start(
-    State(_state): State<AppState>,
-    Json(_req): Json<WebauthnStartRequest>,
-) -> Result<Json<WebauthnChallengeResponse>, AppError> {
-    todo!("Task 2: WebAuthn registration/authentication flow");
+    State(state): State<AppState>,
+    Json(req): Json<WebauthnStartRequest>,
+) -> Result<Json<WebauthnAuthStartResponse>, AppError> {
+    service::expire_challenges(&state.webauthn_challenges);
+
+    let (challenge_id, request_options) =
+        service::start_passkey_authentication(&state).await?;
+
+    let _username_hint = req.username.as_deref();
+
+    Ok(Json(WebauthnAuthStartResponse {
+        challenge_id,
+        request_options,
+    }))
 }
 
 pub async fn webauthn_finish(
-    State(_state): State<AppState>,
-    Json(_req): Json<WebauthnFinishRequest>,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<WebauthnFinishRequest>,
 ) -> Result<Json<SessionResponse>, AppError> {
-    todo!("Task 2: WebAuthn registration/authentication flow");
+    let challenge_id = headers
+        .get("x-challenge-id")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    if challenge_id.is_empty() {
+        return Err(AppError::Auth(AuthError::WebauthnChallengeExpired));
+    }
+
+    let device_info = DeviceInfo {
+        device_id: None,
+        device_name: None,
+        client_name: None,
+        client_version: None,
+        client_platform: None,
+        ip_address: headers
+            .get("x-forwarded-for")
+            .or_else(|| headers.get("x-real-ip"))
+            .and_then(|v| v.to_str().ok())
+            .and_then(|v| v.split(',').next())
+            .map(|v| v.trim().to_string()),
+        user_agent: headers
+            .get("user-agent")
+            .and_then(|v| v.to_str().ok())
+            .map(String::from),
+        is_secure: false,
+    };
+
+    let (token, summary) = service::finish_passkey_authentication(
+        &state,
+        &challenge_id,
+        &req.credential,
+        &device_info,
+    )
+    .await?;
+
+    Ok(Json(SessionResponse {
+        session_token: token,
+        user: summary,
+    }))
 }
 
 pub async fn totp_verify(
@@ -267,34 +319,108 @@ pub async fn delete_user_session(
 }
 
 pub async fn passkey_list(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
 ) -> Result<Json<PasskeyListResponse>, AppError> {
-    todo!("Task 2: Passkey listing");
+    let passkeys = service::list_user_passkeys(&state.pool, user.user_id).await?;
+    Ok(Json(PasskeyListResponse { items: passkeys }))
 }
 
 pub async fn passkey_register_start(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Json(_req): Json<PasskeyRegisterStartRequest>,
-) -> Result<Json<WebauthnChallengeResponse>, AppError> {
-    todo!("Task 2: Passkey registration start");
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<PasskeyRegisterStartRequest>,
+) -> Result<Json<WebauthnRegisterStartResponse>, AppError> {
+    req.validate().map_err(|e| {
+        AppError::Validation {
+            errors: e
+                .field_errors()
+                .into_iter()
+                .flat_map(|(field, errors)| {
+                    errors.iter().map(move |err| crate::error::FieldError {
+                        field: field.to_string(),
+                        code: err.code.to_string(),
+                        message: err
+                            .message
+                            .as_ref()
+                            .map(|m| m.to_string())
+                            .unwrap_or_default(),
+                    })
+                })
+                .collect(),
+            instance: Some("/api/v1/user/passkeys/register/start".to_string()),
+        }
+    })?;
+
+    service::expire_challenges(&state.webauthn_challenges);
+
+    let user_row = sqlx::query(
+        "SELECT username, display_name FROM users WHERE id = $1",
+    )
+    .bind(user.user_id)
+    .fetch_one(&state.pool)
+    .await
+    .map_err(|_| AuthError::InvalidCredentials)?;
+
+    let username: String = user_row.try_get("username").unwrap_or_default();
+    let display_name: String = user_row.try_get("display_name").unwrap_or_default();
+
+    let (challenge_id, creation_options) = service::start_passkey_registration(
+        &state,
+        user.user_id,
+        &username,
+        &display_name,
+        &req.name,
+    )
+    .await?;
+
+    Ok(Json(WebauthnRegisterStartResponse {
+        creation_options,
+        challenge_id,
+    }))
 }
 
 pub async fn passkey_register_finish(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Json(_req): Json<PasskeyRegisterFinishRequest>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    headers: HeaderMap,
+    Json(req): Json<PasskeyRegisterFinishRequest>,
 ) -> Result<Json<PasskeyResponse>, AppError> {
-    todo!("Task 2: Passkey registration finish");
+    let challenge_id = headers
+        .get("x-challenge-id")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .to_string();
+
+    if challenge_id.is_empty() {
+        return Err(AppError::Auth(AuthError::WebauthnChallengeExpired));
+    }
+
+    if let Some(entry) = state.webauthn_challenges.get(&challenge_id) {
+        if entry.user_id != Some(user.user_id) {
+            return Err(AppError::Auth(AuthError::WebauthnChallengeExpired));
+        }
+        drop(entry);
+    }
+
+    let passkey = service::finish_passkey_registration(
+        &state,
+        &challenge_id,
+        &req.credential,
+        "New Passkey",
+    )
+    .await?;
+
+    Ok(Json(passkey))
 }
 
 pub async fn passkey_delete(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    axum::extract::Path(_passkey_id): axum::extract::Path<uuid::Uuid>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    axum::extract::Path(passkey_id): axum::extract::Path<uuid::Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    todo!("Task 2: Passkey deletion");
+    service::delete_passkey(&state.pool, passkey_id, user.user_id).await?;
+    Ok(Json(serde_json::json!({ "status": "deleted" })))
 }
 
 pub async fn list_invitations(

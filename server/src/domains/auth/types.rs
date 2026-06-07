@@ -86,6 +86,18 @@ pub struct WebauthnFinishRequest {
     pub credential: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct WebauthnRegisterStartResponse {
+    pub creation_options: serde_json::Value,
+    pub challenge_id: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WebauthnAuthStartResponse {
+    pub request_options: serde_json::Value,
+    pub challenge_id: String,
+}
+
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct PasskeyRegisterStartRequest {
     #[validate(length(min = 1, max = 200))]
@@ -95,12 +107,6 @@ pub struct PasskeyRegisterStartRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct PasskeyRegisterFinishRequest {
     pub credential: serde_json::Value,
-}
-
-#[derive(Debug, Clone, Serialize)]
-pub struct WebauthnChallengeResponse {
-    pub challenge: serde_json::Value,
-    pub session_token: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]

@@ -646,4 +646,17 @@ All auth service queries use **runtime `sqlx::query`** with `Row::get()` rather 
 
 ### WebAuthn Crate
 
-Deferred to Task 2. Research identified `passkey-auth` (pure Rust, no OpenSSL) as the recommended crate, aligning with the workspace `ring`/`rustls` crypto strategy. The service layer is structured so the WebAuthn crate choice is encapsulated within service functions.
+Uses `webauthn-rs` (by kanidm) — a mature, security-audited server-side Relying Party library. Originally `passkey-auth` was recommended during Task 1 (pure Rust, aligns with `ring`/`rustls` strategy), but research in Task 2 revealed that `passkey-auth` and `passkey-rs` are **client-side** libraries (implementing WebAuthn client/authenticator, not server-side Relying Party verification).
+
+**Why `webauthn-rs`:**
+- Server-side Relying Party implementation with safe, high-level API
+- Security-audited by SUSE product security
+- Supports all major authenticator types (YubiKey, TouchID, FaceID, Windows Hello, Android)
+- Passkey flow API: `start_passkey_registration` → `finish_passkey_registration` → `start_passkey_authentication` → `finish_passkey_authentication`
+- Feature `danger-allow-state-serialisation` enabled to persist challenge state in DB (safe since we store server-side, not in client cookies)
+- `Webauthn` instance stored in `AppState`, constructed from `AuthConfig.rp_id` and `AuthConfig.rp_origin`
+
+**Challenge state persistence:**
+- Registration state (`PasskeyRegistration`) and authentication state (`PasskeyAuthentication`) are serialized to JSON and stored in a transient in-memory `DashMap` keyed by challenge ID with 5-minute TTL
+- Each challenge is single-use — consumed on `finish` and removed from the map
+- Alternative DB storage considered but in-memory is sufficient for single-instance deployment; multi-instance would require a shared store (Redis/PG) — deferred to future horizontal scaling work

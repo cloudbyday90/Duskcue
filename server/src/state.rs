@@ -19,10 +19,12 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
+use dashmap::DashMap;
 use ipnet::IpNet;
 use metrics_exporter_prometheus::PrometheusHandle;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
+use webauthn_rs::prelude::{PasskeyAuthentication, PasskeyRegistration, Webauthn};
 
 use crate::config::BootstrapConfig;
 use crate::error::set_environment;
@@ -424,6 +426,13 @@ impl RuntimeConfig {
     }
 }
 
+pub struct WebauthnChallenge {
+    pub registration_state: Option<PasskeyRegistration>,
+    pub authentication_state: Option<PasskeyAuthentication>,
+    pub user_id: Option<uuid::Uuid>,
+    pub created_at: std::time::Instant,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub pool: PgPool,
@@ -432,12 +441,15 @@ pub struct AppState {
     pub rate_limits: Arc<RateLimitState>,
     pub metrics_handle: PrometheusHandle,
     pub metrics_allowed_subnets: Arc<Vec<IpNet>>,
+    pub webauthn: Arc<Webauthn>,
+    pub webauthn_challenges: Arc<DashMap<String, WebauthnChallenge>>,
 }
 
 impl AppState {
     pub fn new(pool: PgPool, bootstrap: BootstrapConfig, metrics_handle: PrometheusHandle) -> Self {
         set_environment(bootstrap.environment.clone());
         let subnets = parse_metrics_subnets(&NetworkConfig::default().allowed_metrics_subnets);
+        let webauthn = build_webauthn("localhost", "http://localhost:48027");
         Self {
             pool,
             runtime_config: Arc::new(ArcSwap::from_pointee(RuntimeConfig::default())),
@@ -445,6 +457,8 @@ impl AppState {
             rate_limits: Arc::new(RateLimitState::from_defaults()),
             metrics_handle,
             metrics_allowed_subnets: Arc::new(subnets),
+            webauthn: Arc::new(webauthn),
+            webauthn_challenges: Arc::new(DashMap::new()),
         }
     }
 
@@ -457,6 +471,11 @@ impl AppState {
         set_environment(bootstrap.environment.clone());
         let rate_limits = RateLimitState::new(&runtime_config.auth.rate_limits);
         let subnets = parse_metrics_subnets(&runtime_config.network.allowed_metrics_subnets);
+
+        let rp_id = runtime_config.auth.rp_id.as_deref().unwrap_or("localhost");
+        let rp_origin = runtime_config.auth.rp_origin.as_deref().unwrap_or("http://localhost:48027");
+        let webauthn = build_webauthn(rp_id, rp_origin);
+
         Self {
             pool,
             runtime_config: Arc::new(ArcSwap::from_pointee(runtime_config)),
@@ -464,6 +483,8 @@ impl AppState {
             rate_limits: Arc::new(rate_limits),
             metrics_handle,
             metrics_allowed_subnets: Arc::new(subnets),
+            webauthn: Arc::new(webauthn),
+            webauthn_challenges: Arc::new(DashMap::new()),
         }
     }
 
@@ -471,6 +492,25 @@ impl AppState {
         self.runtime_config.store(Arc::new(new_config));
         tracing::info!("Runtime configuration reloaded");
     }
+}
+
+fn build_webauthn(rp_id: &str, rp_origin: &str) -> Webauthn {
+    let origin = url::Url::parse(rp_origin).unwrap_or_else(|_| {
+        tracing::warn!("Invalid WebAuthn RP origin '{}', falling back to http://localhost:48027", rp_origin);
+        url::Url::parse("http://localhost:48027").unwrap()
+    });
+
+    webauthn_rs::WebauthnBuilder::new(rp_id, &origin)
+        .and_then(|b| {
+            b.timeout(std::time::Duration::from_secs(300)).build()
+        })
+        .unwrap_or_else(|e| {
+            tracing::error!("Failed to build Webauthn with rp_id='{}', rp_origin='{}': {}. Falling back to localhost.", rp_id, rp_origin, e);
+            webauthn_rs::WebauthnBuilder::new("localhost", &url::Url::parse("http://localhost:48027").unwrap())
+                .unwrap()
+                .build()
+                .unwrap()
+        })
 }
 
 fn parse_metrics_subnets(subnets: &[String]) -> Vec<IpNet> {
