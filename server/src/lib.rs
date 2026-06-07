@@ -16,6 +16,7 @@
 
 pub mod config;
 pub mod error;
+pub mod extractors;
 pub mod middleware;
 pub mod router;
 pub mod state;

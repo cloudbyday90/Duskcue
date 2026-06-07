@@ -92,21 +92,19 @@ impl MakeRequestId for UuidV7RequestId {
 }
 
 fn extract_client_ip(request: &Request) -> Option<IpAddr> {
-    if let Some(xff) = request.headers().get("x-forwarded-for") {
-        if let Ok(val) = xff.to_str() {
-            if let Some(first) = val.split(',').next() {
-                if let Ok(ip) = first.trim().parse::<IpAddr>() {
-                    return Some(ip);
-                }
-            }
-        }
+    if let Some(xff) = request.headers().get("x-forwarded-for")
+        && let Ok(val) = xff.to_str()
+        && let Some(first) = val.split(',').next()
+        && let Ok(ip) = first.trim().parse::<IpAddr>()
+    {
+        return Some(ip);
     }
-    if let Some(xri) = request.headers().get("x-real-ip") {
-        if let Ok(val) = xri.to_str() {
-            if let Ok(ip) = val.parse::<IpAddr>() {
-                return Some(ip);
-            }
-        }
+
+    if let Some(xri) = request.headers().get("x-real-ip")
+        && let Ok(val) = xri.to_str()
+        && let Ok(ip) = val.parse::<IpAddr>()
+    {
+        return Some(ip);
     }
     request
         .extensions()

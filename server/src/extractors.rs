@@ -14,3 +14,296 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use axum::extract::{FromRequestParts, Query};
+use axum::http::header::{AUTHORIZATION, COOKIE};
+use axum::http::request::Parts;
+use serde::Deserialize;
+use uuid::Uuid;
+
+use crate::error::{AppError, FieldError};
+use crate::state::AppState;
+
+const DEFAULT_LIMIT: u32 = 20;
+const MAX_LIMIT: u32 = 100;
+const DEFAULT_PAGE: u32 = 1;
+const DEFAULT_PAGE_SIZE: u32 = 25;
+const MAX_PAGE_SIZE: u32 = 100;
+
+pub struct AuthenticatedUser {
+    pub user_id: Uuid,
+    pub session_id: Uuid,
+    pub capabilities: Vec<String>,
+    pub role: String,
+}
+
+impl FromRequestParts<AppState> for AuthenticatedUser {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        _state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let _token = extract_session_token(parts)?;
+        Err(AppError::Unauthorized(
+            "Authentication not yet configured".into(),
+        ))
+    }
+}
+
+fn extract_session_token(parts: &Parts) -> Result<String, AppError> {
+    if let Some(cookie_header) = parts.headers.get(COOKIE)
+        && let Ok(val) = cookie_header.to_str()
+    {
+        for cookie in val.split(';') {
+            let cookie = cookie.trim();
+            if let Some(token) = cookie.strip_prefix("session=") {
+                let token = token.trim();
+                if !token.is_empty() {
+                    return Ok(token.to_string());
+                }
+            }
+        }
+    }
+
+    if let Some(auth_header) = parts.headers.get(AUTHORIZATION)
+        && let Ok(val) = auth_header.to_str()
+        && let Some(token) = val.strip_prefix("Bearer ")
+    {
+        let token = token.trim();
+        if !token.is_empty() {
+            return Ok(token.to_string());
+        }
+    }
+
+    Err(AppError::Unauthorized(
+        "Missing authentication token".into(),
+    ))
+}
+
+pub struct AdminOnly {
+    pub user: AuthenticatedUser,
+}
+
+impl FromRequestParts<AppState> for AdminOnly {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let user = AuthenticatedUser::from_request_parts(parts, state).await?;
+        if !user
+            .capabilities
+            .iter()
+            .any(|c| c == "can_manage_server")
+        {
+            return Err(AppError::Forbidden(
+                "Insufficient capabilities: requires can_manage_server".into(),
+            ));
+        }
+        Ok(AdminOnly { user })
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SortOrder {
+    Asc,
+    Desc,
+}
+
+impl std::fmt::Display for SortOrder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            SortOrder::Asc => write!(f, "asc"),
+            SortOrder::Desc => write!(f, "desc"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct PaginationQuery {
+    limit: Option<u32>,
+    cursor: Option<String>,
+    order: Option<String>,
+    page: Option<u32>,
+    page_size: Option<u32>,
+}
+
+#[derive(Debug, Clone)]
+pub enum PaginationParams {
+    Cursor {
+        limit: u32,
+        cursor: Option<String>,
+        order: SortOrder,
+    },
+    Offset {
+        page: u32,
+        page_size: u32,
+    },
+}
+
+impl PaginationParams {
+    pub fn limit(&self) -> u32 {
+        match self {
+            Self::Cursor { limit, .. } => *limit,
+            Self::Offset { page_size, .. } => *page_size,
+        }
+    }
+
+    pub fn is_cursor(&self) -> bool {
+        matches!(self, Self::Cursor { .. })
+    }
+
+    pub fn cursor(&self) -> Option<&str> {
+        match self {
+            Self::Cursor { cursor, .. } => cursor.as_deref(),
+            Self::Offset { .. } => None,
+        }
+    }
+
+    pub fn order(&self) -> SortOrder {
+        match self {
+            Self::Cursor { order, .. } => *order,
+            Self::Offset { .. } => SortOrder::Desc,
+        }
+    }
+
+    pub fn page(&self) -> Option<u32> {
+        match self {
+            Self::Cursor { .. } => None,
+            Self::Offset { page, .. } => Some(*page),
+        }
+    }
+
+    pub fn page_size(&self) -> Option<u32> {
+        match self {
+            Self::Cursor { .. } => None,
+            Self::Offset { page_size, .. } => Some(*page_size),
+        }
+    }
+}
+
+impl FromRequestParts<AppState> for PaginationParams {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let query = Query::<PaginationQuery>::from_request_parts(parts, state)
+            .await
+            .map_err(|_| AppError::BadRequest("Invalid query parameters".into()))?;
+
+        validate_pagination(query.0)
+    }
+}
+
+fn validate_pagination(query: PaginationQuery) -> Result<PaginationParams, AppError> {
+    let has_cursor = query.cursor.as_ref().is_some_and(|c| !c.trim().is_empty());
+    let is_offset_request =
+        query.page.is_some() || query.page_size.is_some();
+
+    if has_cursor && is_offset_request {
+        return Err(field_error(
+            "cursor",
+            "CONFLICT",
+            "Cannot use both cursor and offset pagination",
+        ));
+    }
+
+    if is_offset_request {
+        let page = query.page.unwrap_or(DEFAULT_PAGE);
+        if page < 1 {
+            return Err(field_error("page", "MIN_VALUE", "page must be at least 1"));
+        }
+
+        let page_size = query.page_size.unwrap_or(DEFAULT_PAGE_SIZE);
+        if page_size < 1 {
+            return Err(field_error(
+                "page_size",
+                "MIN_VALUE",
+                "page_size must be at least 1",
+            ));
+        }
+        if page_size > MAX_PAGE_SIZE {
+            return Err(field_error(
+                "page_size",
+                "MAX_VALUE",
+                &format!("page_size must not exceed {MAX_PAGE_SIZE}"),
+            ));
+        }
+
+        Ok(PaginationParams::Offset { page, page_size })
+    } else {
+        let limit = query.limit.unwrap_or(DEFAULT_LIMIT);
+        if limit < 1 {
+            return Err(field_error(
+                "limit",
+                "MIN_VALUE",
+                "limit must be at least 1",
+            ));
+        }
+        if limit > MAX_LIMIT {
+            return Err(field_error(
+                "limit",
+                "MAX_VALUE",
+                &format!("limit must not exceed {MAX_LIMIT}"),
+            ));
+        }
+
+        let cursor = query
+            .cursor
+            .filter(|c| !c.trim().is_empty())
+            .map(|c| {
+                if is_valid_base64(&c) {
+                    Ok(c)
+                } else {
+                    Err(field_error(
+                        "cursor",
+                        "INVALID_FORMAT",
+                        "Invalid cursor encoding",
+                    ))
+                }
+            })
+            .transpose()?;
+
+        let order = match query.order.as_deref() {
+            Some("asc") => SortOrder::Asc,
+            Some("desc") | None => SortOrder::Desc,
+            Some(_) => {
+                return Err(field_error(
+                    "order",
+                    "INVALID_VALUE",
+                    "order must be 'asc' or 'desc'",
+                ));
+            }
+        };
+
+        Ok(PaginationParams::Cursor {
+            limit,
+            cursor,
+            order,
+        })
+    }
+}
+
+fn is_valid_base64(s: &str) -> bool {
+    let trimmed = s.trim();
+    !trimmed.is_empty()
+        && trimmed.len().is_multiple_of(4)
+        && trimmed
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '+' || c == '/' || c == '=')
+}
+
+fn field_error(field: &str, code: &str, message: &str) -> AppError {
+    AppError::Validation {
+        errors: vec![FieldError {
+            field: field.to_string(),
+            code: code.to_string(),
+            message: message.to_string(),
+        }],
+        instance: None,
+    }
+}
+
