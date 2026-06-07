@@ -496,7 +496,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase | Status | Commit |
 |---|---|---|
 | Phase 1: Project Scaffolding | **Complete** | `aaedc05` |
-| Phase 2: Database Schema | **Complete** | pending |
+| Phase 2: Database Schema | **Complete** | `dd3f201` |
 | Phase 3: Core Server Infrastructure | **In progress** (Tasks 1–7 complete) | — |
 | Phase 4–16 | Not started | — |
 
