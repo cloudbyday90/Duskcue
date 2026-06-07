@@ -26,13 +26,13 @@ use std::time::Duration;
 
 use clap::Parser;
 use duskcue::config::{build_bootstrap_config, CliArgs};
+use duskcue::logging::init_logging;
 use duskcue::router::build_router;
 use duskcue::state::{load_runtime_config, AppState};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Row;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
-use tracing_subscriber::EnvFilter;
 
 static SHUTDOWN_STARTED: AtomicBool = AtomicBool::new(false);
 
@@ -156,12 +156,7 @@ async fn main() {
         std::process::exit(1);
     });
 
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new(&bootstrap.log_level)),
-        )
-        .init();
+    let _log_guard = init_logging(&bootstrap.log_level, &bootstrap.data_dir);
 
     tracing::info!(
         environment = %bootstrap.environment,

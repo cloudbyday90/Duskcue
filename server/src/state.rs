@@ -313,8 +313,24 @@ pub struct BackupConfig {}
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IntegrationsConfig {}
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct LoggingConfig {}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LoggingConfig {
+    pub level: String,
+    pub max_file_size_mb: u32,
+    pub max_files: u32,
+    pub format: String,
+}
+
+impl Default for LoggingConfig {
+    fn default() -> Self {
+        Self {
+            level: "info".to_string(),
+            max_file_size_mb: 10,
+            max_files: 5,
+            format: "json".to_string(),
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StorageConfig {}

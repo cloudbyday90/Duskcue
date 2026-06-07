@@ -245,6 +245,21 @@ These documents apply to every phase. Consult them when making implementation de
 - Cross-platform signal handling unchanged: `#[cfg(unix)]` for SIGTERM via `SignalKind::terminate()`, `std::future::pending()` fallback on non-Unix
 - No new workspace dependencies beyond `tokio-util` feature flag change
 
+**Key decisions from Task 9 (tracing subscriber):**
+
+- `server/src/logging.rs` created as cross-cutting infrastructure module per LOGGING_OBSERVABILITY.md — not a domain module
+- Layered subscriber: `Registry` → `EnvFilter` → `ErrorLayer` (tracing-error) → console fmt layer (pretty) → file fmt layer (JSON)
+- Console output uses `tracing_subscriber::fmt::layer().pretty()` — colored, human-readable for `docker logs` and development
+- File output uses `tracing_subscriber::fmt::layer().json()` with non-blocking writer — structured JSON for log aggregation (Loki, Elastic)
+- `RollingFileAppender::builder()` with `Rotation::DAILY`, filename prefix `server`, suffix `log`, `max_log_files(5)` — writes to `{data_dir}/logs/`
+- `WorkerGuard` returned from `init_logging()` and held as `_log_guard` in `main()` — dropped on shutdown to flush buffered file writes
+- `ErrorLayer` from `tracing-error` captures span context in error chains — enables `SpanTrace` enrichment per LOGGING_OBSERVABILITY.md error enrichment section
+- `EnvFilter` reads `RUST_LOG` env var first, falls back to bootstrap `log_level` — consistent with CONFIGURATION.md step 3
+- `LoggingConfig` in `state.rs` expanded from empty placeholder to full struct: `level`, `max_file_size_mb`, `max_files`, `format` — matches LOGGING_OBSERVABILITY.md Rust struct definition
+- File settings use hardcoded defaults at startup (step 3); hot-reload from runtime `LoggingConfig` deferred to admin API implementation
+- `max_file_size_mb` stored in config but not used by `tracing-appender` (only supports time-based rotation); retained for future custom rotation or documentation accuracy
+- `tracing-error` v0.2.1 added to workspace dependencies
+
 **Tasks:**
 
 1. ~~Implement `config.rs` — parse bootstrap TOML + ENV + CLI via `config-rs` + `clap`~~ **DONE** (bootstrap config in `config.rs`; `RuntimeConfig` DB loading in `state.rs` Task 2; `AppState` wiring in Tasks 2/4)
@@ -259,7 +274,7 @@ These documents apply to every phase. Consult them when making implementation de
    - Double-signal protection (`std::process::exit(1)`)
    - 3-phase: Signal → Drain 30s → Cleanup 90s
    - PG Fast mode checkpoint
-9. Wire up `tracing` subscriber — pretty console + JSON file via `tracing-appender`
+ 9. ~~Wire up `tracing` subscriber — pretty console + JSON file via `tracing-appender`~~ **DONE**
 10. Wire up Prometheus `/metrics` endpoint
 11. Implement startup lockfile at `/data/.duskcue.lock`
 12. Implement PG settings validation (fsync, data_checksums, wal_level — warn only) — *basic implementation included in Task 7; Task 12 may expand with more thorough checks*

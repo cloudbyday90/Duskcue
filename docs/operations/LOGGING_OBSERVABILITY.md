@@ -576,3 +576,29 @@ While not part of the server binary, the recommended stack for self-hosted obser
 | **Alerting** | Threshold-based notifications | Grafana Alerting → our notification system |
 
 The server exposes the data (metrics endpoint, JSON logs, optional OTel traces). Admins choose whether to consume it with Grafana, use the built-in Tautulli-style analytics, or both.
+
+---
+
+## Implementation Notes
+
+### Phase 3 (Task 9) — Tracing Subscriber
+
+**Module:** `server/src/logging.rs`
+
+**What was implemented:**
+
+- `init_logging(log_level: &str, data_dir: &Path) -> WorkerGuard` — builds and installs the layered tracing subscriber at startup step 3
+- Layer stack (outermost → innermost): `EnvFilter` → `ErrorLayer` (tracing-error) → console fmt layer (pretty) → file fmt layer (JSON)
+- `RollingFileAppender::builder()` with `Rotation::DAILY`, prefix `server`, suffix `log`, `max_log_files(5)` — writes to `{data_dir}/logs/`
+- `WorkerGuard` returned and held in `main()` as `_log_guard` — dropped on shutdown to flush buffered file writes
+- `EnvFilter` reads `RUST_LOG` env var first, falls back to bootstrap `log_level`
+- `LoggingConfig` in `state.rs` expanded from empty placeholder to full struct with `level`, `max_file_size_mb`, `max_files`, `format` fields
+- `tracing-error` v0.2.1 added to workspace dependencies
+
+**Deferred:**
+
+- Runtime config hot-reload — `LoggingConfig` fields (level, max_files, format) loaded from DB at step 9 but not yet wired to subscriber reload; requires `tracing-subscriber::reload` layer
+- `max_file_size_mb` — stored in config but `tracing-appender` only supports time-based rotation (DAILY); retained for future custom rotation or documentation accuracy
+- PII sanitization layer — custom `tracing-subscriber` layer for email masking, IP truncation, session ID truncation; deferred to Phase 13
+- Prometheus `/metrics` endpoint — Task 10
+- OpenTelemetry layer — `otel` Cargo feature flag; deferred until admin demand warrants it

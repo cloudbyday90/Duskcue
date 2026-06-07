@@ -40,6 +40,7 @@ clap.workspace = true
 tokio-util.workspace = true
 mimalloc.workspace = true
 tracing-appender.workspace = true
+tracing-error.workspace = true
 dirs.workspace = true
 arc-swap.workspace = true
 duskcue-types = { path = "../crates/types" }

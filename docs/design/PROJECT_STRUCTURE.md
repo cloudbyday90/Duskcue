@@ -48,6 +48,7 @@ project/
 │       ├── error.rs              # Unified AppError + IntoResponse
 │       ├── extractors.rs         # Custom Axum extractors (AuthenticatedUser, PaginationParams, DeviceProfile, etc.)
 │       ├── middleware.rs         # Tower middleware setup (logging, CORS, rate limiting via governor)
+│       ├── logging.rs            # Tracing subscriber init (pretty console + JSON file + ErrorLayer)
 │       ├── router.rs             # Top-level router assembly, merges domain routers
 │       │
 │       ├── db/                   # Database layer (sqlx queries)
@@ -422,6 +423,7 @@ clap = { version = "4", features = ["derive", "env"] }
 tokio-util = "0.7"
 mimalloc = "0.1"
 tracing-appender = "0.2"
+tracing-error = "0.2"
 dirs = "6"
 arc-swap = "1"
 ```
