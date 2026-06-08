@@ -261,7 +261,7 @@ Database bloat prevention and maintenance strategy is documented in [DATABASE_MA
 
 ## Library Organization
 
-Library folder structure, file naming conventions, sub-folder design, and the identification pipeline are documented in [LIBRARY_ORGANIZATION.md](docs/design/LIBRARY_ORGANIZATION.md). Covers: parent container → library sub-folder → item hierarchy, per-movie and per-series folder structures, metadata provider ID tags, multiple editions, extras folders, episode naming patterns, transparent container detection, smart collections, access control per library, multi-path libraries, Docker volume mapping, and the 5-layer cascading identification pipeline.
+Library folder structure, file naming conventions, sub-folder design, and the identification pipeline are documented in [LIBRARY_ORGANIZATION.md](docs/design/LIBRARY_ORGANIZATION.md). Covers: parent container → library sub-folder → item hierarchy, per-movie and per-series folder structures, metadata provider ID tags, multiple editions, extras folders, episode naming patterns, transparent container detection, smart collections, access control per library, multi-path libraries, Docker volume mapping, and the 5-layer cascading identification pipeline. Multi-edition support (theatrical, director's cut, extended, etc.) is documented separately in [MULTI_EDITION.md](docs/design/MULTI_EDITION.md).
 
 **Key decisions:**
 - **Each sub-folder is a library** — each `libraries` row maps to a user-chosen sub-folder (e.g. `/media/TV Shows/Kids TV/`, `/media/Movies/Family Films/`); the parent container (`TV Shows/`, `Movies/`) is a filesystem convention only, not a database entity
@@ -498,7 +498,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 1: Project Scaffolding | **Complete** | `aaedc05` |
 | Phase 2: Database Schema | **Complete** | `dd3f201` |
 | Phase 3: Core Server Infrastructure | **Complete** | — |
-| Phase 4: Auth & Users | **In Progress** (Tasks 1–4 complete) | — |
+| Phase 4: Auth & Users | **In Progress** (Tasks 1–5 complete) | — |
 | Phase 5–16 | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
@@ -507,7 +507,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 
 **Phase 3 complete:** All 12 tasks done. See [BUILD_ORDER.md](BUILD_ORDER.md) Phase 3 for full details.
 
-**Phase 4 in progress:** Tasks 1–3 complete. Task 1: `domains/auth/` five-file pattern with 22 routes, `AuthError` enum (23 variants), runtime-sqlx service layer with PBKDF2 password hashing and session token generation, `AppError::Auth` variant. Task 2: `webauthn-rs` server-side Relying Party library with 8 service functions (passkey registration/authentication, challenge management), 6 handlers replacing `todo!()` stubs, `DashMap` challenge store in `AppState`. Task 3: Invite code CRUD — `generate_invite_code()` (base-20, 24 chars, ~103 bits entropy), `create_invitation`, `list_invitations`, `revoke_invitation`, `resend_invitation` (regenerates code); resend route added; `can_manage_users` capability check inline. Remaining: Tasks 4–11 (sessions, capabilities, device linking, re-auth, users CRUD, extractor wiring, capability middleware). See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
+**Phase 4 in progress:** Tasks 1–5 complete. Task 1: `domains/auth/` five-file pattern with 22 routes, `AuthError` enum (23 variants), runtime-sqlx service layer with PBKDF2 password hashing and session token generation, `AppError::Auth` variant. Task 2: `webauthn-rs` server-side Relying Party library with 8 service functions (passkey registration/authentication, challenge management), 6 handlers replacing `todo!()` stubs, `DashMap` challenge store in `AppState`. Task 3: Invite code CRUD — `generate_invite_code()` (base-20, 24 chars, ~103 bits entropy), `create_invitation`, `list_invitations`, `revoke_invitation`, `resend_invitation` (regenerates code); resend route added; `can_manage_users` capability check inline. Task 4: `AuthenticatedUser` extractor wired to `validate_session()` for DB-backed session validation with idle timeout enforcement, throttled `last_active_at` updates (60s), session cookie management per SECURITY.md tiered model. Task 5: `check_capability()` centralized helper replacing 4 inline checks; `get_capability_overrides()` and `update_capabilities()` service functions with transactional delete-and-reinsert; `validate_capability_name()` against `ALL_CAPABILITIES`; `GET /api/v1/auth/capabilities` (unauthenticated) listing all 12 capabilities with descriptions; `GET/PUT /api/v1/users/{id}/capabilities` (admin) for per-user override management. Remaining: Tasks 6–11 (device linking, re-auth, users domain, user CRUD, extractor wiring, capability middleware). See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
 
 ## Open Questions
 
@@ -584,6 +584,7 @@ All database design is documented in [DATABASE.md](docs/design/DATABASE.md). Sum
 | Memory | Complete | `server_config.resource_limits` JSONB; mimalloc v3 allocator | [MEMORY.md](docs/design/MEMORY.md) |
 | CPU | Complete | `server_config.cpu` JSONB | [CPU.md](docs/design/CPU.md) |
 | Library Organization | Complete | `library_paths` | [LIBRARY_ORGANIZATION.md](docs/design/LIBRARY_ORGANIZATION.md) |
+| Multi-Edition | Complete | `media_files.edition_name`, `movies.edition_count`, `episodes.edition_count` | [MULTI_EDITION.md](docs/design/MULTI_EDITION.md) |
 | Quality Management | Complete | `device_profiles`, `device_capability_tests`, `client_network_reports`, `qoe_reports`; `server_config.quality` JSONB | [QUALITY_MANAGEMENT.md](docs/design/QUALITY_MANAGEMENT.md) |
 | Subtitle | Complete | `subtitle_files`, `subtitle_ocr_cache`, `subtitle_sync_data`; `server_config.subtitles` JSONB | [SUBTITLES.md](docs/design/SUBTITLES.md) |
 | Video Formats | Complete | Uses `media_files` columns; no dedicated tables | [VIDEO_FORMATS.md](docs/design/VIDEO_FORMATS.md) |

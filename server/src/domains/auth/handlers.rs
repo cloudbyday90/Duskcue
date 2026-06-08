@@ -26,10 +26,10 @@ use crate::error::AppError;
 use crate::extractors::AuthenticatedUser;
 use crate::state::{AppState, NetworkMode};
 
+use super::types::*;
 use super::error::AuthError;
 use super::service;
 use super::service::DeviceInfo;
-use super::types::*;
 
 fn build_session_cookie_value(
     state: &AppState,
@@ -528,11 +528,7 @@ pub async fn list_invitations(
     State(state): State<AppState>,
     user: AuthenticatedUser,
 ) -> Result<Json<InvitationListResponse>, AppError> {
-    if !user.capabilities.iter().any(|c| c == "can_manage_users") {
-        return Err(AppError::Auth(AuthError::InsufficientCapabilities {
-            required: vec!["can_manage_users".to_string()],
-        }));
-    }
+    service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
 
     let (items, total) = service::list_invitations(&state.pool).await?;
 
@@ -544,11 +540,7 @@ pub async fn create_invitation(
     user: AuthenticatedUser,
     Json(req): Json<CreateInvitationRequest>,
 ) -> Result<(axum::http::StatusCode, Json<InvitationResponse>), AppError> {
-    if !user.capabilities.iter().any(|c| c == "can_manage_users") {
-        return Err(AppError::Auth(AuthError::InsufficientCapabilities {
-            required: vec!["can_manage_users".to_string()],
-        }));
-    }
+    service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
 
     req.validate().map_err(|e| {
         AppError::Validation {
@@ -604,11 +596,7 @@ pub async fn revoke_invitation(
     user: AuthenticatedUser,
     axum::extract::Path(invitation_id): axum::extract::Path<uuid::Uuid>,
 ) -> Result<Json<InvitationResponse>, AppError> {
-    if !user.capabilities.iter().any(|c| c == "can_manage_users") {
-        return Err(AppError::Auth(AuthError::InsufficientCapabilities {
-            required: vec!["can_manage_users".to_string()],
-        }));
-    }
+    service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
 
     let invitation = service::revoke_invitation(&state.pool, invitation_id).await?;
     Ok(Json(invitation))
@@ -619,14 +607,82 @@ pub async fn resend_invitation(
     user: AuthenticatedUser,
     axum::extract::Path(invitation_id): axum::extract::Path<uuid::Uuid>,
 ) -> Result<Json<InvitationResponse>, AppError> {
-    if !user.capabilities.iter().any(|c| c == "can_manage_users") {
-        return Err(AppError::Auth(AuthError::InsufficientCapabilities {
-            required: vec!["can_manage_users".to_string()],
-        }));
-    }
+    service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
 
     let invitation = service::resend_invitation(&state.pool, invitation_id).await?;
     Ok(Json(invitation))
+}
+
+pub async fn list_capabilities() -> Result<Json<CapabilityListResponse>, AppError> {
+    let capabilities = service::CAPABILITY_DESCRIPTIONS
+        .iter()
+        .map(|(name, description)| AvailableCapability {
+            name: name.to_string(),
+            description: description.to_string(),
+        })
+        .collect();
+
+    Ok(Json(CapabilityListResponse { capabilities }))
+}
+
+pub async fn get_user_capabilities(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    axum::extract::Path(target_user_id): axum::extract::Path<uuid::Uuid>,
+) -> Result<Json<CapabilityOverridesResponse>, AppError> {
+    service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
+
+    let target_user = sqlx::query(
+        "SELECT id, role FROM users WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(target_user_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| AppError::Auth(AuthError::Database(e)))?
+    .ok_or(AppError::NotFound("User not found".into()))?;
+
+    let role: String = target_user.get("role");
+    let overrides = service::get_capability_overrides(&state.pool, target_user_id).await?;
+    let effective = service::resolve_capabilities(&state.pool, target_user_id, &role).await?;
+
+    Ok(Json(CapabilityOverridesResponse {
+        user_id: target_user_id,
+        role,
+        overrides,
+        effective,
+    }))
+}
+
+pub async fn update_user_capabilities(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    axum::extract::Path(target_user_id): axum::extract::Path<uuid::Uuid>,
+    Json(req): Json<UpdateCapabilitiesRequest>,
+) -> Result<Json<CapabilityOverridesResponse>, AppError> {
+    service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
+
+    let target_user = sqlx::query(
+        "SELECT id, role FROM users WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(target_user_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(|e| AppError::Auth(AuthError::Database(e)))?
+    .ok_or(AppError::NotFound("User not found".into()))?;
+
+    let role: String = target_user.get("role");
+
+    service::update_capabilities(&state.pool, target_user_id, req.capabilities, &role).await?;
+
+    let overrides = service::get_capability_overrides(&state.pool, target_user_id).await?;
+    let effective = service::resolve_capabilities(&state.pool, target_user_id, &role).await?;
+
+    Ok(Json(CapabilityOverridesResponse {
+        user_id: target_user_id,
+        role,
+        overrides,
+        effective,
+    }))
 }
 
 fn extract_device_info(

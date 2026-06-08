@@ -350,7 +350,7 @@ These documents apply to every phase. Consult them when making implementation de
 2. ~~Implement WebAuthn registration and authentication flows~~ **DONE**
 3. ~~Implement invite code system — admin creates invite, user registers with code~~ **DONE**
 4. ~~Implement `user_sessions` — session creation, validation, revocation~~ **DONE**
-5. Implement `user_capabilities` — capability-based access control checks
+5. ~~Implement `user_capabilities` — capability-based access control checks~~ **DONE**
 6. Implement device linking — RFC 8628 device code flow
 7. Implement re-auth codes for sensitive operations
 8. Create `server/src/domains/users/` — five-file pattern
@@ -448,6 +448,25 @@ These documents apply to every phase. Consult them when making implementation de
 - **Cookie cleared on logout** — `auth_logout` and `auth_logout_all` set a `Max-Age=0` cookie to instruct the browser to delete the session cookie.
 - **Response type change** — Auth handlers that set cookies now return `impl IntoResponse` instead of `Json<SessionResponse>` to allow adding `Set-Cookie` headers to the response. The JSON body structure is unchanged.
 - **No new workspace dependencies** — session cookie is built as a plain string; no `axum-extra` cookie jar or `cookie` crate added.
+
+**What was built for Task 5:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/auth/service.rs` | Added `CAPABILITY_DESCRIPTIONS` static (12 name/description pairs), `validate_capability_name()`, `check_capability()`, `get_capability_overrides()`, `update_capabilities()` |
+| `server/src/domains/auth/types.rs` | Added `AvailableCapability`, `CapabilityListResponse`, `CapabilityOverrideResponse`, `CapabilityOverridesResponse`, `UpdateCapabilitiesRequest`, `CapabilityOverride` DTOs |
+| `server/src/domains/auth/handlers.rs` | Added `list_capabilities`, `get_user_capabilities`, `update_user_capabilities` handlers; refactored 4 invitation handlers from inline capability checks to `service::check_capability()` |
+| `server/src/domains/auth/mod.rs` | Added 3 routes: `GET /api/v1/auth/capabilities`, `GET/PUT /api/v1/users/{id}/capabilities` |
+
+**Key decisions from Task 5:**
+
+- **`check_capability()` replaces inline checks** — Centralized `service::check_capability(role, capabilities, required)` returns `Result<(), AuthError>`; owner role short-circuits to `Ok(())`; matches against capabilities list; returns `InsufficientCapabilities` error with required capability name. All 4 invitation handlers refactored from duplicated `user.capabilities.iter().any(...)` to `service::check_capability()`.
+- **`update_capabilities()` uses delete-and-reinsert** — Rather than upserting individual rows, the function deletes all existing overrides for the user and inserts the new set in a single transaction. This avoids complex diffing logic and ensures the override set exactly matches the request.
+- **Owner bypass on updates** — `update_capabilities()` returns early with current overrides (read-only) when `role == "owner"` — owners always have all capabilities regardless of `user_capabilities` rows; writing override rows for an owner would be misleading.
+- **Capability name validation** — `validate_capability_name()` checks against `ALL_CAPABILITIES` static list; `update_capabilities()` rejects requests containing invalid capability names with `InsufficientCapabilities` error before any DB writes.
+- **`GET /api/v1/auth/capabilities` is unauthenticated** — Returns the static list of all available capabilities with descriptions; no auth required since this is metadata for the admin UI to build capability selection forms.
+- **`GET/PUT /api/v1/users/{id}/capabilities` require `can_manage_users`** — Both endpoints check admin capability via `check_capability()`; lookup target user by ID with `deleted_at IS NULL` guard; response includes `role`, `overrides` (explicit rows), and `effective` (resolved list after evaluation).
+- **No new workspace dependencies** — capability CRUD uses existing `sqlx::query` and `PgPool::begin()` for transactions.
 
 ---
 
@@ -854,7 +873,7 @@ Phase 2: Database Schema (COMPLETE — 15 migrations)
     ↓
 Phase 3: Core Server Infrastructure (COMPLETE — 12 tasks)
     ↓
-Phase 4: Auth & Users (IN PROGRESS — Tasks 1–3 complete)
+Phase 4: Auth & Users (IN PROGRESS — Tasks 1–5 complete)
     ↓
 Phase 5: Libraries & Media ──────────────────────────────┐
     ↓                                                      │

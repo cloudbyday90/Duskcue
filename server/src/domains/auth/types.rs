@@ -271,6 +271,42 @@ pub struct ValidatedSession {
     pub has_all_library_access: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct AvailableCapability {
+    pub name: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CapabilityListResponse {
+    pub capabilities: Vec<AvailableCapability>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CapabilityOverrideResponse {
+    pub capability: String,
+    pub is_granted: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CapabilityOverridesResponse {
+    pub user_id: Uuid,
+    pub role: String,
+    pub overrides: Vec<CapabilityOverrideResponse>,
+    pub effective: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UpdateCapabilitiesRequest {
+    pub capabilities: Vec<CapabilityOverride>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CapabilityOverride {
+    pub capability: String,
+    pub is_granted: bool,
+}
+
 pub struct LoginUser {
     pub id: Uuid,
     pub username: String,

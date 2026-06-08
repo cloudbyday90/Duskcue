@@ -694,3 +694,18 @@ Task 4 wires the `AuthenticatedUser` extractor to perform actual database-backed
 **Response type change:** Auth handlers that set cookies return `impl IntoResponse` instead of `Json<SessionResponse>`, allowing `Set-Cookie` header injection. The JSON body structure is unchanged.
 
 **No new dependencies:** Cookie string built manually; no `axum-extra` cookie jar or `cookie` crate.
+
+### Capability-Based Access Control (Task 5)
+
+Task 5 implements the Capability Evaluation rules from the "Capability-Based Access Control" section above. Prior to Task 5, capability checks were done inline in handlers via `user.capabilities.iter().any(|c| c == "can_manage_users")` — duplicated across 4 invitation handlers.
+
+**`check_capability()` centralized helper:** `service::check_capability(role, capabilities, required)` returns `Result<(), AuthError>`. Owner role short-circuits to `Ok(())`. Non-owner checks the capabilities list. Returns `AuthError::InsufficientCapabilities` with the required capability name. All 4 invitation handlers refactored to use this helper.
+
+**Capability override CRUD:** `get_capability_overrides(pool, user_id)` reads explicit `user_capabilities` rows. `update_capabilities(pool, user_id, overrides, role)` validates all capability names against `ALL_CAPABILITIES`, then transactionally deletes existing overrides and inserts the new set. Owner role is read-only (always has all capabilities regardless of overrides).
+
+**New API endpoints:**
+- `GET /api/v1/auth/capabilities` — unauthenticated, returns all 12 capabilities with descriptions from `CAPABILITY_DESCRIPTIONS` static
+- `GET /api/v1/users/{id}/capabilities` — requires `can_manage_users`, returns overrides + effective capabilities for a target user
+- `PUT /api/v1/users/{id}/capabilities` — requires `can_manage_users`, replaces all overrides, returns updated state
+
+**No new dependencies:** Capability CRUD uses existing `sqlx::query` and `PgPool::begin()` for transactions.

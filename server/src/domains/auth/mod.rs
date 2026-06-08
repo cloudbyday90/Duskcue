@@ -50,5 +50,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/api/v1/invitations", get(handlers::list_invitations).post(handlers::create_invitation))
         .route("/api/v1/invitations/{id}", delete(handlers::revoke_invitation))
         .route("/api/v1/invitations/{id}/resend", post(handlers::resend_invitation))
+        .route("/api/v1/auth/capabilities", get(handlers::list_capabilities))
+        .route("/api/v1/users/{id}/capabilities", get(handlers::get_user_capabilities).put(handlers::update_user_capabilities))
         .with_state(state)
 }

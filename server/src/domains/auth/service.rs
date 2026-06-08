@@ -957,6 +957,98 @@ pub static ALL_CAPABILITIES: &[&str] = &[
     "can_remote_control",
 ];
 
+pub static CAPABILITY_DESCRIPTIONS: &[(&str, &str)] = &[
+    ("play_media", "Play any accessible media"),
+    ("can_transcode", "Request transcoded streams"),
+    ("can_download", "Download media files"),
+    ("can_delete_media", "Delete media from disk"),
+    ("can_manage_libraries", "Create, edit, scan, and delete libraries"),
+    ("can_manage_users", "Create, edit, and delete users"),
+    ("can_view_analytics", "Access analytics dashboard and play history"),
+    ("can_manage_server", "Access server settings, configuration, and logs"),
+    ("can_manage_scheduled_tasks", "Create, edit, and trigger scheduled tasks"),
+    ("can_use_live_tv", "Access live TV features"),
+    ("can_share_content", "Share content links externally"),
+    ("can_remote_control", "Remote control other users playback sessions"),
+];
+
+pub fn validate_capability_name(name: &str) -> bool {
+    ALL_CAPABILITIES.contains(&name)
+}
+
+pub fn check_capability(role: &str, capabilities: &[String], required: &str) -> Result<(), AuthError> {
+    if role == "owner" {
+        return Ok(());
+    }
+    if capabilities.iter().any(|c| c == required) {
+        return Ok(());
+    }
+    Err(AuthError::InsufficientCapabilities {
+        required: vec![required.to_string()],
+    })
+}
+
+pub async fn get_capability_overrides(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+) -> Result<Vec<super::types::CapabilityOverrideResponse>, AuthError> {
+    let rows = sqlx::query(
+        "SELECT capability, is_granted FROM user_capabilities WHERE user_id = $1 ORDER BY capability",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .iter()
+        .map(|row| super::types::CapabilityOverrideResponse {
+            capability: row.get("capability"),
+            is_granted: row.get("is_granted"),
+        })
+        .collect())
+}
+
+pub async fn update_capabilities(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    overrides: Vec<super::types::CapabilityOverride>,
+    role: &str,
+) -> Result<Vec<super::types::CapabilityOverrideResponse>, AuthError> {
+    for ov in &overrides {
+        if !validate_capability_name(&ov.capability) {
+            return Err(AuthError::InsufficientCapabilities {
+                required: vec![format!("invalid capability: {}", ov.capability)],
+            });
+        }
+    }
+
+    if role == "owner" {
+        return get_capability_overrides(pool, user_id).await;
+    }
+
+    let mut tx = pool.begin().await?;
+
+    sqlx::query("DELETE FROM user_capabilities WHERE user_id = $1")
+        .bind(user_id)
+        .execute(&mut *tx)
+        .await?;
+
+    for ov in &overrides {
+        sqlx::query(
+            "INSERT INTO user_capabilities (user_id, capability, is_granted) VALUES ($1, $2, $3)",
+        )
+        .bind(user_id)
+        .bind(&ov.capability)
+        .bind(ov.is_granted)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    tx.commit().await?;
+
+    get_capability_overrides(pool, user_id).await
+}
+
 const BASE20_CHARS: &[u8] = b"BCDFGHJKLMNPQRSTVWXZ";
 
 pub fn generate_invite_code() -> String {
