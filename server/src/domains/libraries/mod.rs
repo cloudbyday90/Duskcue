@@ -14,3 +14,37 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod error;
+pub mod handlers;
+pub mod service;
+pub mod types;
+
+pub use error::LibrariesError;
+
+use axum::routing::{get, post};
+use axum::Router;
+
+use crate::state::AppState;
+
+pub fn router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/v1/libraries",
+            get(handlers::list_libraries).post(handlers::create_library),
+        )
+        .route(
+            "/api/v1/libraries/{id}",
+            get(handlers::get_library)
+                .patch(handlers::update_library)
+                .delete(handlers::delete_library),
+        )
+        .route(
+            "/api/v1/libraries/{id}/scan",
+            post(handlers::scan_library),
+        )
+        .route(
+            "/api/v1/libraries/{id}/items",
+            get(handlers::list_library_items),
+        )
+        .with_state(state)
+}

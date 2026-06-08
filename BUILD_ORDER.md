@@ -580,9 +580,42 @@ These documents apply to every phase. Consult them when making implementation de
 | [MEDIA_SCANNING.md](docs/design/MEDIA_SCANNING.md) | **Primary** — 6-phase pipeline (discover → diff → probe → identify → enrich → cleanup), FS watching (`notify`), mtime diff, Blake3 hash, ffprobe |
 | [DATABASE.md](docs/design/DATABASE.md) | `libraries`, `library_paths`, `media_items`, `movies`, `series`, `seasons`, `episodes`, `media_files` tables |
 
+**Context from Phase 4:**
+
+- `Require<CanManageLibraries>` extractor already defined in `extractors.rs` — checks `can_manage_libraries` capability
+- `AppError` supports domain-specific variants via `#[from]` — Phase 5 adds `AppError::Library(#[from] LibrariesError)`
+- `PaginationParams` extractor supports cursor and offset pagination — library listing uses offset (small dataset, page numbers needed)
+- Router has a comment placeholder for `.merge(crate::domains::libraries::router())` — Task 1 replaces it
+
+**What was built for Task 1:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/libraries/mod.rs` | Module declarations + router assembly with 7 routes across 4 paths |
+| `server/src/domains/libraries/error.rs` | `LibrariesError` enum with 15 variants covering LIB_001–LIB_014 + Database catch-all |
+| `server/src/domains/libraries/types.rs` | Three-type DTOs: `LibraryRow` (internal), `CreateLibraryRequest`/`UpdateLibraryRequest` (Deserialize + Validate), `LibraryResponse`/`LibraryListResponse` (Serialize); `VALID_MEDIA_TYPES` static |
+| `server/src/domains/libraries/service.rs` | Full CRUD service: `list_libraries` (paginated with `item_count` via `LEFT JOIN LATERAL`), `get_library`, `create_library` (slug generation + name/slug uniqueness), `update_library` (COALESCE partial updates), `soft_delete_library` (guards against deleting with media), `generate_slug`, `validate_media_type`, `row_to_library_row` |
+| `server/src/domains/libraries/handlers.rs` | Working handlers for list, get, create, update, delete; `todo!()` stubs for `scan_library` (Task 5) and `list_library_items` (Task 4 media domain) |
+| `server/src/error.rs` | Added `AppError::Library(#[from] LibrariesError)` variant + `library_error_to_http()` mapping all 15 error codes |
+| `server/src/domains/mod.rs` | Added `pub mod libraries;` |
+| `server/src/router.rs` | Merged libraries router, removed Phase 5 libraries comment |
+
+**Key decisions from Task 1:**
+
+- All 15 error variants defined upfront (LIB_001–014 + Database) matching ERROR_HANDLING.md — LIB_007–014 relate to scanning/watching/metadata and will be used in later tasks
+- `item_count` included in library responses via `LEFT JOIN LATERAL` subquery counting `media_items` per library
+- `PATCH` for update (per API_CONVENTIONS.md), not `PUT` — matches design doc example
+- Slug auto-generated from library name (lowercase, hyphenated) — uniqueness enforced against both slug and name columns before insert
+- Soft-delete sets `scan_enabled = false` to prevent scanning deleted libraries
+- `scan_library` and `list_library_items` as `todo!()` stubs — implemented in Tasks 5 and 4 respectively
+- `Require<CanManageLibraries>` on all endpoints — requires `can_manage_libraries` capability
+- `validate_media_type` reuses `ProviderIdTagMalformed` variant for invalid media types — LIB_010 mapped to 422, appropriate for validation errors
+- No new workspace dependencies — all functionality uses existing `sqlx`, `validator`, `serde`, `uuid`, `chrono` crates
+- `generate_slug` converts to lowercase, replaces non-alphanumeric with hyphens, collapses consecutive hyphens
+
 **Tasks:**
 
-1. Create `server/src/domains/libraries/` — five-file pattern
+1. ~~Create `server/src/domains/libraries/` — five-file pattern~~ **DONE**
 2. Implement library CRUD — create, list, get, update, soft-delete
 3. Implement `library_paths` — multi-path library support
 4. Create `server/src/domains/media/` — five-file pattern
@@ -973,7 +1006,7 @@ Phase 3: Core Server Infrastructure (COMPLETE — 12 tasks)
     ↓
 Phase 4: Auth & Users (COMPLETE — 11 tasks)
     ↓
-Phase 5: Libraries & Media ──────────────────────────────┐
+Phase 5: Libraries & Media (IN PROGRESS — Task 1 done) ──────┐
     ↓                                                      │
 Phase 6: Metadata Providers ←─── (enriches Phase 5)       │
     ↓                                                      │

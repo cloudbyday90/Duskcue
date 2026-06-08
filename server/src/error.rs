@@ -92,6 +92,9 @@ pub enum AppError {
     #[error(transparent)]
     Users(#[from] crate::domains::users::UsersError),
 
+    #[error(transparent)]
+    Library(#[from] crate::domains::libraries::LibrariesError),
+
     #[error("internal server error")]
     Internal(#[source] anyhow::Error),
 }
@@ -105,6 +108,10 @@ impl IntoResponse for AppError {
             }
             AppError::Users(e) => {
                 let (s, c, d) = users_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Library(e) => {
+                let (s, c, d) = library_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", Cow::Borrowed(msg.as_str())),
@@ -250,5 +257,28 @@ fn users_error_to_http(err: &crate::domains::users::UsersError) -> (StatusCode, 
         UsersError::InvalidStatus(s) => (StatusCode::BAD_REQUEST, "USER_007", format!("Invalid status: {}", s)),
         UsersError::CannotModifySelf => (StatusCode::FORBIDDEN, "USER_008", "Cannot modify own account role or status".into()),
         UsersError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
+    }
+}
+
+fn library_error_to_http(err: &crate::domains::libraries::LibrariesError) -> (StatusCode, &'static str, String) {
+    use crate::domains::libraries::LibrariesError;
+    use axum::http::StatusCode;
+
+    match err {
+        LibrariesError::NotFound => (StatusCode::NOT_FOUND, "LIB_001", "Library not found".into()),
+        LibrariesError::NameExists(n) => (StatusCode::CONFLICT, "LIB_002", format!("Library name already exists: {}", n)),
+        LibrariesError::ScanInProgress => (StatusCode::CONFLICT, "LIB_003", "Library scan already in progress".into()),
+        LibrariesError::RootPathNotFound(p) => (StatusCode::UNPROCESSABLE_ENTITY, "LIB_004", format!("Root path does not exist: {}", p)),
+        LibrariesError::CannotDeleteWithMedia => (StatusCode::UNPROCESSABLE_ENTITY, "LIB_005", "Cannot delete library with existing media items".into()),
+        LibrariesError::ScanAlreadyInProgress => (StatusCode::CONFLICT, "LIB_006", "Scan already in progress for this library".into()),
+        LibrariesError::FilesystemWatcherFailed => (StatusCode::SERVICE_UNAVAILABLE, "LIB_007", "Filesystem watcher failed to start".into()),
+        LibrariesError::MediaMatchInvalid => (StatusCode::UNPROCESSABLE_ENTITY, "LIB_008", ".media-match file is invalid or unreadable".into()),
+        LibrariesError::NfoInvalid => (StatusCode::UNPROCESSABLE_ENTITY, "LIB_009", "NFO file is invalid or contains no usable provider IDs".into()),
+        LibrariesError::ProviderIdTagMalformed(t) => (StatusCode::UNPROCESSABLE_ENTITY, "LIB_010", format!("Provider ID tag malformed: {}", t)),
+        LibrariesError::TmdbUnavailable => (StatusCode::SERVICE_UNAVAILABLE, "LIB_011", "TMDB metadata provider unavailable".into()),
+        LibrariesError::TvdbAuthFailed => (StatusCode::UNAUTHORIZED, "LIB_012", "TVDB authentication failure".into()),
+        LibrariesError::ProviderRateLimited => (StatusCode::TOO_MANY_REQUESTS, "LIB_013", "Metadata provider rate limit exceeded".into()),
+        LibrariesError::ProviderResponseInvalid => (StatusCode::BAD_GATEWAY, "LIB_014", "Metadata provider response validation failure".into()),
+        LibrariesError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
     }
 }
