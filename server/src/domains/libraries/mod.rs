@@ -46,5 +46,15 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/api/v1/libraries/{id}/items",
             get(handlers::list_library_items),
         )
+        .route(
+            "/api/v1/libraries/{id}/paths",
+            get(handlers::list_library_paths).post(handlers::create_library_path),
+        )
+        .route(
+            "/api/v1/libraries/{id}/paths/{path_id}",
+            get(handlers::get_library_path)
+                .patch(handlers::update_library_path)
+                .delete(handlers::delete_library_path),
+        )
         .with_state(state)
 }

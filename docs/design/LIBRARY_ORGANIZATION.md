@@ -787,6 +787,27 @@ docker run \
 - Library `root_path` values point to sub-folders (`/media/TV Shows/Kids TV/`, `/media/Movies/Family Films/`, etc.)
 - Users add libraries through the admin UI, selecting the appropriate sub-folder as the `root_path`
 
+## Implementation Notes (Phase 5, Task 3)
+
+### library_paths CRUD
+
+Implemented as sub-resource endpoints under `/api/v1/libraries/{id}/paths`:
+
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/api/v1/libraries/{id}/paths` | GET | List all paths for a library (default-first) |
+| `/api/v1/libraries/{id}/paths` | POST | Add a new path to a library |
+| `/api/v1/libraries/{id}/paths/{path_id}` | GET | Get a specific path |
+| `/api/v1/libraries/{id}/paths/{path_id}` | PATCH | Update path settings |
+| `/api/v1/libraries/{id}/paths/{path_id}` | DELETE | Remove a path |
+
+- `create_library` now uses a transaction to INSERT into both `libraries` and `library_paths` — every library always has at least one default path
+- When a path is set as `is_default = true`, the existing default is set to `false` in the same transaction — exactly one default per library
+- Cannot delete the default path if it is the only remaining path (returns LIB_017, 422)
+- `libraries.root_path` is retained for backward compatibility; the scanner reads from `library_paths` (per the migration path described above)
+- No filesystem validation on path creation/update — consistent with `root_path` behavior; the scanner validates at scan time and sets `scan_enabled` for offline drives
+- 3 new error codes: LIB_015 (path not found), LIB_016 (duplicate path), LIB_017 (cannot delete default path)
+
 ## Research Sources
 
 - Plex naming and organizing Movie files: https://support.plex.tv/articles/naming-and-organizing-your-movie-media-files/

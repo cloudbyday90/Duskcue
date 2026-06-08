@@ -95,3 +95,44 @@ pub struct UpdateLibraryRequest {
 }
 
 pub static VALID_MEDIA_TYPES: &[&str] = &["movies", "tvshows"];
+
+pub struct LibraryPathRow {
+    pub id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub library_id: Uuid,
+    pub path: String,
+    pub is_default: bool,
+    pub scan_enabled: bool,
+    pub last_scan_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct LibraryPathResponse {
+    pub id: Uuid,
+    pub library_id: Uuid,
+    pub path: String,
+    pub is_default: bool,
+    pub scan_enabled: bool,
+    pub last_scan_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct CreateLibraryPathRequest {
+    #[validate(length(min = 1, max = 500))]
+    pub path: String,
+
+    pub is_default: Option<bool>,
+
+    pub scan_enabled: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct UpdateLibraryPathRequest {
+    #[validate(length(min = 1, max = 500))]
+    pub path: Option<String>,
+
+    pub is_default: Option<bool>,
+
+    pub scan_enabled: Option<bool>,
+}

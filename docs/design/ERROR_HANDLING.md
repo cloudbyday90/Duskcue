@@ -446,6 +446,9 @@ All API errors return [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) Problem
 | `LIB_012` | 401 | TVDB authentication failure (invalid API key) |
 | `LIB_013` | 429 | Metadata provider rate limit exceeded |
 | `LIB_014` | 502 | Metadata provider response validation failure |
+| `LIB_015` | 404 | Library path not found |
+| `LIB_016` | 409 | Path already exists for this library |
+| `LIB_017` | 422 | Cannot delete the default library path |
 
 ### MEDIA — Media Items & Files
 

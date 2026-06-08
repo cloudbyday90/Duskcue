@@ -60,6 +60,15 @@ pub enum LibrariesError {
     #[error("metadata provider response validation failure")]
     ProviderResponseInvalid,
 
+    #[error("library path not found")]
+    PathNotFound,
+
+    #[error("path already exists for this library: {0}")]
+    PathExists(String),
+
+    #[error("cannot delete the default library path")]
+    CannotDeleteDefaultPath,
+
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 }

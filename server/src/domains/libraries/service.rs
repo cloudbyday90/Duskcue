@@ -18,7 +18,10 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use super::error::LibrariesError;
-use super::types::{LibraryListResponse, LibraryResponse, LibraryRow, VALID_MEDIA_TYPES};
+use super::types::{
+    LibraryListResponse, LibraryPathResponse, LibraryPathRow, LibraryResponse, LibraryRow,
+    VALID_MEDIA_TYPES,
+};
 
 pub async fn list_libraries(
     pool: &sqlx::PgPool,
@@ -134,6 +137,8 @@ pub async fn create_library(
         return Err(LibrariesError::NameExists(params.name));
     }
 
+    let mut tx = pool.begin().await?;
+
     let row = sqlx::query(
         r#"INSERT INTO libraries (name, slug, media_type, root_path, scan_interval_seconds, metadata_language)
            VALUES ($1, $2, $3, $4, $5, $6)
@@ -147,8 +152,20 @@ pub async fn create_library(
     .bind(&params.root_path)
     .bind(params.scan_interval_seconds)
     .bind(&params.metadata_language)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await?;
+
+    let library_id: Uuid = row.get("id");
+
+    sqlx::query(
+        "INSERT INTO library_paths (library_id, path, is_default, scan_enabled) VALUES ($1, $2, true, true)",
+    )
+    .bind(library_id)
+    .bind(&params.root_path)
+    .execute(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
 
     let mut response = row_to_response(&row);
     response.item_count = 0;
@@ -340,4 +357,244 @@ fn row_to_response(row: &sqlx::postgres::PgRow) -> LibraryResponse {
         created_at: lib.created_at,
         updated_at: lib.updated_at,
     }
+}
+
+fn path_row_to_response(row: &sqlx::postgres::PgRow) -> LibraryPathResponse {
+    let path_row = LibraryPathRow {
+        id: row.get("id"),
+        created_at: row.get("created_at"),
+        library_id: row.get("library_id"),
+        path: row.get("path"),
+        is_default: row.get("is_default"),
+        scan_enabled: row.get("scan_enabled"),
+        last_scan_at: row.try_get("last_scan_at").ok(),
+    };
+    LibraryPathResponse {
+        id: path_row.id,
+        library_id: path_row.library_id,
+        path: path_row.path,
+        is_default: path_row.is_default,
+        scan_enabled: path_row.scan_enabled,
+        last_scan_at: path_row.last_scan_at,
+        created_at: path_row.created_at,
+    }
+}
+
+async fn verify_library_exists(
+    pool: &sqlx::PgPool,
+    library_id: Uuid,
+) -> Result<(), LibrariesError> {
+    sqlx::query(
+        "SELECT id FROM libraries WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(library_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(LibrariesError::NotFound)?;
+    Ok(())
+}
+
+pub async fn list_library_paths(
+    pool: &sqlx::PgPool,
+    library_id: Uuid,
+) -> Result<Vec<LibraryPathResponse>, LibrariesError> {
+    verify_library_exists(pool, library_id).await?;
+
+    let rows = sqlx::query(
+        r#"SELECT id, created_at, library_id, path, is_default, scan_enabled, last_scan_at
+           FROM library_paths
+           WHERE library_id = $1
+           ORDER BY is_default DESC, created_at ASC"#,
+    )
+    .bind(library_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.iter().map(path_row_to_response).collect())
+}
+
+pub async fn get_library_path(
+    pool: &sqlx::PgPool,
+    library_id: Uuid,
+    path_id: Uuid,
+) -> Result<LibraryPathResponse, LibrariesError> {
+    verify_library_exists(pool, library_id).await?;
+
+    let row = sqlx::query(
+        r#"SELECT id, created_at, library_id, path, is_default, scan_enabled, last_scan_at
+           FROM library_paths
+           WHERE id = $1 AND library_id = $2"#,
+    )
+    .bind(path_id)
+    .bind(library_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(LibrariesError::PathNotFound)?;
+
+    Ok(path_row_to_response(&row))
+}
+
+pub struct CreateLibraryPathParams {
+    pub library_id: Uuid,
+    pub path: String,
+    pub is_default: bool,
+    pub scan_enabled: bool,
+}
+
+pub async fn create_library_path(
+    pool: &sqlx::PgPool,
+    params: CreateLibraryPathParams,
+) -> Result<LibraryPathResponse, LibrariesError> {
+    verify_library_exists(pool, params.library_id).await?;
+
+    let existing = sqlx::query(
+        "SELECT id FROM library_paths WHERE library_id = $1 AND path = $2",
+    )
+    .bind(params.library_id)
+    .bind(&params.path)
+    .fetch_optional(pool)
+    .await?;
+
+    if existing.is_some() {
+        return Err(LibrariesError::PathExists(params.path));
+    }
+
+    let mut tx = pool.begin().await?;
+
+    if params.is_default {
+        sqlx::query(
+            "UPDATE library_paths SET is_default = false WHERE library_id = $1 AND is_default = true",
+        )
+        .bind(params.library_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    let row = sqlx::query(
+        r#"INSERT INTO library_paths (library_id, path, is_default, scan_enabled)
+           VALUES ($1, $2, $3, $4)
+           RETURNING id, created_at, library_id, path, is_default, scan_enabled, last_scan_at"#,
+    )
+    .bind(params.library_id)
+    .bind(&params.path)
+    .bind(params.is_default)
+    .bind(params.scan_enabled)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(path_row_to_response(&row))
+}
+
+pub struct UpdateLibraryPathParams {
+    pub library_id: Uuid,
+    pub path_id: Uuid,
+    pub path: Option<String>,
+    pub is_default: Option<bool>,
+    pub scan_enabled: Option<bool>,
+}
+
+pub async fn update_library_path(
+    pool: &sqlx::PgPool,
+    params: UpdateLibraryPathParams,
+) -> Result<LibraryPathResponse, LibrariesError> {
+    verify_library_exists(pool, params.library_id).await?;
+
+    sqlx::query(
+        "SELECT id FROM library_paths WHERE id = $1 AND library_id = $2",
+    )
+    .bind(params.path_id)
+    .bind(params.library_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(LibrariesError::PathNotFound)?;
+
+    if let Some(ref new_path) = params.path {
+        let existing = sqlx::query(
+            "SELECT id FROM library_paths WHERE library_id = $1 AND path = $2 AND id != $3",
+        )
+        .bind(params.library_id)
+        .bind(new_path)
+        .bind(params.path_id)
+        .fetch_optional(pool)
+        .await?;
+
+        if existing.is_some() {
+            return Err(LibrariesError::PathExists(new_path.clone()));
+        }
+    }
+
+    let mut tx = pool.begin().await?;
+
+    if params.is_default == Some(true) {
+        sqlx::query(
+            "UPDATE library_paths SET is_default = false WHERE library_id = $1 AND is_default = true",
+        )
+        .bind(params.library_id)
+        .execute(&mut *tx)
+        .await?;
+    }
+
+    let row = sqlx::query(
+        r#"UPDATE library_paths SET
+            path = COALESCE($3, path),
+            is_default = COALESCE($4, is_default),
+            scan_enabled = COALESCE($5, scan_enabled)
+        WHERE id = $1 AND library_id = $2
+        RETURNING id, created_at, library_id, path, is_default, scan_enabled, last_scan_at"#,
+    )
+    .bind(params.path_id)
+    .bind(params.library_id)
+    .bind(&params.path)
+    .bind(params.is_default)
+    .bind(params.scan_enabled)
+    .fetch_one(&mut *tx)
+    .await?;
+
+    tx.commit().await?;
+
+    Ok(path_row_to_response(&row))
+}
+
+pub async fn delete_library_path(
+    pool: &sqlx::PgPool,
+    library_id: Uuid,
+    path_id: Uuid,
+) -> Result<(), LibrariesError> {
+    verify_library_exists(pool, library_id).await?;
+
+    let row = sqlx::query(
+        "SELECT id, is_default FROM library_paths WHERE id = $1 AND library_id = $2",
+    )
+    .bind(path_id)
+    .bind(library_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(LibrariesError::PathNotFound)?;
+
+    let is_default: bool = row.get("is_default");
+
+    if is_default {
+        let path_count: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM library_paths WHERE library_id = $1",
+        )
+        .bind(library_id)
+        .fetch_one(pool)
+        .await?;
+
+        if path_count <= 1 {
+            return Err(LibrariesError::CannotDeleteDefaultPath);
+        }
+    }
+
+    sqlx::query(
+        "DELETE FROM library_paths WHERE id = $1 AND library_id = $2",
+    )
+    .bind(path_id)
+    .bind(library_id)
+    .execute(pool)
+    .await?;
+
+    Ok(())
 }

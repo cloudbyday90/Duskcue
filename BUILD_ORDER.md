@@ -627,11 +627,35 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **No `root_path` filesystem validation** — `RootPathNotFound` error exists but is reserved for the scanner (Task 5). Libraries can be created with paths that don't currently exist (network drives may be offline, Docker volumes not yet mounted). The scanner validates paths at scan time and sets per-path `scan_enabled` for offline drives
 - **No new workspace dependencies** — slug uniqueness uses existing `sqlx::query`
 
+**What was built for Task 3:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/libraries/types.rs` | Added `LibraryPathRow` (internal), `LibraryPathResponse` (Serialize), `CreateLibraryPathRequest` / `UpdateLibraryPathRequest` (Deserialize + Validate) |
+| `server/src/domains/libraries/error.rs` | Added `PathNotFound` (LIB_015), `PathExists` (LIB_016), `CannotDeleteDefaultPath` (LIB_017) error variants |
+| `server/src/domains/libraries/service.rs` | Added 5 library_paths service functions: `list_library_paths`, `get_library_path`, `create_library_path`, `update_library_path`, `delete_library_path`; added `path_row_to_response`, `verify_library_exists` helpers; modified `create_library` to also create default `library_paths` row in a transaction |
+| `server/src/domains/libraries/handlers.rs` | Added 5 working handlers: `list_library_paths`, `get_library_path`, `create_library_path`, `update_library_path`, `delete_library_path` |
+| `server/src/domains/libraries/mod.rs` | Added 2 route groups: `/api/v1/libraries/{id}/paths` (GET, POST), `/api/v1/libraries/{id}/paths/{path_id}` (GET, PATCH, DELETE) |
+| `server/src/error.rs` | Added LIB_015, LIB_016, LIB_017 mappings in `library_error_to_http()` |
+
+**Key decisions from Task 3:**
+
+- **Sub-resource URL pattern** — `/api/v1/libraries/{id}/paths` and `/api/v1/libraries/{id}/paths/{path_id}` — one level of nesting, appropriate for strictly owned sub-resources with CASCADE delete per REST API best practices (Microsoft, Stack Overflow community consensus)
+- **Library creation creates default path** — `create_library` now uses a transaction to INSERT into both `libraries` and `library_paths` (with `is_default = true`, `scan_enabled = true`); ensures every library always has at least one path per LIBRARY_ORGANIZATION.md requirement
+- **Default path transfer** — When creating or updating a path with `is_default = true`, the existing default is set to `false` in the same transaction; ensures exactly one default path per library
+- **Cannot delete last default path** — `delete_library_path` checks if the path is the default and the only remaining path; returns `CannotDeleteDefaultPath` (LIB_017, 422) to prevent orphaning a library with no paths
+- **Path uniqueness per library** — `create_library_path` and `update_library_path` check for duplicate paths within the same library before insertion; returns `PathExists` (LIB_016, 409)
+- **Paths listed default-first** — `list_library_paths` orders by `is_default DESC, created_at ASC` so the default path appears first
+- **No filesystem validation on paths** — Consistent with Task 2 decision for `root_path`; the scanner validates paths at scan time and sets `scan_enabled` for offline drives
+- **`library_paths` responses include `library_id`** — Each path response includes the parent `library_id` for client-side association, even though it's implicit from the URL; follows the pattern of embedding parent context in sub-resource responses
+- **`verify_library_exists` helper** — Extracted from `get_library` pattern; used by all 5 path service functions to validate the parent library exists and is not soft-deleted before querying paths
+- **No new workspace dependencies** — all functionality uses existing `sqlx::query` with `PgPool::begin()` transactions
+
 **Tasks:**
 
 1. ~~Create `server/src/domains/libraries/` — five-file pattern~~ **DONE**
 2. ~~Implement library CRUD — create, list, get, update, soft-delete~~ **DONE**
-3. Implement `library_paths` — multi-path library support
+3. ~~Implement `library_paths` — multi-path library support~~ **DONE**
 4. Create `server/src/domains/media/` — five-file pattern
 5. Implement `server/src/workers/library_scanner.rs`:
    - Phase 1: Discover — walk filesystem using `ignore` (ripgrep) crate
@@ -1020,7 +1044,7 @@ Phase 3: Core Server Infrastructure (COMPLETE — 12 tasks)
     ↓
 Phase 4: Auth & Users (COMPLETE — 11 tasks)
     ↓
-Phase 5: Libraries & Media (IN PROGRESS — Tasks 1-2 done) ─────┐
+Phase 5: Libraries & Media (IN PROGRESS — Tasks 1-3 done) ─────┐
     ↓                                                      │
 Phase 6: Metadata Providers ←─── (enriches Phase 5)       │
     ↓                                                      │

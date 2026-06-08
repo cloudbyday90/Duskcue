@@ -179,3 +179,113 @@ pub async fn list_library_items(
 ) -> Result<Json<serde_json::Value>, AppError> {
     todo!("Library items listing — Phase 5 Task 4 (media domain)")
 }
+
+pub async fn list_library_paths(
+    State(state): State<AppState>,
+    _auth: Require<CanManageLibraries>,
+    axum::extract::Path(library_id): axum::extract::Path<Uuid>,
+) -> Result<Json<Vec<LibraryPathResponse>>, AppError> {
+    let paths = service::list_library_paths(&state.pool, library_id).await?;
+    Ok(Json(paths))
+}
+
+pub async fn get_library_path(
+    State(state): State<AppState>,
+    _auth: Require<CanManageLibraries>,
+    axum::extract::Path((library_id, path_id)): axum::extract::Path<(Uuid, Uuid)>,
+) -> Result<Json<LibraryPathResponse>, AppError> {
+    let path = service::get_library_path(&state.pool, library_id, path_id).await?;
+    Ok(Json(path))
+}
+
+pub async fn create_library_path(
+    State(state): State<AppState>,
+    _auth: Require<CanManageLibraries>,
+    axum::extract::Path(library_id): axum::extract::Path<Uuid>,
+    Json(req): Json<CreateLibraryPathRequest>,
+) -> Result<Json<LibraryPathResponse>, AppError> {
+    req.validate().map_err(|e| {
+        AppError::Validation {
+            errors: e
+                .field_errors()
+                .into_iter()
+                .flat_map(|(field, errors)| {
+                    errors.iter().map(move |err| crate::error::FieldError {
+                        field: field.to_string(),
+                        code: err.code.to_string(),
+                        message: err
+                            .message
+                            .as_ref()
+                            .map(|m| m.to_string())
+                            .unwrap_or_default(),
+                    })
+                })
+                .collect(),
+            instance: Some(format!("/api/v1/libraries/{}/paths", library_id)),
+        }
+    })?;
+
+    let response = service::create_library_path(
+        &state.pool,
+        service::CreateLibraryPathParams {
+            library_id,
+            path: req.path,
+            is_default: req.is_default.unwrap_or(false),
+            scan_enabled: req.scan_enabled.unwrap_or(true),
+        },
+    )
+    .await?;
+
+    Ok(Json(response))
+}
+
+pub async fn update_library_path(
+    State(state): State<AppState>,
+    _auth: Require<CanManageLibraries>,
+    axum::extract::Path((library_id, path_id)): axum::extract::Path<(Uuid, Uuid)>,
+    Json(req): Json<UpdateLibraryPathRequest>,
+) -> Result<Json<LibraryPathResponse>, AppError> {
+    req.validate().map_err(|e| {
+        AppError::Validation {
+            errors: e
+                .field_errors()
+                .into_iter()
+                .flat_map(|(field, errors)| {
+                    errors.iter().map(move |err| crate::error::FieldError {
+                        field: field.to_string(),
+                        code: err.code.to_string(),
+                        message: err
+                            .message
+                            .as_ref()
+                            .map(|m| m.to_string())
+                            .unwrap_or_default(),
+                    })
+                })
+                .collect(),
+            instance: Some(format!("/api/v1/libraries/{}/paths/{}", library_id, path_id)),
+        }
+    })?;
+
+    let response = service::update_library_path(
+        &state.pool,
+        service::UpdateLibraryPathParams {
+            library_id,
+            path_id,
+            path: req.path,
+            is_default: req.is_default,
+            scan_enabled: req.scan_enabled,
+        },
+    )
+    .await?;
+
+    Ok(Json(response))
+}
+
+pub async fn delete_library_path(
+    State(state): State<AppState>,
+    _auth: Require<CanManageLibraries>,
+    axum::extract::Path((library_id, path_id)): axum::extract::Path<(Uuid, Uuid)>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    service::delete_library_path(&state.pool, library_id, path_id).await?;
+    Ok(Json(serde_json::json!({ "status": "deleted" })))
+}

@@ -279,6 +279,9 @@ fn library_error_to_http(err: &crate::domains::libraries::LibrariesError) -> (St
         LibrariesError::TvdbAuthFailed => (StatusCode::UNAUTHORIZED, "LIB_012", "TVDB authentication failure".into()),
         LibrariesError::ProviderRateLimited => (StatusCode::TOO_MANY_REQUESTS, "LIB_013", "Metadata provider rate limit exceeded".into()),
         LibrariesError::ProviderResponseInvalid => (StatusCode::BAD_GATEWAY, "LIB_014", "Metadata provider response validation failure".into()),
+        LibrariesError::PathNotFound => (StatusCode::NOT_FOUND, "LIB_015", "Library path not found".into()),
+        LibrariesError::PathExists(p) => (StatusCode::CONFLICT, "LIB_016", format!("Path already exists for this library: {}", p)),
+        LibrariesError::CannotDeleteDefaultPath => (StatusCode::UNPROCESSABLE_ENTITY, "LIB_017", "Cannot delete the default library path".into()),
         LibrariesError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
     }
 }
