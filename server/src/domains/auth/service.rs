@@ -82,6 +82,20 @@ pub async fn validate_session(
     })
 }
 
+pub fn is_idle_expired(session: &UserSession, idle_timeout_hours: Option<i32>) -> bool {
+    let Some(hours) = idle_timeout_hours else {
+        return false;
+    };
+
+    if hours <= 0 {
+        return false;
+    }
+
+    let now = chrono::Utc::now();
+    let idle_duration = now - session.last_active_at;
+    idle_duration.num_hours() >= hours as i64
+}
+
 pub async fn resolve_capabilities(
     pool: &sqlx::PgPool,
     user_id: Uuid,

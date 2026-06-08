@@ -20,6 +20,7 @@ use axum::http::request::Parts;
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::domains::auth;
 use crate::error::{AppError, FieldError};
 use crate::state::AppState;
 
@@ -34,6 +35,8 @@ pub struct AuthenticatedUser {
     pub session_id: Uuid,
     pub capabilities: Vec<String>,
     pub role: String,
+    pub has_all_library_access: bool,
+    pub display_name: String,
 }
 
 impl FromRequestParts<AppState> for AuthenticatedUser {
@@ -41,12 +44,44 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
 
     async fn from_request_parts(
         parts: &mut Parts,
-        _state: &AppState,
+        state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let _token = extract_session_token(parts)?;
-        Err(AppError::Unauthorized(
-            "Authentication not yet configured".into(),
-        ))
+        let token = extract_session_token(parts)?;
+
+        let validated = auth::service::validate_session(&state.pool, &token).await?;
+
+        let config = state.runtime_config.load();
+        if auth::service::is_idle_expired(&validated.session, config.auth.session_idle_timeout_hours) {
+            drop(config);
+            let _ = sqlx::query("DELETE FROM user_sessions WHERE id = $1")
+                .bind(validated.session.id)
+                .execute(&state.pool)
+                .await;
+            return Err(AppError::Auth(auth::AuthError::SessionExpired));
+        }
+        drop(config);
+
+        let now = chrono::Utc::now();
+        let elapsed = now - validated.session.last_active_at;
+        let should_update = elapsed.num_seconds() > 60;
+
+        if should_update {
+            let _ = sqlx::query(
+                "UPDATE user_sessions SET last_active_at = now() WHERE id = $1",
+            )
+            .bind(validated.session.id)
+            .execute(&state.pool)
+            .await;
+        }
+
+        Ok(AuthenticatedUser {
+            user_id: validated.user_id,
+            session_id: validated.session.id,
+            capabilities: validated.capabilities,
+            role: validated.role,
+            has_all_library_access: validated.has_all_library_access,
+            display_name: validated.display_name,
+        })
     }
 }
 

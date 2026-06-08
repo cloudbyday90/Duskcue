@@ -672,3 +672,25 @@ Invite code CRUD implements the admin-side operations from AUTH.md Invite Manage
 **SMTP delivery deferred:** Both `create_invitation` and `resend_invitation` log an info message that SMTP is not yet configured. The full code is returned in the API response so admins can manually share it. Email delivery will be implemented when SMTP configuration is added (Phase 13).
 
 **Revocation limitation:** `revoke_invitation` sets `is_revoked = true` but does not terminate existing sessions. AUTH.md specifies "all sessions from that code are terminated," but `user_sessions` lacks an `invitation_id` column. Full session termination on revocation requires a migration — deferred to a future enhancement.
+
+### Session Management (Task 4)
+
+Task 4 wires the `AuthenticatedUser` extractor to perform actual database-backed session validation against the `user_sessions` table. Prior to Task 4, the extractor extracted the token from cookie/Bearer header but returned a stub `Unauthorized` error.
+
+**Session validation flow:**
+1. Extract token from `Cookie: session=<token>` or `Authorization: Bearer <token>` (existing extraction logic from Phase 3)
+2. Call `validate_session(pool, token)` which SHA-256 hashes the token, queries `user_sessions WHERE token_hash = $1 AND expires_at > now()`, then loads the user (must be `active`, not soft-deleted) and resolves capabilities
+3. Check idle timeout via `is_idle_expired()` — compares `last_active_at` against configurable `session_idle_timeout_hours`; if expired, session is deleted and `AUTH_005` returned
+4. Throttled `last_active_at` update — only writes to DB if 60+ seconds since last update, avoiding write amplification on every request
+
+**Idle timeout:** `is_idle_expired()` checks `AuthConfig.session_idle_timeout_hours`. Local mode default is `None` (no idle timeout). Exposed mode default is 7 days. When a session is idle-expired, it is immediately deleted from `user_sessions`.
+
+**Session cookies:** All authentication endpoints (`setup`, `auth_invite`, `auth_login`, `webauthn_finish`) now set a `Set-Cookie` header alongside the JSON response body. Cookie attributes per SECURITY.md tiered model:
+- `session={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={absolute_timeout_seconds}`
+- Exposed mode appends `; Secure`
+- `Max-Age` derives from `AuthConfig.session_absolute_timeout_days` (90 days local, 30 days exposed)
+- Logout endpoints (`auth_logout`, `auth_logout_all`) set `Max-Age=0` to clear the cookie
+
+**Response type change:** Auth handlers that set cookies return `impl IntoResponse` instead of `Json<SessionResponse>`, allowing `Set-Cookie` header injection. The JSON body structure is unchanged.
+
+**No new dependencies:** Cookie string built manually; no `axum-extra` cookie jar or `cookie` crate.

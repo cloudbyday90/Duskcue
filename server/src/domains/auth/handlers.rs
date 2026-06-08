@@ -15,24 +15,99 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use axum::extract::State;
+use axum::http::header::SET_COOKIE;
 use axum::http::HeaderMap;
+use axum::response::{IntoResponse, Response};
 use axum::Json;
 use sqlx::Row;
 use validator::Validate;
 
 use crate::error::AppError;
 use crate::extractors::AuthenticatedUser;
-use crate::state::AppState;
+use crate::state::{AppState, NetworkMode};
 
 use super::error::AuthError;
 use super::service;
 use super::service::DeviceInfo;
 use super::types::*;
 
+fn build_session_cookie_value(
+    state: &AppState,
+    token: &str,
+    max_age_days: i32,
+) -> String {
+    let config = state.runtime_config.load();
+    let is_exposed = matches!(config.auth.network_mode, NetworkMode::Exposed);
+    drop(config);
+
+    let max_age_seconds = max_age_days as i64 * 86400;
+
+    let mut cookie = format!(
+        "session={}; Path=/; HttpOnly; SameSite=Strict; Max-Age={}",
+        token, max_age_seconds,
+    );
+
+    if is_exposed {
+        cookie.push_str("; Secure");
+    }
+
+    cookie
+}
+
+fn set_session_cookie(
+    state: &AppState,
+    headers: &mut HeaderMap,
+    token: &str,
+) {
+    let config = state.runtime_config.load();
+    let max_age_days = config.auth.session_absolute_timeout_days;
+    drop(config);
+
+    let cookie_value = build_session_cookie_value(state, token, max_age_days);
+    if let Ok(value) = axum::http::HeaderValue::from_str(&cookie_value) {
+        headers.insert(SET_COOKIE, value);
+    }
+}
+
+fn clear_session_cookie(state: &AppState, headers: &mut HeaderMap) {
+    let config = state.runtime_config.load();
+    let is_exposed = matches!(config.auth.network_mode, NetworkMode::Exposed);
+    drop(config);
+
+    let mut cookie = "session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0".to_string();
+    if is_exposed {
+        cookie.push_str("; Secure");
+    }
+    if let Ok(value) = axum::http::HeaderValue::from_str(&cookie) {
+        headers.insert(SET_COOKIE, value);
+    }
+}
+
+struct CookieResponse {
+    body: serde_json::Value,
+    status: axum::http::StatusCode,
+}
+
+impl IntoResponse for CookieResponse {
+    fn into_response(self) -> Response {
+        (self.status, Json(self.body)).into_response()
+    }
+}
+
+struct SessionResponseWrapper {
+    inner: SessionResponse,
+}
+
+impl IntoResponse for SessionResponseWrapper {
+    fn into_response(self) -> Response {
+        Json(self.inner).into_response()
+    }
+}
+
 pub async fn setup(
     State(state): State<AppState>,
     Json(req): Json<SetupRequest>,
-) -> Result<Json<SessionResponse>, AppError> {
+) -> Result<impl IntoResponse, AppError> {
     let pool = &state.pool;
 
     if service::is_setup_complete(pool).await? {
@@ -67,8 +142,8 @@ pub async fn setup(
     let (user_id, token) =
         service::setup_owner(pool, req.username, req.display_name, req.password).await?;
 
-    Ok(Json(SessionResponse {
-        session_token: token,
+    let body = SessionResponse {
+        session_token: token.clone(),
         user: UserSummary {
             id: user_id,
             username: "".to_string(),
@@ -77,14 +152,18 @@ pub async fn setup(
             capabilities: service::ALL_CAPABILITIES.iter().map(|s| s.to_string()).collect(),
             has_all_library_access: true,
         },
-    }))
+    };
+
+    let mut response = SessionResponseWrapper { inner: body }.into_response();
+    set_session_cookie(&state, response.headers_mut(), &token);
+    Ok(response)
 }
 
 pub async fn auth_invite(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(req): Json<InviteAuthRequest>,
-) -> Result<Json<SessionResponse>, AppError> {
+) -> Result<impl IntoResponse, AppError> {
     let device_info = extract_device_info(
         &headers,
         req.device_name.as_deref(),
@@ -96,17 +175,21 @@ pub async fn auth_invite(
     let (_user_id, token, summary) =
         service::authenticate_invite_code(&state.pool, &state, &req.code, &device_info).await?;
 
-    Ok(Json(SessionResponse {
-        session_token: token,
+    let body = SessionResponse {
+        session_token: token.clone(),
         user: summary,
-    }))
+    };
+
+    let mut response = SessionResponseWrapper { inner: body }.into_response();
+    set_session_cookie(&state, response.headers_mut(), &token);
+    Ok(response)
 }
 
 pub async fn auth_login(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(req): Json<PasswordLoginRequest>,
-) -> Result<Json<SessionResponse>, AppError> {
+) -> Result<impl IntoResponse, AppError> {
     let device_info = extract_device_info(
         &headers,
         req.device_name.as_deref(),
@@ -137,8 +220,8 @@ pub async fn auth_login(
 
     let capabilities = service::resolve_capabilities(&state.pool, user.id, &user.role).await?;
 
-    Ok(Json(SessionResponse {
-        session_token: token,
+    let body = SessionResponse {
+        session_token: token.clone(),
         user: UserSummary {
             id: user.id,
             username: user.username,
@@ -147,26 +230,40 @@ pub async fn auth_login(
             capabilities,
             has_all_library_access: user.has_all_library_access,
         },
-    }))
+    };
+
+    let mut response = SessionResponseWrapper { inner: body }.into_response();
+    set_session_cookie(&state, response.headers_mut(), &token);
+    Ok(response)
 }
 
 pub async fn auth_logout(
     State(state): State<AppState>,
     user: AuthenticatedUser,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<impl IntoResponse, AppError> {
     service::revoke_session(&state.pool, user.session_id, user.user_id).await?;
-    Ok(Json(serde_json::json!({ "status": "logged_out" })))
+    let mut response = CookieResponse {
+        body: serde_json::json!({ "status": "logged_out" }),
+        status: axum::http::StatusCode::OK,
+    }.into_response();
+    clear_session_cookie(&state, response.headers_mut());
+    Ok(response)
 }
 
 pub async fn auth_logout_all(
     State(state): State<AppState>,
     user: AuthenticatedUser,
-) -> Result<Json<serde_json::Value>, AppError> {
+) -> Result<impl IntoResponse, AppError> {
     let count = service::revoke_all_sessions(&state.pool, user.user_id).await?;
-    Ok(Json(serde_json::json!({
-        "status": "logged_out_everywhere",
-        "sessions_revoked": count,
-    })))
+    let mut response = CookieResponse {
+        body: serde_json::json!({
+            "status": "logged_out_everywhere",
+            "sessions_revoked": count,
+        }),
+        status: axum::http::StatusCode::OK,
+    }.into_response();
+    clear_session_cookie(&state, response.headers_mut());
+    Ok(response)
 }
 
 pub async fn webauthn_start(
@@ -190,7 +287,7 @@ pub async fn webauthn_finish(
     State(state): State<AppState>,
     headers: HeaderMap,
     Json(req): Json<WebauthnFinishRequest>,
-) -> Result<Json<SessionResponse>, AppError> {
+) -> Result<impl IntoResponse, AppError> {
     let challenge_id = headers
         .get("x-challenge-id")
         .and_then(|v| v.to_str().ok())
@@ -228,10 +325,14 @@ pub async fn webauthn_finish(
     )
     .await?;
 
-    Ok(Json(SessionResponse {
-        session_token: token,
+    let body = SessionResponse {
+        session_token: token.clone(),
         user: summary,
-    }))
+    };
+
+    let mut response = SessionResponseWrapper { inner: body }.into_response();
+    set_session_cookie(&state, response.headers_mut(), &token);
+    Ok(response)
 }
 
 pub async fn totp_verify(

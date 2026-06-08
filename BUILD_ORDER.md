@@ -349,7 +349,7 @@ These documents apply to every phase. Consult them when making implementation de
 1. ~~Create `server/src/domains/auth/` — five-file pattern~~ **DONE**
 2. ~~Implement WebAuthn registration and authentication flows~~ **DONE**
 3. ~~Implement invite code system — admin creates invite, user registers with code~~ **DONE**
-4. Implement `user_sessions` — session creation, validation, revocation
+4. ~~Implement `user_sessions` — session creation, validation, revocation~~ **DONE**
 5. Implement `user_capabilities` — capability-based access control checks
 6. Implement device linking — RFC 8628 device code flow
 7. Implement re-auth codes for sensitive operations
@@ -430,6 +430,24 @@ These documents apply to every phase. Consult them when making implementation de
 - **Revocation marks code only** — `revoke_invitation` sets `is_revoked = true` but does not terminate existing sessions. AUTH.md specifies "all sessions from that code are terminated," but `user_sessions` lacks an `invitation_id` column to link sessions to their originating invite code. Full session termination on revocation requires a migration adding `invitation_id` to `user_sessions` — deferred to a future enhancement
 - **`CreateInvitationParams` struct** — Introduced to satisfy clippy `too_many_arguments` (10 params → 2 params); handler constructs the struct from validated `CreateInvitationRequest` fields with defaults (`role: "member"`, `max_uses: 1`, `has_all_library_access: false`)
 - **No new workspace dependencies** — invite code generation uses existing `rand` 0.9; hashing uses existing `ring::digest::SHA256`
+
+**What was built for Task 4:**
+
+| File | Purpose |
+|---|---|
+| `server/src/extractors.rs` | `AuthenticatedUser` extractor now calls `validate_session()` to look up session token in `user_sessions`, load user + capabilities from DB, enforce idle timeout, and throttled `last_active_at` update (60s). Added `has_all_library_access` and `display_name` fields. |
+| `server/src/domains/auth/service.rs` | Added `is_idle_expired()` helper to check configurable idle timeout against `last_active_at`; returns `false` when no idle timeout configured (local mode default) |
+| `server/src/domains/auth/handlers.rs` | Added `set_session_cookie()` and `clear_session_cookie()` helpers for `Set-Cookie` header management. Updated `setup`, `auth_invite`, `auth_login`, `webauthn_finish` to set session cookie on successful authentication. Updated `auth_logout` and `auth_logout_all` to clear session cookie. |
+
+**Key decisions from Task 4:**
+
+- **Session validation in extractor** — `AuthenticatedUser::from_request_parts()` calls `auth::service::validate_session()` with the extracted token. This performs a single DB query to look up the session by `token_hash` SHA-256, verifies `expires_at > now()`, loads the user (must be `active`, not soft-deleted), and resolves capabilities via `resolve_capabilities()`.
+- **Throttled `last_active_at` update** — Session `last_active_at` is only updated if 60+ seconds have elapsed since the last update, avoiding a DB write on every single request. The threshold is hardcoded (not configurable) as a reasonable balance between freshness and write amplification.
+- **Idle timeout enforcement** — `is_idle_expired()` checks the configurable `session_idle_timeout_hours` from `AuthConfig`. Local mode default is `None` (no idle timeout). Exposed mode default is 7 days. When a session is idle-expired, it is immediately deleted from `user_sessions` and the request returns `AUTH_005 Session expired`.
+- **Session cookie attributes per SECURITY.md/AUTH.md** — `Set-Cookie: session={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={absolute_timeout_seconds}`. In exposed mode, `Secure` flag is appended. `Max-Age` uses `session_absolute_timeout_days` from `AuthConfig` (90 days local, 30 days exposed).
+- **Cookie cleared on logout** — `auth_logout` and `auth_logout_all` set a `Max-Age=0` cookie to instruct the browser to delete the session cookie.
+- **Response type change** — Auth handlers that set cookies now return `impl IntoResponse` instead of `Json<SessionResponse>` to allow adding `Set-Cookie` headers to the response. The JSON body structure is unchanged.
+- **No new workspace dependencies** — session cookie is built as a plain string; no `axum-extra` cookie jar or `cookie` crate added.
 
 ---
 
