@@ -89,6 +89,9 @@ pub enum AppError {
     #[error(transparent)]
     Auth(#[from] crate::domains::auth::AuthError),
 
+    #[error(transparent)]
+    Users(#[from] crate::domains::users::UsersError),
+
     #[error("internal server error")]
     Internal(#[source] anyhow::Error),
 }
@@ -98,6 +101,10 @@ impl IntoResponse for AppError {
         let (status, code, detail): (StatusCode, &str, Cow<'_, str>) = match &self {
             AppError::Auth(e) => {
                 let (s, c, d) = auth_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Users(e) => {
+                let (s, c, d) = users_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", Cow::Borrowed(msg.as_str())),
@@ -226,5 +233,22 @@ fn auth_error_to_http(err: &crate::domains::auth::AuthError) -> (StatusCode, &'s
         AuthError::WebauthnAuthenticationFailed { .. } => (StatusCode::UNAUTHORIZED, "AUTH_021", "WebAuthn authentication failed".into()),
         AuthError::PasswordTooWeak => (StatusCode::UNPROCESSABLE_ENTITY, "AUTH_022", "Password does not meet requirements".into()),
         AuthError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
+    }
+}
+
+fn users_error_to_http(err: &crate::domains::users::UsersError) -> (StatusCode, &'static str, String) {
+    use crate::domains::users::UsersError;
+    use axum::http::StatusCode;
+
+    match err {
+        UsersError::NotFound => (StatusCode::NOT_FOUND, "USER_001", "User not found".into()),
+        UsersError::OwnerImmutable => (StatusCode::FORBIDDEN, "USER_002", "Owner account cannot be modified".into()),
+        UsersError::OwnerCannotBeDeleted => (StatusCode::FORBIDDEN, "USER_003", "Owner account cannot be deleted".into()),
+        UsersError::UsernameTaken => (StatusCode::CONFLICT, "USER_004", "Username already taken".into()),
+        UsersError::EmailTaken => (StatusCode::CONFLICT, "USER_005", "Email already taken".into()),
+        UsersError::InvalidRole(r) => (StatusCode::BAD_REQUEST, "USER_006", format!("Invalid role: {}", r)),
+        UsersError::InvalidStatus(s) => (StatusCode::BAD_REQUEST, "USER_007", format!("Invalid status: {}", s)),
+        UsersError::CannotModifySelf => (StatusCode::FORBIDDEN, "USER_008", "Cannot modify own account role or status".into()),
+        UsersError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
     }
 }

@@ -14,3 +14,34 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum UsersError {
+    #[error("user not found")]
+    NotFound,
+
+    #[error("owner account cannot be modified")]
+    OwnerImmutable,
+
+    #[error("owner account cannot be deleted")]
+    OwnerCannotBeDeleted,
+
+    #[error("username already taken")]
+    UsernameTaken,
+
+    #[error("email already taken")]
+    EmailTaken,
+
+    #[error("invalid role: {0}")]
+    InvalidRole(String),
+
+    #[error("invalid status: {0}")]
+    InvalidStatus(String),
+
+    #[error("cannot modify own account role or status")]
+    CannotModifySelf,
+
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+}

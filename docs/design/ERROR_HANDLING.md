@@ -420,11 +420,13 @@ All API errors return [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) Problem
 | Code | HTTP | Description |
 |---|---|---|
 | `USER_001` | 404 | User not found |
-| `USER_002` | 409 | Username already exists |
-| `USER_003` | 409 | Email already exists |
-| `USER_004` | 403 | Cannot modify owner account |
-| `USER_005` | 422 | Invitation code invalid or expired |
-| `USER_006` | 422 | Invitation usage limit reached |
+| `USER_002` | 403 | Owner account cannot be modified |
+| `USER_003` | 403 | Owner account cannot be deleted |
+| `USER_004` | 409 | Username already taken |
+| `USER_005` | 409 | Email already taken |
+| `USER_006` | 400 | Invalid role value |
+| `USER_007` | 400 | Invalid status value |
+| `USER_008` | 403 | Cannot modify own account role or status |
 
 ### LIB — Libraries
 

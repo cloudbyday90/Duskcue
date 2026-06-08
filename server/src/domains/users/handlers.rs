@@ -14,3 +14,130 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use axum::extract::{Query, State};
+use axum::Json;
+use serde::Deserialize;
+use uuid::Uuid;
+use validator::Validate;
+
+use crate::domains::auth;
+use crate::error::AppError;
+use crate::extractors::AuthenticatedUser;
+use crate::state::AppState;
+
+use super::service;
+use super::types::*;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ListUsersQuery {
+    page: Option<u32>,
+    page_size: Option<u32>,
+    status: Option<String>,
+    role: Option<String>,
+}
+
+pub async fn list_users(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Query(query): Query<ListUsersQuery>,
+) -> Result<Json<UserListResponse>, AppError> {
+    auth::service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
+
+    let page = query.page.unwrap_or(1).max(1);
+    let page_size = query.page_size.unwrap_or(25).clamp(1, 100);
+
+    let response = service::list_users(
+        &state.pool,
+        page,
+        page_size,
+        query.status.as_deref(),
+        query.role.as_deref(),
+    )
+    .await?;
+
+    Ok(Json(response))
+}
+
+pub async fn get_user(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    axum::extract::Path(target_user_id): axum::extract::Path<Uuid>,
+) -> Result<Json<UserResponse>, AppError> {
+    auth::service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
+
+    let response = service::get_user(&state.pool, target_user_id).await?;
+
+    Ok(Json(response))
+}
+
+pub async fn update_user(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    axum::extract::Path(target_user_id): axum::extract::Path<Uuid>,
+    Json(req): Json<UpdateUserRequest>,
+) -> Result<Json<UserResponse>, AppError> {
+    auth::service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
+
+    req.validate().map_err(|e| {
+        AppError::Validation {
+            errors: e
+                .field_errors()
+                .into_iter()
+                .flat_map(|(field, errors)| {
+                    errors.iter().map(move |err| crate::error::FieldError {
+                        field: field.to_string(),
+                        code: err.code.to_string(),
+                        message: err
+                            .message
+                            .as_ref()
+                            .map(|m| m.to_string())
+                            .unwrap_or_default(),
+                    })
+                })
+                .collect(),
+            instance: Some(format!("/api/v1/users/{}", target_user_id)),
+        }
+    })?;
+
+    if let Some(policy_id) = req.streaming_policy_id {
+        let exists = service::validate_streaming_policy_exists(&state.pool, policy_id).await?;
+        if !exists {
+            return Err(AppError::BadRequest(
+                "Streaming policy not found".into(),
+            ));
+        }
+    }
+
+    let response = service::update_user(
+        &state.pool,
+        service::UpdateUserParams {
+            user_id: target_user_id,
+            admin_user_id: user.user_id,
+            display_name: req.display_name,
+            email: req.email,
+            avatar_url: req.avatar_url,
+            role: req.role,
+            status: req.status,
+            has_all_library_access: req.has_all_library_access,
+            streaming_policy_id: req.streaming_policy_id,
+            max_streams: req.max_streams,
+            max_transcode_streams: req.max_transcode_streams,
+            bandwidth_limit_bps: req.bandwidth_limit_bps,
+        },
+    )
+    .await?;
+
+    Ok(Json(response))
+}
+
+pub async fn delete_user(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    axum::extract::Path(target_user_id): axum::extract::Path<Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    auth::service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
+
+    service::soft_delete_user(&state.pool, target_user_id, user.user_id).await?;
+
+    Ok(Json(serde_json::json!({ "status": "deleted" })))
+}

@@ -353,8 +353,8 @@ These documents apply to every phase. Consult them when making implementation de
 5. ~~Implement `user_capabilities` — capability-based access control checks~~ **DONE**
 6. ~~Implement device linking — RFC 8628 device code flow~~ **DONE**
 7. ~~Implement re-auth codes for sensitive operations~~ **DONE**
-8. Create `server/src/domains/users/` — five-file pattern
-9. Implement user CRUD — list, get, update, soft-delete
+8. ~~Create `server/src/domains/users/` — five-file pattern~~ **DONE**
+9. ~~Implement user CRUD — list, get, update, soft-delete~~ **DONE** (implemented as part of Task 8)
 10. Implement `AuthenticatedUser` extractor — validates session from cookie or Bearer token
 11. Implement `require_capability()` middleware for admin endpoints
 
@@ -510,6 +510,44 @@ These documents apply to every phase. Consult them when making implementation de
 - **SMTP delivery deferred** — `create_reauth_code()` logs an info message that SMTP is not yet implemented, consistent with invite code pattern from Task 3.
 - **No new workspace dependencies** — re-auth code generation uses existing `rand` 0.9 and `BASE20_CHARS`; hashing uses existing `sha256_hex`.
 - **No new error variants needed** — `ReauthCodeInvalid` (AUTH_015, 401) and `ReauthRateLimited` (AUTH_016, 429) already existed in `AuthError` from Task 1 with mappings in `error.rs`.
+
+**What was built for Task 8:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/users/mod.rs` | Module declarations + router assembly with 2 routes (4 endpoints) |
+| `server/src/domains/users/error.rs` | `UsersError` enum with 9 variants covering USER_001–USER_008 + Database catch-all |
+| `server/src/domains/users/types.rs` | `UserRow` (internal), `UpdateUserRequest` (Deserialize + Validate), `UserResponse`, `UserListResponse` DTOs; `VALID_ROLES` and `VALID_STATUSES` statics |
+| `server/src/domains/users/service.rs` | Service layer with `list_users` (paginated, filterable by status/role), `get_user`, `update_user` (via `UpdateUserParams` struct), `soft_delete_user`, `row_to_user_row`, `row_to_response`, `validate_streaming_policy_exists` |
+| `server/src/domains/users/handlers.rs` | Working handlers for `list_users`, `get_user`, `update_user`, `delete_user`; all check `can_manage_users` capability via `auth::service::check_capability()` |
+| `server/src/domains/mod.rs` | Added `pub mod users;` |
+| `server/src/router.rs` | Merged users router via `.merge(crate::domains::users::router(state.clone()))` |
+| `server/src/error.rs` | Added `AppError::Users(#[from] UsersError)` variant + `users_error_to_http()` mapping all 9 error codes |
+
+**Key decisions from Task 8:**
+
+- **Static SQL over dynamic query building** — sqlx 0.9 requires `SqlSafeStr` for dynamic strings; all queries use static SQL with `($N::text IS NULL OR column = $N)` pattern for optional filters, avoiding dynamic query construction entirely
+- **COALESCE pattern for partial updates** — `UPDATE users SET display_name = COALESCE($2, display_name), ...` allows a single static query to update only provided fields; `None` parameters preserve existing values via `COALESCE(NULL, existing) = existing`
+- **`avatar_url` uses CASE WHEN pattern** — Unlike other `Option<String>` fields, `avatar_url` needs a separate boolean flag (`CASE WHEN $4::boolean THEN $5 ELSE avatar_url END`) because empty string and NULL are both valid `Option` states and `COALESCE('', existing)` would incorrectly overwrite
+- **Owner account protection** — `update_user` rejects any modification to owner accounts (`OwnerImmutable`); `soft_delete_user` rejects owner deletion (`OwnerCannotBeDeleted`); both checks run before any DB write
+- **Self-modification prevention** — Admin cannot change their own `role` or `status` via this endpoint (`CannotModifySelf`); prevents accidental self-demotion. Other fields (display_name, email, etc.) are allowed
+- **Soft-delete revokes sessions** — `soft_delete_user` sets `deleted_at = now()` and `is_active = false`, then deletes all `user_sessions` for the user (best-effort, ignores errors)
+- **Email uniqueness checked on update** — If email is provided in the update, queries for an existing user with that email (excluding the target user and soft-deleted users); returns `EmailTaken` on conflict
+- **`UpdateUserParams` struct** — Introduced to satisfy clippy `too_many_arguments` (12 params → 2 params); same pattern as `CreateInvitationParams` and `CreateDeviceCodeParams` in the auth domain
+- **Offset pagination for user list** — Uses `page`/`page_size` query params (not cursor pagination) per API_CONVENTIONS.md recommendation for small datasets that need page numbers; response includes `total`, `page`, `page_size`, `total_pages`
+- **`UsersError` with 9 variants** — `NotFound` (USER_001), `OwnerImmutable` (USER_002), `OwnerCannotBeDeleted` (USER_003), `UsernameTaken` (USER_004), `EmailTaken` (USER_005), `InvalidRole` (USER_006), `InvalidStatus` (USER_007), `CannotModifySelf` (USER_008), `Database` (INTERNAL)
+- **`row_to_user_row` is public** — Shared conversion utility that maps `PgRow` to internal `UserRow`, then to `UserResponse` — keeps the mapping consistent across `list_users` and `get_user`
+- **Streaming policy FK validation** — If `streaming_policy_id` is provided, handler validates it exists in `streaming_policies` table before calling `update_user`; returns `BAD_REQUEST` if not found
+- **No new workspace dependencies** — all functionality uses existing `sqlx`, `validator`, `serde`, `uuid`, `chrono` crates
+- **User endpoints reuse auth domain's `check_capability()`** — All 4 handlers call `auth::service::check_capability(&user.role, &user.capabilities, "can_manage_users")` for authorization, consistent with invitation and capability handlers in the auth domain
+
+**Not yet implemented (deferred to later tasks/phases):**
+
+- Task 10 (`AuthenticatedUser` extractor) — already completed in Phase 4 Task 4 (session validation wired into extractor)
+- Task 11 (`require_capability()` middleware) — pending; currently all capability checks use `auth::service::check_capability()` inline
+- Nullable field clearing — `Option<T>` in `UpdateUserRequest` cannot distinguish "not provided" from "set to NULL" for nullable columns (`streaming_policy_id`, `max_streams`, etc.); `Option<Option<T>>` or a separate "clear" endpoint deferred to admin UI implementation
+- User self-service profile update endpoint — `PUT /api/v1/user/profile` (non-admin) deferred to Task 9 scope expansion or Phase 8 web client
+- Admin user session management endpoints (`GET/DELETE /api/v1/users/{id}/sessions`) — deferred; session management currently only via auth domain self-service endpoints
 
 ---
 
@@ -916,7 +954,7 @@ Phase 2: Database Schema (COMPLETE — 15 migrations)
     ↓
 Phase 3: Core Server Infrastructure (COMPLETE — 12 tasks)
     ↓
-Phase 4: Auth & Users (IN PROGRESS — Tasks 1–7 complete)
+Phase 4: Auth & Users (IN PROGRESS — Tasks 1–9 complete)
     ↓
 Phase 5: Libraries & Media ──────────────────────────────┐
     ↓                                                      │

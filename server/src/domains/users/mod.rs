@@ -14,3 +14,21 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod error;
+pub mod handlers;
+pub mod service;
+pub mod types;
+
+pub use error::UsersError;
+
+use axum::routing::get;
+use axum::Router;
+
+use crate::state::AppState;
+
+pub fn router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route("/api/v1/users", get(handlers::list_users))
+        .route("/api/v1/users/{id}", get(handlers::get_user).put(handlers::update_user).delete(handlers::delete_user))
+        .with_state(state)
+}
