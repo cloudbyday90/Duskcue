@@ -355,8 +355,8 @@ These documents apply to every phase. Consult them when making implementation de
 7. ~~Implement re-auth codes for sensitive operations~~ **DONE**
 8. ~~Create `server/src/domains/users/` — five-file pattern~~ **DONE**
 9. ~~Implement user CRUD — list, get, update, soft-delete~~ **DONE** (implemented as part of Task 8)
-10. Implement `AuthenticatedUser` extractor — validates session from cookie or Bearer token
-11. Implement `require_capability()` middleware for admin endpoints
+10. ~~Implement `AuthenticatedUser` extractor — validates session from cookie or Bearer token~~ **DONE** (completed during Task 4)
+11. ~~Implement `require_capability()` middleware for admin endpoints~~ **DONE**
 
 **Verification:** Admin creates invite code, new user registers with passkey, user session is created, authenticated requests succeed, unauthorized requests return 401, admin-only endpoints require `can_manage_server`.
 
@@ -541,12 +541,29 @@ These documents apply to every phase. Consult them when making implementation de
 - **No new workspace dependencies** — all functionality uses existing `sqlx`, `validator`, `serde`, `uuid`, `chrono` crates
 - **User endpoints reuse auth domain's `check_capability()`** — All 4 handlers call `auth::service::check_capability(&user.role, &user.capabilities, "can_manage_users")` for authorization, consistent with invitation and capability handlers in the auth domain
 
+**What was built for Task 11:**
+
+| File | Purpose |
+|---|---|
+| `server/src/extractors.rs` | Added `RequiredCapability` trait, `Require<C>` generic extractor with `FromRequestParts<AppState>` impl, 12 marker types (`CanManageServer`, `CanManageUsers`, `CanManageLibraries`, etc.), `AdminOnly` type alias |
+| `server/src/domains/auth/handlers.rs` | Replaced inline `check_capability("can_manage_users")` in 6 handlers (`list_invitations`, `create_invitation`, `revoke_invitation`, `resend_invitation`, `get_user_capabilities`, `update_user_capabilities`) with `Require<CanManageUsers>` extractor |
+| `server/src/domains/users/handlers.rs` | Replaced inline `check_capability("can_manage_users")` in 4 handlers (`list_users`, `get_user`, `update_user`, `delete_user`) with `Require<CanManageUsers>` extractor |
+
+**Key decisions from Task 11:**
+
+- **Trait-based generic extractor over middleware** — `Require<C: RequiredCapability>` implements `FromRequestParts<AppState>`; extracts `AuthenticatedUser`, delegates to `auth::service::check_capability()`, and returns `AppError::Auth(InsufficientCapabilities)` on failure. This follows axum's extractor-based authorization pattern (same as the existing `AdminOnly`) rather than a `from_fn` middleware. Extractors are more ergonomic, composable, and avoid the double-extraction problem where middleware and handler both need the same state
+- **12 marker types** — All capabilities from `ALL_CAPABILITIES` defined as zero-sized types (`CanManageServer`, `CanManageUsers`, `CanManageLibraries`, `CanViewAnalytics`, `CanManageScheduledTasks`, `CanTranscode`, `CanDownload`, `CanDeleteMedia`, `CanUseLiveTv`, `CanShareContent`, `CanRemoteControl`, `PlayMedia`). Trivial to define; pre-emptively created for future phases
+- **`AdminOnly` becomes type alias** — `pub type AdminOnly = Require<CanManageServer>` preserves backward compatibility. No handlers currently use `AdminOnly` (it was a Phase 3 placeholder), but the type remains available
+- **Handler signature change** — Handlers that required capability checks changed from `user: AuthenticatedUser` + inline `check_capability()` to `auth: Require<CanManageUsers>` (or the appropriate marker). Access to the underlying user is via `auth.user`. Unused capability-only handlers use `_auth` to suppress unused-variable warnings
+- **`users` domain no longer imports `auth`** — With inline `check_capability()` calls removed, `users/handlers.rs` no longer needs `use crate::domains::auth`; the authorization is handled at the extractor level
+- **No new workspace dependencies** — the `Require<C>` extractor uses existing `AuthenticatedUser` and `auth::service::check_capability()` infrastructure
+
 **Not yet implemented (deferred to later tasks/phases):**
 
 - Task 10 (`AuthenticatedUser` extractor) — already completed in Phase 4 Task 4 (session validation wired into extractor)
-- Task 11 (`require_capability()` middleware) — pending; currently all capability checks use `auth::service::check_capability()` inline
+- Task 11 (`require_capability()` middleware) — complete; see above
 - Nullable field clearing — `Option<T>` in `UpdateUserRequest` cannot distinguish "not provided" from "set to NULL" for nullable columns (`streaming_policy_id`, `max_streams`, etc.); `Option<Option<T>>` or a separate "clear" endpoint deferred to admin UI implementation
-- User self-service profile update endpoint — `PUT /api/v1/user/profile` (non-admin) deferred to Task 9 scope expansion or Phase 8 web client
+- User self-service profile update endpoint — `PUT /api/v1/user/profile` (non-admin) deferred to Phase 8 web client
 - Admin user session management endpoints (`GET/DELETE /api/v1/users/{id}/sessions`) — deferred; session management currently only via auth domain self-service endpoints
 
 ---
@@ -954,7 +971,7 @@ Phase 2: Database Schema (COMPLETE — 15 migrations)
     ↓
 Phase 3: Core Server Infrastructure (COMPLETE — 12 tasks)
     ↓
-Phase 4: Auth & Users (IN PROGRESS — Tasks 1–9 complete)
+Phase 4: Auth & Users (COMPLETE — 11 tasks)
     ↓
 Phase 5: Libraries & Media ──────────────────────────────┐
     ↓                                                      │

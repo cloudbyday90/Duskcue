@@ -300,6 +300,8 @@ pub fn admin_router(state: AppState) -> Router<AppState> {
 }
 ```
 
+> **Implementation note:** The actual implementation uses `Require<CanManageServer>` as an `FromRequestParts` extractor (see `server/src/extractors.rs`) rather than a `.layer()` middleware. This avoids the double-extraction problem and is more ergonomic. `AdminOnly` is a type alias for `Require<CanManageServer>`. See [AUTH.md](../design/AUTH.md) Task 11 for details.
+
 ### Admin Capability Requirements
 
 | Endpoint Group | Required Capability | Additional Checks |

@@ -46,7 +46,7 @@ project/
 │       ├── config.rs             # Bootstrap config (TOML/ENV), AppState construction
 │       ├── state.rs              # AppState struct, Clone impl, RateLimitState, GeoIP (ArcSwap), HW accel cache, Webauthn (Arc), WebauthnChallenge (DashMap)
 │       ├── error.rs              # Unified AppError + IntoResponse
-│       ├── extractors.rs         # Custom Axum extractors (AuthenticatedUser, PaginationParams, DeviceProfile, etc.)
+│       ├── extractors.rs         # Custom Axum extractors (AuthenticatedUser, Require<C>, PaginationParams, DeviceProfile, etc.)
 │       ├── middleware.rs         # Tower middleware (logging, CORS, rate limiting, HTTP metrics, metrics subnet guard)
 │       ├── logging.rs            # Tracing subscriber init + Prometheus metrics recorder init
 │       ├── router.rs             # Top-level router assembly (/health, /metrics), merges domain routers

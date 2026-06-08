@@ -755,3 +755,17 @@ Task 7 implements the "Sign Out Everywhere" + re-authentication code flow from t
 **SMTP delivery deferred:** `create_reauth_code()` logs an info message that SMTP is not yet implemented, consistent with invite code pattern from Task 3. The re-auth code prefix and expiry are returned in the API response for admin/user visibility.
 
 **No new dependencies:** Re-auth code generation uses existing `rand` 0.9 and `BASE20_CHARS`; hashing uses existing `sha256_hex`. No new workspace dependencies added.
+
+### `Require<C>` Capability Extractor (Task 11)
+
+Task 11 replaces all remaining inline `check_capability()` calls with a trait-based generic extractor pattern. Prior to Task 11, handlers called `auth::service::check_capability()` directly, requiring manual extraction of `AuthenticatedUser` followed by a capability check — two separate steps with boilerplate in every handler.
+
+**`RequiredCapability` trait:** Defined in `server/src/extractors.rs`. Has one associated constant `CAPABILITY: &'static str` that maps a zero-sized marker type to a capability name string. All 12 capabilities from `ALL_CAPABILITIES` have marker types: `CanManageServer`, `CanManageUsers`, `CanManageLibraries`, `CanViewAnalytics`, `CanManageScheduledTasks`, `CanTranscode`, `CanDownload`, `CanDeleteMedia`, `CanUseLiveTv`, `CanShareContent`, `CanRemoteControl`, `PlayMedia`.
+
+**`Require<C: RequiredCapability>` generic extractor:** Implements `FromRequestParts<AppState>`. Extracts `AuthenticatedUser` from parts, then delegates to `auth::service::check_capability()`. On failure, rejects with the appropriate `AuthError`. On success, wraps the `AuthenticatedUser` in `Require<C>`, accessible via `auth.user`.
+
+**`AdminOnly` preserved as type alias:** `pub type AdminOnly = Require<CanManageServer>` for backward compatibility and semantic clarity.
+
+**Handler refactoring:** 6 auth handlers (`list_invitations`, `create_invitation`, `revoke_invitation`, `resend_invitation`, `get_user_capabilities`, `update_user_capabilities`) and 4 users handlers (`list_users`, `get_user`, `update_user`, `delete_user`) refactored from inline `check_capability()` to `Require<CanManageUsers>` extractor. The `auth` import was removed from `users/handlers.rs` entirely.
+
+**Why extractors over middleware:** The `from_fn` middleware approach was considered but rejected due to the double-extraction problem (middleware extracts `AuthenticatedUser`, handler also needs it). Extractors avoid this by combining authentication + capability check in a single step that produces the `AuthenticatedUser` for the handler to use.

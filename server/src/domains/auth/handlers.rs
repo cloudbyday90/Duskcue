@@ -23,7 +23,7 @@ use sqlx::Row;
 use validator::Validate;
 
 use crate::error::AppError;
-use crate::extractors::AuthenticatedUser;
+use crate::extractors::{AuthenticatedUser, CanManageUsers, Require};
 use crate::state::{AppState, NetworkMode};
 
 use super::types::*;
@@ -699,22 +699,19 @@ pub async fn passkey_delete(
 
 pub async fn list_invitations(
     State(state): State<AppState>,
-    user: AuthenticatedUser,
+    auth: Require<CanManageUsers>,
 ) -> Result<Json<InvitationListResponse>, AppError> {
-    service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
-
     let (items, total) = service::list_invitations(&state.pool).await?;
 
+    let _ = auth.user;
     Ok(Json(InvitationListResponse { items, total }))
 }
 
 pub async fn create_invitation(
     State(state): State<AppState>,
-    user: AuthenticatedUser,
+    auth: Require<CanManageUsers>,
     Json(req): Json<CreateInvitationRequest>,
 ) -> Result<(axum::http::StatusCode, Json<InvitationResponse>), AppError> {
-    service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
-
     req.validate().map_err(|e| {
         AppError::Validation {
             errors: e
@@ -748,7 +745,7 @@ pub async fn create_invitation(
     let (_raw_code, invitation) = service::create_invitation(
         &state.pool,
         service::CreateInvitationParams {
-            admin_user_id: user.user_id,
+            admin_user_id: auth.user.user_id,
             email: req.email,
             display_name: req.display_name,
             role,
@@ -766,22 +763,18 @@ pub async fn create_invitation(
 
 pub async fn revoke_invitation(
     State(state): State<AppState>,
-    user: AuthenticatedUser,
+    _auth: Require<CanManageUsers>,
     axum::extract::Path(invitation_id): axum::extract::Path<uuid::Uuid>,
 ) -> Result<Json<InvitationResponse>, AppError> {
-    service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
-
     let invitation = service::revoke_invitation(&state.pool, invitation_id).await?;
     Ok(Json(invitation))
 }
 
 pub async fn resend_invitation(
     State(state): State<AppState>,
-    user: AuthenticatedUser,
+    _auth: Require<CanManageUsers>,
     axum::extract::Path(invitation_id): axum::extract::Path<uuid::Uuid>,
 ) -> Result<Json<InvitationResponse>, AppError> {
-    service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
-
     let invitation = service::resend_invitation(&state.pool, invitation_id).await?;
     Ok(Json(invitation))
 }
@@ -800,10 +793,9 @@ pub async fn list_capabilities() -> Result<Json<CapabilityListResponse>, AppErro
 
 pub async fn get_user_capabilities(
     State(state): State<AppState>,
-    user: AuthenticatedUser,
+    _auth: Require<CanManageUsers>,
     axum::extract::Path(target_user_id): axum::extract::Path<uuid::Uuid>,
 ) -> Result<Json<CapabilityOverridesResponse>, AppError> {
-    service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
 
     let target_user = sqlx::query(
         "SELECT id, role FROM users WHERE id = $1 AND deleted_at IS NULL",
@@ -828,11 +820,10 @@ pub async fn get_user_capabilities(
 
 pub async fn update_user_capabilities(
     State(state): State<AppState>,
-    user: AuthenticatedUser,
+    _auth: Require<CanManageUsers>,
     axum::extract::Path(target_user_id): axum::extract::Path<uuid::Uuid>,
     Json(req): Json<UpdateCapabilitiesRequest>,
 ) -> Result<Json<CapabilityOverridesResponse>, AppError> {
-    service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
 
     let target_user = sqlx::query(
         "SELECT id, role FROM users WHERE id = $1 AND deleted_at IS NULL",

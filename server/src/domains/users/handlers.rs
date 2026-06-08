@@ -20,9 +20,8 @@ use serde::Deserialize;
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::domains::auth;
 use crate::error::AppError;
-use crate::extractors::AuthenticatedUser;
+use crate::extractors::{CanManageUsers, Require};
 use crate::state::AppState;
 
 use super::service;
@@ -38,10 +37,9 @@ pub struct ListUsersQuery {
 
 pub async fn list_users(
     State(state): State<AppState>,
-    user: AuthenticatedUser,
+    _auth: Require<CanManageUsers>,
     Query(query): Query<ListUsersQuery>,
 ) -> Result<Json<UserListResponse>, AppError> {
-    auth::service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
 
     let page = query.page.unwrap_or(1).max(1);
     let page_size = query.page_size.unwrap_or(25).clamp(1, 100);
@@ -60,10 +58,9 @@ pub async fn list_users(
 
 pub async fn get_user(
     State(state): State<AppState>,
-    user: AuthenticatedUser,
+    _auth: Require<CanManageUsers>,
     axum::extract::Path(target_user_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<UserResponse>, AppError> {
-    auth::service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
 
     let response = service::get_user(&state.pool, target_user_id).await?;
 
@@ -72,11 +69,10 @@ pub async fn get_user(
 
 pub async fn update_user(
     State(state): State<AppState>,
-    user: AuthenticatedUser,
+    auth: Require<CanManageUsers>,
     axum::extract::Path(target_user_id): axum::extract::Path<Uuid>,
     Json(req): Json<UpdateUserRequest>,
 ) -> Result<Json<UserResponse>, AppError> {
-    auth::service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
 
     req.validate().map_err(|e| {
         AppError::Validation {
@@ -112,7 +108,7 @@ pub async fn update_user(
         &state.pool,
         service::UpdateUserParams {
             user_id: target_user_id,
-            admin_user_id: user.user_id,
+            admin_user_id: auth.user.user_id,
             display_name: req.display_name,
             email: req.email,
             avatar_url: req.avatar_url,
@@ -132,12 +128,10 @@ pub async fn update_user(
 
 pub async fn delete_user(
     State(state): State<AppState>,
-    user: AuthenticatedUser,
+    auth: Require<CanManageUsers>,
     axum::extract::Path(target_user_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    auth::service::check_capability(&user.role, &user.capabilities, "can_manage_users")?;
-
-    service::soft_delete_user(&state.pool, target_user_id, user.user_id).await?;
+    service::soft_delete_user(&state.pool, target_user_id, auth.user.user_id).await?;
 
     Ok(Json(serde_json::json!({ "status": "deleted" })))
 }

@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::marker::PhantomData;
+
 use axum::extract::{FromRequestParts, Query};
 use axum::http::header::{AUTHORIZATION, COOKIE};
 use axum::http::request::Parts;
@@ -115,11 +117,16 @@ fn extract_session_token(parts: &Parts) -> Result<String, AppError> {
     ))
 }
 
-pub struct AdminOnly {
-    pub user: AuthenticatedUser,
+pub trait RequiredCapability {
+    const CAPABILITY: &'static str;
 }
 
-impl FromRequestParts<AppState> for AdminOnly {
+pub struct Require<C: RequiredCapability> {
+    pub user: AuthenticatedUser,
+    _marker: PhantomData<C>,
+}
+
+impl<C: RequiredCapability> FromRequestParts<AppState> for Require<C> {
     type Rejection = AppError;
 
     async fn from_request_parts(
@@ -127,18 +134,75 @@ impl FromRequestParts<AppState> for AdminOnly {
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         let user = AuthenticatedUser::from_request_parts(parts, state).await?;
-        if !user
-            .capabilities
-            .iter()
-            .any(|c| c == "can_manage_server")
-        {
-            return Err(AppError::Forbidden(
-                "Insufficient capabilities: requires can_manage_server".into(),
-            ));
-        }
-        Ok(AdminOnly { user })
+        auth::service::check_capability(&user.role, &user.capabilities, C::CAPABILITY)?;
+        Ok(Require {
+            user,
+            _marker: PhantomData,
+        })
     }
 }
+
+pub struct CanManageServer;
+impl RequiredCapability for CanManageServer {
+    const CAPABILITY: &'static str = "can_manage_server";
+}
+
+pub struct CanManageUsers;
+impl RequiredCapability for CanManageUsers {
+    const CAPABILITY: &'static str = "can_manage_users";
+}
+
+pub struct CanManageLibraries;
+impl RequiredCapability for CanManageLibraries {
+    const CAPABILITY: &'static str = "can_manage_libraries";
+}
+
+pub struct CanViewAnalytics;
+impl RequiredCapability for CanViewAnalytics {
+    const CAPABILITY: &'static str = "can_view_analytics";
+}
+
+pub struct CanManageScheduledTasks;
+impl RequiredCapability for CanManageScheduledTasks {
+    const CAPABILITY: &'static str = "can_manage_scheduled_tasks";
+}
+
+pub struct CanTranscode;
+impl RequiredCapability for CanTranscode {
+    const CAPABILITY: &'static str = "can_transcode";
+}
+
+pub struct CanDownload;
+impl RequiredCapability for CanDownload {
+    const CAPABILITY: &'static str = "can_download";
+}
+
+pub struct CanDeleteMedia;
+impl RequiredCapability for CanDeleteMedia {
+    const CAPABILITY: &'static str = "can_delete_media";
+}
+
+pub struct CanUseLiveTv;
+impl RequiredCapability for CanUseLiveTv {
+    const CAPABILITY: &'static str = "can_use_live_tv";
+}
+
+pub struct CanShareContent;
+impl RequiredCapability for CanShareContent {
+    const CAPABILITY: &'static str = "can_share_content";
+}
+
+pub struct CanRemoteControl;
+impl RequiredCapability for CanRemoteControl {
+    const CAPABILITY: &'static str = "can_remote_control";
+}
+
+pub struct PlayMedia;
+impl RequiredCapability for PlayMedia {
+    const CAPABILITY: &'static str = "play_media";
+}
+
+pub type AdminOnly = Require<CanManageServer>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SortOrder {
