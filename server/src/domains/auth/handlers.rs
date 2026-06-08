@@ -343,26 +343,80 @@ pub async fn totp_verify(
 }
 
 pub async fn device_code(
-    State(_state): State<AppState>,
-    _headers: HeaderMap,
-    Json(_req): Json<DeviceCodeRequest>,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<DeviceCodeRequest>,
 ) -> Result<Json<DeviceCodeResponse>, AppError> {
-    todo!("Task 6: Device linking code creation");
+    let ip_address = headers
+        .get("x-forwarded-for")
+        .or_else(|| headers.get("x-real-ip"))
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .map(|v| v.trim().to_string());
+
+    let user_agent = headers
+        .get("user-agent")
+        .and_then(|v| v.to_str().ok())
+        .map(String::from);
+
+    let verification_uri = {
+        let config = state.runtime_config.load();
+        let base = match &config.base_url {
+            Some(url) => url.clone(),
+            None => headers
+                .get("host")
+                .and_then(|v| v.to_str().ok())
+                .map(|h| format!("http://{}", h))
+                .unwrap_or_else(|| "http://localhost:48027".to_string()),
+        };
+        drop(config);
+        format!("{}/link", base.trim_end_matches('/'))
+    };
+
+    let response = service::create_device_linking_code(
+        &state.pool,
+        &state,
+        service::CreateDeviceCodeParams {
+            client_name: req.client_name,
+            client_platform: req.client_platform,
+            client_version: req.client_version,
+            ip_address,
+            user_agent,
+            verification_uri,
+        },
+    )
+    .await?;
+
+    Ok(Json(response))
 }
 
 pub async fn device_token(
-    State(_state): State<AppState>,
-    Json(_req): Json<DeviceTokenRequest>,
+    State(state): State<AppState>,
+    Json(req): Json<DeviceTokenRequest>,
 ) -> Result<Json<DeviceTokenResponse>, AppError> {
-    todo!("Task 6: Device linking token polling");
+    let response = service::poll_device_linking_token(
+        &state.pool,
+        &state,
+        &req.device_code,
+    )
+    .await?;
+
+    Ok(Json(response))
 }
 
 pub async fn device_verify(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Json(_req): Json<DeviceVerifyRequest>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<DeviceVerifyRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    todo!("Task 6: Device linking verification");
+    let result = service::verify_device_linking_code(
+        &state.pool,
+        user.user_id,
+        &req.user_code,
+    )
+    .await?;
+
+    Ok(Json(result))
 }
 
 pub async fn reauth(

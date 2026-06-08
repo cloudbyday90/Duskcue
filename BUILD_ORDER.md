@@ -351,7 +351,7 @@ These documents apply to every phase. Consult them when making implementation de
 3. ~~Implement invite code system — admin creates invite, user registers with code~~ **DONE**
 4. ~~Implement `user_sessions` — session creation, validation, revocation~~ **DONE**
 5. ~~Implement `user_capabilities` — capability-based access control checks~~ **DONE**
-6. Implement device linking — RFC 8628 device code flow
+6. ~~Implement device linking — RFC 8628 device code flow~~ **DONE**
 7. Implement re-auth codes for sensitive operations
 8. Create `server/src/domains/users/` — five-file pattern
 9. Implement user CRUD — list, get, update, soft-delete
@@ -467,6 +467,26 @@ These documents apply to every phase. Consult them when making implementation de
 - **`GET /api/v1/auth/capabilities` is unauthenticated** — Returns the static list of all available capabilities with descriptions; no auth required since this is metadata for the admin UI to build capability selection forms.
 - **`GET/PUT /api/v1/users/{id}/capabilities` require `can_manage_users`** — Both endpoints check admin capability via `check_capability()`; lookup target user by ID with `deleted_at IS NULL` guard; response includes `role`, `overrides` (explicit rows), and `effective` (resolved list after evaluation).
 - **No new workspace dependencies** — capability CRUD uses existing `sqlx::query` and `PgPool::begin()` for transactions.
+
+**What was built for Task 6:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/auth/service.rs` | Added 6 device linking functions: `generate_device_user_code`, `format_user_code`, `create_device_linking_code`, `poll_device_linking_token`, `verify_device_linking_code`; `CreateDeviceCodeParams` struct |
+| `server/src/domains/auth/handlers.rs` | Replaced `todo!()` stubs with working handlers: `device_code`, `device_token`, `device_verify` |
+
+**Key decisions from Task 6:**
+
+- **RFC 8628 device code flow** — Three endpoints: `POST /api/v1/device/code` (device initiates), `POST /api/v1/device/token` (device polls), `POST /api/v1/device/verify` (user approves). All routes and DTOs already existed from Task 1.
+- **Device code hashed at rest** — The internal `device_code` (32 random bytes, hex-encoded, 256-bit) is SHA-256 hashed before storage in the `device_linking_codes.device_code` column, consistent with session token pattern. Raw code sent to device once, never stored.
+- **User code stored raw** — The 8-char base-20 user code is stored without formatting in `device_linking_codes.user_code`. Dashes are stripped from user input before lookup, so `WDJBMJHT` and `WDJB-MJHT` both match.
+- **Verification URI from config** — Built from `RuntimeConfig.base_url + "/link"`, falling back to request `Host` header, then `http://localhost:48027/link`.
+- **No explicit denial** — The schema has no `is_denied` column. Users deny by simply not approving; the code expires after `device_linking_code_expiry_seconds` (default 900 = 15 minutes). `DeviceLinkingDenied` and `DeviceLinkingSlowDown` error variants exist for future use.
+- **Token exchange cleanup** — After successful token exchange, the `device_linking_codes` row is deleted. This prevents reuse and serves as implicit cleanup. Expired codes are also cleaned on access (delete on poll if expired).
+- **Session creation uses stored device metadata** — When the device polls and finds `is_approved = true`, a session is created for `approved_by_user_id` using the `client_name`, `client_platform`, `client_version`, `ip_address`, and `user_agent` from the original device code request.
+- **`CreateDeviceCodeParams` struct** — Introduced to satisfy clippy `too_many_arguments` (8 params → 3 params); same pattern as `CreateInvitationParams` from Task 3.
+- **No new workspace dependencies** — device code generation uses existing `rand` 0.9 and `BASE20_CHARS`; hashing uses existing `sha256_hex`.
+- **Configurable parameters** — `AuthConfig.device_linking_code_length` (default 8), `device_linking_code_expiry_seconds` (default 900), `device_linking_poll_interval_seconds` (default 5) — all from `AuthConfig` defaults in `state.rs`.
 
 ---
 
@@ -873,7 +893,7 @@ Phase 2: Database Schema (COMPLETE — 15 migrations)
     ↓
 Phase 3: Core Server Infrastructure (COMPLETE — 12 tasks)
     ↓
-Phase 4: Auth & Users (IN PROGRESS — Tasks 1–5 complete)
+Phase 4: Auth & Users (IN PROGRESS — Tasks 1–6 complete)
     ↓
 Phase 5: Libraries & Media ──────────────────────────────┐
     ↓                                                      │

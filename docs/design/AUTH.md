@@ -709,3 +709,25 @@ Task 5 implements the Capability Evaluation rules from the "Capability-Based Acc
 - `PUT /api/v1/users/{id}/capabilities` — requires `can_manage_users`, replaces all overrides, returns updated state
 
 **No new dependencies:** Capability CRUD uses existing `sqlx::query` and `PgPool::begin()` for transactions.
+
+### Device Linking (Task 6)
+
+Task 6 implements the RFC 8628 Device Authorization Grant flow from the "Device Linking (RFC 8628 Device Authorization Grant)" section above. Prior to Task 6, the three device endpoints (`POST /api/v1/device/code`, `POST /api/v1/device/token`, `POST /api/v1/device/verify`) were `todo!()` stubs with all routes, DTOs, and error variants already in place from Task 1.
+
+**Device code flow:** The device (TV/console) calls `POST /api/v1/device/code` with optional `client_name`, `client_platform`, `client_version`. The server generates a `user_code` (8 base-20 chars, formatted as `XXXX-XXXX`) and a `device_code` (32 random bytes, hex-encoded, 256 bits). The device displays the `user_code` and `verification_uri`, then polls `POST /api/v1/device/token` every `interval` seconds. The authenticated user visits the verification URI and calls `POST /api/v1/device/verify` with the `user_code` to approve. The next poll returns a session token.
+
+**Device code hashed at rest:** The internal `device_code` is SHA-256 hashed before storage in `device_linking_codes.device_code`, consistent with the session token pattern. The raw code is sent to the device once in the initial response and never stored.
+
+**User code lookup normalization:** The 8-char base-20 user code is stored raw (no dashes) in the database. User input has dashes stripped before lookup, so both `WDJBMJHT` and `WDJB-MJHT` match. Code generation uses the same `BASE20_CHARS` set as invite codes.
+
+**Verification URI construction:** Built from `RuntimeConfig.base_url + "/link"`. Falls back to the request `Host` header (`http://{host}/link`), then `http://localhost:48027/link`.
+
+**No explicit denial mechanism:** The schema lacks an `is_denied` column. Users deny by simply not approving — the code expires after `device_linking_code_expiry_seconds` (default 900 = 15 minutes). The `DeviceLinkingDenied` and `DeviceLinkingSlowDown` error variants exist in `AuthError` for future use but are not actively triggered.
+
+**Token exchange cleanup:** After a successful token exchange, the `device_linking_codes` row is deleted. This prevents the same device code from creating multiple sessions and serves as implicit cleanup. Expired codes are also cleaned on access (deleted when a poll finds an expired code).
+
+**Session creation uses stored device metadata:** When the device polls and finds `is_approved = true`, a session is created for `approved_by_user_id` using the `client_name`, `client_platform`, `client_version`, `ip_address`, and `user_agent` stored from the original device code request.
+
+**`CreateDeviceCodeParams` struct:** Introduced to satisfy clippy `too_many_arguments` (8 params → 3), following the same pattern as `CreateInvitationParams` from Task 3.
+
+**No new dependencies:** Device code generation uses existing `rand` 0.9 and `BASE20_CHARS`; hashing uses existing `sha256_hex`.

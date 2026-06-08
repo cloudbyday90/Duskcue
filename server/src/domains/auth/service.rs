@@ -1071,6 +1071,224 @@ pub fn generate_invite_code() -> String {
     format!("mv_invite-{}", formatted)
 }
 
+fn generate_device_user_code(length: usize) -> String {
+    let mut rng = rand::rng();
+    let chars: Vec<u8> = (0..length)
+        .map(|_| {
+            let idx: usize = rng.random_range(0..BASE20_CHARS.len());
+            BASE20_CHARS[idx]
+        })
+        .collect();
+    String::from_utf8(chars).unwrap()
+}
+
+fn format_user_code(code: &str) -> String {
+    let mid = code.len() / 2;
+    format!("{}-{}", &code[..mid], &code[mid..])
+}
+
+pub struct CreateDeviceCodeParams {
+    pub client_name: Option<String>,
+    pub client_platform: Option<String>,
+    pub client_version: Option<String>,
+    pub ip_address: Option<String>,
+    pub user_agent: Option<String>,
+    pub verification_uri: String,
+}
+
+pub async fn create_device_linking_code(
+    pool: &sqlx::PgPool,
+    state: &AppState,
+    params: CreateDeviceCodeParams,
+) -> Result<DeviceCodeResponse, AuthError> {
+    let config = state.runtime_config.load();
+    let code_length = config.auth.device_linking_code_length;
+    let expiry_seconds = config.auth.device_linking_code_expiry_seconds;
+    let poll_interval = config.auth.device_linking_poll_interval_seconds;
+    drop(config);
+
+    let raw_user_code = generate_device_user_code(code_length);
+    let formatted_user_code = format_user_code(&raw_user_code);
+
+    let device_code_raw = generate_session_token();
+    let device_code_hash = sha256_hex(&device_code_raw);
+
+    sqlx::query(
+        r#"
+        INSERT INTO device_linking_codes (
+            user_code, device_code, client_name, client_platform, client_version,
+            ip_address, user_agent, expires_at
+        ) VALUES ($1, $2, $3, $4, $5, $6::inet, $7, now() + ($8 || ' seconds')::interval)
+        "#,
+    )
+    .bind(&raw_user_code)
+    .bind(&device_code_hash)
+    .bind(&params.client_name)
+    .bind(&params.client_platform)
+    .bind(&params.client_version)
+    .bind(&params.ip_address)
+    .bind(&params.user_agent)
+    .bind(format!("{}", expiry_seconds))
+    .execute(pool)
+    .await?;
+
+    Ok(DeviceCodeResponse {
+        device_code: device_code_raw,
+        user_code: formatted_user_code,
+        verification_uri: params.verification_uri,
+        expires_in: expiry_seconds,
+        interval: poll_interval,
+    })
+}
+
+pub async fn poll_device_linking_token(
+    pool: &sqlx::PgPool,
+    state: &AppState,
+    device_code_raw: &str,
+) -> Result<DeviceTokenResponse, AuthError> {
+    let device_code_hash = sha256_hex(device_code_raw);
+
+    let row = sqlx::query(
+        r#"
+        SELECT id, client_name, client_platform, client_version,
+               ip_address::text as ip_address, user_agent, expires_at,
+               is_approved, approved_by_user_id
+        FROM device_linking_codes
+        WHERE device_code = $1
+        "#,
+    )
+    .bind(&device_code_hash)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AuthError::DeviceLinkingExpired)?;
+
+    let linking_id: Uuid = row.get("id");
+    let expires_at: DateTime<Utc> = row.get("expires_at");
+
+    if expires_at < chrono::Utc::now() {
+        let _ = sqlx::query("DELETE FROM device_linking_codes WHERE id = $1")
+            .bind(linking_id)
+            .execute(pool)
+            .await;
+        return Err(AuthError::DeviceLinkingExpired);
+    }
+
+    let is_approved: bool = row.get("is_approved");
+    if !is_approved {
+        return Err(AuthError::DeviceLinkingPending);
+    }
+
+    let approved_by_user_id: Uuid = row.try_get("approved_by_user_id")
+        .map_err(|_| AuthError::DeviceLinkingDenied)?;
+
+    let device_info = DeviceInfo {
+        device_id: None,
+        device_name: None,
+        client_name: row.try_get("client_name").ok(),
+        client_version: row.try_get("client_version").ok(),
+        client_platform: row.try_get("client_platform").ok(),
+        ip_address: row.try_get("ip_address").ok(),
+        user_agent: row.try_get("user_agent").ok(),
+        is_secure: false,
+    };
+
+    let (token, _session) = create_session(pool, state, approved_by_user_id, &device_info).await?;
+
+    let user = sqlx::query(
+        r#"SELECT id, username, display_name, role, has_all_library_access FROM users WHERE id = $1 AND deleted_at IS NULL"#,
+    )
+    .bind(approved_by_user_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AuthError::InvalidCredentials)?;
+
+    let db_user_id: Uuid = user.get("id");
+    let username: String = user.get("username");
+    let display_name: String = user.get("display_name");
+    let role: String = user.get("role");
+    let has_all_library_access: bool = user.get("has_all_library_access");
+
+    let capabilities = resolve_capabilities(pool, db_user_id, &role).await?;
+
+    let _ = sqlx::query("DELETE FROM device_linking_codes WHERE id = $1")
+        .bind(linking_id)
+        .execute(pool)
+        .await;
+
+    Ok(DeviceTokenResponse {
+        session_token: token,
+        user: UserSummary {
+            id: db_user_id,
+            username,
+            display_name,
+            role,
+            capabilities,
+            has_all_library_access,
+        },
+    })
+}
+
+pub async fn verify_device_linking_code(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    user_code: &str,
+) -> Result<serde_json::Value, AuthError> {
+    let normalized: String = user_code.chars().filter(|c| *c != '-').collect();
+
+    let row = sqlx::query(
+        r#"
+        SELECT id, client_name, client_platform, client_version, expires_at, is_approved
+        FROM device_linking_codes
+        WHERE user_code = $1
+        "#,
+    )
+    .bind(&normalized)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AuthError::DeviceLinkingExpired)?;
+
+    let linking_id: Uuid = row.get("id");
+    let expires_at: DateTime<Utc> = row.get("expires_at");
+
+    if expires_at < chrono::Utc::now() {
+        let _ = sqlx::query("DELETE FROM device_linking_codes WHERE id = $1")
+            .bind(linking_id)
+            .execute(pool)
+            .await;
+        return Err(AuthError::DeviceLinkingExpired);
+    }
+
+    let is_approved: bool = row.get("is_approved");
+    if is_approved {
+        return Err(AuthError::DeviceLinkingExpired);
+    }
+
+    let client_name: Option<String> = row.try_get("client_name").ok();
+    let client_platform: Option<String> = row.try_get("client_platform").ok();
+    let client_version: Option<String> = row.try_get("client_version").ok();
+
+    sqlx::query(
+        r#"
+        UPDATE device_linking_codes
+        SET is_approved = true, approved_by_user_id = $2, approved_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(linking_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+
+    Ok(serde_json::json!({
+        "status": "approved",
+        "device": {
+            "client_name": client_name,
+            "client_platform": client_platform,
+            "client_version": client_version,
+        }
+    }))
+}
+
 fn extract_code_prefix(full_code: &str) -> String {
     let stripped = full_code.strip_prefix("mv_invite-").unwrap_or(full_code);
     let no_dashes: String = stripped.chars().filter(|c| *c != '-').collect();
