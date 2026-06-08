@@ -1071,6 +1071,26 @@ pub fn generate_invite_code() -> String {
     format!("mv_invite-{}", formatted)
 }
 
+pub fn generate_reauth_code() -> String {
+    let mut rng = rand::rng();
+    let chars: Vec<u8> = (0..16)
+        .map(|_| {
+            let idx: usize = rng.random_range(0..BASE20_CHARS.len());
+            BASE20_CHARS[idx]
+        })
+        .collect();
+
+    let raw = String::from_utf8(chars).unwrap();
+    let formatted: String = raw
+        .as_bytes()
+        .chunks(4)
+        .map(|chunk| std::str::from_utf8(chunk).unwrap())
+        .collect::<Vec<_>>()
+        .join("-");
+
+    format!("mv_reauth-{}", formatted)
+}
+
 fn generate_device_user_code(length: usize) -> String {
     let mut rng = rand::rng();
     let chars: Vec<u8> = (0..length)
@@ -1491,4 +1511,152 @@ pub async fn resend_invitation(
         is_revoked: row.get("is_revoked"),
         created_at: row.get("created_at"),
     })
+}
+
+fn extract_reauth_prefix(full_code: &str) -> String {
+    let stripped = full_code.strip_prefix("mv_reauth-").unwrap_or(full_code);
+    let no_dashes: String = stripped.chars().filter(|c| *c != '-').collect();
+    no_dashes[..4].to_string()
+}
+
+pub async fn create_reauth_code(
+    pool: &sqlx::PgPool,
+    state: &AppState,
+    user_id: Uuid,
+    requested_by_user_id: Uuid,
+    ip_address: Option<String>,
+) -> Result<ReauthCodeResponse, AuthError> {
+    let config = state.runtime_config.load();
+    let expiry_hours = config.auth.reauth_code_expiry_hours;
+    let max_requests = config.auth.reauth_max_requests_per_user_per_day;
+    drop(config);
+
+    let count_row = sqlx::query(
+        r#"
+        SELECT count(*) as cnt FROM reauth_codes
+        WHERE user_id = $1 AND created_at > now() - '24 hours'::interval
+        "#,
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+
+    let recent_count: i64 = count_row.get("cnt");
+    if recent_count >= max_requests as i64 {
+        return Err(AuthError::ReauthRateLimited);
+    }
+
+    let raw_code = generate_reauth_code();
+    let code_hash = sha256_hex(&raw_code);
+    let code_prefix = extract_reauth_prefix(&raw_code);
+
+    let row = sqlx::query(
+        r#"
+        INSERT INTO reauth_codes (
+            user_id, requested_by_user_id, code_hash, code_prefix,
+            ip_address, expires_at
+        ) VALUES ($1, $2, $3, $4, $5::inet, now() + ($6 || ' hours')::interval)
+        RETURNING code_prefix, expires_at
+        "#,
+    )
+    .bind(user_id)
+    .bind(requested_by_user_id)
+    .bind(&code_hash)
+    .bind(&code_prefix)
+    .bind(&ip_address)
+    .bind(format!("{}", expiry_hours))
+    .fetch_one(pool)
+    .await?;
+
+    let resp_prefix: String = row.get("code_prefix");
+    let expires_at: DateTime<Utc> = row.get("expires_at");
+
+    tracing::info!(
+        user_id = %user_id,
+        prefix = %resp_prefix,
+        "re-auth code generated (SMTP delivery not yet implemented)"
+    );
+
+    Ok(ReauthCodeResponse {
+        prefix: resp_prefix,
+        expires_at,
+    })
+}
+
+pub async fn authenticate_reauth_code(
+    pool: &sqlx::PgPool,
+    state: &AppState,
+    code: &str,
+    device_info: &DeviceInfo,
+) -> Result<(String, UserSummary), AuthError> {
+    let code_hash = sha256_hex(code);
+
+    let row = sqlx::query(
+        r#"
+        SELECT id, user_id, code_hash, code_prefix, expires_at, is_used
+        FROM reauth_codes
+        WHERE code_hash = $1
+        "#,
+    )
+    .bind(&code_hash)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AuthError::ReauthCodeInvalid)?;
+
+    let reauth_id: Uuid = row.get("id");
+    let user_id: Uuid = row.get("user_id");
+    let expires_at: DateTime<Utc> = row.get("expires_at");
+    let is_used: bool = row.get("is_used");
+
+    if is_used {
+        return Err(AuthError::ReauthCodeInvalid);
+    }
+
+    if expires_at < chrono::Utc::now() {
+        return Err(AuthError::ReauthCodeInvalid);
+    }
+
+    let user = sqlx::query(
+        r#"SELECT id, username, display_name, role, has_all_library_access, status
+           FROM users WHERE id = $1 AND deleted_at IS NULL"#,
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(AuthError::ReauthCodeInvalid)?;
+
+    let status: String = user.get("status");
+    if status != "active" {
+        return Err(AuthError::ReauthCodeInvalid);
+    }
+
+    let (token, _session) = create_session(pool, state, user_id, device_info).await?;
+
+    sqlx::query(
+        r#"UPDATE reauth_codes SET is_used = true, used_at = now(), resulting_session_id = $2 WHERE id = $1"#,
+    )
+    .bind(reauth_id)
+    .bind(_session.id)
+    .execute(pool)
+    .await?;
+
+    let db_user_id: Uuid = user.get("id");
+    let username: String = user.get("username");
+    let display_name: String = user.get("display_name");
+    let role: String = user.get("role");
+    let has_all_library_access: bool = user.get("has_all_library_access");
+
+    let capabilities = resolve_capabilities(pool, db_user_id, &role).await?;
+
+    Ok((
+        token,
+        UserSummary {
+            id: db_user_id,
+            username,
+            display_name,
+            role,
+            capabilities,
+            has_all_library_access,
+        },
+    ))
 }

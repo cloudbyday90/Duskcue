@@ -420,18 +420,74 @@ pub async fn device_verify(
 }
 
 pub async fn reauth(
-    State(_state): State<AppState>,
-    _headers: HeaderMap,
-    Json(_req): Json<ReauthRequest>,
-) -> Result<Json<SessionResponse>, AppError> {
-    todo!("Task 7: Re-authentication code flow");
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(req): Json<ReauthRequest>,
+) -> Result<impl IntoResponse, AppError> {
+    req.validate().map_err(|e| {
+        AppError::Validation {
+            errors: e
+                .field_errors()
+                .into_iter()
+                .flat_map(|(field, errors)| {
+                    errors.iter().map(move |err| crate::error::FieldError {
+                        field: field.to_string(),
+                        code: err.code.to_string(),
+                        message: err
+                            .message
+                            .as_ref()
+                            .map(|m| m.to_string())
+                            .unwrap_or_default(),
+                    })
+                })
+                .collect(),
+            instance: Some("/api/v1/auth/reauth".to_string()),
+        }
+    })?;
+
+    let device_info = extract_device_info(
+        &headers,
+        req.device_name.as_deref(),
+        req.client_name.as_deref(),
+        req.client_version.as_deref(),
+        req.client_platform.as_deref(),
+    );
+
+    let (token, summary) =
+        service::authenticate_reauth_code(&state.pool, &state, &req.code, &device_info).await?;
+
+    let body = SessionResponse {
+        session_token: token.clone(),
+        user: summary,
+    };
+
+    let mut response = SessionResponseWrapper { inner: body }.into_response();
+    set_session_cookie(&state, response.headers_mut(), &token);
+    Ok(response)
 }
 
 pub async fn reauth_request(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    user: AuthenticatedUser,
 ) -> Result<Json<ReauthCodeResponse>, AppError> {
-    todo!("Task 7: Re-auth code generation");
+    let ip_address = headers
+        .get("x-forwarded-for")
+        .or_else(|| headers.get("x-real-ip"))
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .map(|v| v.trim().to_string());
+
+    let response = service::create_reauth_code(
+        &state.pool,
+        &state,
+        user.user_id,
+        user.user_id,
+        ip_address,
+    )
+    .await?;
+
+    Ok(Json(response))
 }
 
 pub async fn list_user_sessions(
@@ -462,6 +518,69 @@ pub async fn list_user_sessions(
             })
             .collect(),
     }))
+}
+
+pub async fn sign_out_everywhere(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    user: AuthenticatedUser,
+) -> Result<impl IntoResponse, AppError> {
+    let count = service::revoke_all_sessions(&state.pool, user.user_id).await?;
+
+    let ip_address = headers
+        .get("x-forwarded-for")
+        .or_else(|| headers.get("x-real-ip"))
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .map(|v| v.trim().to_string());
+
+    let reauth_response = service::create_reauth_code(
+        &state.pool,
+        &state,
+        user.user_id,
+        user.user_id,
+        ip_address,
+    )
+    .await?;
+
+    let mut response = CookieResponse {
+        body: serde_json::json!({
+            "status": "logged_out_everywhere",
+            "sessions_revoked": count,
+            "reauth": {
+                "prefix": reauth_response.prefix,
+                "expires_at": reauth_response.expires_at,
+            },
+        }),
+        status: axum::http::StatusCode::OK,
+    }
+    .into_response();
+    clear_session_cookie(&state, response.headers_mut());
+    Ok(response)
+}
+
+pub async fn request_reauth(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    user: AuthenticatedUser,
+) -> Result<Json<ReauthCodeResponse>, AppError> {
+    let ip_address = headers
+        .get("x-forwarded-for")
+        .or_else(|| headers.get("x-real-ip"))
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .map(|v| v.trim().to_string());
+
+    let response = service::create_reauth_code(
+        &state.pool,
+        &state,
+        user.user_id,
+        user.user_id,
+        ip_address,
+    )
+    .await?;
+
+    Ok(Json(response))
 }
 
 pub async fn delete_user_session(

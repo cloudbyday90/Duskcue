@@ -43,6 +43,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/api/v1/device/verify", post(handlers::device_verify))
         .route("/api/v1/user/sessions", get(handlers::list_user_sessions))
         .route("/api/v1/user/sessions/{id}", delete(handlers::delete_user_session))
+        .route("/api/v1/user/sign-out-everywhere", post(handlers::sign_out_everywhere))
+        .route("/api/v1/user/request-reauth", post(handlers::request_reauth))
         .route("/api/v1/user/passkeys", get(handlers::passkey_list))
         .route("/api/v1/user/passkeys/register/start", post(handlers::passkey_register_start))
         .route("/api/v1/user/passkeys/register/finish", post(handlers::passkey_register_finish))

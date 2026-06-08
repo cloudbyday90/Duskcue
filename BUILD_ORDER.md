@@ -352,7 +352,7 @@ These documents apply to every phase. Consult them when making implementation de
 4. ~~Implement `user_sessions` — session creation, validation, revocation~~ **DONE**
 5. ~~Implement `user_capabilities` — capability-based access control checks~~ **DONE**
 6. ~~Implement device linking — RFC 8628 device code flow~~ **DONE**
-7. Implement re-auth codes for sensitive operations
+7. ~~Implement re-auth codes for sensitive operations~~ **DONE**
 8. Create `server/src/domains/users/` — five-file pattern
 9. Implement user CRUD — list, get, update, soft-delete
 10. Implement `AuthenticatedUser` extractor — validates session from cookie or Bearer token
@@ -487,6 +487,29 @@ These documents apply to every phase. Consult them when making implementation de
 - **`CreateDeviceCodeParams` struct** — Introduced to satisfy clippy `too_many_arguments` (8 params → 3 params); same pattern as `CreateInvitationParams` from Task 3.
 - **No new workspace dependencies** — device code generation uses existing `rand` 0.9 and `BASE20_CHARS`; hashing uses existing `sha256_hex`.
 - **Configurable parameters** — `AuthConfig.device_linking_code_length` (default 8), `device_linking_code_expiry_seconds` (default 900), `device_linking_poll_interval_seconds` (default 5) — all from `AuthConfig` defaults in `state.rs`.
+
+**What was built for Task 7:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/auth/service.rs` | Added 4 re-auth code functions: `generate_reauth_code`, `create_reauth_code`, `authenticate_reauth_code`, `extract_reauth_prefix` |
+| `server/src/domains/auth/handlers.rs` | Replaced `todo!()` stubs with working handlers: `reauth`, `reauth_request`; added new handlers: `sign_out_everywhere`, `request_reauth` |
+| `server/src/domains/auth/mod.rs` | Added 2 routes: `POST /api/v1/user/sign-out-everywhere`, `POST /api/v1/user/request-reauth` |
+
+**Key decisions from Task 7:**
+
+- **Re-auth code format** — `mv_reauth-` prefix + 16 base-20 characters (~69 bits entropy), formatted as 4-char dash-separated groups (e.g., `mv_reauth-BCDK-MJHT-WDJB-NPQR`). Uses same `BASE20_CHARS` set as invite and device codes.
+- **Code hashed at rest** — SHA-256 hash stored in `reauth_codes.code_hash`; raw code never stored. `code_prefix` (first 4 base-20 chars after prefix) stored for admin identification.
+- **Rate limiting** — `create_reauth_code()` queries `reauth_codes` for the user in the last 24 hours; returns `AuthError::ReauthRateLimited` if count exceeds `AuthConfig.reauth_max_requests_per_user_per_day` (default 3).
+- **Single use** — `authenticate_reauth_code()` sets `is_used = true` and `used_at = now()` after successful authentication. Subsequent attempts return `AuthError::ReauthCodeInvalid`. The `resulting_session_id` column links the re-auth code to the session it created.
+- **User status check** — Authentication rejects codes for non-active or soft-deleted users.
+- **`POST /api/v1/auth/reauth`** — Unauthenticated endpoint; accepts re-auth code + device info, validates, creates session, sets cookie. Returns session token + user summary.
+- **`POST /api/v1/auth/reauth/request`** — Authenticated endpoint; generates a new re-auth code for the requesting user.
+- **`POST /api/v1/user/sign-out-everywhere`** — Authenticated endpoint; revokes all sessions, generates re-auth code, clears session cookie. Returns count of revoked sessions + re-auth code prefix/expiry.
+- **`POST /api/v1/user/request-reauth`** — Authenticated endpoint; generates re-auth code without revoking existing sessions (for requesting a code proactively).
+- **SMTP delivery deferred** — `create_reauth_code()` logs an info message that SMTP is not yet implemented, consistent with invite code pattern from Task 3.
+- **No new workspace dependencies** — re-auth code generation uses existing `rand` 0.9 and `BASE20_CHARS`; hashing uses existing `sha256_hex`.
+- **No new error variants needed** — `ReauthCodeInvalid` (AUTH_015, 401) and `ReauthRateLimited` (AUTH_016, 429) already existed in `AuthError` from Task 1 with mappings in `error.rs`.
 
 ---
 
@@ -893,7 +916,7 @@ Phase 2: Database Schema (COMPLETE — 15 migrations)
     ↓
 Phase 3: Core Server Infrastructure (COMPLETE — 12 tasks)
     ↓
-Phase 4: Auth & Users (IN PROGRESS — Tasks 1–6 complete)
+Phase 4: Auth & Users (IN PROGRESS — Tasks 1–7 complete)
     ↓
 Phase 5: Libraries & Media ──────────────────────────────┐
     ↓                                                      │

@@ -731,3 +731,27 @@ Task 6 implements the RFC 8628 Device Authorization Grant flow from the "Device 
 **`CreateDeviceCodeParams` struct:** Introduced to satisfy clippy `too_many_arguments` (8 params → 3), following the same pattern as `CreateInvitationParams` from Task 3.
 
 **No new dependencies:** Device code generation uses existing `rand` 0.9 and `BASE20_CHARS`; hashing uses existing `sha256_hex`.
+
+### Re-Authentication Codes (Task 7)
+
+Task 7 implements the "Sign Out Everywhere" + re-authentication code flow from the "Session Management → Account Recovery" section above. Prior to Task 7, `reauth` and `reauth_request` handlers were `todo!()` stubs with routes, DTOs (`ReauthRequest`, `ReauthCodeResponse`), and error variants (`ReauthCodeInvalid`, `ReauthRateLimited`) already in place from Task 1.
+
+**Re-auth code format:** `mv_reauth-` prefix + 16 base-20 characters (~69 bits entropy), formatted as 4-char dash-separated groups (e.g., `mv_reauth-BCDK-MJHT-WDJB-NPQR`). Uses the same `BASE20_CHARS` set as invite and device codes.
+
+**Code generation:** `generate_reauth_code()` uses `rand::rng()` with `random_range(0..20)` per character, same pattern as `generate_invite_code()` but with 16 chars instead of 24.
+
+**Rate limiting:** `create_reauth_code()` queries `reauth_codes` for the user's codes created in the last 24 hours. If the count exceeds `AuthConfig.reauth_max_requests_per_user_per_day` (default 3), returns `AuthError::ReauthRateLimited` (AUTH_016, 429). This is application-level rate limiting (not governor-based) since the limit is per-user-per-day, not per-IP-per-minute.
+
+**Single use:** `authenticate_reauth_code()` sets `is_used = true`, `used_at = now()`, and `resulting_session_id` after successful authentication. Subsequent attempts return `AuthError::ReauthCodeInvalid` (AUTH_015, 401). The `resulting_session_id` column links the re-auth code to the session it created, enabling future audit trails.
+
+**Code hashed at rest:** SHA-256 hash stored in `reauth_codes.code_hash`; raw code never stored. `code_prefix` (first 4 base-20 chars after prefix) stored for admin identification. Same pattern as invite codes and session tokens.
+
+**New endpoints:**
+- `POST /api/v1/auth/reauth` — unauthenticated; accepts re-auth code + device info, validates, creates session, sets cookie
+- `POST /api/v1/auth/reauth/request` — authenticated; generates a new re-auth code for the requesting user
+- `POST /api/v1/user/sign-out-everywhere` — authenticated; revokes all sessions, generates re-auth code, clears session cookie. Returns count of revoked sessions + re-auth prefix/expiry
+- `POST /api/v1/user/request-reauth` — authenticated; generates re-auth code without revoking existing sessions (for requesting a code proactively)
+
+**SMTP delivery deferred:** `create_reauth_code()` logs an info message that SMTP is not yet implemented, consistent with invite code pattern from Task 3. The re-auth code prefix and expiry are returned in the API response for admin/user visibility.
+
+**No new dependencies:** Re-auth code generation uses existing `rand` 0.9 and `BASE20_CHARS`; hashing uses existing `sha256_hex`. No new workspace dependencies added.
