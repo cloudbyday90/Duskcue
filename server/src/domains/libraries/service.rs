@@ -192,6 +192,21 @@ pub async fn update_library(
         }
     }
 
+    if let Some(ref slug) = params.slug {
+        let existing = sqlx::query(
+            "SELECT id FROM libraries WHERE slug = $1 AND id != $2 AND deleted_at IS NULL",
+        )
+        .bind(slug)
+        .bind(params.library_id)
+        .fetch_optional(pool)
+        .await?;
+
+        if existing.is_some() {
+            let display_name = params.name.as_deref().unwrap_or(slug);
+            return Err(LibrariesError::NameExists(display_name.to_string()));
+        }
+    }
+
     let row = sqlx::query(
         r#"UPDATE libraries SET
             name = COALESCE($2, name),

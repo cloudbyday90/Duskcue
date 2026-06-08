@@ -613,10 +613,24 @@ These documents apply to every phase. Consult them when making implementation de
 - No new workspace dependencies — all functionality uses existing `sqlx`, `validator`, `serde`, `uuid`, `chrono` crates
 - `generate_slug` converts to lowercase, replaces non-alphanumeric with hyphens, collapses consecutive hyphens
 
+**What was built for Task 2:**
+
+All CRUD operations were implemented as part of Task 1 (natural to include when building the five-file pattern). Task 2 adds one improvement:
+
+| File | Change |
+|---|---|
+| `server/src/domains/libraries/service.rs` | Added slug uniqueness check on `update_library` — when name changes, the derived slug is checked against existing libraries (excludes self) to catch edge cases where different names produce the same slug (e.g., "My Movies" and "My-Movies" both → "my-movies") |
+
+**Key decisions from Task 2:**
+
+- **Slug uniqueness on update** — `update_library` now checks both name and slug uniqueness independently. Create already checked both; update was only checking name. The slug check prevents a DB unique constraint violation (`libraries_slug_active`) from surfacing as a generic 500 error
+- **No `root_path` filesystem validation** — `RootPathNotFound` error exists but is reserved for the scanner (Task 5). Libraries can be created with paths that don't currently exist (network drives may be offline, Docker volumes not yet mounted). The scanner validates paths at scan time and sets per-path `scan_enabled` for offline drives
+- **No new workspace dependencies** — slug uniqueness uses existing `sqlx::query`
+
 **Tasks:**
 
 1. ~~Create `server/src/domains/libraries/` — five-file pattern~~ **DONE**
-2. Implement library CRUD — create, list, get, update, soft-delete
+2. ~~Implement library CRUD — create, list, get, update, soft-delete~~ **DONE**
 3. Implement `library_paths` — multi-path library support
 4. Create `server/src/domains/media/` — five-file pattern
 5. Implement `server/src/workers/library_scanner.rs`:
@@ -1006,7 +1020,7 @@ Phase 3: Core Server Infrastructure (COMPLETE — 12 tasks)
     ↓
 Phase 4: Auth & Users (COMPLETE — 11 tasks)
     ↓
-Phase 5: Libraries & Media (IN PROGRESS — Task 1 done) ──────┐
+Phase 5: Libraries & Media (IN PROGRESS — Tasks 1-2 done) ─────┐
     ↓                                                      │
 Phase 6: Metadata Providers ←─── (enriches Phase 5)       │
     ↓                                                      │
