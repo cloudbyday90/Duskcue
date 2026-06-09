@@ -344,6 +344,11 @@ async fn main() {
     tracing::info!("Starting scheduled task runner");
     scheduler.start(&tracker, scheduler_shutdown).await;
 
+    tracing::info!("Starting filesystem watcher");
+    if let Err(e) = state.fs_watcher.start(&tracker, shutdown.clone()).await {
+        tracing::warn!(error = %e, "Failed to start filesystem watcher — scheduled scans will still work");
+    }
+
     tracker.spawn(async move {
         tokio::select! {
             result = axum::serve(listener, app) => {
@@ -367,6 +372,7 @@ async fn main() {
     }
 
     tracing::info!("Phase 3: Cleanup (up to 90s)");
+    state.fs_watcher.stop();
     {
         let pool = state.pool.clone();
         let close_result = tokio::time::timeout(Duration::from_secs(60), async {

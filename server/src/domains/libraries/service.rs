@@ -598,3 +598,17 @@ pub async fn delete_library_path(
 
     Ok(())
 }
+
+pub async fn list_library_path_strings(
+    pool: &sqlx::PgPool,
+    library_id: Uuid,
+) -> Result<Vec<String>, LibrariesError> {
+    let rows = sqlx::query(
+        "SELECT path FROM library_paths WHERE library_id = $1 AND scan_enabled = true",
+    )
+    .bind(library_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows.iter().map(|r| r.get::<String, _>("path")).collect())
+}

@@ -29,6 +29,7 @@ use webauthn_rs::prelude::{PasskeyAuthentication, PasskeyRegistration, Webauthn}
 use crate::config::BootstrapConfig;
 use crate::error::set_environment;
 use crate::middleware::RateLimitState;
+use crate::services::fs_watcher::LibraryWatcherManager;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthConfig {
@@ -443,6 +444,7 @@ pub struct AppState {
     pub metrics_allowed_subnets: Arc<Vec<IpNet>>,
     pub webauthn: Arc<Webauthn>,
     pub webauthn_challenges: Arc<DashMap<String, WebauthnChallenge>>,
+    pub fs_watcher: Arc<LibraryWatcherManager>,
 }
 
 impl AppState {
@@ -450,6 +452,7 @@ impl AppState {
         set_environment(bootstrap.environment.clone());
         let subnets = parse_metrics_subnets(&NetworkConfig::default().allowed_metrics_subnets);
         let webauthn = build_webauthn("localhost", "http://localhost:48027");
+        let fs_watcher = Arc::new(LibraryWatcherManager::new(pool.clone()));
         Self {
             pool,
             runtime_config: Arc::new(ArcSwap::from_pointee(RuntimeConfig::default())),
@@ -459,6 +462,7 @@ impl AppState {
             metrics_allowed_subnets: Arc::new(subnets),
             webauthn: Arc::new(webauthn),
             webauthn_challenges: Arc::new(DashMap::new()),
+            fs_watcher,
         }
     }
 
@@ -475,6 +479,7 @@ impl AppState {
         let rp_id = runtime_config.auth.rp_id.as_deref().unwrap_or("localhost");
         let rp_origin = runtime_config.auth.rp_origin.as_deref().unwrap_or("http://localhost:48027");
         let webauthn = build_webauthn(rp_id, rp_origin);
+        let fs_watcher = Arc::new(LibraryWatcherManager::new(pool.clone()));
 
         Self {
             pool,
@@ -485,6 +490,7 @@ impl AppState {
             metrics_allowed_subnets: Arc::new(subnets),
             webauthn: Arc::new(webauthn),
             webauthn_challenges: Arc::new(DashMap::new()),
+            fs_watcher,
         }
     }
 

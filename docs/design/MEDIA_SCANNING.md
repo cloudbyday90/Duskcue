@@ -698,7 +698,7 @@ The scanner uses `ScannerError` (internal) mapped through `AppError::Internal` f
 
 Existing LIB error codes registered in ERROR_HANDLING.md:
 - `LIB_006` (409): Scan already in progress for this library — not yet wired (scan is synchronous; will be enforced when async background scan is implemented)
-- `LIB_007` (503): Filesystem watcher failed to start — deferred to Task 7 (FS watching)
+- `LIB_007` (503): Filesystem watcher failed to start — implemented in Task 7; watcher failures logged but not surfaced to API
 
 ### Logging (LOGGING_OBSERVABILITY.md)
 
@@ -721,20 +721,22 @@ The `media_files` table (including `file_hash`, `file_modified_at`) is part of t
 
 ## Implementation Status
 
-**Phase 5 Tasks 5-6 (complete):**
+**Phase 5 Tasks 5-7 (complete):**
 
 - `workers/library_scanner.rs` — 6-phase pipeline implemented: Discover, Diff, Probe, Identify, Enrich (stub), Cleanup
 - `services/scheduler.rs` — Scheduled task runner with `croner` cron evaluation, 30s tick, 8 seeded defaults
-- Crates added: `ignore` 0.4, `blake3` 1, `regex` 1, `croner` 3
+- `services/fs_watcher.rs` — Cross-platform FS watcher with `notify` 8.2 + `notify-debouncer-full` 0.7; 3-second debounce, media extension filtering, bulk import detection, per-library cooldown, channel-based event processing
+- Crates added: `ignore` 0.4, `blake3` 1, `regex` 1, `croner` 3, `notify` 8, `notify-debouncer-full` 0.7
 - Handler `scan_library` wired to scanner for synchronous manual scans
 - Scheduler wired in `main.rs` with `library_scan` executor for periodic scheduled scans
+- FS watcher wired in `main.rs` startup, library/path CRUD handlers for dynamic watch/unwatch lifecycle
+- `LibraryWatcherManager` in `AppState` for shared access between handlers and main.rs
 - `ScannerError` mapped via `AppError::Internal`; per-file errors in `ScanResult.errors` array
 
 **Not yet implemented:**
 
 - Phase 5 (Enrich) is a stub — metadata provider integration deferred to Phase 6
-- FS watching (Task 7) — `notify` + `notify-debouncer-full` not yet integrated
 - `.media-match`, NFO, provider ID tag parsing implemented within scanner but TMDB API search deferred to Phase 6
 - `walkdir` not yet used (targeted re-scans deferred)
 - `LIB_006` scan-in-progress guard not yet enforced (scan is synchronous; needs async background with 202 response)
-- `LIB_007` watcher failure not yet applicable (watcher not implemented)
+- `LIB_007` watcher failure logged but not surfaced to API

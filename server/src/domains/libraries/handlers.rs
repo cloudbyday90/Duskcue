@@ -113,6 +113,14 @@ pub async fn create_library(
     )
     .await?;
 
+    let watcher_paths = service::list_library_path_strings(&state.pool, response.id).await.ok();
+    if let Some(paths) = watcher_paths {
+        let path_bufs: Vec<std::path::PathBuf> = paths.into_iter().map(std::path::PathBuf::from).collect();
+        if let Err(e) = state.fs_watcher.watch_library(response.id, path_bufs) {
+            tracing::warn!(library_id = %response.id, error = %e, "Failed to start FS watcher for new library");
+        }
+    }
+
     Ok(Json(response))
 }
 
@@ -169,6 +177,7 @@ pub async fn delete_library(
     axum::extract::Path(library_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     service::soft_delete_library(&state.pool, library_id).await?;
+    state.fs_watcher.unwatch_library(library_id);
     Ok(Json(serde_json::json!({ "status": "deleted" })))
 }
 
@@ -268,6 +277,14 @@ pub async fn create_library_path(
     )
     .await?;
 
+    if response.scan_enabled
+        && let Ok(paths) = service::list_library_path_strings(&state.pool, library_id).await {
+        let path_bufs: Vec<std::path::PathBuf> = paths.into_iter().map(std::path::PathBuf::from).collect();
+        if let Err(e) = state.fs_watcher.watch_library(library_id, path_bufs) {
+            tracing::warn!(library_id = %library_id, error = %e, "Failed to update FS watcher after path creation");
+        }
+    }
+
     Ok(Json(response))
 }
 
@@ -319,5 +336,13 @@ pub async fn delete_library_path(
     axum::extract::Path((library_id, path_id)): axum::extract::Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     service::delete_library_path(&state.pool, library_id, path_id).await?;
+    if let Ok(paths) = service::list_library_path_strings(&state.pool, library_id).await {
+        let path_bufs: Vec<std::path::PathBuf> = paths.into_iter().map(std::path::PathBuf::from).collect();
+        if path_bufs.is_empty() {
+            state.fs_watcher.unwatch_library(library_id);
+        } else if let Err(e) = state.fs_watcher.watch_library(library_id, path_bufs) {
+            tracing::warn!(library_id = %library_id, error = %e, "Failed to update FS watcher after path deletion");
+        }
+    }
     Ok(Json(serde_json::json!({ "status": "deleted" })))
 }

@@ -763,10 +763,40 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **Library scan executor** — fetches all non-deleted libraries, runs `scan_library()` for each with `mode` from task config (default: `"full"`); aggregates `items_created`, `files_modified`, `files_deleted` across all libraries
 - **No task timeout in executor wrapper** — individual task timeout handled inside the spawned `JoinHandle` via `tokio::time::timeout`; timeout value comes from `scheduled_tasks.timeout_seconds` (default: 3600) — but currently the inner handler's own timeout (3600s hardcoded) applies; the outer spawn just awaits the `JoinHandle`
 
-7. Implement FS watching via `notify` + `notify-debouncer-full` for real-time detection
-8. Implement `.media-match` sidecar file parsing (Layer 1 of identification)
-9. Implement NFO file parsing (Layer 2)
-10. Implement provider ID tag parsing `{tmdb-XXX}`, `{imdb-ttXXX}`, `{tvdb-XXX}` (Layer 3)
+ 7. ~~Implement FS watching via `notify` + `notify-debouncer-full` for real-time detection~~ **DONE**
+
+**What was built for Task 7:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/fs_watcher.rs` | `LibraryWatcherManager` — cross-platform FS watcher with `notify` 8.2 + `notify-debouncer-full` 0.7 debounced events |
+| `server/src/services/mod.rs` | Added `pub mod fs_watcher;` |
+| `server/src/state.rs` | Added `fs_watcher: Arc<LibraryWatcherManager>` to `AppState` |
+| `server/src/main.rs` | Wired watcher startup after scheduler, stop during shutdown Phase 3 |
+| `server/src/domains/libraries/handlers.rs` | `create_library` / `create_library_path` → `watch_library()`; `delete_library` / `delete_library_path` → `unwatch_library()` |
+| `server/src/domains/libraries/service.rs` | Added `list_library_path_strings()` helper for watcher path resolution |
+| `Cargo.toml` | Added `notify = "8"`, `notify-debouncer-full = "0.7"` to workspace deps |
+| `server/Cargo.toml` | Added `notify.workspace = true`, `notify-debouncer-full.workspace = true` |
+
+**Key decisions from Task 7:**
+
+- **`notify` 8.2 + `notify-debouncer-full` 0.7** — per MEDIA_SCANNING.md Crate Selection table; debouncer handles rename stitching, event dedup, file ID tracking, settled events
+- **3-second debounce timeout** — per MEDIA_SCANNING.md; media files are large, 3-second window ensures partially-written files are not processed
+- **Two-phase event architecture** — Debouncer callback (sync, runs on notify thread) accumulates per-directory file counts in `pending` map and sends channel notification; event processor (async tokio task) receives channel messages and drains `pending` for batch processing
+- **Media extension filtering** — Debouncer callback filters events to video + subtitle extensions before counting; non-media events (log files, temp files, metadata) are ignored at the source
+- **Library path resolution** — Event processor matches directory paths against watched library paths via `starts_with()` to determine which library owns the change
+- **Bulk import detection** — If ≥10 files detected in a single directory within a debounce window, triggers a full scan (`quick = false`) instead of a quick scan
+- **Per-library cooldown** — 10-second cooldown prevents rapid re-triggering of scans for the same library; logged at DEBUG level when skipped
+- **Watcher lifecycle per MEDIA_SCANNING.md** — `start()` loads all non-deleted libraries with `scan_enabled = true` paths at server boot; `watch_library()` / `unwatch_library()` called from library and path CRUD handlers; `stop()` during shutdown Phase 3
+- **Graceful failure** — Watcher failures (watch limit exceeded, permission denied) log warnings but do not prevent startup or library creation; scheduled scans remain as fallback per MEDIA_SCANNING.md limitations table
+- **`Arc<LibraryWatcherManager>` in AppState** — Shared between handlers (for watch/unwatch) and main.rs (for start/stop); internal state uses `std::sync::Mutex` (debouncer is not Send)
+- **Channel-based notification** — `mpsc::channel<WatchEvent>` bridges sync debouncer callback to async event processor; channel send uses `try_send` (non-blocking) to avoid blocking the notify thread
+- **No new error variants** — Watcher failures are logged, not surfaced to API callers; LIB_007 (`FilesystemWatcherFailed`) already registered in ERROR_HANDLING.md for future API exposure
+- **`list_library_path_strings()` helper** — Added to libraries service for efficient path lookup without full DTO conversion; returns scan-enabled paths for a library
+
+ 8. Implement `.media-match` sidecar file parsing (Layer 1 of identification)
+ 9. Implement NFO file parsing (Layer 2)
+ 10. Implement provider ID tag parsing `{tmdb-XXX}`, `{imdb-ttXXX}`, `{tvdb-XXX}` (Layer 3)
 
 **Verification:** Admin creates a library pointing to a media directory, triggers scan, media items appear in DB with correct file paths, codecs, and resolutions. FS watching detects new files in real-time.
 
@@ -1142,7 +1172,7 @@ Phase 3: Core Server Infrastructure (COMPLETE — 12 tasks)
     ↓
 Phase 4: Auth & Users (COMPLETE — 11 tasks)
     ↓
-Phase 5: Libraries & Media (IN PROGRESS — Tasks 1-6 done, 7-10 remain) ─────┐
+Phase 5: Libraries & Media (IN PROGRESS — Tasks 1-7 done, 8-10 remain) ─────┐
     ↓                                                      │
 Phase 6: Metadata Providers ←─── (enriches Phase 5)       │
     ↓                                                      │
