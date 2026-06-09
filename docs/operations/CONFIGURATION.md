@@ -815,6 +815,14 @@ Common alternatives considered:
 - Auth setup state checked: if `setup_complete = false`, logs WARN about setup mode
 - `sqlx` workspace features updated: added `migrate` and `sqlx-toml`
 
+**Phase 5 Tasks 5-6 (complete):**
+
+- `workers/library_scanner.rs` — 6-phase scanning pipeline (discover, diff, probe, identify, enrich stub, cleanup)
+- `services/scheduler.rs` — Scheduled task runner with `croner` v3 cron evaluation, 30-second tick interval, builder-pattern executor registration
+- Scheduler wired into `main.rs` startup: seeds 8 default tasks, registers `library_scan` executor, starts with `TaskTracker` + `CancellationToken` for graceful shutdown
+- Crates added to workspace: `ignore` 0.4, `blake3` 1, `regex` 1, `croner` 3
+- `services/mod.rs` wired with `pub mod scheduler;`
+
 **Not yet implemented:**
 
 - Admin API endpoint (`PUT /api/v1/server/config`) that triggers `reload_runtime_config()` — Phase 13

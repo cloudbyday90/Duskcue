@@ -173,11 +173,17 @@ pub async fn delete_library(
 }
 
 pub async fn scan_library(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _auth: Require<CanManageLibraries>,
-    axum::extract::Path(_library_id): axum::extract::Path<Uuid>,
+    axum::extract::Path(library_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    todo!("Library scanning — Phase 5 Task 5")
+    let pool = state.pool.clone();
+    let result = crate::workers::library_scanner::scan_library(&pool, library_id, false)
+        .await
+        .map_err(|e| crate::error::AppError::Internal(anyhow::anyhow!("{}", e)))?;
+    Ok(Json(serde_json::to_value(result).unwrap_or_else(|_| {
+        serde_json::json!({ "status": "scan_completed" })
+    })))
 }
 
 pub async fn list_library_items(

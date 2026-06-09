@@ -693,14 +693,76 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 2. ~~Implement library CRUD — create, list, get, update, soft-delete~~ **DONE**
 3. ~~Implement `library_paths` — multi-path library support~~ **DONE**
 4. ~~Create `server/src/domains/media/` — five-file pattern~~ **DONE**
-5. Implement `server/src/workers/library_scanner.rs`:
-   - Phase 1: Discover — walk filesystem using `ignore` (ripgrep) crate
-   - Phase 2: Diff — mtime-based change detection with 2s tolerance
-   - Phase 3: Probe — ffprobe concurrent queue for codec/resolution/duration
-   - Phase 4: Identify — 5-layer cascading pipeline from LIBRARY_ORGANIZATION.md
-   - Phase 5: Enrich — stub (metadata provider calls added in Phase 8)
-   - Phase 6: Cleanup — remove orphaned items
-6. Implement `server/src/services/scheduler.rs` — scheduled task runner
+5. ~~Implement `server/src/workers/library_scanner.rs` — 6-phase scanning pipeline~~ **DONE**
+
+**What was built for Task 5:**
+
+| File | Purpose |
+|---|---|
+| `server/src/workers/library_scanner.rs` | 6-phase scanning pipeline: discover, diff, probe, identify, enrich (stub), cleanup |
+| `server/src/workers/mod.rs` | Module declarations (`pub mod library_scanner;`) |
+| `server/src/services/mod.rs` | Module declarations (placeholder for future services) |
+| `server/src/lib.rs` | Added `pub mod workers;` and `pub mod services;` module declarations |
+| `server/src/domains/libraries/handlers.rs` | Replaced `scan_library` `todo!()` with working handler calling scanner |
+| `Cargo.toml` | Added `ignore = "0.4"`, `blake3 = "1"`, `regex = "1"` to workspace deps |
+| `server/Cargo.toml` | Added `ignore.workspace = true`, `blake3.workspace = true`, `regex.workspace = true` |
+
+**Key decisions from Task 5:**
+
+- **`ignore` crate for parallel directory walking** — `WalkBuilder::new(path).hidden(false).git_ignore(false).build_parallel()` with glob overrides for media extensions; `std::sync::Mutex<Vec>` collects results from parallel walker threads
+- **Extension-based glob filtering** — `ignore::overrides::OverrideBuilder` with individual `add()` calls for each extension pattern (`.mkv`, `.mp4`, `.srt`, etc.); video extensions filtered in Phase 2, subtitle extensions discovered for future Phase 9
+- **mtime-based diffing with 2s tolerance** — `Phase2_diff` compares `DiscoveredFile.mtime` (SystemTime) against `media_files.file_modified_at` (DB timestamptz); files with matching path + size + mtime (within 2s) are skipped as unchanged; FAT32 and some SMB mounts have 2-second timestamp resolution
+- **Blake3 partial hash** — `compute_partial_hash_sync()` hashes first 1MB + last 1MB (for files > 2MB); Blake3 is 10x faster than SHA-256 per MEDIA_SCANNING.md rationale; hash stored in `media_files.file_hash`
+- **ffprobe async subprocess** — `tokio::process::Command` with `-v quiet -print_format json -show_format -show_streams -show_chapters`; JSON output parsed into `FfprobeOutput` struct; concurrent probing limited by `Semaphore` (default: 2 concurrent)
+- **HDR detection from color_transfer** — `smpte2084` → `"hdr10"`, `arib-std-b67` → `"hlg"`, else `"sdr"` per VIDEO_FORMATS.md
+- **Chapter extraction** — ffprobe `-show_chapters` output stored in `additional_streams.chapters` JSONB; avoids re-probing during Phase 10 segment detection
+- **Frame rate parsing** — Handles `r_frame_rate` in `"num/den"` format (e.g., `"24000/1001"` for 23.976fps) and plain decimal strings
+- **5-layer identification cascade** — Layer 1: `.media-match` sidecar (key-value format with tmdb/imdb/tvdb IDs); Layer 2: NFO files (`movie.nfo`/`tvshow.nfo` XML parsed via regex); Layer 3: Provider ID tags (`{tmdb-272}`, `[tmdbid=272]`); Layer 4: Structured filename parsing (title + year extraction, SXXEXX episode detection); Layer 5: Unmatched queue (match_state = "unmatched")
+- **ResolvedIds struct** — Carries `tmdb_id`, `imdb_id`, `tvdb_id` separately for direct DB binding; avoids generic provider/id pair that would require per-provider branching at SQL bind time
+- **Movie identification** — Parse parent folder name for `Title (Year)` pattern; create `media_items` + `movies` + `media_files` rows in single transaction; existing `media_files` by path triggers update instead of duplicate insert
+- **TV show identification** — `group_episodes_by_series()` groups files by series folder (detecting `Season XX`/`Specials` sub-folders); creates series `media_items` + `series` row (with `find_existing_series` dedup), season `media_items` + `seasons` rows (with `ensure_season` dedup), episode `media_items` + `episodes` + `media_files` per file
+- **Season folder detection** — `find_series_folder()` walks up from episode file's parent; if parent matches `Season XX` or `Specials`, the grandparent is the series folder
+- **SXXEXX regex patterns** — Two patterns: `(?i)[_.\s\-]s?(\d{1,2})[ex](\d{1,3})` (standard S01E01) and `(?i)[_.\s\-](\d{1,2})x(\d{1,3})` (alternate 1x01); supports multi-episode ranges via optional `-E##` suffix
+- **Sort title generation** — Articles ("The", "A", "An") stripped from beginning and appended: `"The Matrix"` → `"Matrix, The"`
+- **Phase 5 (Enrich) is a stub** — Logs "metadata provider integration deferred to Phase 6"; Phase 6 adds TMDB/TVDB search that upgrades `auto_matched` items to `confirmed`
+- **Phase 6 (Cleanup) marks deleted files** — `UPDATE media_files SET is_healthy = false` for paths in DB but not on disk; orphaned media items (no healthy files) detected and logged but not deleted (admin reviews in UI)
+- **`ScannerError` mapped via `AppError::Internal`** — Handler uses `.map_err(|e| AppError::Internal(anyhow::anyhow!("{}", e)))` since scanner is an internal worker; no new domain error variant needed
+- **Scan is synchronous** — Handler runs scan inline and returns results; for large libraries this may timeout; async background scan with `POST` returning 202 Accepted deferred to Task 6 (scheduler)
+
+**Not yet implemented (deferred to later tasks/phases):**
+
+- Task 7: FS watching via `notify` + `notify-debouncer-full` — real-time file detection
+- Tasks 8-10: Identification layers 1-3 implemented within scanner; layer 4 filename parsing implemented without TMDB API search; API search added in Phase 6
+- Multi-episode file support — `episode_end` field populated but not yet used for creating multiple episode rows from a single file
+- Subtitle file discovery — Subtitle Extensions discovered in Phase 1 but not yet processed into `subtitle_files` rows (Phase 9)
+- Split file detection — `pt1`/`pt2`/`cd1`/`disc1` patterns not yet parsed
+- Edition detection — `edition` field populated but not yet used for multi-version grouping
+
+6. ~~Implement `server/src/services/scheduler.rs` — scheduled task runner~~ **DONE**
+
+**What was built for Task 6:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/scheduler.rs` | Scheduled task runner — polls `scheduled_tasks` every 30s, dispatches due tasks to registered executors |
+| `server/src/services/mod.rs` | Added `pub mod scheduler;` |
+| `server/src/main.rs` | Wired scheduler startup with `library_scan` executor; seeds default tasks on first run |
+| `Cargo.toml` | Added `croner = "3"` to workspace deps |
+| `server/Cargo.toml` | Added `croner.workspace = true` |
+
+**Key decisions from Task 6:**
+
+- **`croner` crate v3** for cron expression parsing — POSIX/Vixie-cron compliant, chrono-compatible, supports `L`/`W`/`#` modifiers, `@daily`/`@hourly` aliases, human-readable descriptions; MIT licensed; more feature-complete than `cron` crate
+- **30-second tick interval** — scheduler polls `scheduled_tasks WHERE next_run_at <= now() AND is_enabled = true AND state != 'running'` every 30s; adequate for media server workloads (no sub-minute precision needed)
+- **Builder-pattern executor registration** — `Scheduler::new(pool).register_executor("library_scan", handler)` returns `Self` for chaining; each executor is an `Arc<dyn Fn>` that takes `(PgPool, task_id, config)` and returns `Future<Output = ()>`
+- **Task lifecycle** — tick fetches due tasks → creates `scheduled_task_runs` row → sets state to `running` → spawns executor in background → on completion: updates run row with result/duration/stats, resets `consecutive_failures` to 0, computes `next_run_at` from cron or interval → on failure: increments `consecutive_failures`, sets retry delay, auto-disables after `max_retries` consecutive failures
+- **`compute_next_run()`** — uses `croner::Cron::find_next_occurrence()` for cron tasks, `now + interval_seconds` for interval tasks; falls back to `now + 1 hour` on parse failure
+- **`seed_default_tasks()`** — idempotent (checks `COUNT(*)` first, uses `ON CONFLICT DO NOTHING`); seeds 8 default tasks: Library Scan (daily 03:00), Metadata Refresh (daily 04:00), Database Maintenance (weekly Sunday 05:00), Session Cleanup (every 1h), Notification Cleanup (daily 02:00), Disk Space Check (every 30min), Media Health Check (weekly Sunday 06:00), Soft Delete Purge (daily 01:00)
+- **`TaskFailureInfo` struct** — groups failure parameters to avoid `too_many_arguments` clippy warning
+- **Scheduler integrates with `TaskTracker` + `CancellationToken`** — spawned as a tracked task alongside the HTTP server; responds to shutdown signal
+- **Library scan executor** — fetches all non-deleted libraries, runs `scan_library()` for each with `mode` from task config (default: `"full"`); aggregates `items_created`, `files_modified`, `files_deleted` across all libraries
+- **No task timeout in executor wrapper** — individual task timeout handled inside the spawned `JoinHandle` via `tokio::time::timeout`; timeout value comes from `scheduled_tasks.timeout_seconds` (default: 3600) — but currently the inner handler's own timeout (3600s hardcoded) applies; the outer spawn just awaits the `JoinHandle`
+
 7. Implement FS watching via `notify` + `notify-debouncer-full` for real-time detection
 8. Implement `.media-match` sidecar file parsing (Layer 1 of identification)
 9. Implement NFO file parsing (Layer 2)
@@ -1080,7 +1142,7 @@ Phase 3: Core Server Infrastructure (COMPLETE — 12 tasks)
     ↓
 Phase 4: Auth & Users (COMPLETE — 11 tasks)
     ↓
-Phase 5: Libraries & Media (IN PROGRESS — Tasks 1-4 done) ─────┐
+Phase 5: Libraries & Media (IN PROGRESS — Tasks 1-6 done, 7-10 remain) ─────┐
     ↓                                                      │
 Phase 6: Metadata Providers ←─── (enriches Phase 5)       │
     ↓                                                      │

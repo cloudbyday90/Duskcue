@@ -14,6 +14,9 @@ Library folder structure, file naming conventions, and sub-folder design are doc
 | `walkdir` | 2.5.0 | BurntSushi | Single-directory walks (targeted re-scans) |
 | `notify` | 8.2.0 | notify-rs | Cross-platform filesystem watching (real-time detection) |
 | `notify-debouncer-full` | 0.7.0 | notify-rs | Debounced FS events with rename stitching and dedup |
+| `blake3` | 1.x | oconnor663 | Partial file hashing (first+last 1MB); fastest non-crypto hash |
+| `regex` | 1.x | rust-lang | SXXEXX filename parsing, provider ID tag extraction, NFO parsing |
+| `croner` | 3.x | hexagon | Cron expression evaluation for scheduled scans |
 | FFmpeg `ffprobe` | existing | FFmpeg project | Media file probing (codecs, resolution, duration, streams) |
 
 ### Why These Crates
@@ -149,7 +152,7 @@ debouncer.watch(library.root_path, RecursiveMode::Recursive)?;
 
 Uses the existing `scheduled_tasks` infrastructure. The `library_scan` task type (already defined in DATABASE.md) handles periodic full scans.
 
-Default schedule: `scan_interval_seconds` per library (default: 86400 = 24 hours).
+**Implementation:** The scheduler (`services/scheduler.rs`) polls `scheduled_tasks` every 30 seconds. The `library_scan` executor fetches all non-deleted libraries and runs `scan_library()` for each sequentially. Default schedule: `0 3 * * *` (daily at 03:00) via cron expression on the `scheduled_tasks` row. Task config supports `{"mode": "full"|"quick"}` (default: `"full"`).
 
 The scheduled scan runs Phase 1-6 for all enabled libraries. Each library is scanned sequentially to avoid I/O saturation.
 
@@ -476,6 +479,8 @@ For TV libraries, the scanner must group episodes into series and seasons (see [
 
 ## Phase 5: Enrich
 
+**Implementation status: Stub.** The scanner logs "metadata provider integration deferred to Phase 6" for all items. Phase 6 (Metadata Providers) will add TMDB/TVDB search that upgrades `auto_matched` items to `confirmed` and populates titles, overviews, artwork, cast/crew, and external IDs.
+
 ### Metadata Fetching
 
 After identification, full metadata is fetched from the provider:
@@ -675,23 +680,25 @@ Stored in `server_config.metadata` JSONB:
 
 ### Scheduled Tasks (DATABASE.md)
 
-The existing `library_scan` scheduled task type triggers full scans. The scanner updates `scheduled_tasks` state as it progresses:
+The existing `library_scan` scheduled task type triggers full scans. The scheduler (`services/scheduler.rs`) manages task lifecycle:
 - `state = 'running'` during scan
-- `state = 'completed'` on success with `ScanResult` in `config` JSONB
-- `state = 'failed'` on error
+- `state = 'completed'` on success with `ScanResult` stats in `scheduled_task_runs.stats` JSONB
+- `state = 'failed'` on error with error details in `scheduled_task_runs.error_message`
+- `consecutive_failures` incremented on failure, reset to 0 on success
+- Auto-disabled after `max_retries` consecutive failures (default: 3)
+- `next_run_at` computed from `cron_expression` via `croner` crate or `interval_seconds`
+
+The scheduler seeds 8 default tasks on first run via `seed_default_tasks()`: Library Scan (daily 03:00), Metadata Refresh (daily 04:00), Database Maintenance (weekly Sun 05:00), Session Cleanup (every 1h), Notification Cleanup (daily 02:00), Disk Space Check (every 30min), Media Health Check (weekly Sun 06:00), Soft Delete Purge (daily 01:00).
 
 The `metadata_refresh` task type handles Phase 5 (re-enriching metadata for existing items).
 
 ### Error Handling (ERROR_HANDLING.md)
 
-New error codes for the media scanning domain (LIB):
+The scanner uses `ScannerError` (internal) mapped through `AppError::Internal` for HTTP responses. Scan errors are collected per-file in `ScanResult.errors` as `ScanError` structs (path, phase, message) — batch operations use partial success rather than RFC 9457 problem details for individual files.
 
-| Code | HTTP | Description |
-|---|---|---|
-| `LIB_005` | 409 | Scan already in progress for this library |
-| `LIB_006` | 503 | Filesystem watcher failed to start (logs fallback mode) |
-
-Added to the existing LIB domain (currently has `LIB_001` through `LIB_004`).
+Existing LIB error codes registered in ERROR_HANDLING.md:
+- `LIB_006` (409): Scan already in progress for this library — not yet wired (scan is synchronous; will be enforced when async background scan is implemented)
+- `LIB_007` (503): Filesystem watcher failed to start — deferred to Task 7 (FS watching)
 
 ### Logging (LOGGING_OBSERVABILITY.md)
 
@@ -709,3 +716,25 @@ Scan results feed into the existing analytics infrastructure:
 ### Backup & Recovery (BACKUP_RECOVERY.md)
 
 The `media_files` table (including `file_hash`, `file_modified_at`) is part of the PostgreSQL database backed up by WAL-G. If the database is restored, the scanner can verify file health by re-checking `is_healthy` status.
+
+---
+
+## Implementation Status
+
+**Phase 5 Tasks 5-6 (complete):**
+
+- `workers/library_scanner.rs` — 6-phase pipeline implemented: Discover, Diff, Probe, Identify, Enrich (stub), Cleanup
+- `services/scheduler.rs` — Scheduled task runner with `croner` cron evaluation, 30s tick, 8 seeded defaults
+- Crates added: `ignore` 0.4, `blake3` 1, `regex` 1, `croner` 3
+- Handler `scan_library` wired to scanner for synchronous manual scans
+- Scheduler wired in `main.rs` with `library_scan` executor for periodic scheduled scans
+- `ScannerError` mapped via `AppError::Internal`; per-file errors in `ScanResult.errors` array
+
+**Not yet implemented:**
+
+- Phase 5 (Enrich) is a stub — metadata provider integration deferred to Phase 6
+- FS watching (Task 7) — `notify` + `notify-debouncer-full` not yet integrated
+- `.media-match`, NFO, provider ID tag parsing implemented within scanner but TMDB API search deferred to Phase 6
+- `walkdir` not yet used (targeted re-scans deferred)
+- `LIB_006` scan-in-progress guard not yet enforced (scan is synchronous; needs async background with 202 response)
+- `LIB_007` watcher failure not yet applicable (watcher not implemented)

@@ -52,5 +52,9 @@ webauthn-rs.workspace = true
 dashmap.workspace = true
 url.workspace = true
 base64.workspace = true
+ignore.workspace = true
+blake3.workspace = true
+regex.workspace = true
+croner.workspace = true
 duskcue-types = { path = "../crates/types" }
 duskcue-db = { path = "../crates/db" }

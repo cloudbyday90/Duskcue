@@ -22,6 +22,7 @@ use mimalloc::MiMalloc;
 static GLOBAL: MiMalloc = MiMalloc;
 
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use clap::Parser;
@@ -30,6 +31,7 @@ use duskcue::lockfile::Lockfile;
 use duskcue::logging::init_logging;
 use duskcue::logging::init_metrics;
 use duskcue::router::build_router;
+use duskcue::services::scheduler::{seed_default_tasks, Scheduler};
 use duskcue::state::{load_runtime_config, AppState};
 use sqlx::postgres::PgPoolOptions;
 use sqlx::Row;
@@ -262,7 +264,10 @@ async fn main() {
         }
     }
 
-    tracing::info!("Starting scheduled task runner (not yet implemented)");
+    tracing::info!("Seeding default scheduled tasks");
+    if let Err(e) = seed_default_tasks(&state.pool).await {
+        tracing::warn!(error = %e, "Failed to seed default scheduled tasks");
+    }
 
     let app = build_router(state.clone()).with_state(state.clone());
     let listener = tokio::net::TcpListener::bind(("0.0.0.0", 48027))
@@ -275,6 +280,69 @@ async fn main() {
     let tracker = TaskTracker::new();
     let shutdown = CancellationToken::new();
     let server_shutdown = shutdown.clone();
+    let scheduler_shutdown = shutdown.clone();
+
+    let scheduler = Arc::new(
+        Scheduler::new(state.pool.clone())
+            .register_executor("library_scan", |pool, task_id, config| {
+                let pool = pool.clone();
+                async move {
+                    let mode = config.get("mode").and_then(|v| v.as_str()).unwrap_or("full");
+                    tracing::info!(task_id = %task_id, mode = %mode, "Starting library scan task");
+
+                    let libraries: Result<Vec<uuid::Uuid>, sqlx::Error> = sqlx::query_scalar(
+                        "SELECT id FROM libraries WHERE deleted_at IS NULL"
+                    )
+                    .fetch_all(&pool)
+                    .await;
+
+                    match libraries {
+                        Ok(ids) => {
+                            let mut scanned = 0u64;
+                            let mut total_added = 0u64;
+                            let mut total_updated = 0u64;
+                            let mut total_removed = 0u64;
+
+                            for library_id in ids {
+                                match duskcue::workers::library_scanner::scan_library(
+                                    &pool, library_id, mode == "quick",
+                                )
+                                .await
+                                {
+                                    Ok(result) => {
+                                        scanned += 1;
+                                        total_added += result.items_created;
+                                        total_updated += result.files_modified;
+                                        total_removed += result.files_deleted;
+                                    }
+                                    Err(e) => {
+                                        tracing::error!(
+                                            library_id = %library_id,
+                                            error = %e,
+                                            "Library scan failed"
+                                        );
+                                    }
+                                }
+                            }
+
+                            tracing::info!(
+                                scanned,
+                                total_added,
+                                total_updated,
+                                total_removed,
+                                "Library scan task completed"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::error!(error = %e, "Failed to fetch libraries for scan");
+                        }
+                    }
+                }
+            }),
+    );
+
+    tracing::info!("Starting scheduled task runner");
+    scheduler.start(&tracker, scheduler_shutdown).await;
 
     tracker.spawn(async move {
         tokio::select! {

@@ -22,4 +22,6 @@ pub mod lockfile;
 pub mod logging;
 pub mod middleware;
 pub mod router;
+pub mod services;
 pub mod state;
+pub mod workers;

@@ -62,3 +62,7 @@ webauthn-rs = { version = "0.6.1-dev", features = ["danger-allow-state-serialisa
 dashmap = "5.5"
 url = "2"
 base64 = "0.22"
+ignore = "0.4"
+blake3 = "1"
+regex = "1"
+croner = "3"
