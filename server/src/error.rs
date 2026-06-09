@@ -95,6 +95,9 @@ pub enum AppError {
     #[error(transparent)]
     Library(#[from] crate::domains::libraries::LibrariesError),
 
+    #[error(transparent)]
+    Media(#[from] crate::domains::media::MediaError),
+
     #[error("internal server error")]
     Internal(#[source] anyhow::Error),
 }
@@ -112,6 +115,10 @@ impl IntoResponse for AppError {
             }
             AppError::Library(e) => {
                 let (s, c, d) = library_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Media(e) => {
+                let (s, c, d) = media_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", Cow::Borrowed(msg.as_str())),
@@ -283,5 +290,27 @@ fn library_error_to_http(err: &crate::domains::libraries::LibrariesError) -> (St
         LibrariesError::PathExists(p) => (StatusCode::CONFLICT, "LIB_016", format!("Path already exists for this library: {}", p)),
         LibrariesError::CannotDeleteDefaultPath => (StatusCode::UNPROCESSABLE_ENTITY, "LIB_017", "Cannot delete the default library path".into()),
         LibrariesError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
+    }
+}
+
+fn media_error_to_http(err: &crate::domains::media::MediaError) -> (StatusCode, &'static str, String) {
+    use crate::domains::media::MediaError;
+    use axum::http::StatusCode;
+
+    match err {
+        MediaError::NotFound => (StatusCode::NOT_FOUND, "MEDIA_001", "Media item not found".into()),
+        MediaError::FileNotFound => (StatusCode::NOT_FOUND, "MEDIA_002", "Media file not found".into()),
+        MediaError::FileUnhealthy(r) => (StatusCode::UNPROCESSABLE_ENTITY, "MEDIA_003", format!("Media file is unhealthy: {}", r)),
+        MediaError::ArtworkNotFound => (StatusCode::NOT_FOUND, "MEDIA_004", "Artwork not found".into()),
+        MediaError::AlreadyExists => (StatusCode::CONFLICT, "MEDIA_006", "Media item already exists in library".into()),
+        MediaError::StoryboardNotFound => (StatusCode::NOT_FOUND, "MEDIA_007", "Storyboard not found".into()),
+        MediaError::InvalidMediaType(t) => (StatusCode::BAD_REQUEST, "MEDIA_001", format!("Invalid media type: {}", t)),
+        MediaError::InvalidMatchState(s) => (StatusCode::BAD_REQUEST, "MEDIA_001", format!("Invalid match state: {}", s)),
+        MediaError::InvalidIdentificationSource(s) => (StatusCode::BAD_REQUEST, "MEDIA_001", format!("Invalid identification source: {}", s)),
+        MediaError::SeriesNotFound => (StatusCode::NOT_FOUND, "MEDIA_001", "Series not found".into()),
+        MediaError::SeasonNotFound => (StatusCode::NOT_FOUND, "MEDIA_001", "Season not found".into()),
+        MediaError::DuplicateSeasonNumber(n) => (StatusCode::CONFLICT, "MEDIA_006", format!("Duplicate season number {} for series", n)),
+        MediaError::DuplicateEpisodeNumber(n) => (StatusCode::CONFLICT, "MEDIA_006", format!("Duplicate episode number {} for season", n)),
+        MediaError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
     }
 }

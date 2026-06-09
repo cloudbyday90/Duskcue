@@ -16,4 +16,5 @@
 
 pub mod auth;
 pub mod libraries;
+pub mod media;
 pub mod users;

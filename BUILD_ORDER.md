@@ -651,12 +651,48 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`verify_library_exists` helper** — Extracted from `get_library` pattern; used by all 5 path service functions to validate the parent library exists and is not soft-deleted before querying paths
 - **No new workspace dependencies** — all functionality uses existing `sqlx::query` with `PgPool::begin()` transactions
 
+**What was built for Task 4:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/media/mod.rs` | Module declarations + router assembly with 4 route groups |
+| `server/src/domains/media/error.rs` | `MediaError` enum with 14 variants covering MEDIA_001–MEDIA_007 plus domain-specific variants |
+| `server/src/domains/media/types.rs` | Three-type DTOs: `MediaItemRow` (internal), `UpdateMediaItemRequest` (Deserialize + Validate), `MediaItemResponse`/`MediaItemListResponse` (Serialize); `MediaFileRow`/`MediaFileResponse`; validation statics |
+| `server/src/domains/media/service.rs` | Full CRUD service: `list_media_items` (cursor pagination with optional library/type filters), `list_library_items`, `get_media_item` (with CTI child joins for series/seasons/episodes), `update_media_item` (COALESCE partial updates with match_state/identification_source validation), `delete_media_item`, `list_media_files`, `get_media_file`, `validate_media_type`, row mapping helpers, base64 cursor encode/decode |
+| `server/src/domains/media/handlers.rs` | Working handlers for list, get, update, delete media items; list and get media files; type validation |
+| `server/src/error.rs` | Added `AppError::Media(#[from] MediaError)` variant + `media_error_to_http()` mapping all 14 error codes |
+| `server/src/domains/mod.rs` | Added `pub mod media;` |
+| `server/src/router.rs` | Merged media router, removed Phase 5 media comment |
+| `server/src/domains/libraries/handlers.rs` | Replaced `list_library_items` `todo!()` stub with working handler delegating to `media::service::list_library_items` |
+
+**Key decisions from Task 4:**
+
+- **CTI-aware response model** — `MediaItemResponse` includes optional `series_status`, `series_id`, `season_number`, `season_id`, `episode_number`, `absolute_episode_number`, `file_count` fields; all populated via `LEFT JOIN` on series/seasons/episodes child tables in a single query, avoiding N+1 lookups
+- **Static SQL over dynamic query building** — Two static SQL constants for list queries (`LIST_MEDIA_ITEMS_DESC_SQL`, `LIST_MEDIA_ITEMS_ASC_SQL`) instead of dynamic string construction; uses `($N::uuid IS NULL OR column = $N)` pattern for optional filters, matching the users domain convention
+- **Cursor pagination with UUIDv7** — Cursors are base64-encoded `{"id": "..."}` JSON; UUIDv7 is naturally time-ordered so `id > cursor` / `id < cursor` gives chronological ordering without a separate sort column; `LIMIT $limit + 1` pattern for `has_more` detection
+- **`file_count` via LEFT JOIN LATERAL** — Count of `media_files` per item computed inline in the same query as the item itself, avoiding a second round-trip; `COALESCE(cnt, 0)` handles items with no files
+- **Update uses COALESCE pattern** — `COALESCE($2, title)` for all 17 updatable fields, matching the libraries/users domain convention; `match_state` and `identification_source` validated against static allowlists before the UPDATE
+- **`get_media_item` reuses list query structure** — Same CTI-aware SELECT with LEFT JOINs as the list endpoint, ensuring consistent response shape whether fetching one or many
+- **`list_library_items` wired in libraries domain** — The `todo!()` stub in `libraries/handlers.rs` replaced with a real handler that delegates to `media::service::list_library_items`, which first verifies the library exists then calls the generic `list_media_items` with the library_id filter
+- **14 error variants defined upfront** — `NotFound` (MEDIA_001), `FileNotFound` (MEDIA_002), `FileUnhealthy` (MEDIA_003), `ArtworkNotFound` (MEDIA_004), `AlreadyExists` (MEDIA_006), `StoryboardNotFound` (MEDIA_007), plus `InvalidMediaType`, `InvalidMatchState`, `InvalidIdentificationSource`, `SeriesNotFound`, `SeasonNotFound`, `DuplicateSeasonNumber`, `DuplicateEpisodeNumber`, `Database` catch-all
+- **`AuthenticatedUser` on all media endpoints** — All 6 handlers require an authenticated user (no capability check); admin-only operations (delete, update match_state) may add `Require<CanManageLibraries>` or `Require<CanDeleteMedia>` in future phases
+- **No new workspace dependencies** — cursor encoding uses existing `base64` 0.22; all other functionality uses existing `sqlx`, `serde_json`, `uuid`, `chrono`
+
+**Not yet implemented (deferred to later tasks/phases):**
+
+- Media item creation — items are created by the scanner (Task 5), not by direct API
+- Series/season/episode-specific endpoints — `GET /api/v1/series/{id}/seasons`, etc. deferred to when the web client needs them
+- Full-text search — `GET /api/v1/search?q=...` uses `search_vector` column; deferred to Phase 6 (metadata providers populate the column) or Phase 8 (web client needs search)
+- Genre/tag/credit endpoints — `GET /api/v1/media-items/{id}/genres`, `/credits`, etc. deferred to Phase 6
+- ETag / Cache-Control headers — deferred to Phase 8 web client performance optimization
+- Nullable field clearing — same `Option<T>` limitation as users domain; `Option<Option<T>>` deferred to admin UI
+
 **Tasks:**
 
 1. ~~Create `server/src/domains/libraries/` — five-file pattern~~ **DONE**
 2. ~~Implement library CRUD — create, list, get, update, soft-delete~~ **DONE**
 3. ~~Implement `library_paths` — multi-path library support~~ **DONE**
-4. Create `server/src/domains/media/` — five-file pattern
+4. ~~Create `server/src/domains/media/` — five-file pattern~~ **DONE**
 5. Implement `server/src/workers/library_scanner.rs`:
    - Phase 1: Discover — walk filesystem using `ignore` (ripgrep) crate
    - Phase 2: Diff — mtime-based change detection with 2s tolerance
@@ -1044,7 +1080,7 @@ Phase 3: Core Server Infrastructure (COMPLETE — 12 tasks)
     ↓
 Phase 4: Auth & Users (COMPLETE — 11 tasks)
     ↓
-Phase 5: Libraries & Media (IN PROGRESS — Tasks 1-3 done) ─────┐
+Phase 5: Libraries & Media (IN PROGRESS — Tasks 1-4 done) ─────┐
     ↓                                                      │
 Phase 6: Metadata Providers ←─── (enriches Phase 5)       │
     ↓                                                      │

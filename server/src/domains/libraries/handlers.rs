@@ -34,6 +34,14 @@ pub struct ListLibrariesQuery {
     media_type: Option<String>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct ListLibraryItemsQuery {
+    r#type: Option<String>,
+    limit: Option<u32>,
+    cursor: Option<String>,
+    order: Option<String>,
+}
+
 pub async fn list_libraries(
     State(state): State<AppState>,
     _auth: Require<CanManageLibraries>,
@@ -173,11 +181,29 @@ pub async fn scan_library(
 }
 
 pub async fn list_library_items(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _auth: Require<CanManageLibraries>,
-    axum::extract::Path(_library_id): axum::extract::Path<Uuid>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    todo!("Library items listing — Phase 5 Task 4 (media domain)")
+    axum::extract::Path(library_id): axum::extract::Path<Uuid>,
+    Query(query): Query<ListLibraryItemsQuery>,
+) -> Result<Json<crate::domains::media::types::MediaItemListResponse>, AppError> {
+    let limit = query.limit.unwrap_or(20).clamp(1, 100);
+    let order = query.order.as_deref().unwrap_or("desc");
+
+    if let Some(ref t) = query.r#type {
+        crate::domains::media::service::validate_media_type(t)?;
+    }
+
+    let response = crate::domains::media::service::list_library_items(
+        &state.pool,
+        library_id,
+        query.r#type.as_deref(),
+        limit,
+        query.cursor.as_deref(),
+        order,
+    )
+    .await?;
+
+    Ok(Json(response))
 }
 
 pub async fn list_library_paths(

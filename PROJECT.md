@@ -499,7 +499,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 2: Database Schema | **Complete** | `dd3f201` |
 | Phase 3: Core Server Infrastructure | **Complete** | — |
 | Phase 4: Auth & Users | **Complete** | — |
-| Phase 5: Libraries & Media Items | **In Progress** (Tasks 1-3 complete) | — |
+| Phase 5: Libraries & Media Items | **In Progress** (Tasks 1-4 complete) | — |
 | Phase 6–16 | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.

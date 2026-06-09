@@ -14,3 +14,37 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod error;
+pub mod handlers;
+pub mod service;
+pub mod types;
+
+pub use error::MediaError;
+
+use axum::routing::get;
+use axum::Router;
+
+use crate::state::AppState;
+
+pub fn router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/v1/media-items",
+            get(handlers::list_media_items),
+        )
+        .route(
+            "/api/v1/media-items/{id}",
+            get(handlers::get_media_item)
+                .patch(handlers::update_media_item)
+                .delete(handlers::delete_media_item),
+        )
+        .route(
+            "/api/v1/media-items/{id}/files",
+            get(handlers::list_media_files),
+        )
+        .route(
+            "/api/v1/media-items/{id}/files/{file_id}",
+            get(handlers::get_media_file),
+        )
+        .with_state(state)
+}
