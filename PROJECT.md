@@ -500,7 +500,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 3: Core Server Infrastructure | **Complete** | — |
 | Phase 4: Auth & Users | **Complete** | — |
 | Phase 5: Libraries & Media Items | **Complete** | — |
-| Phase 6: Metadata Providers | **In Progress** (Task 1) | — |
+| Phase 6: Metadata Providers | **In Progress** (Tasks 1–6) | — |
 | Phase 7–16 | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
@@ -513,7 +513,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 
 **Phase 5 complete:** All 10 tasks done — libraries domain (CRUD, slug uniqueness, multi-path), media domain (five-file pattern with cursor pagination), library scanner (`workers/library_scanner.rs`, 6-phase pipeline: discover→diff→probe→identify→enrich stub→cleanup), scheduled task runner (`services/scheduler.rs`, `croner` v3 cron evaluation, 8 seeded default tasks), FS watcher (`services/fs_watcher.rs`, `notify` 8.2 + `notify-debouncer-full` 0.7), media matching service (`services/media_matching.rs`, 5-layer identification cascade with `.media-match` pattern tokens, episode overrides, season-level cascading, multi-ID provider tag extraction from both folder names and filenames), NFO parser (`services/nfo_parser.rs`, `quick-xml` 0.40 streaming StAX), provider ID tag parsing (Layer 3 — `parse_provider_id_tags()` extracts all IDs from `{tmdb-XXX}`/`[tmdbid=XXX]` formats in folder names and filenames with curly-brace priority). See [BUILD_ORDER.md](BUILD_ORDER.md) Phase 5 for details.
 
-**Phase 6 in progress (Task 1):** `ProviderRegistry` + `EnrichmentOrchestrator` in `services/metadata.rs` with 3 async traits (`MetadataProvider`, `ArtworkProvider`, `RatingsProvider`), 4 provider stubs (TMDB/TVDB/Fanart/OMDB), per-provider rate limiters, and rich data types. `MetadataConfig` expanded from empty placeholder to 22 fields. `Arc<EnrichmentOrchestrator>` wired into `AppState`. `async-trait` 0.1 added to workspace. See [BUILD_ORDER.md](BUILD_ORDER.md) Phase 6 for details.
+**Phase 6 in progress (Tasks 1–6):** `ProviderRegistry` + `EnrichmentOrchestrator` in `services/metadata.rs` with 3 async traits (`MetadataProvider`, `ArtworkProvider`, `RatingsProvider`), 4 provider stubs (TVDB/Fanart/OMDB remain stubs), per-provider rate limiters, and rich data types. Full `TmdbClient` in `services/tmdb_client.rs` — Bearer token auth, `reqwest::Client` with redirect disabled per SSRF hardening, `append_to_response` batching (credits+videos+external_ids+images in 1 request), search (`/search/movie`, `/search/tv`), details (`/movie/{id}`, `/tv/{id}`), find by IMDb ID (`/find`), configuration caching (`/configuration`) with `ArcSwap<TmdbConfig>` for hot-reload. `urlencoding` 2 added to workspace. See [BUILD_ORDER.md](BUILD_ORDER.md) Phase 6 for details.
 
 ## Open Questions
 

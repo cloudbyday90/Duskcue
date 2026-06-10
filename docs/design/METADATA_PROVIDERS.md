@@ -919,3 +919,18 @@ Provider metrics are exposed via the existing Prometheus endpoint (see [LOGGING_
 - SubDL API Docs: `https://subdl.com/api-doc`
 - Jellyfin Metadata Providers: `https://jellyfin.org/docs/general/server/metadata/`
 - Jellyfin Provider Identifiers: `https://jellyfin.org/docs/general/server/metadata/identifiers/`
+
+## Implementation Notes
+
+### TmdbClient (Tasks 2–6)
+
+- **Module:** `server/src/services/tmdb_client.rs` — dedicated module following project convention (modular service files over large singletons). metadata.rs retains traits/types/registry/orchestrator; tmdb_client.rs owns the concrete HTTP implementation.
+- **HTTP client:** `reqwest::Client` owned per TmdbClient instance; 30s request timeout; 10s connect timeout; `redirect(Policy::none())` per API_SECURITY.md SSRF hardening. Bearer token set per-request via `Authorization` header.
+- **Response deserialization:** 17 TMDB-specific `Deserialize` types with `Option<T>` throughout (TMDB API responses vary significantly between items). Converted to domain types via private helper methods (`convert_credits`, `convert_videos`, `convert_images`, `convert_external_ids`).
+- **Search:** `#[serde(untagged)]` enum `TmdbSearchItem` handles both movie (`title`/`release_date`) and TV (`name`/`first_air_date`) result shapes. Year extracted from date string via `d.get(..4)`.
+- **Details:** `append_to_response=credits,videos,external_ids,images` in single request per METADATA_PROVIDERS.md batching recommendation. `include_image_language=en,null` ensures English + language-neutral images.
+- **Find by IMDb:** `/find/{id}?external_source=imdb_id` returns separate `movie_results` and `tv_results` arrays; movies checked first (more common).
+- **Configuration caching:** `fetch_configuration()` calls `/configuration` and returns `TmdbConfig` with fallback defaults. Stored in `EnrichmentOrchestrator` as `Arc<ArcSwap<TmdbConfig>>` for atomic hot-reload via `refresh_tmdb_config()`.
+- **Error mapping:** HTTP 401 → `AuthenticationFailed`, 404 → `NotFound`, 429 → `RateLimited`, other → `InvalidResponse` with parsed TMDB error message; JSON parse failures → `InvalidResponse`.
+- **Dependencies added:** `urlencoding = "2"` for query parameter encoding (TMDB search queries may contain special characters).
+- **TmdbClient derives Clone:** `reqwest::Client` is cheaply cloneable; enables storing in both the registry (as `Box<dyn MetadataProvider>`) and orchestrator (for direct config refresh access).

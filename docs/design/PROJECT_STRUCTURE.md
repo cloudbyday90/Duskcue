@@ -199,7 +199,8 @@ project/
 │       │   ├── media_matching.rs # 5-layer identification cascade (.media-match, provider ID tags)
 │       │   ├── nfo_parser.rs     # NFO XML parsing (quick-xml streaming StAX, Kodi/Jellyfin/Emby formats)
 │       │   ├── transcoding.rs    # FFmpeg integration (tokio-process-tools, -progress pipe:1)
-│       │   ├── metadata.rs       # TMDB/TVDB metadata fetching
+│       │   ├── metadata.rs       # Provider registry, enrichment orchestrator, provider traits, provider stubs
+│       │   ├── tmdb_client.rs    # TMDB v3 API client (Bearer token, append_to_response, search/details/find/config)
 │       │   ├── notifications.rs  # Notification dispatch
 │       │   ├── search.rs         # Full-text search coordination
 │       │   ├── security.rs       # TLS (rustls), HMAC signing (ring), security headers
@@ -445,6 +446,7 @@ regex = "1"
 croner = "3"
 quick-xml = "0.40"
 async-trait = "0.1"
+urlencoding = "2"
 ```
 
 **TLS backend note:** `rustls`, `tokio-rustls`, and `reqwest` use the `ring` crypto backend instead of the default `aws-lc-rs`. The `aws-lc-sys` crate requires NASM and CMake on Windows, which are not present in standard development environments. `ring` is pure Rust + precompiled assembly, builds everywhere, and is the same library used by `ring` 0.17 for HMAC signing. This is a workspace-level decision that applies to all workspace members.

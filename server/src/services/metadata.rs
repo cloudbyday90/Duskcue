@@ -26,7 +26,9 @@ use reqwest::Client;
 use sqlx::PgPool;
 use thiserror::Error;
 
-use crate::state::{MetadataConfig, TmdbProviderConfig};
+use crate::state::MetadataConfig;
+
+use super::tmdb_client::TmdbClient;
 
 #[derive(Debug, Error)]
 pub enum MetadataError {
@@ -503,7 +505,8 @@ pub struct EnrichmentOrchestrator {
     rate_limiters: Arc<ProviderRateLimiter>,
     db: PgPool,
     http: Client,
-    tmdb_config: Arc<TmdbConfig>,
+    tmdb_config: Arc<arc_swap::ArcSwap<TmdbConfig>>,
+    tmdb_client: Option<TmdbClient>,
     config: MetadataConfig,
 }
 
@@ -520,12 +523,24 @@ impl EnrichmentOrchestrator {
             .build()
             .unwrap_or_default();
 
+        let tmdb_client = if config.providers.tmdb.enabled
+            && !config.providers.tmdb.access_token.is_empty()
+        {
+            Some(TmdbClient::new(
+                &config.providers.tmdb,
+                config.metadata_language.clone(),
+            ))
+        } else {
+            None
+        };
+
         Self {
             registry: Arc::new(registry),
             rate_limiters: Arc::new(ProviderRateLimiter::new()),
             db,
             http,
-            tmdb_config: Arc::new(TmdbConfig::default()),
+            tmdb_config: Arc::new(arc_swap::ArcSwap::from_pointee(TmdbConfig::default())),
+            tmdb_client,
             config,
         }
     }
@@ -534,8 +549,23 @@ impl EnrichmentOrchestrator {
         &self.registry
     }
 
-    pub fn tmdb_config(&self) -> &TmdbConfig {
-        &self.tmdb_config
+    pub fn tmdb_config(&self) -> Arc<TmdbConfig> {
+        Arc::clone(&self.tmdb_config.load())
+    }
+
+    pub fn tmdb_client(&self) -> Option<&TmdbClient> {
+        self.tmdb_client.as_ref()
+    }
+
+    pub async fn refresh_tmdb_config(&self) -> MetadataResult<()> {
+        let client = self
+            .tmdb_client
+            .as_ref()
+            .ok_or(MetadataError::TmdbNotConfigured)?;
+        let config = client.fetch_configuration().await?;
+        self.tmdb_config.store(Arc::new(config));
+        tracing::info!("TMDB configuration refreshed successfully");
+        Ok(())
     }
 
     pub fn http_client(&self) -> &Client {
@@ -753,152 +783,6 @@ impl EnrichmentOrchestrator {
 
         self.rate_limiters.tmdb.until_ready().await;
         primary.find_by_imdb_id(imdb_id).await
-    }
-}
-
-struct TmdbClient {
-    config: TmdbProviderConfig,
-    _language: String,
-}
-
-impl TmdbClient {
-    fn new(config: &TmdbProviderConfig, language: String) -> Self {
-        Self {
-            config: config.clone(),
-            _language: language,
-        }
-    }
-
-    #[allow(dead_code)]
-    fn base_url(&self) -> &str {
-        "https://api.themoviedb.org/3"
-    }
-
-    #[allow(dead_code)]
-    fn auth_header(&self) -> String {
-        format!("Bearer {}", self.config.access_token)
-    }
-}
-
-#[async_trait]
-impl MetadataProvider for TmdbClient {
-    fn name(&self) -> &str {
-        "tmdb"
-    }
-
-    fn is_configured(&self) -> bool {
-        !self.config.access_token.is_empty()
-    }
-
-    async fn test_connection(&self) -> MetadataResult<()> {
-        tracing::info!("TMDB test_connection — full implementation in Task 2");
-        Ok(())
-    }
-
-    async fn search_movie(
-        &self,
-        query: &str,
-        year: Option<u32>,
-    ) -> MetadataResult<Vec<SearchResult>> {
-        tracing::info!(
-            query = query,
-            year = ?year,
-            "TMDB search_movie — full implementation in Task 3"
-        );
-        Ok(vec![])
-    }
-
-    async fn search_tv(
-        &self,
-        query: &str,
-        year: Option<u32>,
-    ) -> MetadataResult<Vec<SearchResult>> {
-        tracing::info!(
-            query = query,
-            year = ?year,
-            "TMDB search_tv — full implementation in Task 3"
-        );
-        Ok(vec![])
-    }
-
-    async fn get_movie_details(&self, id: u64) -> MetadataResult<MovieDetails> {
-        tracing::info!(tmdb_id = id, "TMDB get_movie_details — full implementation in Task 4");
-        Ok(MovieDetails {
-            provider_id: id,
-            title: String::new(),
-            original_title: None,
-            overview: None,
-            tagline: None,
-            release_date: None,
-            runtime: None,
-            vote_average: None,
-            vote_count: None,
-            popularity: None,
-            adult: false,
-            backdrop_path: None,
-            poster_path: None,
-            imdb_id: None,
-            tvdb_id: None,
-            genres: vec![],
-            production_companies: vec![],
-            credits: None,
-            videos: None,
-            images: None,
-            external_ids: None,
-        })
-    }
-
-    async fn get_tv_details(&self, id: u64) -> MetadataResult<TvDetails> {
-        tracing::info!(tmdb_id = id, "TMDB get_tv_details — full implementation in Task 4");
-        Ok(TvDetails {
-            provider_id: id,
-            name: String::new(),
-            original_name: None,
-            overview: None,
-            tagline: None,
-            first_air_date: None,
-            last_air_date: None,
-            number_of_seasons: None,
-            number_of_episodes: None,
-            vote_average: None,
-            vote_count: None,
-            popularity: None,
-            backdrop_path: None,
-            poster_path: None,
-            imdb_id: None,
-            tvdb_id: None,
-            genres: vec![],
-            networks: vec![],
-            credits: None,
-            videos: None,
-            images: None,
-            external_ids: None,
-        })
-    }
-
-    async fn get_season_details(
-        &self,
-        _tv_id: u64,
-        _season: u32,
-    ) -> MetadataResult<SeasonDetails> {
-        tracing::info!("TMDB get_season_details — full implementation in Task 4");
-        Ok(SeasonDetails {
-            provider_id: 0,
-            season_number: 0,
-            name: None,
-            overview: None,
-            air_date: None,
-            episode_count: None,
-            poster_path: None,
-        })
-    }
-
-    async fn find_by_imdb_id(&self, imdb_id: &str) -> MetadataResult<Option<SearchResult>> {
-        tracing::info!(
-            imdb_id = imdb_id,
-            "TMDB find_by_imdb_id — full implementation in Task 5"
-        );
-        Ok(None)
     }
 }
 

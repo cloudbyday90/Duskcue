@@ -873,11 +873,11 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 **Tasks:**
 
 1. ~~Create `server/src/services/metadata.rs` — `ProviderRegistry`, `EnrichmentOrchestrator`~~ **DONE**
-2. Implement `TmdbClient` — Bearer token auth, `append_to_response` batching, rate limiter (governor, 40 req/s)
-3. Implement TMDB search endpoints — `/search/movie`, `/search/tv`
-4. Implement TMDB details endpoints — `/movie/{id}`, `/tv/{id}` with `append_to_response=credits,videos,external_ids,images`
-5. Implement TMDB `/find` — cross-reference from IMDb ID
-6. Implement TMDB `/configuration` caching — image sizes, base URL
+2. ~~Implement `TmdbClient` — Bearer token auth, `append_to_response` batching, rate limiter (governor, 40 req/s)~~ **DONE**
+3. ~~Implement TMDB search endpoints — `/search/movie`, `/search/tv`~~ **DONE**
+4. ~~Implement TMDB details endpoints — `/movie/{id}`, `/tv/{id}` with `append_to_response=credits,videos,external_ids,images`~~ **DONE**
+5. ~~Implement TMDB `/find` — cross-reference from IMDb ID~~ **DONE**
+6. ~~Implement TMDB `/configuration` caching — image sizes, base URL~~ **DONE**
 7. Wire TMDB client into Phase 5 enrichment (Phase 5 stub → real implementation)
 8. Implement artwork download — save to `/data/metadata/artwork/`, create `artwork` table rows
 9. Implement `TvdbClient` — JWT auth via `/login`, token refresh, series/episode endpoints
@@ -911,6 +911,33 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`MetadataConfig` expanded to 22 fields** — All fields from POSTER_MANAGEMENT.md and METADATA_PROVIDERS.md configuration section; includes artwork language priority, overlay settings, collection settings, provider configs, enrichment timeout, export cache days; `Default` implementations match design doc defaults
 - **`AppState.enrichment` created from config** — `new_with_config()` reads `MetadataConfig` from `RuntimeConfig`, builds `ProviderRegistry::from_config()`, creates `EnrichmentOrchestrator`; `new()` creates empty registry (no providers configured)
 - **No new DB migrations** — `MetadataConfig` fields map to existing `server_config.metadata` JSONB column; no schema changes needed
+
+**What was built for Tasks 2–6:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/tmdb_client.rs` | Full TMDB v3 API client: `TmdbClient` struct with Bearer token auth, `reqwest::Client` with 30s timeout + 10s connect timeout + redirect disabled; 17 TMDB response deserialization types; all `MetadataProvider` trait methods implemented with real HTTP calls |
+| `server/src/services/metadata.rs` | Removed TmdbClient stub; imports real TmdbClient from `tmdb_client` module; `EnrichmentOrchestrator` now stores `Option<TmdbClient>` for direct access and `Arc<ArcSwap<TmdbConfig>>` for hot-reload; added `refresh_tmdb_config()` async method |
+| `server/src/services/mod.rs` | Added `pub mod tmdb_client;` |
+| `Cargo.toml` | Added `urlencoding = "2"` to workspace deps |
+| `server/Cargo.toml` | Added `urlencoding.workspace = true` |
+
+**Key decisions from Tasks 2–6:**
+
+- **Dedicated `tmdb_client.rs` module** — Extracted from metadata.rs following the project's "modular service files over large monolithic files" convention (same pattern as `nfo_parser.rs`, `media_matching.rs`). metadata.rs retains traits, types, registry, and orchestrator; tmdb_client.rs owns the concrete HTTP implementation
+- **TmdbClient owns its own `reqwest::Client`** — Each client instance has its own HTTP connection pool with Bearer token auth pre-configured; 30s request timeout matching `enrichment_timeout_seconds` default; redirect policy disabled per API_SECURITY.md SSRF hardening rules; connect timeout 10s
+- **`urlencoding` crate for query parameter encoding** — TMDB search queries may contain special characters (accented titles, apostrophes, ampersands); `urlencoding::encode()` provides safe URL encoding; v2 is the current stable release
+- **`append_to_response` batching** — `get_movie_details()` and `get_tv_details()` use `append_to_response=credits,videos,external_ids,images` in a single HTTP request, reducing API calls by 4-5x per item per METADATA_PROVIDERS.md; `include_image_language=en,null` ensures English + language-neutral images are returned
+- **`#[serde(untagged)]` search response enum** — TMDB search results return either movie or TV objects with different field names (`title` vs `name`, `release_date` vs `first_air_date`); `TmdbSearchItem` enum with untagged deserialization handles both; movie results checked first (more common), TV results second
+- **Error mapping from HTTP status codes** — 401 → `AuthenticationFailed`, 404 → `NotFound`, 429 → `RateLimited`, other non-success → `InvalidResponse` with parsed TMDB error message; network errors → `NetworkError`; JSON parse failures → `InvalidResponse`
+- **Graceful deserialization with `Option<T>` throughout** — All TMDB response fields are `Option<T>` because TMDB's API responses vary significantly between items (some lack `overview`, `tagline`, `runtime`, etc.); missing fields become `None` in our domain types rather than causing parse failures
+- **`TmdbConfig` stored as `Arc<ArcSwap<TmdbConfig>>`** — Allows atomic hot-reload of TMDB configuration (image base URLs, available sizes, change keys) without restarting the server; `refresh_tmdb_config()` on orchestrator fetches fresh config from TMDB `/configuration` and swaps atomically; `tmdb_config()` accessor returns `Arc<TmdbConfig>` for cheap cloning
+- **`TmdbClient` stored in orchestrator** — `EnrichmentOrchestrator.tmdb_client: Option<TmdbClient>` provides direct access for config refresh and future operations that bypass the trait (e.g., daily ID exports, genre list); also stored in registry as `Box<dyn MetadataProvider>` for trait-dispatched enrichment
+- **`TmdbClient` derives `Clone`** — `reqwest::Client` is cheaply cloneable (internally Arc'd); cloning creates a TmdbClient for the registry and another for the orchestrator from the same config; both share the same connection pool semantics
+- **Year extraction from date strings** — Search results extract year from `release_date`/`first_air_date` via `d.get(..4).and_then(|y| y.parse::<u32>().ok())` rather than storing the full date in `SearchResult`
+- **`find_by_imdb_id` checks movies before TV** — TMDB `/find` returns separate arrays for `movie_results` and `tv_results`; movies are checked first since IMDb IDs are more commonly associated with movies in the identification pipeline
+- **`fetch_configuration()` with fallback defaults** — TMDB `/configuration` endpoint returns image base URLs and size lists; all fields fall back to hardcoded defaults from METADATA_PROVIDERS.md if the API response is missing or incomplete
+- **No new workspace dependencies beyond `urlencoding`** — All HTTP functionality uses existing `reqwest` (workspace already has `json` + `rustls-tls` features); JSON deserialization via existing `serde`/`serde_json`
 
 **Verification:** Library scan enriches items with TMDB data — titles, overviews, ratings, genres, cast, artwork. Admin can configure TVDB/Fanart.tv/OMDb keys in settings UI. Provider failures are non-blocking.
 

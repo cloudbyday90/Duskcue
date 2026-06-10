@@ -19,3 +19,4 @@ pub mod media_matching;
 pub mod metadata;
 pub mod nfo_parser;
 pub mod scheduler;
+pub mod tmdb_client;
