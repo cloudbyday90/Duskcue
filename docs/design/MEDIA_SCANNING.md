@@ -733,10 +733,20 @@ The `media_files` table (including `file_hash`, `file_modified_at`) is part of t
 - `LibraryWatcherManager` in `AppState` for shared access between handlers and main.rs
 - `ScannerError` mapped via `AppError::Internal`; per-file errors in `ScanResult.errors` array
 
+**Phase 5 Task 8 (complete):**
+
+- `services/media_matching.rs` — Dedicated service module for the 5-layer identification cascade; extracted from monolithic scanner
+- `.media-match` parser enhanced: `pattern:` line with token interpolation (`{s}`, `{season}`, `{e}`, `{episode}`, `{sp}`, `{special}`), `edition:` field, season-level cascading
+- `pattern:` tokens converted to regex capture groups via existing `regex` crate — no new dependencies
+- Episode overrides from `ep:` lines now wired into TV show identification pipeline
+- Season-level `.media-match` cascading: series folder file applies to all seasons; season folder file overrides for that season only
+- NFO parsing and provider ID tag parsing moved from scanner into service module
+- Scanner `resolve_identification_layers()` replaced by `media_matching::resolve_identification()`
+
 **Not yet implemented:**
 
 - Phase 5 (Enrich) is a stub — metadata provider integration deferred to Phase 6
-- `.media-match`, NFO, provider ID tag parsing implemented within scanner but TMDB API search deferred to Phase 6
+- TMDB API search deferred to Phase 6 (Layer 4 API lookup)
 - `walkdir` not yet used (targeted re-scans deferred)
 - `LIB_006` scan-in-progress guard not yet enforced (scan is synchronous; needs async background with 202 response)
 - `LIB_007` watcher failure logged but not surfaced to API

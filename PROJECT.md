@@ -499,7 +499,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 2: Database Schema | **Complete** | `dd3f201` |
 | Phase 3: Core Server Infrastructure | **Complete** | — |
 | Phase 4: Auth & Users | **Complete** | — |
-| Phase 5: Libraries & Media Items | **In Progress** (Tasks 1-7 complete, scanner + scheduler + FS watcher done) | — |
+| Phase 5: Libraries & Media Items | **In Progress** (Tasks 1-8 complete, scanner + scheduler + FS watcher + media matching done) | — |
 | Phase 6–16 | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
@@ -510,7 +510,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 
 **Phase 4 complete:** All 11 tasks done. See [BUILD_ORDER.md](BUILD_ORDER.md) Phase 4 for full details. Auth domain with WebAuthn passkeys, invite codes, device linking (RFC 8628), re-auth codes, session management, capability-based access control with `Require<C>` trait-based generic extractor. Users domain with full CRUD (list, get, update, soft-delete). `AuthenticatedUser` extractor wired to DB-backed session validation. 12 capability marker types replace all inline `check_capability()` calls. `AdminOnly` preserved as type alias for `Require<CanManageServer>`.
 
-**Phase 5 in progress:** Tasks 1-6 complete — libraries domain (CRUD, slug uniqueness, multi-path), media domain (five-file pattern), library scanner (`workers/library_scanner.rs` ~1845 lines, 6-phase pipeline: discover→diff→probe→identify→enrich stub→cleanup), scheduled task runner (`services/scheduler.rs`, `croner` v3 cron evaluation, 30s tick, 8 seeded default tasks, `library_scan` executor). Remaining: Tasks 7-10 (FS watching, .media-match parsing, NFO parsing, provider ID tag parsing — partially covered by scanner internals). See [BUILD_ORDER.md](BUILD_ORDER.md) Phase 5 for details.
+**Phase 5 in progress:** Tasks 1-8 complete — libraries domain (CRUD, slug uniqueness, multi-path), media domain (five-file pattern), library scanner (`workers/library_scanner.rs` ~1640 lines, 6-phase pipeline: discover→diff→probe→identify→enrich stub→cleanup), scheduled task runner (`services/scheduler.rs`, `croner` v3 cron evaluation, 30s tick, 8 seeded default tasks, `library_scan` executor), FS watcher (`services/fs_watcher.rs`, `notify` 8.2 + `notify-debouncer-full` 0.7), media matching service (`services/media_matching.rs`, 5-layer identification cascade with `.media-match` pattern tokens, episode overrides, season-level cascading). Remaining: Tasks 9-10 (NFO parsing and provider ID tag parsing already extracted into `media_matching.rs` service; may be considered complete). See [BUILD_ORDER.md](BUILD_ORDER.md) Phase 5 for details.
 
 ## Open Questions
 

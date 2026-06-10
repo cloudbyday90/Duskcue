@@ -29,6 +29,8 @@ use thiserror::Error;
 use tokio::sync::Semaphore;
 use uuid::Uuid;
 
+use crate::services::media_matching;
+
 const MEDIA_VIDEO_EXTENSIONS: &[&str] = &[
     "mkv", "mp4", "avi", "ts", "m2ts", "wmv", "flv", "webm", "mov", "mpg",
     "mpeg", "m4v", "3gp", "ogv", "iso", "img",
@@ -113,33 +115,6 @@ pub struct ParsedMediaName {
     pub codec: Option<String>,
     pub group: Option<String>,
     pub edition: Option<String>,
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct ResolvedIds {
-    pub tmdb_id: Option<i64>,
-    pub imdb_id: Option<String>,
-    pub tvdb_id: Option<i64>,
-}
-
-#[derive(Debug, Clone)]
-pub struct MediaMatchData {
-    pub tmdb_id: Option<i64>,
-    pub imdb_id: Option<String>,
-    pub tvdb_id: Option<i64>,
-    pub title: Option<String>,
-    pub year: Option<u16>,
-    pub season: Option<u32>,
-    pub episode_overrides: HashMap<String, String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct NfoData {
-    pub tmdb_id: Option<i64>,
-    pub imdb_id: Option<String>,
-    pub tvdb_id: Option<i64>,
-    pub title: Option<String>,
-    pub year: Option<u16>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -866,13 +841,13 @@ async fn identify_and_create_movie(
     }
 
     let parent = file.path.parent().unwrap_or(scan_path);
-    let (provider_ids, ident_source, match_state) =
-        resolve_identification_layers(parent, &file.path)?;
+    let ident = media_matching::resolve_identification(parent, None);
 
     let parsed = parse_media_name(&file.path, parent, "movies");
     let title = parsed
         .as_ref()
         .map(|p| p.title.clone())
+        .or(ident.title.clone())
         .unwrap_or_else(|| {
             file.path
                 .file_stem()
@@ -881,7 +856,7 @@ async fn identify_and_create_movie(
                 .to_string()
         });
 
-    let year = parsed.as_ref().and_then(|p| p.year);
+    let year = parsed.as_ref().and_then(|p| p.year).or(ident.year);
     let sort_title = generate_sort_title(&title);
     let file_hash = compute_partial_hash_sync(&file.path);
 
@@ -900,11 +875,11 @@ async fn identify_and_create_movie(
     .bind(&title)
     .bind(&sort_title)
     .bind(year.map(|y| y as i32))
-    .bind(match_state)
-    .bind(ident_source)
-    .bind(provider_ids.tmdb_id)
-    .bind(provider_ids.imdb_id.clone())
-    .bind(provider_ids.tvdb_id)
+    .bind(&ident.match_state)
+    .bind(&ident.identification_source)
+    .bind(ident.ids.tmdb_id)
+    .bind(ident.ids.imdb_id.clone())
+    .bind(ident.ids.tvdb_id)
     .fetch_one(&mut *tx)
     .await?;
 
@@ -944,25 +919,55 @@ fn group_episodes_by_series(
     probed: &[(DiscoveredFile, ProbeResult)],
 ) -> HashMap<String, (SeriesKey, Vec<EpisodeInfo>)> {
     let mut groups: HashMap<String, (SeriesKey, Vec<EpisodeInfo>)> = HashMap::new();
+    let mut media_match_cache: HashMap<PathBuf, Option<media_matching::MediaMatchData>> = HashMap::new();
 
     for (file, probe) in probed {
         let parent = file.path.parent().unwrap_or(scan_path);
 
         let series_folder = find_series_folder(parent, scan_path);
 
+        let cached = media_match_cache
+            .entry(series_folder.clone())
+            .or_insert_with(|| media_matching::parse_media_match_file(&series_folder.join(".media-match")));
+
         let series_name = series_folder
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("Unknown");
 
-        let parsed = parse_media_name(&file.path, &series_folder, "tvshows");
-        let (season, episode, episode_end) = match parsed {
-            Some(ref p) => (p.season, p.episode, p.episode_end),
-            None => {
-                let parsed_ep = parse_sxxexx_filename(&file.path);
-                match parsed_ep {
-                    Some((s, e, ee)) => (Some(s), Some(e), ee),
-                    None => continue,
+        let filename = file.path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+
+        let (season, episode, episode_end) = if let Some(mm) = cached {
+            if let Some(ov_result) = media_matching::resolve_episode_override(
+                filename,
+                &mm.episode_overrides,
+                mm.pattern.as_deref(),
+                mm.season.unwrap_or(1),
+            ) {
+                (Some(ov_result.0), Some(ov_result.1), ov_result.2)
+            } else {
+                let parsed = parse_media_name(&file.path, &series_folder, "tvshows");
+                match parsed {
+                    Some(ref p) => (p.season, p.episode, p.episode_end),
+                    None => {
+                        let parsed_ep = parse_sxxexx_filename(&file.path);
+                        match parsed_ep {
+                            Some((s, e, ee)) => (Some(s), Some(e), ee),
+                            None => continue,
+                        }
+                    }
+                }
+            }
+        } else {
+            let parsed = parse_media_name(&file.path, &series_folder, "tvshows");
+            match parsed {
+                Some(ref p) => (p.season, p.episode, p.episode_end),
+                None => {
+                    let parsed_ep = parse_sxxexx_filename(&file.path);
+                    match parsed_ep {
+                        Some((s, e, ee)) => (Some(s), Some(e), ee),
+                        None => continue,
+                    }
                 }
             }
         };
@@ -972,16 +977,22 @@ fn group_episodes_by_series(
             _ => continue,
         };
 
-        let title = parsed
-            .as_ref()
-            .map(|p| p.title.clone())
-            .unwrap_or_else(|| clean_series_name(series_name));
+        let title = {
+            let parsed = parse_media_name(&file.path, &series_folder, "tvshows");
+            parsed
+                .as_ref()
+                .map(|p| p.title.clone())
+                .unwrap_or_else(|| clean_series_name(series_name))
+        };
 
         let key = format!("{}-{}", title, series_folder.to_string_lossy());
 
-        let year = parsed.as_ref().and_then(|p| p.year).or_else(|| {
-            parse_year_from_name(series_name)
-        });
+        let year = {
+            let parsed = parse_media_name(&file.path, &series_folder, "tvshows");
+            parsed.as_ref().and_then(|p| p.year).or_else(|| {
+                parse_year_from_name(series_name)
+            })
+        };
 
         groups
             .entry(key)
@@ -1018,8 +1029,10 @@ async fn identify_and_create_series(
 ) -> Result<usize, ScannerError> {
     let mut items_created = 0;
 
-    let (provider_ids, ident_source, match_state) =
-        resolve_identification_layers(&series_key.folder, &series_key.folder)?;
+    let ident = media_matching::resolve_identification(
+        &series_key.folder,
+        None,
+    );
 
     let title = series_key.title.clone();
     let sort_title = generate_sort_title(&title);
@@ -1043,11 +1056,11 @@ async fn identify_and_create_series(
             .bind(&title)
             .bind(&sort_title)
             .bind(year.map(|y| y as i32))
-            .bind(match_state)
-            .bind(ident_source)
-            .bind(provider_ids.tmdb_id)
-            .bind(provider_ids.imdb_id.clone())
-            .bind(provider_ids.tvdb_id)
+            .bind(&ident.match_state)
+            .bind(&ident.identification_source)
+            .bind(ident.ids.tmdb_id)
+            .bind(ident.ids.imdb_id.clone())
+            .bind(ident.ids.tvdb_id)
             .fetch_one(&mut *tx)
             .await?;
 
@@ -1302,199 +1315,6 @@ async fn update_media_file(
     .await?;
 
     Ok(())
-}
-
-fn resolve_identification_layers(
-    item_folder: &Path,
-    _file_path: &Path,
-) -> Result<(ResolvedIds, Option<String>, String), ScannerError> {
-    if let Some(data) = parse_media_match_file(&item_folder.join(".media-match"))
-        && (data.tmdb_id.is_some() || data.imdb_id.is_some() || data.tvdb_id.is_some())
-    {
-        return Ok((
-            ResolvedIds {
-                tmdb_id: data.tmdb_id,
-                imdb_id: data.imdb_id,
-                tvdb_id: data.tvdb_id,
-            },
-            Some("media_match".to_string()),
-            "confirmed".to_string(),
-        ));
-    }
-
-    if let Some(nfo) = parse_nfo_file(item_folder)
-        && (nfo.tmdb_id.is_some() || nfo.imdb_id.is_some() || nfo.tvdb_id.is_some())
-    {
-        return Ok((
-            ResolvedIds {
-                tmdb_id: nfo.tmdb_id,
-                imdb_id: nfo.imdb_id,
-                tvdb_id: nfo.tvdb_id,
-            },
-            Some("nfo".to_string()),
-            "confirmed".to_string(),
-        ));
-    }
-
-    let folder_name = item_folder
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
-
-    if let Some(ids) = parse_provider_id_tag(folder_name) {
-        return Ok((
-            ids,
-            Some("provider_id_tag".to_string()),
-            "confirmed".to_string(),
-        ));
-    }
-
-    Ok((ResolvedIds::default(), Some("filename_parse".to_string()), "auto_matched".to_string()))
-}
-
-fn parse_media_match_file(path: &Path) -> Option<MediaMatchData> {
-    let content = std::fs::read_to_string(path).ok()?;
-    let mut data = MediaMatchData {
-        tmdb_id: None,
-        imdb_id: None,
-        tvdb_id: None,
-        title: None,
-        year: None,
-        season: None,
-        episode_overrides: HashMap::new(),
-    };
-
-    for line in content.lines() {
-        let line = line.trim();
-        if line.is_empty() || line.starts_with('#') {
-            continue;
-        }
-
-        if let Some((key, value)) = line.split_once(':') {
-            let key = key.trim();
-            let value = value.trim().to_string();
-
-            match key {
-                "tmdb" => data.tmdb_id = value.parse().ok(),
-                "imdb" => data.imdb_id = Some(value),
-                "tvdb" => data.tvdb_id = value.parse().ok(),
-                "title" => data.title = Some(value),
-                "year" => data.year = value.parse().ok(),
-                "season" => data.season = value.parse().ok(),
-                "ep" => {
-                    let parts: Vec<&str> = value.splitn(2, ':').collect();
-                    if parts.len() == 2 {
-                        data.episode_overrides.insert(
-                            parts[0].trim().to_string(),
-                            parts[1].trim().to_string(),
-                        );
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-
-    Some(data)
-}
-
-fn parse_nfo_file(item_folder: &Path) -> Option<NfoData> {
-    let nfo_paths = [
-        item_folder.join("movie.nfo"),
-        item_folder.join("tvshow.nfo"),
-    ];
-
-    let content = nfo_paths
-        .iter()
-        .find_map(|p| std::fs::read_to_string(p).ok())?;
-
-    let mut data = NfoData {
-        tmdb_id: None,
-        imdb_id: None,
-        tvdb_id: None,
-        title: None,
-        year: None,
-    };
-
-    let tmdb_re = Regex::new(r"<tmdbid>(\d+)</tmdbid>").ok()?;
-    let imdb_re = Regex::new(r"<imdb[id_]*>(tt\d+)</imdb[id_]*>").ok()?;
-    let tvdb_re = Regex::new(r"<tvdbid>(\d+)</tvdbid>").ok()?;
-    let title_re = Regex::new(r"<title>([^<]+)</title>").ok()?;
-    let year_re = Regex::new(r"<year>(\d{4})</year>").ok()?;
-
-    if let Some(caps) = tmdb_re.captures(&content) {
-        data.tmdb_id = caps[1].parse().ok();
-    }
-    if let Some(caps) = imdb_re.captures(&content) {
-        data.imdb_id = Some(caps[1].to_string());
-    }
-    if let Some(caps) = tvdb_re.captures(&content) {
-        data.tvdb_id = caps[1].parse().ok();
-    }
-    if let Some(caps) = title_re.captures(&content) {
-        data.title = Some(caps[1].to_string());
-    }
-    if let Some(caps) = year_re.captures(&content) {
-        data.year = caps[1].parse().ok();
-    }
-
-    Some(data)
-}
-
-fn parse_provider_id_tag(name: &str) -> Option<ResolvedIds> {
-    let curly_re = Regex::new(r"\{(?:(tmdb)-(\d+)|(imdb)-(tt\d+)|(tvdb)-(\d+))\}").ok()?;
-    let bracket_re =
-        Regex::new(r"\[(?:(?:tmdbid)=(\d+)|(?:imdbid)-(tt\d+)|(?:tvdbid)=(\d+))\]").ok()?;
-
-    if let Some(caps) = curly_re.captures(name) {
-        if let Some(id) = caps.get(2) {
-            return Some(ResolvedIds {
-                tmdb_id: id.as_str().parse().ok(),
-                imdb_id: None,
-                tvdb_id: None,
-            });
-        }
-        if let Some(id) = caps.get(4) {
-            return Some(ResolvedIds {
-                tmdb_id: None,
-                imdb_id: Some(id.as_str().to_string()),
-                tvdb_id: None,
-            });
-        }
-        if let Some(id) = caps.get(6) {
-            return Some(ResolvedIds {
-                tmdb_id: None,
-                imdb_id: None,
-                tvdb_id: id.as_str().parse().ok(),
-            });
-        }
-    }
-
-    if let Some(caps) = bracket_re.captures(name) {
-        if let Some(id) = caps.get(1) {
-            return Some(ResolvedIds {
-                tmdb_id: id.as_str().parse().ok(),
-                imdb_id: None,
-                tvdb_id: None,
-            });
-        }
-        if let Some(id) = caps.get(2) {
-            return Some(ResolvedIds {
-                tmdb_id: None,
-                imdb_id: Some(id.as_str().to_string()),
-                tvdb_id: None,
-            });
-        }
-        if let Some(id) = caps.get(3) {
-            return Some(ResolvedIds {
-                tmdb_id: None,
-                imdb_id: None,
-                tvdb_id: id.as_str().parse().ok(),
-            });
-        }
-    }
-
-    None
 }
 
 fn parse_media_name(file_path: &Path, parent: &Path, media_type: &str) -> Option<ParsedMediaName> {

@@ -792,9 +792,27 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`Arc<LibraryWatcherManager>` in AppState** — Shared between handlers (for watch/unwatch) and main.rs (for start/stop); internal state uses `std::sync::Mutex` (debouncer is not Send)
 - **Channel-based notification** — `mpsc::channel<WatchEvent>` bridges sync debouncer callback to async event processor; channel send uses `try_send` (non-blocking) to avoid blocking the notify thread
 - **No new error variants** — Watcher failures are logged, not surfaced to API callers; LIB_007 (`FilesystemWatcherFailed`) already registered in ERROR_HANDLING.md for future API exposure
-- **`list_library_path_strings()` helper** — Added to libraries service for efficient path lookup without full DTO conversion; returns scan-enabled paths for a library
+ - **`list_library_path_strings()` helper** — Added to libraries service for efficient path lookup without full DTO conversion; returns scan-enabled paths for a library
 
- 8. Implement `.media-match` sidecar file parsing (Layer 1 of identification)
+**What was built for Task 8:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/media_matching.rs` | Dedicated service module for the 5-layer identification cascade: `.media-match` parsing (with `pattern:`, `edition:`, cascading), NFO parsing, provider ID tag parsing, `resolve_identification()` entry point |
+| `server/src/services/mod.rs` | Added `pub mod media_matching;` |
+| `server/src/workers/library_scanner.rs` | Removed inline `parse_media_match_file`, `parse_nfo_file`, `parse_provider_id_tag`, `resolve_identification_layers`, `MediaMatchData`, `NfoData`; replaced with `media_matching::resolve_identification()` calls; `identify_and_create_series` now uses episode overrides from `.media-match` |
+
+**Key decisions from Task 8:**
+
+- **Dedicated service module over inline scanner functions** — The 1845-line scanner had identification logic mixed with pipeline orchestration. Extracted into `services/media_matching.rs` following the project's "modular service files over large singleton files" convention. Scanner now calls `media_matching::resolve_identification()` at two points: movie identification and series identification
+- **No new crate dependencies** — `pattern:` token interpolation converts `{s}`, `{e}`, `{sp}` to regex capture groups using the existing `regex` crate. `globset` was considered but rejected because the pattern syntax is custom tokens, not standard glob
+- **Pattern token support** — `pattern: Show.Part.{s}.-.{e}.-.*` is converted to a regex by replacing `{s}`/`{season}` with `(?P<season>\d{1,2})`, `{e}`/`{episode}` with `(?P<episode>\d{1,3})`, `{sp}`/`{special}` with `(?P<special>\d{1,3})`, and `*` with `.*`. Named capture groups extract season/episode from matched filenames
+- **Season-level `.media-match` cascading** — `resolve_identification()` checks for `.media-match` at both the series folder level and the season folder level (when a season folder is provided). Season-level file overrides series-level for episode matching, following the Plex `.plexmatch` cascading convention
+- **Episode overrides wired into TV identification** — `identify_and_create_series()` now calls `media_matching::resolve_episode_override()` for each episode file. If a `.media-match` file contains an `ep:` line matching the filename, the override season/episode numbers are used instead of regex parsing from the filename. Pattern-based matching is checked before individual `ep:` lines
+- **`edition:` field parsed** — Stored in `MediaMatchData` for use in multi-version grouping (deferred to future enhancement)
+- **`IdentificationResult` unified return type** — `resolve_identification()` returns `IdentificationResult` containing `ResolvedIds`, `identification_source`, `match_state`, plus optional `title`, `year`, `season`, `edition`, and `episode_overrides` — a richer result than the previous 3-tuple
+- **NFO and provider ID tag parsing moved** — `parse_nfo_file()` and `parse_provider_id_tag()` moved from scanner into the service module, keeping all identification logic in one place
+- **Scanner reduced by ~200 lines** — Inline parsing functions removed; `resolve_identification_layers()` replaced by single `media_matching::resolve_identification()` call; `MediaMatchData` and `NfoData` types moved to service module
  9. Implement NFO file parsing (Layer 2)
  10. Implement provider ID tag parsing `{tmdb-XXX}`, `{imdb-ttXXX}`, `{tvdb-XXX}` (Layer 3)
 
