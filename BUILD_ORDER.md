@@ -872,7 +872,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Tasks:**
 
-1. Create `server/src/services/metadata.rs` — `ProviderRegistry`, `EnrichmentOrchestrator`
+1. ~~Create `server/src/services/metadata.rs` — `ProviderRegistry`, `EnrichmentOrchestrator`~~ **DONE**
 2. Implement `TmdbClient` — Bearer token auth, `append_to_response` batching, rate limiter (governor, 40 req/s)
 3. Implement TMDB search endpoints — `/search/movie`, `/search/tv`
 4. Implement TMDB details endpoints — `/movie/{id}`, `/tv/{id}` with `append_to_response=credits,videos,external_ids,images`
@@ -886,7 +886,31 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 12. Implement provider API key validation on save (test request)
 13. Implement API key encryption at rest (AES-256-GCM with `encrypted:` prefix)
 14. Implement TMDB daily ID export download and caching
-15. Implement `server/src/workers/metadata_refresh.rs` — periodic enrichment using TMDB `/changes`
+ 15. Implement `server/src/workers/metadata_refresh.rs` — periodic enrichment using TMDB `/changes`
+
+**What was built for Task 1:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/metadata.rs` | Full service module: `MetadataProvider`, `ArtworkProvider`, `RatingsProvider` traits (async_trait); `ProviderRegistry` with primary/supplementary/artwork/ratings slots; `EnrichmentOrchestrator` with `enrich_movie()`/`enrich_tv()`/`search()`/`find_by_imdb()`; `ProviderRateLimiter` with 4 governor direct rate limiters; `MetadataError` enum with 11 variants; `TmdbClient`/`TvdbClient`/`FanartClient`/`OmdbClient` stubs; rich data types (`MovieDetails`, `TvDetails`, `CreditsData`, `ArtworkCandidate`, `RatingsData`, `EnrichmentResult`, etc.) |
+| `server/src/services/mod.rs` | Added `pub mod metadata;` |
+| `server/src/state.rs` | Expanded `MetadataConfig` from empty placeholder to full struct with 22 fields (artwork, overlays, collections, providers); added `ProviderConfig`, `TmdbProviderConfig`, `OptionalProviderConfig` structs; added `Arc<EnrichmentOrchestrator>` to `AppState`; both constructors create registry from config |
+| `Cargo.toml` | Added `async-trait = "0.1"` to workspace deps |
+| `server/Cargo.toml` | Added `async-trait.workspace = true` |
+
+**Key decisions from Task 1:**
+
+- **`async-trait` required for dyn dispatch** — The design doc uses `Box<dyn MetadataProvider>`; native Rust async traits are not dyn-compatible as of Rust 1.88. `async-trait` 0.1 provides the `#[async_trait]` macro to enable `dyn Trait` with async methods
+- **Three separate traits over one mega-trait** — `MetadataProvider`, `ArtworkProvider`, `RatingsProvider` per METADATA_PROVIDERS.md design; each provider type only implements relevant traits (e.g., `OmdbClient` implements only `RatingsProvider`, not `MetadataProvider`)
+- **Provider stubs with logging** — `TmdbClient`, `TvdbClient`, `FanartClient`, `OmdbClient` implement their trait methods as stubs that log "full implementation in Task N" and return empty/default results; this allows the orchestrator and registry to compile and wire up while individual provider implementations are built incrementally in Tasks 2-11
+- **`ProviderRegistry::from_config()`** — Constructs the registry from `MetadataConfig` at startup; only creates provider instances for enabled+configured providers; TMDB requires `access_token` non-empty, supplementary providers require `api_key` present
+- **`EnrichmentOrchestrator` owns `Arc<ProviderRegistry>`** — Registry is shared reference-counted inside the orchestrator; the orchestrator is stored in `AppState` as `Arc<EnrichmentOrchestrator>` so all handlers and workers access the same instance
+- **Per-provider rate limiters** — `ProviderRateLimiter` uses `governor::RateLimiter::direct()` (non-keyed) per METADATA_PROVIDERS.md: TMDB 40/s, TVDB 1/s burst 5, Fanart 1/s burst 3, OMDb 1/s burst 10; rate limiter awaits via `until_ready()` before each provider call
+- **Sequential tier execution with graceful failure** — `enrich_movie()` and `enrich_tv()` call primary (TMDB) first, then artwork providers, then ratings providers; each tier's failures are caught with `tracing::warn!` and skipped — enrichment succeeds with available data per METADATA_PROVIDERS.md graceful degradation design
+- **`MetadataError` with 11 variants** — Covers authentication, rate limiting, not found, network, invalid response, daily budget, unconfigured, timeout, and database errors; maps to existing LIB error codes (LIB_011–014) per METADATA_PROVIDERS.md error handling section
+- **`MetadataConfig` expanded to 22 fields** — All fields from POSTER_MANAGEMENT.md and METADATA_PROVIDERS.md configuration section; includes artwork language priority, overlay settings, collection settings, provider configs, enrichment timeout, export cache days; `Default` implementations match design doc defaults
+- **`AppState.enrichment` created from config** — `new_with_config()` reads `MetadataConfig` from `RuntimeConfig`, builds `ProviderRegistry::from_config()`, creates `EnrichmentOrchestrator`; `new()` creates empty registry (no providers configured)
+- **No new DB migrations** — `MetadataConfig` fields map to existing `server_config.metadata` JSONB column; no schema changes needed
 
 **Verification:** Library scan enriches items with TMDB data — titles, overviews, ratings, genres, cast, artwork. Admin can configure TVDB/Fanart.tv/OMDb keys in settings UI. Provider failures are non-blocking.
 

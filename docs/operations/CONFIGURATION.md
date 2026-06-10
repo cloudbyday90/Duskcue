@@ -265,7 +265,7 @@ pub struct RuntimeConfig {
 }
 ```
 
-`BackupConfig` is defined in BACKUP_RECOVERY.md. `StorageConfig` is defined in CACHE_STORAGE.md. `MaintenanceConfig` is defined in DATABASE_MAINTENANCE.md. `ResourceLimitsConfig` is defined in MEMORY.md. `CpuConfig` is defined in CPU.md. `QualityConfig` is defined below. `SubtitleConfig` is defined below. `AuthConfig` is defined below. `MetadataConfig` is defined in POSTER_MANAGEMENT.md. Other structs follow the same serde-deserialized pattern from JSONB. The full audio format catalog (codecs, channels, spatial audio, transcode targets) is documented in [AUDIO_FORMATS.md](../design/AUDIO_FORMATS.md).
+`BackupConfig` is defined in BACKUP_RECOVERY.md. `StorageConfig` is defined in CACHE_STORAGE.md. `MaintenanceConfig` is defined in DATABASE_MAINTENANCE.md. `ResourceLimitsConfig` is defined in MEMORY.md. `CpuConfig` is defined in CPU.md. `QualityConfig` is defined below. `SubtitleConfig` is defined below. `AuthConfig` is defined below. `MetadataConfig` is defined in POSTER_MANAGEMENT.md and METADATA_PROVIDERS.md (expanded in Phase 6 with 22 fields including `ProviderConfig` for TMDB/TVDB/Fanart/OMDb). Other structs follow the same serde-deserialized pattern from JSONB. The full audio format catalog (codecs, channels, spatial audio, transcode targets) is documented in [AUDIO_FORMATS.md](../design/AUDIO_FORMATS.md).
 
 ### QualityConfig Rust Struct
 
@@ -798,8 +798,9 @@ Common alternatives considered:
 
 - `AppState` struct with `Clone` — holds `PgPool`, `Arc<ArcSwap<RuntimeConfig>>`, `BootstrapConfig`
 - `RuntimeConfig` struct with all 21 fields matching `server_config` table columns
-- 6 fully-defined sub-configs: `AuthConfig` (with `RateLimitConfig`, `NetworkMode`), `SecurityConfig` (with `TlsConfig`, `StreamSigningConfig`, `VpnDetectionConfig`, `AcmeChallengeType`), `QualityConfig`, `SubtitleConfig`, `ResourceLimitsConfig`
-- 6 placeholder sub-configs with `Default`: `NetworkConfig`, `TranscodingConfig`, `MetadataConfig`, `NotificationConfig`, `BackupConfig`, `IntegrationsConfig`, `LoggingConfig`, `StorageConfig`, `MaintenanceConfig`, `CpuConfig` — expanded in their respective domain phases
+- 5 fully-defined sub-configs: `AuthConfig` (with `RateLimitConfig`, `NetworkMode`), `SecurityConfig` (with `TlsConfig`, `StreamSigningConfig`, `VpnDetectionConfig`, `AcmeChallengeType`), `QualityConfig`, `SubtitleConfig`, `ResourceLimitsConfig`
+- 1 expanded sub-config (Phase 6): `MetadataConfig` — 22 fields covering artwork, overlays, collections, and provider configuration (`ProviderConfig` with `TmdbProviderConfig` + `OptionalProviderConfig` for TVDB/Fanart/OMDb); defined in POSTER_MANAGEMENT.md and METADATA_PROVIDERS.md
+- 9 placeholder sub-configs with `Default`: `NetworkConfig`, `TranscodingConfig`, `NotificationConfig`, `BackupConfig`, `IntegrationsConfig`, `LoggingConfig`, `StorageConfig`, `MaintenanceConfig`, `CpuConfig` — expanded in their respective domain phases
 - `load_runtime_config(pool)` — queries `server_config` table, deserializes JSONB columns with `unwrap_or_default()` fallback, returns `RuntimeConfig::default()` for empty table (first-run)
 - `AppState::reload_runtime_config()` — atomic swap via `ArcSwap` for admin API config changes
 - `arc-swap` v1.9.1 added as workspace dependency for lock-free config reads

@@ -59,5 +59,6 @@ croner.workspace = true
 notify.workspace = true
 notify-debouncer-full.workspace = true
 quick-xml.workspace = true
+async-trait.workspace = true
 duskcue-types = { path = "../crates/types" }
 duskcue-db = { path = "../crates/db" }

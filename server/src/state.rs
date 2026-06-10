@@ -30,6 +30,7 @@ use crate::config::BootstrapConfig;
 use crate::error::set_environment;
 use crate::middleware::RateLimitState;
 use crate::services::fs_watcher::LibraryWatcherManager;
+use crate::services::metadata::EnrichmentOrchestrator;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthConfig {
@@ -320,8 +321,95 @@ impl Default for NetworkConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TranscodingConfig {}
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct MetadataConfig {}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MetadataConfig {
+    pub artwork_language_priority: Vec<String>,
+    pub artwork_auto_download: bool,
+    pub artwork_download_originals_only: bool,
+    pub asset_directory: Option<String>,
+    pub overlays_enabled: bool,
+    pub overlay_apply_schedule: String,
+    pub overlay_image_format: String,
+    pub overlay_image_quality: i32,
+    pub overlay_max_image_size_mb: i32,
+    pub overlay_default_font: String,
+    pub overlay_reapply_on_artwork_change: bool,
+    pub collections_enabled: bool,
+    pub collection_sync_schedule: String,
+    pub collection_default_poster_source: String,
+    pub collection_max_items_default: i32,
+    pub collection_track_missing: bool,
+    pub collection_external_rate_limit_per_minute: i32,
+    pub providers: ProviderConfig,
+    pub auto_refresh_hours: u32,
+    pub max_concurrent_probes: u32,
+    pub metadata_language: String,
+    pub enrichment_timeout_seconds: u32,
+    pub export_cache_days: u32,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ProviderConfig {
+    pub tmdb: TmdbProviderConfig,
+    pub tvdb: OptionalProviderConfig,
+    pub fanart: OptionalProviderConfig,
+    pub omdb: OptionalProviderConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TmdbProviderConfig {
+    pub api_key: String,
+    pub access_token: String,
+    pub enabled: bool,
+    pub include_adult: bool,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct OptionalProviderConfig {
+    pub api_key: Option<String>,
+    pub enabled: bool,
+}
+
+impl Default for MetadataConfig {
+    fn default() -> Self {
+        Self {
+            artwork_language_priority: vec!["en".to_string()],
+            artwork_auto_download: true,
+            artwork_download_originals_only: true,
+            asset_directory: None,
+            overlays_enabled: true,
+            overlay_apply_schedule: "0 5 * * *".to_string(),
+            overlay_image_format: "webp".to_string(),
+            overlay_image_quality: 90,
+            overlay_max_image_size_mb: 10,
+            overlay_default_font: "Inter".to_string(),
+            overlay_reapply_on_artwork_change: true,
+            collections_enabled: true,
+            collection_sync_schedule: "0 6 * * *".to_string(),
+            collection_default_poster_source: "auto".to_string(),
+            collection_max_items_default: 100,
+            collection_track_missing: true,
+            collection_external_rate_limit_per_minute: 30,
+            providers: ProviderConfig::default(),
+            auto_refresh_hours: 6,
+            max_concurrent_probes: 2,
+            metadata_language: "en".to_string(),
+            enrichment_timeout_seconds: 30,
+            export_cache_days: 7,
+        }
+    }
+}
+
+impl Default for TmdbProviderConfig {
+    fn default() -> Self {
+        Self {
+            api_key: String::new(),
+            access_token: String::new(),
+            enabled: true,
+            include_adult: false,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NotificationConfig {}
@@ -445,6 +533,7 @@ pub struct AppState {
     pub webauthn: Arc<Webauthn>,
     pub webauthn_challenges: Arc<DashMap<String, WebauthnChallenge>>,
     pub fs_watcher: Arc<LibraryWatcherManager>,
+    pub enrichment: Arc<EnrichmentOrchestrator>,
 }
 
 impl AppState {
@@ -453,6 +542,11 @@ impl AppState {
         let subnets = parse_metrics_subnets(&NetworkConfig::default().allowed_metrics_subnets);
         let webauthn = build_webauthn("localhost", "http://localhost:48027");
         let fs_watcher = Arc::new(LibraryWatcherManager::new(pool.clone()));
+        let enrichment = Arc::new(EnrichmentOrchestrator::new(
+            crate::services::metadata::ProviderRegistry::new(),
+            pool.clone(),
+            MetadataConfig::default(),
+        ));
         Self {
             pool,
             runtime_config: Arc::new(ArcSwap::from_pointee(RuntimeConfig::default())),
@@ -463,6 +557,7 @@ impl AppState {
             webauthn: Arc::new(webauthn),
             webauthn_challenges: Arc::new(DashMap::new()),
             fs_watcher,
+            enrichment,
         }
     }
 
@@ -481,6 +576,14 @@ impl AppState {
         let webauthn = build_webauthn(rp_id, rp_origin);
         let fs_watcher = Arc::new(LibraryWatcherManager::new(pool.clone()));
 
+        let metadata_config = runtime_config.metadata.clone();
+        let registry = crate::services::metadata::ProviderRegistry::from_config(&metadata_config);
+        let enrichment = Arc::new(EnrichmentOrchestrator::new(
+            registry,
+            pool.clone(),
+            metadata_config,
+        ));
+
         Self {
             pool,
             runtime_config: Arc::new(ArcSwap::from_pointee(runtime_config)),
@@ -491,6 +594,7 @@ impl AppState {
             webauthn: Arc::new(webauthn),
             webauthn_challenges: Arc::new(DashMap::new()),
             fs_watcher,
+            enrichment,
         }
     }
 

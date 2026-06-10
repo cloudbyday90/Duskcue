@@ -383,7 +383,7 @@ Artwork lifecycle (source → select → customize → display), multi-source ar
 - **Poster locking** — prevents auto-refresh from overwriting user-selected artwork; auto-locked on upload or asset directory discovery
 - **Asset directory** — `/data/assets/` with per-item folders matching library item names; auto-discovered during scan
 - **TMDb image fetching** — `original` size downloaded for best quality; resized versions generated server-side; CC BY 4.0 attribution
-- **MetadataConfig** — 16 configurable fields covering artwork, overlays, and collections in `server_config.metadata` JSONB
+- **MetadataConfig** — 22 configurable fields covering artwork, overlays, collections, and provider configuration (TMDB/TVDB/Fanart/OMDb) in `server_config.metadata` JSONB; includes `ProviderConfig` with `TmdbProviderConfig` and `OptionalProviderConfig` for each supplementary provider
 
 ## API Conventions
 
@@ -500,7 +500,8 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 3: Core Server Infrastructure | **Complete** | — |
 | Phase 4: Auth & Users | **Complete** | — |
 | Phase 5: Libraries & Media Items | **Complete** | — |
-| Phase 6–16 | Not started | — |
+| Phase 6: Metadata Providers | **In Progress** (Task 1) | — |
+| Phase 7–16 | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
 
@@ -511,6 +512,8 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 **Phase 4 complete:** All 11 tasks done. See [BUILD_ORDER.md](BUILD_ORDER.md) Phase 4 for full details. Auth domain with WebAuthn passkeys, invite codes, device linking (RFC 8628), re-auth codes, session management, capability-based access control with `Require<C>` trait-based generic extractor. Users domain with full CRUD (list, get, update, soft-delete). `AuthenticatedUser` extractor wired to DB-backed session validation. 12 capability marker types replace all inline `check_capability()` calls. `AdminOnly` preserved as type alias for `Require<CanManageServer>`.
 
 **Phase 5 complete:** All 10 tasks done — libraries domain (CRUD, slug uniqueness, multi-path), media domain (five-file pattern with cursor pagination), library scanner (`workers/library_scanner.rs`, 6-phase pipeline: discover→diff→probe→identify→enrich stub→cleanup), scheduled task runner (`services/scheduler.rs`, `croner` v3 cron evaluation, 8 seeded default tasks), FS watcher (`services/fs_watcher.rs`, `notify` 8.2 + `notify-debouncer-full` 0.7), media matching service (`services/media_matching.rs`, 5-layer identification cascade with `.media-match` pattern tokens, episode overrides, season-level cascading, multi-ID provider tag extraction from both folder names and filenames), NFO parser (`services/nfo_parser.rs`, `quick-xml` 0.40 streaming StAX), provider ID tag parsing (Layer 3 — `parse_provider_id_tags()` extracts all IDs from `{tmdb-XXX}`/`[tmdbid=XXX]` formats in folder names and filenames with curly-brace priority). See [BUILD_ORDER.md](BUILD_ORDER.md) Phase 5 for details.
+
+**Phase 6 in progress (Task 1):** `ProviderRegistry` + `EnrichmentOrchestrator` in `services/metadata.rs` with 3 async traits (`MetadataProvider`, `ArtworkProvider`, `RatingsProvider`), 4 provider stubs (TMDB/TVDB/Fanart/OMDB), per-provider rate limiters, and rich data types. `MetadataConfig` expanded from empty placeholder to 22 fields. `Arc<EnrichmentOrchestrator>` wired into `AppState`. `async-trait` 0.1 added to workspace. See [BUILD_ORDER.md](BUILD_ORDER.md) Phase 6 for details.
 
 ## Open Questions
 
