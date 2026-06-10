@@ -3,6 +3,8 @@ use std::path::Path;
 
 use regex::Regex;
 
+use crate::services::nfo_parser;
+
 #[derive(Debug, Clone, Default)]
 pub struct ResolvedIds {
     pub tmdb_id: Option<i64>,
@@ -28,15 +30,6 @@ pub struct EpisodeOverride {
     pub season: Option<u32>,
     pub episode: u32,
     pub episode_end: Option<u32>,
-}
-
-#[derive(Debug, Clone)]
-pub struct NfoData {
-    pub tmdb_id: Option<i64>,
-    pub imdb_id: Option<String>,
-    pub tvdb_id: Option<i64>,
-    pub title: Option<String>,
-    pub year: Option<u16>,
 }
 
 #[derive(Debug, Clone)]
@@ -83,7 +76,7 @@ pub fn resolve_identification(
         };
     }
 
-    if let Some(nfo) = parse_nfo_file(item_folder)
+    if let Some(nfo) = nfo_parser::parse_nfo(item_folder)
         && (nfo.tmdb_id.is_some() || nfo.imdb_id.is_some() || nfo.tvdb_id.is_some())
     {
         return IdentificationResult {
@@ -341,49 +334,6 @@ fn parse_episode_ref(ep_ref: &str) -> Option<(Option<u32>, u32, Option<u32>)> {
     }
 
     None
-}
-
-fn parse_nfo_file(item_folder: &Path) -> Option<NfoData> {
-    let nfo_paths = [
-        item_folder.join("movie.nfo"),
-        item_folder.join("tvshow.nfo"),
-    ];
-
-    let content = nfo_paths
-        .iter()
-        .find_map(|p| std::fs::read_to_string(p).ok())?;
-
-    let mut data = NfoData {
-        tmdb_id: None,
-        imdb_id: None,
-        tvdb_id: None,
-        title: None,
-        year: None,
-    };
-
-    let tmdb_re = Regex::new(r"<tmdbid>(\d+)</tmdbid>").ok()?;
-    let imdb_re = Regex::new(r"<imdb[id_]*>(tt\d+)</imdb[id_]*>").ok()?;
-    let tvdb_re = Regex::new(r"<tvdbid>(\d+)</tvdbid>").ok()?;
-    let title_re = Regex::new(r"<title>([^<]+)</title>").ok()?;
-    let year_re = Regex::new(r"<year>(\d{4})</year>").ok()?;
-
-    if let Some(caps) = tmdb_re.captures(&content) {
-        data.tmdb_id = caps[1].parse().ok();
-    }
-    if let Some(caps) = imdb_re.captures(&content) {
-        data.imdb_id = Some(caps[1].to_string());
-    }
-    if let Some(caps) = tvdb_re.captures(&content) {
-        data.tvdb_id = caps[1].parse().ok();
-    }
-    if let Some(caps) = title_re.captures(&content) {
-        data.title = Some(caps[1].to_string());
-    }
-    if let Some(caps) = year_re.captures(&content) {
-        data.year = caps[1].parse().ok();
-    }
-
-    Some(data)
 }
 
 fn parse_provider_id_tag(name: &str) -> Option<ResolvedIds> {

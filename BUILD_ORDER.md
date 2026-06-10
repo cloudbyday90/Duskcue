@@ -813,8 +813,29 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`IdentificationResult` unified return type** — `resolve_identification()` returns `IdentificationResult` containing `ResolvedIds`, `identification_source`, `match_state`, plus optional `title`, `year`, `season`, `edition`, and `episode_overrides` — a richer result than the previous 3-tuple
 - **NFO and provider ID tag parsing moved** — `parse_nfo_file()` and `parse_provider_id_tag()` moved from scanner into the service module, keeping all identification logic in one place
 - **Scanner reduced by ~200 lines** — Inline parsing functions removed; `resolve_identification_layers()` replaced by single `media_matching::resolve_identification()` call; `MediaMatchData` and `NfoData` types moved to service module
- 9. Implement NFO file parsing (Layer 2)
+ 9. ~~Implement NFO file parsing (Layer 2)~~ **DONE**
  10. Implement provider ID tag parsing `{tmdb-XXX}`, `{imdb-ttXXX}`, `{tvdb-XXX}` (Layer 3)
+
+**What was built for Task 9:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/nfo_parser.rs` | Dedicated NFO parsing module using `quick-xml` 0.40 streaming StAX parser |
+| `server/src/services/media_matching.rs` | Removed regex-based `parse_nfo_file()` and `NfoData`; calls `nfo_parser::parse_nfo()` instead |
+| `server/src/services/mod.rs` | Added `pub mod nfo_parser;` |
+| `Cargo.toml` | Added `quick-xml = "0.40"` to workspace deps |
+| `server/Cargo.toml` | Added `quick-xml.workspace = true` |
+
+**Key decisions from Task 9:**
+
+- **`quick-xml` 0.40 over regex** — Streaming StAX parser replaces fragile regex-based XML parsing. 50x faster than xml-rs, near-zero allocation, handles malformed XML gracefully
+- **All NFO tag formats supported** — Modern Kodi v19+ `<uniqueid type="tmdb|imdb|tvdb">`, legacy flat tags (`<tmdbid>`, `<imdbid>`, `<imdb_id>`, `<tvdbid>`), URL-only format (`https://www.themoviedb.org/movie/...`), mixed uniqueid + legacy in same file
+- **All root elements supported** — `<movie>`, `<tvshow>`, `<episodedetails>` (episode NFO with `<season>` and `<episode>`)
+- **`<filename>.nfo` discovery** — `parse_nfo_for_file()` checks for NFO alongside a video file (e.g., `S01E01.nfo` next to `S01E01.mkv`), per Kodi/Jellyfin naming conventions
+- **Graceful degradation on trailing content** — Stops at closing root tag; ignores trailing URLs after `</movie>` (common Jellyfin bug per issue #13655). Falls back to URL-only parsing if XML parsing fails entirely
+- **No provider IDs = None** — NFO files with only `<title>` and `<year>` but no provider IDs return `None`, consistent with identification cascade (NFO is only useful if it contains a provider ID for exact matching)
+- **`NfoData` moved to nfo_parser module** — Expanded with `season` and `episode` fields for episode-level NFO; old `NfoData` struct removed from media_matching.rs
+- **14 unit tests** covering: modern Kodi uniqueid, legacy flat tags, TV show NFO, Jellyfin `<imdb_id>` variant, episode NFO with season/episode, URL-only format, trailing content after root, mixed uniqueid + legacy, no provider IDs, no NFO file, TV show URL-only, uniqueid without default attribute, Kodi/Radarr mixed format, filename NFO discovery
 
 **Verification:** Admin creates a library pointing to a media directory, triggers scan, media items appear in DB with correct file paths, codecs, and resolutions. FS watching detects new files in real-time.
 
@@ -1190,7 +1211,7 @@ Phase 3: Core Server Infrastructure (COMPLETE — 12 tasks)
     ↓
 Phase 4: Auth & Users (COMPLETE — 11 tasks)
     ↓
-Phase 5: Libraries & Media (IN PROGRESS — Tasks 1-7 done, 8-10 remain) ─────┐
+Phase 5: Libraries & Media (IN PROGRESS — Tasks 1-9 done, 10 remains) ─────┐
     ↓                                                      │
 Phase 6: Metadata Providers ←─── (enriches Phase 5)       │
     ↓                                                      │

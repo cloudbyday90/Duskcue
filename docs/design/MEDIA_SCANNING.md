@@ -15,7 +15,8 @@ Library folder structure, file naming conventions, and sub-folder design are doc
 | `notify` | 8.2.0 | notify-rs | Cross-platform filesystem watching (real-time detection) |
 | `notify-debouncer-full` | 0.7.0 | notify-rs | Debounced FS events with rename stitching and dedup |
 | `blake3` | 1.x | oconnor663 | Partial file hashing (first+last 1MB); fastest non-crypto hash |
-| `regex` | 1.x | rust-lang | SXXEXX filename parsing, provider ID tag extraction, NFO parsing |
+| `regex` | 1.x | rust-lang | SXXEXX filename parsing, provider ID tag extraction |
+| `quick-xml` | 0.40.x | tafia | NFO XML parsing (streaming StAX; 50x faster than xml-rs) |
 | `croner` | 3.x | hexagon | Cron expression evaluation for scheduled scans |
 | FFmpeg `ffprobe` | existing | FFmpeg project | Media file probing (codecs, resolution, duration, streams) |
 
@@ -27,6 +28,7 @@ Library folder structure, file naming conventions, and sub-folder design are doc
 | **walkdir** | Simple; well-tested; low overhead | Single-threaded | Targeted single-directory re-scans |
 | **notify** | Cross-platform (inotify/FSEvents/ReadDirectoryChangesW); PollWatcher fallback | NFS/SMB may not emit events; Linux inotify watch limits | Real-time file detection |
 | **notify-debouncer-full** | Rename stitching; event dedup; file ID tracking; only emits settled events | Adds latency (debounce timeout) | Processing FS watch events |
+| **quick-xml** | Fastest Rust XML parser (50x xml-rs); streaming StAX; near-zero alloc | Low-level API; no DOM tree | NFO file parsing (Layer 2 identification) |
 
 ### Rejected Alternatives
 
@@ -726,7 +728,7 @@ The `media_files` table (including `file_hash`, `file_modified_at`) is part of t
 - `workers/library_scanner.rs` — 6-phase pipeline implemented: Discover, Diff, Probe, Identify, Enrich (stub), Cleanup
 - `services/scheduler.rs` — Scheduled task runner with `croner` cron evaluation, 30s tick, 8 seeded defaults
 - `services/fs_watcher.rs` — Cross-platform FS watcher with `notify` 8.2 + `notify-debouncer-full` 0.7; 3-second debounce, media extension filtering, bulk import detection, per-library cooldown, channel-based event processing
-- Crates added: `ignore` 0.4, `blake3` 1, `regex` 1, `croner` 3, `notify` 8, `notify-debouncer-full` 0.7
+- Crates added: `ignore` 0.4, `blake3` 1, `regex` 1, `croner` 3, `notify` 8, `notify-debouncer-full` 0.7, `quick-xml` 0.40
 - Handler `scan_library` wired to scanner for synchronous manual scans
 - Scheduler wired in `main.rs` with `library_scan` executor for periodic scheduled scans
 - FS watcher wired in `main.rs` startup, library/path CRUD handlers for dynamic watch/unwatch lifecycle
@@ -742,6 +744,21 @@ The `media_files` table (including `file_hash`, `file_modified_at`) is part of t
 - Season-level `.media-match` cascading: series folder file applies to all seasons; season folder file overrides for that season only
 - NFO parsing and provider ID tag parsing moved from scanner into service module
 - Scanner `resolve_identification_layers()` replaced by `media_matching::resolve_identification()`
+
+**Phase 5 Task 9 (complete):**
+
+- `services/nfo_parser.rs` — Dedicated NFO parsing module using `quick-xml` 0.40 streaming StAX parser
+- Supports all NFO tag formats found in the wild:
+  - Modern Kodi v19+ `<uniqueid type="tmdb|imdb|tvdb" default="...">` format
+  - Legacy flat tags: `<tmdbid>`, `<imdbid>`, `<imdb_id>`, `<tvdbid>`
+  - URL-only format: `https://www.themoviedb.org/movie/...`, `https://www.imdb.com/title/...`
+- Supports all root elements: `<movie>`, `<tvshow>`, `<episodedetails>`
+- Supports episode NFO: extracts `<season>` and `<episode>` from `<episodedetails>`
+- Discovers NFO files: `movie.nfo`, `tvshow.nfo`, `<filename>.nfo` (video basename match)
+- Graceful degradation: stops at closing root tag, ignores trailing content after `</movie>` (common Jellyfin bug)
+- `NfoData` expanded: added `season` and `episode` fields for episode-level NFO
+- Replaced regex-based `parse_nfo_file()` in `media_matching.rs` with call to `nfo_parser::parse_nfo()`
+- Crate added: `quick-xml` 0.40
 
 **Not yet implemented:**
 

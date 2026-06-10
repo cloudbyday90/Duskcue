@@ -196,7 +196,8 @@ project/
 │       │   ├── mod.rs
 │       │   ├── scheduler.rs      # Scheduled task runner
 │       │   ├── fs_watcher.rs     # Filesystem watcher (notify + notify-debouncer-full)
-│       │   ├── media_matching.rs # 5-layer identification cascade (.media-match, NFO, provider ID tags)
+│       │   ├── media_matching.rs # 5-layer identification cascade (.media-match, provider ID tags)
+│       │   ├── nfo_parser.rs     # NFO XML parsing (quick-xml streaming StAX, Kodi/Jellyfin/Emby formats)
 │       │   ├── transcoding.rs    # FFmpeg integration (tokio-process-tools, -progress pipe:1)
 │       │   ├── metadata.rs       # TMDB/TVDB metadata fetching
 │       │   ├── notifications.rs  # Notification dispatch

@@ -16,4 +16,5 @@
 
 pub mod fs_watcher;
 pub mod media_matching;
+pub mod nfo_parser;
 pub mod scheduler;
