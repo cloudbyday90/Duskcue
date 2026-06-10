@@ -841,7 +841,8 @@ async fn identify_and_create_movie(
     }
 
     let parent = file.path.parent().unwrap_or(scan_path);
-    let ident = media_matching::resolve_identification(parent, None);
+    let file_stem = file.path.file_stem().and_then(|s| s.to_str());
+    let ident = media_matching::resolve_identification(parent, None, file_stem);
 
     let parsed = parse_media_name(&file.path, parent, "movies");
     let title = parsed
@@ -1031,6 +1032,7 @@ async fn identify_and_create_series(
 
     let ident = media_matching::resolve_identification(
         &series_key.folder,
+        None,
         None,
     );
 

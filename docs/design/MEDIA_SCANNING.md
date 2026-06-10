@@ -760,6 +760,16 @@ The `media_files` table (including `file_hash`, `file_modified_at`) is part of t
 - Replaced regex-based `parse_nfo_file()` in `media_matching.rs` with call to `nfo_parser::parse_nfo()`
 - Crate added: `quick-xml` 0.40
 
+**Phase 5 Task 10 (complete):**
+
+- `parse_provider_id_tag()` refactored to `parse_provider_id_tags()` — extracts ALL provider IDs from a string using `captures_iter()` instead of single `captures()`
+- Multi-ID extraction: `{tmdb-272}{imdb-tt0381061}` now returns both IDs instead of only the first
+- Curly braces (`{tmdb-XXX}`) take priority over square brackets (`[tmdbid=XXX]`) for the same provider per LIBRARY_ORGANIZATION.md; different providers are merged
+- `resolve_identification()` now accepts `filename: Option<&str>` parameter — checks both folder name and filename for provider ID tags; folder name IDs take priority, filename IDs fill in missing providers
+- Movie scanner passes `file.path.file_stem()` as filename; TV series scanner passes `None` (tags go on series folder)
+- Regex patterns compiled via `std::sync::LazyLock` statics (`CURLY_TAG_RE`, `BRACKET_TAG_RE`) — avoids recompilation per call
+- No new workspace dependencies — uses existing `regex` crate and `std::sync::LazyLock` (Rust edition 2024 stable)
+
 **Not yet implemented:**
 
 - Phase 5 (Enrich) is a stub — metadata provider integration deferred to Phase 6

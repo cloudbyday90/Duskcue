@@ -814,7 +814,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **NFO and provider ID tag parsing moved** — `parse_nfo_file()` and `parse_provider_id_tag()` moved from scanner into the service module, keeping all identification logic in one place
 - **Scanner reduced by ~200 lines** — Inline parsing functions removed; `resolve_identification_layers()` replaced by single `media_matching::resolve_identification()` call; `MediaMatchData` and `NfoData` types moved to service module
  9. ~~Implement NFO file parsing (Layer 2)~~ **DONE**
- 10. Implement provider ID tag parsing `{tmdb-XXX}`, `{imdb-ttXXX}`, `{tvdb-XXX}` (Layer 3)
+ 10. ~~Implement provider ID tag parsing `{tmdb-XXX}`, `{imdb-ttXXX}`, `{tvdb-XXX}` (Layer 3)~~ **DONE**
 
 **What was built for Task 9:**
 
@@ -836,6 +836,23 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **No provider IDs = None** — NFO files with only `<title>` and `<year>` but no provider IDs return `None`, consistent with identification cascade (NFO is only useful if it contains a provider ID for exact matching)
 - **`NfoData` moved to nfo_parser module** — Expanded with `season` and `episode` fields for episode-level NFO; old `NfoData` struct removed from media_matching.rs
 - **14 unit tests** covering: modern Kodi uniqueid, legacy flat tags, TV show NFO, Jellyfin `<imdb_id>` variant, episode NFO with season/episode, URL-only format, trailing content after root, mixed uniqueid + legacy, no provider IDs, no NFO file, TV show URL-only, uniqueid without default attribute, Kodi/Radarr mixed format, filename NFO discovery
+
+**What was built for Task 10:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/media_matching.rs` | Refactored `parse_provider_id_tag()` → `parse_provider_id_tags()` with multi-ID extraction; added `filename` parameter to `resolve_identification()` for filename tag checking; regex patterns compiled via `LazyLock` statics |
+| `server/src/workers/library_scanner.rs` | Updated `identify_and_create_movie()` to pass file stem as filename; updated `identify_and_create_series()` to pass `None` |
+
+**Key decisions from Task 10:**
+
+- **Multi-ID extraction** — `parse_provider_id_tags()` uses `captures_iter()` to extract ALL provider IDs from a string; `{tmdb-272}{imdb-tt0381061}` now returns both IDs instead of only the first
+- **Curly braces priority over square brackets** — Per LIBRARY_ORGANIZATION.md, curly brace tags (`{tmdb-XXX}`) take priority over square bracket tags (`[tmdbid=XXX]`) for the same provider; different providers are merged (e.g., `{tmdb-272}[imdbid-tt0381061]` returns both)
+- **Filename checking** — `resolve_identification()` now accepts `filename: Option<&str>` parameter; folder name is checked first, then filename; folder name IDs take priority, filename IDs fill in any missing providers
+- **`LazyLock` statics** — `CURLY_TAG_RE` and `BRACKET_TAG_RE` compiled once via `std::sync::LazyLock` (Rust edition 2024 stable), avoiding regex recompilation per call
+- **Movie file stems passed** — `identify_and_create_movie()` extracts `file.path.file_stem()` and passes it; `identify_and_create_series()` passes `None` (tags go on series folder, not episode filenames)
+- **20 new unit tests** covering: all 6 tag formats (curly + bracket × tmdb/imdb/tvdb), multi-ID extraction, mixed curly+bracket, curly priority, bracket fills missing, empty/no-tag strings, filename tag extraction, folder priority over filename, filename fills missing IDs, no-tag fallback to filename_parse
+- **No new workspace dependencies** — uses existing `regex` crate and `std::sync::LazyLock`
 
 **Verification:** Admin creates a library pointing to a media directory, triggers scan, media items appear in DB with correct file paths, codecs, and resolutions. FS watching detects new files in real-time.
 
@@ -1211,7 +1228,7 @@ Phase 3: Core Server Infrastructure (COMPLETE — 12 tasks)
     ↓
 Phase 4: Auth & Users (COMPLETE — 11 tasks)
     ↓
-Phase 5: Libraries & Media (IN PROGRESS — Tasks 1-9 done, 10 remains) ─────┐
+Phase 5: Libraries & Media (COMPLETE — 10 tasks) ─────────────────────────────┐
     ↓                                                      │
 Phase 6: Metadata Providers ←─── (enriches Phase 5)       │
     ↓                                                      │

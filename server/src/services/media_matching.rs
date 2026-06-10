@@ -1,9 +1,18 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::LazyLock;
 
 use regex::Regex;
 
 use crate::services::nfo_parser;
+
+static CURLY_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\{(?:(tmdb)-(\d+)|(imdb)-(tt\d+)|(tvdb)-(\d+))\}").unwrap()
+});
+
+static BRACKET_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"\[(?:(?:tmdbid)=(\d+)|(?:imdbid)-(tt\d+)|(?:tvdbid)=(\d+))\]").unwrap()
+});
 
 #[derive(Debug, Clone, Default)]
 pub struct ResolvedIds {
@@ -48,6 +57,7 @@ pub struct IdentificationResult {
 pub fn resolve_identification(
     item_folder: &Path,
     season_folder: Option<&Path>,
+    filename: Option<&str>,
 ) -> IdentificationResult {
     let series_match = parse_media_match_file(&item_folder.join(".media-match"));
 
@@ -101,7 +111,21 @@ pub fn resolve_identification(
         .and_then(|n| n.to_str())
         .unwrap_or("");
 
-    if let Some(ids) = parse_provider_id_tag(folder_name) {
+    let folder_ids = parse_provider_id_tags(folder_name);
+    let file_ids = filename.and_then(parse_provider_id_tags);
+
+    let merged_ids = match (folder_ids, file_ids) {
+        (Some(f), Some(fi)) => Some(ResolvedIds {
+            tmdb_id: f.tmdb_id.or(fi.tmdb_id),
+            imdb_id: f.imdb_id.or(fi.imdb_id),
+            tvdb_id: f.tvdb_id.or(fi.tvdb_id),
+        }),
+        (Some(f), None) => Some(f),
+        (None, Some(fi)) => Some(fi),
+        (None, None) => None,
+    };
+
+    if let Some(ids) = merged_ids {
         return IdentificationResult {
             ids,
             identification_source: Some("provider_id_tag".to_string()),
@@ -336,60 +360,44 @@ fn parse_episode_ref(ep_ref: &str) -> Option<(Option<u32>, u32, Option<u32>)> {
     None
 }
 
-fn parse_provider_id_tag(name: &str) -> Option<ResolvedIds> {
-    let curly_re = Regex::new(r"\{(?:(tmdb)-(\d+)|(imdb)-(tt\d+)|(tvdb)-(\d+))\}").ok()?;
-    let bracket_re =
-        Regex::new(r"\[(?:(?:tmdbid)=(\d+)|(?:imdbid)-(tt\d+)|(?:tvdbid)=(\d+))\]").ok()?;
+fn parse_provider_id_tags(name: &str) -> Option<ResolvedIds> {
+    let mut curly = ResolvedIds::default();
+    let mut found_curly = false;
 
-    if let Some(caps) = curly_re.captures(name) {
+    for caps in CURLY_TAG_RE.captures_iter(name) {
+        found_curly = true;
         if let Some(id) = caps.get(2) {
-            return Some(ResolvedIds {
-                tmdb_id: id.as_str().parse().ok(),
-                imdb_id: None,
-                tvdb_id: None,
-            });
-        }
-        if let Some(id) = caps.get(4) {
-            return Some(ResolvedIds {
-                tmdb_id: None,
-                imdb_id: Some(id.as_str().to_string()),
-                tvdb_id: None,
-            });
-        }
-        if let Some(id) = caps.get(6) {
-            return Some(ResolvedIds {
-                tmdb_id: None,
-                imdb_id: None,
-                tvdb_id: id.as_str().parse().ok(),
-            });
+            curly.tmdb_id = id.as_str().parse().ok();
+        } else if let Some(id) = caps.get(4) {
+            curly.imdb_id = Some(id.as_str().to_string());
+        } else if let Some(id) = caps.get(6) {
+            curly.tvdb_id = id.as_str().parse().ok();
         }
     }
 
-    if let Some(caps) = bracket_re.captures(name) {
+    let mut bracket = ResolvedIds::default();
+    let mut found_bracket = false;
+
+    for caps in BRACKET_TAG_RE.captures_iter(name) {
+        found_bracket = true;
         if let Some(id) = caps.get(1) {
-            return Some(ResolvedIds {
-                tmdb_id: id.as_str().parse().ok(),
-                imdb_id: None,
-                tvdb_id: None,
-            });
-        }
-        if let Some(id) = caps.get(2) {
-            return Some(ResolvedIds {
-                tmdb_id: None,
-                imdb_id: Some(id.as_str().to_string()),
-                tvdb_id: None,
-            });
-        }
-        if let Some(id) = caps.get(3) {
-            return Some(ResolvedIds {
-                tmdb_id: None,
-                imdb_id: None,
-                tvdb_id: id.as_str().parse().ok(),
-            });
+            bracket.tmdb_id = id.as_str().parse().ok();
+        } else if let Some(id) = caps.get(2) {
+            bracket.imdb_id = Some(id.as_str().to_string());
+        } else if let Some(id) = caps.get(3) {
+            bracket.tvdb_id = id.as_str().parse().ok();
         }
     }
 
-    None
+    if !found_curly && !found_bracket {
+        return None;
+    }
+
+    Some(ResolvedIds {
+        tmdb_id: curly.tmdb_id.or(bracket.tmdb_id),
+        imdb_id: curly.imdb_id.or(bracket.imdb_id),
+        tvdb_id: curly.tvdb_id.or(bracket.tvdb_id),
+    })
 }
 
 #[cfg(test)]
@@ -610,6 +618,156 @@ mod tests {
         assert_eq!(result.pattern, Some("Show.{s}.{e}.*".to_string()));
         assert_eq!(result.edition, Some("Extended".to_string()));
         assert!(result.episode_overrides.contains_key("weird_file.mkv"));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_parse_provider_id_tags_tmdb_curly() {
+        let ids = parse_provider_id_tags("Batman Begins (2005) {tmdb-272}").unwrap();
+        assert_eq!(ids.tmdb_id, Some(272));
+        assert!(ids.imdb_id.is_none());
+        assert!(ids.tvdb_id.is_none());
+    }
+
+    #[test]
+    fn test_parse_provider_id_tags_imdb_curly() {
+        let ids = parse_provider_id_tags("Casino Royale (2006) {imdb-tt0381061}").unwrap();
+        assert!(ids.tmdb_id.is_none());
+        assert_eq!(ids.imdb_id, Some("tt0381061".to_string()));
+        assert!(ids.tvdb_id.is_none());
+    }
+
+    #[test]
+    fn test_parse_provider_id_tags_tvdb_curly() {
+        let ids = parse_provider_id_tags("The Matrix (1999) {tvdb-603}").unwrap();
+        assert!(ids.tmdb_id.is_none());
+        assert!(ids.imdb_id.is_none());
+        assert_eq!(ids.tvdb_id, Some(603));
+    }
+
+    #[test]
+    fn test_parse_provider_id_tags_tmdb_bracket() {
+        let ids = parse_provider_id_tags("Batman Begins (2005) [tmdbid=272]").unwrap();
+        assert_eq!(ids.tmdb_id, Some(272));
+        assert!(ids.imdb_id.is_none());
+        assert!(ids.tvdb_id.is_none());
+    }
+
+    #[test]
+    fn test_parse_provider_id_tags_imdb_bracket() {
+        let ids = parse_provider_id_tags("Casino Royale (2006) [imdbid-tt0381061]").unwrap();
+        assert!(ids.tmdb_id.is_none());
+        assert_eq!(ids.imdb_id, Some("tt0381061".to_string()));
+        assert!(ids.tvdb_id.is_none());
+    }
+
+    #[test]
+    fn test_parse_provider_id_tags_tvdb_bracket() {
+        let ids = parse_provider_id_tags("The Office {tvdb-73244}").unwrap();
+        assert!(ids.tmdb_id.is_none());
+        assert!(ids.imdb_id.is_none());
+        assert_eq!(ids.tvdb_id, Some(73244));
+    }
+
+    #[test]
+    fn test_parse_provider_id_tags_multiple_curly() {
+        let ids = parse_provider_id_tags(
+            "Batman Begins (2005) {tmdb-272}{imdb-tt0381061}",
+        )
+        .unwrap();
+        assert_eq!(ids.tmdb_id, Some(272));
+        assert_eq!(ids.imdb_id, Some("tt0381061".to_string()));
+        assert!(ids.tvdb_id.is_none());
+    }
+
+    #[test]
+    fn test_parse_provider_id_tags_mixed_curly_bracket() {
+        let ids = parse_provider_id_tags(
+            "Breaking Bad (2008) {tvdb-81189}[tmdbid=1396]",
+        )
+        .unwrap();
+        assert_eq!(ids.tmdb_id, Some(1396));
+        assert!(ids.imdb_id.is_none());
+        assert_eq!(ids.tvdb_id, Some(81189));
+    }
+
+    #[test]
+    fn test_parse_provider_id_tags_curly_priority() {
+        let ids = parse_provider_id_tags(
+            "Movie {tmdb-272}[tmdbid=999]",
+        )
+        .unwrap();
+        assert_eq!(ids.tmdb_id, Some(272));
+    }
+
+    #[test]
+    fn test_parse_provider_id_tags_bracket_fills_missing() {
+        let ids = parse_provider_id_tags(
+            "Movie {tmdb-272}[imdbid-tt0381061]",
+        )
+        .unwrap();
+        assert_eq!(ids.tmdb_id, Some(272));
+        assert_eq!(ids.imdb_id, Some("tt0381061".to_string()));
+    }
+
+    #[test]
+    fn test_parse_provider_id_tags_no_tags() {
+        assert!(parse_provider_id_tags("Batman Begins (2005)").is_none());
+    }
+
+    #[test]
+    fn test_parse_provider_id_tags_empty() {
+        assert!(parse_provider_id_tags("").is_none());
+    }
+
+    #[test]
+    fn test_resolve_identification_filename_tag() {
+        let dir = std::env::temp_dir().join("duskcue_test_ident_filename");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let result = resolve_identification(&dir, None, Some("Batman Begins (2005) {tmdb-272}"));
+        assert_eq!(result.ids.tmdb_id, Some(272));
+        assert_eq!(result.identification_source, Some("provider_id_tag".to_string()));
+        assert_eq!(result.match_state, "confirmed");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_resolve_identification_folder_priority_over_filename() {
+        let dir = std::env::temp_dir().join("duskcue_test_ident_folder_priority");
+        let sub = dir.join("Movie {tmdb-272}");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        let result = resolve_identification(&sub, None, Some("Movie {tmdb-999}"));
+        assert_eq!(result.ids.tmdb_id, Some(272));
+        assert_eq!(result.identification_source, Some("provider_id_tag".to_string()));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_resolve_identification_filename_fills_missing() {
+        let dir = std::env::temp_dir().join("duskcue_test_ident_merge");
+        let sub = dir.join("Movie {tmdb-272}");
+        std::fs::create_dir_all(&sub).unwrap();
+
+        let result = resolve_identification(&sub, None, Some("Movie {imdb-tt0381061}"));
+        assert_eq!(result.ids.tmdb_id, Some(272));
+        assert_eq!(result.ids.imdb_id, Some("tt0381061".to_string()));
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn test_resolve_identification_no_tags_falls_through() {
+        let dir = std::env::temp_dir().join("duskcue_test_ident_fallback");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let result = resolve_identification(&dir, None, Some("Plain Movie Name"));
+        assert_eq!(result.identification_source, Some("filename_parse".to_string()));
+        assert_eq!(result.match_state, "auto_matched");
 
         std::fs::remove_dir_all(&dir).ok();
     }
