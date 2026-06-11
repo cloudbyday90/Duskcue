@@ -934,3 +934,15 @@ Provider metrics are exposed via the existing Prometheus endpoint (see [LOGGING_
 - **Error mapping:** HTTP 401 → `AuthenticationFailed`, 404 → `NotFound`, 429 → `RateLimited`, other → `InvalidResponse` with parsed TMDB error message; JSON parse failures → `InvalidResponse`.
 - **Dependencies added:** `urlencoding = "2"` for query parameter encoding (TMDB search queries may contain special characters).
 - **TmdbClient derives Clone:** `reqwest::Client` is cheaply cloneable; enables storing in both the registry (as `Box<dyn MetadataProvider>`) and orchestrator (for direct config refresh access).
+
+### Artwork Downloader (Task 8)
+
+- **Module:** `server/src/services/artwork_downloader.rs` — dedicated module following project convention (modular service files over large singletons).
+- **Download approach:** `reqwest` HTTP client (already in workspace) downloads TMDB `original` size images. TMDB API provides width/height in responses, so no image parsing crate is needed. The `image` crate is deferred to Phase 12 (overlay compositing).
+- **File storage:** `{data_dir}/metadata/artwork/tmdb/{posters,backdrops,logos}/{tmdb_id}_{filename}` — directory created idempotently via `create_dir_all`.
+- **Download limits:** Top 5 posters, top 3 backdrops, top 2 logos sorted by TMDB vote count (then vote average as tiebreaker). Prevents downloading hundreds of images for popular movies.
+- **Deduplication:** Queries `artwork` table for existing rows with the same `source_url` per `media_item_id` before downloading. Skips re-download if artwork already exists.
+- **Database insert:** `INSERT INTO artwork ... ON CONFLICT (media_item_id, artwork_type, "order") DO NOTHING` — `source_type='tmdb'`, `provider='tmdb'`, dimensions from TMDB API, language from TMDB `iso_639_1` field.
+- **Orchestrator wiring:** `EnrichmentOrchestrator` stores `data_dir: PathBuf` (from `BootstrapConfig`). `enrich_movie()`/`enrich_tv()` accept `media_item_id: Option<Uuid>` — when present alongside `images`, artwork is downloaded automatically. `EnrichmentResult` stores `tmdb_id` from details response for artwork download even when caller only had a title (search path).
+- **Graceful failure:** Individual artwork download failures are logged as warnings and do not fail the overall enrichment. Failed downloads counted in `ArtworkDownloadResult.failed` for monitoring. On DB insert failure, the downloaded file is cleaned up.
+- **No new workspace dependencies:** all functionality uses existing `reqwest`, `tokio::fs`, `sqlx`.

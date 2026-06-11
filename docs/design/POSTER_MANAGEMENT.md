@@ -406,3 +406,15 @@ The artwork management section provides:
 - [CONFIGURATION.md](../operations/CONFIGURATION.md) — `MetadataConfig` Rust struct; `server_config.metadata` JSONB
 - [CACHE_STORAGE.md](../operations/CACHE_STORAGE.md) — `/cache/images/` storage tier; artwork cache size limits
 - [ERROR_HANDLING.md](ERROR_HANDLING.md) — OVERLAY_001–OVERLAY_006 and COLL_001–COLL_008 error codes
+
+## Implementation Notes
+
+### TMDB Artwork Download (Phase 6, Task 8)
+
+- **Module:** `server/src/services/artwork_downloader.rs` — see [METADATA_PROVIDERS.md](METADATA_PROVIDERS.md) Artwork Downloader section for full details.
+- **Storage layout implemented:** `{data_dir}/metadata/artwork/tmdb/{posters,backdrops,logos}/{tmdb_id}_{filename}` — matches the `/data/metadata/artwork/tmdb/` layout from the Disk Storage section above.
+- **Download `original` size only** — per `artwork_download_originals_only = true` in `MetadataConfig`. URL constructed as `{secure_image_base_url}original{file_path}` using cached TMDB configuration.
+- **Vote-sorted selection** — images sorted by `vote_count` desc, then `vote_average` desc; top 5 posters, 3 backdrops, 2 logos downloaded per item.
+- **Deduplication** — `source_url` column checked before download; existing artwork rows are skipped.
+- **`artwork` table rows** — inserted with `source_type = 'tmdb'`, `provider = 'tmdb'`, `order` by vote ranking (0 = primary), `width`/`height` from TMDB API, `language` from TMDB `iso_639_1`. Uses `ON CONFLICT DO NOTHING` on `(media_item_id, artwork_type, "order")`.
+- **Not yet implemented:** User upload, asset directory scanning, community packs, overlay compositing, resized cache generation — deferred to Phases 8, 12, 13.

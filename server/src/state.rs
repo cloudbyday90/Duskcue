@@ -546,6 +546,7 @@ impl AppState {
             crate::services::metadata::ProviderRegistry::new(),
             pool.clone(),
             MetadataConfig::default(),
+            bootstrap.data_dir.clone(),
         ));
         Self {
             pool,
@@ -582,6 +583,7 @@ impl AppState {
             registry,
             pool.clone(),
             metadata_config,
+            bootstrap.data_dir.clone(),
         ));
 
         Self {

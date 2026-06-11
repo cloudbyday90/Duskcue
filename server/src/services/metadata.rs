@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -28,6 +29,7 @@ use thiserror::Error;
 
 use crate::state::MetadataConfig;
 
+use super::artwork_downloader;
 use super::tmdb_client::TmdbClient;
 
 #[derive(Debug, Error)]
@@ -258,6 +260,7 @@ pub struct EnrichmentResult {
     pub backdrop_path: Option<String>,
     pub imdb_id: Option<String>,
     pub tvdb_id: Option<u64>,
+    pub tmdb_id: Option<u64>,
     pub genres: Vec<GenreEntry>,
     pub credits: Option<CreditsData>,
     pub videos: Vec<VideoEntry>,
@@ -267,6 +270,12 @@ pub struct EnrichmentResult {
     pub production_companies: Vec<ProductionCompany>,
     pub networks: Vec<NetworkEntry>,
     pub external_ids: Option<ExternalIds>,
+}
+
+impl EnrichmentResult {
+    pub fn tmdb_id_from_details(&self) -> Option<u64> {
+        self.tmdb_id
+    }
 }
 
 #[async_trait]
@@ -508,6 +517,7 @@ pub struct EnrichmentOrchestrator {
     tmdb_config: Arc<arc_swap::ArcSwap<TmdbConfig>>,
     tmdb_client: Option<TmdbClient>,
     config: MetadataConfig,
+    data_dir: PathBuf,
 }
 
 impl EnrichmentOrchestrator {
@@ -515,6 +525,7 @@ impl EnrichmentOrchestrator {
         registry: ProviderRegistry,
         db: PgPool,
         config: MetadataConfig,
+        data_dir: PathBuf,
     ) -> Self {
         let http = Client::builder()
             .timeout(std::time::Duration::from_secs(
@@ -542,6 +553,7 @@ impl EnrichmentOrchestrator {
             tmdb_config: Arc::new(arc_swap::ArcSwap::from_pointee(TmdbConfig::default())),
             tmdb_client,
             config,
+            data_dir,
         }
     }
 
@@ -594,6 +606,7 @@ impl EnrichmentOrchestrator {
         imdb_id: Option<&str>,
         title: &str,
         year: Option<u32>,
+        media_item_id: Option<uuid::Uuid>,
     ) -> MetadataResult<EnrichmentResult> {
         let primary = self.registry.primary().ok_or(MetadataError::TmdbNotConfigured)?;
 
@@ -626,6 +639,7 @@ impl EnrichmentOrchestrator {
             backdrop_path: details.backdrop_path.clone(),
             imdb_id: details.imdb_id.clone(),
             tvdb_id: details.tvdb_id,
+            tmdb_id: Some(details.provider_id),
             genres: details.genres.clone(),
             credits: details.credits.clone(),
             videos: details.videos.clone().unwrap_or_default(),
@@ -669,6 +683,26 @@ impl EnrichmentOrchestrator {
             }
         }
 
+        if let Some(item_id) = media_item_id
+            && let Some(ref images) = result.images
+        {
+            let effective_tmdb_id = tmdb_id.or(result.tmdb_id_from_details());
+            if let Some(tid) = effective_tmdb_id {
+                let tmdb_cfg = self.tmdb_config();
+                artwork_downloader::download_and_store_artwork(
+                    &self.db,
+                    &self.http,
+                    &tmdb_cfg,
+                    &self.data_dir,
+                    item_id,
+                    tid,
+                    images,
+                    self.config.artwork_auto_download,
+                )
+                .await;
+            }
+        }
+
         Ok(result)
     }
 
@@ -678,6 +712,7 @@ impl EnrichmentOrchestrator {
         imdb_id: Option<&str>,
         title: &str,
         year: Option<u32>,
+        media_item_id: Option<uuid::Uuid>,
     ) -> MetadataResult<EnrichmentResult> {
         let primary = self.registry.primary().ok_or(MetadataError::TmdbNotConfigured)?;
 
@@ -709,6 +744,7 @@ impl EnrichmentOrchestrator {
             backdrop_path: details.backdrop_path.clone(),
             imdb_id: details.imdb_id.clone(),
             tvdb_id: details.tvdb_id,
+            tmdb_id: Some(details.provider_id),
             genres: details.genres.clone(),
             credits: details.credits.clone(),
             videos: details.videos.clone().unwrap_or_default(),
@@ -749,6 +785,26 @@ impl EnrichmentOrchestrator {
                         );
                     }
                 }
+            }
+        }
+
+        if let Some(item_id) = media_item_id
+            && let Some(ref images) = result.images
+        {
+            let effective_tmdb_id = tmdb_id.or(result.tmdb_id_from_details());
+            if let Some(tid) = effective_tmdb_id {
+                let tmdb_cfg = self.tmdb_config();
+                artwork_downloader::download_and_store_artwork(
+                    &self.db,
+                    &self.http,
+                    &tmdb_cfg,
+                    &self.data_dir,
+                    item_id,
+                    tid,
+                    images,
+                    self.config.artwork_auto_download,
+                )
+                .await;
             }
         }
 

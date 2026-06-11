@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod artwork_downloader;
 pub mod fs_watcher;
 pub mod media_matching;
 pub mod metadata;

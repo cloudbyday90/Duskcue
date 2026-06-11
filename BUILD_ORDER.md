@@ -879,7 +879,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 5. ~~Implement TMDB `/find` — cross-reference from IMDb ID~~ **DONE**
 6. ~~Implement TMDB `/configuration` caching — image sizes, base URL~~ **DONE**
 7. Wire TMDB client into Phase 5 enrichment (Phase 5 stub → real implementation)
-8. Implement artwork download — save to `/data/metadata/artwork/`, create `artwork` table rows
+8. ~~Implement artwork download — save to `/data/metadata/artwork/`, create `artwork` table rows~~ **DONE**
 9. Implement `TvdbClient` — JWT auth via `/login`, token refresh, series/episode endpoints
 10. Implement `FanartClient` — artwork lookup by TMDB/TVDB ID
 11. Implement `OmdbClient` — ratings lookup by IMDb ID
@@ -938,6 +938,29 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`find_by_imdb_id` checks movies before TV** — TMDB `/find` returns separate arrays for `movie_results` and `tv_results`; movies are checked first since IMDb IDs are more commonly associated with movies in the identification pipeline
 - **`fetch_configuration()` with fallback defaults** — TMDB `/configuration` endpoint returns image base URLs and size lists; all fields fall back to hardcoded defaults from METADATA_PROVIDERS.md if the API response is missing or incomplete
 - **No new workspace dependencies beyond `urlencoding`** — All HTTP functionality uses existing `reqwest` (workspace already has `json` + `rustls-tls` features); JSON deserialization via existing `serde`/`serde_json`
+
+**What was built for Task 8:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/artwork_downloader.rs` | Artwork download service: `download_and_store_artwork()` downloads TMDB images (posters, backdrops, logos), saves to `/data/metadata/artwork/tmdb/`, inserts `artwork` table rows; `sort_by_votes()` ranking; deduplication via `source_url` check; `download_image()` async HTTP + filesystem write |
+| `server/src/services/mod.rs` | Added `pub mod artwork_downloader;` |
+| `server/src/services/metadata.rs` | Added `data_dir: PathBuf` to `EnrichmentOrchestrator`; added `media_item_id: Option<Uuid>` parameter to `enrich_movie()`/`enrich_tv()`; added `tmdb_id: Option<u64>` field to `EnrichmentResult`; artwork download called after metadata enrichment when `media_item_id` and images are present |
+| `server/src/state.rs` | `AppState::new()` and `AppState::new_with_config()` now pass `bootstrap.data_dir.clone()` to `EnrichmentOrchestrator::new()` |
+
+**Key decisions from Task 8:**
+
+- **`reqwest` for image download (no new dependency)** — TMDB provides width/height in its API response; no need for an image parsing crate to detect dimensions. The `image` crate is deferred to Phase 12 (overlay compositing)
+- **File naming: `{tmdb_id}_{tmdb_filename}`** — TMDB file paths look like `/abc123def456.jpg`; the filename portion is extracted and prefixed with the TMDB ID for directory organization. Stored in `{data_dir}/metadata/artwork/tmdb/{posters,backdrops,logos}/`
+- **Download `original` size only** — Per POSTER_MANAGEMENT.md `artwork_download_originals_only = true`. URL constructed as `{secure_image_base_url}original{file_path}` using the cached TMDB configuration
+- **Vote-sorted download limits** — Top 5 posters, top 3 backdrops, top 2 logos by TMDB vote count (then vote average as tiebreaker). Prevents downloading hundreds of images for popular movies
+- **Deduplication via `source_url` check** — Before downloading, queries `artwork` table for existing rows with the same `source_url` for that `media_item_id`. Skips re-download if artwork already exists
+- **`ON CONFLICT DO NOTHING` on insert** — The `artwork` table has `UNIQUE(media_item_id, artwork_type, "order")`; the insert uses `ON CONFLICT DO NOTHING` to handle edge cases where the same order slot is already filled
+- **`media_item_id: Option<Uuid>` parameter** — `enrich_movie()`/`enrich_tv()` accept an optional `media_item_id`. When `None` (e.g., search-only calls), artwork download is skipped. When `Some`, artwork is downloaded and stored for that item
+- **`tmdb_id` added to `EnrichmentResult`** — The TMDB provider_id from the details response is stored in `EnrichmentResult.tmdb_id`, enabling artwork download even when the caller only had a title (search path)
+- **Graceful failure** — Individual artwork download failures are logged as warnings and do not fail the overall enrichment. Failed downloads are counted in `ArtworkDownloadResult.failed` for monitoring
+- **Directory creation is idempotent** — `create_dir_all` is called before each download; if the directory already exists, this is a no-op
+- **No new workspace dependencies** — all functionality uses existing `reqwest`, `tokio::fs`, `sqlx`
 
 **Verification:** Library scan enriches items with TMDB data — titles, overviews, ratings, genres, cast, artwork. Admin can configure TVDB/Fanart.tv/OMDb keys in settings UI. Provider failures are non-blocking.
 
