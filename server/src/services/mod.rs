@@ -16,10 +16,12 @@
 
 pub mod artwork_downloader;
 pub mod enrichment_persistence;
+pub mod fanart_client;
 pub mod fs_watcher;
 pub mod media_matching;
 pub mod metadata;
 pub mod nfo_parser;
+pub mod omdb_client;
 pub mod scheduler;
 pub mod tmdb_client;
 pub mod tvdb_client;

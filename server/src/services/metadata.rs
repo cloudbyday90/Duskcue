@@ -30,6 +30,8 @@ use thiserror::Error;
 use crate::state::MetadataConfig;
 
 use super::artwork_downloader;
+use super::fanart_client::FanartClient;
+use super::omdb_client::OmdbClient;
 use super::tmdb_client::TmdbClient;
 use super::tvdb_client::TvdbClient;
 
@@ -443,16 +445,16 @@ impl ProviderRegistry {
         }
 
         if config.providers.fanart.enabled
-            && let Some(_api_key) = &config.providers.fanart.api_key
+            && let Some(api_key) = &config.providers.fanart.api_key
         {
-            let fanart = FanartClient::new();
+            let fanart = FanartClient::new(api_key.clone());
             registry.artwork.push(Box::new(fanart));
         }
 
         if config.providers.omdb.enabled
-            && let Some(_api_key) = &config.providers.omdb.api_key
+            && let Some(api_key) = &config.providers.omdb.api_key
         {
-            let omdb = OmdbClient::new();
+            let omdb = OmdbClient::new(api_key.clone());
             registry.ratings.push(Box::new(omdb));
         }
 
@@ -844,64 +846,4 @@ impl EnrichmentOrchestrator {
     }
 }
 
-struct FanartClient;
 
-impl FanartClient {
-    fn new() -> Self {
-        Self
-    }
-}
-
-#[async_trait]
-impl ArtworkProvider for FanartClient {
-    fn name(&self) -> &str {
-        "fanart"
-    }
-
-    fn is_configured(&self) -> bool {
-        tracing::info!("Fanart is_configured — full implementation in Task 10");
-        false
-    }
-
-    async fn get_movie_artwork(&self, tmdb_id: u64) -> MetadataResult<Vec<ArtworkCandidate>> {
-        tracing::info!(tmdb_id = tmdb_id, "Fanart get_movie_artwork — full implementation in Task 10");
-        Ok(vec![])
-    }
-
-    async fn get_tv_artwork(&self, tvdb_id: u64) -> MetadataResult<Vec<ArtworkCandidate>> {
-        tracing::info!(tvdb_id = tvdb_id, "Fanart get_tv_artwork — full implementation in Task 10");
-        Ok(vec![])
-    }
-}
-
-struct OmdbClient;
-
-impl OmdbClient {
-    fn new() -> Self {
-        Self
-    }
-}
-
-#[async_trait]
-impl RatingsProvider for OmdbClient {
-    fn name(&self) -> &str {
-        "omdb"
-    }
-
-    fn is_configured(&self) -> bool {
-        tracing::info!("OMDB is_configured — full implementation in Task 11");
-        false
-    }
-
-    async fn get_ratings(&self, imdb_id: &str) -> MetadataResult<RatingsData> {
-        tracing::info!(imdb_id = imdb_id, "OMDB get_ratings — full implementation in Task 11");
-        Ok(RatingsData {
-            imdb_rating: None,
-            imdb_votes: None,
-            rotten_tomatoes: None,
-            metacritic: None,
-            rated: None,
-            awards: None,
-        })
-    }
-}

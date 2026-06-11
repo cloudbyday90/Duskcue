@@ -964,3 +964,37 @@ Provider metrics are exposed via the existing Prometheus endpoint (see [LOGGING_
 - **Error mapping:** HTTP 401 → `AuthenticationFailed` (also clears cached token), 404 → `NotFound`, 429 → `RateLimited`, other → `InvalidResponse`. JSON parse failures → `InvalidResponse`.
 - **No new workspace dependencies:** all functionality uses existing `reqwest`, `serde`, `tokio`.
 - **TvdbClient not Clone:** Unlike TmdbClient, TvdbClient contains `RwLock` for token state. Registry stores `Box<dyn MetadataProvider>` (owned), no need for cloning.
+
+### FanartClient (Task 10)
+
+- **Module:** `server/src/services/fanart_client.rs` — dedicated module following project convention (modular service files over large singletons). metadata.rs stubs removed; real FanartClient lives in its own file.
+- **Simple API key auth:** `api_key` passed as query parameter (`?api_key={key}`). No JWT token lifecycle needed (unlike TVDB). API key stored directly in `FanartClient` struct.
+- **HTTP client:** `reqwest::Client` owned per FanartClient instance; 30s request timeout; 10s connect timeout; `redirect(Policy::none())` per API_SECURITY.md SSRF hardening.
+- **Movie artwork:** GET `/movies/{tmdb_id}?api_key={key}` — accepts TMDB ID or IMDb ID (`tt0037884`). Returns flat JSON with artwork type keys mapping to image arrays.
+- **TV artwork:** GET `/tv/{tvdb_id}?api_key={key}` — uses TVDB ID (not TMDB ID). This is a limitation of the fanart.tv API; the TV endpoint only accepts TVDB IDs.
+- **Response deserialization:** Two dedicated response types (`FanartMovieResponse`, `FanartTvResponse`) with `Option<Vec<FanartImage>>` fields for each artwork type. Unknown fields (e.g., `{type}_count`) ignored by serde default. All image fields use `Option<String>` since fanart.tv returns all values as strings (`likes: "3"`, `width: "1000"`).
+- **Artwork type mapping:** Fanart.tv type keys mapped to internal artwork types: `movieposter`/`tvposter` → "poster", `moviebackground`/`showbackground` → "backdrop", `hdmovielogo`/`hdtvlogo`/`clearlogo`/`movielogo` → "clearlogo", `hdmovieclearart`/`hdclearart`/`movieart` → "clearart", `moviebanner`/`tvbanner` → "banner", `moviethumb`/`tvthumb` → "thumbnail", `moviedisc` → "disc", `characterart` → "character", season types → "seasonposter"/"seasonthumb"/"seasonbanner".
+- **Clear logos are the primary value:** Fanart.tv's unique contribution is transparent HD logos (`hdmovielogo`/`hdtvlogo`) that TMDB does not provide. These are mapped to "clearlogo" type in the artwork pipeline.
+- **URL handling:** API normally returns full URLs (`https://assets.fanart.tv/fanart/...`). A transient November 2025 server bug returned relative paths (`filename.jpg`). Relative URLs are detected via `!starts_with("http")` and skipped with a DEBUG log warning. This is defensive handling for a resolved upstream bug.
+- **Language field:** `lang: ""` (empty string) means language-neutral; converted to `None` in `ArtworkCandidate.language`. Non-empty values preserved as-is.
+- **Likes-based sorting:** String `likes` parsed to `u32`; candidates sorted by likes descending. Used as `vote_count` in `ArtworkCandidate` since fanart.tv uses likes rather than vote counts.
+- **Width/height:** String fields parsed to `u32` from v3.2 response format. Default to `0` if absent (v3/v3.1 responses or parse failure).
+- **FanartClient not Clone:** Only stored in `artwork` registry slot (single use); no need for cloning unlike TvdbClient (which goes into both `supplementary_metadata` and `artwork` slots).
+- **Error mapping:** HTTP 401 → `AuthenticationFailed`, 404 → `NotFound`, 429 → `RateLimited`, other → `InvalidResponse` with body text. Response body read as text before JSON parse to preserve error messages.
+- **No new workspace dependencies:** all functionality uses existing `reqwest`, `serde`, `serde_json`.
+
+### OmdbClient (Task 11)
+
+- **Module:** `server/src/services/omdb_client.rs` — dedicated module following project convention (modular service files over large singletons). metadata.rs stubs removed; real OmdbClient lives in its own file.
+- **Simple API key auth:** `api_key` passed as query parameter (`?apikey={key}`). No JWT token lifecycle needed. API key stored directly in `OmdbClient` struct.
+- **HTTP client:** `reqwest::Client` owned per OmdbClient instance; 30s request timeout; 10s connect timeout; `redirect(Policy::none())` per API_SECURITY.md SSRF hardening.
+- **Single endpoint:** `GET /?i={imdb_id}&apikey={key}` — only IMDb ID lookup is needed per design; title search not used (TMDB handles search).
+- **OMDb returns HTTP 200 for all responses** — including errors. The `Response` JSON field (`"True"` or `"False"`) indicates success/failure. Error messages in the `Error` field: `"Movie not found!"`, `"Series not found!"`, `"Episode not found!"`, `"Invalid API key!"`. `fetch_by_imdb_id()` checks `Response` after deserialization.
+- **`N/A` string handling** — OMDb uses literal string `"N/A"` for missing values (e.g., `"imdbRating": "N/A"`). All parsing helpers filter `"N/A"` before conversion.
+- **`Ratings` array for Rotten Tomatoes** — `extract_rotten_tomatoes()` scans the `Ratings` array for `Source: "Rotten Tomatoes"` and extracts `Value` (e.g., `"94%"`). IMDb rating and Metascore come from top-level fields.
+- **`imdb_rating` parsed to `f64`** — `RatingsData.imdb_rating` is `Option<f64>`; OMDb string `"7.9"` parsed via `str::parse()`.
+- **`#[allow(non_snake_case)]` on deserialization structs** — OMDb uses PascalCase (`Response`, `Error`, `Rated`, `Metascore`, `imdbRating`, `imdbVotes`, `Ratings`). Attribute suppresses Rust naming warnings while maintaining exact serde field mapping.
+- **Error mapping:** HTTP 401 → `AuthenticationFailed`; non-success HTTP → `InvalidResponse` with body text; `Response: "False"` with `"not found"` → `NotFound`; `Response: "False"` with `"Invalid API key"` → `AuthenticationFailed`; other `Response: "False"` → `InvalidResponse` with error message.
+- **Response body read as text before JSON parse** — preserves error messages in `InvalidResponse` errors (same defensive pattern as FanartClient).
+- **OmdbClient not Clone** — only stored in `ratings` registry slot (single use).
+- **No new workspace dependencies:** all functionality uses existing `reqwest`, `serde`, `serde_json`, `urlencoding`.

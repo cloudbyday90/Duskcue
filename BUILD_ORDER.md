@@ -881,8 +881,8 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 7. ~~Wire TMDB client into Phase 5 enrichment (Phase 5 stub → real implementation)~~ **DONE**
 8. ~~Implement artwork download — save to `/data/metadata/artwork/`, create `artwork` table rows~~ **DONE**
 9. ~~Implement `TvdbClient` — JWT auth via `/login`, token refresh, series/episode endpoints~~ **DONE**
-10. Implement `FanartClient` — artwork lookup by TMDB/TVDB ID
-11. Implement `OmdbClient` — ratings lookup by IMDb ID
+10. ~~Implement `FanartClient` — artwork lookup by TMDB/TVDB ID~~ **DONE**
+11. ~~Implement `OmdbClient` — ratings lookup by IMDb ID~~ **DONE**
 12. Implement provider API key validation on save (test request)
 13. Implement API key encryption at rest (AES-256-GCM with `encrypted:` prefix)
 14. Implement TMDB daily ID export download and caching
@@ -985,6 +985,51 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`get_season_details` returns `NoProviderConfigured`** — TVDB's season structure uses season types (`default`, `dvd`, `absolute`) rather than simple season numbers; the generic `SeasonDetails` type doesn't map cleanly
 - **`TvdbEpisodesResponse` reserved for future use** — Struct defined for `/series/{id}/episodes/{season-type}` paginated endpoint but not yet wired; will be used when alternate episode ordering is needed (DVD order, absolute numbering)
 - **No new workspace dependencies** — all functionality uses existing `reqwest`, `serde`, `tokio`, `urlencoding`
+
+**What was built for Task 10:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/fanart_client.rs` | Full Fanart.tv v3 API client: `FanartClient` with `api_key` query param auth, `reqwest::Client` with 30s timeout; `ArtworkProvider` trait implementation for movie and TV artwork lookup |
+| `server/src/services/mod.rs` | Added `pub mod fanart_client;` |
+| `server/src/services/metadata.rs` | Removed `FanartClient` stub (~30 lines); imported real `FanartClient` from new module; wired into `ProviderRegistry::from_config()` with API key |
+
+**Key decisions from Task 10:**
+
+- **Simple API key auth over JWT** — Fanart.tv uses `?api_key={key}` query param auth, no token lifecycle needed (unlike TVDB's JWT). `FanartClient` stores `api_key: String` directly; no `Arc<Inner>` or `RwLock` pattern needed
+- **Movie endpoint uses TMDB ID** — `/movies/{tmdb_id}?api_key={key}` accepts TMDB ID (also accepts IMDb ID like `tt0037884` for cross-reference). TV endpoint uses TVDB ID: `/tv/{tvdb_id}?api_key={key}`
+- **Dedicated deserialization types** — `FanartMovieResponse` and `FanartTvResponse` with `Option<Vec<FanartImage>>` fields for each artwork type. Unknown top-level fields (`{type}_count`, `name`, `tmdb_id`) ignored by serde. All image fields use `Option<String>` since fanart.tv returns all values as strings (`likes: "3"`, `width: "1000"`)
+- **Artwork type mapping** — 9 movie types and 11 TV types mapped to internal artwork types. Key unique types: `hdmovielogo`/`hdtvlogo` → "clearlogo" (transparent HD logos, fanart.tv's primary value), `moviebackground`/`showbackground` → "backdrop" (includes 4K backgrounds at 3840×2160), `characterart` → "character"
+- **Relative URL defensive handling** — A transient November 2025 fanart.tv server bug returned relative paths instead of full URLs. Relative URLs detected via `!starts_with("http")` and skipped with DEBUG log. Full URLs used as-is (normal operation)
+- **Likes-based sorting** — String `likes` parsed to `u32` via `str::parse()`; candidates sorted by likes descending. Mapped to `vote_count` in `ArtworkCandidate` since fanart.tv uses likes rather than votes
+- **Language field handling** — `lang: ""` (language-neutral, common for backgrounds) converted to `None` in `ArtworkCandidate.language`; non-empty values preserved as-is
+- **Width/height from v3.2** — String `width`/`height` parsed to `u32`; default to `0` if absent (v3/v3.1 responses) or parse failure
+- **Response body read as text before parse** — Unlike TvdbClient which uses `response.json()`, FanartClient reads response body as text first, then parses. This preserves error messages in `InvalidResponse` errors
+- **FanartClient not Clone** — Only stored in `artwork` registry slot (single use); no need for cloning unlike TvdbClient (which goes into both `supplementary_metadata` and `artwork` slots)
+- **Error mapping** — HTTP 401 → `AuthenticationFailed`, 404 → `NotFound`, 429 → `RateLimited`, other → `InvalidResponse` with body text
+- **No new workspace dependencies** — all functionality uses existing `reqwest`, `serde`, `serde_json`
+
+**What was built for Task 11:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/omdb_client.rs` | Full OMDb API client: `OmdbClient` with `apikey` query param auth, `reqwest::Client` with 30s timeout; `RatingsProvider` trait implementation for ratings lookup by IMDb ID |
+| `server/src/services/mod.rs` | Added `pub mod omdb_client;` |
+| `server/src/services/metadata.rs` | Removed `OmdbClient` stub (~30 lines); imported real `OmdbClient` from new module; wired into `ProviderRegistry::from_config()` with API key |
+
+**Key decisions from Task 11:**
+
+- **Simple API key auth** — OMDb uses `?apikey={key}` query param auth, no token lifecycle. `OmdbClient` stores `api_key: String` directly; same pattern as `FanartClient`
+- **Single endpoint: `/?i={imdb_id}&apikey={key}`** — Only IMDb ID lookup is needed per METADATA_PROVIDERS.md design (title search endpoint not used; TMDB handles search)
+- **OMDb returns HTTP 200 for errors** — OMDb always returns HTTP 200, even for "not found" or "invalid API key". The `Response` field in the JSON body indicates success (`"True"`) or failure (`"False"`). `fetch_by_imdb_id()` checks `Response == "True"` after deserialization and maps error strings to typed errors: `"not found"` → `NotFound`, `"Invalid API key"` → `AuthenticationFailed`, other → `InvalidResponse`
+- **`Ratings` array parsing for Rotten Tomatoes** — `extract_rotten_tomatoes()` scans the `Ratings` array for `Source == "Rotten Tomatoes"` and extracts the `Value` (e.g., `"94%"`). IMDb rating and Metascore come from top-level fields
+- **`"N/A"` string handling** — OMDb uses the literal string `"N/A"` for missing values rather than null/absent fields. `parse_imdb_rating()`, `parse_imdb_votes()`, `parse_metascore()`, and `parse_string_field()` all filter out `"N/A"` before parsing
+- **`#[allow(non_snake_case)]` on deserialization structs** — OMDb uses PascalCase field names (`Response`, `Error`, `Rated`, `Metascore`, `imdbRating`, `Ratings`, etc.). The `#[allow(non_snake_case)]` attribute suppresses Rust naming convention warnings while maintaining exact field mapping for serde deserialization
+- **`imdb_rating` parsed to `f64`** — `RatingsData.imdb_rating` is `Option<f64>` (not `Option<String>`); the string value `"7.9"` from OMDb is parsed to `f64` in `to_ratings_data()`
+- **Response body read as text before JSON parse** — Same defensive pattern as FanartClient; preserves error messages in `InvalidResponse` errors
+- **OmdbClient not Clone** — Only stored in `ratings` registry slot (single use); no need for cloning
+- **Error mapping** — HTTP 401 → `AuthenticationFailed`, non-success HTTP → `InvalidResponse` with body text, `Response: "False"` with `"not found"` → `NotFound`, `Response: "False"` with `"Invalid API key"` → `AuthenticationFailed`, other `Response: "False"` → `InvalidResponse`
+- **No new workspace dependencies** — all functionality uses existing `reqwest`, `serde`, `serde_json`, `urlencoding`
 
 **What was built for Task 7:**
 

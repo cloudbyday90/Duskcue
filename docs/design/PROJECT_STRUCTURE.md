@@ -201,6 +201,9 @@ project/
 │       │   ├── transcoding.rs    # FFmpeg integration (tokio-process-tools, -progress pipe:1)
 │       │   ├── metadata.rs       # Provider registry, enrichment orchestrator, provider traits, provider stubs
 │       │   ├── tmdb_client.rs    # TMDB v3 API client (Bearer token, append_to_response, search/details/find/config)
+│       │   ├── tvdb_client.rs    # TVDB v4 API client (JWT auth, Arc<Inner> for Clone, search/series/movies/artworks)
+│       │   ├── fanart_client.rs  # Fanart.tv v3 API client (api_key query param, movie/TV artwork by TMDB/TVDB ID)
+│       │   ├── omdb_client.rs    # OMDb API client (apikey query param, ratings lookup by IMDb ID)
 │       │   ├── notifications.rs  # Notification dispatch
 │       │   ├── search.rs         # Full-text search coordination
 │       │   ├── security.rs       # TLS (rustls), HMAC signing (ring), security headers

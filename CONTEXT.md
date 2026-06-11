@@ -10,7 +10,7 @@ For the full build sequence and phase-specific task lists, see [BUILD_ORDER.md](
 
 Every feature or domain follows the same three-phase process:
 
-**Phase 1 — Research.** Research official online sources for current best practices as of June 2026. Do NOT assume URLs. Use MCP search services to identify correct URLs and gather relevant information. Limit results to 3 per query to avoid timeouts. Present findings with pros, cons, and a final recommendation.
+**Phase 1 — Research.** Research official online sources for current best practices as of June 2026. Do NOT assume URLs. Use web search tools to identify correct URLs and gather relevant information. Present findings with pros, cons, and a final recommendation.
 
 **Phase 2 — Document.** Update relevant MDs with the design decisions and outcomes, or create new MDs if the domain does not yet have one. Each MD is a separate authoritative document that details the design and outcome for its domain. MDs under `docs/` are organized by category:
 - `docs/design/` — domain design documents
@@ -32,7 +32,7 @@ Every feature or domain follows the same three-phase process:
 
 | Tool | Usage | Constraints |
 |---|---|---|
-| **SearXNG MCP** | Primary web search. GET requests with `?q=...&format=json&num_results=3` | POST returns HTML; always use GET. Limit to 3 results. |
+| **Serper API** | Primary web search. API key authenticated, no rate limit concerns for development use. | — |
 | **context7 MCP** | Library/framework documentation lookups | Monthly quota exceeded — do not use |
 | **webfetch** | Fallback for fetching specific known URLs | Cannot bypass anti-bot (e.g., FFmpeg trac wiki) |
 
