@@ -880,7 +880,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 6. ~~Implement TMDB `/configuration` caching — image sizes, base URL~~ **DONE**
 7. ~~Wire TMDB client into Phase 5 enrichment (Phase 5 stub → real implementation)~~ **DONE**
 8. ~~Implement artwork download — save to `/data/metadata/artwork/`, create `artwork` table rows~~ **DONE**
-9. Implement `TvdbClient` — JWT auth via `/login`, token refresh, series/episode endpoints
+9. ~~Implement `TvdbClient` — JWT auth via `/login`, token refresh, series/episode endpoints~~ **DONE**
 10. Implement `FanartClient` — artwork lookup by TMDB/TVDB ID
 11. Implement `OmdbClient` — ratings lookup by IMDb ID
 12. Implement provider API key validation on save (test request)
@@ -961,6 +961,30 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **Graceful failure** — Individual artwork download failures are logged as warnings and do not fail the overall enrichment. Failed downloads are counted in `ArtworkDownloadResult.failed` for monitoring
 - **Directory creation is idempotent** — `create_dir_all` is called before each download; if the directory already exists, this is a no-op
 - **No new workspace dependencies** — all functionality uses existing `reqwest`, `tokio::fs`, `sqlx`
+
+**What was built for Task 9:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/tvdb_client.rs` | Full TVDB v4 API client: `TvdbClient` with JWT auth (`Arc<Inner>` pattern for Clone), `ensure_token()` with double-checked locking, `login()`, `authenticated_get()`, search (`/search`, `/search/remoteid/{id}`), series details (`/series/{id}/extended`), movie details (`/movies/{id}`), artwork (`/series/{id}/artworks`); 20 TVDB response deserialization types |
+| `server/src/services/mod.rs` | Added `pub mod tvdb_client;` |
+| `server/src/services/metadata.rs` | Removed TvdbClient stubs (~130 lines of trait impl stubs); imported real `TvdbClient` from new module; wired into `ProviderRegistry::from_config()` for both `supplementary_metadata` and `artwork` slots |
+| `docs/design/METADATA_PROVIDERS.md` | Corrected token TTL (2h → 1 month per v4 spec); added full Task 9 implementation notes section |
+
+**Key decisions from Task 9:**
+
+- **`Arc<Inner>` pattern for Clone** — `Inner` holds `api_key`, `http: Client`, `token_state: RwLock<TokenState>`; `TvdbClient` wraps `Arc<Inner>`. Enables both `Box<dyn MetadataProvider>` and `Box<dyn ArtworkProvider>` registry slots to share the same underlying token state
+- **Manual `ensure_token()` over reqwest-middleware** — Double-checked locking: read lock for fast path (token valid → return), write lock only when refresh needed. Token TTL is 1 month per TVDB v4 OpenAPI spec (corrected from initial 2-hour estimate in METADATA_PROVIDERS.md), so contention is near-zero. Chosen over `reqwest-middleware` + `reqwest-retry` to avoid extra dependency chain and complex generic types for marginal benefit
+- **Token refreshed 5 minutes before expiry** — `TOKEN_REFRESH_BUFFER = 300s`; token set to expire at `Instant::now() + 30 days`. On 401 responses, `clear_token()` uses `try_write()` (non-blocking) so concurrent requests aren't blocked; next request re-authenticates
+- **TVDB v4 response wrapper** — All responses use `{ "status": "success", "data": <T> }`; `TvdbResponse<T>` generic unwraps the `data` field. The OpenAPI spec marks NO fields as required on any schema — all deserialization types use `Option<T>` throughout
+- **`/series/{id}/extended?meta=episodes` as primary TV details endpoint** — Returns series, episodes, seasons, artworks, genres, companies, remote IDs in one request. TVDB's equivalent of TMDB's `append_to_response` batching
+- **`/search/remoteid/{id}` for IMDb cross-reference** — Returns typed `TvdbRemoteIdSearchResult` with separate `series` and `movie` arrays; `RemoteID.sourceName == "IMDB"` extracts IMDb ID from series extended record
+- **Artwork type ID mapping** — TVDB artwork type IDs (1=poster, 2=banner, 3=backdrop, 4=clearlogo, 5=thumbnail) mapped to string types for the artwork pipeline. `get_tv_artwork()` returns `ArtworkCandidate` with full image URLs from TVDB's `image` field
+- **TVDB search returns string IDs** — `SearchResult.tvdb_id` and `SearchResult.objectID` are `string` type per v4 spec, not integer. `search_to_result()` parses via `id_str.parse::<u64>()`
+- **TvdbClient in both registry slots** — Cloned into `supplementary_metadata` (for search/details) and `artwork` (for artwork lookup). Both clones share the same `Arc<Inner>` including token state
+- **`get_season_details` returns `NoProviderConfigured`** — TVDB's season structure uses season types (`default`, `dvd`, `absolute`) rather than simple season numbers; the generic `SeasonDetails` type doesn't map cleanly
+- **`TvdbEpisodesResponse` reserved for future use** — Struct defined for `/series/{id}/episodes/{season-type}` paginated endpoint but not yet wired; will be used when alternate episode ordering is needed (DVD order, absolute numbering)
+- **No new workspace dependencies** — all functionality uses existing `reqwest`, `serde`, `tokio`, `urlencoding`
 
 **What was built for Task 7:**
 

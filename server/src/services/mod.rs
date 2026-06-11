@@ -22,3 +22,4 @@ pub mod metadata;
 pub mod nfo_parser;
 pub mod scheduler;
 pub mod tmdb_client;
+pub mod tvdb_client;

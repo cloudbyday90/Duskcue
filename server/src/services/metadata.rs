@@ -31,6 +31,7 @@ use crate::state::MetadataConfig;
 
 use super::artwork_downloader;
 use super::tmdb_client::TmdbClient;
+use super::tvdb_client::TvdbClient;
 
 #[derive(Debug, Error)]
 pub enum MetadataError {
@@ -434,10 +435,11 @@ impl ProviderRegistry {
         }
 
         if config.providers.tvdb.enabled
-            && let Some(_api_key) = &config.providers.tvdb.api_key
+            && let Some(api_key) = &config.providers.tvdb.api_key
         {
-            let tvdb = TvdbClient::new();
-            registry.supplementary_metadata.push(Box::new(tvdb));
+            let tvdb = TvdbClient::new(api_key.clone());
+            registry.supplementary_metadata.push(Box::new(tvdb.clone()));
+            registry.artwork.push(Box::new(tvdb));
         }
 
         if config.providers.fanart.enabled
@@ -839,147 +841,6 @@ impl EnrichmentOrchestrator {
 
         self.rate_limiters.tmdb.until_ready().await;
         primary.find_by_imdb_id(imdb_id).await
-    }
-}
-
-struct TvdbClient;
-
-impl TvdbClient {
-    fn new() -> Self {
-        Self
-    }
-}
-
-#[async_trait]
-impl MetadataProvider for TvdbClient {
-    fn name(&self) -> &str {
-        "tvdb"
-    }
-
-    fn is_configured(&self) -> bool {
-        tracing::info!("TVDB is_configured — full implementation in Task 9");
-        false
-    }
-
-    async fn test_connection(&self) -> MetadataResult<()> {
-        tracing::info!("TVDB test_connection — full implementation in Task 9");
-        Ok(())
-    }
-
-    async fn search_movie(
-        &self,
-        query: &str,
-        _year: Option<u32>,
-    ) -> MetadataResult<Vec<SearchResult>> {
-        tracing::info!(query = query, "TVDB search_movie — full implementation in Task 9");
-        Ok(vec![])
-    }
-
-    async fn search_tv(
-        &self,
-        query: &str,
-        _year: Option<u32>,
-    ) -> MetadataResult<Vec<SearchResult>> {
-        tracing::info!(query = query, "TVDB search_tv — full implementation in Task 9");
-        Ok(vec![])
-    }
-
-    async fn get_movie_details(&self, id: u64) -> MetadataResult<MovieDetails> {
-        tracing::info!(tvdb_id = id, "TVDB get_movie_details — full implementation in Task 9");
-        Ok(MovieDetails {
-            provider_id: id,
-            title: String::new(),
-            original_title: None,
-            overview: None,
-            tagline: None,
-            release_date: None,
-            runtime: None,
-            vote_average: None,
-            vote_count: None,
-            popularity: None,
-            adult: false,
-            backdrop_path: None,
-            poster_path: None,
-            imdb_id: None,
-            tvdb_id: None,
-            genres: vec![],
-            production_companies: vec![],
-            credits: None,
-            videos: None,
-            images: None,
-            external_ids: None,
-        })
-    }
-
-    async fn get_tv_details(&self, id: u64) -> MetadataResult<TvDetails> {
-        tracing::info!(tvdb_id = id, "TVDB get_tv_details — full implementation in Task 9");
-        Ok(TvDetails {
-            provider_id: id,
-            name: String::new(),
-            original_name: None,
-            overview: None,
-            tagline: None,
-            first_air_date: None,
-            last_air_date: None,
-            number_of_seasons: None,
-            number_of_episodes: None,
-            vote_average: None,
-            vote_count: None,
-            popularity: None,
-            backdrop_path: None,
-            poster_path: None,
-            imdb_id: None,
-            tvdb_id: None,
-            genres: vec![],
-            networks: vec![],
-            credits: None,
-            videos: None,
-            images: None,
-            external_ids: None,
-        })
-    }
-
-    async fn get_season_details(
-        &self,
-        _tv_id: u64,
-        _season: u32,
-    ) -> MetadataResult<SeasonDetails> {
-        tracing::info!("TVDB get_season_details — full implementation in Task 9");
-        Ok(SeasonDetails {
-            provider_id: 0,
-            season_number: 0,
-            name: None,
-            overview: None,
-            air_date: None,
-            episode_count: None,
-            poster_path: None,
-        })
-    }
-
-    async fn find_by_imdb_id(&self, imdb_id: &str) -> MetadataResult<Option<SearchResult>> {
-        tracing::info!(imdb_id = imdb_id, "TVDB find_by_imdb_id — full implementation in Task 9");
-        Ok(None)
-    }
-}
-
-#[async_trait]
-impl ArtworkProvider for TvdbClient {
-    fn name(&self) -> &str {
-        "tvdb"
-    }
-
-    fn is_configured(&self) -> bool {
-        false
-    }
-
-    async fn get_movie_artwork(&self, tmdb_id: u64) -> MetadataResult<Vec<ArtworkCandidate>> {
-        tracing::info!(tmdb_id = tmdb_id, "TVDB get_movie_artwork — full implementation in Task 9");
-        Ok(vec![])
-    }
-
-    async fn get_tv_artwork(&self, tvdb_id: u64) -> MetadataResult<Vec<ArtworkCandidate>> {
-        tracing::info!(tvdb_id = tvdb_id, "TVDB get_tv_artwork — full implementation in Task 9");
-        Ok(vec![])
     }
 }
 

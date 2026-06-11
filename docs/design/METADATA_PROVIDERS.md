@@ -143,7 +143,7 @@ Duskcue downloads `original` size for best quality (per POSTER_MANAGEMENT.md `ar
 | Attribute | Value |
 |---|---|
 | **Base URL** | `https://api4.thetvdb.com/v4/` |
-| **Auth** | POST `/login` with `{"apikey": "..."}` → JWT token (2-hour TTL) |
+| **Auth** | POST `/login` with `{"apikey": "..."}` → JWT token (1-month TTL per v4 spec) |
 | **Rate limit** | Undocumented; rate-limited per API key |
 | **Cost** | Free if revenue < $50K/year (attribution required) |
 | **Attribution** | Required with direct link to thetvdb.com |
@@ -946,3 +946,21 @@ Provider metrics are exposed via the existing Prometheus endpoint (see [LOGGING_
 - **Orchestrator wiring:** `EnrichmentOrchestrator` stores `data_dir: PathBuf` (from `BootstrapConfig`). `enrich_movie()`/`enrich_tv()` accept `media_item_id: Option<Uuid>` — when present alongside `images`, artwork is downloaded automatically. `EnrichmentResult` stores `tmdb_id` from details response for artwork download even when caller only had a title (search path).
 - **Graceful failure:** Individual artwork download failures are logged as warnings and do not fail the overall enrichment. Failed downloads counted in `ArtworkDownloadResult.failed` for monitoring. On DB insert failure, the downloaded file is cleaned up.
 - **No new workspace dependencies:** all functionality uses existing `reqwest`, `tokio::fs`, `sqlx`.
+
+### TvdbClient (Task 9)
+
+- **Module:** `server/src/services/tvdb_client.rs` — dedicated module following project convention (modular service files over large singletons). metadata.rs stubs removed; real TvdbClient lives in its own file.
+- **JWT auth:** POST `/login` with `{"apikey": "..."}` receives `{ "data": { "token": "..." } }`. Token TTL is 1 month per v4 OpenAPI spec (corrected from initial 2-hour estimate). Token refreshed 5 minutes before expiry.
+- **Token storage:** `tokio::sync::RwLock<(Option<String>, Option<Instant>)>` holds token + expiry. `ensure_token()` checks expiry before each request; acquires write lock only when refresh needed. Contention near-zero given 1-month TTL.
+- **Manual refresh over reqwest-middleware:** Chosen for full control, no extra deps, transparent error handling. The `reqwest-middleware` + `reqwest-retry` approach adds dependency chain and complex generic types for marginal benefit given the long TTL.
+- **HTTP client:** `reqwest::Client` owned per TvdbClient instance; 30s request timeout; 10s connect timeout; `redirect(Policy::none())` per API_SECURITY.md SSRF hardening. Bearer token set per-request via `Authorization` header after `ensure_token()`.
+- **Response wrapper:** All TVDB v4 responses use `{ "status": "success", "data": <T> }` wrapper. `TvdbResponse<T>` generic deserializes the wrapper; inner `data` field is the typed payload.
+- **All fields `Option<T>`:** TVDB v4 OpenAPI spec marks NO fields as required on any schema. Every deserialization type uses `Option<T>` throughout. ID fields use `i64` (spec uses `int64`).
+- **Search:** GET `/search?query=...&type=series` returns flat `SearchResult` objects with `objectID` (string), `tvdb_id` (string), `name`, `year`, `overview`, `poster`, `type`. Converted to domain `SearchResult` with provider-specific ID parsing.
+- **Series details:** GET `/series/{id}/extended?meta=episodes` returns `SeriesExtendedRecord` with episodes, seasons, artworks, genres, companies, remote IDs in a single request. This is the primary endpoint for TV enrichment (analogous to TMDB's `append_to_response`).
+- **Episode listing:** GET `/series/{id}/episodes/{season-type}?page=0` returns paginated episodes. `season-type` supports `default`, `dvd`, `absolute`, `alternate` ordering. Used for alternate episode ordering not available from TMDB.
+- **Artwork:** `ArtworkExtendedRecord` from `/series/{id}/artworks` provides `image` (full URL), `thumbnail`, `width`, `height`, `type` (artwork type ID), `language`, `score`. Converted to `ArtworkCandidate` for the artwork pipeline.
+- **Remote IDs:** `RemoteID` struct with `id` (string value), `type` (int64 source type), `sourceName` (e.g. "IMDB"). Enables cross-referencing from IMDb ID via `/search/remoteid/{id}`.
+- **Error mapping:** HTTP 401 → `AuthenticationFailed` (also clears cached token), 404 → `NotFound`, 429 → `RateLimited`, other → `InvalidResponse`. JSON parse failures → `InvalidResponse`.
+- **No new workspace dependencies:** all functionality uses existing `reqwest`, `serde`, `tokio`.
+- **TvdbClient not Clone:** Unlike TmdbClient, TvdbClient contains `RwLock` for token state. Registry stores `Box<dyn MetadataProvider>` (owned), no need for cloning.
