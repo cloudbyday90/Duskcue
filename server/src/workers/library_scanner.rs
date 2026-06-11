@@ -30,6 +30,7 @@ use tokio::sync::Semaphore;
 use uuid::Uuid;
 
 use crate::services::media_matching;
+use crate::services::metadata::EnrichmentOrchestrator;
 
 const MEDIA_VIDEO_EXTENSIONS: &[&str] = &[
     "mkv", "mp4", "avi", "ts", "m2ts", "wmv", "flv", "webm", "mov", "mpg",
@@ -179,6 +180,7 @@ pub async fn scan_library(
     pool: &sqlx::PgPool,
     library_id: Uuid,
     full: bool,
+    enrichment: Option<Arc<EnrichmentOrchestrator>>,
 ) -> Result<ScanResult, ScannerError> {
     let started_at = Utc::now();
     let timer = Instant::now();
@@ -226,7 +228,7 @@ pub async fn scan_library(
             continue;
         }
 
-        match scan_path_pipeline(pool, library_id, &library.media_type, scan_path, full).await {
+        match scan_path_pipeline(pool, library_id, &library.media_type, scan_path, full, enrichment.as_deref()).await {
             Ok(result) => {
                 total_result.files_discovered += result.files_discovered;
                 total_result.files_new += result.files_new;
@@ -317,6 +319,7 @@ async fn scan_path_pipeline(
     media_type: &str,
     scan_path: &Path,
     full: bool,
+    enrichment: Option<&EnrichmentOrchestrator>,
 ) -> Result<ScanResult, ScannerError> {
     let started_at = Utc::now();
     let timer = Instant::now();
@@ -372,7 +375,7 @@ async fn scan_path_pipeline(
         "Phase 4 (Identify) complete"
     );
 
-    phase5_enrich(pool, library_id, &mut errors).await;
+    phase5_enrich(pool, library_id, enrichment, &mut errors).await;
 
     let deleted_count =
         phase6_cleanup(pool, library_id, &diff.deleted_paths, &mut errors).await?;
@@ -1573,14 +1576,35 @@ fn generate_sort_title(title: &str) -> String {
 }
 
 async fn phase5_enrich(
-    _pool: &sqlx::PgPool,
+    pool: &sqlx::PgPool,
     library_id: Uuid,
-    _errors: &mut Vec<ScanError>,
+    enrichment: Option<&EnrichmentOrchestrator>,
+    errors: &mut Vec<ScanError>,
 ) {
-    tracing::info!(
-        library_id = %library_id,
-        "Phase 5 (Enrich) — metadata provider integration deferred to Phase 6"
-    );
+    let Some(orchestrator) = enrichment else {
+        tracing::info!(
+            library_id = %library_id,
+            "Phase 5 (Enrich) — skipped, no enrichment orchestrator configured"
+        );
+        return;
+    };
+
+    let mut persist_errors: Vec<String> = Vec::new();
+    crate::services::enrichment_persistence::enrich_items_for_library(
+        pool,
+        orchestrator,
+        library_id,
+        &mut persist_errors,
+    )
+    .await;
+
+    for err in persist_errors {
+        errors.push(ScanError {
+            path: format!("library:{library_id}"),
+            phase: "enrich".to_string(),
+            message: err,
+        });
+    }
 }
 
 async fn phase6_cleanup(

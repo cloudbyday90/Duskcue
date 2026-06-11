@@ -724,7 +724,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **Season folder detection** — `find_series_folder()` walks up from episode file's parent; if parent matches `Season XX` or `Specials`, the grandparent is the series folder
 - **SXXEXX regex patterns** — Two patterns: `(?i)[_.\s\-]s?(\d{1,2})[ex](\d{1,3})` (standard S01E01) and `(?i)[_.\s\-](\d{1,2})x(\d{1,3})` (alternate 1x01); supports multi-episode ranges via optional `-E##` suffix
 - **Sort title generation** — Articles ("The", "A", "An") stripped from beginning and appended: `"The Matrix"` → `"Matrix, The"`
-- **Phase 5 (Enrich) is a stub** — Logs "metadata provider integration deferred to Phase 6"; Phase 6 adds TMDB/TVDB search that upgrades `auto_matched` items to `confirmed`
+- **Phase 5 (Enrich) calls TMDB enrichment** — When `EnrichmentOrchestrator` is available, queries `auto_matched`/`unmatched` movies and series, enriches each via `enrich_movie()`/`enrich_tv()`, persists metadata to DB, downloads artwork; sets `match_state = 'confirmed'` on success
 - **Phase 6 (Cleanup) marks deleted files** — `UPDATE media_files SET is_healthy = false` for paths in DB but not on disk; orphaned media items (no healthy files) detected and logged but not deleted (admin reviews in UI)
 - **`ScannerError` mapped via `AppError::Internal`** — Handler uses `.map_err(|e| AppError::Internal(anyhow::anyhow!("{}", e)))` since scanner is an internal worker; no new domain error variant needed
 - **Scan is synchronous** — Handler runs scan inline and returns results; for large libraries this may timeout; async background scan with `POST` returning 202 Accepted deferred to Task 6 (scheduler)
@@ -878,7 +878,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 4. ~~Implement TMDB details endpoints — `/movie/{id}`, `/tv/{id}` with `append_to_response=credits,videos,external_ids,images`~~ **DONE**
 5. ~~Implement TMDB `/find` — cross-reference from IMDb ID~~ **DONE**
 6. ~~Implement TMDB `/configuration` caching — image sizes, base URL~~ **DONE**
-7. Wire TMDB client into Phase 5 enrichment (Phase 5 stub → real implementation)
+7. ~~Wire TMDB client into Phase 5 enrichment (Phase 5 stub → real implementation)~~ **DONE**
 8. ~~Implement artwork download — save to `/data/metadata/artwork/`, create `artwork` table rows~~ **DONE**
 9. Implement `TvdbClient` — JWT auth via `/login`, token refresh, series/episode endpoints
 10. Implement `FanartClient` — artwork lookup by TMDB/TVDB ID
@@ -961,6 +961,32 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **Graceful failure** — Individual artwork download failures are logged as warnings and do not fail the overall enrichment. Failed downloads are counted in `ArtworkDownloadResult.failed` for monitoring
 - **Directory creation is idempotent** — `create_dir_all` is called before each download; if the directory already exists, this is a no-op
 - **No new workspace dependencies** — all functionality uses existing `reqwest`, `tokio::fs`, `sqlx`
+
+**What was built for Task 7:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/enrichment_persistence.rs` | New service module: `enrich_items_for_library()` fetches enrichable items (`auto_matched`/`unmatched` movies and series), calls `enrich_movie()`/`enrich_tv()` per item, persists results to DB via transaction |
+| `server/src/services/mod.rs` | Added `pub mod enrichment_persistence;` |
+| `server/src/workers/library_scanner.rs` | `scan_library()` now accepts `Option<Arc<EnrichmentOrchestrator>>`; `scan_path_pipeline()` passes enrichment reference to `phase5_enrich()`; `phase5_enrich()` calls `enrichment_persistence::enrich_items_for_library()` when orchestrator is available, logs skip message when not |
+| `server/src/state.rs` | `LibraryWatcherManager::new()` now takes `Arc<EnrichmentOrchestrator>`; enrichment created before fs_watcher in both `AppState` constructors |
+| `server/src/services/fs_watcher.rs` | `LibraryWatcherManager` stores `Arc<EnrichmentOrchestrator>`; `process_batch()` passes enrichment to `scan_library()` |
+| `server/src/domains/libraries/handlers.rs` | `scan_library` handler passes `Some(state.enrichment.clone())` to scanner |
+| `server/src/main.rs` | Scheduler executor passes `None` for enrichment (scheduler has no orchestrator reference; scheduled scans enrich items on the next handler-triggered scan) |
+
+**Key decisions from Task 7:**
+
+- **`Option<Arc<EnrichmentOrchestrator>>` parameter** — `scan_library()` accepts an optional orchestrator rather than requiring one. This allows the scheduler to call `scan_library(... None)` for discovery/identification phases even when no TMDB is configured. Handler-triggered scans pass `Some(...)` for full enrichment
+- **Dedicated `enrichment_persistence.rs` module** — Follows the project's "modular service files over large monoliths" convention. Separates persistence logic (genre upserts, credit linking, person deduplication, metadata JSON merging) from the scanner's orchestration flow
+- **Transaction-per-item enrichment** — Each item's enrichment result is persisted in a single DB transaction (`BEGIN` → update media_items → update movies/series extension → upsert genres → upsert credits → merge metadata JSON → `COMMIT`). This ensures atomicity: a failed enrichment doesn't leave partial data
+- **Genre upsert with `ON CONFLICT (name) DO UPDATE`** — Genres are get-or-create by name; the SQL upserts into the `genres` table and links via `media_genres`. Previous genre links are deleted before re-inserting (full replacement per enrichment)
+- **Person deduplication via `tmdb_person_id`** — People are upserted using `ON CONFLICT (tmdb_person_id) WHERE tmdb_person_id IS NOT NULL`; the name and image_url are updated on conflict, ensuring profile photo updates propagate
+- **Top-N credit filtering** — Only the top 20 cast members (by `order`) and key crew (Director, Writer, Creator, Executive Producer) up to 10 are persisted. This avoids bloating the `media_credits` table with hundreds of minor crew members
+- **`match_state` updated to `'confirmed'`** — After successful enrichment, `media_items.match_state` is set to `confirmed`, removing the item from future enrichment queries
+- **`sqlx::QueryBuilder` for dynamic updates** — `media_items` updates are conditional (only non-None fields are SET), avoiding overwriting existing data with NULLs. `QueryBuilder` pushes SQL fragments dynamically based on which enrichment fields are populated
+- **Metadata JSONB merge** — Rich data that doesn't map to dedicated columns (videos, external ratings like RT/Metacritic, tagline) is stored in `media_items.metadata` JSONB via `COALESCE(metadata, '{}') || $2`. Movies/series extension tables also use metadata JSONB for tagline, certification, studios, networks
+- **Scheduler executor passes `None`** — The scheduler's closure signature only receives `(pool, task_id, config)`. Adding enrichment would require changing the `Scheduler` API or capturing state via environment. For now, scheduled scans run identification only; handler-triggered scans provide full enrichment. This can be enhanced in a future task if needed
+- **No new workspace dependencies** — All functionality uses existing `sqlx`, `serde_json`, `uuid`
 
 **Verification:** Library scan enriches items with TMDB data — titles, overviews, ratings, genres, cast, artwork. Admin can configure TVDB/Fanart.tv/OMDb keys in settings UI. Provider failures are non-blocking.
 

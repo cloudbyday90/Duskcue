@@ -541,13 +541,13 @@ impl AppState {
         set_environment(bootstrap.environment.clone());
         let subnets = parse_metrics_subnets(&NetworkConfig::default().allowed_metrics_subnets);
         let webauthn = build_webauthn("localhost", "http://localhost:48027");
-        let fs_watcher = Arc::new(LibraryWatcherManager::new(pool.clone()));
         let enrichment = Arc::new(EnrichmentOrchestrator::new(
             crate::services::metadata::ProviderRegistry::new(),
             pool.clone(),
             MetadataConfig::default(),
             bootstrap.data_dir.clone(),
         ));
+        let fs_watcher = Arc::new(LibraryWatcherManager::new(pool.clone(), enrichment.clone()));
         Self {
             pool,
             runtime_config: Arc::new(ArcSwap::from_pointee(RuntimeConfig::default())),
@@ -575,7 +575,6 @@ impl AppState {
         let rp_id = runtime_config.auth.rp_id.as_deref().unwrap_or("localhost");
         let rp_origin = runtime_config.auth.rp_origin.as_deref().unwrap_or("http://localhost:48027");
         let webauthn = build_webauthn(rp_id, rp_origin);
-        let fs_watcher = Arc::new(LibraryWatcherManager::new(pool.clone()));
 
         let metadata_config = runtime_config.metadata.clone();
         let registry = crate::services::metadata::ProviderRegistry::from_config(&metadata_config);
@@ -585,6 +584,8 @@ impl AppState {
             metadata_config,
             bootstrap.data_dir.clone(),
         ));
+
+        let fs_watcher = Arc::new(LibraryWatcherManager::new(pool.clone(), enrichment.clone()));
 
         Self {
             pool,

@@ -15,6 +15,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 pub mod artwork_downloader;
+pub mod enrichment_persistence;
 pub mod fs_watcher;
 pub mod media_matching;
 pub mod metadata;

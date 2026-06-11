@@ -51,6 +51,7 @@ struct PendingDirectory {
 
 pub struct LibraryWatcherManager {
     pool: sqlx::PgPool,
+    enrichment: Arc<crate::services::metadata::EnrichmentOrchestrator>,
     watched: Arc<std::sync::Mutex<HashMap<Uuid, WatchedLibrary>>>,
     debouncer: Arc<std::sync::Mutex<Option<notify_debouncer_full::Debouncer<notify::RecommendedWatcher, notify_debouncer_full::RecommendedCache>>>>,
     pending: Arc<std::sync::Mutex<HashMap<PathBuf, PendingDirectory>>>,
@@ -58,9 +59,13 @@ pub struct LibraryWatcherManager {
 }
 
 impl LibraryWatcherManager {
-    pub fn new(pool: sqlx::PgPool) -> Self {
+    pub fn new(
+        pool: sqlx::PgPool,
+        enrichment: Arc<crate::services::metadata::EnrichmentOrchestrator>,
+    ) -> Self {
         Self {
             pool,
+            enrichment,
             watched: Arc::new(std::sync::Mutex::new(HashMap::new())),
             debouncer: Arc::new(std::sync::Mutex::new(None)),
             pending: Arc::new(std::sync::Mutex::new(HashMap::new())),
@@ -254,6 +259,7 @@ impl LibraryWatcherManager {
         let cooldowns = Arc::clone(&self.cooldowns);
         let watched = Arc::clone(&self.watched);
         let pool = self.pool.clone();
+        let enrichment = self.enrichment.clone();
 
         loop {
             tokio::select! {
@@ -266,7 +272,7 @@ impl LibraryWatcherManager {
                                 continue;
                             }
 
-                            process_batch(&batch, &watched, &cooldowns, &pool).await;
+                            process_batch(&batch, &watched, &cooldowns, &pool, &enrichment).await;
                         }
                         None => {
                             tracing::info!("FS watcher channel closed");
@@ -323,6 +329,7 @@ async fn process_batch(
     watched: &Arc<std::sync::Mutex<HashMap<Uuid, WatchedLibrary>>>,
     cooldowns: &Arc<std::sync::Mutex<HashMap<Uuid, std::time::Instant>>>,
     pool: &sqlx::PgPool,
+    enrichment: &Arc<crate::services::metadata::EnrichmentOrchestrator>,
 ) {
     for (directory, count) in batch {
         let library_id = {
@@ -370,8 +377,9 @@ async fn process_batch(
         }
 
         let pool = pool.clone();
+        let enrichment = enrichment.clone();
         tokio::spawn(async move {
-            match crate::workers::library_scanner::scan_library(&pool, library_id, quick).await {
+            match crate::workers::library_scanner::scan_library(&pool, library_id, quick, Some(enrichment)).await {
                 Ok(result) => {
                     tracing::info!(
                         library_id = %library_id,

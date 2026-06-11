@@ -187,7 +187,8 @@ pub async fn scan_library(
     axum::extract::Path(library_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     let pool = state.pool.clone();
-    let result = crate::workers::library_scanner::scan_library(&pool, library_id, false)
+    let enrichment = Some(state.enrichment.clone());
+    let result = crate::workers::library_scanner::scan_library(&pool, library_id, false, enrichment)
         .await
         .map_err(|e| crate::error::AppError::Internal(anyhow::anyhow!("{}", e)))?;
     Ok(Json(serde_json::to_value(result).unwrap_or_else(|_| {
