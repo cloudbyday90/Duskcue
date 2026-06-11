@@ -476,6 +476,20 @@ Provider API keys are encrypted at rest using AES-256-GCM:
 - Admin API returns masked values: `"api_key": "abc...xyz"` (first 3 + last 3 characters)
 - Keys are decrypted in memory only when making outbound requests; never logged, never cached in plaintext
 
+#### Implementation (Phase 6, Task 13)
+
+- `server/src/services/encryption.rs` — `EncryptionKey` struct wrapping `ring::aead::LessSafeKey` (AES-256-GCM)
+- Wire format: `encrypted:` + base64(12-byte random nonce || ciphertext || 16-byte authentication tag)
+- Master key: 256-bit random value, hex-encoded, stored in `config.toml` as `encryption_key` or `DUSKCUE_ENCRYPTION_KEY` env var
+- Auto-generation: if no key in bootstrap config, `ensure_encryption_key()` generates via `ring::rand::SystemRandom` and writes to `{data_dir}/config/config.toml`
+- Transparent plaintext migration: `decrypt_if_encrypted()` returns values without `encrypted:` prefix unchanged
+- Decryption at config load: `load_runtime_config()` calls `decrypt_provider_config()` after JSONB deserialization; provider clients receive plaintext keys without encryption awareness
+- Encryption for saves: `encrypt_provider_config()` skips already-encrypted values (idempotent)
+- Masking: `mask_secret()` returns `"abc...xyz"` for long strings, `"***"` for short, `"***encrypted***"` for encrypted values
+- `Arc<EncryptionKey>` stored in `AppState`; shared reference for config loading and future settings save endpoints
+- 18 unit tests covering roundtrips, tamper detection, wrong-key rejection, plaintext migration, provider config encrypt/decrypt
+- No new workspace dependencies — all cryptography via existing `ring` 0.17 and `base64` 0.22
+
 ### Access Controls
 
 - Provider API keys are admin-only accessible via the settings UI

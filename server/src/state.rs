@@ -29,6 +29,7 @@ use webauthn_rs::prelude::{PasskeyAuthentication, PasskeyRegistration, Webauthn}
 use crate::config::BootstrapConfig;
 use crate::error::set_environment;
 use crate::middleware::RateLimitState;
+use crate::services::encryption::EncryptionKey;
 use crate::services::fs_watcher::LibraryWatcherManager;
 use crate::services::metadata::EnrichmentOrchestrator;
 
@@ -534,10 +535,11 @@ pub struct AppState {
     pub webauthn_challenges: Arc<DashMap<String, WebauthnChallenge>>,
     pub fs_watcher: Arc<LibraryWatcherManager>,
     pub enrichment: Arc<EnrichmentOrchestrator>,
+    pub encryption_key: Arc<EncryptionKey>,
 }
 
 impl AppState {
-    pub fn new(pool: PgPool, bootstrap: BootstrapConfig, metrics_handle: PrometheusHandle) -> Self {
+    pub fn new(pool: PgPool, bootstrap: BootstrapConfig, metrics_handle: PrometheusHandle, encryption_key: EncryptionKey) -> Self {
         set_environment(bootstrap.environment.clone());
         let subnets = parse_metrics_subnets(&NetworkConfig::default().allowed_metrics_subnets);
         let webauthn = build_webauthn("localhost", "http://localhost:48027");
@@ -559,6 +561,7 @@ impl AppState {
             webauthn_challenges: Arc::new(DashMap::new()),
             fs_watcher,
             enrichment,
+            encryption_key: Arc::new(encryption_key),
         }
     }
 
@@ -567,6 +570,7 @@ impl AppState {
         bootstrap: BootstrapConfig,
         runtime_config: RuntimeConfig,
         metrics_handle: PrometheusHandle,
+        encryption_key: EncryptionKey,
     ) -> Self {
         set_environment(bootstrap.environment.clone());
         let rate_limits = RateLimitState::new(&runtime_config.auth.rate_limits);
@@ -598,6 +602,7 @@ impl AppState {
             webauthn_challenges: Arc::new(DashMap::new()),
             fs_watcher,
             enrichment,
+            encryption_key: Arc::new(encryption_key),
         }
     }
 
@@ -640,7 +645,7 @@ fn parse_metrics_subnets(subnets: &[String]) -> Vec<IpNet> {
         .collect()
 }
 
-pub async fn load_runtime_config(pool: &PgPool) -> Result<RuntimeConfig, sqlx::Error> {
+pub async fn load_runtime_config(pool: &PgPool, encryption_key: Option<&EncryptionKey>) -> Result<RuntimeConfig, sqlx::Error> {
     let row = sqlx::query(
         r#"
         SELECT
@@ -708,7 +713,13 @@ pub async fn load_runtime_config(pool: &PgPool) -> Result<RuntimeConfig, sqlx::E
         ssl_private_key_path: ssl_private_key_path.map(PathBuf::from),
         network: serde_json::from_value(network).unwrap_or_default(),
         transcoding: serde_json::from_value(transcoding).unwrap_or_default(),
-        metadata: serde_json::from_value(metadata).unwrap_or_default(),
+        metadata: {
+            let mut mc: MetadataConfig = serde_json::from_value(metadata).unwrap_or_default();
+            if let Some(key) = encryption_key {
+                crate::services::encryption::decrypt_provider_config(&mut mc.providers, key);
+            }
+            mc
+        },
         auth: serde_json::from_value(auth).unwrap_or_default(),
         security: serde_json::from_value(security).unwrap_or_default(),
         notifications: serde_json::from_value(notifications).unwrap_or_default(),

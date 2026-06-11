@@ -31,6 +31,7 @@ use duskcue::lockfile::Lockfile;
 use duskcue::logging::init_logging;
 use duskcue::logging::init_metrics;
 use duskcue::router::build_router;
+use duskcue::services::encryption;
 use duskcue::services::scheduler::{seed_default_tasks, Scheduler};
 use duskcue::state::{load_runtime_config, AppState};
 use sqlx::postgres::PgPoolOptions;
@@ -206,6 +207,13 @@ async fn main() {
     let metrics_handle = init_metrics();
     tracing::info!("Prometheus metrics recorder initialized");
 
+    tracing::info!("Initializing encryption key");
+    let (encryption_key, _new_key_hex) = encryption::ensure_encryption_key(&bootstrap).unwrap_or_else(|e| {
+        tracing::error!(error = %e, "Failed to initialize encryption key");
+        eprintln!("Failed to initialize encryption key: {e}");
+        std::process::exit(1);
+    });
+
     let database_url = match bootstrap.database_url.as_deref() {
         Some(url) => url.to_string(),
         None => {
@@ -245,7 +253,7 @@ async fn main() {
         });
     tracing::info!("Database migrations complete");
 
-    let runtime_config = load_runtime_config(&pool)
+    let runtime_config = load_runtime_config(&pool, Some(&encryption_key))
         .await
         .unwrap_or_else(|e| {
             tracing::error!(error = %e, "Failed to load runtime configuration");
@@ -253,7 +261,7 @@ async fn main() {
             std::process::exit(1);
         });
 
-    let state = AppState::new_with_config(pool, bootstrap, runtime_config, metrics_handle);
+    let state = AppState::new_with_config(pool, bootstrap, runtime_config, metrics_handle, encryption_key);
     tracing::info!("Runtime configuration loaded");
 
     {

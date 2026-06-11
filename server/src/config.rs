@@ -36,6 +36,9 @@ pub struct CliArgs {
     #[arg(long, env = "DUSKCUE_ENVIRONMENT", default_value = "production")]
     pub environment: String,
 
+    #[arg(long, env = "DUSKCUE_ENCRYPTION_KEY")]
+    pub encryption_key: Option<String>,
+
     #[arg(long, env = "DUSKCUE_CONFIG")]
     pub config: Option<PathBuf>,
 }
@@ -47,6 +50,7 @@ pub struct BootstrapConfig {
     pub cache_dir: PathBuf,
     pub log_level: String,
     pub environment: String,
+    pub encryption_key: Option<String>,
 }
 
 fn default_data_dir() -> PathBuf {
@@ -85,6 +89,7 @@ pub fn build_bootstrap_config(cli: CliArgs) -> Result<BootstrapConfig, Box<dyn s
         );
 
     builder = builder.set_override_option("database_url", cli.database_url)?;
+    builder = builder.set_override_option("encryption_key", cli.encryption_key)?;
 
     let settings = builder.build()?;
 

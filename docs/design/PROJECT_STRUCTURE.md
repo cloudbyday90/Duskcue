@@ -194,6 +194,7 @@ project/
 │       │
 │       ├── services/             # Cross-domain services
 │       │   ├── mod.rs
+│       │   ├── encryption.rs    # AES-256-GCM encryption at rest (ring::aead, provider key encrypt/decrypt, secret masking)
 │       │   ├── scheduler.rs      # Scheduled task runner
 │       │   ├── fs_watcher.rs     # Filesystem watcher (notify + notify-debouncer-full)
 │       │   ├── media_matching.rs # 5-layer identification cascade (.media-match, provider ID tags)

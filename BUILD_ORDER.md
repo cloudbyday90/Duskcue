@@ -884,11 +884,31 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 10. ~~Implement `FanartClient` — artwork lookup by TMDB/TVDB ID~~ **DONE**
 11. ~~Implement `OmdbClient` — ratings lookup by IMDb ID~~ **DONE**
 12. ~~Implement provider API key validation on save (test request)~~ **DONE**
-13. Implement API key encryption at rest (AES-256-GCM with `encrypted:` prefix)
+13. ~~Implement API key encryption at rest (AES-256-GCM with `encrypted:` prefix)~~ **DONE**
 14. Implement TMDB daily ID export download and caching
  15. Implement `server/src/workers/metadata_refresh.rs` — periodic enrichment using TMDB `/changes`
 
-**What was built for Task 1:**
+**What was built for Task 13:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/encryption.rs` | AES-256-GCM encryption service: `EncryptionKey` struct wrapping `ring::aead::LessSafeKey`; `encrypt()`/`decrypt()` with `encrypted:` + base64(nonce \|\| ciphertext \|\| tag) wire format; `decrypt_provider_config()`/`encrypt_provider_config()` for provider key batch operations; `mask_secret()` for admin API responses; `ensure_encryption_key()` for startup key resolution and auto-generation; 18 unit tests |
+| `server/src/services/mod.rs` | Added `pub mod encryption;` |
+| `server/src/config.rs` | Added `encryption_key: Option<String>` to `CliArgs` (with `DUSKCUE_ENCRYPTION_KEY` env var) and `BootstrapConfig`; wired through config builder with `set_override_option` |
+| `server/src/state.rs` | Added `encryption_key: Arc<EncryptionKey>` to `AppState`; `load_runtime_config()` now accepts `Option<&EncryptionKey>` and decrypts provider keys after JSONB deserialization; both `AppState` constructors accept `EncryptionKey` parameter |
+| `server/src/main.rs` | Encryption key initialization after metrics setup, before DB connection: resolves from bootstrap config or auto-generates and writes to `{data_dir}/config/config.toml`; passes key to `load_runtime_config()` and `AppState::new_with_config()` |
+
+**Key decisions from Task 13:**
+
+- **`ring::aead::AES_256_GCM` via `LessSafeKey`** — Direct use of `ring`'s AES-256-GCM implementation; `LessSafeKey` chosen over `SealingKey`/`OpeningKey` because each encryption uses a random nonce (no sequential nonce tracking needed); `ring` already in workspace for PBKDF2, HMAC, rustls
+- **Wire format: `encrypted:` + base64(nonce_12 \|\| ciphertext \|\| tag_16)** — Self-describing prefix enables transparent migration from plaintext; base64 encoding avoids JSONB string escaping issues; 12-byte random nonce per encryption ensures uniqueness
+- **Master key in bootstrap config** — Hex-encoded 256-bit key stored in `config.toml` or `DUSKCUE_ENCRYPTION_KEY` env var; same key used for backup encryption per BACKUP_RECOVERY.md design; not stored in DB (would create lockout loop since DB itself is inside backups)
+- **Auto-generation on first run** — If no `encryption_key` in bootstrap config, `ensure_encryption_key()` generates a random 32-byte key via `ring::rand::SystemRandom` and writes to `{data_dir}/config/config.toml`; generates key before DB connection so encrypted values in future migrations are handled correctly
+- **Graceful plaintext migration** — `decrypt_if_encrypted()` checks for `encrypted:` prefix; values without prefix are returned as-is; allows gradual migration from existing plaintext deployments without a migration script
+- **Decryption at config load time** — `load_runtime_config()` decrypts provider keys after JSONB deserialization but before `AppState` construction; provider clients receive plaintext keys in memory without any encryption awareness; matches design doc: "Keys are decrypted in memory only when making outbound requests"
+- **`encrypt_provider_config()` skips already-encrypted values** — Idempotent: values already starting with `encrypted:` prefix are not re-encrypted; prevents double-encryption on repeated save operations
+- **`mask_secret()` for admin API** — Returns first 3 + last 3 chars for long strings, `***` for short strings, `***encrypted***` for encrypted values; ready for Phase 13 admin settings UI
+- **No new workspace dependencies** — All cryptography uses existing `ring` 0.17 (`ring::aead::AES_256_GCM`, `ring::rand::SystemRandom`); base64 encoding uses existing `base64` 0.22; hex encoding is inline (32 bytes, trivial)
 
 | File | Purpose |
 |---|---|

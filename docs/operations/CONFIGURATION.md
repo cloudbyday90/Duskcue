@@ -67,9 +67,10 @@ data_dir = "/var/lib/duskcue"
 cache_dir = "/var/cache/duskcue"
 log_level = "info"
 environment = "production"
+encryption_key = "auto-generated-hex-encoded-256-bit-key"
 ```
 
-Only five fields. Everything else is in `server_config` after the database is reachable.
+Six fields. Everything else is in `server_config` after the database is reachable.
 
 ### Field Reference
 
@@ -88,6 +89,7 @@ See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for the full embedded/external 
 | `cache_dir` | Path | `{data_dir}/cache` | `DUSKCUE_CACHE_DIR` | `--cache-dir` | No |
 | `log_level` | String | `info` | `DUSKCUE_LOG_LEVEL` | `--log-level` | No |
 | `environment` | String | `production` | `DUSKCUE_ENVIRONMENT` | `--environment` | No |
+| `encryption_key` | String | Auto-generated | `DUSKCUE_ENCRYPTION_KEY` | `--encryption-key` | No |
 
 `environment` must be one of: `development`, `staging`, `production`. This controls error response verbosity as documented in ERROR_HANDLING.md.
 
@@ -212,6 +214,9 @@ pub struct CliArgs {
     #[arg(long, env = "DUSKCUE_ENVIRONMENT", default_value = "production")]
     pub environment: String,
 
+    #[arg(long, env = "DUSKCUE_ENCRYPTION_KEY")]
+    pub encryption_key: Option<String>,
+
     #[arg(long, env = "DUSKCUE_CONFIG")]
     pub config: Option<PathBuf>,
 }
@@ -223,6 +228,7 @@ pub struct BootstrapConfig {
     pub cache_dir: PathBuf,
     pub log_level: String,
     pub environment: String,
+    pub encryption_key: Option<String>,
 }
 ```
 
