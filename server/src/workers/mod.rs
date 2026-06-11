@@ -15,3 +15,4 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 pub mod library_scanner;
+pub mod metadata_refresh;

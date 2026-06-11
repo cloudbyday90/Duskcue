@@ -106,6 +106,32 @@ async fn fetch_enrichable_items(
         .collect())
 }
 
+pub async fn re_enrich_item(
+    pool: &PgPool,
+    orchestrator: &EnrichmentOrchestrator,
+    media_item_id: Uuid,
+    item_type: &str,
+    tmdb_id: u64,
+) -> Result<(), String> {
+    let result = match item_type {
+        "movie" => orchestrator
+            .enrich_movie(Some(tmdb_id), None, "", None, Some(media_item_id))
+            .await
+            .map_err(|e| e.to_string())?,
+        "series" => orchestrator
+            .enrich_tv(Some(tmdb_id), None, "", None, Some(media_item_id))
+            .await
+            .map_err(|e| e.to_string())?,
+        _ => return Ok(()),
+    };
+
+    persist_enrichment_result(pool, media_item_id, item_type, &result)
+        .await
+        .map_err(|e| e.to_string())?;
+
+    Ok(())
+}
+
 async fn enrich_single_item(
     orchestrator: &EnrichmentOrchestrator,
     pool: &PgPool,

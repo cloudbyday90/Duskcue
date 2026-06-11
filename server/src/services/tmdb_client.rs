@@ -267,6 +267,23 @@ struct TmdbErrorResponse {
     status_code: Option<i32>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+struct TmdbChangesListResponse {
+    results: Option<Vec<TmdbChangedId>>,
+    #[allow(dead_code)]
+    page: Option<u32>,
+    total_pages: Option<u32>,
+    #[allow(dead_code)]
+    total_results: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TmdbChangedId {
+    id: u64,
+    #[allow(dead_code)]
+    adult: Option<bool>,
+}
+
 #[derive(Clone)]
 pub struct TmdbClient {
     config: TmdbProviderConfig,
@@ -552,6 +569,62 @@ impl TmdbClient {
             instagram_id: ids.instagram_id,
             twitter_id: ids.twitter_id,
         }
+    }
+
+    pub async fn fetch_changed_movie_ids(
+        &self,
+        start_date: &str,
+        end_date: &str,
+    ) -> MetadataResult<Vec<u64>> {
+        let mut all_ids = Vec::new();
+        let mut page = 1u32;
+
+        loop {
+            let path = format!(
+                "/movie/changes?start_date={start_date}&end_date={end_date}&page={page}"
+            );
+            let resp: TmdbChangesListResponse = self.get(&path).await?;
+            let total_pages = resp.total_pages.unwrap_or(1);
+
+            for item in resp.results.unwrap_or_default() {
+                all_ids.push(item.id);
+            }
+
+            if page >= total_pages {
+                break;
+            }
+            page += 1;
+        }
+
+        Ok(all_ids)
+    }
+
+    pub async fn fetch_changed_tv_ids(
+        &self,
+        start_date: &str,
+        end_date: &str,
+    ) -> MetadataResult<Vec<u64>> {
+        let mut all_ids = Vec::new();
+        let mut page = 1u32;
+
+        loop {
+            let path = format!(
+                "/tv/changes?start_date={start_date}&end_date={end_date}&page={page}"
+            );
+            let resp: TmdbChangesListResponse = self.get(&path).await?;
+            let total_pages = resp.total_pages.unwrap_or(1);
+
+            for item in resp.results.unwrap_or_default() {
+                all_ids.push(item.id);
+            }
+
+            if page >= total_pages {
+                break;
+            }
+            page += 1;
+        }
+
+        Ok(all_ids)
     }
 }
 

@@ -565,6 +565,18 @@ TMDB daily ID exports are downloaded once per day and stored locally:
 
 Used for bulk matching during full library scans. Downloaded by the `metadata_refresh` scheduled task. Old files cleaned up after 7 days.
 
+#### Implementation (Phase 6, Tasks 14–15)
+
+- `server/src/workers/metadata_refresh.rs` — Full worker module with `run_metadata_refresh()` entry point
+- **Daily export download:** `download_daily_exports()` fetches `movie_ids_MM_DD_YYYY.json.gz` and `tv_series_ids_MM_DD_YYYY.json.gz` from `https://files.tmdb.org/p/exports/` (no auth required); files stored in `{cache_dir}/metadata/exports/`; uses separate `reqwest::Client` with 300s timeout for large files
+- **Cleanup:** `cleanup_old_exports()` removes `.gz` files older than 7 days based on file modification time
+- **Changes detection:** `fetch_changed_movie_ids()`/`fetch_changed_tv_ids()` added to `TmdbClient` — auto-paginated queries against `GET /3/movie/changes?start_date=&end_date=&page=` (100 items/page, 14-day max range)
+- **Cross-reference:** `find_matching_items()` uses `sqlx::QueryBuilder` to build `WHERE (metadata->>'tmdb_id')::bigint IN (...)` with bind parameters against `media_items JOIN movies/series` where `match_state = 'confirmed'`
+- **Re-enrichment:** `re_enrich_item()` in `enrichment_persistence.rs` — calls orchestrator's `enrich_movie()`/`enrich_tv()` directly with known tmdb_id, persists via existing `persist_enrichment_result()`; avoids re-enriching entire libraries
+- **Scheduler integration:** `metadata_refresh` executor registered in `main.rs` with `Arc<EnrichmentOrchestrator>` and `cache_dir` captures; runs daily at 04:00 UTC (seeded default)
+- **Graceful degradation:** Export download failure doesn't block `/changes` refresh; TMDB API failures logged as warnings; individual item re-enrichment failures counted but don't stop processing
+- **New dependency:** `flate2 = "1"` added to workspace for gzip decompression of daily export files
+
 ## Provider Client Architecture
 
 ### Trait-Based Abstraction

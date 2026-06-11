@@ -61,5 +61,6 @@ notify-debouncer-full.workspace = true
 quick-xml.workspace = true
 async-trait.workspace = true
 urlencoding.workspace = true
+flate2.workspace = true
 duskcue-types = { path = "../crates/types" }
 duskcue-db = { path = "../crates/db" }

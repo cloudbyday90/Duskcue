@@ -290,6 +290,9 @@ async fn main() {
     let server_shutdown = shutdown.clone();
     let scheduler_shutdown = shutdown.clone();
 
+    let enrichment = state.enrichment.clone();
+    let cache_dir = state.bootstrap.cache_dir.clone();
+
     let scheduler = Arc::new(
         Scheduler::new(state.pool.clone())
             .register_executor("library_scan", |pool, task_id, config| {
@@ -345,6 +348,21 @@ async fn main() {
                             tracing::error!(error = %e, "Failed to fetch libraries for scan");
                         }
                     }
+                }
+            })
+            .register_executor("metadata_refresh", move |pool, task_id, config| {
+                let pool = pool.clone();
+                let enrichment = enrichment.clone();
+                let cache_dir = cache_dir.clone();
+                async move {
+                    duskcue::workers::metadata_refresh::run_metadata_refresh(
+                        &pool,
+                        &cache_dir,
+                        &enrichment,
+                        task_id,
+                        config,
+                    )
+                    .await;
                 }
             }),
     );

@@ -1549,6 +1549,7 @@ dependencies = [
  "dirs",
  "duskcue-db",
  "duskcue-types",
+ "flate2",
  "governor",
  "ignore",
  "ipnet",

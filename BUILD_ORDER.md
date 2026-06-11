@@ -885,8 +885,8 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 11. ~~Implement `OmdbClient` — ratings lookup by IMDb ID~~ **DONE**
 12. ~~Implement provider API key validation on save (test request)~~ **DONE**
 13. ~~Implement API key encryption at rest (AES-256-GCM with `encrypted:` prefix)~~ **DONE**
-14. Implement TMDB daily ID export download and caching
- 15. Implement `server/src/workers/metadata_refresh.rs` — periodic enrichment using TMDB `/changes`
+14. ~~Implement TMDB daily ID export download and caching~~ **DONE**
+15. ~~Implement `server/src/workers/metadata_refresh.rs` — periodic enrichment using TMDB `/changes`~~ **DONE**
 
 **What was built for Task 13:**
 
@@ -909,6 +909,30 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`encrypt_provider_config()` skips already-encrypted values** — Idempotent: values already starting with `encrypted:` prefix are not re-encrypted; prevents double-encryption on repeated save operations
 - **`mask_secret()` for admin API** — Returns first 3 + last 3 chars for long strings, `***` for short strings, `***encrypted***` for encrypted values; ready for Phase 13 admin settings UI
 - **No new workspace dependencies** — All cryptography uses existing `ring` 0.17 (`ring::aead::AES_256_GCM`, `ring::rand::SystemRandom`); base64 encoding uses existing `base64` 0.22; hex encoding is inline (32 bytes, trivial)
+
+**What was built for Tasks 14–15:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/tmdb_client.rs` | Added `TmdbChangesListResponse`, `TmdbChangedId` deserialization types; `fetch_changed_movie_ids()` and `fetch_changed_tv_ids()` methods — paginated queries against TMDB `/movie/changes` and `/tv/changes` endpoints with `start_date`/`end_date` parameters |
+| `server/src/services/enrichment_persistence.rs` | Added `re_enrich_item()` public function — re-enrichs a single confirmed item by tmdb_id, calls orchestrator's `enrich_movie()`/`enrich_tv()` directly and persists result via existing `persist_enrichment_result()` |
+| `server/src/workers/metadata_refresh.rs` | Full metadata refresh worker: `run_metadata_refresh()` entry point; `download_daily_exports()` downloads `movie_ids_*.json.gz` and `tv_series_ids_*.json.gz` from `files.tmdb.org/p/exports`; `cleanup_old_exports()` removes files older than 7 days; `refresh_changed_items()` queries TMDB `/changes` for modified IDs, cross-references with DB items via `find_matching_items()`, calls `re_enrich_item()` for each |
+| `server/src/workers/mod.rs` | Added `pub mod metadata_refresh;` |
+| `server/src/main.rs` | Registered `metadata_refresh` executor on scheduler with `enrichment` and `cache_dir` captures |
+| `Cargo.toml` | Added `flate2 = "1"` to workspace deps |
+| `server/Cargo.toml` | Added `flate2.workspace = true` |
+
+**Key decisions from Tasks 14–15:**
+
+- **Daily export download via `files.tmdb.org`** — No authentication required; files available by 08:00 UTC daily; stored in `{cache_dir}/metadata/exports/` per METADATA_PROVIDERS.md; cleaned up after 7 days
+- **Gzip decompression via `flate2`** — Already a transitive dependency through `serde_json`; added explicitly for direct use; synchronous `GzDecoder` for counting entries (files are local, not blocking async runtime significantly)
+- **TMDB `/changes` endpoint for incremental refresh** — `GET /3/movie/changes?start_date=&end_date=&page=` returns paginated list of changed IDs (100/page); max 14-day range per query; auto-paginated in `fetch_changed_movie_ids()`/`fetch_changed_tv_ids()`
+- **`re_enrich_item()` for targeted re-enrichment** — Public function in `enrichment_persistence.rs`; calls orchestrator's `enrich_movie()`/`enrich_tv()` with known tmdb_id; reuses existing `persist_enrichment_result()` for DB persistence; avoids re-enriching entire library
+- **`sqlx::QueryBuilder` for dynamic IN clause** — `find_matching_items()` uses `QueryBuilder` to build `WHERE tmdb_id IN (...)` with bind parameters; avoids SQL injection concerns from dynamic string interpolation; shared function for both movies and series via `ext_table` parameter
+- **Cross-reference TMDB changed IDs with local DB** — Queries `media_items JOIN movies/series` where `match_state = 'confirmed'` and `metadata->>'tmdb_id'` matches; only re-enrichs items that exist in both TMDB changes and local library
+- **`last_metadata_refresh_at` from task config JSON** — Scheduler task config stores the last refresh timestamp; default 6-hour lookback on first run; end_date is current date
+- **Graceful degradation** — Daily export download failure doesn't block `/changes` refresh; TMDB API failures logged as warnings, not errors; individual item re-enrichment failures counted but don't stop processing
+- **No new HTTP client for exports** — Uses a separate `reqwest::Client` with 300s timeout for large file downloads; the TMDB API client keeps its 30s timeout
 
 | File | Purpose |
 |---|---|
@@ -1103,7 +1127,9 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`validate_credentials()` on request type** — `ValidateProviderRequest::validate_credentials()` checks provider-specific credential requirements: TMDB requires `access_token`, all others require `api_key`. Runs after `validator` struct validation, before the provider test
 - **No new workspace dependencies** — all functionality uses existing `reqwest`, `validator`, `serde`, `sqlx`
 
-**Verification:** Library scan enriches items with TMDB data — titles, overviews, ratings, genres, cast, artwork. Admin can configure TVDB/Fanart.tv/OMDb keys in settings UI. Provider failures are non-blocking.
+**Verification:** Library scan enriches items with TMDB data — titles, overviews, ratings, genres, cast, artwork. Admin can configure TVDB/Fanart.tv/OMDb keys in settings UI. Provider failures are non-blocking. Daily TMDB exports download to cache directory. `metadata_refresh` scheduled task detects changed items via TMDB `/changes` and re-enriches them. Provider API keys encrypted at rest with AES-256-GCM.
+
+**Phase 6 status:** All 15 tasks complete.
 
 ---
 
