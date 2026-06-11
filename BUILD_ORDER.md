@@ -1103,9 +1103,34 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 | [MEMORY.md](docs/design/MEMORY.md) | FFmpeg subprocess via `tokio-process-tools` v0.11.2, `-progress pipe:1` structured output |
 | [SECURITY.md](docs/security/SECURITY.md) | FFmpeg per-process sandboxing — Landlock + seccompiler |
 
+**What was built for Task 1:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/playback/mod.rs` | Module declarations + router assembly with 20 routes across playback sessions, streaming, transcode, bookmarks, playlists |
+| `server/src/domains/playback/error.rs` | `PlaybackError` enum with 24 variants covering PLAY_001–PLAY_013 plus domain-specific variants (SessionNotFound, FileNotFound, UserItemDataNotFound, BookmarkNotFound, PlaylistNotFound, etc.) |
+| `server/src/domains/playback/types.rs` | Row structs (`PlaySessionRow`, `UserItemDataRow`, `BookmarkRow`, `PlaylistRow`), Request DTOs with `Validate` (`StartPlaybackRequest`, `HeartbeatRequest`, `SeekRequest`, `CreateBookmarkRequest`, `CreatePlaylistRequest`, etc.), Response DTOs with `Serialize` (`PlaybackStartResponse`, `PlaybackInfoResponse`, `HeartbeatResponse`, `UserItemDataResponse`, `BookmarkResponse`, `PlaylistResponse`, etc.) |
+| `server/src/domains/playback/service.rs` | 20 service function stubs with `todo!()` |
+| `server/src/domains/playback/handlers.rs` | 22 handler stubs with `todo!()` and concrete return types using `AppError` |
+| `server/src/error.rs` | Added `AppError::Playback(#[from] PlaybackError)` variant + `playback_error_to_http()` mapping all 24 error variants |
+| `server/src/domains/mod.rs` | Added `pub mod playback;` |
+| `server/src/router.rs` | Merged playback router via `.merge(crate::domains::playback::router(state.clone()))` |
+
+**Key decisions from Task 1:**
+
+- **Handlers return `Result<Json<T>, AppError>` not `Result<impl IntoResponse, AppError>`** — `todo!()` bodies prevent the compiler from inferring the concrete type behind `impl IntoResponse`; concrete `Json<T>` return types solve this while matching the auth/users/libraries/media domain convention
+- **Handlers use `AppError` not `PlaybackError`** — Domain errors convert to `AppError` via `#[from]` derive; `AppError` implements `IntoResponse`. This matches all other domains (auth, users, libraries, media, system)
+- **Route design follows STREAMING.md** — Playback session lifecycle (start/heartbeat/stop/seek/info), stream file serving, HLS transcode manifest/playlist/segment, user item data, bookmarks, playlists
+- **Error codes mapped per ERROR_HANDLING.md** — PLAY_001 (404) through PLAY_013 (403) plus domain-specific variants for entities not found
+- **Playlist routes: CRUD + nested items** — `/api/v1/playlists/` for CRUD, `/api/v1/playlists/{id}/items/` for nested items
+- **Bookmark routes nested under items** — `/api/v1/items/{item_id}/bookmarks/`
+- **Transcode routes use literal path segments** — `manifest.m3u8`, `index.m3u8`, `{segment}` for clean HLS URL structure
+- **`.patch()` method on `MethodRouter`** — Not the standalone `axum::routing::patch` function; `MethodRouter::patch()` method is used for combining GET + PATCH + DELETE on playlist detail route
+- **No new workspace dependencies** — all functionality uses existing `sqlx`, `validator`, `serde`, `uuid`, `chrono`, `axum` crates
+
 **Tasks:**
 
-1. Create `server/src/domains/playback/` — five-file pattern
+1. ~~Create `server/src/domains/playback/` — five-file pattern~~ **DONE**
 2. Implement `server/src/services/transcoding.rs`:
    - FFmpeg subprocess management via `tokio-process-tools`
    - Structured progress parsing via `-progress pipe:1`

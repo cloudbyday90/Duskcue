@@ -17,5 +17,6 @@
 pub mod auth;
 pub mod libraries;
 pub mod media;
+pub mod playback;
 pub mod system;
 pub mod users;

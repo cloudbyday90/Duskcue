@@ -14,3 +14,79 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum PlaybackError {
+    #[error("media item not found")]
+    MediaNotFound,
+
+    #[error("user lacks library access or play_media capability")]
+    AccessDenied,
+
+    #[error("transcode capacity reached")]
+    TranscodeCapacityReached,
+
+    #[error("FFmpeg process failed: {0}")]
+    FfmpegFailed(String),
+
+    #[error("session already active for this item")]
+    SessionAlreadyActive,
+
+    #[error("invalid seek position: {0}")]
+    InvalidSeekPosition(String),
+
+    #[error("invalid byte range for direct stream: {0}")]
+    InvalidByteRange(String),
+
+    #[error("hardware acceleration initialization failed, fell back to software: {0}")]
+    HwAccelFallback(String),
+
+    #[error("FFmpeg process crashed during transcode; session terminated")]
+    FfmpegCrashed,
+
+    #[error("transcode disk space exhausted")]
+    DiskSpaceExhausted,
+
+    #[error("client IP address blocked by streaming policy")]
+    IpBlocked,
+
+    #[error("per-user stream limit exceeded")]
+    StreamLimitExceeded,
+
+    #[error("resolution requires direct play — transcode restricted by policy")]
+    TranscodeRestrictedByPolicy,
+
+    #[error("session not found")]
+    SessionNotFound,
+
+    #[error("media file not found")]
+    FileNotFound,
+
+    #[error("media file is unhealthy: {0}")]
+    FileUnhealthy(String),
+
+    #[error("streaming policy not found")]
+    PolicyNotFound,
+
+    #[error("invalid stream decision: {0}")]
+    InvalidStreamDecision(String),
+
+    #[error("user item data not found")]
+    UserItemDataNotFound,
+
+    #[error("bookmark not found")]
+    BookmarkNotFound,
+
+    #[error("playlist not found")]
+    PlaylistNotFound,
+
+    #[error("playlist item not found")]
+    PlaylistItemNotFound,
+
+    #[error("invalid playlist visibility: {0}")]
+    InvalidVisibility(String),
+
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+}

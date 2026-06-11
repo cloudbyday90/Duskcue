@@ -101,6 +101,9 @@ pub enum AppError {
     #[error(transparent)]
     System(#[from] crate::domains::system::SystemError),
 
+    #[error(transparent)]
+    Playback(#[from] crate::domains::playback::PlaybackError),
+
     #[error("internal server error")]
     Internal(#[source] anyhow::Error),
 }
@@ -126,6 +129,10 @@ impl IntoResponse for AppError {
             }
             AppError::System(e) => {
                 let (s, c, d) = system_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Playback(e) => {
+                let (s, c, d) = playback_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", Cow::Borrowed(msg.as_str())),
@@ -330,5 +337,37 @@ fn system_error_to_http(err: &crate::domains::system::SystemError) -> (StatusCod
         SystemError::InvalidProvider(p) => (StatusCode::BAD_REQUEST, "SYS_013", format!("Invalid provider: {}", p)),
         SystemError::MissingCredential(msg) => (StatusCode::BAD_REQUEST, "SYS_014", format!("Missing credential: {}", msg)),
         SystemError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
+    }
+}
+
+fn playback_error_to_http(err: &crate::domains::playback::PlaybackError) -> (StatusCode, &'static str, String) {
+    use crate::domains::playback::PlaybackError;
+    use axum::http::StatusCode;
+
+    match err {
+        PlaybackError::MediaNotFound => (StatusCode::NOT_FOUND, "PLAY_001", "Media item not found".into()),
+        PlaybackError::AccessDenied => (StatusCode::FORBIDDEN, "PLAY_002", "User lacks library access or play_media capability".into()),
+        PlaybackError::TranscodeCapacityReached => (StatusCode::SERVICE_UNAVAILABLE, "PLAY_003", "Transcode capacity reached".into()),
+        PlaybackError::FfmpegFailed(r) => (StatusCode::INTERNAL_SERVER_ERROR, "PLAY_004", format!("FFmpeg process failed: {}", r)),
+        PlaybackError::SessionAlreadyActive => (StatusCode::CONFLICT, "PLAY_005", "Session already active for this item".into()),
+        PlaybackError::InvalidSeekPosition(r) => (StatusCode::BAD_REQUEST, "PLAY_006", format!("Invalid seek position: {}", r)),
+        PlaybackError::InvalidByteRange(r) => (StatusCode::RANGE_NOT_SATISFIABLE, "PLAY_007", format!("Invalid byte range: {}", r)),
+        PlaybackError::HwAccelFallback(r) => (StatusCode::INTERNAL_SERVER_ERROR, "PLAY_008", format!("HW accel fallback: {}", r)),
+        PlaybackError::FfmpegCrashed => (StatusCode::INTERNAL_SERVER_ERROR, "PLAY_009", "FFmpeg process crashed during transcode".into()),
+        PlaybackError::DiskSpaceExhausted => (StatusCode::INSUFFICIENT_STORAGE, "PLAY_010", "Transcode disk space exhausted".into()),
+        PlaybackError::IpBlocked => (StatusCode::FORBIDDEN, "PLAY_011", "Client IP address blocked by streaming policy".into()),
+        PlaybackError::StreamLimitExceeded => (StatusCode::TOO_MANY_REQUESTS, "PLAY_012", "Per-user stream limit exceeded".into()),
+        PlaybackError::TranscodeRestrictedByPolicy => (StatusCode::FORBIDDEN, "PLAY_013", "Resolution requires direct play — transcode restricted by policy".into()),
+        PlaybackError::SessionNotFound => (StatusCode::NOT_FOUND, "PLAY_001", "Session not found".into()),
+        PlaybackError::FileNotFound => (StatusCode::NOT_FOUND, "PLAY_001", "Media file not found".into()),
+        PlaybackError::FileUnhealthy(r) => (StatusCode::UNPROCESSABLE_ENTITY, "PLAY_001", format!("Media file is unhealthy: {}", r)),
+        PlaybackError::PolicyNotFound => (StatusCode::NOT_FOUND, "PLAY_001", "Streaming policy not found".into()),
+        PlaybackError::InvalidStreamDecision(d) => (StatusCode::BAD_REQUEST, "PLAY_001", format!("Invalid stream decision: {}", d)),
+        PlaybackError::UserItemDataNotFound => (StatusCode::NOT_FOUND, "PLAY_001", "User item data not found".into()),
+        PlaybackError::BookmarkNotFound => (StatusCode::NOT_FOUND, "PLAY_001", "Bookmark not found".into()),
+        PlaybackError::PlaylistNotFound => (StatusCode::NOT_FOUND, "PLAY_001", "Playlist not found".into()),
+        PlaybackError::PlaylistItemNotFound => (StatusCode::NOT_FOUND, "PLAY_001", "Playlist item not found".into()),
+        PlaybackError::InvalidVisibility(v) => (StatusCode::BAD_REQUEST, "PLAY_001", format!("Invalid visibility: {}", v)),
+        PlaybackError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
     }
 }
