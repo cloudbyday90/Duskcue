@@ -109,7 +109,8 @@ pub fn build_router(state: AppState) -> Router<AppState> {
         .merge(crate::domains::auth::router(state.clone()))
         .merge(crate::domains::users::router(state.clone()))
         .merge(crate::domains::libraries::router(state.clone()))
-        .merge(crate::domains::media::router(state.clone()));
+        .merge(crate::domains::media::router(state.clone()))
+        .merge(crate::domains::system::router(state.clone()));
     // Phase 7: .merge(crate::domains::playback::router())
     // Phase 7: .merge(crate::domains::quality::router())
     // Phase 9: .merge(crate::domains::subtitles::router())

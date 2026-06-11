@@ -212,6 +212,16 @@ impl FanartClient {
             .unwrap_or_default()
     }
 
+    pub async fn test_connection(&self) -> MetadataResult<()> {
+        match self.fetch_movie(550).await {
+            Ok(_) => Ok(()),
+            Err(MetadataError::AuthenticationFailed { .. }) => Err(MetadataError::AuthenticationFailed {
+                provider: "fanart".to_string(),
+            }),
+            Err(_) => Ok(()),
+        }
+    }
+
     fn movie_candidates(response: &FanartMovieResponse) -> Vec<ArtworkCandidate> {
         let mut candidates = Vec::new();
 

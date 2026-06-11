@@ -998,3 +998,14 @@ Provider metrics are exposed via the existing Prometheus endpoint (see [LOGGING_
 - **Response body read as text before JSON parse** — preserves error messages in `InvalidResponse` errors (same defensive pattern as FanartClient).
 - **OmdbClient not Clone** — only stored in `ratings` registry slot (single use).
 - **No new workspace dependencies:** all functionality uses existing `reqwest`, `serde`, `serde_json`, `urlencoding`.
+
+### Provider API Key Validation (Task 12)
+
+- **Endpoint:** `POST /api/v1/settings/providers/validate` — admin-only (`Require<CanManageServer>`), new `domains/system/` five-file pattern.
+- **Temporary client instances:** Creates throwaway client with provided credentials, tests connectivity, discards. Does not mutate live `EnrichmentOrchestrator`.
+- **TmdbClient / TvdbClient validation:** Uses existing `MetadataProvider::test_connection()` trait method.
+- **FanartClient `test_connection()`:** Inherent method (not trait). Fetches movie artwork for TMDB ID 550 (Fight Club). Only `AuthenticationFailed` from API = bad key; all other errors (NotFound, NetworkError, InvalidResponse) treated as "key valid, resource unavailable".
+- **OmdbClient `test_connection()`:** Inherent method (not trait). Fetches `tt0000001`. Only `"Invalid API key!"` error = bad key; `"not found"` and other errors treated as "key valid, resource unavailable".
+- **Why inherent methods for Fanart/OMDb:** Adding `test_connection()` to `ArtworkProvider` or `RatingsProvider` traits would require every implementor to provide it; TvdbClient implements both `MetadataProvider` (which already has it) and `ArtworkProvider`, causing duplicate impl. Inherent methods avoid the conflict.
+- **Error codes:** `SYS_013` (InvalidProvider, 400) for unknown provider name; `SYS_014` (MissingCredential, 400) for missing required credential. Provider-specific auth failures returned in response body as `{valid: false, error: "..."}` with HTTP 200.
+- **Validation in response body, not HTTP status:** Only input errors (bad provider name, missing credential) return 4xx. Actual key test results always return 200 with `{valid, error}` to simplify client handling.

@@ -14,3 +14,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum SystemError {
+    #[error("invalid provider: {0}. Valid providers: tmdb, tvdb, fanart, omdb")]
+    InvalidProvider(String),
+
+    #[error("missing required credential: {0}")]
+    MissingCredential(String),
+
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+}

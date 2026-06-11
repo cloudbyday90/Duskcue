@@ -883,7 +883,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 9. ~~Implement `TvdbClient` — JWT auth via `/login`, token refresh, series/episode endpoints~~ **DONE**
 10. ~~Implement `FanartClient` — artwork lookup by TMDB/TVDB ID~~ **DONE**
 11. ~~Implement `OmdbClient` — ratings lookup by IMDb ID~~ **DONE**
-12. Implement provider API key validation on save (test request)
+12. ~~Implement provider API key validation on save (test request)~~ **DONE**
 13. Implement API key encryption at rest (AES-256-GCM with `encrypted:` prefix)
 14. Implement TMDB daily ID export download and caching
  15. Implement `server/src/workers/metadata_refresh.rs` — periodic enrichment using TMDB `/changes`
@@ -1056,6 +1056,32 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **Metadata JSONB merge** — Rich data that doesn't map to dedicated columns (videos, external ratings like RT/Metacritic, tagline) is stored in `media_items.metadata` JSONB via `COALESCE(metadata, '{}') || $2`. Movies/series extension tables also use metadata JSONB for tagline, certification, studios, networks
 - **Scheduler executor passes `None`** — The scheduler's closure signature only receives `(pool, task_id, config)`. Adding enrichment would require changing the `Scheduler` API or capturing state via environment. For now, scheduled scans run identification only; handler-triggered scans provide full enrichment. This can be enhanced in a future task if needed
 - **No new workspace dependencies** — All functionality uses existing `sqlx`, `serde_json`, `uuid`
+
+**What was built for Task 12:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/metadata.rs` | Added `ProviderValidationRequest`, `ProviderValidationResponse`, `VALID_PROVIDERS` static; `validate_provider_key()` free function dispatches to provider-specific validation; `validate_tmdb()`, `validate_tvdb()`, `validate_fanart()`, `validate_omdb()` helper functions create temporary client instances and call `test_connection()` |
+| `server/src/services/fanart_client.rs` | Added `test_connection()` inherent method — fetches known movie (TMDB ID 550) with API key; 401 → `AuthenticationFailed`; any other result (including 404/success) → key is valid |
+| `server/src/services/omdb_client.rs` | Added `test_connection()` inherent method — fetches known IMDb ID `tt0000001` with API key; `"Invalid API key!"` → `AuthenticationFailed`; any other result → key is valid |
+| `server/src/domains/system/mod.rs` | Minimal system domain router with `POST /api/v1/settings/providers/validate` (admin-only, `Require<CanManageServer>`) |
+| `server/src/domains/system/handlers.rs` | `validate_provider_key` handler — validates request with `validator` + `validate_credentials()`, delegates to service, returns validation result |
+| `server/src/domains/system/service.rs` | `validate_provider()` — converts domain types to metadata service types and calls `validate_provider_key()` |
+| `server/src/domains/system/error.rs` | `SystemError` enum with 3 variants: `InvalidProvider` (SYS_013), `MissingCredential` (SYS_014), `Database` catch-all |
+| `server/src/domains/system/types.rs` | `ValidateProviderRequest` (Deserialize + Validate), `ValidateProviderResponse` (Serialize); `validate_credentials()` checks provider-specific credential requirements |
+| `server/src/domains/mod.rs` | Added `pub mod system;` |
+| `server/src/error.rs` | Added `AppError::System(#[from] SystemError)` variant + `system_error_to_http()` mapping SYS_013 (400), SYS_014 (400), Database (500) |
+| `server/src/router.rs` | Merged system router, removed Phase 13 system comment |
+
+**Key decisions from Task 12:**
+
+- **Temporary client instances for validation** — `validate_tmdb()`/`validate_tvdb()`/`validate_fanart()`/`validate_omdb()` each create a throwaway client instance with the provided credentials, call `test_connection()`, and discard the client. This avoids mutating the live `EnrichmentOrchestrator` or `ProviderRegistry` during validation
+- **Graceful test connection for Fanart/OMDb** — `FanartClient::test_connection()` fetches TMDB ID 550 (Fight Club); any error that is NOT `AuthenticationFailed` (e.g., `NotFound`, `NetworkError`) is treated as "key is valid, resource may not exist." Same pattern for `OmdbClient::test_connection()` with `tt0000001`. This distinguishes "bad key" from "bad resource"
+- **Validation result in response body, not HTTP status** — `POST /api/v1/settings/providers/validate` returns 200 with `{ valid: true/false, error: "..." }` for all provider results. Only input validation errors (missing fields, unknown provider) return 4xx. This lets the admin UI display the specific provider error message
+- **Minimal system domain created** — `server/src/domains/system/` follows the five-file pattern with just the provider validation endpoint. Phase 13 will expand this domain significantly with `server_config` runtime API, scheduled task management, notification system, backup coordination, and admin settings UI
+- **`SystemError` with 3 variants** — `InvalidProvider` (SYS_013, 400), `MissingCredential` (SYS_014, 400), `Database` (INTERNAL, 500). Error codes start at SYS_013 to avoid colliding with Phase 13's planned SYS_001–SYS_012 codes (scheduled tasks, notifications, config, backups, transcode resource limits)
+- **`validate_credentials()` on request type** — `ValidateProviderRequest::validate_credentials()` checks provider-specific credential requirements: TMDB requires `access_token`, all others require `api_key`. Runs after `validator` struct validation, before the provider test
+- **No new workspace dependencies** — all functionality uses existing `reqwest`, `validator`, `serde`, `sqlx`
 
 **Verification:** Library scan enriches items with TMDB data — titles, overviews, ratings, genres, cast, artwork. Admin can configure TVDB/Fanart.tv/OMDb keys in settings UI. Provider failures are non-blocking.
 

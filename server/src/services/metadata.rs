@@ -35,6 +35,95 @@ use super::omdb_client::OmdbClient;
 use super::tmdb_client::TmdbClient;
 use super::tvdb_client::TvdbClient;
 
+pub const VALID_PROVIDERS: &[&str] = &["tmdb", "tvdb", "fanart", "omdb"];
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct ProviderValidationRequest {
+    pub provider: String,
+    pub access_token: Option<String>,
+    pub api_key: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ProviderValidationResponse {
+    pub provider: String,
+    pub valid: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+pub async fn validate_provider_key(
+    req: &ProviderValidationRequest,
+) -> ProviderValidationResponse {
+    let result = match req.provider.as_str() {
+        "tmdb" => validate_tmdb(req.access_token.as_deref()).await,
+        "tvdb" => validate_tvdb(req.api_key.as_deref()).await,
+        "fanart" => validate_fanart(req.api_key.as_deref()).await,
+        "omdb" => validate_omdb(req.api_key.as_deref()).await,
+        _ => Err(MetadataError::InvalidResponse {
+            provider: req.provider.clone(),
+            message: format!("Unknown provider: {}. Valid providers: {}", req.provider, VALID_PROVIDERS.join(", ")),
+        }),
+    };
+
+    match result {
+        Ok(()) => ProviderValidationResponse {
+            provider: req.provider.clone(),
+            valid: true,
+            error: None,
+        },
+        Err(e) => ProviderValidationResponse {
+            provider: req.provider.clone(),
+            valid: false,
+            error: Some(e.to_string()),
+        },
+    }
+}
+
+async fn validate_tmdb(access_token: Option<&str>) -> MetadataResult<()> {
+    let token = access_token.ok_or(MetadataError::InvalidResponse {
+        provider: "tmdb".to_string(),
+        message: "access_token is required for TMDB validation".to_string(),
+    })?;
+
+    let config = crate::state::TmdbProviderConfig {
+        access_token: token.to_string(),
+        ..Default::default()
+    };
+    let client = TmdbClient::new(&config, "en".to_string());
+    client.test_connection().await
+}
+
+async fn validate_tvdb(api_key: Option<&str>) -> MetadataResult<()> {
+    let key = api_key.ok_or(MetadataError::InvalidResponse {
+        provider: "tvdb".to_string(),
+        message: "api_key is required for TVDB validation".to_string(),
+    })?;
+
+    let client = TvdbClient::new(key.to_string());
+    client.test_connection().await
+}
+
+async fn validate_fanart(api_key: Option<&str>) -> MetadataResult<()> {
+    let key = api_key.ok_or(MetadataError::InvalidResponse {
+        provider: "fanart".to_string(),
+        message: "api_key is required for Fanart.tv validation".to_string(),
+    })?;
+
+    let client = FanartClient::new(key.to_string());
+    client.test_connection().await
+}
+
+async fn validate_omdb(api_key: Option<&str>) -> MetadataResult<()> {
+    let key = api_key.ok_or(MetadataError::InvalidResponse {
+        provider: "omdb".to_string(),
+        message: "api_key is required for OMDb validation".to_string(),
+    })?;
+
+    let client = OmdbClient::new(key.to_string());
+    client.test_connection().await
+}
+
 #[derive(Debug, Error)]
 pub enum MetadataError {
     #[error("provider '{provider}' returned authentication failure")]

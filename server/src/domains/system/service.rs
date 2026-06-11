@@ -14,3 +14,28 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use crate::services::metadata::{
+    validate_provider_key, ProviderValidationRequest,
+};
+
+use super::error::SystemError;
+use super::types::ValidateProviderResponse;
+
+pub async fn validate_provider(
+    provider: &str,
+    access_token: Option<&str>,
+    api_key: Option<&str>,
+) -> Result<ValidateProviderResponse, SystemError> {
+    let req = ProviderValidationRequest {
+        provider: provider.to_string(),
+        access_token: access_token.map(|s| s.to_string()),
+        api_key: api_key.map(|s| s.to_string()),
+    };
+
+    let result = validate_provider_key(&req).await;
+    Ok(ValidateProviderResponse {
+        provider: result.provider,
+        valid: result.valid,
+        error: result.error,
+    })
+}

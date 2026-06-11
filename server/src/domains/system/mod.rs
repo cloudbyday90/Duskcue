@@ -14,3 +14,23 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod error;
+pub mod handlers;
+pub mod service;
+pub mod types;
+
+pub use error::SystemError;
+
+use axum::routing::post;
+use axum::Router;
+
+use crate::state::AppState;
+
+pub fn router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/v1/settings/providers/validate",
+            post(handlers::validate_provider_key),
+        )
+        .with_state(state)
+}

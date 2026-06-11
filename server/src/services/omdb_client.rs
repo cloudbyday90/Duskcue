@@ -143,6 +143,16 @@ impl OmdbClient {
         Ok(omdb)
     }
 
+    pub async fn test_connection(&self) -> MetadataResult<()> {
+        match self.fetch_by_imdb_id("tt0000001").await {
+            Ok(_) => Ok(()),
+            Err(MetadataError::AuthenticationFailed { .. }) => Err(MetadataError::AuthenticationFailed {
+                provider: "omdb".to_string(),
+            }),
+            Err(_) => Ok(()),
+        }
+    }
+
     fn extract_rotten_tomatoes(ratings: &Option<Vec<OmdbRating>>) -> Option<String> {
         ratings
             .as_ref()?

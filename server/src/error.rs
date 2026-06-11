@@ -98,6 +98,9 @@ pub enum AppError {
     #[error(transparent)]
     Media(#[from] crate::domains::media::MediaError),
 
+    #[error(transparent)]
+    System(#[from] crate::domains::system::SystemError),
+
     #[error("internal server error")]
     Internal(#[source] anyhow::Error),
 }
@@ -119,6 +122,10 @@ impl IntoResponse for AppError {
             }
             AppError::Media(e) => {
                 let (s, c, d) = media_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::System(e) => {
+                let (s, c, d) = system_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", Cow::Borrowed(msg.as_str())),
@@ -312,5 +319,16 @@ fn media_error_to_http(err: &crate::domains::media::MediaError) -> (StatusCode, 
         MediaError::DuplicateSeasonNumber(n) => (StatusCode::CONFLICT, "MEDIA_006", format!("Duplicate season number {} for series", n)),
         MediaError::DuplicateEpisodeNumber(n) => (StatusCode::CONFLICT, "MEDIA_006", format!("Duplicate episode number {} for season", n)),
         MediaError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
+    }
+}
+
+fn system_error_to_http(err: &crate::domains::system::SystemError) -> (StatusCode, &'static str, String) {
+    use crate::domains::system::SystemError;
+    use axum::http::StatusCode;
+
+    match err {
+        SystemError::InvalidProvider(p) => (StatusCode::BAD_REQUEST, "SYS_013", format!("Invalid provider: {}", p)),
+        SystemError::MissingCredential(msg) => (StatusCode::BAD_REQUEST, "SYS_014", format!("Missing credential: {}", msg)),
+        SystemError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
     }
 }

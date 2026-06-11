@@ -506,6 +506,8 @@ All API errors return [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) Problem
 | `SYS_010` | 503 | System CPU too high for transcode (resource limit) |
 | `SYS_011` | 503 | System memory pressure — transcode rejected |
 | `SYS_012` | 503 | CPU thermal throttle — transcode rejected (ARM64) |
+| `SYS_013` | 400 | Invalid metadata provider name |
+| `SYS_014` | 400 | Missing required provider credential |
 
 ### VALID — Validation
 
