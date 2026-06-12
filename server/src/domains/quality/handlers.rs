@@ -14,51 +14,133 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::Json;
+use serde::Deserialize;
+use validator::Validate;
 
 use crate::error::AppError;
+use crate::domains::quality::service;
 use crate::domains::quality::types::*;
 use crate::extractors::AuthenticatedUser;
 use crate::state::AppState;
 
+#[derive(Debug, Deserialize)]
+pub struct DeviceQuery {
+    pub device_identifier: Option<String>,
+}
+
 pub async fn report_capabilities(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Json(_req): Json<ReportCapabilitiesRequest>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<ReportCapabilitiesRequest>,
 ) -> Result<Json<DeviceProfileResponse>, AppError> {
-    todo!()
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect(),
+        instance: Some("/api/v1/device/capabilities".to_string()),
+    })?;
+    let profile = service::report_capabilities(
+        &state.pool,
+        user.user_id,
+        &req.device_identifier,
+        &req,
+    ).await?;
+    Ok(Json(profile))
 }
 
 pub async fn get_capabilities(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _user: AuthenticatedUser,
+    Query(query): Query<DeviceQuery>,
 ) -> Result<Json<DeviceProfileResponse>, AppError> {
-    todo!()
+    let device_id = query.device_identifier.unwrap_or_default();
+    if device_id.is_empty() {
+        return Err(AppError::BadRequest(
+            "device_identifier query parameter is required".to_string(),
+        ));
+    }
+    let profile = service::get_device_profile(&state.pool, &device_id).await?;
+    Ok(Json(profile))
 }
 
 pub async fn list_capability_tests(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _user: AuthenticatedUser,
+    Query(query): Query<DeviceQuery>,
 ) -> Result<Json<CapabilityTestListResponse>, AppError> {
-    todo!()
+    let device_id = query.device_identifier.unwrap_or_default();
+    if device_id.is_empty() {
+        return Err(AppError::BadRequest(
+            "device_identifier query parameter is required".to_string(),
+        ));
+    }
+    let tests = service::list_capability_tests(&state.pool, &device_id).await?;
+    Ok(Json(tests))
 }
 
 pub async fn start_wizard(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Json(_req): Json<StartWizardRequest>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<StartWizardRequest>,
 ) -> Result<Json<WizardStartResponse>, AppError> {
-    todo!()
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect(),
+        instance: Some("/api/v1/device/capability-tests/start".to_string()),
+    })?;
+    let result = service::start_wizard(
+        &state.pool,
+        user.user_id,
+        &req.device_identifier,
+    ).await?;
+    Ok(Json(result))
 }
 
 pub async fn submit_wizard_result(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _user: AuthenticatedUser,
-    Path(_test_id): Path<uuid::Uuid>,
-    Json(_req): Json<WizardTestResultRequest>,
+    Path(test_id): Path<uuid::Uuid>,
+    Json(req): Json<WizardTestResultRequest>,
 ) -> Result<Json<CapabilityTestResponse>, AppError> {
-    todo!()
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect(),
+        instance: Some(format!("/api/v1/device/capability-tests/{}/result", test_id)),
+    })?;
+    let result = service::submit_wizard_test_result(
+        &state.pool,
+        test_id,
+        &req,
+    ).await?;
+    Ok(Json(result))
 }
 
 pub async fn get_bandwidth_probe(

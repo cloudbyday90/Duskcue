@@ -1270,7 +1270,27 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
     - **All service/handler functions are `todo!()` stubs** — tasks 5-7 will implement the actual business logic
     - **Static validation constants** — `VALID_PROFILE_SOURCES`, `VALID_NETWORK_TIERS`, `VALID_REPORT_TYPES`, `VALID_WIZARD_RESULTS`, `VALID_QUALITY_MODES` arrays for use in service-layer validation
 
-  5. Implement device capability detection — runtime probe
+   5. ~~Implement device capability detection — runtime probe~~ **DONE**
+
+     **What was built for Task 5:**
+
+     | File | Purpose |
+     |---|---|
+     | `server/src/domains/quality/service.rs` | Full device capability detection service: `report_capabilities` (upsert on `device_identifier`), `get_device_profile` (returns conservative baseline when no profile exists), `start_capability_wizard` (creates test rows from `WIZARD_TEST_MATRIX`), `submit_capability_test` (records test result, auto-completes wizard), `get_capabilities` / `list_capability_tests` (query by `device_identifier`); `derive_capabilities_from_wizard` derives full profile from test results; `try_complete_wizard` checks completion and derives profile; `CONSERVATIVE_BASELINE_*` statics for unknown devices; `WIZARD_TEST_MATRIX` with 10 test entries |
+     | `server/src/domains/quality/handlers.rs` | 5 working handlers: `report_capabilities`, `get_device_profile`, `start_capability_wizard`, `submit_capability_test`, `get_capabilities`, `list_capability_tests`; 7 handlers remain `todo!()` (bandwidth probe, segment telemetry, QoE reports, admin summaries) |
+     | `server/src/domains/quality/error.rs` | No changes needed — existing variants sufficient |
+
+     **Key decisions from Task 5:**
+
+     - **Conservative baseline for unknown devices** — H.264, AAC, SRT/WebVTT, MP4, 1080p, 2ch, 6Mbps — matches QUALITY_MANAGEMENT.md fallback behavior
+     - **`report_capabilities` uses upsert** — `INSERT ... ON CONFLICT (device_identifier) DO UPDATE` on the unique index; client can re-report capabilities at any time
+     - **`get_device_profile` returns baseline on missing** — When no profile exists, returns `DeviceProfileResponse` with `id: Uuid::nil()` and conservative defaults rather than a 404 error; allows clients to proceed with safe defaults
+     - **Wizard test matrix: 10 tests** — H.264 8/10-bit, HEVC 8/10-bit/4K HDR10, AV1 8/10-bit, Dolby Vision P8, AAC/AC3/DTS audio, PGS subtitle overlay — covers the transcode decision matrix from VIDEO_FORMATS.md
+     - **Auto-complete on final test** — `try_complete_wizard` is called after each test submission; when all tests have a non-pending result, `derive_capabilities_from_wizard` builds the full capability profile from test results
+     - **`derive_capabilities_from_wizard` maps test IDs to capabilities** — Each test format ID (e.g., `hevc_10bit_4k_hdr10_mkv`) maps to specific video codecs, HDR formats, containers, resolutions, audio codecs, and max channels; results are aggregated across all passed tests
+     - **`device_identifier` query parameter** — `get_capabilities` and `list_capability_tests` use `?device_identifier=` query param since `AuthenticatedUser` has no device identifier; handlers validate the parameter is non-empty and return `AppError::BadRequest` if missing
+     - **`test_passed` helper uses `&[PgRow]` slice** — Follows clippy recommendation to use slices over `&Vec<T>`
+     - **No new workspace dependencies** — all functionality uses existing `sqlx`, `serde_json`, `uuid`, `chrono`
 6. Implement network quality assessment — segment download telemetry
 7. Implement transcoding decision engine — 10-factor evaluation from QUALITY_MANAGEMENT.md
 8. Implement streaming policy system — `streaming_policies` table with per-user overrides
@@ -1580,7 +1600,7 @@ Phase 5: Libraries & Media (COMPLETE — 10 tasks) ─────────�
     ↓                                                      │
 Phase 6: Metadata Providers ←─── (enriches Phase 5)       │
     ↓                                                      │
-Phase 7: Streaming & Playback                             │
+Phase 7: Streaming & Playback (Tasks 1–5 complete)              │
     ↓                                                      │
 Phase 8: Web Client Core ←─── (consumes all above) ←──────┘
     ↓
