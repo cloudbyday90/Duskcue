@@ -319,8 +319,42 @@ impl Default for NetworkConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct TranscodingConfig {}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TranscodingConfig {
+    pub hardware_accel: String,
+    pub transcode_path: String,
+    pub max_concurrent_transcodes: u32,
+    pub segment_duration_seconds: u32,
+    pub allow_hw_tone_mapping: bool,
+    pub allow_hw_subtitle_burn_in: bool,
+    pub default_video_codec: String,
+    pub default_audio_codec: String,
+    pub max_downscale_resolution: String,
+    pub enable_thumb_extraction: bool,
+    pub thread_count: Option<u32>,
+    pub thread_type: String,
+    pub prefer_hw_decode: bool,
+}
+
+impl Default for TranscodingConfig {
+    fn default() -> Self {
+        Self {
+            hardware_accel: "auto".to_string(),
+            transcode_path: "/cache/transcodes".to_string(),
+            max_concurrent_transcodes: 2,
+            segment_duration_seconds: 6,
+            allow_hw_tone_mapping: true,
+            allow_hw_subtitle_burn_in: true,
+            default_video_codec: "h264".to_string(),
+            default_audio_codec: "aac".to_string(),
+            max_downscale_resolution: "3840x2160".to_string(),
+            enable_thumb_extraction: true,
+            thread_count: None,
+            thread_type: "frame".to_string(),
+            prefer_hw_decode: true,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MetadataConfig {
@@ -446,8 +480,40 @@ pub struct StorageConfig {}
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct MaintenanceConfig {}
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct CpuConfig {}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CpuConfig {
+    pub transcode_cpu_threshold_percent: u8,
+    pub cpu_warning_percent: u8,
+    pub cpu_critical_percent: u8,
+    pub ffmpeg_threads: Option<u32>,
+    pub ffmpeg_thread_type: String,
+    pub ffmpeg_nice: bool,
+    pub ffmpeg_ionice: bool,
+    pub cpu_affinity: Option<String>,
+    pub hw_accel_auto_detect: bool,
+    pub thermal_throttle_enabled: bool,
+    pub thermal_warning_celsius: u8,
+    pub thermal_critical_celsius: u8,
+}
+
+impl Default for CpuConfig {
+    fn default() -> Self {
+        Self {
+            transcode_cpu_threshold_percent: 90,
+            cpu_warning_percent: 80,
+            cpu_critical_percent: 90,
+            ffmpeg_threads: None,
+            ffmpeg_thread_type: "frame".to_string(),
+            ffmpeg_nice: true,
+            ffmpeg_ionice: true,
+            cpu_affinity: None,
+            hw_accel_auto_detect: true,
+            thermal_throttle_enabled: true,
+            thermal_warning_celsius: 80,
+            thermal_critical_celsius: 85,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RuntimeConfig {
@@ -536,6 +602,7 @@ pub struct AppState {
     pub fs_watcher: Arc<LibraryWatcherManager>,
     pub enrichment: Arc<EnrichmentOrchestrator>,
     pub encryption_key: Arc<EncryptionKey>,
+    pub transcode_manager: Arc<crate::services::transcoding::TranscodeManager>,
 }
 
 impl AppState {
@@ -550,6 +617,11 @@ impl AppState {
             bootstrap.data_dir.clone(),
         ));
         let fs_watcher = Arc::new(LibraryWatcherManager::new(pool.clone(), enrichment.clone()));
+        let transcode_manager = Arc::new(
+            crate::services::transcoding::TranscodeManager::new(
+                Arc::new(ArcSwap::from_pointee(RuntimeConfig::default())),
+            ),
+        );
         Self {
             pool,
             runtime_config: Arc::new(ArcSwap::from_pointee(RuntimeConfig::default())),
@@ -562,6 +634,7 @@ impl AppState {
             fs_watcher,
             enrichment,
             encryption_key: Arc::new(encryption_key),
+            transcode_manager,
         }
     }
 
@@ -591,9 +664,14 @@ impl AppState {
 
         let fs_watcher = Arc::new(LibraryWatcherManager::new(pool.clone(), enrichment.clone()));
 
+        let config_arc = Arc::new(ArcSwap::from_pointee(runtime_config));
+        let transcode_manager = Arc::new(
+            crate::services::transcoding::TranscodeManager::new(config_arc.clone()),
+        );
+
         Self {
             pool,
-            runtime_config: Arc::new(ArcSwap::from_pointee(runtime_config)),
+            runtime_config: config_arc,
             bootstrap,
             rate_limits: Arc::new(rate_limits),
             metrics_handle,
@@ -603,6 +681,7 @@ impl AppState {
             fs_watcher,
             enrichment,
             encryption_key: Arc::new(encryption_key),
+            transcode_manager,
         }
     }
 

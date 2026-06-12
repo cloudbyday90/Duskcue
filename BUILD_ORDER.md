@@ -1177,13 +1177,50 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 **Tasks:**
 
 1. ~~Create `server/src/domains/playback/` — five-file pattern~~ **DONE**
-2. Implement `server/src/services/transcoding.rs`:
+2. ~~Implement `server/src/services/transcoding.rs`~~ **DONE**
    - FFmpeg subprocess management via `tokio-process-tools`
    - Structured progress parsing via `-progress pipe:1`
    - HLS/fMP4 segment generation (6-second duration)
    - ABR ladder: 480p/1.5Mbps, 720p/3Mbps, 1080p/6Mbps, 1080p HQ/10Mbps
    - Three-tier decision: Direct Play → Remux → Transcode
-3. Implement `server/src/services/sandbox.rs`:
+
+   **Design decisions (pre-implementation):**
+   - `TranscodingConfig` expanded from empty placeholder to 13 fields per STREAMING.md configuration section: `hardware_accel`, `transcode_path`, `max_concurrent_transcodes`, `segment_duration_seconds`, `allow_hw_tone_mapping`, `allow_hw_subtitle_burn_in`, `default_video_codec`, `default_audio_codec`, `max_downscale_resolution`, `enable_thumb_extraction`, `thread_count`, `thread_type`, `prefer_hw_decode`
+   - `CpuConfig` expanded from empty placeholder to 12 fields per CPU.md configuration section: `transcode_cpu_threshold_percent`, `cpu_warning_percent`, `cpu_critical_percent`, `ffmpeg_threads`, `ffmpeg_thread_type`, `ffmpeg_nice`, `ffmpeg_ionice`, `cpu_affinity`, `hw_accel_auto_detect`, `thermal_throttle_enabled`, `thermal_warning_celsius`, `thermal_critical_celsius`
+   - Service module pattern (not domain five-file) — transcoding is a shared service used by the playback domain, not a standalone domain. Module lives at `server/src/services/transcoding.rs`
+   - `TranscodeManager` holds active sessions in `DashMap<Uuid, TranscodeSession>` with `Semaphore(max_concurrent)` for capacity enforcement
+   - `HwAccelMethod` enum: Nvenc, Qsv, Vaapi, VideoToolbox, Amf, Software — detection cached at startup, re-detectable on config reload
+   - `ProgressUpdate` struct parsed from FFmpeg `-progress pipe:1` stdout: `out_time_ms`, `speed`, `fps`, `bitrate`, `total_size`, `frame`, `progress=continue|end`
+   - FFmpeg command builder generates full CLI args from `TranscodeSession` config: input args, stream mapping, video codec + filters, audio codec, HLS output args, progress pipe
+   - Process lifecycle: `Process::new(Command).name().stdout_and_stderr().spawn()` → progress consumer on stdout → log collector on stderr → `GracefulShutdown` on terminate
+   - Sandboxing (Landlock + seccomp) deferred to Task 3 — this task creates the subprocess infrastructure without security hooks
+    - `TranscodeManager` will be added to `AppState` as `Arc<TranscodeManager>` for sharing across handlers and background tasks
+
+   **What was built for Task 2:**
+
+   | File | Purpose |
+   |---|---|
+   | `server/src/services/transcoding.rs` | `HwAccelMethod` enum (Nvenc, Qsv, Vaapi, VideoToolbox, Amf, Software) with `ffmpeg_encoder()` mapping; `ProgressUpdate` struct for FFmpeg `-progress pipe:1` parsing; `TranscodeRendition` with `default_ladder()` (4 rungs: 480p/1.5M, 720p/3M, 1080p/6M, 1080p-hq/10M) and `smart_ladder()`; `TranscodeSession` struct with source/target config, progress tracking, segment paths; `TranscodeManager` with `Arc<DashMap<Uuid, TranscodeSession>>`, `Semaphore`, `Arc<ArcSwap<RuntimeConfig>>`; methods: `start_session`, `stop_session`, `seek_session`, `get_session`, `active_session_count`, `get_hw_accel`, `redetect_hw_accel`, `list_active_sessions`, `cleanup_orphaned_sessions`; FFmpeg arg builder functions: `build_ffmpeg_input_args`, `build_video_encode_args`, `build_audio_encode_args`, `build_threading_args`, `build_hls_output_args`; `detect_hw_accel()` with cfg-conditional auto-detection (macOS→VideoToolbox, Linux→Nvenc/Vaapi/Software); `parse_progress_line()` parsing key=value pairs from FFmpeg progress output; `spawn_ffmpeg()` creating `ProcessHandle` via `tokio-process-tools` |
+   | `server/src/services/mod.rs` | Added `pub mod transcoding;` |
+   | `server/src/state.rs` | `TranscodingConfig` expanded from empty placeholder to 13 fields; `CpuConfig` expanded from empty placeholder to 12 fields; `transcode_manager: Arc<TranscodeManager>` added to `AppState`; both constructors create `TranscodeManager` |
+
+   **Key decisions from Task 2:**
+
+   - **`OwnedSemaphorePermit` over `SemaphorePermit`** — `Semaphore::try_acquire()` returns `SemaphorePermit<'_>` that borrows from `&Semaphore`, preventing it from being moved into `tokio::spawn`. Fixed by using `Arc::clone(&self.semaphore).try_acquire_owned()` which returns an owned permit with `'static` lifetime
+   - **`Arc<DashMap>` for sessions** — `sessions` wrapped in `Arc<DashMap<Uuid, TranscodeSession>>` so the progress callback inside the spawned task shares the same map as the manager's public methods
+   - **`Consumable` trait import** — `stdout.consume()` requires `tokio_process_tools::Consumable` trait to be in scope
+   - **`ParseLines::inspect` closure returns `Next`** — The closure passed to `ParseLines::inspect()` must return `Next::Continue` (not `()`); the return type controls whether streaming continues or stops
+   - **`ArcSwap::load_full()` for `'static` config** — `self.config.load()` returns a borrowed guard that prevents spawning `'static` tasks; `load_full()` returns an owned `Arc<RuntimeConfig>` instead
+   - **Graceful shutdown after progress consumption** — Process handle is wrapped in `terminate_on_drop(GracefulShutdown)` only after progress streaming completes; this avoids the `stdout()` method being unavailable on `TerminateOnDrop`
+   - **Progress parsing via `ParseLines::inspect`** — FFmpeg stdout consumed line-by-line via `tokio_process_tools::ParseLines::inspect()` with `LineParsingOptions::default()`; each parsed line updates the session's `ProgressUpdate` in the `DashMap`
+   - **Seek implemented as stop + restart** — `seek_session()` stops the current session (removes from DashMap, cleans segment directory), then creates a new session with `-ss` seek position
+   - **`HwAccelMethod::ffmpeg_encoder()` maps codec + method to FFmpeg encoder name** — e.g., `Nvenc` + `"hevc"` → `"hevc_nvenc"`, `Software` + `"h264"` → `"libx264"`; returns `"libx264"` as fallback for unknown combinations
+   - **`build_graceful_shutdown()` platform-conditional** — Unix: SIGTERM + 30s timeout → SIGKILL; Windows: Ctrl-Break + 30s timeout → taskkill; per MEMORY.md FFmpeg lifecycle design
+   - **Clippy fixes applied** — `&Path` instead of `&PathBuf` on public signatures; `is_none_or` instead of `map_or(true, ...)`; collapsed nested `if let` chains into `&&` let chains (edition 2024); removed unnecessary `.clone()` on non-Clone type reference
+   - **`too_many_arguments` on `start_session` (13 params) acknowledged** — Will be refactored into a `StartSessionParams` struct pattern when playback domain handlers integrate with the service
+   - **Sandboxing deferred to Task 3** — No Landlock/seccomp hooks in subprocess spawning yet; FFmpeg runs with full process permissions
+
+  3. Implement `server/src/services/sandbox.rs`:
    - Landlock filesystem isolation (Linux 5.13+)
    - seccomp-BPF syscall filtering via `seccompiler`
    - Graceful degradation on unsupported platforms
