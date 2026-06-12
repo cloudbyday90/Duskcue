@@ -62,5 +62,10 @@ quick-xml.workspace = true
 async-trait.workspace = true
 urlencoding.workspace = true
 flate2.workspace = true
+libc.workspace = true
 duskcue-types = { path = "../crates/types" }
 duskcue-db = { path = "../crates/db" }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+landlock.workspace = true
+seccompiler.workspace = true

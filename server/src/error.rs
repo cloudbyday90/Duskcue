@@ -104,6 +104,9 @@ pub enum AppError {
     #[error(transparent)]
     Playback(#[from] crate::domains::playback::PlaybackError),
 
+    #[error(transparent)]
+    Quality(#[from] crate::domains::quality::QualityError),
+
     #[error("internal server error")]
     Internal(#[source] anyhow::Error),
 }
@@ -133,6 +136,10 @@ impl IntoResponse for AppError {
             }
             AppError::Playback(e) => {
                 let (s, c, d) = playback_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Quality(e) => {
+                let (s, c, d) = quality_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", Cow::Borrowed(msg.as_str())),
@@ -369,5 +376,26 @@ fn playback_error_to_http(err: &crate::domains::playback::PlaybackError) -> (Sta
         PlaybackError::PlaylistItemNotFound => (StatusCode::NOT_FOUND, "PLAY_001", "Playlist item not found".into()),
         PlaybackError::InvalidVisibility(v) => (StatusCode::BAD_REQUEST, "PLAY_001", format!("Invalid visibility: {}", v)),
         PlaybackError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
+    }
+}
+
+fn quality_error_to_http(err: &crate::domains::quality::QualityError) -> (StatusCode, &'static str, String) {
+    use crate::domains::quality::QualityError;
+    use axum::http::StatusCode;
+
+    match err {
+        QualityError::WizardTestNotFound => (StatusCode::NOT_FOUND, "QUALITY_001", "Capability wizard test not found".into()),
+        QualityError::WizardAlreadyCompleted => (StatusCode::CONFLICT, "QUALITY_002", "Capability wizard already completed for this device".into()),
+        QualityError::InvalidTelemetry(r) => (StatusCode::BAD_REQUEST, "QUALITY_003", format!("Invalid telemetry report: {}", r)),
+        QualityError::TelemetryRateLimited => (StatusCode::TOO_MANY_REQUESTS, "QUALITY_004", "Too many telemetry reports".into()),
+        QualityError::InvalidProbeResult(r) => (StatusCode::BAD_REQUEST, "QUALITY_005", format!("Invalid bandwidth probe result: {}", r)),
+        QualityError::DeviceProfileNotFound => (StatusCode::NOT_FOUND, "QUALITY_006", "Device profile not found".into()),
+        QualityError::TranscodeDecisionConflict => (StatusCode::CONFLICT, "QUALITY_007", "Transcode decision conflict".into()),
+        QualityError::SubtitleBurnInRequired => (StatusCode::OK, "QUALITY_008", "Subtitle burn-in required".into()),
+        QualityError::UnsupportedToneMappingAlgorithm(a) => (StatusCode::BAD_REQUEST, "QUALITY_009", format!("Unsupported tone mapping algorithm: {}", a)),
+        QualityError::ToneMappingUnavailable => (StatusCode::SERVICE_UNAVAILABLE, "QUALITY_010", "Tone mapping unavailable".into()),
+        QualityError::InvalidQualityMode(m) => (StatusCode::BAD_REQUEST, "QUALITY_011", format!("Invalid quality mode: {}", m)),
+        QualityError::MediaVersionNotFound => (StatusCode::NOT_FOUND, "QUALITY_012", "Requested media version not found".into()),
+        QualityError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
     }
 }

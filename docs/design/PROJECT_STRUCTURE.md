@@ -215,7 +215,7 @@ project/
 │       │   ├── segments.rs       # Chromaprint, black frame, silence detection
 │       │   ├── storyboards.rs    # FFmpeg thumbnail extraction, WebP sprite generation
 │       │   ├── geoip.rs          # MaxMind GeoLite2 MMDB lookups (maxminddb + ArcSwap)
-│       │   └── sandbox.rs        # FFmpeg per-process sandboxing (landlock + seccompiler)
+│       │   ├── sandbox.rs        # FFmpeg per-process sandboxing (landlock + seccompiler) — **implemented**
 │       │
 │       └── workers/              # Background task definitions
 │           ├── mod.rs

@@ -876,6 +876,19 @@ FFmpeg processes are protected by multiple independent layers. Compromise of one
 - pelagos-containers — Landlock LSM integration Issue #51 (March 2026): https://github.com/pelagos-containers/pelagos/issues/51
 - NVIDIA NemoClaw — Sandbox Image Hardening (Landlock + seccomp): https://docs.nvidia.com/nemoclaw/deployment/sandbox-hardening
 
+### Implementation Status
+
+**Implemented** in `server/src/services/sandbox.rs` (Phase 7, Task 3). Key implementation decisions:
+
+- `landlock` v0.4 with `ABI::V3` for access flag computation; `AccessFs::from_read()` for RO paths, `AccessFs::from_all()` for RW paths
+- `seccompiler` v0.4 with 62-syscall allow-list; `SeccompAction::KillProcess` on mismatch, `SeccompAction::Allow` on match
+- Platform-gated to Linux via `#[cfg(target_os = "linux")]`; no-op on Windows/macOS
+- `libc` v0.2 for `SYS_*` constants (unconditional dep)
+- `SandboxConfig` borrows paths as `&Path`; closures capture `PathBuf` clones for `'static + Send` in `pre_exec`
+- Graceful degradation: sandbox failure logs warning but returns `Ok(())` so FFmpeg still starts
+- `apply_landlock()` silently skips non-existent paths (e.g., `/dev/dri` on headless systems)
+- `target_arch()` returns `seccompiler::TargetArch` based on compile-time `cfg`; `arch_prctl` gated to `x86_64`
+
 ### Self-Hosted Security Monitoring
 - Reddit r/selfhosted — Minimum Security Steps (February 2026): https://www.reddit.com/r/selfhosted/comments/1r4lpld/
 - Tenzai — Security Dashboard Design for Self-Hosted Applications (December 2025): https://tenzai.com/blog/self-hosted-security-dashboard/

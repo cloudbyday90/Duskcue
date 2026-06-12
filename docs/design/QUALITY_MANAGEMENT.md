@@ -679,3 +679,15 @@ Quality management error codes are defined in [ERROR_HANDLING.md](ERROR_HANDLING
 - Jellyfin GitHub Discussion #4795 — Quality Switcher (2022–2026): 4-year community discussion on Netflix-like automatic quality
 - Firecore Infuse Community — Wrong Version from Merged Movies (February 2026): API returns MediaSources sorted by resolution highest first
 - Reddit r/jellyfin — Movie with Two Versions (February 2026): Group Versions feature loses extras content
+
+## Implementation Status
+
+**Domain module** implemented in `server/src/domains/quality/` (Phase 7, Task 4). Five-file pattern with:
+
+- `types.rs` — 4 Row types (`DeviceProfileRow`, `DeviceCapabilityTestRow`, `ClientNetworkReportRow`, `QoeReportRow`), 7 Request types with `validator` validation, 8 Response types including admin summaries
+- `error.rs` — `QualityError` enum with 12 variants matching QUALITY_001–012 error codes
+- `service.rs` — 12 function stubs (`todo!()`) for capabilities, wizard, telemetry, probing, QoE, admin summaries
+- `handlers.rs` — 13 handler stubs wired to Axum extractors
+- `mod.rs` — Router with 13 routes; `QualityError` integrated into `AppError` with `quality_error_to_http()` mapping
+
+**Not yet implemented** (Tasks 5–7): Device capability detection runtime probe, network quality assessment engine, transcoding decision engine. All service/handler functions are `todo!()` stubs awaiting business logic.

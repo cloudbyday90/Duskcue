@@ -14,3 +14,46 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum QualityError {
+    #[error("capability wizard test not found")]
+    WizardTestNotFound,
+
+    #[error("capability wizard already completed for this device")]
+    WizardAlreadyCompleted,
+
+    #[error("invalid telemetry report: {0}")]
+    InvalidTelemetry(String),
+
+    #[error("too many telemetry reports")]
+    TelemetryRateLimited,
+
+    #[error("invalid bandwidth probe result: {0}")]
+    InvalidProbeResult(String),
+
+    #[error("device profile not found")]
+    DeviceProfileNotFound,
+
+    #[error("transcode decision conflict")]
+    TranscodeDecisionConflict,
+
+    #[error("subtitle burn-in required")]
+    SubtitleBurnInRequired,
+
+    #[error("unsupported tone mapping algorithm: {0}")]
+    UnsupportedToneMappingAlgorithm(String),
+
+    #[error("tone mapping unavailable")]
+    ToneMappingUnavailable,
+
+    #[error("invalid quality mode: {0}")]
+    InvalidQualityMode(String),
+
+    #[error("requested media version not found")]
+    MediaVersionNotFound,
+
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+}

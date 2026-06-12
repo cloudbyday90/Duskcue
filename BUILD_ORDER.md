@@ -1220,12 +1220,57 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
    - **`too_many_arguments` on `start_session` (13 params) acknowledged** — Will be refactored into a `StartSessionParams` struct pattern when playback domain handlers integrate with the service
    - **Sandboxing deferred to Task 3** — No Landlock/seccomp hooks in subprocess spawning yet; FFmpeg runs with full process permissions
 
-  3. Implement `server/src/services/sandbox.rs`:
-   - Landlock filesystem isolation (Linux 5.13+)
-   - seccomp-BPF syscall filtering via `seccompiler`
-   - Graceful degradation on unsupported platforms
-4. Create `server/src/domains/quality/` — five-file pattern
-5. Implement device capability detection — runtime probe
+   3. ~~Implement `server/src/services/sandbox.rs`~~ **DONE**
+
+    **What was built for Task 3:**
+
+    | File | Purpose |
+    |---|---|
+    | `server/src/services/sandbox.rs` | FFmpeg per-process sandboxing: Landlock LSM filesystem isolation + seccomp-BPF syscall filtering with graceful degradation on non-Linux platforms |
+    | `server/src/services/mod.rs` | Added `pub mod sandbox;` |
+    | `server/src/services/transcoding.rs` | `spawn_ffmpeg()` now accepts `source_path` and `segment_dir` params; applies sandbox via `pre_exec` on Linux; spawns FFmpeg before creating `TranscodeSession` to avoid borrow-after-move |
+    | `Cargo.toml` | Added `libc = "0.2"` to workspace deps |
+    | `server/Cargo.toml` | Added `libc.workspace = true`; added `[target.'cfg(target_os = "linux")'.dependencies]` section with `landlock.workspace = true` and `seccompiler.workspace = true` |
+
+    **Key decisions from Task 3:**
+
+    - **Platform-gated dependencies** — `landlock` and `seccompiler` are Linux-only crates that won't compile on Windows/macOS; placed under `[target.'cfg(target_os = "linux")'.dependencies]` in `server/Cargo.toml`; `libc` added as unconditional dep since it compiles everywhere and is needed for `libc::SYS_*` constants
+    - **`SandboxConfig` struct** — Borrows `media_path` and `transcode_dir` as `&Path` to avoid allocating in the `pre_exec` closure; paths are cloned into owned `PathBuf` vars before the closure captures them
+    - **Landlock ABI V3** — Uses `ABI::V3` for access flag computation; `AccessFs::from_read(abi)` for read-only paths, `AccessFs::from_all(abi)` for read-write paths
+    - **Landlock policy per SECURITY.md** — Read-only: `/usr`, `/lib`, `/etc`, `/dev/dri`, media source path; Read-write: transcode session directory, `/tmp`; All paths guarded with `.exists()` check before adding rules (graceful skip if path absent)
+    - **Landlock graceful degradation** — `RulesetStatus::NotEnforced` returns `Ok(())` rather than error; sandbox silently skipped on kernels without Landlock support (logged via `RulesetStatus` match, but no `tracing` used in pre_exec itself)
+    - **Seccomp allow-list approach** — 62 syscalls explicitly allowed; `SeccompAction::KillProcess` as mismatch action (any unlisted syscall kills the process); `SeccompAction::Allow` as match action per SECURITY.md design
+    - **x86_64-specific syscalls** — `arch_prctl` conditionally included via `#[cfg(target_arch = "x86_64")]` inside the rules builder; `target_arch()` function uses `cfg` to return correct `seccompiler::TargetArch` (x86_64 or aarch64)
+    - **Blocked dangerous syscalls** — By omission from allow-list: `execve`, `execveat`, `fork`, `vfork`, `ptrace`, `mount`, `umount2`, `chroot`, `pivot_root`, `connect`, `bind`, `listen`, `accept`, `socket`, `socketpair`, `keyctl`, `add_key`, `request_key`, `perf_event_open`, `kcmp`, `process_vm_readv`, `process_vm_writev`
+    - **`spawn_ffmpeg` signature change** — Now accepts `source_path: &Path` and `segment_dir: &Path` for sandbox config; call site in `start_session` reordered to spawn before creating `TranscodeSession` (avoids borrow-after-move on the PathBuf fields)
+    - **Sandbox failure is non-fatal** — `pre_exec` closure catches sandbox errors, logs warning via `tracing::warn!`, and returns `Ok(())` so FFmpeg still starts without sandbox on failure; matches SECURITY.md graceful degradation model
+    - **No `tracing` inside pre_exec** — Logging happens in the `pre_exec` error handler which is safe (it's in the child process after fork, before exec); the landlock/seccomp functions themselves don't log
+    - **`seccompiler::Error::Backend`** — `build_ffmpeg_filter().try_into()` error mapped via `.map_err(seccompiler::Error::Backend)` following seccompiler's error type hierarchy
+
+   4. ~~Create `server/src/domains/quality/` — five-file pattern~~ **DONE**
+
+    **What was built for Task 4:**
+
+    | File | Purpose |
+    |---|---|
+    | `server/src/domains/quality/mod.rs` | Module declarations, re-exports (`QualityError`), router with 13 routes covering device capabilities, capability wizard, network probing, telemetry, QoE, and admin endpoints |
+    | `server/src/domains/quality/types.rs` | 4 Row types (`DeviceProfileRow`, `DeviceCapabilityTestRow`, `ClientNetworkReportRow`, `QoeReportRow`), 7 Request types with validation, 8 Response types including admin summaries |
+    | `server/src/domains/quality/error.rs` | `QualityError` enum — 12 variants matching QUALITY_001–QUALITY_012 error codes from ERROR_HANDLING.md, plus `Database` |
+    | `server/src/domains/quality/service.rs` | 12 service function stubs (`todo!()`) for capabilities, wizard, telemetry, probing, QoE, admin summaries |
+    | `server/src/domains/quality/handlers.rs` | 13 handler stubs wired to Axum extractors (State, AuthenticatedUser, Path, Json) with correct request/response types |
+    | `server/src/error.rs` | Added `Quality(#[from] QualityError)` variant to `AppError`, `quality_error_to_http()` mapping with correct status codes and QUALITY_xxx codes |
+    | `server/src/domains/mod.rs` | Added `pub mod quality;` |
+    | `server/src/router.rs` | Wired `quality::router(state)` into main router, removed Phase 7 comment |
+
+    **Key decisions from Task 4:**
+
+    - **QUALITY_008 (SubtitleBurnInRequired) maps to HTTP 200** — per ERROR_HANDLING.md, this is a warning not an error; burn-in occurred but playback proceeds normally
+    - **Three-type DTO pattern followed** — `XxxRow` (no Serialize/Deserialize), `XxxRequest` (Deserialize + Validate), `XxxResponse` (Serialize only)
+    - **Admin endpoints separated** — `/api/v1/admin/quality/*` routes for network summary, device summary, QoE metrics, and transcode breakdown; require `can_manage_server`/`can_view_analytics` (enforced by AuthenticatedUser extractor capabilities)
+    - **All service/handler functions are `todo!()` stubs** — tasks 5-7 will implement the actual business logic
+    - **Static validation constants** — `VALID_PROFILE_SOURCES`, `VALID_NETWORK_TIERS`, `VALID_REPORT_TYPES`, `VALID_WIZARD_RESULTS`, `VALID_QUALITY_MODES` arrays for use in service-layer validation
+
+  5. Implement device capability detection — runtime probe
 6. Implement network quality assessment — segment download telemetry
 7. Implement transcoding decision engine — 10-factor evaluation from QUALITY_MANAGEMENT.md
 8. Implement streaming policy system — `streaming_policies` table with per-user overrides
