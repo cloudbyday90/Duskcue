@@ -14,21 +14,470 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::domains::playback::error::PlaybackError;
 use crate::domains::playback::types::*;
+use crate::services::decision_engine::{self, DeviceCapabilities, MediaFileInfo, NetworkConditions, DecisionEngineConfig, StreamDecision};
 use crate::services::transcoding::{TranscodeManager, TranscodeRendition};
+use crate::state::RuntimeConfig;
 
 pub async fn start_playback(
-    _user_id: Uuid,
-    _media_item_id: Uuid,
-    _media_file_id: Option<Uuid>,
-) -> Result<(), PlaybackError> {
-    todo!()
+    pool: &PgPool,
+    transcode_manager: &TranscodeManager,
+    user_id: Uuid,
+    _user_role: &str,
+    req: &StartPlaybackRequest,
+    config: &RuntimeConfig,
+    data_dir: &Path,
+) -> Result<PlaybackStartResponse, PlaybackError> {
+    let media_item_id = req.media_item_id.ok_or(PlaybackError::MediaNotFound)?;
+
+    let item_row = sqlx::query(
+        "SELECT id, library_id FROM media_items WHERE id = $1 AND deleted_at IS NULL"
+    )
+    .bind(media_item_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(PlaybackError::MediaNotFound)?;
+
+    let library_id: Uuid = item_row.try_get("library_id").unwrap_or_default();
+
+    let media_file_details = if let Some(file_id) = req.media_file_id {
+        fetch_media_file_details(pool, file_id).await?
+    } else {
+        select_best_media_file(pool, media_item_id).await?
+    };
+
+    let media_info = build_media_file_info(&media_file_details);
+
+    let device_caps = build_device_capabilities(req.device_profile.as_ref(), config);
+
+    let network = build_network_conditions(pool, user_id, req.max_streaming_bitrate).await;
+
+    let engine_config = build_decision_engine_config(config, req.max_streaming_bitrate);
+
+    let mut decision = decision_engine::decide(&media_info, &device_caps, &network, &engine_config);
+
+    if req.force_transcode.unwrap_or(false) {
+        decision.overall = StreamDecision::Transcode;
+    }
+
+    let stream_decision_str = match decision.overall {
+        StreamDecision::DirectPlay => "direct_play",
+        StreamDecision::DirectStream => "direct_stream",
+        StreamDecision::Transcode => "transcode",
+    };
+
+    let stream_url;
+    let transcode_session_id;
+
+    match decision.overall {
+        StreamDecision::DirectPlay => {
+            stream_url = format!("/api/v1/stream/{}", media_file_details.id);
+            transcode_session_id = None;
+        }
+        StreamDecision::DirectStream => {
+            let session = transcode_manager
+                .start_remux_session(
+                    media_file_details.id,
+                    user_id,
+                    PathBuf::from(&media_file_details.file_path),
+                    media_info.video_codec.clone(),
+                    media_info.video_resolution,
+                    media_info.audio_codec.clone(),
+                    data_dir,
+                )
+                .await?;
+            stream_url = format!("/api/v1/transcode/{}/manifest.m3u8", session.id);
+            transcode_session_id = Some(session.id);
+        }
+        StreamDecision::Transcode => {
+            let target_v = decision.target_video_codec.clone();
+            let target_a = decision.target_audio_codec.clone();
+            let target_res = decision.target_resolution;
+            let target_bitrate = decision.target_bitrate_bps.map(|b| b as u32);
+
+            let session = transcode_manager
+                .start_session(
+                    media_file_details.id,
+                    user_id,
+                    PathBuf::from(&media_file_details.file_path),
+                    media_info.video_codec.clone(),
+                    media_info.video_resolution,
+                    media_info.audio_codec.clone(),
+                    target_v,
+                    target_a,
+                    target_res,
+                    target_bitrate,
+                    None,
+                    data_dir,
+                )
+                .await?;
+            stream_url = format!("/api/v1/transcode/{}/manifest.m3u8", session.id);
+            transcode_session_id = Some(session.id);
+        }
+    }
+
+    let play_session_id = create_play_session(
+        pool,
+        user_id,
+        media_item_id,
+        library_id,
+        stream_decision_str,
+    )
+    .await?;
+
+    Ok(PlaybackStartResponse {
+        session_id: play_session_id,
+        stream_decision: stream_decision_str.to_string(),
+        stream_url,
+        media_item_id,
+        media_file_id: Some(media_file_details.id),
+        source_video_codec: Some(media_info.video_codec),
+        source_audio_codec: Some(media_info.audio_codec),
+        target_video_codec: decision.target_video_codec,
+        target_audio_codec: decision.target_audio_codec,
+        transcode_session_id,
+    })
+}
+
+struct MediaFileDetails {
+    id: Uuid,
+    file_path: String,
+    container_format: String,
+    video_codec: Option<String>,
+    video_resolution: Option<String>,
+    video_bitrate: Option<i32>,
+    video_dynamic_range: Option<String>,
+    video_frame_rate: Option<f64>,
+    audio_codec: Option<String>,
+    audio_channels: Option<i32>,
+    audio_language: Option<String>,
+    audio_bitrate: Option<i32>,
+    #[allow(dead_code)]
+    runtime_seconds: i32,
+    additional_streams: serde_json::Value,
+}
+
+async fn fetch_media_file_details(
+    pool: &PgPool,
+    file_id: Uuid,
+) -> Result<MediaFileDetails, PlaybackError> {
+    let row = sqlx::query(
+        "SELECT id, file_path, container_format, video_codec, \
+         video_resolution, video_bitrate, video_dynamic_range, \
+         audio_codec, audio_channels, audio_language, audio_bitrate, \
+         runtime_seconds, additional_streams \
+         FROM media_files WHERE id = $1 AND is_healthy = true"
+    )
+    .bind(file_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(PlaybackError::FileNotFound)?;
+
+    Ok(row_to_media_file_details(&row))
+}
+
+async fn select_best_media_file(
+    pool: &PgPool,
+    media_item_id: Uuid,
+) -> Result<MediaFileDetails, PlaybackError> {
+    let row = sqlx::query(
+        "SELECT id, file_path, container_format, video_codec, \
+         video_resolution, video_bitrate, video_dynamic_range, \
+         audio_codec, audio_channels, audio_language, audio_bitrate, \
+         runtime_seconds, additional_streams \
+         FROM media_files WHERE media_item_id = $1 AND is_healthy = true \
+         ORDER BY file_size DESC LIMIT 1"
+    )
+    .bind(media_item_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(PlaybackError::FileNotFound)?;
+
+    Ok(row_to_media_file_details(&row))
+}
+
+fn row_to_media_file_details(row: &sqlx::postgres::PgRow) -> MediaFileDetails {
+    MediaFileDetails {
+        id: row.get("id"),
+        file_path: row.get("file_path"),
+        container_format: row.get("container_format"),
+        video_codec: row.try_get("video_codec").ok().flatten(),
+        video_resolution: row.try_get("video_resolution").ok().flatten(),
+        video_bitrate: row.try_get("video_bitrate").ok().flatten(),
+        video_dynamic_range: row.try_get("video_dynamic_range").ok().flatten(),
+        video_frame_rate: None,
+        audio_codec: row.try_get("audio_codec").ok().flatten(),
+        audio_channels: row.try_get("audio_channels").ok().flatten(),
+        audio_language: row.try_get("audio_language").ok().flatten(),
+        audio_bitrate: row.try_get("audio_bitrate").ok().flatten(),
+        runtime_seconds: row.get("runtime_seconds"),
+        additional_streams: row
+            .try_get("additional_streams")
+            .unwrap_or(serde_json::json!({})),
+    }
+}
+
+fn build_media_file_info(details: &MediaFileDetails) -> MediaFileInfo {
+    let (res_w, res_h) = details
+        .video_resolution
+        .as_deref()
+        .map(decision_engine::parse_resolution_string)
+        .unwrap_or((1920, 1080));
+
+    let bit_depth = extract_video_bit_depth(&details.additional_streams);
+
+    let (subtitle_format, has_embedded_subtitles) =
+        extract_subtitle_info(&details.additional_streams);
+
+    let frame_rate = details.video_frame_rate.unwrap_or(24.0);
+
+    MediaFileInfo {
+        container_format: details.container_format.clone(),
+        video_codec: details
+            .video_codec
+            .clone()
+            .unwrap_or_else(|| "h264".to_string()),
+        video_profile: extract_video_profile(&details.additional_streams),
+        video_level: extract_video_level(&details.additional_streams),
+        video_bit_depth: bit_depth,
+        video_resolution: (res_w, res_h),
+        video_bitrate_bps: details.video_bitrate.unwrap_or(0) as u64,
+        video_dynamic_range: details
+            .video_dynamic_range
+            .clone()
+            .unwrap_or_else(|| "sdr".to_string()),
+        video_frame_rate: frame_rate,
+        audio_codec: details
+            .audio_codec
+            .clone()
+            .unwrap_or_else(|| "aac".to_string()),
+        audio_channels: details.audio_channels.unwrap_or(2) as u32,
+        audio_bitrate_bps: details.audio_bitrate.unwrap_or(0) as u64,
+        audio_language: details.audio_language.clone(),
+        has_embedded_subtitles,
+        subtitle_format,
+        additional_streams: Some(details.additional_streams.clone()),
+    }
+}
+
+fn extract_video_bit_depth(streams: &serde_json::Value) -> u32 {
+    streams
+        .get("video")
+        .and_then(|v| v.get("bit_depth"))
+        .and_then(|b| b.as_u64())
+        .map(|b| b as u32)
+        .unwrap_or(8)
+}
+
+fn extract_video_profile(streams: &serde_json::Value) -> Option<String> {
+    streams
+        .get("video")
+        .and_then(|v| v.get("profile"))
+        .and_then(|p| p.as_str())
+        .map(String::from)
+}
+
+fn extract_video_level(streams: &serde_json::Value) -> Option<f32> {
+    streams
+        .get("video")
+        .and_then(|v| v.get("level"))
+        .and_then(|l| l.as_f64())
+        .map(|l| l as f32)
+}
+
+fn extract_subtitle_info(streams: &serde_json::Value) -> (Option<String>, bool) {
+    let subs = match streams.get("subtitles").and_then(|s| s.as_array()) {
+        Some(arr) if !arr.is_empty() => arr,
+        _ => return (None, false),
+    };
+
+    let fmt = subs
+        .first()
+        .and_then(|s| s.get("codec"))
+        .and_then(|c| c.as_str())
+        .map(String::from);
+
+    (fmt, true)
+}
+
+fn build_device_capabilities(
+    device_profile: Option<&serde_json::Value>,
+    config: &RuntimeConfig,
+) -> DeviceCapabilities {
+    match device_profile {
+        Some(profile) => parse_device_profile(profile, config),
+        None => conservative_device_defaults(config),
+    }
+}
+
+fn parse_device_profile(profile: &serde_json::Value, config: &RuntimeConfig) -> DeviceCapabilities {
+    DeviceCapabilities {
+        video_codecs: decision_engine::parse_json_string_set(
+            profile.get("video_codecs").unwrap_or(&serde_json::json!([])),
+        ),
+        audio_codecs: decision_engine::parse_json_string_set(
+            profile.get("audio_codecs").unwrap_or(&serde_json::json!([])),
+        ),
+        containers: decision_engine::parse_json_string_set(
+            profile.get("containers").unwrap_or(&serde_json::json!([])),
+        ),
+        subtitle_formats: decision_engine::parse_json_string_set(
+            profile.get("subtitle_formats").unwrap_or(&serde_json::json!([])),
+        ),
+        max_resolution: profile
+            .get("max_resolution")
+            .and_then(|r| r.as_str())
+            .map(decision_engine::parse_resolution_string)
+            .unwrap_or((1920, 1080)),
+        max_audio_channels: profile
+            .get("max_audio_channels")
+            .and_then(|c| c.as_u64())
+            .map(|c| c as u32)
+            .unwrap_or(2),
+        hdr_formats: decision_engine::parse_hdr_formats(
+            profile.get("hdr_formats").unwrap_or(&serde_json::json!([])),
+        ),
+        max_bitrate_bps: profile
+            .get("max_bitrate_bps")
+            .and_then(|b| b.as_u64())
+            .unwrap_or(20_000_000),
+        supports_dolby_vision: profile
+            .get("supports_dolby_vision")
+            .and_then(|d| d.as_bool())
+            .unwrap_or(false),
+        allow_client_side_dv_fallback: profile
+            .get("allow_client_side_dv_fallback")
+            .and_then(|d| d.as_bool())
+            .unwrap_or(config.quality.allow_client_side_dv_fallback),
+        max_video_bit_depth: profile
+            .get("max_video_bit_depth")
+            .and_then(|b| b.as_u64())
+            .map(|b| b as u32)
+            .unwrap_or(8),
+    }
+}
+
+fn conservative_device_defaults(config: &RuntimeConfig) -> DeviceCapabilities {
+    let mut video_codecs = HashSet::new();
+    video_codecs.insert("h264".to_string());
+
+    let mut audio_codecs = HashSet::new();
+    audio_codecs.insert("aac".to_string());
+
+    let mut containers = HashSet::new();
+    containers.insert("mp4".to_string());
+    containers.insert("mkv".to_string());
+    containers.insert("matroska".to_string());
+
+    let mut subtitle_formats = HashSet::new();
+    subtitle_formats.insert("srt".to_string());
+    subtitle_formats.insert("webvtt".to_string());
+
+    DeviceCapabilities {
+        video_codecs,
+        audio_codecs,
+        containers,
+        subtitle_formats,
+        max_resolution: decision_engine::parse_resolution_string(
+            &config.quality.fallback_max_resolution,
+        ),
+        max_audio_channels: 2,
+        hdr_formats: HashSet::new(),
+        max_bitrate_bps: config.quality.fallback_max_bitrate_bps as u64,
+        supports_dolby_vision: false,
+        allow_client_side_dv_fallback: config.quality.allow_client_side_dv_fallback,
+        max_video_bit_depth: 8,
+    }
+}
+
+async fn build_network_conditions(
+    pool: &PgPool,
+    user_id: Uuid,
+    max_streaming_bitrate: Option<u64>,
+) -> NetworkConditions {
+    if let Some(bitrate) = max_streaming_bitrate {
+        return NetworkConditions {
+            estimated_throughput_bps: Some(bitrate),
+            network_tier: None,
+        };
+    }
+
+    let row = sqlx::query(
+        "SELECT throughput_bps, network_tier FROM client_network_reports \
+         WHERE user_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .ok()
+    .flatten();
+
+    match row {
+        Some(r) => {
+            let throughput: Option<i64> = r.try_get("throughput_bps").ok().flatten();
+            let tier: Option<String> = r.try_get("network_tier").ok().flatten();
+            NetworkConditions {
+                estimated_throughput_bps: throughput.map(|t| t as u64),
+                network_tier: tier,
+            }
+        }
+        None => NetworkConditions {
+            estimated_throughput_bps: None,
+            network_tier: None,
+        },
+    }
+}
+
+fn build_decision_engine_config(
+    config: &RuntimeConfig,
+    _max_streaming_bitrate: Option<u64>,
+) -> DecisionEngineConfig {
+    DecisionEngineConfig {
+        default_video_codec: config.transcoding.default_video_codec.clone(),
+        default_audio_codec: config.transcoding.default_audio_codec.clone(),
+        fallback_max_resolution: decision_engine::parse_resolution_string(
+            &config.quality.fallback_max_resolution,
+        ),
+        fallback_max_bitrate_bps: config.quality.fallback_max_bitrate_bps as u64,
+        throughput_safety_factor: config.quality.throughput_safety_factor,
+        allow_client_side_dv_fallback: config.quality.allow_client_side_dv_fallback,
+        audio_passthrough_enabled: config.quality.audio_passthrough_enabled,
+        subtitle_burn_in_policy: config.quality.subtitle_burn_in_policy.clone(),
+        quality_mode: decision_engine::parse_quality_mode(&config.quality.default_quality_mode),
+        manual_max_resolution: None,
+    }
+}
+
+async fn create_play_session(
+    pool: &PgPool,
+    user_id: Uuid,
+    media_item_id: Uuid,
+    library_id: Uuid,
+    stream_decision: &str,
+) -> Result<Uuid, PlaybackError> {
+    let session_id = Uuid::now_v7();
+
+    sqlx::query(
+        "INSERT INTO play_sessions (id, user_id, media_item_id, library_id, \
+         started_at, client_name, stream_decision) \
+         VALUES ($1, $2, $3, $4, now(), 'duskcue-web', $5)"
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .bind(media_item_id)
+    .bind(library_id)
+    .bind(stream_decision)
+    .execute(pool)
+    .await?;
+
+    Ok(session_id)
 }
 
 pub async fn heartbeat(

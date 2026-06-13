@@ -30,11 +30,39 @@ use crate::extractors::{AuthenticatedUser, Require, CanManageServer};
 use crate::state::AppState;
 
 pub async fn start_playback(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Json(_req): Json<StartPlaybackRequest>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<StartPlaybackRequest>,
 ) -> Result<Json<PlaybackStartResponse>, AppError> {
-    todo!()
+    req.validate().map_err(|e| {
+        let errors: Vec<crate::error::FieldError> = e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errs)| {
+                errs.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect();
+        AppError::Validation { errors, instance: None }
+    })?;
+
+    let config = state.runtime_config.load();
+    let result = service::start_playback(
+        &state.pool,
+        &state.transcode_manager,
+        user.user_id,
+        &user.role,
+        &req,
+        &config,
+        &state.bootstrap.data_dir,
+    )
+    .await?;
+    drop(config);
+
+    Ok(Json(result))
 }
 
 pub async fn heartbeat(

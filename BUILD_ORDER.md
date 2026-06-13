@@ -1392,10 +1392,33 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
  - **Cache headers** — Manifest and playlist: `no-cache, no-store, must-revalidate` (live transcode state changes); segments: `max-age=3600` (segments are immutable once written)
  - **No new workspace dependencies** — All functionality uses existing `axum::body::Body`, `tokio::fs`, `axum::http` types
 
-10. Implement direct play / remux for compatible formats (no transcode)
-11. Implement HW accel runtime detection — NVIDIA, VAAPI, VideoToolbox, AMF
-12. Implement play session tracking — create `play_sessions` rows, heartbeat updates
-13. Implement `user_item_data` — watch state, resume position, play count
+ 10. ~~Implement direct play / remux for compatible formats (no transcode)~~ **DONE**
+
+ **What was built for Task 10:**
+
+ | File | Purpose |
+ |---|---|
+ | `server/src/services/transcoding.rs` | Added `start_remux_session()` method to `TranscodeManager` — creates an FFmpeg HLS session with `-c:v copy -c:a copy` (stream copy, no re-encoding); reuses existing session tracking, progress monitoring, semaphore capacity enforcement, and sandboxing infrastructure |
+ | `server/src/domains/playback/service.rs` | Replaced `start_playback()` `todo!()` stub with full implementation: fetches media item + media file from DB, builds `MediaFileInfo` from `media_files` row, builds `DeviceCapabilities` from client device profile JSON or conservative defaults, builds `NetworkConditions` from latest `client_network_reports` row or `max_streaming_bitrate`, builds `DecisionEngineConfig` from `RuntimeConfig`, calls `decision_engine::decide()`, dispatches to DirectPlay (stream URL) / DirectStream (remux session) / Transcode (transcode session) paths, creates `play_sessions` row |
+ | `server/src/domains/playback/handlers.rs` | Replaced `start_playback` `todo!()` with working handler: validates request, loads runtime config, calls service, returns `PlaybackStartResponse` |
+
+ **Key decisions from Task 10:**
+
+ - **Three-tier playback dispatch** — `start_playback` implements the full STREAMING.md decision flow: DirectPlay → client uses `GET /api/v1/stream/{file_id}`; DirectStream → `start_remux_session()` spawns FFmpeg with stream copy and HLS output; Transcode → `start_session()` spawns FFmpeg with full encoding and HLS output. Both DirectStream and Transcode return an HLS manifest URL; DirectPlay returns a direct file URL.
+ - **`start_remux_session()` as separate method** — Rather than adding a `remux: bool` flag to the already 12-parameter `start_session()`, a dedicated method handles the remux case (stream copy without encoding). The remux FFmpeg args skip `build_video_encode_args` and `build_audio_encode_args`, replacing them with `-c:v copy -c:a copy`. All other infrastructure (session tracking, progress parsing, graceful shutdown, sandboxing) is shared.
+ - **MediaFileInfo built from DB row** — `build_media_file_info()` converts the `media_files` row (string video_resolution like "1080p", nullable codec/bitrate columns, JSONB additional_streams) into the `MediaFileInfo` struct the decision engine expects. `video_resolution` parsed via `decision_engine::parse_resolution_string()`; `video_bit_depth` extracted from `additional_streams.video.bit_depth` JSONB (defaults to 8); `video_frame_rate` defaulted to 24.0 (NUMERIC column type not directly readable as f64 without `bigdecimal` feature).
+ - **Device profile from request or conservative defaults** — When the client sends `device_profile` JSON in `StartPlaybackRequest`, it's parsed into `DeviceCapabilities` (video_codecs, audio_codecs, containers, subtitle_formats, max_resolution, max_audio_channels, hdr_formats, max_bitrate_bps, supports_dolby_vision, allow_client_side_dv_fallback, max_video_bit_depth). When absent, conservative defaults are used: H.264, AAC, MP4+MKV, SRT+WebVTT, 1080p, 2ch, 8-bit, no HDR — matching the conservative baseline from QUALITY_MANAGEMENT.md.
+ - **Network conditions from client telemetry** — `build_network_conditions()` queries the latest `client_network_reports` row for the user to get `throughput_bps` and `network_tier`. If `max_streaming_bitrate` is provided in the request, it overrides as the throughput estimate (client explicitly caps its own bandwidth). If neither is available, returns `None` throughput (decision engine treats as unlimited).
+ - **DecisionEngineConfig from RuntimeConfig** — Built from `quality.*` fields (throughput_safety_factor, fallback_max_resolution, fallback_max_bitrate_bps, allow_client_side_dv_fallback, audio_passthrough_enabled, subtitle_burn_in_policy, default_quality_mode) and `transcoding.*` fields (default_video_codec, default_audio_codec). `manual_max_resolution` set to `None` (no client-side manual resolution selection yet).
+ - **`force_transcode` override** — When `StartPlaybackRequest.force_transcode` is `true`, the decision engine's `overall` result is overridden to `StreamDecision::Transcode` after evaluation. This allows clients to force transcoding for debugging or compatibility testing.
+ - **`play_sessions` row created** — Each playback start creates a row in the partitioned `play_sessions` table with user_id, media_item_id, library_id, `started_at = now()`, `stream_decision` from the decision, and `client_name = 'duskcue-web'`. The session ID (UUIDv7) is returned to the client for subsequent heartbeat/stop/seek calls. `stopped_at`, `duration_seconds`, and `percent_complete` are set when playback stops (Task 12).
+ - **Static SQL strings** — All media file queries use full static SQL strings (not `format!()` concatenated) per sqlx 0.9 `SqlSafeStr` requirement. The `($N::uuid IS NULL OR column = $N)` pattern is not needed here since media_file_id is always provided or auto-selected.
+ - **No new workspace dependencies** — All functionality uses existing `sqlx`, `serde_json`, `uuid`, `chrono`, `decision_engine`, and `transcoding` modules.
+ - **No new error variants** — Existing `PlaybackError::MediaNotFound`, `FileNotFound`, `TranscodeCapacityReached`, `FfmpegFailed` cover all failure cases in the playback start flow.
+
+ 11. Implement HW accel runtime detection — NVIDIA, VAAPI, VideoToolbox, AMF
+ 12. Implement play session tracking — create `play_sessions` rows, heartbeat updates
+ 13. Implement `user_item_data` — watch state, resume position, play count
 
 **Verification:** User clicks play on a movie, HLS stream starts, segments are served, play session is tracked, resume position updates. Transcoding activates for incompatible formats. HW acceleration detected and used when available.
 

@@ -466,6 +466,127 @@ impl TranscodeManager {
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
+    pub async fn start_remux_session(
+        &self,
+        media_file_id: Uuid,
+        user_id: Uuid,
+        source_path: PathBuf,
+        source_video_codec: String,
+        source_video_resolution: (u32, u32),
+        source_audio_codec: String,
+        data_dir: &Path,
+    ) -> Result<TranscodeSession, PlaybackError> {
+        let permit = Arc::clone(&self.semaphore)
+            .try_acquire_owned()
+            .map_err(|_| PlaybackError::TranscodeCapacityReached)?;
+
+        let config = self.config.load_full();
+        let transcoding = &config.transcoding;
+
+        let session_id = Uuid::now_v7();
+        let segment_dir = data_dir
+            .join(transcoding.transcode_path.trim_start_matches('/'))
+            .join(session_id.to_string());
+        let manifest_path = segment_dir.join("manifest.m3u8");
+
+        tokio::fs::create_dir_all(&segment_dir)
+            .await
+            .map_err(|e| PlaybackError::FfmpegFailed(format!("failed to create segment dir: {e}")))?;
+
+        let segment_filename = segment_dir.join("seg_%04d.m4s");
+
+        let mut args = build_ffmpeg_input_args(None, &source_path);
+
+        args.extend([
+            "-map".to_string(),
+            "0:0".to_string(),
+            "-map".to_string(),
+            "0:1".to_string(),
+            "-c:v".to_string(),
+            "copy".to_string(),
+            "-c:a".to_string(),
+            "copy".to_string(),
+        ]);
+
+        args.extend([
+            "-progress".to_string(),
+            "pipe:1".to_string(),
+        ]);
+
+        args.extend(build_hls_output_args(
+            transcoding.segment_duration_seconds,
+            &segment_filename.to_string_lossy(),
+            &manifest_path.to_string_lossy(),
+        ));
+
+        let process_handle = spawn_ffmpeg(&args, session_id, &source_path, &segment_dir)
+            .map_err(|e| PlaybackError::FfmpegFailed(format!("failed to spawn ffmpeg: {e}")))?;
+
+        let hw_accel = self.get_hw_accel();
+
+        let session = TranscodeSession {
+            id: session_id,
+            media_file_id,
+            user_id,
+            started_at: Utc::now(),
+            source_path,
+            source_video_codec,
+            source_video_resolution,
+            source_audio_codec,
+            target_video_codec: "copy".to_string(),
+            target_video_resolution: source_video_resolution,
+            target_audio_codec: "copy".to_string(),
+            target_bitrate: 0,
+            hw_accel,
+            rendition_name: "remux".to_string(),
+            segment_dir,
+            manifest_path,
+            segments_written: 0,
+            client_position_segment: 0,
+            progress: None,
+            is_complete: false,
+            is_seeking: false,
+        };
+
+        let graceful_timeout = config.resource_limits.ffmpeg_shutdown_grace_secs;
+        let session_clone = session.clone();
+        let sessions = Arc::clone(&self.sessions);
+        tokio::spawn(async move {
+            let _permit = permit;
+
+            let stdout = process_handle.stdout();
+            let consumer = match stdout.consume(
+                tokio_process_tools::ParseLines::inspect(
+                    LineParsingOptions::default(),
+                    move |line: Cow<'_, str>| {
+                            if let Some(update) = parse_progress_line(&line)
+                                && let Some(mut s) = sessions.get_mut(&session_clone.id)
+                            {
+                                    if update.is_complete {
+                                        s.is_complete = true;
+                                    }
+                                    s.progress = Some(update);
+                                }
+                            Next::Continue
+                        },
+                    ),
+                ) {
+                    Ok(c) => c,
+                    Err(_) => return,
+                };
+                let _ = consumer.wait().await;
+
+            let graceful_shutdown = build_graceful_shutdown(graceful_timeout);
+            let mut terminated = process_handle.terminate_on_drop(graceful_shutdown);
+            let _ = terminated.wait_for_completion(Duration::from_secs(3600)).await;
+        });
+
+        self.sessions.insert(session_id, session.clone());
+
+        Ok(session)
+    }
+
     pub fn get_session(&self, session_id: &Uuid) -> Option<TranscodeSession> {
         self.sessions.get(session_id).map(|r| r.value().clone())
     }

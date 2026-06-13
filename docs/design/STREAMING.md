@@ -592,18 +592,15 @@ When a multi-channel audio track must be transcoded for a stereo-only client:
 ### Session Start
 
 1. Client sends `POST /api/v1/playback/start` with `media_item_id`, `media_file_id`, device profile
-2. Server runs playback decision algorithm
-3. If transcode needed:
-   - Create transcode session (in-memory map, keyed by session ID)
-   - Generate transcode directory: `/cache/transcodes/{session_id}/`
-   - Build FFmpeg command based on decision (including `-progress pipe:1`)
-   - Spawn FFmpeg via `tokio-process-tools` with Landlock + seccomp sandboxing
-   - Attach progress parser to stdout, log collector to stderr
-   - Wait for first segment to be written
-   - Return HLS manifest URL to client
-4. If direct play:
-   - Return direct stream URL to client
-5. Create `play_sessions` row (Activity domain)
+2. Server builds `MediaFileInfo` from `media_files` row, `DeviceCapabilities` from client profile or conservative defaults, `NetworkConditions` from telemetry or `max_streaming_bitrate`, `DecisionEngineConfig` from `RuntimeConfig`
+3. Server runs playback decision algorithm (`decision_engine::decide()`)
+4. Dispatch based on `StreamDecision`:
+   - **DirectPlay** — Return direct stream URL (`GET /api/v1/stream/{file_id}`); no FFmpeg needed
+   - **DirectStream (remux)** — Create remux session via `start_remux_session()` with `-c:v copy -c:a copy` (stream copy, no re-encoding); spawn FFmpeg with HLS output; return HLS manifest URL
+   - **Transcode** — Create transcode session via `start_session()` with full encoding pipeline; spawn FFmpeg with Landlock + seccomp sandboxing; return HLS manifest URL
+5. Create `play_sessions` row (Activity domain) with session ID, stream decision, user, media item
+
+> **Implemented** in Phase 7 Task 10 — `start_playback()` in `playback/service.rs`, `start_remux_session()` in `transcoding.rs`. See [BUILD_ORDER.md](../../BUILD_ORDER.md) Task 10 for details.
 
 ### During Playback
 
