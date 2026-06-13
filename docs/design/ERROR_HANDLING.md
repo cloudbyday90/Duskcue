@@ -479,6 +479,11 @@ All API errors return [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) Problem
 | `PLAY_011` | 403 | Client IP address blocked by streaming policy |
 | `PLAY_012` | 429 | Per-user stream limit exceeded (max_streams or max_transcode_streams) |
 | `PLAY_013` | 403 | Resolution requires direct play — transcode restricted by policy (e.g. 4K) |
+| `PLAY_014` | 409 | Streaming policy name already exists |
+| `PLAY_015` | 403 | System policy cannot be deleted |
+| `PLAY_016` | 403 | Cannot remove default policy without assigning a replacement |
+| `PLAY_017` | 400 | Invalid transcode resolution value |
+| `PLAY_018` | 400 | Invalid IP range format |
 
 ### TRAKT — Trakt.tv Integration
 

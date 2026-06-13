@@ -17,10 +17,14 @@
 use axum::extract::{Path, State};
 use axum::http::HeaderMap;
 use axum::Json;
+use sqlx::Row;
+use validator::Validate;
 
 use crate::error::AppError;
+use crate::domains::playback::error::PlaybackError;
 use crate::domains::playback::types::*;
-use crate::extractors::AuthenticatedUser;
+use crate::domains::playback::service;
+use crate::extractors::{AuthenticatedUser, Require, CanManageServer};
 use crate::state::AppState;
 
 pub async fn start_playback(
@@ -191,4 +195,111 @@ pub async fn get_transcode_segment(
     Path((_session_id, _rendition, _segment)): Path<(uuid::Uuid, String, String)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     todo!()
+}
+
+pub async fn list_streaming_policies(
+    State(state): State<AppState>,
+    _auth: Require<CanManageServer>,
+) -> Result<Json<StreamingPolicyListResponse>, AppError> {
+    let result = service::list_streaming_policies(&state.pool).await?;
+    Ok(Json(result))
+}
+
+pub async fn get_streaming_policy(
+    State(state): State<AppState>,
+    _auth: Require<CanManageServer>,
+    Path(policy_id): Path<uuid::Uuid>,
+) -> Result<Json<StreamingPolicyResponse>, AppError> {
+    let result = service::get_streaming_policy(&state.pool, policy_id).await?;
+    Ok(Json(result))
+}
+
+pub async fn create_streaming_policy(
+    State(state): State<AppState>,
+    _auth: Require<CanManageServer>,
+    Json(req): Json<CreateStreamingPolicyRequest>,
+) -> Result<Json<StreamingPolicyResponse>, AppError> {
+    req.validate().map_err(|e| {
+        let errors: Vec<crate::error::FieldError> = e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errs)| {
+                errs.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect();
+        AppError::Validation { errors, instance: None }
+    })?;
+    let result = service::create_streaming_policy(&state.pool, &req).await?;
+    Ok(Json(result))
+}
+
+pub async fn update_streaming_policy(
+    State(state): State<AppState>,
+    _auth: Require<CanManageServer>,
+    Path(policy_id): Path<uuid::Uuid>,
+    Json(req): Json<UpdateStreamingPolicyRequest>,
+) -> Result<Json<StreamingPolicyResponse>, AppError> {
+    req.validate().map_err(|e| {
+        let errors: Vec<crate::error::FieldError> = e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errs)| {
+                errs.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect();
+        AppError::Validation { errors, instance: None }
+    })?;
+    let result = service::update_streaming_policy(&state.pool, policy_id, &req).await?;
+    Ok(Json(result))
+}
+
+pub async fn delete_streaming_policy(
+    State(state): State<AppState>,
+    _auth: Require<CanManageServer>,
+    Path(policy_id): Path<uuid::Uuid>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    service::delete_streaming_policy(&state.pool, policy_id).await?;
+    Ok(Json(serde_json::json!({"deleted": true})))
+}
+
+pub async fn get_effective_streaming_limits(
+    State(state): State<AppState>,
+    _auth: Require<CanManageServer>,
+    Path(user_id): Path<uuid::Uuid>,
+) -> Result<Json<ResolvedStreamingLimitsResponse>, AppError> {
+    let row = sqlx::query(
+        "SELECT streaming_policy_id, max_streams, max_transcode_streams, bandwidth_limit_bps \
+         FROM users WHERE id = $1 AND deleted_at IS NULL"
+    )
+    .bind(user_id)
+    .fetch_optional(&state.pool)
+    .await
+    .map_err(PlaybackError::from)?;
+
+    let row = row.ok_or(AppError::NotFound("User not found".into()))?;
+
+    let streaming_policy_id: Option<uuid::Uuid> = row.try_get("streaming_policy_id").ok().flatten();
+    let max_streams: Option<i32> = row.try_get("max_streams").ok().flatten();
+    let max_transcode_streams: Option<i32> = row.try_get("max_transcode_streams").ok().flatten();
+    let bandwidth_limit_bps: Option<i64> = row.try_get("bandwidth_limit_bps").ok().flatten();
+
+    let result = service::resolve_streaming_limits(
+        &state.pool,
+        user_id,
+        max_streams,
+        max_transcode_streams,
+        bandwidth_limit_bps,
+        streaming_policy_id,
+    )
+    .await?;
+
+    Ok(Json(result))
 }

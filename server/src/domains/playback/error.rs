@@ -69,6 +69,21 @@ pub enum PlaybackError {
     #[error("streaming policy not found")]
     PolicyNotFound,
 
+    #[error("policy name already exists: {0}")]
+    PolicyNameExists(String),
+
+    #[error("system policy cannot be deleted")]
+    SystemPolicyCannotBeDeleted,
+
+    #[error("cannot remove default policy without assigning a replacement")]
+    CannotRemoveDefaultPolicy,
+
+    #[error("invalid transcode resolution: {0}")]
+    InvalidResolution(String),
+
+    #[error("invalid IP range: {0}")]
+    InvalidIpRange(String),
+
     #[error("invalid stream decision: {0}")]
     InvalidStreamDecision(String),
 

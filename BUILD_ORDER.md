@@ -1339,7 +1339,38 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
      - **21 unit tests** covering: direct play (H.264+AAC+MKV, all compatible), transcode (unsupported codec, resolution exceeds device, 10-bit exceeds 8-bit device, bitrate exceeds network), tone mapping (HDR to SDR device), DV handling (Profile 7 client fallback, Profile 7 no fallback → strip, Profile 5 → transcode), container remux, audio passthrough/downmix, subtitle burn-in (PGS), subtitle convert (ASS→SRT), subtitle passthrough (SRT), codec alias matching, resolution normalization, resolution string parsing
      - **No new workspace dependencies** — All functionality uses standard library collections, `serde` derive, and existing `TranscodeRendition` from `transcoding.rs`
 
- 8. Implement streaming policy system — `streaming_policies` table with per-user overrides
+  8. ~~Implement streaming policy system — `streaming_policies` table with per-user overrides~~ **DONE**
+
+  **What was built for Task 8:**
+
+  | File | Purpose |
+  |---|---|
+  | `server/src/domains/playback/types.rs` | Added `StreamingPolicyRow`, `CreateStreamingPolicyRequest`, `UpdateStreamingPolicyRequest`, `StreamingPolicyResponse`, `StreamingPolicyListResponse`, `ResolvedStreamingLimitsResponse` DTOs; `VALID_TRANSCODE_RESOLUTIONS` static |
+  | `server/src/domains/playback/error.rs` | Added 5 error variants: `PolicyNameExists` (PLAY_014), `SystemPolicyCannotBeDeleted` (PLAY_015), `CannotRemoveDefaultPolicy` (PLAY_016), `InvalidResolution` (PLAY_017), `InvalidIpRange` (PLAY_018) |
+  | `server/src/error.rs` | Added PLAY_014–PLAY_018 error code mappings in `playback_error_to_http()` |
+  | `server/src/domains/playback/service.rs` | Added 6 service functions: `list_streaming_policies`, `get_streaming_policy`, `create_streaming_policy`, `update_streaming_policy`, `delete_streaming_policy`, `resolve_streaming_limits`; helpers: `row_to_policy_response`, `jsonb_to_string_vec`, `ip_ranges_to_jsonb`, `validate_resolution`, `validate_ip_ranges` |
+  | `server/src/domains/playback/handlers.rs` | Added 6 working handlers: `list_streaming_policies`, `get_streaming_policy`, `create_streaming_policy`, `update_streaming_policy`, `delete_streaming_policy`, `get_effective_streaming_limits` |
+  | `server/src/domains/playback/mod.rs` | Added 3 route groups: `/api/v1/streaming-policies` (GET, POST), `/api/v1/streaming-policies/{policy_id}` (GET, PATCH, DELETE), `/api/v1/users/{user_id}/streaming-limits` (GET) |
+
+  **Key decisions from Task 8:**
+
+  - **All policy endpoints require `Require<CanManageServer>`** — admin-only per STREAMING.md design
+  - **`is_default` flag management** — creating/updating a policy with `is_default = true` atomically clears the previous default in the same transaction; ensures exactly one default policy exists
+  - **System policy protection** — `is_system = true` policies cannot be deleted (PLAY_015); attempting to delete the sole default policy returns `CannotRemoveDefaultPolicy` (PLAY_016)
+  - **User cleanup on delete** — deleting a policy nullifies `streaming_policy_id` on all affected users (cascade via `ON DELETE SET NULL` in schema); explicit `UPDATE users SET streaming_policy_id = NULL` before DELETE for clarity
+  - **3-tier limit resolution via `resolve_streaming_limits`** — implements the cascade from STREAMING.md: user-level overrides (`max_streams`, `max_transcode_streams`, `bandwidth_limit_bps` from `users` table) → policy values (from `streaming_policies` row) → defaults (when no policy assigned, uses `is_default` policy; if none exists, returns permissive defaults)
+  - **`get_effective_streaming_limits` endpoint** — `GET /api/v1/users/{user_id}/streaming-limits` resolves the merged limits from users table + streaming_policies; intended for admin UI display and for `start_playback` (Task 12) to call during session creation
+  - **COALESCE partial-update pattern** — `update_streaming_policy` uses the same `COALESCE($N, existing)` pattern as libraries/users domains for all 15 updatable fields
+  - **IP range validation is structural** — `validate_ip_ranges` checks for `/` CIDR prefix presence; full CIDR parsing with `ipnet` deferred to playback session enforcement (Task 12) where the check is actually needed
+  - **Resolution validation against `VALID_TRANSCODE_RESOLUTIONS`** — matches the `CHECK` constraint on `streaming_policies.max_transcode_resolution` in the DDL (`'480p', '720p', '1080p', '4k'`)
+  - **No new workspace dependencies** — all functionality uses existing `sqlx`, `serde`, `serde_json`, `uuid`, `chrono`, `validator`
+
+  **Not yet implemented (deferred to later tasks):**
+
+  - Policy enforcement at playback start — `resolve_streaming_limits` is implemented but not yet called by `start_playback` (Task 12)
+  - IP range checking against client IP — `allowed_ip_ranges` / `blocked_ip_ranges` are stored and returned but not yet evaluated against actual client IPs (Task 12)
+  - `auto_terminate_paused_minutes` enforcement — stored in policy but not yet consumed by heartbeat logic (Task 12)
+  - Per-user streaming policy assignment in user CRUD — `streaming_policy_id` is readable via user responses but not yet settable via the users update endpoint (deferred to admin UI)
 9. Implement HLS manifest generation and segment serving
 10. Implement direct play / remux for compatible formats (no transcode)
 11. Implement HW accel runtime detection — NVIDIA, VAAPI, VideoToolbox, AMF
@@ -1646,7 +1677,7 @@ Phase 5: Libraries & Media (COMPLETE — 10 tasks) ─────────�
     ↓                                                      │
 Phase 6: Metadata Providers ←─── (enriches Phase 5)       │
     ↓                                                      │
-Phase 7: Streaming & Playback (Tasks 1–7 complete)              │
+Phase 7: Streaming & Playback (Tasks 1–8 complete)              │
     ↓                                                      │
 Phase 8: Web Client Core ←─── (consumes all above) ←──────┘
     ↓

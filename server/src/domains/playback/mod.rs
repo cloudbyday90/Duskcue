@@ -94,5 +94,19 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/api/v1/playlists/{playlist_id}/items/{item_id}",
             delete(handlers::remove_playlist_item),
         )
+        .route(
+            "/api/v1/streaming-policies",
+            get(handlers::list_streaming_policies).post(handlers::create_streaming_policy),
+        )
+        .route(
+            "/api/v1/streaming-policies/{policy_id}",
+            get(handlers::get_streaming_policy)
+                .patch(handlers::update_streaming_policy)
+                .delete(handlers::delete_streaming_policy),
+        )
+        .route(
+            "/api/v1/users/{user_id}/streaming-limits",
+            get(handlers::get_effective_streaming_limits),
+        )
         .with_state(state)
 }

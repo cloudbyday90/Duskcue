@@ -22,6 +22,7 @@ use validator::Validate;
 pub static VALID_STREAM_DECISIONS: &[&str] = &["direct_play", "direct_stream", "transcode"];
 pub static VALID_PLAYBACK_STATES: &[&str] = &["playing", "paused", "buffering", "stopped"];
 pub static VALID_PLAYLIST_VISIBILITIES: &[&str] = &["private", "shared", "public"];
+pub static VALID_TRANSCODE_RESOLUTIONS: &[&str] = &["480p", "720p", "1080p", "4k"];
 
 pub struct PlaySessionRow {
     pub id: Uuid,
@@ -257,4 +258,116 @@ pub struct PlaylistItemResponse {
 pub struct PlaylistItemListResponse {
     pub items: Vec<PlaylistItemResponse>,
     pub total: i64,
+}
+
+pub struct StreamingPolicyRow {
+    pub id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub name: String,
+    pub description: Option<String>,
+    pub max_streams: Option<i32>,
+    pub max_transcode_streams: Option<i32>,
+    pub bandwidth_limit_bps: Option<i64>,
+    pub allow_direct_play: bool,
+    pub allow_direct_stream: bool,
+    pub allow_transcode: bool,
+    pub max_transcode_resolution: Option<String>,
+    pub allow_transcode_4k: bool,
+    pub require_direct_play_4k: bool,
+    pub allowed_ip_ranges: serde_json::Value,
+    pub blocked_ip_ranges: serde_json::Value,
+    pub auto_terminate_paused_minutes: Option<i32>,
+    pub is_default: bool,
+    pub is_system: bool,
+    pub metadata: serde_json::Value,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct CreateStreamingPolicyRequest {
+    #[validate(length(min = 1, max = 100))]
+    pub name: String,
+    #[validate(length(max = 500))]
+    pub description: Option<String>,
+    pub max_streams: Option<i32>,
+    pub max_transcode_streams: Option<i32>,
+    pub bandwidth_limit_bps: Option<i64>,
+    pub allow_direct_play: Option<bool>,
+    pub allow_direct_stream: Option<bool>,
+    pub allow_transcode: Option<bool>,
+    pub max_transcode_resolution: Option<String>,
+    pub allow_transcode_4k: Option<bool>,
+    pub require_direct_play_4k: Option<bool>,
+    pub allowed_ip_ranges: Option<Vec<String>>,
+    pub blocked_ip_ranges: Option<Vec<String>>,
+    pub auto_terminate_paused_minutes: Option<i32>,
+    pub is_default: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct UpdateStreamingPolicyRequest {
+    #[validate(length(min = 1, max = 100))]
+    pub name: Option<String>,
+    #[validate(length(max = 500))]
+    pub description: Option<String>,
+    pub max_streams: Option<i32>,
+    pub max_transcode_streams: Option<i32>,
+    pub bandwidth_limit_bps: Option<i64>,
+    pub allow_direct_play: Option<bool>,
+    pub allow_direct_stream: Option<bool>,
+    pub allow_transcode: Option<bool>,
+    pub max_transcode_resolution: Option<String>,
+    pub allow_transcode_4k: Option<bool>,
+    pub require_direct_play_4k: Option<bool>,
+    pub allowed_ip_ranges: Option<Vec<String>>,
+    pub blocked_ip_ranges: Option<Vec<String>>,
+    pub auto_terminate_paused_minutes: Option<i32>,
+    pub is_default: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StreamingPolicyResponse {
+    pub id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub max_streams: Option<i32>,
+    pub max_transcode_streams: Option<i32>,
+    pub bandwidth_limit_bps: Option<i64>,
+    pub allow_direct_play: bool,
+    pub allow_direct_stream: bool,
+    pub allow_transcode: bool,
+    pub max_transcode_resolution: Option<String>,
+    pub allow_transcode_4k: bool,
+    pub require_direct_play_4k: bool,
+    pub allowed_ip_ranges: Vec<String>,
+    pub blocked_ip_ranges: Vec<String>,
+    pub auto_terminate_paused_minutes: Option<i32>,
+    pub is_default: bool,
+    pub is_system: bool,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StreamingPolicyListResponse {
+    pub items: Vec<StreamingPolicyResponse>,
+    pub total: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ResolvedStreamingLimitsResponse {
+    pub policy_id: Option<Uuid>,
+    pub policy_name: Option<String>,
+    pub max_streams: Option<i32>,
+    pub max_transcode_streams: Option<i32>,
+    pub bandwidth_limit_bps: Option<i64>,
+    pub allow_direct_play: bool,
+    pub allow_direct_stream: bool,
+    pub allow_transcode: bool,
+    pub max_transcode_resolution: Option<String>,
+    pub allow_transcode_4k: bool,
+    pub require_direct_play_4k: bool,
+    pub allowed_ip_ranges: Vec<String>,
+    pub blocked_ip_ranges: Vec<String>,
+    pub auto_terminate_paused_minutes: Option<i32>,
 }
