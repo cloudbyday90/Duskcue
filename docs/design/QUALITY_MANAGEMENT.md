@@ -690,4 +690,16 @@ Quality management error codes are defined in [ERROR_HANDLING.md](ERROR_HANDLING
 - `handlers.rs` — 13 working handlers (5 capability + 2 probe + 2 telemetry/QoE + 4 admin)
 - `mod.rs` — Router with 13 routes; `QualityError` integrated into `AppError` with `quality_error_to_http()` mapping
 
-**Not yet implemented** (Tasks 7–13): Transcoding decision engine, streaming policy system, HLS manifest/segment serving, direct play/remux, HW accel detection, play session tracking, user item data.
+**Decision engine** implemented in `server/src/services/decision_engine.rs` (Phase 7, Task 7). Pure shared service with:
+
+- Input structs: `MediaFileInfo`, `DeviceCapabilities`, `NetworkConditions`, `DecisionEngineConfig` — independent of DB types for full testability
+- Output struct: `PlaybackDecision` with `VideoDecision` (DirectPlay/Remux/Transcode/ToneMap/Convert/Error), `AudioDecision` (Passthrough/Transcode), `SubtitleDecision` (Passthrough/BurnIn/Convert)
+- 10-factor evaluation order: quality_mode bypass → codec support → bit depth → resolution → HDR/DV → container → bitrate → manual quality cap
+- Dolby Vision handling: Profile 7/8 with `allow_client_side_dv_fallback` → DirectPlay; Profile 7/8 without fallback flag → Remux (strip DV); Profile 5 → Transcode (no base layer)
+- Codec alias system: `CODEC_ALIASES` static maps common aliases (avc/avc1→h264, h265→hevc, dts-hd ma→dts_hd_ma, etc.)
+- Target codec selection: HEVC for 4K/10-bit, falls back to config default; audio prefers Opus→EAC3→AC3→config default
+- Resolution normalization: snaps to standard tiers (2160p/1080p/720p/480p)
+- Bitrate ladder: delegates to existing `TranscodeRendition::smart_ladder()` from `services/transcoding.rs`
+- 21 unit tests covering all decision paths
+
+**Not yet implemented** (Tasks 8–13): Streaming policy system, HLS manifest/segment serving, direct play/remux, HW accel detection, play session tracking, user item data.

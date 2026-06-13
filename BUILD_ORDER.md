@@ -1316,8 +1316,30 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
      - **Admin transcode breakdown from play_sessions metadata** — `get_transcode_breakdown()` queries `play_sessions` filtering on `metadata->>'playback_type'` for direct_play/direct_stream/transcode counts; returns direct_play_percentage as (direct_play / total) * 100
      - **No new workspace dependencies** — all functionality uses existing `sqlx`, `serde`, `serde_json`, `uuid`, `chrono`
 
- 7. Implement transcoding decision engine — 10-factor evaluation from QUALITY_MANAGEMENT.md
-8. Implement streaming policy system — `streaming_policies` table with per-user overrides
+ 7. ~~Implement transcoding decision engine — 10-factor evaluation from QUALITY_MANAGEMENT.md~~ **DONE**
+
+     **What was built for Task 7:**
+
+     | File | Purpose |
+     |---|---|
+     | `server/src/services/decision_engine.rs` | Pure shared service implementing the 10-factor transcoding decision engine: `MediaFileInfo`, `DeviceCapabilities`, `NetworkConditions`, `DecisionEngineConfig` input structs; `PlaybackDecision` output with `VideoDecision`, `AudioDecision`, `SubtitleDecision` enums; 10-factor evaluation (quality_mode bypass → codec → bit depth → resolution → HDR/DV → container → bitrate → manual quality cap); DV Profile 5/7/8 handling with client-side fallback; codec alias system; target codec selection; resolution normalization; bitrate ladder integration; 21 unit tests |
+     | `server/src/services/mod.rs` | Added `pub mod decision_engine;` |
+
+     **Key decisions from Task 7:**
+
+     - **Pure shared service, not a domain module** — `decision_engine.rs` lives in `services/` (not `domains/`) because it has zero DB/state dependencies; all inputs are passed as structs, making it fully testable without a database
+     - **Input structs separate from DB types** — `MediaFileInfo`, `DeviceCapabilities`, `NetworkConditions`, `DecisionEngineConfig` are independent of `DeviceProfileRow` and `QualityConfig`; callers construct them from DB data + request parameters
+     - **6 video outcomes** — `DirectPlay`, `Remux`, `Transcode`, `ToneMap`, `Convert` (unused, reserved for future container conversion), `Error`; matches QUALITY_MANAGEMENT.md 10-factor flow
+     - **Dolby Vision handling per VIDEO_FORMATS.md** — Profile 7/8 with `allow_client_side_dv_fallback=true` → `DirectPlay` (trust client decoder); Profile 7/8 HDR fallback without DV flag → `Remux` (strip DV layer); Profile 5 → `Transcode` (no HDR base layer); DV RPU stripping deferred to FFmpeg command builder (Task 9)
+     - **Codec alias system** — `CODEC_ALIASES` static maps common aliases (`avc`/`avc1` → `h264`, `h265`/`hevc` → `hevc`, `dts-hd ma` → `dts_hd_ma`, etc.) for tolerant matching against device capability sets
+     - **Target codec selection** — Prefers HEVC for 4K/10-bit content, falls back to `DecisionEngineConfig.default_transcode_codec`; audio target prefers Opus → EAC3 → AC3 → config default
+     - **Resolution normalization** — Snaps to standard tiers (2160p/1080p/720p/480p) based on height; prevents fractional resolutions
+     - **Bitrate ladder delegates to existing `TranscodeRendition::smart_ladder()`** — Reuses the 4-rung ABR ladder from `services/transcoding.rs`
+     - **`parse_json_string_set()` and `parse_resolution_value()` helpers** — Public helpers for converting DB JSONB values to `HashSet<String>` and resolution tuples when constructing `DeviceCapabilities` from `device_profiles` table
+     - **21 unit tests** covering: direct play (H.264+AAC+MKV, all compatible), transcode (unsupported codec, resolution exceeds device, 10-bit exceeds 8-bit device, bitrate exceeds network), tone mapping (HDR to SDR device), DV handling (Profile 7 client fallback, Profile 7 no fallback → strip, Profile 5 → transcode), container remux, audio passthrough/downmix, subtitle burn-in (PGS), subtitle convert (ASS→SRT), subtitle passthrough (SRT), codec alias matching, resolution normalization, resolution string parsing
+     - **No new workspace dependencies** — All functionality uses standard library collections, `serde` derive, and existing `TranscodeRendition` from `transcoding.rs`
+
+ 8. Implement streaming policy system — `streaming_policies` table with per-user overrides
 9. Implement HLS manifest generation and segment serving
 10. Implement direct play / remux for compatible formats (no transcode)
 11. Implement HW accel runtime detection — NVIDIA, VAAPI, VideoToolbox, AMF
@@ -1624,7 +1646,7 @@ Phase 5: Libraries & Media (COMPLETE — 10 tasks) ─────────�
     ↓                                                      │
 Phase 6: Metadata Providers ←─── (enriches Phase 5)       │
     ↓                                                      │
-Phase 7: Streaming & Playback (Tasks 1–6 complete)              │
+Phase 7: Streaming & Playback (Tasks 1–7 complete)              │
     ↓                                                      │
 Phase 8: Web Client Core ←─── (consumes all above) ←──────┘
     ↓
