@@ -129,6 +129,8 @@ pub async fn start_playback(
         media_item_id,
         library_id,
         stream_decision_str,
+        transcode_session_id,
+        Some(media_file_details.id),
     )
     .await?;
 
@@ -461,19 +463,29 @@ async fn create_play_session(
     media_item_id: Uuid,
     library_id: Uuid,
     stream_decision: &str,
+    transcode_session_id: Option<Uuid>,
+    media_file_id: Option<Uuid>,
 ) -> Result<Uuid, PlaybackError> {
     let session_id = Uuid::now_v7();
 
+    let metadata = serde_json::json!({
+        "transcode_session_id": transcode_session_id,
+        "media_file_id": media_file_id,
+        "current_state": "playing",
+        "current_position_ms": 0,
+    });
+
     sqlx::query(
         "INSERT INTO play_sessions (id, user_id, media_item_id, library_id, \
-         started_at, client_name, stream_decision) \
-         VALUES ($1, $2, $3, $4, now(), 'duskcue-web', $5)"
+         started_at, client_name, stream_decision, metadata) \
+         VALUES ($1, $2, $3, $4, now(), 'duskcue-web', $5, $6)"
     )
     .bind(session_id)
     .bind(user_id)
     .bind(media_item_id)
     .bind(library_id)
     .bind(stream_decision)
+    .bind(&metadata)
     .execute(pool)
     .await?;
 
@@ -481,23 +493,432 @@ async fn create_play_session(
 }
 
 pub async fn heartbeat(
-    _session_id: Uuid,
-    _position_ms: Option<i32>,
-    _state: Option<&str>,
-) -> Result<(), PlaybackError> {
-    todo!()
+    pool: &PgPool,
+    user_id: Uuid,
+    session_id: Uuid,
+    position_ms: Option<i32>,
+    state: Option<&str>,
+    is_paused: Option<bool>,
+    is_buffering: Option<bool>,
+) -> Result<HeartbeatResponse, PlaybackError> {
+    let row = sqlx::query(
+        "SELECT id, user_id, media_item_id, metadata \
+         FROM play_sessions \
+         WHERE id = $1 AND stopped_at IS NULL"
+    )
+    .bind(session_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(PlaybackError::SessionNotFound)?;
+
+    let session_user_id: Uuid = row.try_get("user_id").map_err(|_| PlaybackError::SessionNotFound)?;
+    if session_user_id != user_id {
+        return Err(PlaybackError::SessionNotFound);
+    }
+
+    let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
+    let metadata: serde_json::Value = row
+        .try_get("metadata")
+        .unwrap_or(serde_json::json!({}));
+
+    let prev_state = metadata
+        .get("current_state")
+        .and_then(|s| s.as_str())
+        .unwrap_or("playing")
+        .to_string();
+
+    let media_file_id = metadata
+        .get("media_file_id")
+        .and_then(|f| f.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok());
+
+    let effective_state = if let Some(s) = state {
+        s.to_string()
+    } else if is_buffering.unwrap_or(false) {
+        "buffering".to_string()
+    } else if is_paused.unwrap_or(false) {
+        "paused".to_string()
+    } else {
+        "playing".to_string()
+    };
+
+    let effective_position = position_ms.unwrap_or_else(|| {
+        metadata
+            .get("current_position_ms")
+            .and_then(|p| p.as_i64())
+            .map(|p| p as i32)
+            .unwrap_or(0)
+    });
+
+    if effective_state != prev_state {
+        let (event_type, details) = match (prev_state.as_str(), effective_state.as_str()) {
+            ("playing", "paused") => (
+                "pause",
+                serde_json::json!({"reason": "user_paused"}),
+            ),
+            ("paused", "playing") => (
+                "resume",
+                serde_json::json!({}),
+            ),
+            ("playing", "buffering") => (
+                "buffer_start",
+                serde_json::json!({}),
+            ),
+            ("buffering", "playing") => (
+                "buffer_end",
+                serde_json::json!({}),
+            ),
+            ("paused", "buffering") => (
+                "buffer_start",
+                serde_json::json!({"from": "paused"}),
+            ),
+            ("buffering", "paused") => (
+                "pause",
+                serde_json::json!({"from": "buffering"}),
+            ),
+            _ => ("heartbeat", serde_json::json!({})),
+        };
+        emit_play_event(
+            pool,
+            session_id,
+            user_id,
+            event_type,
+            Some(effective_position / 1000),
+            details,
+        )
+        .await?;
+    }
+
+    let merge = serde_json::json!({
+        "current_state": effective_state,
+        "current_position_ms": effective_position,
+        "last_heartbeat_at": chrono::Utc::now().to_rfc3339()
+    });
+
+    merge_session_metadata(pool, session_id, merge).await?;
+
+    if position_ms.is_some() {
+        upsert_user_item_data_heartbeat(
+            pool,
+            user_id,
+            media_item_id,
+            effective_position,
+            media_file_id,
+        )
+        .await?;
+    }
+
+    emit_play_event(
+        pool,
+        session_id,
+        user_id,
+        "heartbeat",
+        Some(effective_position / 1000),
+        serde_json::json!({"state": effective_state}),
+    )
+    .await?;
+
+    Ok(HeartbeatResponse {
+        session_id,
+        position_ms: effective_position,
+    })
 }
 
-pub async fn stop_playback(_session_id: Uuid) -> Result<(), PlaybackError> {
-    todo!()
+pub async fn stop_playback(
+    pool: &PgPool,
+    transcode_manager: &TranscodeManager,
+    user_id: Uuid,
+    session_id: Uuid,
+    final_position_ms: Option<i32>,
+) -> Result<StopPlaybackResponse, PlaybackError> {
+    let row = sqlx::query(
+        "SELECT id, user_id, media_item_id, started_at, metadata \
+         FROM play_sessions WHERE id = $1"
+    )
+    .bind(session_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(PlaybackError::SessionNotFound)?;
+
+    let session_user_id: Uuid = row.try_get("user_id").map_err(|_| PlaybackError::SessionNotFound)?;
+    if session_user_id != user_id {
+        return Err(PlaybackError::SessionNotFound);
+    }
+
+    let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
+    let started_at: chrono::DateTime<chrono::Utc> = row.try_get("started_at").unwrap_or_default();
+    let metadata: serde_json::Value = row
+        .try_get("metadata")
+        .unwrap_or(serde_json::json!({}));
+
+    let transcode_session_id = metadata
+        .get("transcode_session_id")
+        .and_then(|t| t.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok());
+
+    let media_file_id = metadata
+        .get("media_file_id")
+        .and_then(|f| f.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok());
+
+    let stored_position = metadata
+        .get("current_position_ms")
+        .and_then(|p| p.as_i64())
+        .map(|p| p as i32)
+        .unwrap_or(0);
+
+    let final_position = final_position_ms.unwrap_or(stored_position);
+
+    if let Some(ts_id) = transcode_session_id {
+        let _ = transcode_manager.stop_session(ts_id).await;
+    }
+
+    let runtime_seconds: Option<i32> = if let Some(mf_id) = media_file_id {
+        sqlx::query_scalar::<_, Option<i32>>(
+            "SELECT runtime_seconds FROM media_files WHERE id = $1"
+        )
+        .bind(mf_id)
+        .fetch_optional(pool)
+        .await?
+        .flatten()
+    } else {
+        None
+    };
+
+    let percent_complete = runtime_seconds
+        .filter(|&r| r > 0)
+        .map(|r| ((final_position as f64) / (r as f64 * 1000.0) * 100.0).min(100.0) as f32);
+
+    let is_watched = percent_complete.map(|p| p >= 90.0).unwrap_or(false);
+    let resume_position = if is_watched { 0 } else { final_position };
+
+    let now = chrono::Utc::now();
+    let duration_seconds = (now - started_at).num_seconds().max(0) as i32;
+
+    let stop_merge = serde_json::json!({
+        "current_state": "stopped",
+        "current_position_ms": final_position
+    });
+
+    sqlx::query(
+        "UPDATE play_sessions \
+         SET stopped_at = now(), \
+             duration_seconds = $2, \
+             percent_complete = $3, \
+             metadata = metadata || $4, \
+             updated_at = now() \
+         WHERE id = $1"
+    )
+    .bind(session_id)
+    .bind(duration_seconds)
+    .bind(percent_complete)
+    .bind(&stop_merge)
+    .execute(pool)
+    .await?;
+
+    emit_play_event(
+        pool,
+        session_id,
+        user_id,
+        "stop",
+        Some(final_position / 1000),
+        serde_json::json!({"duration_seconds": duration_seconds, "percent_complete": percent_complete}),
+    )
+    .await?;
+
+    let play_count = upsert_user_item_data_stop(
+        pool,
+        user_id,
+        media_item_id,
+        is_watched,
+        resume_position,
+        media_file_id,
+    )
+    .await?;
+
+    Ok(StopPlaybackResponse {
+        session_id,
+        media_item_id,
+        duration_seconds,
+        percent_complete,
+        is_watched,
+        play_count,
+    })
 }
 
-pub async fn seek(_session_id: Uuid, _position_ms: i32) -> Result<(), PlaybackError> {
-    todo!()
+pub async fn seek(
+    pool: &PgPool,
+    transcode_manager: &TranscodeManager,
+    user_id: Uuid,
+    session_id: Uuid,
+    position_ms: i32,
+    data_dir: &Path,
+) -> Result<SeekResponse, PlaybackError> {
+    if position_ms < 0 {
+        return Err(PlaybackError::InvalidSeekPosition(format!(
+            "position must be >= 0, got {position_ms}"
+        )));
+    }
+
+    let row = sqlx::query(
+        "SELECT id, user_id, media_item_id, metadata \
+         FROM play_sessions \
+         WHERE id = $1 AND stopped_at IS NULL"
+    )
+    .bind(session_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(PlaybackError::SessionNotFound)?;
+
+    let session_user_id: Uuid = row.try_get("user_id").map_err(|_| PlaybackError::SessionNotFound)?;
+    if session_user_id != user_id {
+        return Err(PlaybackError::SessionNotFound);
+    }
+
+    let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
+    let metadata: serde_json::Value = row
+        .try_get("metadata")
+        .unwrap_or(serde_json::json!({}));
+
+    let transcode_session_id = metadata
+        .get("transcode_session_id")
+        .and_then(|t| t.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok());
+
+    let (new_stream_url, new_transcode_session_id) = if let Some(ts_id) = transcode_session_id {
+        let new_session = transcode_manager
+            .seek_session(ts_id, position_ms as i64, data_dir)
+            .await?;
+
+        let new_id = new_session.id;
+        let url = format!("/api/v1/transcode/{}/manifest.m3u8", new_id);
+
+        let merge = serde_json::json!({
+            "transcode_session_id": new_id,
+            "current_position_ms": position_ms,
+            "current_state": "playing"
+        });
+        merge_session_metadata(pool, session_id, merge).await?;
+
+        (Some(url), Some(new_id))
+    } else {
+        let merge = serde_json::json!({
+            "current_position_ms": position_ms,
+            "current_state": "playing"
+        });
+        merge_session_metadata(pool, session_id, merge).await?;
+        (None, None)
+    };
+
+    upsert_user_item_data_heartbeat(
+        pool,
+        user_id,
+        media_item_id,
+        position_ms,
+        metadata
+            .get("media_file_id")
+            .and_then(|f| f.as_str())
+            .and_then(|s| Uuid::parse_str(s).ok()),
+    )
+    .await?;
+
+    emit_play_event(
+        pool,
+        session_id,
+        user_id,
+        "seek",
+        Some(position_ms / 1000),
+        serde_json::json!({"target_position_ms": position_ms}),
+    )
+    .await?;
+
+    Ok(SeekResponse {
+        session_id,
+        position_ms,
+        stream_url: new_stream_url,
+        transcode_session_id: new_transcode_session_id,
+    })
 }
 
-pub async fn get_playback_info(_session_id: Uuid) -> Result<(), PlaybackError> {
-    todo!()
+pub async fn get_playback_info(
+    pool: &PgPool,
+    transcode_manager: &TranscodeManager,
+    user_id: Uuid,
+    session_id: Uuid,
+) -> Result<PlaybackInfoResponse, PlaybackError> {
+    let row = sqlx::query(
+        "SELECT id, user_id, media_item_id, stream_decision, started_at, metadata \
+         FROM play_sessions WHERE id = $1"
+    )
+    .bind(session_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(PlaybackError::SessionNotFound)?;
+
+    let session_user_id: Uuid = row.try_get("user_id").map_err(|_| PlaybackError::SessionNotFound)?;
+    if session_user_id != user_id {
+        return Err(PlaybackError::SessionNotFound);
+    }
+
+    let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
+    let stream_decision: String = row.try_get("stream_decision").unwrap_or_default();
+    let started_at: chrono::DateTime<chrono::Utc> = row.try_get("started_at").unwrap_or_default();
+    let metadata: serde_json::Value = row
+        .try_get("metadata")
+        .unwrap_or(serde_json::json!({}));
+
+    let position_ms = metadata
+        .get("current_position_ms")
+        .and_then(|p| p.as_i64())
+        .map(|p| p as i32)
+        .unwrap_or(0);
+
+    let is_paused = metadata
+        .get("current_state")
+        .and_then(|s| s.as_str())
+        .map(|s| s == "paused")
+        .unwrap_or(false);
+
+    let transcode_session_id = metadata
+        .get("transcode_session_id")
+        .and_then(|t| t.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok());
+
+    let media_file_id = metadata
+        .get("media_file_id")
+        .and_then(|f| f.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok());
+
+    let transcode_progress = transcode_session_id
+        .and_then(|ts_id| {
+            transcode_manager
+                .get_session(&ts_id)
+                .and_then(|s| s.progress_percent())
+        });
+
+    let duration_ms: Option<i32> = if let Some(mf_id) = media_file_id {
+        sqlx::query_scalar::<_, Option<i32>>(
+            "SELECT runtime_seconds FROM media_files WHERE id = $1"
+        )
+        .bind(mf_id)
+        .fetch_optional(pool)
+        .await?
+        .flatten()
+        .map(|s| s * 1000)
+    } else {
+        None
+    };
+
+    Ok(PlaybackInfoResponse {
+        session_id,
+        media_item_id,
+        stream_decision,
+        position_ms,
+        duration_ms,
+        transcode_progress,
+        is_paused,
+        started_at,
+    })
 }
 
 pub async fn get_user_item_data(
@@ -505,6 +926,99 @@ pub async fn get_user_item_data(
     _media_item_id: Uuid,
 ) -> Result<(), PlaybackError> {
     todo!()
+}
+
+async fn emit_play_event(
+    pool: &PgPool,
+    session_id: Uuid,
+    user_id: Uuid,
+    event_type: &str,
+    position_seconds: Option<i32>,
+    details: serde_json::Value,
+) -> Result<(), PlaybackError> {
+    sqlx::query(
+        "INSERT INTO play_events (play_session_id, user_id, event_type, position_seconds, details) \
+         VALUES ($1, $2, $3, $4, $5)"
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .bind(event_type)
+    .bind(position_seconds)
+    .bind(&details)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+async fn merge_session_metadata(
+    pool: &PgPool,
+    session_id: Uuid,
+    merge: serde_json::Value,
+) -> Result<(), PlaybackError> {
+    sqlx::query(
+        "UPDATE play_sessions SET metadata = metadata || $2, updated_at = now() WHERE id = $1",
+    )
+    .bind(session_id)
+    .bind(&merge)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+async fn upsert_user_item_data_heartbeat(
+    pool: &PgPool,
+    user_id: Uuid,
+    media_item_id: Uuid,
+    position_ms: i32,
+    media_file_id: Option<Uuid>,
+) -> Result<(), PlaybackError> {
+    sqlx::query(
+        "INSERT INTO user_item_data (id, user_id, media_item_id, resume_position_ms, last_played_media_file_id) \
+         VALUES (uuidv7(), $1, $2, $3, $4) \
+         ON CONFLICT (user_id, media_item_id) \
+         DO UPDATE SET resume_position_ms = $3, \
+                       last_played_media_file_id = COALESCE($4, user_item_data.last_played_media_file_id), \
+                       updated_at = now()"
+    )
+    .bind(user_id)
+    .bind(media_item_id)
+    .bind(position_ms)
+    .bind(media_file_id)
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
+async fn upsert_user_item_data_stop(
+    pool: &PgPool,
+    user_id: Uuid,
+    media_item_id: Uuid,
+    is_watched: bool,
+    resume_position_ms: i32,
+    media_file_id: Option<Uuid>,
+) -> Result<i32, PlaybackError> {
+    let row = sqlx::query(
+        "INSERT INTO user_item_data (id, user_id, media_item_id, is_watched, play_count, last_played_at, resume_position_ms, last_played_media_file_id) \
+         VALUES (uuidv7(), $1, $2, $3, 1, now(), $4, $5) \
+         ON CONFLICT (user_id, media_item_id) \
+         DO UPDATE SET play_count = user_item_data.play_count + 1, \
+                       last_played_at = now(), \
+                       is_watched = user_item_data.is_watched OR $3, \
+                       resume_position_ms = $4, \
+                       last_played_media_file_id = COALESCE($5, user_item_data.last_played_media_file_id), \
+                       updated_at = now() \
+         RETURNING play_count"
+    )
+    .bind(user_id)
+    .bind(media_item_id)
+    .bind(is_watched)
+    .bind(resume_position_ms)
+    .bind(media_file_id)
+    .fetch_one(pool)
+    .await?;
+
+    let play_count: i32 = row.try_get("play_count").unwrap_or(1);
+    Ok(play_count)
 }
 
 pub async fn list_bookmarks(

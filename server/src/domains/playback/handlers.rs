@@ -66,34 +66,150 @@ pub async fn start_playback(
 }
 
 pub async fn heartbeat(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Json(_req): Json<HeartbeatRequest>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<HeartbeatRequest>,
 ) -> Result<Json<HeartbeatResponse>, AppError> {
-    todo!()
+    req.validate().map_err(|e| {
+        let errors: Vec<crate::error::FieldError> = e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errs)| {
+                errs.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect();
+        AppError::Validation { errors, instance: None }
+    })?;
+
+    let session_id = req.session_id.ok_or_else(|| {
+        let errors = vec![crate::error::FieldError {
+            field: "session_id".to_string(),
+            code: "required".to_string(),
+            message: "session_id is required".to_string(),
+        }];
+        AppError::Validation { errors, instance: None }
+    })?;
+
+    let result = service::heartbeat(
+        &state.pool,
+        user.user_id,
+        session_id,
+        req.position_ms,
+        req.state.as_deref(),
+        req.is_paused,
+        req.is_buffering,
+    )
+    .await?;
+
+    Ok(Json(result))
 }
 
 pub async fn stop_playback(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-) -> Result<Json<serde_json::Value>, AppError> {
-    todo!()
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<StopPlaybackRequest>,
+) -> Result<Json<StopPlaybackResponse>, AppError> {
+    req.validate().map_err(|e| {
+        let errors: Vec<crate::error::FieldError> = e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errs)| {
+                errs.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect();
+        AppError::Validation { errors, instance: None }
+    })?;
+
+    let session_id = req.session_id.ok_or_else(|| {
+        let errors = vec![crate::error::FieldError {
+            field: "session_id".to_string(),
+            code: "required".to_string(),
+            message: "session_id is required".to_string(),
+        }];
+        AppError::Validation { errors, instance: None }
+    })?;
+
+    let result = service::stop_playback(
+        &state.pool,
+        &state.transcode_manager,
+        user.user_id,
+        session_id,
+        req.position_ms,
+    )
+    .await?;
+
+    Ok(Json(result))
 }
 
 pub async fn seek(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Json(_req): Json<SeekRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    todo!()
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<SeekRequest>,
+) -> Result<Json<SeekResponse>, AppError> {
+    req.validate().map_err(|e| {
+        let errors: Vec<crate::error::FieldError> = e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errs)| {
+                errs.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect();
+        AppError::Validation { errors, instance: None }
+    })?;
+
+    let session_id = req.session_id.ok_or_else(|| {
+        let errors = vec![crate::error::FieldError {
+            field: "session_id".to_string(),
+            code: "required".to_string(),
+            message: "session_id is required".to_string(),
+        }];
+        AppError::Validation { errors, instance: None }
+    })?;
+
+    let position_ms = req.position_ms.ok_or_else(|| {
+        let errors = vec![crate::error::FieldError {
+            field: "position_ms".to_string(),
+            code: "required".to_string(),
+            message: "position_ms is required".to_string(),
+        }];
+        AppError::Validation { errors, instance: None }
+    })?;
+
+    let result = service::seek(
+        &state.pool,
+        &state.transcode_manager,
+        user.user_id,
+        session_id,
+        position_ms,
+        &state.bootstrap.data_dir,
+    )
+    .await?;
+
+    Ok(Json(result))
 }
 
 pub async fn get_playback_info(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Path(_session_id): Path<uuid::Uuid>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(session_id): Path<uuid::Uuid>,
 ) -> Result<Json<PlaybackInfoResponse>, AppError> {
-    todo!()
+    let result =
+        service::get_playback_info(&state.pool, &state.transcode_manager, user.user_id, session_id)
+            .await?;
+
+    Ok(Json(result))
 }
 
 pub async fn get_watch_data(

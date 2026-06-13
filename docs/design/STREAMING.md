@@ -613,6 +613,8 @@ When a multi-channel audio track must be transcoded for a stereo-only client:
 - Server emits `play_events` (play, pause, seek, buffer)
 - FFmpeg writes segments ahead of client position
 
+> **Implemented** in Phase 7 Task 12 — `heartbeat()` in `playback/service.rs` updates `play_sessions` metadata via JSONB `||` merge, detects state transitions (playing↔paused↔buffering) and emits corresponding `play_events`, upserts `user_item_data.resume_position_ms` with HOT-update friendly pattern. See [BUILD_ORDER.md](../../BUILD_ORDER.md) Task 12 for details.
+
 ### Seeking
 
 1. Client sends seek request (or requests a segment far from current position)
@@ -620,6 +622,8 @@ When a multi-channel audio track must be transcoded for a stereo-only client:
 3. Server starts new FFmpeg process from seek target position (`-ss` before `-i` for fast seek)
 4. Old segments before the seek point are deleted
 5. Client resumes from new manifest
+
+> **Implemented** in Phase 7 Task 12 — `seek()` in `playback/service.rs` delegates to `TranscodeManager::seek_session()` for transcoded sessions (returns new transcode session ID written to metadata and returned in `SeekResponse`); for Direct Play, updates metadata position only (client-side seek passthrough). See [BUILD_ORDER.md](../../BUILD_ORDER.md) Task 12 for details.
 
 ### Session End
 
@@ -629,6 +633,8 @@ When a multi-channel audio track must be transcoded for a stereo-only client:
 4. Server updates `play_sessions` with stop time, duration, percent complete
 5. Server updates `user_item_data` (play_count, is_watched, clear resume if >90% complete)
 6. Server removes in-memory transcode session
+
+> **Implemented** in Phase 7 Task 12 — `stop_playback()` in `playback/service.rs` kills transcode session (if active), emits stop `play_event`, marks `play_sessions.ended_at`/`percent_complete`/`playback_duration_seconds`, upserts `user_item_data` (increments `play_count`, sets `is_watched` at 90% threshold, clears `resume_position_ms` when watched). Session heartbeat timeout (60s auto-stop background task) and paused session auto-termination deferred. See [BUILD_ORDER.md](../../BUILD_ORDER.md) Task 12 for details.
 
 ### Transcode Cleanup
 

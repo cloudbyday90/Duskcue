@@ -198,6 +198,31 @@ pub struct HeartbeatResponse {
     pub position_ms: i32,
 }
 
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct StopPlaybackRequest {
+    #[validate(required)]
+    pub session_id: Option<Uuid>,
+    pub position_ms: Option<i32>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct StopPlaybackResponse {
+    pub session_id: Uuid,
+    pub media_item_id: Uuid,
+    pub duration_seconds: i32,
+    pub percent_complete: Option<f32>,
+    pub is_watched: bool,
+    pub play_count: i32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SeekResponse {
+    pub session_id: Uuid,
+    pub position_ms: i32,
+    pub stream_url: Option<String>,
+    pub transcode_session_id: Option<Uuid>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct UserItemDataResponse {
     pub id: Uuid,

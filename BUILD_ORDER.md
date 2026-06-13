@@ -1445,8 +1445,39 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
   - **Health endpoint enrichment** — `/health` response now includes `hardware_acceleration` object with all detection details; allows Docker HEALTHCHECK and admin dashboards to verify HW accel status
   - **Driver detection via sysfs** — `detect_vaapi_driver()` reads `/sys/class/drm/renderD*/device/driver` symlink to distinguish Intel (i915) from AMD (amdgpu) for QSV vs VAAPI selection
   - **No new workspace dependencies** — All functionality uses existing `std::process::Command`, `std::fs`, `metrics` crate, and `tracing`
- 12. Implement play session tracking — create `play_sessions` rows, heartbeat updates
+ 12. ~~Implement play session tracking — create `play_sessions` rows, heartbeat updates~~ **DONE**
  13. Implement `user_item_data` — watch state, resume position, play count
+
+ **What was built for Task 12:**
+
+ | File | Purpose |
+ |---|---|
+ | `server/src/domains/playback/service.rs` | Implemented 4 service functions: `heartbeat` (session ownership verification, state transition detection emitting appropriate `play_events`, metadata merge update, `user_item_data.resume_position_ms` upsert, heartbeat event emission); `stop_playback` (transcode session cleanup, `play_sessions` finalization with `stopped_at`/`duration_seconds`/`percent_complete`, `play_events` stop event, `user_item_data` play_count increment + `is_watched` + resume position logic); `seek` (transcode session restart via `seek_session()` for transcoded/remux sessions, direct play client-side seek passthrough, metadata + `user_item_data` position update, seek event emission); `get_playback_info` (session state from metadata, transcode progress from `TranscodeManager`, media file runtime lookup); Updated `create_play_session` to store `transcode_session_id`, `media_file_id`, `current_state`, and `current_position_ms` in `play_sessions.metadata` JSONB; Added 4 helper functions: `emit_play_event`, `merge_session_metadata`, `upsert_user_item_data_heartbeat`, `upsert_user_item_data_stop` |
+ | `server/src/domains/playback/handlers.rs` | Replaced 4 `todo!()` stubs with working handlers: `heartbeat` (validates `HeartbeatRequest`, extracts session_id, derives effective state from `state`/`is_paused`/`is_buffering` fields); `stop_playback` (accepts `StopPlaybackRequest` body, validates session_id required, passes final position); `seek` (validates `SeekRequest`, passes position to service); `get_playback_info` (takes `Path<session_id>`, returns `PlaybackInfoResponse`) |
+ | `server/src/domains/playback/types.rs` | Added `StopPlaybackRequest` (`session_id` required + optional `position_ms`), `StopPlaybackResponse` (session summary with `duration_seconds`, `percent_complete`, `is_watched`, `play_count`), `SeekResponse` (includes new `stream_url` and `transcode_session_id` for transcode restarts) |
+
+ **Key decisions from Task 12:**
+
+ - **Metadata JSONB for session state** — `play_sessions.metadata` stores `transcode_session_id`, `media_file_id`, `current_state`, `current_position_ms`, `last_heartbeat_at`; enables state transition detection without a separate in-memory session tracker. PostgreSQL `||` operator merges JSONB shallowly per-key — ideal for incremental metadata updates via `merge_session_metadata()`
+ - **State transition detection in heartbeat** — The `heartbeat()` function compares the effective state (derived from `state` field, falling back to `is_buffering`/`is_paused` booleans) against the previously stored `current_state` in metadata. Transitions emit corresponding `play_events`: `playing→paused` emits `pause`, `paused→playing` emits `resume`, `playing→buffering` emits `buffer_start`, `buffering→playing` emits `buffer_end`. Every heartbeat also emits a `heartbeat` event for analytics
+ - **Ownership verification prevents information leakage** — Both heartbeat and stop return `SessionNotFound` when `user_id` doesn't match, so a user can't distinguish between "session doesn't exist" and "session belongs to another user"
+ - **Session must be active for heartbeat/seek** — Heartbeat and seek queries filter `stopped_at IS NULL`; stopped sessions return `SessionNotFound`. Stop can finalize any session (stopped_at may already be set for idempotent stop)
+ - **`percent_complete` computation** — `(position_ms / (runtime_seconds * 1000)) * 100`, clamped to 100%. Runtime looked up from `media_files.runtime_seconds` via `media_file_id` stored in session metadata. Returns `None` if media_file_id or runtime unavailable
+ - **`is_watched` at 90% threshold** — Per STREAMING.md: when `percent_complete >= 90%`, `is_watched` is set to true and `resume_position_ms` is cleared to 0 (fully watched content doesn't need resume). Below 90%, resume position is preserved for "continue watching"
+ - **`user_item_data` upsert patterns** — Heartbeat uses `INSERT ... ON CONFLICT DO UPDATE SET resume_position_ms` (upsert without incrementing play_count); Stop uses `INSERT ... ON CONFLICT DO UPDATE SET play_count = play_count + 1` (atomic increment). Both use `COALESCE($media_file_id, existing)` to avoid nulling out the file reference on subsequent updates
+ - **Transcode seek returns new session ID** — `seek_session()` removes the old transcode session and creates a new one with a fresh UUID; the new `transcode_session_id` and `stream_url` are written to `play_sessions.metadata` and returned in `SeekResponse` so the client can request segments from the new session
+ - **Direct play seek is client-side** — For direct play sessions (no transcode), seek just updates position in metadata and `user_item_data`; the client handles the actual seek via HTTP Range requests
+ - **`get_playback_info` reads transcode progress live** — Queries `TranscodeManager.get_session()` for `progress_percent()` — reflects real-time FFmpeg progress from `-progress pipe:1` parsing
+ - **No new workspace dependencies** — all functionality uses existing `sqlx`, `serde_json`, `chrono`, `uuid`
+ - **No new error variants** — existing `SessionNotFound`, `InvalidSeekPosition` cover all failure cases
+
+ **Not yet implemented (deferred to later tasks/phases):**
+
+ - Session heartbeat timeout (60s no-heartbeat auto-stop) — requires a background cleanup task, deferred
+ - Paused session auto-termination per `streaming_policies.auto_terminate_paused_minutes` — requires querying user's streaming policy on every heartbeat; deferred to a background task or future enhancement
+ - Streaming policy enforcement at playback start (`resolve_streaming_limits` is implemented but not called by `start_playback` — deferred to a future integration task)
+ - IP range checking against client IP (`allowed_ip_ranges`/`blocked_ip_ranges` stored but not evaluated)
+ - Task 13: `user_item_data` standalone read endpoint (`GET /api/v1/items/{id}/watch-data`), bookmarks, playlists — all remain `todo!()` stubs
 
 **Verification:** User clicks play on a movie, HLS stream starts, segments are served, play session is tracked, resume position updates. Transcoding activates for incompatible formats. HW acceleration detected and used when available.
 
@@ -1748,7 +1779,7 @@ Phase 5: Libraries & Media (COMPLETE — 10 tasks) ─────────�
     ↓                                                      │
 Phase 6: Metadata Providers ←─── (enriches Phase 5)       │
     ↓                                                      │
-Phase 7: Streaming & Playback (Tasks 1–8 complete)              │
+Phase 7: Streaming & Playback (Tasks 1–12 complete)              │
     ↓                                                      │
 Phase 8: Web Client Core ←─── (consumes all above) ←──────┘
     ↓
