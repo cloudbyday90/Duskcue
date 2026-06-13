@@ -216,6 +216,7 @@ project/
 │       │   ├── storyboards.rs    # FFmpeg thumbnail extraction, WebP sprite generation
 │       │   ├── geoip.rs          # MaxMind GeoLite2 MMDB lookups (maxminddb + ArcSwap)
 │       │   ├── sandbox.rs        # FFmpeg per-process sandboxing (landlock + seccompiler) — **implemented**
+│       │   ├── hw_accel.rs       # Hardware acceleration runtime detection (FFmpeg probe, platform checks, priority selection) — **implemented**
 │       │
 │       └── workers/              # Background task definitions
 │           ├── mod.rs

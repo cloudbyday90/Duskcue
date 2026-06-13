@@ -1416,7 +1416,35 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
  - **No new workspace dependencies** — All functionality uses existing `sqlx`, `serde_json`, `uuid`, `chrono`, `decision_engine`, and `transcoding` modules.
  - **No new error variants** — Existing `PlaybackError::MediaNotFound`, `FileNotFound`, `TranscodeCapacityReached`, `FfmpegFailed` cover all failure cases in the playback start flow.
 
- 11. Implement HW accel runtime detection — NVIDIA, VAAPI, VideoToolbox, AMF
+  11. ~~Implement HW accel runtime detection — NVIDIA, VAAPI, VideoToolbox, AMF~~ **DONE**
+
+  **What was built for Task 11:**
+
+  | File | Purpose |
+  |---|---|
+  | `server/src/services/hw_accel.rs` | Dedicated HW accel runtime detection module: `HwAccelDetectionResult` struct with method, platform availability flags, verified encoders, and source; `detect_hw_accel_runtime()` with multi-step detection pipeline; `probe_ffmpeg_encoders()` and `probe_ffmpeg_hwaccels()` for FFmpeg capability verification; `check_nvidia_hardware()`, `check_vaapi_hardware()`, `detect_vaapi_driver()` for platform-specific hardware detection; `emit_metrics()` for Prometheus gauge emission; `collect_encoders()` for method-relevant encoder listing |
+  | `server/src/services/mod.rs` | Added `pub mod hw_accel;` |
+  | `server/src/services/transcoding.rs` | Replaced inline `detect_hw_accel()` with `hw_accel::detect_hw_accel_runtime()`; `TranscodeManager.detected_hw_accel` renamed to `hw_detection` storing `HwAccelDetectionResult`; added `get_hw_detection()` public accessor; `redetect_hw_accel()` updated to pass both `TranscodingConfig` and `CpuConfig`; removed unused `TranscodingConfig` import |
+  | `server/src/router.rs` | Health endpoint `/health` now includes `hardware_acceleration` object with `method`, `source`, `nvidia_detected`, `vaapi_available`, `qsv_available`, `amf_available`, `videotoolbox_available`, `verified_encoders` |
+
+  **Key decisions from Task 11:**
+
+  - **Dedicated module over inline expansion** — `services/hw_accel.rs` follows the project's "shared services over singletons" convention; detection logic separated from session management in transcoding.rs
+  - **`HwAccelDetectionResult` stores full detection context** — Not just the chosen method; includes all platform availability flags and verified encoder list for admin diagnostics and health endpoint
+  - **Three-layer detection: config → FFmpeg probe → platform check** — (1) Config can force a specific method or disable auto-detect; (2) FFmpeg `-encoders` and `-hwaccels` probed synchronously at startup via `std::process::Command` to verify encoder availability; (3) Platform-specific device file checks confirm hardware presence
+  - **Priority order per STREAMING.md** — NVENC > QSV > VAAPI > VideoToolbox > AMF > Software; each checked in sequence with both FFmpeg encoder availability AND platform hardware confirmation
+  - **NVIDIA detection** — Checks `/dev/nvidia0` or `/dev/nvidia-uvm` on Linux; falls back to `nvidia-smi` command availability (cross-platform); verifies `h264_nvenc`/`hevc_nvenc` in FFmpeg encoders
+  - **Intel QSV detection** — On Linux: `/dev/dri/renderD*` with i915 driver → QSV; On non-Linux: FFmpeg has `h264_qsv` and `-hwaccels` has `qsv`
+  - **VAAPI detection** — Linux only: `/dev/dri/renderD*` device file + FFmpeg `h264_vaapi`/`hevc_vaapi` + `-hwaccels` has `vaapi`; driver detected via `/sys/class/drm/renderD*/device/driver` symlink
+  - **VideoToolbox detection** — `cfg!(target_os = "macos")` + FFmpeg `h264_videotoolbox`/`hevc_videotoolbox`
+  - **AMD AMF detection** — FFmpeg has `h264_amf`/`hevc_amf`; primarily a Windows fallback (on Linux, AMD uses VAAPI which is higher priority)
+  - **`hw_accel_auto_detect` respected** — When `CpuConfig.hw_accel_auto_detect` is false, immediately returns Software regardless of available hardware
+  - **Forced method with encoder verification** — When `TranscodingConfig.hardware_accel` is set to a specific method (not "auto"), verifies the encoder exists in FFmpeg before accepting; falls back to Software if encoder missing
+  - **Synchronous FFmpeg probing at startup** — `std::process::Command` (not tokio) used for `ffmpeg -hide_banner -encoders` and `ffmpeg -hide_banner -hwaccels`; acceptable one-time cost at startup; takes milliseconds
+  - **Prometheus `system.cpu.hw_accel` gauge** — Per CPU.md spec: one gauge per method label (`nvenc`, `qsv`, `vaapi`, `videotoolbox`, `amf`, `software`), value 1 for active method, 0 for others; emitted during detection
+  - **Health endpoint enrichment** — `/health` response now includes `hardware_acceleration` object with all detection details; allows Docker HEALTHCHECK and admin dashboards to verify HW accel status
+  - **Driver detection via sysfs** — `detect_vaapi_driver()` reads `/sys/class/drm/renderD*/device/driver` symlink to distinguish Intel (i915) from AMD (amdgpu) for QSV vs VAAPI selection
+  - **No new workspace dependencies** — All functionality uses existing `std::process::Command`, `std::fs`, `metrics` crate, and `tracing`
  12. Implement play session tracking — create `play_sessions` rows, heartbeat updates
  13. Implement `user_item_data` — watch state, resume position, play count
 

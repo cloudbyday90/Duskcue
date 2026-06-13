@@ -186,6 +186,21 @@ fn detect_hw_accel() -> HwAccelMethod {
 }
 ```
 
+**Implementation notes (Phase 7, Task 11):**
+
+Detection implemented in `server/src/services/hw_accel.rs` as `detect_hw_accel_runtime()`. Returns `HwAccelDetectionResult` with the chosen method, all platform availability flags, verified FFmpeg encoders, and source (config/auto/software_forced). Detection flow:
+
+1. **Config override** — `TranscodingConfig.hardware_accel` forces a specific method; `CpuConfig.hw_accel_auto_detect = false` forces Software
+2. **FFmpeg probing** — `probe_ffmpeg_encoders()` runs `ffmpeg -hide_banner -encoders` synchronously; `probe_ffmpeg_hwaccels()` runs `ffmpeg -hide_banner -hwaccels`
+3. **Platform checks** — NVIDIA: `/dev/nvidia*` or `nvidia-smi`; VAAPI: `/dev/dri/renderD*` with driver detection via `/sys/class/drm/renderD*/device/driver` sysfs symlink (distinguishes Intel i915 from AMD amdgpu); QSV: Intel driver + FFmpeg qsv encoder + hwaccels; VideoToolbox: `cfg!(target_os = "macos")`; AMF: FFmpeg amf encoder
+4. **Priority order** — NVENC > QSV > VAAPI > VideoToolbox > AMF > Software
+5. **Encoder verification** — Forced methods verified against FFmpeg encoder list; falls back to Software if encoder unavailable
+6. **Prometheus** — `system.cpu.hw_accel` gauge emitted per method label (1=active, 0=inactive)
+7. **Health endpoint** — `/health` includes `hardware_acceleration` object with all detection details
+8. **Re-detection** — `TranscodeManager::redetect_hw_accel()` re-runs full detection pipeline
+
+RKMPP detection deferred to future enhancement (requires `ffmpeg-rockchip` build detection).
+
 ### Per-Architecture Acceleration
 
 | Platform | Method | FFmpeg Encoder | Availability |

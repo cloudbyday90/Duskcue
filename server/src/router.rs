@@ -53,11 +53,23 @@ async fn health_check(State(state): State<AppState>) -> Json<Value> {
         .map(|t| t.elapsed().as_secs())
         .unwrap_or(0);
 
+    let hw = state.transcode_manager.get_hw_detection();
+
     Json(json!({
         "status": status,
         "version": env!("CARGO_PKG_VERSION"),
         "database": db_status,
         "uptime_seconds": uptime,
+        "hardware_acceleration": {
+            "method": hw.method.as_str(),
+            "source": hw.source,
+            "nvidia_detected": hw.nvidia_detected,
+            "vaapi_available": hw.vaapi_available,
+            "qsv_available": hw.qsv_available,
+            "amf_available": hw.amf_available,
+            "videotoolbox_available": hw.videotoolbox_available,
+            "verified_encoders": hw.verified_encoders,
+        }
     }))
 }
 

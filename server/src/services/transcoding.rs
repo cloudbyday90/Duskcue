@@ -31,7 +31,8 @@ use tokio_process_tools::{
 use uuid::Uuid;
 
 use crate::domains::playback::error::PlaybackError;
-use crate::state::{CpuConfig, RuntimeConfig, TranscodingConfig};
+use crate::services::hw_accel::{self, HwAccelDetectionResult};
+use crate::state::{CpuConfig, RuntimeConfig};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -234,7 +235,7 @@ pub struct TranscodeManager {
     sessions: Arc<DashMap<Uuid, TranscodeSession>>,
     semaphore: Arc<Semaphore>,
     config: Arc<ArcSwap<RuntimeConfig>>,
-    detected_hw_accel: Arc<std::sync::RwLock<HwAccelMethod>>,
+    hw_detection: Arc<std::sync::RwLock<HwAccelDetectionResult>>,
 }
 
 impl TranscodeManager {
@@ -244,13 +245,14 @@ impl TranscodeManager {
             .resource_limits
             .max_concurrent_transcodes as usize;
 
-        let hw_accel = detect_hw_accel(&config.load().transcoding);
+        let runtime = config.load();
+        let detection = hw_accel::detect_hw_accel_runtime(&runtime.transcoding, &runtime.cpu);
 
         Self {
             sessions: Arc::new(DashMap::new()),
             semaphore: Arc::new(Semaphore::new(max_concurrent.max(1))),
             config,
-            detected_hw_accel: Arc::new(std::sync::RwLock::new(hw_accel)),
+            hw_detection: Arc::new(std::sync::RwLock::new(detection)),
         }
     }
 
@@ -596,17 +598,33 @@ impl TranscodeManager {
     }
 
     pub fn get_hw_accel(&self) -> HwAccelMethod {
-        self.detected_hw_accel
+        self.hw_detection
             .read()
-            .map(|g| *g)
+            .map(|g| g.method)
             .unwrap_or(HwAccelMethod::Software)
+    }
+
+    pub fn get_hw_detection(&self) -> HwAccelDetectionResult {
+        self.hw_detection
+            .read()
+            .map(|g| g.clone())
+            .unwrap_or_else(|_| HwAccelDetectionResult {
+                method: HwAccelMethod::Software,
+                nvidia_detected: false,
+                vaapi_available: false,
+                qsv_available: false,
+                amf_available: false,
+                videotoolbox_available: false,
+                verified_encoders: vec![],
+                source: "error".to_string(),
+            })
     }
 
     pub fn redetect_hw_accel(&self) {
         let config = self.config.load();
-        let method = detect_hw_accel(&config.transcoding);
-        if let Ok(mut guard) = self.detected_hw_accel.write() {
-            *guard = method;
+        let result = hw_accel::detect_hw_accel_runtime(&config.transcoding, &config.cpu);
+        if let Ok(mut guard) = self.hw_detection.write() {
+            *guard = result;
         }
     }
 
@@ -636,42 +654,6 @@ impl TranscodeManager {
             {
                     let _ = tokio::fs::remove_dir_all(entry.path()).await;
                 }
-        }
-    }
-}
-
-fn detect_hw_accel(config: &TranscodingConfig) -> HwAccelMethod {
-    match config.hardware_accel.as_str() {
-        "nvenc" => HwAccelMethod::Nvenc,
-        "qsv" => HwAccelMethod::Qsv,
-        "vaapi" => HwAccelMethod::Vaapi,
-        "videotoolbox" => HwAccelMethod::VideoToolbox,
-        "amf" => HwAccelMethod::Amf,
-        "software" => HwAccelMethod::Software,
-        _ => {
-            #[cfg(target_os = "macos")]
-            {
-                HwAccelMethod::VideoToolbox
-            }
-
-            #[cfg(not(target_os = "macos"))]
-            {
-                #[cfg(target_os = "linux")]
-                {
-                    if std::path::Path::new("/dev/nvidia0").exists() {
-                        HwAccelMethod::Nvenc
-                    } else if std::path::Path::new("/dev/dri/renderD128").exists() {
-                        HwAccelMethod::Vaapi
-                    } else {
-                        HwAccelMethod::Software
-                    }
-                }
-
-                #[cfg(not(target_os = "linux"))]
-                {
-                    HwAccelMethod::Software
-                }
-            }
         }
     }
 }
