@@ -1446,7 +1446,41 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
   - **Driver detection via sysfs** — `detect_vaapi_driver()` reads `/sys/class/drm/renderD*/device/driver` symlink to distinguish Intel (i915) from AMD (amdgpu) for QSV vs VAAPI selection
   - **No new workspace dependencies** — All functionality uses existing `std::process::Command`, `std::fs`, `metrics` crate, and `tracing`
  12. ~~Implement play session tracking — create `play_sessions` rows, heartbeat updates~~ **DONE**
- 13. Implement `user_item_data` — watch state, resume position, play count
+ 13. ~~Implement `user_item_data` — watch state, resume position, play count~~ **DONE**
+
+  **What was built for Task 13:**
+
+  | File | Purpose |
+  |---|---|
+  | `server/src/domains/playback/types.rs` | Added `UpdateWatchDataRequest` (Deserialize + Validate, fields: `is_favorite`, `user_rating` 1–10, `audio_stream_index`, `subtitle_stream_index`) |
+  | `server/src/domains/playback/service.rs` | Implemented 12 service functions: `get_user_item_data` (returns defaults for unplayed items), `update_user_item_data` (COALESCE upsert for favorite/rating/stream indices), `list_bookmarks`, `create_bookmark`, `delete_bookmark`, `list_playlists`, `get_playlist`, `create_playlist`, `update_playlist` (COALESCE partial update), `delete_playlist` (soft-delete), `list_playlist_items` (JOIN media_items for title), `add_playlist_item` (auto-position via MAX+1000 spacing), `remove_playlist_item`; helpers: `row_to_playlist_response`, `verify_playlist_ownership`, `update_playlist_counters` |
+  | `server/src/domains/playback/handlers.rs` | Replaced 12 `todo!()` stubs with working handlers: `get_watch_data`, `update_watch_data`, `list_bookmarks`, `create_bookmark`, `delete_bookmark`, `list_playlists`, `get_playlist`, `create_playlist`, `update_playlist`, `delete_playlist`, `list_playlist_items`, `add_playlist_item`, `remove_playlist_item` |
+  | `server/src/domains/playback/mod.rs` | Added `PUT` handler on `/api/v1/items/{item_id}/watch-data` route (GET + PUT) |
+
+  **Key decisions from Task 13:**
+
+  - **`get_user_item_data` returns defaults for unplayed items** — When no `user_item_data` row exists (user never interacted with the item), returns a response with `id: Uuid::nil()`, `is_watched: false`, `play_count: 0`, `resume_position_ms: 0`, `is_favorite: false`, `user_rating: None` — matching the quality domain's conservative-defaults-on-missing pattern, so the web client always gets a valid response without 404s for first-time item views
+  - **`update_user_item_data` uses COALESCE upsert** — `INSERT ... ON CONFLICT (user_id, media_item_id) DO UPDATE SET is_favorite = COALESCE($3, existing)` pattern, same as all other domains; `None` fields preserve existing values
+  - **`PUT` method on watch-data endpoint** — Chose `PUT` over `PATCH` for setting favorite/rating/stream indices because the update is an upsert (creates the row if it doesn't exist); PATCH implies partial modification of an existing resource
+  - **Bookmarks ordered by position** — `list_bookmarks` returns items ordered by `position_ms ASC` for chronological seek-bar ordering
+  - **Bookmark deletion scoped by user_id + media_item_id + bookmark_id** — Triple-key DELETE prevents BOLA: a user cannot delete another user's bookmarks even with the bookmark UUID, and the `media_item_id` in the URL path is validated in the WHERE clause
+  - **Playlists use soft-delete** — `delete_playlist` sets `deleted_at = now()` rather than `DELETE FROM`, matching DATABASE.md design (users expect trash/undo); all playlist queries filter `deleted_at IS NULL`
+  - **Playlist visibility validation** — `create_playlist` and `update_playlist` validate against `VALID_PLAYLIST_VISIBILITIES` (`private`, `shared`, `public`); default is `private`
+  - **Playlist item auto-positioning with integer spacing** — When `position` is not provided, `add_playlist_item` uses `MAX(position) + 1000` (or `1000` for empty playlists), matching DATABASE.md integer-spacing convention (1000, 2000, 3000) that allows future insertions without renumbering
+  - **Playlist item unique violation → PlaylistItemNotFound** — The `UNIQUE(playlist_id, media_item_id)` constraint prevents duplicate items; violations are caught via `sqlx::Error::Database::is_unique_violation()` and mapped to `PlaylistItemNotFound`
+  - **`update_playlist_counters` maintains denormalized `item_count`** — Called after add/remove playlist item; updates `item_count` via `SELECT COUNT(*)` subquery to avoid stale counters. `total_duration_seconds` not yet recomputed (stays at 0) — deferred to Phase 8 when the web client needs it
+  - **`verify_playlist_ownership` helper** — Shared by all playlist item operations; queries `playlists WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`, returns `PlaylistNotFound` on failure — prevents BOLA on playlist sub-resources
+  - **`PlaylistItemResponse` includes media title** — `list_playlist_items` JOINs `media_items` to populate `title` so the web client can display item names without a second round-trip
+  - **All endpoints require `AuthenticatedUser`** — No capability checks on watch-data/bookmarks/playlists; these are user-scoped resources (each user manages their own). Admin-only access not needed since all queries are scoped to `user_id` from the authenticated session
+  - **No new workspace dependencies** — all functionality uses existing `sqlx`, `validator`, `serde`, `uuid`, `chrono` crates
+
+  **Not yet implemented (deferred to later phases):**
+
+  - Smart playlist filter evaluation — `is_smart` flag and `smart_filter` JSONB stored but not evaluated at query time (Phase 12 collections shares the filter syntax)
+  - Shared/public playlist visibility — listing currently only returns the user's own playlists; visibility-based listing (shared/public from other users) deferred to Phase 8 web client
+  - `total_duration_seconds` recomputation on add/remove item — counter stays at 0; deferred to when web client needs it
+  - Playlist renumbering — when gaps between positions become too small after many insertions, a renumber task is needed (deferred)
+  - Continue Watching / Up Next query endpoints — the `user_item_data` table has the necessary partial indexes but dedicated endpoints are deferred to Phase 8 web client
 
  **What was built for Task 12:**
 
@@ -1471,21 +1505,22 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
  - **No new workspace dependencies** — all functionality uses existing `sqlx`, `serde_json`, `chrono`, `uuid`
  - **No new error variants** — existing `SessionNotFound`, `InvalidSeekPosition` cover all failure cases
 
- **Not yet implemented (deferred to later tasks/phases):**
+  **Not yet implemented (deferred to later tasks/phases):**
 
- - Session heartbeat timeout (60s no-heartbeat auto-stop) — requires a background cleanup task, deferred
- - Paused session auto-termination per `streaming_policies.auto_terminate_paused_minutes` — requires querying user's streaming policy on every heartbeat; deferred to a background task or future enhancement
- - Streaming policy enforcement at playback start (`resolve_streaming_limits` is implemented but not called by `start_playback` — deferred to a future integration task)
- - IP range checking against client IP (`allowed_ip_ranges`/`blocked_ip_ranges` stored but not evaluated)
- - Task 13: `user_item_data` standalone read endpoint (`GET /api/v1/items/{id}/watch-data`), bookmarks, playlists — all remain `todo!()` stubs
+  - Session heartbeat timeout (60s no-heartbeat auto-stop) — requires a background cleanup task, deferred
+  - Paused session auto-termination per `streaming_policies.auto_terminate_paused_minutes` — requires querying user's streaming policy on every heartbeat; deferred to a background task or future enhancement
+  - Streaming policy enforcement at playback start (`resolve_streaming_limits` is implemented but not called by `start_playback` — deferred to a future integration task)
+  - IP range checking against client IP (`allowed_ip_ranges`/`blocked_ip_ranges` stored but not evaluated)
 
-**Verification:** User clicks play on a movie, HLS stream starts, segments are served, play session is tracked, resume position updates. Transcoding activates for incompatible formats. HW acceleration detected and used when available.
+**Verification:** User clicks play on a movie, HLS stream starts, segments are served, play session is tracked, resume position updates. Transcoding activates for incompatible formats. HW acceleration detected and used when available. Watch data is readable and settable (favorite, rating). Bookmarks can be created, listed, and deleted. Playlists support full CRUD with ordered items.
 
 ---
 
 ## Phase 8 — Web Client Core
 
 **Goal:** Functional web UI for browsing libraries, playing media, and basic settings.
+
+**Prerequisites:** Phase 7 complete. All playback API endpoints are available — playback session lifecycle (start/heartbeat/stop/seek/info), Direct Play/Remux/Transcode streaming, HLS manifest/segment serving, watch data (GET/PUT favorite+rating), bookmarks (list/create/delete), playlists (CRUD + items), streaming policies (admin CRUD), and quality management (device capabilities, network telemetry, QoE reports).
 
 **Authoritative docs:**
 
@@ -1779,7 +1814,7 @@ Phase 5: Libraries & Media (COMPLETE — 10 tasks) ─────────�
     ↓                                                      │
 Phase 6: Metadata Providers ←─── (enriches Phase 5)       │
     ↓                                                      │
-Phase 7: Streaming & Playback (Tasks 1–12 complete)              │
+Phase 7: Streaming & Playback (COMPLETE — 13 tasks)              │
     ↓                                                      │
 Phase 8: Web Client Core ←─── (consumes all above) ←──────┘
     ↓

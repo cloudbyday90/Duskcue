@@ -213,101 +213,202 @@ pub async fn get_playback_info(
 }
 
 pub async fn get_watch_data(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Path(_item_id): Path<uuid::Uuid>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(item_id): Path<uuid::Uuid>,
 ) -> Result<Json<UserItemDataResponse>, AppError> {
-    todo!()
+    let result = service::get_user_item_data(&state.pool, user.user_id, item_id).await?;
+    Ok(Json(result))
+}
+
+pub async fn update_watch_data(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(item_id): Path<uuid::Uuid>,
+    Json(req): Json<UpdateWatchDataRequest>,
+) -> Result<Json<UserItemDataResponse>, AppError> {
+    req.validate().map_err(|e| {
+        let errors: Vec<crate::error::FieldError> = e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errs)| {
+                errs.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect();
+        AppError::Validation { errors, instance: None }
+    })?;
+
+    let result =
+        service::update_user_item_data(&state.pool, user.user_id, item_id, &req).await?;
+    Ok(Json(result))
 }
 
 pub async fn list_bookmarks(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Path(_item_id): Path<uuid::Uuid>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(item_id): Path<uuid::Uuid>,
 ) -> Result<Json<BookmarkListResponse>, AppError> {
-    todo!()
+    let result = service::list_bookmarks(&state.pool, user.user_id, item_id).await?;
+    Ok(Json(result))
 }
 
 pub async fn create_bookmark(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Path(_item_id): Path<uuid::Uuid>,
-    Json(_req): Json<CreateBookmarkRequest>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(item_id): Path<uuid::Uuid>,
+    Json(req): Json<CreateBookmarkRequest>,
 ) -> Result<Json<BookmarkResponse>, AppError> {
-    todo!()
+    req.validate().map_err(|e| {
+        let errors: Vec<crate::error::FieldError> = e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errs)| {
+                errs.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect();
+        AppError::Validation { errors, instance: None }
+    })?;
+
+    let result = service::create_bookmark(&state.pool, user.user_id, item_id, &req).await?;
+    Ok(Json(result))
 }
 
 pub async fn delete_bookmark(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Path((_item_id, _bookmark_id)): Path<(uuid::Uuid, uuid::Uuid)>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path((item_id, bookmark_id)): Path<(uuid::Uuid, uuid::Uuid)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    todo!()
+    service::delete_bookmark(&state.pool, user.user_id, item_id, bookmark_id).await?;
+    Ok(Json(serde_json::json!({"deleted": true})))
 }
 
 pub async fn list_playlists(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
 ) -> Result<Json<PlaylistListResponse>, AppError> {
-    todo!()
+    let result = service::list_playlists(&state.pool, user.user_id).await?;
+    Ok(Json(result))
 }
 
 pub async fn get_playlist(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Path(_playlist_id): Path<uuid::Uuid>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(playlist_id): Path<uuid::Uuid>,
 ) -> Result<Json<PlaylistResponse>, AppError> {
-    todo!()
+    let result = service::get_playlist(&state.pool, user.user_id, playlist_id).await?;
+    Ok(Json(result))
 }
 
 pub async fn create_playlist(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Json(_req): Json<CreatePlaylistRequest>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<CreatePlaylistRequest>,
 ) -> Result<Json<PlaylistResponse>, AppError> {
-    todo!()
+    req.validate().map_err(|e| {
+        let errors: Vec<crate::error::FieldError> = e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errs)| {
+                errs.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect();
+        AppError::Validation { errors, instance: None }
+    })?;
+
+    let result = service::create_playlist(&state.pool, user.user_id, &req).await?;
+    Ok(Json(result))
 }
 
 pub async fn update_playlist(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Path(_playlist_id): Path<uuid::Uuid>,
-    Json(_req): Json<UpdatePlaylistRequest>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(playlist_id): Path<uuid::Uuid>,
+    Json(req): Json<UpdatePlaylistRequest>,
 ) -> Result<Json<PlaylistResponse>, AppError> {
-    todo!()
+    req.validate().map_err(|e| {
+        let errors: Vec<crate::error::FieldError> = e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errs)| {
+                errs.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect();
+        AppError::Validation { errors, instance: None }
+    })?;
+
+    let result =
+        service::update_playlist(&state.pool, user.user_id, playlist_id, &req).await?;
+    Ok(Json(result))
 }
 
 pub async fn delete_playlist(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Path(_playlist_id): Path<uuid::Uuid>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(playlist_id): Path<uuid::Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    todo!()
+    service::delete_playlist(&state.pool, user.user_id, playlist_id).await?;
+    Ok(Json(serde_json::json!({"deleted": true})))
 }
 
 pub async fn list_playlist_items(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Path(_playlist_id): Path<uuid::Uuid>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(playlist_id): Path<uuid::Uuid>,
 ) -> Result<Json<PlaylistItemListResponse>, AppError> {
-    todo!()
+    let result =
+        service::list_playlist_items(&state.pool, user.user_id, playlist_id).await?;
+    Ok(Json(result))
 }
 
 pub async fn add_playlist_item(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Path(_playlist_id): Path<uuid::Uuid>,
-    Json(_req): Json<AddPlaylistItemRequest>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(playlist_id): Path<uuid::Uuid>,
+    Json(req): Json<AddPlaylistItemRequest>,
 ) -> Result<Json<PlaylistItemResponse>, AppError> {
-    todo!()
+    req.validate().map_err(|e| {
+        let errors: Vec<crate::error::FieldError> = e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errs)| {
+                errs.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect();
+        AppError::Validation { errors, instance: None }
+    })?;
+
+    let result =
+        service::add_playlist_item(&state.pool, user.user_id, playlist_id, &req).await?;
+    Ok(Json(result))
 }
 
 pub async fn remove_playlist_item(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Path((_playlist_id, _item_id)): Path<(uuid::Uuid, uuid::Uuid)>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path((playlist_id, item_id)): Path<(uuid::Uuid, uuid::Uuid)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    todo!()
+    service::remove_playlist_item(&state.pool, user.user_id, playlist_id, item_id).await?;
+    Ok(Json(serde_json::json!({"deleted": true})))
 }
 
 pub async fn stream_file(

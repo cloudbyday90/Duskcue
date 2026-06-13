@@ -54,7 +54,10 @@ pub fn router(state: AppState) -> Router<AppState> {
 | Users | `/api/v1/users` | CRUD, capabilities, library access, sessions |
 | Libraries | `/api/v1/libraries` | CRUD, scan, refresh, items |
 | Media | `/api/v1/media-items` | Get, search, refresh metadata, versions |
-| Playback | `/api/v1/playback/*` | Start session, heartbeat, stop, bookmarks, playlists |
+| Playback | `/api/v1/playback/*` | Start session, heartbeat, stop, seek, info |
+| Watch Data | `/api/v1/items/{id}/watch-data` | Get/PUT watch state (favorite, rating, resume position) |
+| Bookmarks | `/api/v1/items/{id}/bookmarks` | List, create, delete user bookmarks |
+| Playlists | `/api/v1/playlists` | CRUD, items (add/remove), visibility (private/shared/public) |
 | Streaming | `/api/v1/stream/*` | Manifest, segments, direct play |
 | Analytics | `/api/v1/analytics/*` | Dashboard, play history, bandwitch, transcode stats |
 | Trakt | `/api/v1/trakt/*` | Link account, sync, history, ratings |

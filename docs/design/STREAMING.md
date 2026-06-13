@@ -744,6 +744,26 @@ Storyboard design is documented in [STORYBOARDS.md](STORYBOARDS.md). Endpoints f
 - Direct play URLs validate that the authenticated user has library access
 - **When `network_mode = "exposed"`:** HMAC-SHA256 signed URLs with short TTL (60s manifests, 300s segments), session-bound, 24h key rotation. Full design in [SECURITY.md](../security/SECURITY.md)
 
+### Watch Data, Bookmarks & Playlists
+
+Per-user playback data endpoints. All require `AuthenticatedUser`; no capability checks — data is scoped to the authenticated user.
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/v1/items/{id}/watch-data` | Get watch state (returns defaults for unplayed items) |
+| `PUT` | `/api/v1/items/{id}/watch-data` | Set favorite, rating (1–10), preferred audio/subtitle stream indices |
+| `GET` | `/api/v1/items/{id}/bookmarks` | List bookmarks (ordered by position ascending) |
+| `POST` | `/api/v1/items/{id}/bookmarks` | Create bookmark at position |
+| `DELETE` | `/api/v1/items/{id}/bookmarks/{bookmark_id}` | Delete bookmark |
+| `GET` | `/api/v1/playlists` | List user's playlists (soft-delete filtered) |
+| `POST` | `/api/v1/playlists` | Create playlist (visibility: private/shared/public) |
+| `GET` | `/api/v1/playlists/{id}` | Get playlist detail |
+| `PATCH` | `/api/v1/playlists/{id}` | Update playlist (name, description, visibility) |
+| `DELETE` | `/api/v1/playlists/{id}` | Soft-delete playlist |
+| `GET` | `/api/v1/playlists/{id}/items` | List playlist items (ordered by position) |
+| `POST` | `/api/v1/playlists/{id}/items` | Add media item to playlist (auto-positioned with 1000-spacing) |
+| `DELETE` | `/api/v1/playlists/{id}/items/{item_id}` | Remove media item from playlist |
+
 ---
 
 ## Streaming Policy System
@@ -1060,6 +1080,38 @@ Transcode metrics are exposed via the existing Prometheus `/metrics` endpoint (s
 
 ---
 
+## Implementation Notes (Phase 7, Task 13)
+
+### user_item_data Endpoints
+
+- **`GET` returns defaults for unplayed items** — When no `user_item_data` row exists, the response uses `id: Uuid::nil()`, `is_watched: false`, `play_count: 0`, `resume_position_ms: 0` — matching the quality domain's conservative-defaults-on-missing pattern. The web client always gets a valid 200 response without 404s for first-time item views.
+- **`PUT` uses COALESCE upsert** — `INSERT ... ON CONFLICT (user_id, media_item_id) DO UPDATE SET is_favorite = COALESCE($3, existing)` — `None` fields preserve existing values. Chosen `PUT` over `PATCH` because the update creates the row if it doesn't exist (upsert), while PATCH implies partial modification of an existing resource.
+- **`resume_position_ms` and `play_count` are managed by heartbeat/stop** — The PUT endpoint only sets `is_favorite`, `user_rating` (1–10), `audio_stream_index`, `subtitle_stream_index`. The `is_watched`, `play_count`, `last_played_at`, `resume_position_ms` fields are updated by the playback lifecycle (heartbeat upserts resume position; stop increments play_count and sets is_watched at 90% completion).
+
+### Bookmarks
+
+- **Triple-key scoped deletion** — `DELETE FROM bookmarks WHERE id = $1 AND user_id = $2 AND media_item_id = $3` prevents BOLA: a user cannot delete another user's bookmarks even with the bookmark UUID, and the `media_item_id` in the URL path is validated in the WHERE clause.
+- **Ordered by position** — `list_bookmarks` returns items ordered by `position_ms ASC` for chronological seek-bar ordering.
+
+### Playlists
+
+- **Soft-delete** — `delete_playlist` sets `deleted_at = now()` rather than hard-delete, matching DATABASE.md design (users expect trash/undo). All playlist queries filter `deleted_at IS NULL`.
+- **Visibility validation** — `create_playlist` and `update_playlist` validate against `["private", "shared", "public"]`; default is `"private"`.
+- **Integer-spacing positions** — When `position` is not provided, `add_playlist_item` uses `MAX(position) + 1000` (or `1000` for empty playlists), matching DATABASE.md integer-spacing convention (1000, 2000, 3000) that allows future insertions without renumbering.
+- **Duplicate item prevention** — The `UNIQUE(playlist_id, media_item_id)` constraint prevents duplicate items; violations are caught via `sqlx::Error::Database::is_unique_violation()` and mapped to `PlaylistItemNotFound`.
+- **Denormalized counter maintenance** — `update_playlist_counters` is called after add/remove playlist item; updates `item_count` via `SELECT COUNT(*)` subquery. `total_duration_seconds` not yet recomputed (stays at 0) — deferred to Phase 8.
+- **`verify_playlist_ownership` helper** — Shared by all playlist item operations; queries `playlists WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL`, returns `PlaylistNotFound` on failure — prevents BOLA on playlist sub-resources.
+- **`PlaylistItemResponse` includes media title** — `list_playlist_items` JOINs `media_items` to populate `title` so the web client can display item names without a second round-trip.
+
+### Deferred
+
+- Smart playlist filter evaluation (`is_smart` + `smart_filter` JSONB stored but not evaluated at query time) — Phase 12 collections shares the filter syntax.
+- Shared/public playlist visibility listing (showing other users' shared/public playlists) — deferred to Phase 8 web client.
+- `total_duration_seconds` recomputation on add/remove — deferred to Phase 8.
+- Continue Watching / Up Next query endpoints — the `user_item_data` partial indexes (`idx_user_item_data_continue_watching`) exist but dedicated endpoints are deferred to Phase 8.
+
+---
+
 ## Error Codes
 
 Streaming and transcoding errors use the existing `PLAY` domain error codes from ERROR_HANDLING.md:
@@ -1089,6 +1141,11 @@ Streaming policy error codes:
 | `PLAY_011` | 403 | Client IP address blocked by streaming policy |
 | `PLAY_012` | 429 | Per-user stream limit exceeded (max_streams or max_transcode_streams) |
 | `PLAY_013` | 403 | Resolution requires direct play — transcode restricted by policy (e.g. 4K) |
+| `PLAY_014` | 409 | Streaming policy name already exists |
+| `PLAY_015` | 403 | System policy cannot be deleted |
+| `PLAY_016` | 403 | Cannot remove default policy without assigning a replacement |
+| `PLAY_017` | 400 | Invalid transcode resolution |
+| `PLAY_018` | 400 | Invalid IP range (missing CIDR prefix length) |
 
 ---
 

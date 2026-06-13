@@ -50,7 +50,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/api/v1/items/{item_id}/watch-data",
-            get(handlers::get_watch_data),
+            get(handlers::get_watch_data).put(handlers::update_watch_data),
         )
         .route(
             "/api/v1/items/{item_id}/bookmarks",

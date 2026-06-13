@@ -166,6 +166,15 @@ pub struct AddPlaylistItemRequest {
     pub position: Option<i32>,
 }
 
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct UpdateWatchDataRequest {
+    pub is_favorite: Option<bool>,
+    #[validate(range(min = 1, max = 10))]
+    pub user_rating: Option<i32>,
+    pub audio_stream_index: Option<i32>,
+    pub subtitle_stream_index: Option<i32>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct PlaybackStartResponse {
     pub session_id: Uuid,

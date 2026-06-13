@@ -922,10 +922,84 @@ pub async fn get_playback_info(
 }
 
 pub async fn get_user_item_data(
-    _user_id: Uuid,
-    _media_item_id: Uuid,
-) -> Result<(), PlaybackError> {
-    todo!()
+    pool: &PgPool,
+    user_id: Uuid,
+    media_item_id: Uuid,
+) -> Result<UserItemDataResponse, PlaybackError> {
+    let row = sqlx::query(
+        "SELECT id, is_watched, play_count, last_played_at, resume_position_ms, \
+         is_favorite, user_rating \
+         FROM user_item_data WHERE user_id = $1 AND media_item_id = $2"
+    )
+    .bind(user_id)
+    .bind(media_item_id)
+    .fetch_optional(pool)
+    .await?;
+
+    match row {
+        Some(r) => Ok(UserItemDataResponse {
+            id: r.try_get("id").unwrap_or_default(),
+            media_item_id,
+            is_watched: r.try_get("is_watched").unwrap_or(false),
+            play_count: r.try_get("play_count").unwrap_or(0),
+            last_played_at: r.try_get("last_played_at").ok().flatten(),
+            resume_position_ms: r.try_get("resume_position_ms").unwrap_or(0),
+            is_favorite: r.try_get("is_favorite").unwrap_or(false),
+            user_rating: r.try_get("user_rating").ok().flatten(),
+        }),
+        None => Ok(UserItemDataResponse {
+            id: Uuid::nil(),
+            media_item_id,
+            is_watched: false,
+            play_count: 0,
+            last_played_at: None,
+            resume_position_ms: 0,
+            is_favorite: false,
+            user_rating: None,
+        }),
+    }
+}
+
+pub async fn update_user_item_data(
+    pool: &PgPool,
+    user_id: Uuid,
+    media_item_id: Uuid,
+    req: &UpdateWatchDataRequest,
+) -> Result<UserItemDataResponse, PlaybackError> {
+    let row = sqlx::query(
+        "INSERT INTO user_item_data \
+         (id, user_id, media_item_id, is_favorite, user_rating, \
+          audio_stream_index, subtitle_stream_index) \
+         VALUES (uuidv7(), $1, $2, $3, $4, $5, $6) \
+         ON CONFLICT (user_id, media_item_id) \
+         DO UPDATE SET \
+            is_favorite = COALESCE($3, user_item_data.is_favorite), \
+            user_rating = COALESCE($4, user_item_data.user_rating), \
+            audio_stream_index = COALESCE($5, user_item_data.audio_stream_index), \
+            subtitle_stream_index = COALESCE($6, user_item_data.subtitle_stream_index), \
+            updated_at = now() \
+         RETURNING id, is_watched, play_count, last_played_at, resume_position_ms, \
+                   is_favorite, user_rating"
+    )
+    .bind(user_id)
+    .bind(media_item_id)
+    .bind(req.is_favorite)
+    .bind(req.user_rating)
+    .bind(req.audio_stream_index)
+    .bind(req.subtitle_stream_index)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(UserItemDataResponse {
+        id: row.try_get("id").unwrap_or_default(),
+        media_item_id,
+        is_watched: row.try_get("is_watched").unwrap_or(false),
+        play_count: row.try_get("play_count").unwrap_or(0),
+        last_played_at: row.try_get("last_played_at").ok().flatten(),
+        resume_position_ms: row.try_get("resume_position_ms").unwrap_or(0),
+        is_favorite: row.try_get("is_favorite").unwrap_or(false),
+        user_rating: row.try_get("user_rating").ok().flatten(),
+    })
 }
 
 async fn emit_play_event(
@@ -1022,63 +1096,393 @@ async fn upsert_user_item_data_stop(
 }
 
 pub async fn list_bookmarks(
-    _user_id: Uuid,
-    _media_item_id: Uuid,
-) -> Result<(), PlaybackError> {
-    todo!()
+    pool: &PgPool,
+    user_id: Uuid,
+    media_item_id: Uuid,
+) -> Result<BookmarkListResponse, PlaybackError> {
+    let rows = sqlx::query(
+        "SELECT id, media_item_id, position_ms, label, description, created_at \
+         FROM bookmarks WHERE user_id = $1 AND media_item_id = $2 \
+         ORDER BY position_ms ASC"
+    )
+    .bind(user_id)
+    .bind(media_item_id)
+    .fetch_all(pool)
+    .await?;
+
+    let items: Vec<BookmarkResponse> = rows
+        .iter()
+        .map(|r| BookmarkResponse {
+            id: r.try_get("id").unwrap_or_default(),
+            media_item_id: r.try_get("media_item_id").unwrap_or(media_item_id),
+            position_ms: r.try_get("position_ms").unwrap_or(0),
+            label: r.try_get("label").unwrap_or_default(),
+            description: r.try_get("description").ok().flatten(),
+            created_at: r.try_get("created_at").unwrap_or_default(),
+        })
+        .collect();
+
+    Ok(BookmarkListResponse { items })
 }
 
 pub async fn create_bookmark(
-    _user_id: Uuid,
-    _media_item_id: Uuid,
-) -> Result<(), PlaybackError> {
-    todo!()
+    pool: &PgPool,
+    user_id: Uuid,
+    media_item_id: Uuid,
+    req: &CreateBookmarkRequest,
+) -> Result<BookmarkResponse, PlaybackError> {
+    let row = sqlx::query(
+        "INSERT INTO bookmarks (id, user_id, media_item_id, position_ms, label, description) \
+         VALUES (uuidv7(), $1, $2, $3, $4, $5) \
+         RETURNING id, media_item_id, position_ms, label, description, created_at"
+    )
+    .bind(user_id)
+    .bind(media_item_id)
+    .bind(req.position_ms)
+    .bind(&req.label)
+    .bind(&req.description)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(BookmarkResponse {
+        id: row.try_get("id").unwrap_or_default(),
+        media_item_id: row.try_get("media_item_id").unwrap_or(media_item_id),
+        position_ms: row.try_get("position_ms").unwrap_or(0),
+        label: row.try_get("label").unwrap_or_default(),
+        description: row.try_get("description").ok().flatten(),
+        created_at: row.try_get("created_at").unwrap_or_default(),
+    })
 }
 
 pub async fn delete_bookmark(
-    _user_id: Uuid,
-    _bookmark_id: Uuid,
+    pool: &PgPool,
+    user_id: Uuid,
+    media_item_id: Uuid,
+    bookmark_id: Uuid,
 ) -> Result<(), PlaybackError> {
-    todo!()
+    let result = sqlx::query(
+        "DELETE FROM bookmarks \
+         WHERE id = $1 AND user_id = $2 AND media_item_id = $3"
+    )
+    .bind(bookmark_id)
+    .bind(user_id)
+    .bind(media_item_id)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(PlaybackError::BookmarkNotFound);
+    }
+
+    Ok(())
 }
 
-pub async fn list_playlists(_user_id: Uuid) -> Result<(), PlaybackError> {
-    todo!()
+pub async fn list_playlists(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<PlaylistListResponse, PlaybackError> {
+    let total = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM playlists WHERE user_id = $1 AND deleted_at IS NULL"
+    )
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+
+    let rows = sqlx::query(
+        "SELECT id, created_at, updated_at, name, description, visibility, \
+         is_smart, item_count, total_duration_seconds \
+         FROM playlists WHERE user_id = $1 AND deleted_at IS NULL \
+         ORDER BY updated_at DESC"
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
+
+    let items: Vec<PlaylistResponse> = rows.iter().map(row_to_playlist_response).collect();
+
+    Ok(PlaylistListResponse { items, total })
 }
 
-pub async fn get_playlist(_user_id: Uuid, _playlist_id: Uuid) -> Result<(), PlaybackError> {
-    todo!()
+pub async fn get_playlist(
+    pool: &PgPool,
+    user_id: Uuid,
+    playlist_id: Uuid,
+) -> Result<PlaylistResponse, PlaybackError> {
+    let row = sqlx::query(
+        "SELECT id, created_at, updated_at, name, description, visibility, \
+         is_smart, item_count, total_duration_seconds \
+         FROM playlists WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL"
+    )
+    .bind(playlist_id)
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let row = row.ok_or(PlaybackError::PlaylistNotFound)?;
+    Ok(row_to_playlist_response(&row))
 }
 
-pub async fn create_playlist(_user_id: Uuid) -> Result<(), PlaybackError> {
-    todo!()
+pub async fn create_playlist(
+    pool: &PgPool,
+    user_id: Uuid,
+    req: &CreatePlaylistRequest,
+) -> Result<PlaylistResponse, PlaybackError> {
+    let visibility = req
+        .visibility
+        .as_deref()
+        .unwrap_or("private");
+
+    if !VALID_PLAYLIST_VISIBILITIES.contains(&visibility) {
+        return Err(PlaybackError::InvalidVisibility(visibility.to_string()));
+    }
+
+    let row = sqlx::query(
+        "INSERT INTO playlists (id, user_id, name, description, visibility) \
+         VALUES (uuidv7(), $1, $2, $3, $4) \
+         RETURNING id, created_at, updated_at, name, description, visibility, \
+                   is_smart, item_count, total_duration_seconds"
+    )
+    .bind(user_id)
+    .bind(&req.name)
+    .bind(&req.description)
+    .bind(visibility)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(row_to_playlist_response(&row))
 }
 
-pub async fn update_playlist(_user_id: Uuid, _playlist_id: Uuid) -> Result<(), PlaybackError> {
-    todo!()
+pub async fn update_playlist(
+    pool: &PgPool,
+    user_id: Uuid,
+    playlist_id: Uuid,
+    req: &UpdatePlaylistRequest,
+) -> Result<PlaylistResponse, PlaybackError> {
+    if let Some(ref vis) = req.visibility
+        && !VALID_PLAYLIST_VISIBILITIES.contains(&vis.as_str())
+    {
+        return Err(PlaybackError::InvalidVisibility(vis.clone()));
+    }
+
+    let row = sqlx::query(
+        "UPDATE playlists SET \
+         name = COALESCE($3, name), \
+         description = COALESCE($4, description), \
+         visibility = COALESCE($5, visibility), \
+         updated_at = now() \
+         WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL \
+         RETURNING id, created_at, updated_at, name, description, visibility, \
+                   is_smart, item_count, total_duration_seconds"
+    )
+    .bind(playlist_id)
+    .bind(user_id)
+    .bind(&req.name)
+    .bind(&req.description)
+    .bind(&req.visibility)
+    .fetch_optional(pool)
+    .await?;
+
+    let row = row.ok_or(PlaybackError::PlaylistNotFound)?;
+    Ok(row_to_playlist_response(&row))
 }
 
-pub async fn delete_playlist(_user_id: Uuid, _playlist_id: Uuid) -> Result<(), PlaybackError> {
-    todo!()
+pub async fn delete_playlist(
+    pool: &PgPool,
+    user_id: Uuid,
+    playlist_id: Uuid,
+) -> Result<(), PlaybackError> {
+    let result = sqlx::query(
+        "UPDATE playlists SET deleted_at = now() \
+         WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL"
+    )
+    .bind(playlist_id)
+    .bind(user_id)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(PlaybackError::PlaylistNotFound);
+    }
+
+    Ok(())
 }
 
 pub async fn list_playlist_items(
-    _user_id: Uuid,
-    _playlist_id: Uuid,
-) -> Result<(), PlaybackError> {
-    todo!()
+    pool: &PgPool,
+    user_id: Uuid,
+    playlist_id: Uuid,
+) -> Result<PlaylistItemListResponse, PlaybackError> {
+    verify_playlist_ownership(pool, user_id, playlist_id).await?;
+
+    let total = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM playlist_items WHERE playlist_id = $1"
+    )
+    .bind(playlist_id)
+    .fetch_one(pool)
+    .await?;
+
+    let rows = sqlx::query(
+        "SELECT pi.id, pi.playlist_id, pi.media_item_id, pi.position, pi.created_at, \
+         mi.title \
+         FROM playlist_items pi \
+         JOIN media_items mi ON mi.id = pi.media_item_id \
+         WHERE pi.playlist_id = $1 \
+         ORDER BY pi.position ASC"
+    )
+    .bind(playlist_id)
+    .fetch_all(pool)
+    .await?;
+
+    let items: Vec<PlaylistItemResponse> = rows
+        .iter()
+        .map(|r| PlaylistItemResponse {
+            id: r.try_get("id").unwrap_or_default(),
+            playlist_id: r.try_get("playlist_id").unwrap_or(playlist_id),
+            media_item_id: r.try_get("media_item_id").unwrap_or_default(),
+            position: r.try_get("position").unwrap_or(0),
+            title: r.try_get("title").unwrap_or_else(|_| "Untitled".to_string()),
+            created_at: r.try_get("created_at").unwrap_or_default(),
+        })
+        .collect();
+
+    Ok(PlaylistItemListResponse { items, total })
 }
 
-pub async fn add_playlist_item(_user_id: Uuid, _playlist_id: Uuid) -> Result<(), PlaybackError> {
-    todo!()
+pub async fn add_playlist_item(
+    pool: &PgPool,
+    user_id: Uuid,
+    playlist_id: Uuid,
+    req: &AddPlaylistItemRequest,
+) -> Result<PlaylistItemResponse, PlaybackError> {
+    verify_playlist_ownership(pool, user_id, playlist_id).await?;
+
+    let media_item_id = req.media_item_id.ok_or(PlaybackError::PlaylistItemNotFound)?;
+
+    let position = if let Some(pos) = req.position {
+        pos
+    } else {
+        let max_pos: Option<i32> = sqlx::query_scalar(
+            "SELECT MAX(position) FROM playlist_items WHERE playlist_id = $1"
+        )
+        .bind(playlist_id)
+        .fetch_one(pool)
+        .await?;
+
+        max_pos.map(|p| p + 1000).unwrap_or(1000)
+    };
+
+    let row = sqlx::query(
+        "INSERT INTO playlist_items (id, playlist_id, media_item_id, position) \
+         VALUES (uuidv7(), $1, $2, $3) \
+         RETURNING id, playlist_id, media_item_id, position, created_at"
+    )
+    .bind(playlist_id)
+    .bind(media_item_id)
+    .bind(position)
+    .fetch_one(pool)
+    .await
+    .map_err(|e| {
+        if let sqlx::Error::Database(ref db_err) = e
+            && db_err.is_unique_violation()
+        {
+            return PlaybackError::PlaylistItemNotFound;
+        }
+        PlaybackError::from(e)
+    })?;
+
+    let title: String = sqlx::query_scalar("SELECT title FROM media_items WHERE id = $1")
+        .bind(media_item_id)
+        .fetch_one(pool)
+        .await
+        .unwrap_or_else(|_| "Untitled".to_string());
+
+    update_playlist_counters(pool, playlist_id).await?;
+
+    Ok(PlaylistItemResponse {
+        id: row.try_get("id").unwrap_or_default(),
+        playlist_id: row.try_get("playlist_id").unwrap_or(playlist_id),
+        media_item_id: row.try_get("media_item_id").unwrap_or(media_item_id),
+        position: row.try_get("position").unwrap_or(position),
+        title,
+        created_at: row.try_get("created_at").unwrap_or_default(),
+    })
 }
 
 pub async fn remove_playlist_item(
-    _user_id: Uuid,
-    _playlist_id: Uuid,
-    _item_id: Uuid,
+    pool: &PgPool,
+    user_id: Uuid,
+    playlist_id: Uuid,
+    media_item_id: Uuid,
 ) -> Result<(), PlaybackError> {
-    todo!()
+    verify_playlist_ownership(pool, user_id, playlist_id).await?;
+
+    let result = sqlx::query(
+        "DELETE FROM playlist_items \
+         WHERE playlist_id = $1 AND media_item_id = $2"
+    )
+    .bind(playlist_id)
+    .bind(media_item_id)
+    .execute(pool)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(PlaybackError::PlaylistItemNotFound);
+    }
+
+    update_playlist_counters(pool, playlist_id).await?;
+
+    Ok(())
+}
+
+fn row_to_playlist_response(row: &sqlx::postgres::PgRow) -> PlaylistResponse {
+    PlaylistResponse {
+        id: row.get("id"),
+        name: row.get("name"),
+        description: row.get("description"),
+        visibility: row.get("visibility"),
+        is_smart: row.get("is_smart"),
+        item_count: row.get("item_count"),
+        total_duration_seconds: row.get("total_duration_seconds"),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    }
+}
+
+async fn verify_playlist_ownership(
+    pool: &PgPool,
+    user_id: Uuid,
+    playlist_id: Uuid,
+) -> Result<(), PlaybackError> {
+    let exists = sqlx::query_scalar::<_, i64>(
+        "SELECT COUNT(*) FROM playlists \
+         WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL"
+    )
+    .bind(playlist_id)
+    .bind(user_id)
+    .fetch_one(pool)
+    .await?;
+
+    if exists == 0 {
+        return Err(PlaybackError::PlaylistNotFound);
+    }
+
+    Ok(())
+}
+
+async fn update_playlist_counters(
+    pool: &PgPool,
+    playlist_id: Uuid,
+) -> Result<(), PlaybackError> {
+    sqlx::query(
+        "UPDATE playlists SET \
+         item_count = (SELECT COUNT(*) FROM playlist_items WHERE playlist_id = $1), \
+         updated_at = now() \
+         WHERE id = $1"
+    )
+    .bind(playlist_id)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 pub async fn get_media_file_path(
