@@ -14,16 +14,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use axum::body::Body;
 use axum::extract::{Path, State};
-use axum::http::HeaderMap;
+use axum::http::{header, HeaderMap, StatusCode};
+use axum::response::Response;
 use axum::Json;
 use sqlx::Row;
 use validator::Validate;
 
 use crate::error::AppError;
 use crate::domains::playback::error::PlaybackError;
+use crate::domains::playback::service::{self, RangeSpec};
 use crate::domains::playback::types::*;
-use crate::domains::playback::service;
 use crate::extractors::{AuthenticatedUser, Require, CanManageServer};
 use crate::state::AppState;
 
@@ -165,36 +167,116 @@ pub async fn remove_playlist_item(
 }
 
 pub async fn stream_file(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _user: AuthenticatedUser,
-    Path(_media_file_id): Path<uuid::Uuid>,
-    _headers: HeaderMap,
-) -> Result<Json<serde_json::Value>, AppError> {
-    todo!()
+    Path(media_file_id): Path<uuid::Uuid>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    let file_path = service::get_media_file_path(&state.pool, media_file_id).await?;
+    let file_size = service::get_media_file_size(&state.pool, media_file_id).await?;
+
+    let range_header = headers.get("range").and_then(|v| v.to_str().ok());
+    let range = RangeSpec::parse(range_header, file_size)?;
+
+    let content_type = service::guess_content_type(&file_path);
+
+    match range {
+        Some(range) => {
+            let length = range.content_length() as usize;
+            let mut file = tokio::fs::File::open(&file_path)
+                .await
+                .map_err(|_| PlaybackError::FileNotFound)?;
+
+            use tokio::io::{AsyncReadExt, AsyncSeekExt};
+            file.seek(std::io::SeekFrom::Start(range.start))
+                .await
+                .map_err(|_| PlaybackError::FileNotFound)?;
+
+            let mut buffer = vec![0u8; length];
+            file.read_exact(&mut buffer)
+                .await
+                .map_err(|_| PlaybackError::FileNotFound)?;
+
+            Ok(Response::builder()
+                .status(StatusCode::PARTIAL_CONTENT)
+                .header(header::CONTENT_TYPE, content_type)
+                .header(header::CONTENT_LENGTH, length.to_string())
+                .header(header::CONTENT_RANGE, range.content_range_header())
+                .header(header::ACCEPT_RANGES, "bytes")
+                .body(Body::from(buffer))
+                .unwrap())
+        }
+        None => {
+            let data = tokio::fs::read(&file_path)
+                .await
+                .map_err(|_| PlaybackError::FileNotFound)?;
+
+            Ok(Response::builder()
+                .status(StatusCode::OK)
+                .header(header::CONTENT_TYPE, content_type)
+                .header(header::CONTENT_LENGTH, file_size.to_string())
+                .header(header::ACCEPT_RANGES, "bytes")
+                .body(Body::from(data))
+                .unwrap())
+        }
+    }
 }
 
 pub async fn get_transcode_manifest(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _user: AuthenticatedUser,
-    Path(_session_id): Path<uuid::Uuid>,
-) -> Result<Json<String>, AppError> {
-    todo!()
+    Path(session_id): Path<uuid::Uuid>,
+) -> Result<Response, AppError> {
+    let content = service::get_transcode_manifest(&state.transcode_manager, session_id).await?;
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/vnd.apple.mpegurl")
+        .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+        .body(Body::from(content))
+        .unwrap())
 }
 
 pub async fn get_transcode_playlist(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _user: AuthenticatedUser,
-    Path((_session_id, _rendition)): Path<(uuid::Uuid, String)>,
-) -> Result<Json<String>, AppError> {
-    todo!()
+    Path((session_id, rendition)): Path<(uuid::Uuid, String)>,
+) -> Result<Response, AppError> {
+    let content =
+        service::get_transcode_playlist(&state.transcode_manager, session_id, &rendition).await?;
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/vnd.apple.mpegurl")
+        .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+        .body(Body::from(content))
+        .unwrap())
 }
 
 pub async fn get_transcode_segment(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _user: AuthenticatedUser,
-    Path((_session_id, _rendition, _segment)): Path<(uuid::Uuid, String, String)>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    todo!()
+    Path((session_id, rendition, segment)): Path<(uuid::Uuid, String, String)>,
+) -> Result<Response, AppError> {
+    let data =
+        service::get_transcode_segment(&state.transcode_manager, session_id, &rendition, &segment)
+            .await?;
+
+    let content_type = if segment.ends_with(".m4s") {
+        "video/iso.segment"
+    } else if segment.ends_with(".mp4") || segment.ends_with(".m4v") {
+        "video/mp4"
+    } else {
+        "application/octet-stream"
+    };
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CONTENT_LENGTH, data.len().to_string())
+        .header(header::CACHE_CONTROL, "max-age=3600")
+        .body(Body::from(data))
+        .unwrap())
 }
 
 pub async fn list_streaming_policies(

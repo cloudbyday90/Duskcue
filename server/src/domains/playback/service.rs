@@ -14,11 +14,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::path::PathBuf;
+
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::domains::playback::error::PlaybackError;
 use crate::domains::playback::types::*;
+use crate::services::transcoding::{TranscodeManager, TranscodeRendition};
 
 pub async fn start_playback(
     _user_id: Uuid,
@@ -115,20 +118,281 @@ pub async fn remove_playlist_item(
     todo!()
 }
 
-pub async fn stream_file(
-    _user_id: Uuid,
-    _media_file_id: Uuid,
-    _range_header: Option<String>,
-) -> Result<(), PlaybackError> {
-    todo!()
+pub async fn get_media_file_path(
+    pool: &PgPool,
+    media_file_id: Uuid,
+) -> Result<PathBuf, PlaybackError> {
+    let row = sqlx::query(
+        "SELECT mf.file_path, mf.is_healthy \
+         FROM media_files mf \
+         WHERE mf.id = $1"
+    )
+    .bind(media_file_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(PlaybackError::FileNotFound)?;
+
+    let is_healthy: bool = row.try_get("is_healthy").unwrap_or(true);
+    if !is_healthy {
+        let path: String = row.try_get("file_path").unwrap_or_default();
+        return Err(PlaybackError::FileUnhealthy(path));
+    }
+
+    let file_path: String = row.try_get("file_path").map_err(|_| PlaybackError::FileNotFound)?;
+    Ok(PathBuf::from(file_path))
 }
 
-pub async fn get_transcode_manifest(_session_id: Uuid) -> Result<(), PlaybackError> {
-    todo!()
+pub async fn get_media_file_size(pool: &PgPool, media_file_id: Uuid) -> Result<u64, PlaybackError> {
+    let path = get_media_file_path(pool, media_file_id).await?;
+    let metadata = tokio::fs::metadata(&path)
+        .await
+        .map_err(|_| PlaybackError::FileNotFound)?;
+    Ok(metadata.len())
 }
 
-pub async fn get_transcode_segment(_session_id: Uuid, _rendition: &str, _segment: &str) -> Result<(), PlaybackError> {
-    todo!()
+pub struct RangeSpec {
+    pub start: u64,
+    pub end: u64,
+    pub total: u64,
+}
+
+impl RangeSpec {
+    pub fn parse(header: Option<&str>, file_size: u64) -> Result<Option<Self>, PlaybackError> {
+        let header = match header {
+            Some(h) => h,
+            None => return Ok(None),
+        };
+
+        let bytes_spec = header.strip_prefix("bytes=").ok_or_else(|| {
+            PlaybackError::InvalidByteRange("expected bytes= prefix".into())
+        })?;
+
+        let (start, end) = if let Some(rest) = bytes_spec.strip_suffix('-') {
+            let start: u64 = rest.parse().map_err(|_| {
+                PlaybackError::InvalidByteRange(format!("invalid start byte: {rest}"))
+            })?;
+            (start, file_size - 1)
+        } else if let Some(rest) = bytes_spec.strip_prefix('-') {
+            let suffix_len: u64 = rest.parse().map_err(|_| {
+                PlaybackError::InvalidByteRange(format!("invalid suffix length: {rest}"))
+            })?;
+            let start = file_size.saturating_sub(suffix_len);
+            (start, file_size - 1)
+        } else {
+            let parts: Vec<&str> = bytes_spec.split('-').collect();
+            if parts.len() != 2 {
+                return Err(PlaybackError::InvalidByteRange(format!(
+                    "invalid range format: {bytes_spec}"
+                )));
+            }
+            let start: u64 = parts[0].parse().map_err(|_| {
+                PlaybackError::InvalidByteRange(format!("invalid start: {}", parts[0]))
+            })?;
+            let end: u64 = if parts[1].is_empty() {
+                file_size - 1
+            } else {
+                parts[1].parse().map_err(|_| {
+                    PlaybackError::InvalidByteRange(format!("invalid end: {}", parts[1]))
+                })?
+            };
+            (start, end)
+        };
+
+        if start > end || start >= file_size {
+            return Err(PlaybackError::InvalidByteRange(format!(
+                "range {start}-{end} out of bounds for file size {file_size}"
+            )));
+        }
+
+        let end = end.min(file_size - 1);
+
+        Ok(Some(Self {
+            start,
+            end,
+            total: file_size,
+        }))
+    }
+
+    pub fn content_length(&self) -> u64 {
+        self.end - self.start + 1
+    }
+
+    pub fn content_range_header(&self) -> String {
+        format!("bytes {}-{}/{}", self.start, self.end, self.total)
+    }
+}
+
+pub fn guess_content_type(path: &std::path::Path) -> &'static str {
+    match path.extension().and_then(|e| e.to_str()).unwrap_or("") {
+        "mkv" => "video/x-matroska",
+        "mp4" | "m4v" => "video/mp4",
+        "avi" => "video/x-msvideo",
+        "mov" => "video/quicktime",
+        "wmv" => "video/x-ms-wmv",
+        "flv" => "video/x-flv",
+        "webm" => "video/webm",
+        "ts" => "video/mp2t",
+        "mpg" | "mpeg" => "video/mpeg",
+        "ogg" | "ogv" => "video/ogg",
+        "3gp" => "video/3gpp",
+        _ => "video/octet-stream",
+    }
+}
+
+pub async fn get_transcode_manifest(
+    transcode_manager: &TranscodeManager,
+    session_id: Uuid,
+) -> Result<String, PlaybackError> {
+    let session = transcode_manager
+        .get_session(&session_id)
+        .ok_or(PlaybackError::SessionNotFound)?;
+
+    let manifest_path = &session.manifest_path;
+    let content = tokio::fs::read_to_string(manifest_path)
+        .await
+        .map_err(|_| PlaybackError::SessionNotFound)?;
+
+    Ok(content)
+}
+
+pub async fn get_transcode_playlist(
+    transcode_manager: &TranscodeManager,
+    session_id: Uuid,
+    rendition: &str,
+) -> Result<String, PlaybackError> {
+    let session = transcode_manager
+        .get_session(&session_id)
+        .ok_or(PlaybackError::SessionNotFound)?;
+
+    let playlist_path = session.segment_dir.join(format!("{rendition}_index.m3u8"));
+
+    if playlist_path.exists() {
+        let content = tokio::fs::read_to_string(&playlist_path)
+            .await
+            .map_err(|_| PlaybackError::SessionNotFound)?;
+        return Ok(content);
+    }
+
+    let manifest_content = tokio::fs::read_to_string(&session.manifest_path)
+        .await
+        .map_err(|_| PlaybackError::SessionNotFound)?;
+
+    if is_single_rendition_manifest(&manifest_content) {
+        if rendition == session.rendition_name {
+            return Ok(manifest_content);
+        }
+        return Err(PlaybackError::SessionNotFound);
+    }
+
+    for line in manifest_content.lines() {
+        if line.starts_with('#') {
+            continue;
+        }
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(dir_rendition) = extract_rendition_from_path(trimmed)
+            && dir_rendition == rendition
+        {
+                let playlist_path = session.segment_dir.join(trimmed);
+                let content = tokio::fs::read_to_string(&playlist_path)
+                    .await
+                    .map_err(|_| PlaybackError::SessionNotFound)?;
+                return Ok(content);
+            }
+    }
+
+    Err(PlaybackError::SessionNotFound)
+}
+
+pub async fn get_transcode_segment(
+    transcode_manager: &TranscodeManager,
+    session_id: Uuid,
+    rendition: &str,
+    segment: &str,
+) -> Result<Vec<u8>, PlaybackError> {
+    let session = transcode_manager
+        .get_session(&session_id)
+        .ok_or(PlaybackError::SessionNotFound)?;
+
+    validate_segment_filename(segment)?;
+
+    let segment_path = if rendition == session.rendition_name {
+        session.segment_dir.join(segment)
+    } else {
+        let rendition_dir = session.segment_dir.join(rendition);
+        if rendition_dir.exists() {
+            rendition_dir.join(segment)
+        } else {
+            session.segment_dir.join(segment)
+        }
+    };
+
+    let data = tokio::fs::read(&segment_path)
+        .await
+        .map_err(|_| PlaybackError::SessionNotFound)?;
+
+    Ok(data)
+}
+
+fn validate_segment_filename(name: &str) -> Result<(), PlaybackError> {
+    if name.is_empty() || name.len() > 64 {
+        return Err(PlaybackError::SessionNotFound);
+    }
+    if name.contains("..") || name.contains('/') || name.contains('\\') {
+        return Err(PlaybackError::SessionNotFound);
+    }
+    if !name.starts_with("seg_") {
+        return Err(PlaybackError::SessionNotFound);
+    }
+    Ok(())
+}
+
+fn is_single_rendition_manifest(content: &str) -> bool {
+    let mut has_extinf = false;
+    for line in content.lines() {
+        if line.starts_with("#EXTINF") {
+            has_extinf = true;
+        }
+        if line.starts_with("#EXT-X-STREAM-INF") {
+            return false;
+        }
+    }
+    has_extinf
+}
+
+fn extract_rendition_from_path(path: &str) -> Option<String> {
+    let path = path.trim_end_matches('/');
+    let file_name = std::path::Path::new(path)
+        .file_stem()?
+        .to_str()?
+        .to_string();
+    if file_name.ends_with("_index") || file_name == "index" {
+        let parent = std::path::Path::new(path).parent()?.file_name()?.to_str()?;
+        return Some(parent.to_string());
+    }
+    None
+}
+
+pub fn generate_master_manifest(_session_id: Uuid, renditions: &[TranscodeRendition]) -> String {
+    let mut lines = vec![
+        "#EXTM3U".to_string(),
+        "#EXT-X-VERSION:7".to_string(),
+        "#EXT-X-INDEPENDENT-SEGMENTS".to_string(),
+    ];
+
+    for rendition in renditions {
+        let bandwidth = (rendition.video_bitrate + rendition.audio_bitrate) / 1000;
+        lines.push(format!(
+            "#EXT-X-STREAM-INF:BANDWIDTH={bandwidth},RESOLUTION={width}x{height},CODECS=\"avc1.64001f,mp4a.40.2\"",
+            width = rendition.width,
+            height = rendition.height,
+        ));
+        lines.push(format!("/{rendition}/index.m3u8", rendition = rendition.name));
+    }
+
+    lines.join("\n")
 }
 
 pub async fn list_streaming_policies(
