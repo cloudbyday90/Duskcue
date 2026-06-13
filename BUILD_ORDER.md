@@ -1289,10 +1289,34 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
      - **Auto-complete on final test** — `try_complete_wizard` is called after each test submission; when all tests have a non-pending result, `derive_capabilities_from_wizard` builds the full capability profile from test results
      - **`derive_capabilities_from_wizard` maps test IDs to capabilities** — Each test format ID (e.g., `hevc_10bit_4k_hdr10_mkv`) maps to specific video codecs, HDR formats, containers, resolutions, audio codecs, and max channels; results are aggregated across all passed tests
      - **`device_identifier` query parameter** — `get_capabilities` and `list_capability_tests` use `?device_identifier=` query param since `AuthenticatedUser` has no device identifier; handlers validate the parameter is non-empty and return `AppError::BadRequest` if missing
-     - **`test_passed` helper uses `&[PgRow]` slice** — Follows clippy recommendation to use slices over `&Vec<T>`
-     - **No new workspace dependencies** — all functionality uses existing `sqlx`, `serde_json`, `uuid`, `chrono`
-6. Implement network quality assessment — segment download telemetry
-7. Implement transcoding decision engine — 10-factor evaluation from QUALITY_MANAGEMENT.md
+      - **`test_passed` helper uses `&[PgRow]` slice** — Follows clippy recommendation to use slices over `&Vec<T>`
+      - **No new workspace dependencies** — all functionality uses existing `sqlx`, `serde_json`, `uuid`, `chrono`
+ 6. ~~Implement network quality assessment — segment download telemetry~~ **DONE**
+
+     **What was built for Task 6:**
+
+     | File | Purpose |
+     |---|---|
+     | `server/src/domains/quality/service.rs` | Replaced 7 `todo!()` stubs with working implementations: `submit_segment_telemetry` (insert into `client_network_reports`, compute throughput + harmonic mean + network tier), `submit_bandwidth_probe_result` (insert probe report with throughput/tier), `submit_qoe_report` (insert into `qoe_reports`), `get_network_quality_summary` (admin per-user latest tier + 24h sample count), `get_device_capability_summary` (admin per-platform device count + wizard rate + top codecs), `get_qoe_summary` (admin last-100 sessions QoE), `get_transcode_breakdown` (admin direct play/stream/transcode % from `play_sessions`); added `classify_network_tier()`, `compute_segment_throughput()`, `compute_harmonic_mean_throughput()` |
+     | `server/src/domains/quality/handlers.rs` | Replaced 7 `todo!()` stubs with working handlers: `get_bandwidth_probe` (returns 100KB static payload), `submit_bandwidth_probe_result`, `submit_telemetry` (reads `throughput_estimate_window` from `RuntimeConfig`), `submit_qoe` (reads `qoe_report_interval_seconds` from `RuntimeConfig`), `admin_network_summary`, `admin_device_summary`, `admin_qoe_summary`, `admin_transcode_breakdown` |
+     | `server/src/domains/quality/types.rs` | Added `TelemetryAckResponse`, `ProbeAckResponse`, `QoeAckResponse` DTOs with `report_id`, `throughput_bps`, `network_tier` fields |
+
+     **Key decisions from Task 6:**
+
+     - **Network tier classification** — `classify_network_tier()` implements the 6-tier table from QUALITY_MANAGEMENT.md: excellent (>25 Mbps), good (10-25), moderate (5-10), slow (2-5), very_slow (0.5-2), critical (<0.5)
+     - **Segment throughput computation** — `compute_segment_throughput()` calculates `(bytes * 8 * 1000) / duration_ms` to get bits/sec; returns `None` for zero/negative durations or bytes
+     - **Harmonic mean for running throughput estimate** — `compute_harmonic_mean_throughput()` queries last N `client_network_reports` with non-null `throughput_bps`, computes harmonic mean (n / sum(1/x_i)); resistant to outlier segments per ABR best practice; window size from `QualityConfig.throughput_estimate_window` (default 5)
+     - **Telemetry inserts segment throughput + estimated throughput** — `throughput_bps` is the per-segment computed value; `estimated_throughput_bps` is the harmonic mean across the window; `network_tier` uses the harmonic mean (or per-segment if insufficient history)
+     - **Bandwidth probe handler returns static 100KB payload** — `static PROBE_PAYLOAD: [u8; 102400] = [0u8; 102400]`; fixed-size zero-filled buffer per `QualityConfig.network_probe_bytes` default; client measures download time to estimate throughput
+     - **Probe result computes throughput server-side** — `submit_bandwidth_probe_result()` computes `(probe_bytes * 8 * 1000) / download_ms` independently; client's `estimated_throughput_bps` is stored if provided but server computation takes precedence for tier classification
+     - **QoE report interval from config** — `submit_qoe()` reads `QualityConfig.qoe_report_interval_seconds` (default 30) and passes to service for insertion into `qoe_reports.report_interval_seconds`
+     - **Admin network summary uses LATERAL join** — `get_network_quality_summary()` joins latest `client_network_reports` per user with a 24-hour sample count subquery; returns per-user latest tier, throughput, and sample count
+     - **Admin device summary aggregates per-platform** — Groups `device_profiles` by platform; computes wizard completion rate as percentage; extracts top video codecs via `jsonb_array_elements_text` with deduplication
+     - **Admin QoE summary uses DISTINCT ON** — `get_qoe_summary()` returns the latest QoE report per session (up to 100 sessions) using PostgreSQL's `DISTINCT ON (session_id)` with `ORDER BY session_id, created_at DESC`
+     - **Admin transcode breakdown from play_sessions metadata** — `get_transcode_breakdown()` queries `play_sessions` filtering on `metadata->>'playback_type'` for direct_play/direct_stream/transcode counts; returns direct_play_percentage as (direct_play / total) * 100
+     - **No new workspace dependencies** — all functionality uses existing `sqlx`, `serde`, `serde_json`, `uuid`, `chrono`
+
+ 7. Implement transcoding decision engine — 10-factor evaluation from QUALITY_MANAGEMENT.md
 8. Implement streaming policy system — `streaming_policies` table with per-user overrides
 9. Implement HLS manifest generation and segment serving
 10. Implement direct play / remux for compatible formats (no transcode)
@@ -1600,7 +1624,7 @@ Phase 5: Libraries & Media (COMPLETE — 10 tasks) ─────────�
     ↓                                                      │
 Phase 6: Metadata Providers ←─── (enriches Phase 5)       │
     ↓                                                      │
-Phase 7: Streaming & Playback (Tasks 1–5 complete)              │
+Phase 7: Streaming & Playback (Tasks 1–6 complete)              │
     ↓                                                      │
 Phase 8: Web Client Core ←─── (consumes all above) ←──────┘
     ↓

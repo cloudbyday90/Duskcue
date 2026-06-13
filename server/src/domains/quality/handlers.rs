@@ -147,57 +147,125 @@ pub async fn get_bandwidth_probe(
     State(_state): State<AppState>,
     _user: AuthenticatedUser,
 ) -> Result<&'static [u8], AppError> {
-    todo!()
+    static PROBE_PAYLOAD: [u8; 102400] = [0u8; 102400];
+    Ok(&PROBE_PAYLOAD)
 }
 
 pub async fn submit_bandwidth_probe_result(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Json(_req): Json<BandwidthProbeResultRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    todo!()
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<BandwidthProbeResultRequest>,
+) -> Result<Json<ProbeAckResponse>, AppError> {
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect(),
+        instance: Some("/api/v1/probe/bandwidth/result".to_string()),
+    })?;
+    let result = service::submit_bandwidth_probe_result(
+        &state.pool,
+        user.user_id,
+        &req,
+    ).await?;
+    Ok(Json(result))
 }
 
 pub async fn submit_telemetry(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Json(_req): Json<SegmentTelemetryRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    todo!()
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<SegmentTelemetryRequest>,
+) -> Result<Json<TelemetryAckResponse>, AppError> {
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect(),
+        instance: Some("/api/v1/playback/telemetry".to_string()),
+    })?;
+    let config = state.runtime_config.load();
+    let window = config.quality.throughput_estimate_window;
+    let result = service::submit_segment_telemetry(
+        &state.pool,
+        user.user_id,
+        &req,
+        window,
+    ).await?;
+    Ok(Json(result))
 }
 
 pub async fn submit_qoe(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Json(_req): Json<QoeReportRequest>,
-) -> Result<Json<serde_json::Value>, AppError> {
-    todo!()
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<QoeReportRequest>,
+) -> Result<Json<QoeAckResponse>, AppError> {
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect(),
+        instance: Some("/api/v1/playback/qoe".to_string()),
+    })?;
+    let config = state.runtime_config.load();
+    let interval = config.quality.qoe_report_interval_seconds;
+    let result = service::submit_qoe_report(
+        &state.pool,
+        user.user_id,
+        &req,
+        interval,
+    ).await?;
+    Ok(Json(result))
 }
 
 pub async fn admin_network_summary(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _user: AuthenticatedUser,
 ) -> Result<Json<Vec<NetworkQualitySummary>>, AppError> {
-    todo!()
+    let summary = service::get_network_quality_summary(&state.pool).await?;
+    Ok(Json(summary))
 }
 
 pub async fn admin_device_summary(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _user: AuthenticatedUser,
 ) -> Result<Json<Vec<DeviceCapabilitySummary>>, AppError> {
-    todo!()
+    let summary = service::get_device_capability_summary(&state.pool).await?;
+    Ok(Json(summary))
 }
 
 pub async fn admin_qoe_summary(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _user: AuthenticatedUser,
 ) -> Result<Json<Vec<QoeSummary>>, AppError> {
-    todo!()
+    let summary = service::get_qoe_summary(&state.pool).await?;
+    Ok(Json(summary))
 }
 
 pub async fn admin_transcode_breakdown(
-    State(_state): State<AppState>,
+    State(state): State<AppState>,
     _user: AuthenticatedUser,
 ) -> Result<Json<TranscodeBreakdown>, AppError> {
-    todo!()
+    let breakdown = service::get_transcode_breakdown(&state.pool).await?;
+    Ok(Json(breakdown))
 }

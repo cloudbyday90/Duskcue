@@ -604,39 +604,339 @@ fn create_conservative_baseline_response(device_identifier: &str) -> DeviceProfi
     }
 }
 
+pub fn classify_network_tier(throughput_bps: i64) -> &'static str {
+    if throughput_bps > 25_000_000 {
+        "excellent"
+    } else if throughput_bps >= 10_000_000 {
+        "good"
+    } else if throughput_bps >= 5_000_000 {
+        "moderate"
+    } else if throughput_bps >= 2_000_000 {
+        "slow"
+    } else if throughput_bps >= 500_000 {
+        "very_slow"
+    } else {
+        "critical"
+    }
+}
+
+pub fn compute_segment_throughput(segment_bytes: i64, download_start_ms: i64, download_end_ms: i64) -> Option<i64> {
+    let duration_ms = download_end_ms.saturating_sub(download_start_ms);
+    if duration_ms <= 0 || segment_bytes <= 0 {
+        return None;
+    }
+    let throughput_bps = (segment_bytes * 8 * 1000) / duration_ms;
+    Some(throughput_bps)
+}
+
+pub async fn compute_harmonic_mean_throughput(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    window: i32,
+) -> Option<i64> {
+    let rows = sqlx::query(
+        r#"SELECT throughput_bps FROM client_network_reports
+        WHERE user_id = $1 AND throughput_bps IS NOT NULL
+        ORDER BY created_at DESC LIMIT $2"#
+    )
+        .bind(user_id)
+        .bind(window)
+        .fetch_all(pool)
+        .await
+        .ok()?;
+
+    if rows.is_empty() {
+        return None;
+    }
+
+    let reciprocals: f64 = rows.iter()
+        .filter_map(|r| {
+            let bps: i64 = r.get("throughput_bps");
+            if bps > 0 { Some(1.0 / bps as f64) } else { None }
+        })
+        .sum();
+
+    if reciprocals <= 0.0 {
+        return None;
+    }
+
+    Some((rows.len() as f64 / reciprocals) as i64)
+}
+
 pub async fn submit_segment_telemetry(
-    _user_id: Uuid,
-    _session_id: Uuid,
-) -> Result<(), QualityError> {
-    todo!()
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    req: &SegmentTelemetryRequest,
+    throughput_window: i32,
+) -> Result<TelemetryAckResponse, QualityError> {
+    let session_id = req.session_id
+        .ok_or_else(|| QualityError::InvalidTelemetry("session_id is required".to_string()))?;
+
+    let throughput_bps = match (req.segment_bytes, req.download_start_ms, req.download_end_ms) {
+        (Some(bytes), Some(start), Some(end)) => compute_segment_throughput(bytes, start, end),
+        _ => None,
+    };
+
+    let harmonic_throughput = if throughput_bps.is_some() {
+        compute_harmonic_mean_throughput(pool, user_id, throughput_window).await
+    } else {
+        None
+    };
+
+    let effective_throughput = harmonic_throughput.or(throughput_bps);
+    let network_tier = effective_throughput.map(|t| classify_network_tier(t).to_string());
+
+    let row = sqlx::query(
+        r#"INSERT INTO client_network_reports (
+            user_id, session_id, report_type,
+            segment_index, rung,
+            payload_bytes, download_start_ms, download_end_ms,
+            throughput_bps,
+            buffer_seconds, rebuffer_count, rebuffer_total_ms,
+            estimated_throughput_bps, network_tier
+        ) VALUES ($1, $2, 'segment', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        RETURNING id"#
+    )
+        .bind(user_id)
+        .bind(session_id)
+        .bind(req.segment_index)
+        .bind(&req.rung)
+        .bind(req.segment_bytes)
+        .bind(req.download_start_ms)
+        .bind(req.download_end_ms)
+        .bind(throughput_bps)
+        .bind(req.buffer_seconds)
+        .bind(req.rebuffer_count)
+        .bind(req.rebuffer_total_ms)
+        .bind(effective_throughput)
+        .bind(&network_tier)
+        .fetch_one(pool)
+        .await
+        .map_err(QualityError::Database)?;
+
+    Ok(TelemetryAckResponse {
+        report_id: row.get("id"),
+        throughput_bps: effective_throughput,
+        network_tier,
+    })
 }
 
 pub async fn submit_bandwidth_probe_result(
-    _user_id: Uuid,
-    _session_id: Uuid,
-) -> Result<(), QualityError> {
-    todo!()
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    req: &BandwidthProbeResultRequest,
+) -> Result<ProbeAckResponse, QualityError> {
+    let session_id = req.session_id
+        .ok_or_else(|| QualityError::InvalidProbeResult("session_id is required".to_string()))?;
+
+    let probe_bytes = req.probe_bytes
+        .filter(|&b| b > 0)
+        .ok_or_else(|| QualityError::InvalidProbeResult("probe_bytes must be positive".to_string()))?;
+    let download_ms = req.download_ms
+        .filter(|&d| d > 0)
+        .ok_or_else(|| QualityError::InvalidProbeResult("download_ms must be positive".to_string()))?;
+
+    let computed_throughput = (probe_bytes * 8 * 1000) / download_ms;
+    let throughput_bps = req.estimated_throughput_bps.unwrap_or(computed_throughput);
+    let network_tier = classify_network_tier(throughput_bps).to_string();
+
+    let row = sqlx::query(
+        r#"INSERT INTO client_network_reports (
+            user_id, session_id, report_type,
+            payload_bytes, download_start_ms, download_end_ms,
+            throughput_bps, estimated_throughput_bps, network_tier
+        ) VALUES ($1, $2, 'probe', $3, 0, $4, $5, $6, $7)
+        RETURNING id"#
+    )
+        .bind(user_id)
+        .bind(session_id)
+        .bind(probe_bytes)
+        .bind(download_ms)
+        .bind(computed_throughput)
+        .bind(throughput_bps)
+        .bind(&network_tier)
+        .fetch_one(pool)
+        .await
+        .map_err(QualityError::Database)?;
+
+    Ok(ProbeAckResponse {
+        report_id: row.get("id"),
+        throughput_bps: Some(throughput_bps),
+        network_tier: Some(network_tier),
+    })
 }
 
 pub async fn submit_qoe_report(
-    _user_id: Uuid,
-    _session_id: Uuid,
-) -> Result<(), QualityError> {
-    todo!()
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    req: &QoeReportRequest,
+    report_interval_seconds: i32,
+) -> Result<QoeAckResponse, QualityError> {
+    let session_id = req.session_id
+        .ok_or_else(|| QualityError::InvalidTelemetry("session_id is required".to_string()))?;
+
+    let row = sqlx::query(
+        r#"INSERT INTO qoe_reports (
+            user_id, session_id, report_interval_seconds,
+            startup_time_ms, rebuffer_ratio, average_bitrate_bps,
+            switches_per_minute, quality_drops,
+            current_rung, current_buffer_seconds
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        RETURNING id"#
+    )
+        .bind(user_id)
+        .bind(session_id)
+        .bind(report_interval_seconds)
+        .bind(req.startup_time_ms)
+        .bind(req.rebuffer_ratio)
+        .bind(req.average_bitrate_bps)
+        .bind(req.switches_per_minute)
+        .bind(req.quality_drops)
+        .bind(&req.current_rung)
+        .bind(req.current_buffer_seconds)
+        .fetch_one(pool)
+        .await
+        .map_err(QualityError::Database)?;
+
+    Ok(QoeAckResponse {
+        report_id: row.get("id"),
+    })
 }
 
-pub async fn get_network_quality_summary() -> Result<(), QualityError> {
-    todo!()
+pub async fn get_network_quality_summary(
+    pool: &sqlx::PgPool,
+) -> Result<Vec<NetworkQualitySummary>, QualityError> {
+    let rows = sqlx::query(
+        r#"SELECT
+            cnr.user_id,
+            cnr.network_tier AS latest_tier,
+            cnr.throughput_bps AS latest_throughput_bps,
+            summary.sample_count
+        FROM client_network_reports cnr
+        INNER JOIN LATERAL (
+            SELECT user_id, COUNT(*) AS sample_count
+            FROM client_network_reports
+            WHERE created_at > now() - interval '24 hours'
+            GROUP BY user_id
+        ) summary ON summary.user_id = cnr.user_id
+        WHERE cnr.created_at = (
+            SELECT MAX(c2.created_at)
+            FROM client_network_reports c2
+            WHERE c2.user_id = cnr.user_id
+        )
+        ORDER BY cnr.created_at DESC"#
+    )
+        .fetch_all(pool)
+        .await
+        .map_err(QualityError::Database)?;
+
+    Ok(rows.iter().map(|r| NetworkQualitySummary {
+        user_id: r.get("user_id"),
+        latest_tier: r.get("latest_tier"),
+        latest_throughput_bps: r.get("latest_throughput_bps"),
+        sample_count: r.get("sample_count"),
+    }).collect())
 }
 
-pub async fn get_device_capability_summary() -> Result<(), QualityError> {
-    todo!()
+pub async fn get_device_capability_summary(
+    pool: &sqlx::PgPool,
+) -> Result<Vec<DeviceCapabilitySummary>, QualityError> {
+    let rows = sqlx::query(
+        r#"SELECT
+            platform,
+            COUNT(*) AS device_count,
+            COALESCE(
+                AVG(CASE WHEN wizard_completed_at IS NOT NULL THEN 1.0 ELSE 0.0 END),
+                0.0
+            ) AS wizard_completion_rate,
+            COALESCE(
+                (SELECT jsonb_agg(DISTINCT elem)
+                 FROM device_profiles dp2, jsonb_array_elements_text(dp2.video_codecs) elem
+                 WHERE dp2.platform = dp.platform
+                 LIMIT 5),
+                '[]'::jsonb
+            )::text AS top_video_codecs
+        FROM device_profiles dp
+        GROUP BY platform
+        ORDER BY device_count DESC"#
+    )
+        .fetch_all(pool)
+        .await
+        .map_err(QualityError::Database)?;
+
+    Ok(rows.iter().map(|r| {
+        let codecs_text: String = r.try_get("top_video_codecs")
+            .unwrap_or_else(|_| "[]".to_string());
+        let top_codecs: Vec<String> = serde_json::from_str(&codecs_text)
+            .unwrap_or_default();
+        DeviceCapabilitySummary {
+            platform: r.get("platform"),
+            device_count: r.get("device_count"),
+            wizard_completion_rate: r.get::<f64, _>("wizard_completion_rate") * 100.0,
+            top_video_codecs: top_codecs,
+        }
+    }).collect())
 }
 
-pub async fn get_qoe_summary() -> Result<(), QualityError> {
-    todo!()
+pub async fn get_qoe_summary(
+    pool: &sqlx::PgPool,
+) -> Result<Vec<QoeSummary>, QualityError> {
+    let rows = sqlx::query(
+        r#"SELECT DISTINCT ON (session_id)
+            session_id, user_id,
+            startup_time_ms, rebuffer_ratio, average_bitrate_bps,
+            switches_per_minute, quality_drops
+        FROM qoe_reports
+        ORDER BY session_id, created_at DESC
+        LIMIT 100"#
+    )
+        .fetch_all(pool)
+        .await
+        .map_err(QualityError::Database)?;
+
+    Ok(rows.iter().map(|r| QoeSummary {
+        session_id: r.get("session_id"),
+        user_id: r.get("user_id"),
+        startup_time_ms: r.get("startup_time_ms"),
+        rebuffer_ratio: r.get("rebuffer_ratio"),
+        average_bitrate_bps: r.get("average_bitrate_bps"),
+        switches_per_minute: r.get("switches_per_minute"),
+        quality_drops: r.get("quality_drops"),
+    }).collect())
 }
 
-pub async fn get_transcode_breakdown() -> Result<(), QualityError> {
-    todo!()
+pub async fn get_transcode_breakdown(
+    pool: &sqlx::PgPool,
+) -> Result<TranscodeBreakdown, QualityError> {
+    let row = sqlx::query(
+        r#"SELECT
+            COUNT(*) AS total,
+            COUNT(*) FILTER (WHERE metadata->>'playback_type' = 'direct_play') AS direct_play,
+            COUNT(*) FILTER (WHERE metadata->>'playback_type' = 'direct_stream') AS direct_stream,
+            COUNT(*) FILTER (WHERE metadata->>'playback_type' = 'transcode') AS transcode
+        FROM play_sessions
+        WHERE ended_at IS NOT NULL"#
+    )
+        .fetch_one(pool)
+        .await
+        .map_err(QualityError::Database)?;
+
+    let total: i64 = row.try_get("total").unwrap_or(0);
+    let direct_play: i64 = row.try_get("direct_play").unwrap_or(0);
+    let direct_stream: i64 = row.try_get("direct_stream").unwrap_or(0);
+    let transcode: i64 = row.try_get("transcode").unwrap_or(0);
+
+    let direct_play_percentage = if total > 0 {
+        (direct_play as f64 / total as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    Ok(TranscodeBreakdown {
+        direct_play_count: direct_play,
+        direct_stream_count: direct_stream,
+        transcode_count: transcode,
+        total_sessions: total,
+        direct_play_percentage,
+    })
 }

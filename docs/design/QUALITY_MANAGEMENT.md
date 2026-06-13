@@ -682,12 +682,12 @@ Quality management error codes are defined in [ERROR_HANDLING.md](ERROR_HANDLING
 
 ## Implementation Status
 
-**Domain module** implemented in `server/src/domains/quality/` (Phase 7, Task 4). Five-file pattern with:
+**Domain module** implemented in `server/src/domains/quality/` (Phase 7, Tasks 4–6). Five-file pattern with:
 
-- `types.rs` — 4 Row types (`DeviceProfileRow`, `DeviceCapabilityTestRow`, `ClientNetworkReportRow`, `QoeReportRow`), 7 Request types with `validator` validation, 8 Response types including admin summaries
+- `types.rs` — 4 Row types (`DeviceProfileRow`, `DeviceCapabilityTestRow`, `ClientNetworkReportRow`, `QoeReportRow`), 7 Request types with `validator` validation, 8 Response types including admin summaries, 3 ack response types (`TelemetryAckResponse`, `ProbeAckResponse`, `QoeAckResponse`)
 - `error.rs` — `QualityError` enum with 12 variants matching QUALITY_001–012 error codes
-- `service.rs` — 12 function stubs (`todo!()`) for capabilities, wizard, telemetry, probing, QoE, admin summaries
-- `handlers.rs` — 13 handler stubs wired to Axum extractors
+- `service.rs` — Full implementations for capabilities, wizard, telemetry, probing, QoE, and admin summaries; `classify_network_tier()` 6-tier classification, `compute_segment_throughput()` per-segment throughput, `compute_harmonic_mean_throughput()` running estimate with configurable window
+- `handlers.rs` — 13 working handlers (5 capability + 2 probe + 2 telemetry/QoE + 4 admin)
 - `mod.rs` — Router with 13 routes; `QualityError` integrated into `AppError` with `quality_error_to_http()` mapping
 
-**Not yet implemented** (Tasks 5–7): Device capability detection runtime probe, network quality assessment engine, transcoding decision engine. All service/handler functions are `todo!()` stubs awaiting business logic.
+**Not yet implemented** (Tasks 7–13): Transcoding decision engine, streaming policy system, HLS manifest/segment serving, direct play/remux, HW accel detection, play session tracking, user item data.

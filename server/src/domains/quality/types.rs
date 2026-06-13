@@ -263,3 +263,22 @@ pub struct TranscodeBreakdown {
     pub total_sessions: i64,
     pub direct_play_percentage: f64,
 }
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TelemetryAckResponse {
+    pub report_id: Uuid,
+    pub throughput_bps: Option<i64>,
+    pub network_tier: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ProbeAckResponse {
+    pub report_id: Uuid,
+    pub throughput_bps: Option<i64>,
+    pub network_tier: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct QoeAckResponse {
+    pub report_id: Uuid,
+}
