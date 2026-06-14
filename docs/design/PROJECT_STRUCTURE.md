@@ -563,66 +563,128 @@ All JavaScript/TypeScript files use `import`/`export` syntax exclusively. No `re
 
 ### API Client Layer Pattern
 
-Each API module exports named functions — one function per endpoint. Vue components and stores never call `fetch` directly.
+Each API module exports named functions — one function per endpoint. Svelte components and stores never call `fetch` directly.
 
 ```javascript
 // src/lib/api/libraries.js
-import { getDataRequest, postDataRequest } from './core.js';
+import { get, post } from './core.js';
 
 export async function listLibraries(params = {}) {
-    return getDataRequest('/api/v1/libraries', params);
+    return get('/libraries', params);
 }
 
 export async function getLibrary(id) {
-    return getDataRequest(`/api/v1/libraries/${id}`);
+    return get(`/libraries/${id}`);
 }
 
 export async function createLibrary(data) {
-    return postDataRequest('/api/v1/libraries', data);
+    return post('/libraries', data);
 }
 
 export async function scanLibrary(id) {
-    return postDataRequest(`/api/v1/libraries/${id}/scan`);
+    return post(`/libraries/${id}/scan`);
 }
 ```
 
 ```javascript
 // src/lib/api/core.js
-import { getAuthHeaders } from './auth.js';
-
 const API_BASE = '/api/v1';
 
-export async function getDataRequest(path, params = {}) {
-    const url = new URL(API_BASE + path, window.location.origin);
-    Object.entries(params).forEach(([key, value]) => {
-        if (value !== undefined && value !== null) {
-            url.searchParams.set(key, value);
+let bearerToken = null;
+
+export function setBearerToken(token) {
+    bearerToken = token;
+}
+
+export function clearBearerToken() {
+    bearerToken = null;
+}
+
+export class ApiError extends Error {
+    constructor(problem) {
+        super(problem.detail || problem.title || `HTTP ${problem.status}`);
+        this.name = 'ApiError';
+        this.type = problem.type || '';
+        this.title = problem.title || '';
+        this.status = problem.status || 0;
+        this.detail = problem.detail || '';
+        this.traceId = problem.trace_id || '';
+        this.instance = problem.instance || '';
+        this.errors = problem.errors || null;
+        this.retryAfter = null;
+    }
+
+    get isValidation() { return Array.isArray(this.errors); }
+    get isRateLimited() { return this.status === 429; }
+    get isUnauthorized() { return this.status === 401; }
+    get isForbidden() { return this.status === 403; }
+    get isNotFound() { return this.status === 404; }
+    get isConflict() { return this.status === 409; }
+    get isServerError() { return this.status >= 500; }
+
+    fieldError(fieldName) {
+        if (!this.errors) return undefined;
+        return this.errors.find((e) => e.field === fieldName);
+    }
+}
+
+export async function request(method, path, options = {}) {
+    const search = new URLSearchParams();
+    if (options.params) {
+        for (const [key, value] of Object.entries(options.params)) {
+            if (value === undefined || value === null) continue;
+            search.set(key, Array.isArray(value) ? value.join(',') : String(value));
         }
-    });
+    }
+    const query = search.toString();
+    const url = query ? `${API_BASE}${path}?${query}` : `${API_BASE}${path}`;
+
+    const headers = { Accept: 'application/json' };
+    if (bearerToken) headers['Authorization'] = `Bearer ${bearerToken}`;
+    if (options.body !== undefined) headers['Content-Type'] = 'application/json';
+    if (options.ifNoneMatch) headers['If-None-Match'] = options.ifNoneMatch;
+
     const response = await fetch(url, {
-        headers: { ...getAuthHeaders() },
+        method,
+        headers,
+        credentials: 'same-origin',
+        body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+        signal: options.signal,
     });
+
+    if (response.status === 204 || response.status === 304) return null;
     if (!response.ok) {
-        const error = await response.json();
+        const problem = await response.json().catch(() => ({
+            type: `/errors/http_${response.status}`,
+            title: `HTTP_${response.status}`,
+            status: response.status,
+            detail: response.statusText,
+        }));
+        const error = new ApiError(problem);
+        error.retryAfter = parseInt(response.headers.get('Retry-After'), 10) || null;
         throw error;
     }
     return response.json();
 }
 
-export async function postDataRequest(path, data) {
-    const response = await fetch(API_BASE + path, {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-            ...getAuthHeaders(),
-        },
-        body: JSON.stringify(data),
-    });
-    if (!response.ok) {
-        const error = await response.json();
-        throw error;
-    }
-    return response;
+export function get(path, params = {}, options = {}) {
+    return request('GET', path, { ...options, params });
+}
+
+export function post(path, body = undefined, options = {}) {
+    return request('POST', path, { ...options, body });
+}
+
+export function patch(path, body = undefined, options = {}) {
+    return request('PATCH', path, { ...options, body });
+}
+
+export function put(path, body = undefined, options = {}) {
+    return request('PUT', path, { ...options, body });
+}
+
+export function del(path, options = {}) {
+    return request('DELETE', path, options);
 }
 ```
 

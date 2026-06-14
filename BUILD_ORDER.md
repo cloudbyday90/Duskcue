@@ -1533,7 +1533,39 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Tasks:**
 
-1. Build `clients/web/src/lib/api/core.js` — HTTP client with session cookie handling, error parsing (RFC 9457)
+1. ~~Build `clients/web/src/lib/api/core.js` — HTTP client with session cookie handling, error parsing (RFC 9457)~~ **DONE**
+
+   **What was built for Task 1:**
+
+   | File | Purpose |
+   |---|---|
+   | `clients/web/package.json` | SvelteKit/Svelte 5/Vite devDependencies — `@sveltejs/kit` ^2.57, `@sveltejs/adapter-node` ^5.2, `@sveltejs/vite-plugin-svelte` ^5.0, `svelte` ^5.55, `vite` ^6.0 |
+   | `clients/web/svelte.config.js` | SvelteKit config with `adapter-node` (Docker/self-hosted target) and `vitePreprocess` |
+   | `clients/web/vite.config.js` | Vite config with SvelteKit plugin and dev-mode API proxy (`/api`, `/health` → `DUSKCUE_BACKEND_URL` or `localhost:48027`) |
+   | `clients/web/src/app.html` | SvelteKit HTML shell with `%sveltekit.head%` / `%sveltekit.body%`, `data-sveltekit-preload-data="hover"` |
+   | `clients/web/src/routes/+layout.svelte` | Root layout (Svelte 5 runes — `$props()`, `{@render children()}`) |
+   | `clients/web/src/routes/+page.svelte` | Minimal placeholder home page |
+   | `clients/web/src/lib/api/core.js` | HTTP client — `request()` core wrapper, `get`/`post`/`patch`/`put`/`del` convenience methods, `ApiError` class (RFC 9457), bearer token store, `buildApiUrl()` |
+
+   **Key decisions from Task 1:**
+
+   - **Decoupled from `auth.js`** — PROJECT_STRUCTURE.md showed `core.js` importing `getAuthHeaders()` from `auth.js`, but this creates a circular dependency (auth API module imports core for HTTP methods). Instead, `core.js` manages an optional module-level bearer token via `setBearerToken()` / `clearBearerToken()`. The web client primarily uses HttpOnly session cookies (browser-managed, no JS token access); bearer token support is for optional scenarios (Tauri desktop wrapper, API keys, testing).
+   - **Clean method names (`get`/`post`/`patch`/`put`/`del`)** — Replaced the documented `getDataRequest`/`postDataRequest` names with concise REST-verb methods. `del` instead of `delete` (reserved word). Domain modules import like `import { get, post, del } from './core.js'`.
+   - **`credentials: 'same-origin'`** — Explicit on all requests. The session cookie (`Path=/api`, `HttpOnly`, `SameSite=Strict`) is sent automatically by the browser for same-origin API calls. During dev, Vite proxy makes requests appear same-origin to the browser.
+   - **`ApiError` class wraps RFC 9457 Problem Details** — Extends `Error` with `type`, `title`, `status`, `detail`, `traceId`, `instance`, `errors` (validation array), `retryAfter` (429). Convenience getters: `isValidation`, `isRateLimited`, `isUnauthorized`, `isForbidden`, `isNotFound`, `isConflict`, `isServerError`. `fieldError(fieldName)` extracts per-field validation errors.
+   - **Query param handling** — `URLSearchParams` for encoding; arrays joined with comma (per API_CONVENTIONS.md multi-value filter convention: `?genre=action,thriller`); `undefined`/`null` values omitted; booleans stringified as `'true'`/`'false'`.
+   - **Response handling** — `204 No Content` and `304 Not Modified` return `null`; non-JSON content types return `null`; JSON content types parse and return the body; error responses throw `ApiError`.
+   - **Network errors throw `ApiError` with `status: 0`** — A `NETWORK_ERROR` synthetic error type (`/errors/network`) wraps fetch failures so callers catch everything in one `catch` block.
+   - **`AbortSignal` support** — `options.signal` for request cancellation; `AbortError` re-thrown directly (not wrapped in `ApiError`).
+   - **ETag support** — `options.ifNoneMatch` sets `If-None-Match` header; `options.returnResponse` returns raw `Response` for ETag extraction. 304 returns `null` so caller uses cached data.
+   - **No `window` dependency** — Relative URL construction via string concatenation (not `new URL(path, window.location.origin)`) to keep the module SSR-safe and environment-agnostic.
+   - **Svelte 5 runes in layout** — `+layout.svelte` uses `$props()` + `{@render children()}` (Svelte 5 pattern), not the Svelte 4 `<slot />` pattern documented in PROJECT_STRUCTURE.md stores section.
+
+   **Deviations from PROJECT_STRUCTURE.md (to be reconciled):**
+   - `core.js` API surface changed from `getDataRequest`/`postDataRequest` to `get`/`post`/`patch`/`put`/`del` — cleaner, covers all HTTP methods
+   - `core.js` does not import from `auth.js` — bearer token store is self-contained
+   - Store pattern in docs uses Svelte 4 `writable`/`derived` — will be updated to Svelte 5 runes (`$state`/`$derived`) when stores are built (Task 3)
+
 2. Build API client modules per domain — `auth.js`, `users.js`, `libraries.js`, `media.js`, `playback.js`, `settings.js`, `search.js`
 3. Build Svelte stores — `auth.js`, `user.js`, `libraries.js`, `player.js`, `notifications.js`
 4. Build core components — `MediaCard.svelte`, `Player.svelte` (hls.js integration), `SearchBar.svelte`, `NotificationToast.svelte`

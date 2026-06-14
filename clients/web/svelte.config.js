@@ -16,3 +16,15 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import adapter from '@sveltejs/adapter-node';
+import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+const config = {
+    preprocess: vitePreprocess(),
+    kit: {
+        adapter: adapter(),
+    },
+};
+
+export default config;
+

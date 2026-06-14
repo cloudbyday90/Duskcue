@@ -16,3 +16,24 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { sveltekit } from '@sveltejs/kit/vite';
+import { defineConfig } from 'vite';
+
+const BACKEND_URL = process.env.DUSKCUE_BACKEND_URL || 'http://localhost:48027';
+
+export default defineConfig({
+    plugins: [sveltekit()],
+    server: {
+        proxy: {
+            '/api': {
+                target: BACKEND_URL,
+                changeOrigin: true,
+            },
+            '/health': {
+                target: BACKEND_URL,
+                changeOrigin: true,
+            },
+        },
+    },
+});
+

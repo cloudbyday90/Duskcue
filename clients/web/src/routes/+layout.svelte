@@ -5,4 +5,9 @@
   This program is free software: licensed under AGPL-3.0
   See LICENSE file for details.
 -->
+<script>
+    let { children } = $props();
+</script>
+
+{@render children()}
 

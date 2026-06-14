@@ -7,8 +7,9 @@ Thumbs.db
 .env
 node_modules/
 /dist
-/.svelte-kit
+.svelte-kit/
 /build
+clients/web/build/
 .cache/
 *.db
 *.db-journal
