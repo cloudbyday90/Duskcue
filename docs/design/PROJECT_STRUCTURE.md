@@ -692,6 +692,7 @@ export function del(path, options = {}) {
 
 ```javascript
 // src/lib/api/index.js
+export * from './core.js';
 export * from './auth.js';
 export * from './users.js';
 export * from './libraries.js';
@@ -709,6 +710,12 @@ export * from './segments.js';
 export * from './migration.js';
 export * from './storyboards.js';
 ```
+
+`core.js` is included in the barrel export so consumers can import `ApiError`, `setBearerToken`, `clearBearerToken`, and `buildApiUrl` alongside domain functions from a single `import { ... } from '$lib/api'`.
+
+Modules with implemented endpoints (Phases 1–7 complete): `auth.js`, `users.js`, `libraries.js`, `media.js`, `playback.js`, `quality.js`, `settings.js`, `search.js`. Remaining modules (`analytics.js`, `trakt.js`, `subtitles.js`, `overlays.js`, `collections.js`, `segments.js`, `migration.js`, `storyboards.js`) are license-header-only stubs until their respective phases are built.
+
+Streaming endpoints (Direct Play file serving, HLS manifest/playlist/segment) use **URL builder functions** (e.g., `streamFileUrl()`, `transcodeManifestUrl()`) rather than fetch wrappers — these return URL strings consumed by the `<video>` element's `src` attribute or hls.js, since the browser handles those fetches directly with Range headers.
 
 ### Store Pattern
 

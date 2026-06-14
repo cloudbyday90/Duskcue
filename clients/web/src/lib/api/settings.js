@@ -16,3 +16,13 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { get, post } from './core.js';
+
+export async function validateProviderKey(data) {
+    return post('/settings/providers/validate', data);
+}
+
+export async function getHealth() {
+    return get('/health');
+}
+

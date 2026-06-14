@@ -16,3 +16,29 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { get, patch, del } from './core.js';
+
+export async function listMediaItems(params = {}) {
+    return get('/media-items', params);
+}
+
+export async function getMediaItem(itemId) {
+    return get(`/media-items/${itemId}`);
+}
+
+export async function updateMediaItem(itemId, data) {
+    return patch(`/media-items/${itemId}`, data);
+}
+
+export async function deleteMediaItem(itemId) {
+    return del(`/media-items/${itemId}`);
+}
+
+export async function listMediaFiles(itemId) {
+    return get(`/media-items/${itemId}/files`);
+}
+
+export async function getMediaFile(itemId, fileId) {
+    return get(`/media-items/${itemId}/files/${fileId}`);
+}
+

@@ -16,3 +16,13 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+export * from './core.js';
+export * from './auth.js';
+export * from './users.js';
+export * from './libraries.js';
+export * from './media.js';
+export * from './playback.js';
+export * from './settings.js';
+export * from './search.js';
+export * from './quality.js';
+

@@ -16,3 +16,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { get } from './core.js';
+
+export async function search(query, params = {}) {
+    return get('/search', { q: query, ...params });
+}
+

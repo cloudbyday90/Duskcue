@@ -16,3 +16,29 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { get, put, del } from './core.js';
+
+export async function listUsers(params = {}) {
+    return get('/users', params);
+}
+
+export async function getUser(userId) {
+    return get(`/users/${userId}`);
+}
+
+export async function updateUser(userId, data) {
+    return put(`/users/${userId}`, data);
+}
+
+export async function deleteUser(userId) {
+    return del(`/users/${userId}`);
+}
+
+export async function getUserCapabilities(userId) {
+    return get(`/users/${userId}/capabilities`);
+}
+
+export async function updateUserCapabilities(userId, data) {
+    return put(`/users/${userId}/capabilities`, data);
+}
+

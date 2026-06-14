@@ -16,3 +16,57 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { get, post, buildApiUrl } from './core.js';
+
+export async function reportCapabilities(data) {
+    return post('/device/capabilities', data);
+}
+
+export async function getCapabilities(params = {}) {
+    return get('/device/capabilities', params);
+}
+
+export async function listCapabilityTests(params = {}) {
+    return get('/device/capability-tests', params);
+}
+
+export async function startCapabilityWizard(data) {
+    return post('/device/capability-tests/start', data);
+}
+
+export async function submitCapabilityTestResult(testId, data) {
+    return post(`/device/capability-tests/${testId}/result`, data);
+}
+
+export function bandwidthProbeUrl() {
+    return buildApiUrl('/probe/bandwidth');
+}
+
+export async function submitBandwidthProbeResult(data) {
+    return post('/probe/bandwidth/result', data);
+}
+
+export async function submitTelemetry(data) {
+    return post('/playback/telemetry', data);
+}
+
+export async function submitQoeReport(data) {
+    return post('/playback/qoe', data);
+}
+
+export async function getNetworkQualitySummary(params = {}) {
+    return get('/admin/quality/network', params);
+}
+
+export async function getDeviceCapabilitySummary(params = {}) {
+    return get('/admin/quality/devices', params);
+}
+
+export async function getQoeSummary(params = {}) {
+    return get('/admin/quality/qoe', params);
+}
+
+export async function getTranscodeBreakdown(params = {}) {
+    return get('/admin/quality/transcodes', params);
+}
+
