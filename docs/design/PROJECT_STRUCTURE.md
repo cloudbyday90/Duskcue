@@ -748,6 +748,18 @@ function createLibrariesStore() {
 export const libraries = createLibrariesStore();
 ```
 
+**Implemented stores (Phase 8 Task 3):** 5 stores built using `svelte/store` writable/derived with the factory-function pattern above. Each store encapsulates `set`/`update` via closures, exposing only `subscribe` + domain-specific action methods. Derived stores are exported for fine-grained subscriptions (e.g., `isPlaying`, `currentPosition`, `progressPercent` from the player store).
+
+| Store | Exports | Responsibility |
+|---|---|---|
+| `stores/auth.js` | `auth` + 7 derived + `hasCapability()` | Session lifecycle, login flows, user identity, capability checks with owner bypass; caches user in localStorage |
+| `stores/user.js` | `user` + 4 derived | Active sessions, passkey management, UI preferences (localStorage) |
+| `stores/libraries.js` | `libraries` + 4 derived | Library CRUD, selection context, path management, per-library scanning flags |
+| `stores/player.js` | `player` + 11 derived | Playback lifecycle, 15s heartbeat timer, stream URL resolution (direct file vs HLS), volume persistence |
+| `stores/notifications.js` | `notifications` + 1 derived | Toast system with auto-dismiss (5s default, 8s errors), FIFO eviction (max 5) |
+
+All stores consume API client functions from `../api/*.js` — never calling `fetch` directly. All localStorage access is SSR-safe (`typeof localStorage !== 'undefined'` checks) for `adapter-node`. WebAuthn credential API calls (`navigator.credentials.get()`/`create()`) are delegated to the caller via injected callbacks, keeping stores framework-agnostic and testable.
+
 ## Why This Structure
 
 ### Why Cargo Workspace (not separate repos)
