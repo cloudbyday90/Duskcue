@@ -1667,15 +1667,57 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
     - `SearchBar` navigates to `/search?q=...` on submit; the search page (Task 5) should read `$page.url.searchParams.get('q')` and call `search()` from `api/search.js`
     - hls.js is dynamically imported — only the player route will load it in the browser bundle
 
-5. Build route pages:
-   - Auth: login, setup, device linking
-   - Dashboard: home screen with recently added, continue watching
-   - Libraries: library list, library detail (grid of media items)
-   - Media: item detail page with metadata, cast, play button
-   - Player: full-screen HLS player with quality selector
-   - Search: search results page
-   - Settings: server overview, users, libraries
-6. Implement responsive layout — desktop and mobile breakpoints
+ 5. ~~Build route pages~~ **DONE**
+
+    **What was built for Task 5:**
+
+    | File | Purpose |
+    |---|---|
+    | `clients/web/src/routes/+layout.svelte` | App shell — nav bar with logo, nav links (Dashboard, Libraries, Media), compact `SearchBar`, user dropdown menu (display name, Settings, Logout); auth guard via `$effect` checking `$isAuthenticated` after `auth.init()`; redirects unauthenticated users to `/auth/login` (or `/auth/setup` if no owner exists); redirects authenticated users away from auth pages to `/dashboard`; `NotificationToast` rendered; full-screen loading spinner during auth init |
+    | `clients/web/src/routes/+page.svelte` | Root redirect — `goto('/dashboard')` on mount |
+    | `clients/web/src/routes/auth/setup/+page.svelte` | First-run owner creation — form with username, password, display_name, server_name; calls `auth.setup()`; redirects to `/dashboard` on success |
+    | `clients/web/src/routes/auth/login/+page.svelte` | Two-mode login — invite code or username/password tabs; passkey (WebAuthn) button with `navigator.credentials.get()` callback; calls `auth.loginWithInvite()` / `auth.loginWithPassword()` / `auth.loginWithPasskey()`; error display with `ApiError` field extraction |
+    | `clients/web/src/routes/auth/link/+page.svelte` | Device code entry — auto-formats input to `ABCD-EFGH` pattern; reads `?code=` URL param for pre-filled codes; calls `auth` API device linking flow |
+    | `clients/web/src/routes/dashboard/+page.svelte` | Home dashboard — hero greeting with user display name; Continue Watching row (fetches recent items, per-item `getWatchData()` calls, filters by `resume_position_ms > 0`, progress bar on cards); Recently Added grid with `MediaCard` components |
+    | `clients/web/src/routes/libraries/+page.svelte` | Library list — grid of library cards with type-specific SVG icons, item counts; empty state when no libraries exist |
+    | `clients/web/src/routes/libraries/[id]/+page.svelte` | Library detail — media items grid with type filter buttons (all/movie/series/etc.); load-more pagination; scan button (gated by `can_manage_libraries` capability); uses `libraries` store for CRUD + scanning flags |
+    | `clients/web/src/routes/media/+page.svelte` | All media browse — grid of `MediaCard` with type filters and load-more pagination |
+    | `clients/web/src/routes/media/[id]/+page.svelte` | Media detail — backdrop hero image, poster, metadata (year, content rating, runtime, genres), overview text; play/resume button (shows "Resume" if `resume_position_ms > 0`); favorite toggle (heart icon); 5-star rating selector; file list with health badges (healthy/damaged/missing) and codec/resolution info |
+    | `clients/web/src/routes/play/[id]/+page.svelte` | Full-screen player route — renders `Player` component with `mediaItem`, `mediaFileId` (from `?file=` query param), `startPositionMs` (from watch data resume position); fetches media item + watch data on mount; `onstop` callback navigates back to media detail |
+    | `clients/web/src/routes/search/+page.svelte` | Search results — reactive to `$page.url.searchParams.get('q')`; type filter pills; results grid using `MediaCard`; loading spinner; empty states (no query entered, no results found) |
+    | `clients/web/src/routes/settings/+page.svelte` | Settings overview — server health card (version, uptime, DB status from `getHealth()`); management link grid with icons; capability-gated visibility (users/libraries links only for admins); "Soon" tags on unimplemented pages |
+    | `clients/web/src/routes/settings/users/+page.svelte` | User management — user table with avatar/username/display name, role badges, status indicators; invitation creation form (max uses, expiry); pending invitations list with revoke buttons; `can_manage_users` capability gated |
+    | `clients/web/src/routes/settings/libraries/+page.svelte` | Library management — create library form (name, type, paths); library list with scan and delete buttons; expandable path management per library (add/remove paths); `can_manage_libraries` capability gated |
+    | `clients/web/src/routes/{analytics,collections}/+page.svelte` | Placeholder pages — "Coming in Phase 11" / "Coming in Phase 12" stubs with branded empty state |
+    | `clients/web/src/routes/settings/{backups,collections,migration,overlays,quality,security,storage,subtitles}/+page.svelte` | 8 placeholder stubs — each shows "Coming in Phase X" with description of future functionality |
+    | `clients/web/jsconfig.json` | Created — extends `.svelte-kit/tsconfig.json` for `svelte-check` and `$app/*` module resolution |
+    | `clients/web/src/lib/api/core.js` | Fixed `credentials` type annotation — `/** @type {RequestInit} */` cast on fetch options for `svelte-check` compatibility |
+    | `clients/web/package.json` | Added `svelte-check`, `typescript`, `@types/node` as devDependencies |
+
+    **Key decisions from Task 5:**
+
+    - **Player as separate route (`/play/[id]`)** — Better UX than an overlay: browser back button works naturally, shareable URL, full viewport for the player. Created a new `routes/play/[id]/` directory. The `Player.svelte` component (Task 4) is the actual player implementation; this route page is a thin wrapper that resolves media item + watch data and passes them as props
+    - **Auth guard in layout via `$effect`** — `$effect` checks `$isAuthenticated` after `auth.init()` completes. Uses `$page.url.pathname` to avoid redirect loops (auth pages are exempt). Redirects to `/auth/setup` if no owner exists yet (checks via setup API), to `/auth/login` for unauthenticated users, and to `/dashboard` for authenticated users visiting auth pages
+    - **No SvelteKit `load` functions** — Data loaded via `onMount` + `$state` in each page component. This is simpler than `+page.js`/`+page.server.js` load functions and avoids SSR complexity for client-only auth flows. Trade-off: no SSR data prefetching, but the app is client-side oriented (auth-gated content)
+    - **Continue Watching via per-item `getWatchData` calls** — No dedicated "continue watching" backend endpoint exists yet. Dashboard fetches recent media items, then calls `getWatchData()` per item, filters by `resume_position_ms > 0`, and sorts by most recently watched. This is N+1 but acceptable for the typical 20-item recent list; a dedicated endpoint can be added in a future phase
+    - **Capability-gated UI elements** — Admin actions (scan library, manage users, manage libraries) check `hasCapability('can_manage_users')` / `hasCapability('can_manage_libraries')` via store subscription. Non-admin users see the pages but not the action buttons. Settings overview hides management links entirely for users without the relevant capability
+    - **Device code auto-formatting** — Login device link page formats input to `XXXX-XXXX` pattern (uppercase, auto-insert hyphen at position 4). Reads `?code=` URL param for QR-code-initiated flows
+    - **5-star rating as clickable stars** — Media detail page renders 5 star buttons with hover preview; calls `updateWatchData({ user_rating: N })`. Favorite toggle is a separate heart icon calling `updateWatchData({ is_favorite: !current })`
+    - **File health badges** — Media detail lists all `media_files` for the item with color-coded health badges: green (healthy), yellow (damaged/repairable), red (missing/corrupt). Shows codec, resolution, and container from `MediaFileRow` data
+    - **`jsconfig.json` extends generated config** — Created `jsconfig.json` that extends `.svelte-kit/tsconfig.json`. Critical: must NOT override `include` array or `$app/*` resolution — overriding either breaks virtual module type resolution. The generated tsconfig from `svelte-kit sync` has correct path mappings
+    - **`svelte-check` + `typescript` added** — Enables type checking for `.svelte` files and JS modules. `svelte-check` uses the generated `.svelte-kit/tsconfig.json` for path aliases and virtual module declarations
+    - **Placeholder pages reference future phases** — Each placeholder page states which phase will implement it (e.g., "Coming in Phase 11 — Analytics"), giving users context without dead-end navigation. Settings overview links to these pages with "Soon" tags
+
+    **Context from Task 5 for Task 6:**
+
+    - All 24 route pages are functional and pass `svelte-check` (0 errors, 0 warnings) and `vite build`
+    - The layout shell (`+layout.svelte`) uses a desktop-oriented nav bar; Task 6 needs to add responsive mobile nav (hamburger menu, breakpoint-based visibility)
+    - CSS uses `var(--color-*)` tokens from `app.css` throughout; Task 6 should add media queries adjusting grid columns, font sizes, and nav layout at breakpoints
+    - `MediaCard` grids use CSS grid with `repeat(auto-fill, minmax(...))` — already partially responsive but needs explicit breakpoint tuning
+    - Player route uses full viewport already; minimal responsive work needed there
+    - Auth pages use centered single-column forms that work on mobile but may need padding adjustments
+
+ 6. Implement responsive layout — desktop and mobile breakpoints
 
 **Verification:** User can log in, browse libraries, search for items, view metadata, and play media through the web client.
 

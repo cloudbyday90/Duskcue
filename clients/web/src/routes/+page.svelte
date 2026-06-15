@@ -5,5 +5,11 @@
   This program is free software: licensed under AGPL-3.0
   See LICENSE file for details.
 -->
-<h1>Duskcue</h1>
+<script>
+    import { onMount } from 'svelte';
+    import { goto } from '$app/navigation';
 
+    onMount(() => {
+        goto('/dashboard');
+    });
+</script>

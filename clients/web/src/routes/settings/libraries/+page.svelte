@@ -5,4 +5,486 @@
   This program is free software: licensed under AGPL-3.0
   See LICENSE file for details.
 -->
+<script>
+    import { onMount } from 'svelte';
+    import { libraries, libraryList } from '$lib/stores/libraries.js';
+    import { hasCapability } from '$lib/stores/auth.js';
+    import { notifications } from '$lib/stores/notifications.js';
+    import { MEDIA_TYPE_LABELS } from '$lib/utils/constants.js';
 
+    let loading = $state(true);
+    let showCreate = $state(false);
+    let newName = $state('');
+    let newType = $state('movie');
+    let newRootPath = $state('');
+    let creating = $state(false);
+    let canManage = $state(false);
+    let expandedPaths = $state({});
+
+    $effect(() => {
+        const unsub = hasCapability('can_manage_libraries').subscribe((v) => (canManage = v));
+        return unsub;
+    });
+
+    onMount(async () => {
+        await libraries.fetch();
+        loading = false;
+    });
+
+    async function handleCreate() {
+        if (!newName.trim() || !newRootPath.trim()) {
+            notifications.error('Name and root path are required');
+            return;
+        }
+        creating = true;
+        try {
+            const lib = await libraries.create({
+                name: newName.trim(),
+                media_type: newType,
+                root_path: newRootPath.trim(),
+            });
+            notifications.success(`Library "${lib.name}" created`);
+            showCreate = false;
+            newName = '';
+            newRootPath = '';
+        } catch (err) {
+            notifications.error(err.detail || err.message || 'Failed to create library');
+        } finally {
+            creating = false;
+        }
+    }
+
+    async function handleScan(libraryId) {
+        try {
+            await libraries.scan(libraryId, 'full');
+            notifications.success('Scan complete');
+        } catch (err) {
+            notifications.error(err.detail || err.message || 'Scan failed');
+        }
+    }
+
+    async function handleDelete(libraryId, name) {
+        if (!confirm(`Delete library "${name}"? This will soft-delete the library.`)) return;
+        try {
+            await libraries.remove(libraryId);
+            notifications.success('Library deleted');
+        } catch (err) {
+            notifications.error(err.detail || 'Failed to delete library');
+        }
+    }
+
+    async function togglePaths(libraryId) {
+        if (expandedPaths[libraryId]) {
+            expandedPaths = { ...expandedPaths, [libraryId]: false };
+        } else {
+            expandedPaths = { ...expandedPaths, [libraryId]: true };
+            if (!libraries.getById(libraryId)?.paths) {
+                await libraries.fetchPaths(libraryId);
+            }
+        }
+    }
+
+    function getPaths(libraryId) {
+        let paths = [];
+        const unsub = libraries.subscribe((s) => {
+            paths = s.paths[libraryId] || [];
+        });
+        unsub();
+        return paths;
+    }
+</script>
+
+<div class="lib-settings">
+    <div class="page-header">
+        <div>
+            <a href="/settings" class="back-link">← Settings</a>
+            <h1 class="page-title">Library Management</h1>
+        </div>
+        {#if canManage}
+            <button class="btn-primary" onclick={() => (showCreate = !showCreate)}>
+                {showCreate ? 'Cancel' : 'New Library'}
+            </button>
+        {/if}
+    </div>
+
+    {#if showCreate}
+        <div class="create-form">
+            <h3 class="form-title">Create Library</h3>
+            <div class="form-grid">
+                <label class="field">
+                    <span class="field-label">Library Name</span>
+                    <input type="text" bind:value={newName} placeholder="My Movies" />
+                </label>
+                <label class="field">
+                    <span class="field-label">Media Type</span>
+                    <select bind:value={newType}>
+                        <option value="movie">Movies</option>
+                        <option value="series">TV Shows</option>
+                        <option value="music">Music</option>
+                    </select>
+                </label>
+                <label class="field field-wide">
+                    <span class="field-label">Root Path</span>
+                    <input type="text" bind:value={newRootPath} placeholder="/media/movies" />
+                </label>
+            </div>
+            <button class="btn-primary" onclick={handleCreate} disabled={creating}>
+                {creating ? 'Creating…' : 'Create Library'}
+            </button>
+        </div>
+    {/if}
+
+    {#if loading}
+        <div class="loading-state">
+            <div class="loading-spinner"></div>
+        </div>
+    {:else if $libraryList.length === 0}
+        <div class="empty-state">
+            <p>No libraries configured.</p>
+            {#if canManage}
+                <button class="btn-primary" onclick={() => (showCreate = true)}>Create your first library</button>
+            {/if}
+        </div>
+    {:else}
+        <div class="library-list">
+            {#each $libraryList as lib (lib.id)}
+                <div class="library-item">
+                    <div class="library-item-header">
+                        <div class="library-item-info">
+                            <a href="/libraries/{lib.id}" class="library-name">{lib.name}</a>
+                            <div class="library-meta">
+                                <span class="badge">{MEDIA_TYPE_LABELS[lib.media_type] || lib.media_type}</span>
+                                <span class="item-count">{lib.item_count || 0} items</span>
+                                {#if lib.scan_enabled === false}
+                                    <span class="badge-inactive">Scanning disabled</span>
+                                {/if}
+                            </div>
+                        </div>
+                        {#if canManage}
+                            <div class="library-actions">
+                                <button
+                                    class="btn-secondary-sm"
+                                    onclick={() => handleScan(lib.id)}
+                                    disabled={libraries.isScanning(lib.id)}
+                                >
+                                    {libraries.isScanning(lib.id) ? 'Scanning…' : 'Scan'}
+                                </button>
+                                <button class="btn-secondary-sm" onclick={() => togglePaths(lib.id)}>
+                                    {expandedPaths[lib.id] ? 'Hide Paths' : 'Paths'}
+                                </button>
+                                <button class="btn-danger-sm" onclick={() => handleDelete(lib.id, lib.name)}>
+                                    Delete
+                                </button>
+                            </div>
+                        {/if}
+                    </div>
+
+                    {#if expandedPaths[lib.id]}
+                        <div class="paths-section">
+                            {#if getPaths(lib.id).length > 0}
+                                {#each getPaths(lib.id) as path (path.id)}
+                                    <div class="path-row">
+                                        <span class="path-text">{path.root_path}</span>
+                                        <div class="path-flags">
+                                            {#if path.is_default}<span class="flag-badge">Default</span>{/if}
+                                            {#if path.scan_enabled}<span class="flag-badge flag-on">Scan On</span>{:else}<span class="flag-badge flag-off">Scan Off</span>{/if}
+                                        </div>
+                                    </div>
+                                {/each}
+                            {:else}
+                                <p class="paths-loading">Loading paths…</p>
+                            {/if}
+                        </div>
+                    {/if}
+                </div>
+            {/each}
+        </div>
+    {/if}
+</div>
+
+<style>
+    .lib-settings {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+        max-width: 900px;
+    }
+
+    .page-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+    }
+
+    .back-link {
+        font-size: 0.8125rem;
+        color: var(--color-text-muted);
+    }
+
+    .page-title {
+        font-size: 1.5rem;
+        font-weight: 700;
+        color: var(--color-text-primary);
+        margin-top: 0.25rem;
+    }
+
+    .create-form {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        padding: 1.5rem;
+        background-color: var(--color-bg-surface);
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
+    }
+
+    .form-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--color-text-primary);
+    }
+
+    .form-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+    }
+
+    .field {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .field-wide {
+        grid-column: 1 / -1;
+    }
+
+    .field-label {
+        font-size: 0.75rem;
+        font-weight: 500;
+        color: var(--color-text-secondary);
+    }
+
+    input, select {
+        padding: 0.5rem 0.625rem;
+        background-color: var(--color-bg-elevated);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        color: var(--color-text-primary);
+        font-size: 0.8125rem;
+    }
+
+    input:focus, select:focus {
+        outline: none;
+        border-color: var(--color-accent);
+    }
+
+    .btn-primary {
+        align-self: flex-start;
+        padding: 0.625rem 1.25rem;
+        background-color: var(--color-accent);
+        color: var(--color-bg-deep);
+        font-size: 0.8125rem;
+        font-weight: 600;
+        border-radius: var(--radius-sm);
+        transition: background-color var(--transition-fast);
+    }
+
+    .btn-primary:hover:not(:disabled) {
+        background-color: var(--color-accent-hover);
+    }
+
+    .btn-primary:disabled {
+        opacity: 0.5;
+    }
+
+    .library-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+
+    .library-item {
+        background-color: var(--color-bg-surface);
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-md);
+        overflow: hidden;
+    }
+
+    .library-item-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1rem 1.25rem;
+    }
+
+    .library-item-info {
+        min-width: 0;
+    }
+
+    .library-name {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--color-text-primary);
+        transition: color var(--transition-fast);
+    }
+
+    .library-name:hover {
+        color: var(--color-accent);
+    }
+
+    .library-meta {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.25rem;
+    }
+
+    .badge {
+        font-size: 0.625rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: var(--color-accent);
+        background-color: var(--color-accent-muted);
+        padding: 0.125rem 0.5rem;
+        border-radius: var(--radius-sm);
+    }
+
+    .badge-inactive {
+        font-size: 0.625rem;
+        font-weight: 600;
+        color: var(--color-text-muted);
+        background-color: var(--color-info-bg);
+        padding: 0.125rem 0.5rem;
+        border-radius: var(--radius-sm);
+    }
+
+    .item-count {
+        font-size: 0.75rem;
+        color: var(--color-text-muted);
+    }
+
+    .library-actions {
+        display: flex;
+        gap: 0.375rem;
+        flex-shrink: 0;
+    }
+
+    .btn-secondary-sm {
+        padding: 0.375rem 0.75rem;
+        font-size: 0.75rem;
+        color: var(--color-text-secondary);
+        background-color: var(--color-bg-elevated);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        transition: all var(--transition-fast);
+    }
+
+    .btn-secondary-sm:hover:not(:disabled) {
+        border-color: var(--color-accent);
+        color: var(--color-text-primary);
+    }
+
+    .btn-secondary-sm:disabled {
+        opacity: 0.5;
+    }
+
+    .btn-danger-sm {
+        padding: 0.375rem 0.75rem;
+        font-size: 0.75rem;
+        color: var(--color-error);
+        background-color: transparent;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        transition: all var(--transition-fast);
+    }
+
+    .btn-danger-sm:hover {
+        background-color: var(--color-error-bg);
+        border-color: var(--color-error);
+    }
+
+    .paths-section {
+        border-top: 1px solid var(--color-border-subtle);
+        padding: 0.75rem 1.25rem;
+        background-color: var(--color-bg-deep);
+    }
+
+    .path-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.375rem 0;
+    }
+
+    .path-text {
+        font-family: monospace;
+        font-size: 0.75rem;
+        color: var(--color-text-secondary);
+    }
+
+    .path-flags {
+        display: flex;
+        gap: 0.375rem;
+    }
+
+    .flag-badge {
+        font-size: 0.5625rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        padding: 0.0625rem 0.375rem;
+        border-radius: 3px;
+        color: var(--color-text-muted);
+        background-color: var(--color-info-bg);
+    }
+
+    .flag-on {
+        color: var(--color-success);
+        background-color: var(--color-success-bg);
+    }
+
+    .flag-off {
+        color: var(--color-text-muted);
+    }
+
+    .paths-loading {
+        font-size: 0.75rem;
+        color: var(--color-text-muted);
+    }
+
+    .empty-state {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 1rem;
+        padding: 3rem 1rem;
+        text-align: center;
+        color: var(--color-text-muted);
+        font-size: 0.875rem;
+    }
+
+    .loading-state {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 4rem 0;
+    }
+
+    .loading-spinner {
+        width: 32px;
+        height: 32px;
+        border: 3px solid var(--color-border);
+        border-top-color: var(--color-accent);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
+        }
+    }
+</style>

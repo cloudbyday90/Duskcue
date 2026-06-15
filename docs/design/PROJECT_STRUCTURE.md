@@ -268,6 +268,8 @@ project/
 │   │   │   │   ├── media/
 │   │   │   │   │   ├── +page.svelte
 │   │   │   │   │   └── [id]/+page.svelte
+│   │   │   │   ├── play/
+│   │   │   │   │   └── [id]/+page.svelte          # Full-screen player
 │   │   │   │   ├── settings/
 │   │   │   │   │   ├── +page.svelte           # Server overview
 │   │   │   │   │   ├── users/+page.svelte

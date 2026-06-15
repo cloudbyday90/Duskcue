@@ -142,7 +142,7 @@ export async function request(method, path, options = {}) {
 
     let response;
     try {
-        response = await fetch(url, fetchOptions);
+        response = await fetch(url, /** @type {RequestInit} */ (fetchOptions));
     } catch (err) {
         if (err.name === 'AbortError') throw err;
         throw new ApiError({
