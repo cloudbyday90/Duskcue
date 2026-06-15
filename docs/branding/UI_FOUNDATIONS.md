@@ -237,6 +237,23 @@ If a proposed component or pattern does not clearly support one of these screens
 2. Define the first-run and remote-access setup UX so self-hosting complexity does not leak into the main product experience.
 3. Define the artwork and poster treatment rules for cards, hero surfaces, and details pages.
 
+## Implementation Status
+
+The low-light editorial palette and design tokens from this document are implemented as CSS custom properties in `clients/web/src/app.css` (Phase 8 Task 4). The token names map directly to the visual language section above:
+
+| Token | Value | Maps to |
+|---|---|---|
+| `--color-bg-deep` | `#0e0f13` | Foundational deep charcoal surface |
+| `--color-bg-surface` | `#16181f` | Graphite surface |
+| `--color-bg-elevated` | `#1e2129` | Elevated card/panel surface |
+| `--color-text-primary` | `#e8e4dc` | Warm off-white primary text |
+| `--color-text-secondary` | `#9b9ba4` | Secondary text |
+| `--color-accent` | `#c8965a` | Brass/amber primary accent |
+| `--color-success` | `#6abf69` | Cool green (healthy states) |
+| `--color-error` | `#c95c5c` | Muted red (destructive/warnings) |
+
+The 4 core components (`MediaCard`, `Player`, `SearchBar`, `NotificationToast`) consume these tokens via CSS custom properties. The player-control model (item 1 in "Three More High-Value Design Areas") is partially addressed in `Player.svelte` — keyboard shortcuts (Space/K/arrows/F/M/Esc), auto-hide transport controls, and focus-visible rings are implemented. Touch/TV remote input models remain deferred to future client phases.
+
 ## Official Sources
 
 - Microsoft Learn: Recommendations for following design standards - https://learn.microsoft.com/en-us/power-platform/well-architected/experience-optimization/design-standards

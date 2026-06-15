@@ -760,6 +760,17 @@ export const libraries = createLibrariesStore();
 
 All stores consume API client functions from `../api/*.js` — never calling `fetch` directly. All localStorage access is SSR-safe (`typeof localStorage !== 'undefined'` checks) for `adapter-node`. WebAuthn credential API calls (`navigator.credentials.get()`/`create()`) are delegated to the caller via injected callbacks, keeping stores framework-agnostic and testable.
 
+**Implemented components (Phase 8 Task 4):** 4 core components built using Svelte 5 runes (`$props`, `$state`, `$derived`, `$effect`) alongside `svelte/store` auto-subscription. All components consume stores and API client functions — never calling `fetch` directly.
+
+| Component | Props | Responsibility |
+|---|---|---|
+| `NotificationToast.svelte` | (none — subscribes to store) | Fixed-position toast container; subscribes to `notifications` store; per-type accent colors + SVG icons; fly/fade/flip transitions; dismiss button |
+| `SearchBar.svelte` | `value` (bindable), `placeholder`, `compact`, `autofocus`, `navigate`, `onsearch`, `oninput` | Debounced search input (300ms); navigates to `/search?q=...` via `goto()`; compact mode for nav bar |
+| `MediaCard.svelte` | `item`, `posterUrl`, `progress`, `showOverview`, `onclick` | Content-first media card — `<a>` linking to `/media/{id}`; poster or gradient placeholder; rating/type badges; hover overview overlay; optional progress bar |
+| `Player.svelte` | `mediaItem`, `mediaFileId`, `startPositionMs`, `sessionId`, `title`, `onstop` | Full HLS player with hls.js 1.6.16; transport controls (play/pause, seek, volume, speed, fullscreen); keyboard shortcuts; QoE telemetry; auto-hide controls |
+
+Design tokens are established in `app.css` as CSS custom properties implementing UI_FOUNDATIONS.md's low-light editorial palette (deep charcoal surfaces, warm off-white text, brass/amber accent, muted semantic colors). `utils/format.js` provides `formatDuration`, `formatTimestamp`, `formatYear`, `formatRating`, `formatPercent`. `utils/constants.js` provides `MEDIA_TYPE_LABELS`, `NOTIFICATION_ICONS`, and player/search timing constants.
+
 ## Why This Structure
 
 ### Why Cargo Workspace (not separate repos)

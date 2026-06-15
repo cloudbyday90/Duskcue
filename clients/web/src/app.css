@@ -1,0 +1,97 @@
+/*
+ * Duskcue — Self-hosted media streaming server
+ * Copyright (C) 2026-2026 Duskcue Contributors
+ *
+ * This program is free software: licensed under AGPL-3.0
+ * See LICENSE file for details.
+ */
+
+:root {
+    --color-bg-deep: #0e0f13;
+    --color-bg-surface: #16181f;
+    --color-bg-elevated: #1e2129;
+    --color-bg-hover: #262a35;
+    --color-border: #2e323d;
+    --color-border-subtle: #242832;
+
+    --color-text-primary: #e8e4dc;
+    --color-text-secondary: #9b9ba4;
+    --color-text-muted: #6b6c75;
+
+    --color-accent: #c8965a;
+    --color-accent-hover: #d4a468;
+    --color-accent-muted: rgba(200, 150, 90, 0.15);
+
+    --color-success: #6abf69;
+    --color-warning: #d4a644;
+    --color-error: #c95c5c;
+
+    --color-error-bg: rgba(201, 92, 92, 0.12);
+    --color-success-bg: rgba(106, 191, 105, 0.12);
+    --color-warning-bg: rgba(212, 166, 68, 0.12);
+    --color-info-bg: rgba(155, 155, 164, 0.12);
+
+    --radius-sm: 4px;
+    --radius-md: 8px;
+    --radius-lg: 12px;
+
+    --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-elevated: 0 8px 24px rgba(0, 0, 0, 0.4);
+
+    --transition-fast: 150ms ease;
+    --transition-normal: 250ms ease;
+
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    --font-display: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+    --focus-ring: 0 0 0 2px var(--color-accent);
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html {
+    font-size: 16px;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+    font-family: var(--font-sans);
+    background-color: var(--color-bg-deep);
+    color: var(--color-text-primary);
+    line-height: 1.5;
+    min-height: 100vh;
+}
+
+a {
+    color: inherit;
+    text-decoration: none;
+}
+
+button {
+    font-family: inherit;
+    cursor: pointer;
+    border: none;
+    background: none;
+    color: inherit;
+}
+
+input {
+    font-family: inherit;
+}
+
+img {
+    display: block;
+    max-width: 100%;
+}
+
+:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+}

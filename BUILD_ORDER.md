@@ -1624,7 +1624,49 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
     - **No new npm dependencies** — All stores use `svelte/store` (built into Svelte) and existing API client modules.
     - **SSR-safe localStorage access** — All localStorage access guarded with `typeof localStorage !== 'undefined'` checks, preventing SSR crashes when SvelteKit renders on the server with `adapter-node`.
 
- 4. Build core components — `MediaCard.svelte`, `Player.svelte` (hls.js integration), `SearchBar.svelte`, `NotificationToast.svelte`
+ 4. ~~Build core components — `MediaCard.svelte`, `Player.svelte` (hls.js integration), `SearchBar.svelte`, `NotificationToast.svelte`~~ **DONE**
+
+    **What was built for Task 4:**
+
+    | File | Purpose |
+    |---|---|
+    | `clients/web/src/lib/components/NotificationToast.svelte` | Fixed-position toast container subscribing to `notifications` store; per-type accent colors (success/error/warning/info), SVG icons, dismiss button, fly/fade transitions, flip animation; responsive (full-width on mobile) |
+    | `clients/web/src/lib/components/SearchBar.svelte` | Debounced search input (300ms) with SVG search icon; `compact` prop for nav-bar mode; `$bindable` value for two-way binding; navigates to `/search?q=...` via `goto()` on submit; customizable placeholder, autofocus |
+    | `clients/web/src/lib/components/MediaCard.svelte` | Content-first media card — `<a>` tag linking to `/media/{id}`; 2:3 aspect-ratio poster (image or gradient placeholder with title initial); rating badge (star icon + value), type badge (non-movie), hover overlay with overview text (4-line clamp); optional progress bar (resume position); derived subtitle for episodes (S01 E01), seasons (Season N), and movies (year); keyboard accessible |
+    | `clients/web/src/lib/components/Player.svelte` | Full HLS player with hls.js 1.6.16 integration; video element synced bidirectionally with `player` store; transport controls (play/pause, seek bar with buffered indicator, volume slider + mute, playback speed 0.5x–2x, fullscreen toggle, close button); auto-hide controls after 3s; keyboard shortcuts (Space/K=play-pause, Left/Right=±10s seek, Up/Down=volume, F=fullscreen, M=mute, Esc=close); loading/buffering spinner; error display with retry; periodic QoE telemetry reporting (30s interval); buffering duration tracking |
+    | `clients/web/src/app.css` | Global design tokens implementing UI_FOUNDATIONS.md low-light editorial palette: CSS custom properties for surfaces (--color-bg-deep/surface/elevated), text (--color-text-primary/secondary/muted), accent (--color-accent brass/amber), semantic colors (success/warning/error); radii, shadows, transitions, font stacks; focus-visible ring; global resets (box-sizing, body bg, link/button/input inheritance) |
+    | `clients/web/src/lib/utils/format.js` | `formatDuration(seconds)` → "1h 23m", `formatTimestamp(ms)` → "M:SS" or "H:MM:SS", `formatYear(dateString)` → year integer, `formatRating(rating)` → rounded f32, `formatPercent(positionMs, durationMs)` → 0–100 |
+    | `clients/web/src/lib/utils/constants.js` | `MEDIA_TYPE_LABELS` (movie/series/season/episode → display names), `NOTIFICATION_ICONS` (SVG path data per type), timing constants (`SEARCH_DEBOUNCE_MS`, `PLAYER_CONTROLS_TIMEOUT_MS`, `PLAYER_SEEK_STEP_S`, `PLAYER_VOLUME_STEP`) |
+    | `clients/web/src/routes/+layout.svelte` | Imports `app.css` for global design tokens |
+    | `clients/web/package.json` | Added `hls.js@1.6.16` dependency |
+
+    **Key decisions from Task 4:**
+
+    - **hls.js 1.6.16** — Latest stable release; supports HLS.js MSE-based playback for Chrome/Firefox/Edge, with native HLS fallback for Safari via `canPlayType('application/vnd.apple.mpegurl')`. Dynamic import (`await import('hls.js')`) keeps the library out of the initial bundle for non-player pages and avoids SSR import issues
+    - **Dynamic hls.js import** — `loadHlsJs()` uses `await import('hls.js')` rather than a top-level import. This prevents SSR from evaluating the browser-only hls.js module, keeps the main bundle smaller (hls.js is only loaded when the Player component mounts), and is tree-shakeable
+    - **`<a>` tag for MediaCard over `<article role="button">`** — Semantic HTML: a card that navigates to a detail page is a link, not a button. Provides native keyboard support (Enter to navigate), screen reader semantics, and right-click → open in new tab. Custom `onclick` for optional programmatic navigation override
+    - **Keyboard shortcuts on `<svelte:window>` not container** — Player keyboard handlers (Space, arrows, F, M, Esc) are on `<svelte:window>` rather than the container div. This matches real media player UX (shortcuts work without clicking the player first) and avoids a11y warnings about interactive roles on non-interactive elements
+    - **Design tokens from UI_FOUNDATIONS.md** — `app.css` implements the "low-light editorial palette" as CSS custom properties: deep charcoal/graphite surfaces (`#0e0f13` → `#1e2129`), warm off-white text (`#e8e4dc`), brass/amber accent (`#c8965a`), muted semantic colors. These tokens establish the foundational design system that Task 5 (route pages) and Task 6 (responsive layout) build upon
+    - **Player store bidirectional sync** — Video element events (`play`, `pause`, `waiting`, `playing`, `timeupdate`, `durationchange`, `loadedmetadata`) push state INTO the store via `player.setPlaying()`, `player.setBuffering()`, etc. Store state flows OUT to the video element via `$effect` watchers on `$playerVolume`, `$player.isMuted`, `$player.playbackRate`. The seek bar uses local `isSeeking`/`seekValue` state to prevent fighting between drag position and store position during seeking
+    - **Direct play seek vs. transcode seek** — `handleSeekEnd()` checks `$streamDecision`: for `direct_play`, seeks the video element directly (`videoEl.currentTime = positionMs / 1000`); for `transcode`/`direct_stream`, calls `player.seek()` which triggers server-side transcode restart and a new stream URL
+    - **hls.js error recovery** — Fatal NETWORK_ERROR → `hls.startLoad()` retry; fatal MEDIA_ERROR → `hls.recoverMediaError()`; other fatal → destroy + notification. Non-fatal errors are silently ignored (common for HLS streams with minor quirks)
+    - **QoE telemetry** — Player reports QoE data every 30s via `submitQoeReport()` from `quality.js`; buffering events include `buffer_duration_ms` measured from `waiting` to `playing` event. This data feeds the Phase 7 quality analytics dashboards
+    - **Svelte 5 patterns** — All components use Svelte 5 runes (`$props()`, `$state()`, `$derived()`, `$derived.by()`, `$effect()`, `$bindable()`) alongside compatible Svelte 4 APIs (`onMount`, `onDestroy`, `svelte/store` auto-subscription with `$store` prefix, `svelte/transition`, `svelte/animate`). The `svelte/store` derived stores from Task 3 are consumed via `$` prefix in templates and `$effect` blocks
+    - **`NotificationToast` uses `flip`/`fly`/`fade` animations** — `animate:flip` for smooth reordering when toasts are added/removed; `in:fly` for slide-down entrance; `out:fade` for exit. These are built-in Svelte transitions requiring no additional dependencies
+    - **MediaCard poster fallback** — When no `posterUrl` is provided (artwork serving endpoint not yet built), renders a gradient placeholder with the title's first letter. This keeps the card functional in all states without blocking on an artwork API
+    - **`formatTimestamp` uses `Math.floor` not `Math.round`** — Position display should never show a future second; `Math.floor(ms / 1000)` ensures the displayed time always matches or precedes the actual position
+    - **0 svelte-check warnings** — All a11y warnings resolved: MediaCard uses `<a href>` (semantic navigation), Player keyboard handling on `<svelte:window>`, Player container has `role="region"` + `aria-label` for mouse handlers
+
+    **Context from Task 4 for Tasks 5–6:**
+
+    - The 4 core components (`MediaCard`, `Player`, `SearchBar`, `NotificationToast`) are available for import from `$lib/components/`
+    - Design tokens in `app.css` (imported via `+layout.svelte`) provide all CSS custom properties — route pages should use `var(--color-*)` tokens, not hardcoded colors
+    - `format.js` provides `formatDuration`, `formatTimestamp`, `formatYear`, `formatRating`, `formatPercent` for rendering media data
+    - `MediaCard` accepts `posterUrl` prop — artwork serving endpoint not yet built; pages should pass `null` until artwork API is available
+    - `Player` accepts `mediaItem`, `mediaFileId`, `startPositionMs` props and manages the full playback lifecycle; route pages just render `<Player mediaItem={item} mediaFileId={fileId} onstop={() => goto('/media/' + item.id)} />`
+    - `SearchBar` navigates to `/search?q=...` on submit; the search page (Task 5) should read `$page.url.searchParams.get('q')` and call `search()` from `api/search.js`
+    - hls.js is dynamically imported — only the player route will load it in the browser bundle
+
 5. Build route pages:
    - Auth: login, setup, device linking
    - Dashboard: home screen with recently added, continue watching

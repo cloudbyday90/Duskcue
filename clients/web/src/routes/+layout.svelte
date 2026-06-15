@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import '../app.css';
     let { children } = $props();
 </script>
 

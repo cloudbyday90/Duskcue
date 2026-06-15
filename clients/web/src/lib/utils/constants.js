@@ -16,3 +16,22 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+export const MEDIA_TYPE_LABELS = {
+    movie: 'Movie',
+    series: 'Series',
+    season: 'Season',
+    episode: 'Episode',
+};
+
+export const NOTIFICATION_ICONS = {
+    success: 'M20 6L9 17l-5-5',
+    error: 'M18 6L6 18M6 6l12 12',
+    warning: 'M12 9v4m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z',
+    info: 'M12 16v-4m0-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z',
+};
+
+export const SEARCH_DEBOUNCE_MS = 300;
+export const PLAYER_CONTROLS_TIMEOUT_MS = 3000;
+export const PLAYER_SEEK_STEP_S = 10;
+export const PLAYER_VOLUME_STEP = 0.1;
+
