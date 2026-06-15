@@ -13,3 +13,4 @@ clients/web/build/
 .cache/
 *.db
 *.db-journal
+opencode.jsonc
