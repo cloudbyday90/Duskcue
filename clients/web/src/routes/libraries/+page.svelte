@@ -218,4 +218,14 @@
     .btn-primary:hover {
         background-color: var(--color-accent-hover);
     }
+
+    @media (max-width: 768px) {
+        .library-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .page-title {
+            font-size: 1.25rem;
+        }
+    }
 </style>

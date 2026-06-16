@@ -487,4 +487,36 @@
             transform: rotate(360deg);
         }
     }
+
+    @media (max-width: 768px) {
+        .form-grid {
+            grid-template-columns: 1fr;
+        }
+
+        .library-item-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+
+        .library-actions {
+            width: 100%;
+            flex-wrap: wrap;
+        }
+
+        .page-header {
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .page-header .btn-primary {
+            align-self: flex-start;
+        }
+
+        .path-row {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.375rem;
+        }
+    }
 </style>

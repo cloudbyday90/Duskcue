@@ -19,6 +19,7 @@
 
     let authChecked = $state(false);
     let userMenuOpen = $state(false);
+    let mobileMenuOpen = $state(false);
 
     const AUTH_ROUTES = ['/auth/login', '/auth/setup'];
 
@@ -51,13 +52,23 @@
         userMenuOpen = false;
     }
 
+    function toggleMobileMenu() {
+        mobileMenuOpen = !mobileMenuOpen;
+    }
+
+    function closeMobileMenu() {
+        mobileMenuOpen = false;
+    }
+
     async function handleLogout() {
         closeUserMenu();
+        closeMobileMenu();
         await auth.logout();
         goto('/auth/login');
     }
 
     function handleSearch(query) {
+        closeMobileMenu();
         goto(`/search?q=${encodeURIComponent(query)}`);
     }
 </script>
@@ -119,9 +130,64 @@
                             </div>
                         {/if}
                     </div>
+
+                    <button
+                        class="menu-toggle"
+                        onclick={toggleMobileMenu}
+                        aria-label="Open menu"
+                        aria-expanded={mobileMenuOpen}
+                    >
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                            {#if mobileMenuOpen}
+                                <path d="M18 6L6 18M6 6l12 12" />
+                            {:else}
+                                <path d="M3 12h18M3 6h18M3 18h18" />
+                            {/if}
+                        </svg>
+                    </button>
                 {/if}
             </nav>
         </header>
+
+        {#if mobileMenuOpen}
+            <div
+                class="mobile-backdrop"
+                role="button"
+                tabindex="0"
+                onclick={closeMobileMenu}
+                onkeydown={(e) => e.key === 'Escape' && closeMobileMenu()}
+                aria-label="Close menu"
+            ></div>
+            <div class="mobile-drawer" role="navigation" aria-label="Mobile navigation">
+                <div class="drawer-search">
+                    <SearchBar onsearch={handleSearch} navigate={false} />
+                </div>
+
+                <ul class="drawer-links">
+                    {#each navLinks as link}
+                        <li>
+                            <a
+                                href={link.href}
+                                class="drawer-link"
+                                class:active={$page.url.pathname.startsWith(link.href)}
+                                onclick={closeMobileMenu}
+                            >
+                                {link.label}
+                            </a>
+                        </li>
+                    {/each}
+                </ul>
+
+                <div class="drawer-divider"></div>
+
+                <a href="/settings" class="drawer-link" onclick={closeMobileMenu}>
+                    Settings
+                </a>
+                <button class="drawer-link drawer-danger" onclick={handleLogout}>
+                    Sign Out
+                </button>
+            </div>
+        {/if}
 
         <main class="main-content">
             {@render children()}
@@ -285,6 +351,106 @@
         padding: 1.5rem;
     }
 
+    .menu-toggle {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        width: 40px;
+        height: 40px;
+        color: var(--color-text-secondary);
+        border-radius: var(--radius-md);
+        transition: background-color var(--transition-fast);
+    }
+
+    .menu-toggle:hover {
+        background-color: var(--color-bg-hover);
+        color: var(--color-text-primary);
+    }
+
+    .mobile-backdrop {
+        position: fixed;
+        inset: 0;
+        z-index: 149;
+        background-color: rgba(0, 0, 0, 0.5);
+        backdrop-filter: blur(2px);
+        cursor: default;
+    }
+
+    .mobile-drawer {
+        position: fixed;
+        top: 0;
+        right: 0;
+        bottom: 0;
+        width: 300px;
+        max-width: 85vw;
+        z-index: 150;
+        background-color: var(--color-bg-surface);
+        border-left: 1px solid var(--color-border);
+        box-shadow: var(--shadow-elevated);
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        padding: 1.25rem;
+        overflow-y: auto;
+        animation: drawer-slide-in 0.2s ease-out;
+    }
+
+    @keyframes drawer-slide-in {
+        from {
+            transform: translateX(100%);
+        }
+        to {
+            transform: translateX(0);
+        }
+    }
+
+    .drawer-search {
+        margin-bottom: 0.75rem;
+    }
+
+    .drawer-links {
+        list-style: none;
+        display: flex;
+        flex-direction: column;
+        gap: 0.125rem;
+    }
+
+    .drawer-link {
+        display: block;
+        padding: 0.75rem 1rem;
+        font-size: 0.9375rem;
+        font-weight: 500;
+        color: var(--color-text-secondary);
+        border-radius: var(--radius-sm);
+        transition: color var(--transition-fast), background-color var(--transition-fast);
+        text-align: left;
+        width: 100%;
+    }
+
+    .drawer-link:hover {
+        color: var(--color-text-primary);
+        background-color: var(--color-bg-hover);
+    }
+
+    .drawer-link.active {
+        color: var(--color-accent);
+        background-color: var(--color-accent-muted);
+    }
+
+    .drawer-danger {
+        color: var(--color-text-secondary);
+    }
+
+    .drawer-danger:hover {
+        color: var(--color-error);
+    }
+
+    .drawer-divider {
+        height: 1px;
+        background-color: var(--color-border);
+        margin: 0.5rem 0;
+    }
+
     .app-loading {
         display: flex;
         align-items: center;
@@ -304,6 +470,43 @@
     @keyframes spin {
         to {
             transform: rotate(360deg);
+        }
+    }
+
+    @media (max-width: 768px) {
+        .nav-content {
+            padding: 0 1rem;
+            gap: 0.75rem;
+        }
+
+        .nav-links {
+            display: none;
+        }
+
+        .nav-search {
+            display: none;
+        }
+
+        .user-name {
+            display: none;
+        }
+
+        .user-button {
+            padding: 0.25rem;
+        }
+
+        .menu-toggle {
+            display: flex;
+        }
+
+        .main-content {
+            padding: 1rem;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .main-content {
+            padding: 0.75rem;
         }
     }
 </style>

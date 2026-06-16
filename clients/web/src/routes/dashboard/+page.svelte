@@ -226,4 +226,19 @@
     .btn-link:hover {
         background-color: var(--color-accent-hover);
     }
+
+    @media (max-width: 768px) {
+        .hero-title {
+            font-size: 1.375rem;
+        }
+
+        .card-row {
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 0.75rem;
+        }
+
+        .dashboard {
+            gap: 1.75rem;
+        }
+    }
 </style>

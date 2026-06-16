@@ -1516,7 +1516,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 ---
 
-## Phase 8 — Web Client Core
+## Phase 8 — Web Client Core (COMPLETE)
 
 **Goal:** Functional web UI for browsing libraries, playing media, and basic settings.
 
@@ -1717,9 +1717,48 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
     - Player route uses full viewport already; minimal responsive work needed there
     - Auth pages use centered single-column forms that work on mobile but may need padding adjustments
 
- 6. Implement responsive layout — desktop and mobile breakpoints
+ 6. ~~Implement responsive layout — desktop and mobile breakpoints~~ **DONE**
 
-**Verification:** User can log in, browse libraries, search for items, view metadata, and play media through the web client.
+    **What was built for Task 6:**
+
+    | File | Purpose |
+    |---|---|
+    | `clients/web/src/app.css` | Added responsive breakpoint documentation comment block; added `@media (max-width: 480px)` reducing base font size to 15px for small mobile screens |
+    | `clients/web/src/routes/+layout.svelte` | Mobile hamburger menu with slide-in drawer; nav-links and nav-search hidden on mobile and shown in drawer; user-name hidden on mobile (avatar only); drawer contains nav links, full-width search bar, Settings link, Sign Out button; drawer closes on navigation, Escape key, or backdrop click; animated drawer-slide-in; responsive padding adjustments for nav-content and main-content at 768px and 480px breakpoints |
+    | `clients/web/src/routes/media/[id]/+page.svelte` | Detail header stacks vertically below 768px (poster centered at 140px above info); media title scales down; file rows stack vertically; backdrop height reduced |
+    | `clients/web/src/routes/settings/users/+page.svelte` | Users table collapses to stacked card layout below 768px (table header hidden, rows become flex columns); invite form fields stack vertically; page header stacks; invitation rows wrap |
+    | `clients/web/src/routes/settings/libraries/+page.svelte` | Form grid stacks to single column; library item headers stack with full-width actions; path rows stack; page header stacks |
+    | `clients/web/src/routes/dashboard/+page.svelte` | Card grid minmax reduced to 140px below 768px; hero title scales down; spacing reduced |
+    | `clients/web/src/routes/libraries/[id]/+page.svelte` | Media grid minmax reduced to 140px; library header stacks vertically; filter bar becomes horizontally scrollable (nowrap) |
+    | `clients/web/src/routes/libraries/+page.svelte` | Library grid switches to single column below 768px |
+    | `clients/web/src/routes/search/+page.svelte` | Results grid minmax reduced to 140px; filter bar becomes horizontally scrollable; page title scales down |
+    | `clients/web/src/routes/media/+page.svelte` | Media grid minmax reduced to 140px; filter bar becomes horizontally scrollable; page title scales down |
+    | `clients/web/src/routes/settings/+page.svelte` | Links grid switches to single column below 768px; page title scales down |
+    | `clients/web/src/routes/auth/login/+page.svelte` | Auth card padding reduced to 1.5rem below 480px; auth page padding reduced |
+    | `clients/web/src/routes/auth/setup/+page.svelte` | Same mobile padding adjustments as login page |
+    | `clients/web/src/routes/auth/link/+page.svelte` | Same mobile padding adjustments |
+
+    **Key decisions from Task 6:**
+
+    - **Two-breakpoint system** — `768px` (tablet/mobile boundary: hamburger nav appears, grids adjust, tables collapse, page headers stack) and `480px` (small phone: font size reduced, auth card padding reduced, main content padding minimized). These are the two most widely adopted breakpoint values across major frameworks and provide clean transitions without over-fragmenting the CSS.
+    - **Slide-in drawer over bottom tab bar** — A right-side slide-in drawer (max-width 85vw, capped at 300px) was chosen over a bottom navigation tab bar because the nav must accommodate search, settings, sign-out, and navigation links — too many items for a clean bottom bar. The drawer includes all nav destinations plus user account actions in a single surface. Drawer animation is a 200ms ease-out `translateX` slide.
+    - **Hamburger button toggles between menu and close icon** — The SVG path switches between three horizontal lines (menu) and an X (close) based on `mobileMenuOpen` state, giving clear visual feedback without requiring a separate close button.
+    - **Drawer includes Settings and Sign Out** — On mobile, Settings and Sign Out are accessible from both the drawer and the user dropdown (which still works on mobile). This provides redundant access paths, ensuring users can always reach account actions regardless of whether they open the hamburger or tap the avatar.
+    - **CSS `display: none` for desktop nav elements on mobile** — Nav links and nav search bar use `display: none` below 768px and `display: flex` by default. This is simpler than conditional rendering and avoids Svelte transition lifecycle issues.
+    - **Horizontally scrollable filter bars** — Library detail, search results, and media browse filter bars use `flex-wrap: nowrap` + `overflow-x: auto` below 768px, allowing horizontal scrolling through filter chips without wrapping. Filter chips use `flex-shrink: 0` to maintain fixed width. This is a standard mobile pattern for tag/chip bars.
+    - **Card grid minmax 140px on mobile** — Media card grids use `minmax(140px, 1fr)` below 768px (down from 160px on desktop). At 140px minimum, a 375px phone shows 2 cards per row, a 768px tablet shows 5. The 20px reduction maintains card readability while preventing single-column layouts on mid-size phones.
+    - **Users table collapses to card layout** — The 5-column CSS grid table (`grid-template-columns: 2fr 1.5fr 1fr 1fr auto`) switches to a vertical flex column layout below 768px. The table header is hidden; each row becomes a card with ordered fields (name, username, role, status, actions). This follows the "responsive table to card" pattern recommended by accessibility guidelines.
+    - **Media detail stacks poster vertically** — The horizontal poster + info flex layout switches to `flex-direction: column` below 768px. Poster shrinks to 140px (from 200px) and centers above the info area. File rows also stack vertically (file info above actions).
+    - **Per-component `@media` queries over global responsive CSS** — Each Svelte component uses scoped `<style>` blocks. Responsive media queries are placed in each component's style block rather than a global responsive stylesheet, maintaining Svelte's CSS scoping and component encapsulation.
+    - **No JavaScript-based responsive behavior** — All responsive behavior is pure CSS media queries. No JS-based viewport detection, resize observers, or conditional rendering. This keeps the client fast, avoids hydration mismatches in SSR, and follows progressive enhancement principles.
+    - **Existing responsive components unchanged** — `NotificationToast.svelte` already had a `@media (max-width: 480px)` block (full-width on mobile); `SearchBar.svelte` already had a `@media (max-width: 768px)` block (full-width compact mode); `Player.svelte` already had a `@media (max-width: 640px)` block (hides volume slider and center title). These were left as-is.
+    - **No new npm dependencies** — All responsive behavior uses native CSS media queries. No breakpoint utility libraries (e.g., `svelte-breakpoint`) or CSS-in-JS solutions added.
+
+**Verification:** User can log in, browse libraries, search for items, view metadata, and play media through the web client. The UI is responsive across desktop, tablet, and mobile breakpoints (768px and 480px) with a mobile hamburger drawer navigation, stacked layouts for detail pages and tables, and tuned card grids.
+
+**Phase 8 status:** All 6 tasks complete.
+
+**Committed:** `8d1834e` on `main`
 
 ---
 
@@ -1988,7 +2027,7 @@ Phase 6: Metadata Providers ←─── (enriches Phase 5)       │
     ↓                                                      │
 Phase 7: Streaming & Playback (COMPLETE — 13 tasks)              │
     ↓                                                      │
-Phase 8: Web Client Core ←─── (consumes all above) ←──────┘
+Phase 8: Web Client Core (COMPLETE — 6 tasks) ←─── (consumes all above) ←──────┘
     ↓
     ├── Phase 9:  Subtitles
     ├── Phase 10: Segments & Storyboards

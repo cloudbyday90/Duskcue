@@ -202,4 +202,14 @@
         color: var(--color-text-muted);
         line-height: 1.5;
     }
+
+    @media (max-width: 480px) {
+        .auth-card {
+            padding: 1.5rem;
+        }
+
+        .auth-page {
+            padding: 1rem 0.75rem;
+        }
+    }
 </style>

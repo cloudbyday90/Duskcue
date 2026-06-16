@@ -287,4 +287,14 @@
         font-size: 0.75rem;
         color: var(--color-text-muted);
     }
+
+    @media (max-width: 768px) {
+        .page-title {
+            font-size: 1.25rem;
+        }
+
+        .links-grid {
+            grid-template-columns: 1fr;
+        }
+    }
 </style>

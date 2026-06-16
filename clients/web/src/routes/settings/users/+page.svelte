@@ -493,4 +493,61 @@
             transform: rotate(360deg);
         }
     }
+
+    @media (max-width: 768px) {
+        .form-row {
+            flex-direction: column;
+        }
+
+        .table-header {
+            display: none;
+        }
+
+        .table-row {
+            display: flex;
+            flex-direction: column;
+            gap: 0.625rem;
+            padding: 0.875rem 1rem;
+        }
+
+        .col-name {
+            font-size: 0.9375rem;
+        }
+
+        .col-username {
+            order: 2;
+        }
+
+        .col-role {
+            order: 3;
+        }
+
+        .col-status {
+            order: 4;
+        }
+
+        .col-actions {
+            order: 5;
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .invitation-row {
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        .inv-info {
+            width: 100%;
+        }
+
+        .page-header {
+            flex-direction: column;
+            gap: 0.75rem;
+        }
+
+        .page-header .btn-primary {
+            align-self: flex-start;
+        }
+    }
 </style>

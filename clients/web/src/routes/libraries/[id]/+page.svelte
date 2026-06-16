@@ -311,4 +311,35 @@
         font-size: 0.8125rem;
         color: var(--color-text-muted);
     }
+
+    @media (max-width: 768px) {
+        .library-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.75rem;
+        }
+
+        .library-title {
+            font-size: 1.25rem;
+        }
+
+        .header-left {
+            flex-wrap: wrap;
+        }
+
+        .media-grid {
+            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+            gap: 0.75rem;
+        }
+
+        .filter-bar {
+            overflow-x: auto;
+            flex-wrap: nowrap;
+            padding-bottom: 0.25rem;
+        }
+
+        .filter-chip {
+            flex-shrink: 0;
+        }
+    }
 </style>

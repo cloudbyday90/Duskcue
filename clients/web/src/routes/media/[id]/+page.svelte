@@ -583,4 +583,55 @@
             transform: rotate(360deg);
         }
     }
+
+    @media (max-width: 768px) {
+        .detail-header {
+            flex-direction: column;
+            gap: 1.25rem;
+            padding-top: 2rem;
+        }
+
+        .poster-area {
+            width: 140px;
+            align-self: center;
+        }
+
+        .poster {
+            width: 140px;
+            height: 210px;
+        }
+
+        .poster-placeholder {
+            width: 140px;
+            height: 210px;
+            font-size: 3rem;
+        }
+
+        .info-area {
+            text-align: left;
+        }
+
+        .media-title {
+            font-size: 1.5rem;
+        }
+
+        .detail-backdrop {
+            height: 280px;
+        }
+
+        .action-row {
+            flex-wrap: wrap;
+        }
+
+        .file-row {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.5rem;
+        }
+
+        .file-actions {
+            width: 100%;
+            justify-content: flex-end;
+        }
+    }
 </style>

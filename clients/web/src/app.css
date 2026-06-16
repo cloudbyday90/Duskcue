@@ -47,6 +47,17 @@
     --focus-ring: 0 0 0 2px var(--color-accent);
 }
 
+/*
+ * Responsive breakpoints (used as raw px values in @media queries
+ * since CSS custom properties cannot be used inside media conditions).
+ *
+ * --mobile:  max-width 767px  (phones, small tablets in portrait)
+ * --tablet:  768px–1023px     (tablets, small laptops)
+ * --desktop: min-width 1024px (standard desktops and larger)
+ *
+ * Additional small-mobile tuning at max-width 480px.
+ */
+
 *,
 *::before,
 *::after {
@@ -59,6 +70,12 @@ html {
     font-size: 16px;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+}
+
+@media (max-width: 480px) {
+    html {
+        font-size: 15px;
+    }
 }
 
 body {

@@ -350,4 +350,14 @@
         font-size: 0.8125rem;
         border-radius: var(--radius-sm);
     }
+
+    @media (max-width: 480px) {
+        .auth-card {
+            padding: 1.5rem;
+        }
+
+        .auth-page {
+            padding: 1rem 0.75rem;
+        }
+    }
 </style>

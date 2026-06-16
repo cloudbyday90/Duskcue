@@ -254,6 +254,18 @@ The low-light editorial palette and design tokens from this document are impleme
 
 The 4 core components (`MediaCard`, `Player`, `SearchBar`, `NotificationToast`) consume these tokens via CSS custom properties. The player-control model (item 1 in "Three More High-Value Design Areas") is partially addressed in `Player.svelte` — keyboard shortcuts (Space/K/arrows/F/M/Esc), auto-hide transport controls, and focus-visible rings are implemented. Touch/TV remote input models remain deferred to future client phases.
 
+### Responsive Layout (Phase 8 Task 6)
+
+The web client implements a responsive layout with a two-breakpoint system covering desktop, tablet, and mobile per the navigation model section above ("On mobile, keep the same product nouns even if the navigation compresses into tabs and nested views"):
+
+| Breakpoint | Behavior |
+|---|---|
+| `≥ 768px` (desktop/tablet) | Full horizontal nav bar with logo, nav links, compact search, user dropdown |
+| `< 768px` (mobile) | Hamburger menu button with animated slide-in drawer containing nav links, full-width search, Settings, Sign Out; user avatar only (no name); stacked layouts for detail pages and tables; horizontally scrollable filter bars; 140px card grid minmax |
+| `< 480px` (small phone) | Base font size reduced to 15px; auth card padding reduced; main content padding minimized |
+
+All responsive behavior is pure CSS media queries — no JavaScript viewport detection, resize observers, or breakpoint utility libraries. Each Svelte component uses scoped `<style>` media queries, maintaining Svelte's CSS encapsulation. Existing responsive components (`NotificationToast` at 480px, `SearchBar` at 768px, `Player` at 640px) were implemented in Phase 8 Task 4 and left unchanged.
+
 ## Official Sources
 
 - Microsoft Learn: Recommendations for following design standards - https://learn.microsoft.com/en-us/power-platform/well-architected/experience-optimization/design-standards
