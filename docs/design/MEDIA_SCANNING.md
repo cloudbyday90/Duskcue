@@ -353,6 +353,14 @@ External subtitle files are discovered during Phase 1 and matched to their paren
 
 Embedded subtitles (inside the container) are extracted from the ffprobe output during Phase 3.
 
+**Implementation (Phase 9 Tasks 2–3):** Subtitle discovery is implemented in `server/src/services/subtitle_discovery.rs` and called after Phase 4 (Identify) in the scan pipeline. The service:
+
+- **Loads video files** from `media_files` joined with `media_items` for the library, building a `HashMap<PathBuf, Vec<usize>>` directory map for O(1) video lookup
+- **External subtitles** — Iterates all discovered files with subtitle extensions (`.srt`, `.ass`, `.ssa`, `.vtt`, `.sub`, `.sup`); `.idx` companion files are excluded. Each subtitle is matched to a video file by directory + base-name prefix. The `Subs/` and `subtitles/` directory convention is supported by searching the grandparent directory when the parent matches a known subtitle directory name. Language codes and flags (`forced`, `hi`, `sdh`, `cc`, `hearing_impaired`, `default`) are parsed from trailing filename segments after the video base name
+- **Embedded subtitles** — Extracted from `media_files.additional_streams` JSONB `subtitles` array (populated during Phase 3 ffprobe). Each embedded subtitle is stored with synthetic path `{media_file_path}::embedded::{stream_index}` for uniqueness
+- **Idempotent inserts** — All inserts use `INSERT ... ON CONFLICT (media_item_id, file_path) DO NOTHING`, so re-scans add new subtitles without duplicating existing ones. Stale subtitle rows (deleted sidecars) are not removed during scan; cleanup is deferred to a future task
+- **`ScanResult.subtitles_discovered`** — The count of newly inserted subtitle rows is aggregated across scan paths and reported in the scan result JSON
+
 The full subtitle domain — including OCR conversion, synchronization, external provider fetching, and delivery — is documented in [SUBTITLES.md](SUBTITLES.md).
 
 ---

@@ -132,6 +132,7 @@ pub struct ScanResult {
     pub files_deleted: u64,
     pub items_created: u64,
     pub items_unmatched: u64,
+    pub subtitles_discovered: u64,
     pub errors: Vec<ScanError>,
 }
 
@@ -149,7 +150,15 @@ struct FfprobeFormat {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+struct FfprobeDisposition {
+    forced: Option<i64>,
+    hearing_impaired: Option<i64>,
+    default: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 struct FfprobeStream {
+    index: Option<i64>,
     codec_type: Option<String>,
     codec_name: Option<String>,
     width: Option<i64>,
@@ -158,6 +167,7 @@ struct FfprobeStream {
     color_transfer: Option<String>,
     r_frame_rate: Option<String>,
     channels: Option<i32>,
+    disposition: Option<FfprobeDisposition>,
     tags: Option<HashMap<String, String>>,
 }
 
@@ -214,6 +224,7 @@ pub async fn scan_library(
         files_deleted: 0,
         items_created: 0,
         items_unmatched: 0,
+        subtitles_discovered: 0,
         errors: Vec::new(),
     };
 
@@ -237,6 +248,7 @@ pub async fn scan_library(
                 total_result.files_deleted += result.files_deleted;
                 total_result.items_created += result.items_created;
                 total_result.items_unmatched += result.items_unmatched;
+                total_result.subtitles_discovered += result.subtitles_discovered;
                 total_result.errors.extend(result.errors);
             }
             Err(e) => {
@@ -375,6 +387,31 @@ async fn scan_path_pipeline(
         "Phase 4 (Identify) complete"
     );
 
+    let subtitles_discovered =
+        match crate::services::subtitle_discovery::discover_subtitles(
+            pool,
+            library_id,
+            &discovered,
+        )
+        .await
+        {
+            Ok(n) => n as u64,
+            Err(e) => {
+                tracing::warn!(error = %e, "Subtitle discovery failed");
+                errors.push(ScanError {
+                    path: scan_path.to_string_lossy().to_string(),
+                    phase: "subtitle_discovery".to_string(),
+                    message: e.to_string(),
+                });
+                0
+            }
+        };
+    tracing::info!(
+        path = %scan_path.display(),
+        subtitles_discovered,
+        "Subtitle discovery complete"
+    );
+
     phase5_enrich(pool, library_id, enrichment, &mut errors).await;
 
     let deleted_count =
@@ -400,6 +437,7 @@ async fn scan_path_pipeline(
         files_deleted: deleted_count,
         items_created: items_created as u64,
         items_unmatched: items_unmatched as u64,
+        subtitles_discovered,
         errors,
     })
 }
@@ -654,6 +692,7 @@ async fn probe_file(path: &Path) -> Result<ProbeResult, ScannerError> {
     let mut audio_language = None;
     let mut audio_bitrate = None;
     let mut additional_streams = serde_json::json!({});
+    let mut subtitle_streams: Vec<serde_json::Value> = Vec::new();
 
     for stream in &streams {
         match stream.codec_type.as_deref() {
@@ -687,6 +726,47 @@ async fn probe_file(path: &Path) -> Result<ProbeResult, ScannerError> {
                     .bit_rate
                     .as_ref()
                     .and_then(|b| b.parse::<i32>().ok());
+            }
+            Some("subtitle") => {
+                let lang = stream
+                    .tags
+                    .as_ref()
+                    .and_then(|t| t.get("language").cloned())
+                    .unwrap_or_else(|| "und".to_string());
+                let title = stream
+                    .tags
+                    .as_ref()
+                    .and_then(|t| t.get("title").cloned());
+                let title_lower = title
+                    .as_ref()
+                    .map(|t| t.to_lowercase())
+                    .unwrap_or_default();
+                let disp_forced = stream
+                    .disposition
+                    .as_ref()
+                    .and_then(|d| d.forced)
+                    .map(|f| f == 1)
+                    .unwrap_or(false);
+                let disp_hi = stream
+                    .disposition
+                    .as_ref()
+                    .and_then(|d| d.hearing_impaired)
+                    .map(|f| f == 1)
+                    .unwrap_or(false);
+                let is_forced = disp_forced || title_lower.contains("forced");
+                let is_hearing_impaired = disp_hi
+                    || title_lower.contains("hearing impaired")
+                    || title_lower.contains("sdh")
+                    || title_lower.contains("cc");
+
+                subtitle_streams.push(serde_json::json!({
+                    "index": stream.index.unwrap_or(0),
+                    "codec_name": stream.codec_name,
+                    "language": lang,
+                    "title": title,
+                    "is_forced": is_forced,
+                    "is_hearing_impaired": is_hearing_impaired,
+                }));
             }
             _ => {}
         }
@@ -723,6 +803,13 @@ async fn probe_file(path: &Path) -> Result<ProbeResult, ScannerError> {
             .as_object_mut()
             .unwrap_or(&mut serde_json::Map::new())
             .insert("chapters".to_string(), serde_json::json!(chapters));
+    }
+
+    if !subtitle_streams.is_empty() {
+        additional_streams
+            .as_object_mut()
+            .unwrap_or(&mut serde_json::Map::new())
+            .insert("subtitles".to_string(), serde_json::json!(subtitle_streams));
     }
 
     Ok(ProbeResult {

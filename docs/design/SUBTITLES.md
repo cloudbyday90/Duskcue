@@ -598,5 +598,27 @@ The subtitle domain five-file pattern was created with the following API surface
 **Validation statics** — `VALID_SUBTITLE_TYPES` (`embedded`, `external`, `fetched`), `VALID_SUBTITLE_FORMATS` (`srt`, `ass`, `ssa`, `vtt`, `sup`, `sub`, `idx`, `ttml`), `VALID_OCR_ENGINES` (`paddleocr`, `tesseract`), `VALID_SYNC_METHODS` (`voice_activity`, `fps_adjust`, `manual`), `VALID_DELIVERY_FORMATS` (`srt`, `vtt`), `VALID_SUBTITLE_PROVIDERS` (`subdl`, `opensubtitles`).
 
 **Offset range validation** — `SetSubtitleOffsetRequest.offset_ms` validated to ±300000ms (±5 minutes) via `#[validate(range(min = -300000, max = 300000))]`. SUBTITLES.md specifies 30-second max offset for voice activity alignment; the wider manual range allows users to correct larger known offsets for alternate editions.
+
+### Phase 9 Tasks 2–3 — Subtitle Discovery (Complete)
+
+Subtitle discovery is implemented in `server/src/services/subtitle_discovery.rs` and integrated into the library scan pipeline. It populates the `subtitle_files` table with both external sidecar and embedded container subtitles.
+
+**External subtitle discovery** — During the scan, all files with subtitle extensions are discovered in Phase 1 (Discover). The `discover_external_subtitles()` function iterates discovered files and matches each to its parent video file by:
+
+1. Building a `HashMap<PathBuf, Vec<usize>>` directory map from all video files in the library for O(1) lookup
+2. For each subtitle file, determining the search directory (parent directory, or grandparent if the parent is named `Subs` or `subtitles`)
+3. Finding candidate video files in the same directory whose file stem is a prefix of the subtitle's file stem
+4. Parsing the remaining filename segments after the video base name for language codes (2–5 char ASCII alpha, optionally with region suffix like `en-US`) and flags (`forced`, `hi`, `sdh`, `cc`, `hearing_impaired`, `hearing_impaired`, `default`)
+5. Selecting the longest-matching video base name (most specific match)
+
+Processed extensions: `.srt`, `.ass`, `.ssa`, `.vtt`, `.sub`, `.sup`. The `.idx` companion file for VobSub is excluded — only `.sub` creates a row.
+
+**Embedded subtitle discovery** — During Phase 3 (Probe), `probe_file` now captures subtitle streams from ffprobe output. The `FfprobeStream` struct includes `index` and `disposition` fields (via new `FfprobeDisposition` struct with `forced`, `hearing_impaired`, `default` fields). Subtitle streams are collected into `additional_streams.subtitles` JSONB array with: `index`, `codec_name`, `language` (from `tags.language`, defaults to `"und"`), `title` (from `tags.title`), `is_forced` (from disposition or title containing "forced"), `is_hearing_impaired` (from disposition or title containing "hearing impaired"/"sdh"/"cc"). The `discover_embedded_subtitles()` function reads this JSONB and inserts rows with synthetic path `{media_file_path}::embedded::{stream_index}`.
+
+**Idempotent inserts** — All subtitle inserts use `INSERT ... ON CONFLICT (media_item_id, file_path) DO NOTHING`, leveraging the `UNIQUE(media_item_id, file_path)` constraint. Re-scans add new subtitles without duplicating existing ones. Stale subtitle rows (deleted sidecar files) are not removed during scan — cleanup is deferred to a future task.
+
+**Scan integration** — `discover_subtitles()` is called after Phase 4 (Identify) in `scan_path_pipeline`, when `media_items` and `media_files` rows already exist in the database. The count of newly inserted rows is returned as `subtitles_discovered` in `ScanResult` and aggregated across scan paths in `scan_library`.
+
+**13 unit tests** — Cover language code detection (2-char, 3-char, region suffix, non-language), flag parsing (forced, hi, sdh, cc, hearing_impaired, multiple flags, no language with flag), subtitle file detection (all extensions, non-subtitle exclusion), and simple filename parsing.
 - hls.js WebVTT support: WebVTT sidecar tracks, WebVTT-in-ISOBMFF rendering
 - WebRTC VAD: lightweight voice activity detection for audio analysis

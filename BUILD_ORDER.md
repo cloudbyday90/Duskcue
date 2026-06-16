@@ -1810,8 +1810,27 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`#![allow(unused_variables)]` on service.rs** — All 8 service functions are `todo!()` stubs; the module-level allow suppresses unused parameter warnings until actual implementations are added in Tasks 2–8
 - **No new workspace dependencies** — all functionality uses existing `sqlx`, `validator`, `serde`, `uuid`, `chrono`, `axum` crates
 
-2. Implement subtitle discovery — scan for SRT/ASS/VTT/PGS/VobSub sidecars alongside media files
-3. Implement `subtitle_files` rows — populate during library scan (Phase 5)
+2. ~~Implement subtitle discovery — scan for SRT/ASS/VTT/PGS/VobSub sidecars alongside media files~~ **DONE**
+3. ~~Implement `subtitle_files` rows — populate during library scan (Phase 5)~~ **DONE**
+
+**What was built for Tasks 2–3:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/subtitle_discovery.rs` | Complete subtitle discovery service: `discover_subtitles()` entry point (called after Phase 4 Identify), `discover_external_subtitles()` for sidecar files, `discover_embedded_subtitles()` for container-internal streams, `load_video_files()` queries media_files for matching, `build_directory_map()` indexes video files by parent directory for O(1) lookup, `match_external_subtitle()` matches sidecar to video by base-name prefix, `parse_subtitle_name()` extracts language code + flags from filename, `is_subtitle_file()` extension check, `looks_like_language_code()` validates 2–5 char alpha codes |
+| `server/src/services/mod.rs` | Added `pub mod subtitle_discovery;` |
+| `server/src/workers/library_scanner.rs` | Added `FfprobeDisposition` struct (forced, hearing_impaired, default fields from ffprobe JSON); added `index` and `disposition` fields to `FfprobeStream`; added `Some("subtitle")` arm in `probe_file` stream loop — collects index/codec_name/language/title/is_forced/is_hearing_impaired into `subtitle_streams` Vec; stores into `additional_streams.subtitles` JSONB alongside chapters; added `subtitles_discovered: u64` to `ScanResult` struct; wired `discover_subtitles()` call after Phase 4 (Identify) with error capture into `ScanError`; accumulated count in `scan_library` aggregation |
+
+**Key decisions for Tasks 2–3:**
+
+- **Discovery as a service module, not in the scanner** — `subtitle_discovery.rs` lives in `services/` keeping the 1700+ line scanner focused on the 6-phase pipeline; follows the existing services pattern (like `media_matching.rs`, `artwork_downloader.rs`)
+- **External subtitle matching by directory + base-name prefix** — A subtitle file matches a video file if they share the same parent directory (or the subtitle is in a `Subs/` or `subtitles/` subdirectory) and the video's file stem is a prefix of the subtitle's file stem. This handles `Movie.srt`, `Movie.en.srt`, `Movie.forced.eng.srt`, etc.
+- **Language parsing from trailing filename segments** — After stripping the video base name, remaining dot-separated segments are checked: 2–5 char ASCII alpha codes (with optional region suffix like `en-US`) are treated as language codes; known flags (`forced`, `hi`, `sdh`, `cc`, `hearingimpaired`, `hearing_impaired`, `default`) set boolean attributes; defaults to `"und"` if no language detected
+- **Embedded subtitle synthetic path** — `{media_file_path}::embedded::{stream_index}` stored in `subtitle_files.file_path` for uniqueness; uses the `UNIQUE(media_item_id, file_path)` constraint for idempotent re-scans via `ON CONFLICT DO NOTHING`
+- **VobSub `.idx` excluded** — Only `.sub` creates a `subtitle_files` row; the `.idx` companion index file is skipped via `SUBTITLE_PROCESS_EXTENSIONS` which omits `"idx"`
+- **`ON CONFLICT DO NOTHING`** — All subtitle inserts use `INSERT ... ON CONFLICT (media_item_id, file_path) DO NOTHING` for idempotent re-scans; existing subtitles are preserved, new ones are added, deleted sidecars are NOT removed (cleanup deferred)
+- **Embedded stream metadata from ffprobe** — `probe_file` now captures subtitle streams with: `index` (stream position), `codec_name` (e.g., `subrip`, `ass`, `hdmv_pgs_subtitle`, `dvd_subtitle`), `language` (from `tags.language`), `title` (from `tags.title`), `is_forced` (from disposition or title containing "forced"), `is_hearing_impaired` (from disposition or title containing "hearing impaired"/"sdh"/"cc")
+- **13 unit tests** — Cover language code detection, flag parsing (forced, hi, sdh, cc, hearing_impaired, multiple flags), subtitle file detection, simple filename parsing, 3-letter language code, region suffix, no-language-with-flag edge case
 4. Implement subtitle delivery — serve WebVTT for HLS streams, serve text-based subtitles directly
 5. Implement `server/src/services/subtitles.rs`:
    - SRT ↔ ASS ↔ WebVTT format conversion

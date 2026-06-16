@@ -208,6 +208,7 @@ project/
 │       │   ├── notifications.rs  # Notification dispatch
 │       │   ├── search.rs         # Full-text search coordination
 │       │   ├── security.rs       # TLS (rustls), HMAC signing (ring), security headers
+│       │   ├── subtitle_discovery.rs  # External + embedded subtitle discovery during library scan — **implemented**
 │       │   ├── subtitles.rs      # OCR (PaddleOCR bridge), sync correction, fetching
 │       │   ├── quality.rs        # Device capability probing, network assessment
 │       │   ├── overlays.rs       # Compositing pipeline (image + ab_glyph + resvg)
