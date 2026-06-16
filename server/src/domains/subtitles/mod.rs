@@ -14,3 +14,43 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod error;
+pub mod handlers;
+pub mod service;
+pub mod types;
+
+pub use error::SubtitleError;
+
+use axum::routing::{get, post};
+use axum::Router;
+
+use crate::state::AppState;
+
+pub fn router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/v1/items/{item_id}/subtitles",
+            get(handlers::list_subtitles).post(handlers::fetch_subtitles),
+        )
+        .route(
+            "/api/v1/items/{item_id}/subtitles/{subtitle_id}",
+            get(handlers::get_subtitle).delete(handlers::delete_subtitle),
+        )
+        .route(
+            "/api/v1/items/{item_id}/subtitles/{subtitle_id}/content",
+            get(handlers::get_subtitle_content),
+        )
+        .route(
+            "/api/v1/items/{item_id}/subtitles/{subtitle_id}/offset",
+            axum::routing::put(handlers::set_subtitle_offset),
+        )
+        .route(
+            "/api/v1/items/{item_id}/subtitles/{subtitle_id}/ocr",
+            post(handlers::trigger_ocr),
+        )
+        .route(
+            "/api/v1/items/{item_id}/subtitles/{subtitle_id}/sync",
+            get(handlers::get_subtitle_sync_data),
+        )
+        .with_state(state)
+}

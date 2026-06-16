@@ -14,3 +14,125 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
+use uuid::Uuid;
+use validator::Validate;
+
+pub static VALID_SUBTITLE_TYPES: &[&str] = &["embedded", "external", "fetched"];
+pub static VALID_SUBTITLE_FORMATS: &[&str] = &["srt", "ass", "ssa", "vtt", "sup", "sub", "idx", "ttml"];
+pub static VALID_OCR_ENGINES: &[&str] = &["paddleocr", "tesseract"];
+pub static VALID_SYNC_METHODS: &[&str] = &["voice_activity", "fps_adjust", "manual"];
+pub static VALID_DELIVERY_FORMATS: &[&str] = &["srt", "vtt"];
+pub static VALID_SUBTITLE_PROVIDERS: &[&str] = &["subdl", "opensubtitles"];
+
+pub struct SubtitleFileRow {
+    pub id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub media_item_id: Uuid,
+    pub file_path: String,
+    pub language: String,
+    pub subtitle_type: String,
+    pub is_forced: bool,
+    pub is_hearing_impaired: bool,
+    pub source_provider: Option<String>,
+}
+
+pub struct SubtitleOcrCacheRow {
+    pub id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub media_item_id: Uuid,
+    pub subtitle_stream_index: i32,
+    pub source_hash: String,
+    pub ocr_engine: String,
+    pub confidence_score: Option<f64>,
+    pub srt_content: String,
+}
+
+pub struct SubtitleSyncDataRow {
+    pub id: Uuid,
+    pub created_at: DateTime<Utc>,
+    pub media_item_id: Uuid,
+    pub subtitle_file_id: Uuid,
+    pub sync_method: String,
+    pub offset_ms: i32,
+    pub confidence: Option<f64>,
+    pub fps_source: Option<f64>,
+    pub fps_target: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct FetchSubtitlesRequest {
+    #[validate(length(min = 2, max = 10))]
+    pub language: String,
+    pub provider: Option<String>,
+    pub is_forced: Option<bool>,
+    pub is_hearing_impaired: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct SetSubtitleOffsetRequest {
+    #[validate(range(min = -300000, max = 300000))]
+    pub offset_ms: i32,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct TriggerOcrRequest {
+    pub engine: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct SubtitleContentQuery {
+    pub format: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SubtitleFileResponse {
+    pub id: Uuid,
+    pub media_item_id: Uuid,
+    pub file_path: String,
+    pub language: String,
+    pub subtitle_type: String,
+    pub is_forced: bool,
+    pub is_hearing_impaired: bool,
+    pub source_provider: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SubtitleListResponse {
+    pub items: Vec<SubtitleFileResponse>,
+    pub total: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FetchSubtitlesResponse {
+    pub fetched: Vec<SubtitleFileResponse>,
+    pub provider_used: Option<String>,
+    pub no_results: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SubtitleOffsetResponse {
+    pub subtitle_id: Uuid,
+    pub offset_ms: i32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SubtitleOcrResult {
+    pub subtitle_file_id: Uuid,
+    pub ocr_engine: String,
+    pub confidence_score: Option<f64>,
+    pub srt_content_length: usize,
+    pub below_threshold: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SubtitleSyncDataResponse {
+    pub subtitle_file_id: Uuid,
+    pub sync_method: String,
+    pub offset_ms: i32,
+    pub confidence: Option<f64>,
+    pub fps_source: Option<f64>,
+    pub fps_target: Option<f64>,
+}

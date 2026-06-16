@@ -573,5 +573,30 @@ Downloads missing subtitles from external providers for newly scanned items.
 - OpenSubtitles API v2 Documentation: hash-based search, 75 languages, rate limiting
 - sub-convert (GitHub): PaddleOCR-based subtitle OCR tool
 - FFmpeg Subtitle Filters: overlay filter for burn-in, subtitle extraction
+
+## Implementation Notes
+
+### Phase 9 Task 1 — Domain Scaffolding (Complete)
+
+The subtitle domain five-file pattern was created with the following API surface:
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/items/{item_id}/subtitles` | List all subtitles for a media item |
+| `POST` | `/api/v1/items/{item_id}/subtitles/fetch` | Manually trigger subtitle fetch from external providers |
+| `GET` | `/api/v1/items/{item_id}/subtitles/{subtitle_id}` | Get specific subtitle metadata |
+| `DELETE` | `/api/v1/items/{item_id}/subtitles/{subtitle_id}` | Delete a fetched/OCR-generated subtitle |
+| `GET` | `/api/v1/items/{item_id}/subtitles/{subtitle_id}/content` | Serve subtitle text content (with optional format conversion) |
+| `PUT` | `/api/v1/items/{item_id}/subtitles/{subtitle_id}/offset` | Set per-user per-item subtitle offset |
+| `POST` | `/api/v1/items/{item_id}/subtitles/{subtitle_id}/ocr` | Trigger OCR for image subtitle (PGS/VobSub) |
+| `GET` | `/api/v1/items/{item_id}/subtitles/{subtitle_id}/sync` | Get subtitle synchronization data |
+
+**Error codes** — SUB_001 (FileNotFound, 404), SUB_002 (OcrUnavailable, 503), SUB_003 (OcrLowConfidence, 422), SUB_004 (ProviderUnavailable, 503), SUB_005 (ProviderRateLimited, 429), SUB_006 (VoiceAnalysisFailed, 422) are mapped in `subtitle_error_to_http()` in `server/src/error.rs`. Additional domain-specific variants (MediaItemNotFound, InvalidSubtitleFormat, InvalidLanguageCode, FetchFailed, ConversionFailed, SyncDataNotFound) map to existing SUB codes or INTERNAL.
+
+**Row types** — `SubtitleFileRow` (7 columns matching `subtitle_files` table), `SubtitleOcrCacheRow` (7 columns matching `subtitle_ocr_cache` table), `SubtitleSyncDataRow` (9 columns matching `subtitle_sync_data` table). All match the DDL in DATABASE.md exactly.
+
+**Validation statics** — `VALID_SUBTITLE_TYPES` (`embedded`, `external`, `fetched`), `VALID_SUBTITLE_FORMATS` (`srt`, `ass`, `ssa`, `vtt`, `sup`, `sub`, `idx`, `ttml`), `VALID_OCR_ENGINES` (`paddleocr`, `tesseract`), `VALID_SYNC_METHODS` (`voice_activity`, `fps_adjust`, `manual`), `VALID_DELIVERY_FORMATS` (`srt`, `vtt`), `VALID_SUBTITLE_PROVIDERS` (`subdl`, `opensubtitles`).
+
+**Offset range validation** — `SetSubtitleOffsetRequest.offset_ms` validated to ±300000ms (±5 minutes) via `#[validate(range(min = -300000, max = 300000))]`. SUBTITLES.md specifies 30-second max offset for voice activity alignment; the wider manual range allows users to correct larger known offsets for alternate editions.
 - hls.js WebVTT support: WebVTT sidecar tracks, WebVTT-in-ISOBMFF rendering
 - WebRTC VAD: lightweight voice activity detection for audio analysis

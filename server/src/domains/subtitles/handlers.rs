@@ -14,3 +14,96 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use axum::extract::{Path, Query, State};
+use axum::response::Response;
+use axum::Json;
+use uuid::Uuid;
+
+use crate::error::AppError;
+use crate::domains::subtitles::service;
+use crate::domains::subtitles::types::*;
+use crate::extractors::AuthenticatedUser;
+use crate::state::AppState;
+
+pub async fn list_subtitles(
+    State(state): State<AppState>,
+    _user: AuthenticatedUser,
+    Path(item_id): Path<Uuid>,
+) -> Result<Json<SubtitleListResponse>, AppError> {
+    let result = service::list_subtitles(&state.pool, item_id).await?;
+    Ok(Json(result))
+}
+
+pub async fn get_subtitle(
+    State(state): State<AppState>,
+    _user: AuthenticatedUser,
+    Path((item_id, subtitle_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<SubtitleFileResponse>, AppError> {
+    let result = service::get_subtitle(&state.pool, item_id, subtitle_id).await?;
+    Ok(Json(result))
+}
+
+pub async fn get_subtitle_content(
+    State(_state): State<AppState>,
+    _user: AuthenticatedUser,
+    Path((_item_id, _subtitle_id)): Path<(Uuid, Uuid)>,
+    Query(_query): Query<SubtitleContentQuery>,
+) -> Result<Response, AppError> {
+    todo!()
+}
+
+pub async fn fetch_subtitles(
+    State(state): State<AppState>,
+    _user: AuthenticatedUser,
+    Path(item_id): Path<Uuid>,
+    Json(req): Json<FetchSubtitlesRequest>,
+) -> Result<Json<FetchSubtitlesResponse>, AppError> {
+    let result = service::fetch_subtitles(&state.pool, item_id, &req).await?;
+    Ok(Json(result))
+}
+
+pub async fn set_subtitle_offset(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path((item_id, subtitle_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<SetSubtitleOffsetRequest>,
+) -> Result<Json<SubtitleOffsetResponse>, AppError> {
+    let result = service::set_subtitle_offset(
+        &state.pool,
+        user.user_id,
+        item_id,
+        subtitle_id,
+        req.offset_ms,
+    )
+    .await?;
+    Ok(Json(result))
+}
+
+pub async fn trigger_ocr(
+    State(state): State<AppState>,
+    _user: AuthenticatedUser,
+    Path((item_id, subtitle_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<TriggerOcrRequest>,
+) -> Result<Json<SubtitleOcrResult>, AppError> {
+    let result =
+        service::trigger_ocr(&state.pool, item_id, subtitle_id, req.engine.as_deref()).await?;
+    Ok(Json(result))
+}
+
+pub async fn get_subtitle_sync_data(
+    State(state): State<AppState>,
+    _user: AuthenticatedUser,
+    Path((item_id, subtitle_id)): Path<(Uuid, Uuid)>,
+) -> Result<Json<SubtitleSyncDataResponse>, AppError> {
+    let result = service::get_subtitle_sync_data(&state.pool, item_id, subtitle_id).await?;
+    Ok(Json(result))
+}
+
+pub async fn delete_subtitle(
+    State(state): State<AppState>,
+    _user: AuthenticatedUser,
+    Path((item_id, subtitle_id)): Path<(Uuid, Uuid)>,
+) -> Result<axum::http::StatusCode, AppError> {
+    service::delete_subtitle(&state.pool, item_id, subtitle_id).await?;
+    Ok(axum::http::StatusCode::NO_CONTENT)
+}

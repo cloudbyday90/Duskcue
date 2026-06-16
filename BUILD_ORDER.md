@@ -1773,9 +1773,43 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 | [SUBTITLES.md](docs/design/SUBTITLES.md) | **Primary** — subtitle discovery, conversion, sync correction, fetching, delivery |
 | [METADATA_PROVIDERS.md](docs/design/METADATA_PROVIDERS.md) | SubDL and OpenSubtitles provider profiles, rate limiting |
 
+**Context from Phase 8:**
+
+- `clients/web/src/routes/settings/subtitles/+page.svelte` exists as a placeholder stub ("Coming in Phase 9")
+- `clients/web/src/lib/api/subtitles.js` exists as a license-header-only stub
+- `SubtitleConfig` already defined in `state.rs` with 9 fields (ocr_enabled, ocr_engine, ocr_confidence_threshold, voice_activity_analysis, voice_activity_schedule, default_subtitle_mode, default_subtitle_language, auto_fetch_enabled, auto_fetch_languages) — already stored in `server_config.subtitles` JSONB and loaded by `load_runtime_config()`
+- `subtitle_files`, `subtitle_ocr_cache`, `subtitle_sync_data` tables created in Phase 2 migrations
+- Web client Player component already has subtitle support in its `StartPlaybackRequest` (client sends `subtitle_stream_index`)
+
 **Tasks:**
 
-1. Create `server/src/domains/subtitles/` — five-file pattern
+1. ~~Create `server/src/domains/subtitles/` — five-file pattern~~ **DONE**
+
+**What was built for Task 1:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/subtitles/mod.rs` | Module declarations + router assembly with 6 route groups (8 endpoints) |
+| `server/src/domains/subtitles/error.rs` | `SubtitleError` enum with 13 variants: SUB_001–006 (FileNotFound, OcrUnavailable, OcrLowConfidence, ProviderUnavailable, ProviderRateLimited, VoiceAnalysisFailed) per ERROR_HANDLING.md + 6 domain-specific (MediaItemNotFound, InvalidSubtitleFormat, InvalidLanguageCode, FetchFailed, ConversionFailed, SyncDataNotFound) + Database catch-all |
+| `server/src/domains/subtitles/types.rs` | Three-type DTOs: 3 Row types (SubtitleFileRow, SubtitleOcrCacheRow, SubtitleSyncDataRow) matching DATABASE.md schema; 4 Request DTOs with Validate (FetchSubtitlesRequest, SetSubtitleOffsetRequest, TriggerOcrRequest, SubtitleContentQuery); 6 Response DTOs (SubtitleFileResponse, SubtitleListResponse, FetchSubtitlesResponse, SubtitleOffsetResponse, SubtitleOcrResult, SubtitleSyncDataResponse); 6 validation statics |
+| `server/src/domains/subtitles/service.rs` | 8 `todo!()` service function stubs (list_subtitles, get_subtitle, get_subtitle_content, fetch_subtitles, set_subtitle_offset, trigger_ocr, get_subtitle_sync_data, delete_subtitle) + `validate_language_code` helper |
+| `server/src/domains/subtitles/handlers.rs` | 8 handlers wired to Axum extractors with concrete return types; content endpoint uses `Result<Response, AppError>` (serves text, not JSON); all others use `Result<Json<T>, AppError>` |
+| `server/src/error.rs` | Added `AppError::Subtitle(#[from] SubtitleError)` variant + `subtitle_error_to_http()` mapping all 13 error variants |
+| `server/src/domains/mod.rs` | Added `pub mod subtitles;` |
+| `server/src/router.rs` | Merged subtitles router via `.merge(crate::domains::subtitles::router(state.clone()))`, removed Phase 9 comment |
+
+**Key decisions from Task 1:**
+
+- **Routes nested under `/api/v1/items/{item_id}/subtitles`** — Subtitles are strictly owned by media items (CASCADE on media_item_id FK); one level of nesting per REST sub-resource convention, same pattern as bookmarks and watch-data in the playback domain
+- **Content endpoint returns `Result<Response, AppError>`** — Unlike other subtitle endpoints that return JSON, the content endpoint serves raw subtitle text (SRT/WebVTT) with appropriate `Content-Type` headers. Uses `todo!()` stub for Task 1; Task 4 (delivery) will implement response construction with format-specific content types
+- **Offset endpoint scoped by `user_id`** — Per-user per-item offset per SUBTITLES.md; offset stored in `user_item_data.metadata` JSONB, not in subtitle_files. The `set_subtitle_offset` handler extracts `user_id` from `AuthenticatedUser` and passes it to the service
+- **OCR trigger as POST endpoint** — `POST /api/v1/items/{item_id}/subtitles/{subtitle_id}/ocr` allows manual OCR trigger for image subtitles (PGS/VobSub); engine override optional via request body
+- **Delete limited to fetched subtitles** — `DELETE` endpoint intended for removing provider-fetched or OCR-generated subtitle rows; embedded and external subtitles should not be deletable via API (service layer enforces this in Task 2)
+- **Additional error variants beyond SUB_001–006** — `MediaItemNotFound`, `InvalidSubtitleFormat`, `InvalidLanguageCode`, `FetchFailed`, `ConversionFailed`, `SyncDataNotFound` provide domain-specific error reporting; these map to existing SUB codes or INTERNAL, avoiding the need for generic `AppError::BadRequest`/`AppError::Internal` wrappers
+- **`validate_language_code` helper** — Simple check: 2–10 ASCII alphabetic chars (covers ISO 639-1 `en` through ISO 639-2/T `eng` and IETF tags `en-US`). Full validation deferred to service implementation
+- **`#![allow(unused_variables)]` on service.rs** — All 8 service functions are `todo!()` stubs; the module-level allow suppresses unused parameter warnings until actual implementations are added in Tasks 2–8
+- **No new workspace dependencies** — all functionality uses existing `sqlx`, `validator`, `serde`, `uuid`, `chrono`, `axum` crates
+
 2. Implement subtitle discovery — scan for SRT/ASS/VTT/PGS/VobSub sidecars alongside media files
 3. Implement `subtitle_files` rows — populate during library scan (Phase 5)
 4. Implement subtitle delivery — serve WebVTT for HLS streams, serve text-based subtitles directly

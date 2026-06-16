@@ -14,3 +14,82 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+#![allow(unused_variables)]
+
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use crate::domains::subtitles::error::SubtitleError;
+use crate::domains::subtitles::types::*;
+
+pub async fn list_subtitles(
+    pool: &PgPool,
+    media_item_id: Uuid,
+) -> Result<SubtitleListResponse, SubtitleError> {
+    todo!()
+}
+
+pub async fn get_subtitle(
+    pool: &PgPool,
+    media_item_id: Uuid,
+    subtitle_id: Uuid,
+) -> Result<SubtitleFileResponse, SubtitleError> {
+    todo!()
+}
+
+pub async fn get_subtitle_content(
+    pool: &PgPool,
+    media_item_id: Uuid,
+    subtitle_id: Uuid,
+    delivery_format: Option<&str>,
+    user_offset_ms: Option<i32>,
+) -> Result<(String, &'static str), SubtitleError> {
+    todo!()
+}
+
+pub async fn fetch_subtitles(
+    pool: &PgPool,
+    media_item_id: Uuid,
+    req: &FetchSubtitlesRequest,
+) -> Result<FetchSubtitlesResponse, SubtitleError> {
+    todo!()
+}
+
+pub async fn set_subtitle_offset(
+    pool: &PgPool,
+    user_id: Uuid,
+    media_item_id: Uuid,
+    subtitle_id: Uuid,
+    offset_ms: i32,
+) -> Result<SubtitleOffsetResponse, SubtitleError> {
+    todo!()
+}
+
+pub async fn trigger_ocr(
+    pool: &PgPool,
+    media_item_id: Uuid,
+    subtitle_id: Uuid,
+    engine_override: Option<&str>,
+) -> Result<SubtitleOcrResult, SubtitleError> {
+    todo!()
+}
+
+pub async fn get_subtitle_sync_data(
+    pool: &PgPool,
+    media_item_id: Uuid,
+    subtitle_id: Uuid,
+) -> Result<SubtitleSyncDataResponse, SubtitleError> {
+    todo!()
+}
+
+pub async fn delete_subtitle(
+    pool: &PgPool,
+    media_item_id: Uuid,
+    subtitle_id: Uuid,
+) -> Result<(), SubtitleError> {
+    todo!()
+}
+
+pub fn validate_language_code(code: &str) -> bool {
+    code.len() >= 2 && code.len() <= 10 && code.chars().all(|c| c.is_ascii_alphabetic())
+}

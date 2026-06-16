@@ -107,6 +107,9 @@ pub enum AppError {
     #[error(transparent)]
     Quality(#[from] crate::domains::quality::QualityError),
 
+    #[error(transparent)]
+    Subtitle(#[from] crate::domains::subtitles::SubtitleError),
+
     #[error("internal server error")]
     Internal(#[source] anyhow::Error),
 }
@@ -140,6 +143,10 @@ impl IntoResponse for AppError {
             }
             AppError::Quality(e) => {
                 let (s, c, d) = quality_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Subtitle(e) => {
+                let (s, c, d) = subtitle_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", Cow::Borrowed(msg.as_str())),
@@ -402,5 +409,26 @@ fn quality_error_to_http(err: &crate::domains::quality::QualityError) -> (Status
         QualityError::InvalidQualityMode(m) => (StatusCode::BAD_REQUEST, "QUALITY_011", format!("Invalid quality mode: {}", m)),
         QualityError::MediaVersionNotFound => (StatusCode::NOT_FOUND, "QUALITY_012", "Requested media version not found".into()),
         QualityError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
+    }
+}
+
+fn subtitle_error_to_http(err: &crate::domains::subtitles::SubtitleError) -> (StatusCode, &'static str, String) {
+    use crate::domains::subtitles::SubtitleError;
+    use axum::http::StatusCode;
+
+    match err {
+        SubtitleError::FileNotFound { .. } => (StatusCode::NOT_FOUND, "SUB_001", "Subtitle file not found".into()),
+        SubtitleError::OcrUnavailable => (StatusCode::SERVICE_UNAVAILABLE, "SUB_002", "OCR engine unavailable".into()),
+        SubtitleError::OcrLowConfidence { confidence, threshold } => (StatusCode::UNPROCESSABLE_ENTITY, "SUB_003", format!("OCR confidence {} below threshold {}", confidence, threshold)),
+        SubtitleError::ProviderUnavailable { provider } => (StatusCode::SERVICE_UNAVAILABLE, "SUB_004", format!("Subtitle provider unavailable: {}", provider)),
+        SubtitleError::ProviderRateLimited { provider } => (StatusCode::TOO_MANY_REQUESTS, "SUB_005", format!("Subtitle provider rate limited: {}", provider)),
+        SubtitleError::VoiceAnalysisFailed { reason } => (StatusCode::UNPROCESSABLE_ENTITY, "SUB_006", format!("Voice activity analysis failed: {}", reason)),
+        SubtitleError::MediaItemNotFound { .. } => (StatusCode::NOT_FOUND, "SUB_001", "Media item not found".into()),
+        SubtitleError::InvalidSubtitleFormat(f) => (StatusCode::BAD_REQUEST, "SUB_001", format!("Invalid subtitle format: {}", f)),
+        SubtitleError::InvalidLanguageCode(c) => (StatusCode::BAD_REQUEST, "SUB_001", format!("Invalid language code: {}", c)),
+        SubtitleError::FetchFailed { reason } => (StatusCode::SERVICE_UNAVAILABLE, "SUB_004", format!("Subtitle fetch failed: {}", reason)),
+        SubtitleError::ConversionFailed { reason } => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", format!("Subtitle conversion failed: {}", reason)),
+        SubtitleError::SyncDataNotFound { .. } => (StatusCode::NOT_FOUND, "SUB_001", "Subtitle sync data not found".into()),
+        SubtitleError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
     }
 }
