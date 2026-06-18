@@ -710,9 +710,68 @@ The shared subtitle processing service is implemented in `server/src/services/su
 - **`-30dB:d=0.5` silencedetect thresholds** — Per FFmpeg community consensus for speech boundary detection: -30dB noise floor separates speech from background; 0.5s minimum duration filters out brief pauses within sentences.
 - **ASS→SRT bidirectional added** — `srt_to_ass` produces a minimal valid ASS with default `[V4+ Styles]` and `[Events]` sections. Used when a client requests ASS delivery from an SRT source (rare, but completes the conversion matrix).
 
+### Phase 9 Task 6 — Subtitle Provider Fetching (Complete)
+
+Subtitle fetching from external providers is implemented with SubDL (primary) and OpenSubtitles (fallback). Both provider clients follow the established per-client module pattern (`tmdb_client.rs`, `tvdb_client.rs`, `fanart_client.rs`, `omdb_client.rs`).
+
+**Provider clients:**
+
+- **`SubdlClient`** (`services/subdl_client.rs`) — SubDL API at `api.subdl.com/api/v1`. Search by TMDB ID (`/subtitles?tmdb_id=...`), IMDb ID, or film name. Returns `SubtitleSearchResult` list with normalized language codes (uppercase in API, normalized to ISO 639-1). Download via `dl.subdl.com` URL prefix + API key. Responses are ZIP archives — `extract_subtitle_from_zip()` scans for `.srt`/`.ass`/`.ssa`/`.vtt`/`.ttml` entries. `test_connection()` searches TMDB ID 27205 (Inception) as health check.
+
+- **`OpensubtitlesClient`** (`services/opensubtitles_client.rs`) — OpenSubtitles API at `api.opensubtitles.com/api/v1`. Search by OSHash + file size (`/subtitles?moviehash=...&moviebytesize=...`), TMDB ID, IMDb ID, or query string. Two-step download: `POST /download {file_id}` → response contains `link` → GET link returns subtitle bytes. Responses may be plain text or ZIP (checked via PK magic bytes). `test_connection()` searches TMDB ID 27205 as health check. Requires `Api-Key` and `User-Agent` headers.
+
+**OSHash implementation:**
+
+`compute_oshash()` in `services/subtitles.rs` computes the OpenSubtitles hash: `hash = file_size + sum_uint64_le(first_64KB) + sum_uint64_le(last_64KB)`, wrapping at 64 bits, output as 16-char hex. Minimum file size 128KB. Uses `tokio::io` for async file reads. This hash enables exact-match subtitle search, which is the most accurate method on OpenSubtitles.
+
+**Fetch flow (`domains/subtitles/service.rs::fetch_subtitles()`):**
+
+1. Load media item (`title`, `tmdb_id`, `imdb_id`, `media_type`) and primary media file path from DB
+2. Determine provider order: if `req.provider` specified, use that only; otherwise try SubDL then OpenSubtitles
+3. For each enabled provider with non-empty API key:
+   - Search using best available identifier (TMDB ID → IMDb ID → title for SubDL; hash+size → TMDB ID → IMDb ID → query for OpenSubtitles)
+   - `pick_best_result()` filters by language match, then forced/HI preference, then ranks by vote count + format
+   - Download subtitle (ZIP for SubDL, two-step for OpenSubtitles)
+   - Extract subtitle bytes from ZIP if needed
+   - Save to `{media_stem}.{language}.{ext}` next to media file
+   - Insert `subtitle_files` row (`subtitle_type = 'fetched'`, `source_provider = 'subdl'` or `'opensubtitles'`)
+   - Return `FetchSubtitlesResponse` with fetched subtitle and provider used
+4. If all providers return no results or are unavailable, return `{ fetched: [], no_results: true }`
+
+**Error handling:**
+
+- `ProviderUnavailable` (SUB_004, 503) — provider returned 401/403 (invalid credentials). Causes fallthrough to next provider.
+- `ProviderRateLimited` (SUB_005, 429) — provider returned 429. Causes fallthrough to next provider.
+- `FetchFailed` (SUB_006, 502) — network error, JSON parse error, or ZIP extraction failure. Propagates immediately.
+- All other errors (DB, IO) propagate immediately.
+
+**Config changes:**
+
+`IntegrationsConfig` expanded from empty `{}` to:
+
+```rust
+pub struct IntegrationsConfig {
+    pub subtitle_providers: SubtitleProviderConfig,
+}
+
+pub struct SubtitleProviderConfig {
+    pub subdl: SubdlProviderConfig,
+    pub opensubtitles: OpensubtitlesProviderConfig,
+}
+```
+
+Each provider config: `enabled: bool`, `api_key: Option<String>`, `auto_fetch_enabled: bool`, `auto_fetch_languages: Vec<String>`, `prefer_hearing_impaired: bool`. OpenSubtitles additionally has `api_token: Option<String>`. All default to `enabled: false` (opt-in).
+
+**Key decisions:**
+
+- **SubDL as primary** — Larger free tier (2,000 req/day, 300 downloads/day), single-step download (ZIP), no user account needed
+- **OSHash first for OpenSubtitles** — Hash-based matching gives exact-file results, more accurate than TMDB/IMDb title matching
+- **Normalized `SubtitleSearchResult`** — Both clients return the same struct so the domain service can rank/filter uniformly without provider-specific logic
+- **`zip` crate v2** added to workspace — SubDL always returns ZIP archives; needed for extraction
+- **Subtitle files saved next to media** — Follows discovery convention so `subtitle_discovery.rs` finds them on re-scan
+
 **Deferred to later tasks:**
 
-- Subtitle fetching from SubDL/OpenSubtitles — Task 6
 - Auto-fetch during scan — Task 7
 - Subtitle settings UI — Task 8
 - Full PaddleOCR/Tesseract image OCR pipeline (PNG frame rendering, per-frame OCR, SRT assembly from bitmap subtitles) — future enhancement, requires Python runtime orchestration in a background worker

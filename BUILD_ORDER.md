@@ -1885,10 +1885,33 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
    - **`srt_to_ass` added** — Produces minimal valid ASS with default `[V4+ Styles]` and `[Events]`. Completes the bidirectional conversion matrix (SRT↔ASS↔WebVTT)
    - **No new workspace dependencies** — FFmpeg invocation uses `tokio::process::Command` (already in workspace); OCR engine detection uses `std::process::Command` (already used by `hw_accel.rs`); Blake3 hashing uses existing `blake3` workspace dep; all text parsing is standard library string manipulation
 
- 6. Implement subtitle fetching from providers:
-    - SubDL client — search by TMDB ID, download, save
-    - OpenSubtitles client — search by hash/filename, download, save
-    - Provider priority: SubDL first, OpenSubtitles fallback
+  6. ~~Implement subtitle fetching from providers~~ **DONE**
+
+     **What was built for Task 6:**
+
+     | File | Purpose |
+     |---|---|
+     | `server/src/services/subdl_client.rs` | SubDL API client — search by TMDB/IMDb/name, ZIP download, connection test |
+     | `server/src/services/opensubtitles_client.rs` | OpenSubtitles API client — search by TMDB/IMDb/hash/query, two-step download, connection test |
+     | `server/src/services/subtitles.rs` | `compute_oshash()` added — 64-bit LE hash of first/last 64KB + file size for OpenSubtitles hash-based search |
+     | `server/src/domains/subtitles/service.rs` | `fetch_subtitles()` implemented — provider priority search, ZIP extraction, file save, DB insert |
+     | `server/src/domains/subtitles/handlers.rs` | `fetch_subtitles` handler updated to pass `&AppState` |
+     | `server/src/state.rs` | `IntegrationsConfig` expanded from empty placeholder to include `SubtitleProviderConfig` with SubDL/OpenSubtitles sub-configs |
+     | `server/src/services/mod.rs` | `subdl_client` and `opensubtitles_client` modules registered |
+     | `Cargo.toml` | `zip = "2"` added to workspace and server deps |
+
+     **Key decisions from Task 6:**
+
+     - **Provider priority: SubDL → OpenSubtitles** — SubDL searched first (free tier: 2,000 req/day, 300 downloads/day, uppercase lang codes, returns ZIP archives). OpenSubtitles is fallback (5 downloads/IP/24h, lowercase lang codes, two-step download flow: `POST /download {file_id}` → GET link)
+     - **Normalized `SubtitleSearchResult`** — Both clients return the same struct (`provider`, `language`, `release_name`, `file_name`, `format`, `is_hearing_impaired`, `is_forced`, `download_url`, `vote_count`) so the domain service can rank and filter uniformly
+     - **Search strategy** — SubDL: TMDB ID → IMDb ID → title fallback. OpenSubtitles: OSHash + file_size → TMDB ID → IMDb ID → title query fallback. Hash-based search gives best match accuracy on OpenSubtitles
+     - **OSHash implementation** — `hash = file_size + sum_uint64_le(first_64KB) + sum_uint64_le(last_64KB)`, wraps at 64 bits, 16-char hex output. Minimum file size 128KB. Implemented in `services/subtitles.rs::compute_oshash()`
+     - **ZIP extraction** — SubDL returns ZIP archives containing `.srt`/`.ass`/`.ssa`/`.vtt`/`.ttml` files. `extract_subtitle_from_zip()` scans archive entries for subtitle extensions and returns the first match. OpenSubtitles responses are checked for ZIP magic bytes (`PK`) before extraction
+     - **Subtitle files saved next to media** — Fetched subtitles written to `{media_stem}.{language}.{ext}` in the same directory as the media file, matching the discovery convention
+     - **Provider config in `IntegrationsConfig`** — Each provider has `enabled`, `api_key`, `auto_fetch_enabled`, `auto_fetch_languages`, `prefer_hearing_impaired` fields. Both providers default to `enabled: false` (opt-in). Stored in `server_config.integrations.subtitle_providers` JSONB
+     - **`pick_best_result` ranking** — Filters by language match, then prefers forced/non-forced match, then hearing-impaired match, then scores by vote count + HI preference + SRT format bonus
+     - **Graceful provider fallback** — `ProviderUnavailable` and `ProviderRateLimited` errors cause fallthrough to the next provider rather than hard failure. All other errors propagate immediately
+     - **`zip` crate v2** added to workspace — needed for SubDL ZIP archive extraction; `flate2` already present for gzip
  7. Implement `server/src/workers/subtitle_processor.rs` — auto-fetch during scan
  8. Implement subtitle settings UI in web client
 

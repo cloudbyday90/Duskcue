@@ -16,14 +16,18 @@
 
 #![allow(unused_variables)]
 
-use std::path::PathBuf;
+use std::io::{Cursor, Read};
+use std::path::{Path, PathBuf};
 
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::domains::subtitles::error::SubtitleError;
 use crate::domains::subtitles::types::*;
+use crate::services::subdl_client::{SubdlClient, SubtitleSearchResult};
 use crate::services::subtitles as sub_svc;
+use crate::services::opensubtitles_client::OpensubtitlesClient;
+use crate::state::AppState;
 
 const LIST_SUBTITLES_SQL: &str = r#"SELECT id, media_item_id, file_path, language, subtitle_type,
          is_forced, is_hearing_impaired, source_provider
@@ -139,12 +143,459 @@ pub async fn get_subtitle_content(
 }
 
 pub async fn fetch_subtitles(
-    pool: &PgPool,
+    state: &AppState,
     media_item_id: Uuid,
     req: &FetchSubtitlesRequest,
 ) -> Result<FetchSubtitlesResponse, SubtitleError> {
+    let config = state.runtime_config.load();
+    let subtitle_providers = &config.integrations.subtitle_providers;
+
+    let item = get_media_item_for_fetch(&state.pool, media_item_id).await?;
+    let media_file = resolve_media_file_path(&state.pool, media_item_id).await?;
+    let media_file_str = media_file.to_string_lossy().to_string();
+
+    let language = &req.language;
+    let want_hi = req.is_hearing_impaired.unwrap_or(false);
+    let want_forced = req.is_forced.unwrap_or(false);
+
+    let provider_pref = match req.provider.as_deref() {
+        Some("subdl") => vec!["subdl"],
+        Some("opensubtitles") => vec!["opensubtitles"],
+        _ => vec!["subdl", "opensubtitles"],
+    };
+
+    for &provider in &provider_pref {
+        match provider {
+            "subdl" if subtitle_providers.subdl.enabled => {
+                let api_key = subtitle_providers.subdl.api_key.as_deref().unwrap_or("");
+                if api_key.is_empty() {
+                    continue;
+                }
+                let client = SubdlClient::new(api_key.to_string());
+                let item_type = if item.media_type == "tv" || item.media_type == "episode" {
+                    Some("tv")
+                } else {
+                    Some("movie")
+                };
+                let results = match item.tmdb_id {
+                    Some(tmdb_id) => {
+                        client
+                            .search_by_tmdb(tmdb_id, language, item_type)
+                            .await
+                    }
+                    None => match &item.imdb_id {
+                        Some(imdb) => {
+                            client
+                                .search_by_imdb(imdb, language, item_type)
+                                .await
+                        }
+                        None => {
+                            client
+                                .search_by_name(&item.title, language, item_type)
+                                .await
+                        }
+                    },
+                };
+
+                match results {
+                    Ok(search_results) => {
+                        if let Some(fetched) = try_download_and_save_subdl(
+                            &client,
+                            search_results,
+                            language,
+                            want_hi,
+                            want_forced,
+                            &media_file,
+                            &state.pool,
+                            media_item_id,
+                            subtitle_providers.subdl.prefer_hearing_impaired,
+                        )
+                        .await?
+                        {
+                            return Ok(FetchSubtitlesResponse {
+                                fetched: vec![fetched],
+                                provider_used: Some("subdl".to_string()),
+                                no_results: false,
+                            });
+                        }
+                    }
+                    Err(SubtitleError::ProviderUnavailable { .. })
+                    | Err(SubtitleError::ProviderRateLimited { .. }) => {
+                        tracing::warn!("SubDL provider error, falling through to next provider");
+                        continue;
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            "opensubtitles" if subtitle_providers.opensubtitles.enabled => {
+                let api_key = subtitle_providers.opensubtitles.api_key.as_deref().unwrap_or("");
+                if api_key.is_empty() {
+                    continue;
+                }
+                let client = OpensubtitlesClient::new(api_key.to_string());
+                let item_type = if item.media_type == "tv" || item.media_type == "episode" {
+                    Some("tv")
+                } else {
+                    Some("movie")
+                };
+
+                let hash_result = match sub_svc::compute_oshash(&media_file).await {
+                    Ok(hash) => {
+                        let file_size = tokio::fs::metadata(&media_file)
+                            .await
+                            .map(|m| m.len())
+                            .unwrap_or(0);
+                        Some((hash, file_size))
+                    }
+                    Err(e) => {
+                        tracing::debug!("OSHash computation failed: {e}");
+                        None
+                    }
+                };
+
+                let results = if let Some((ref hash, file_size)) = hash_result {
+                    client
+                        .search_by_hash(hash, file_size, language)
+                        .await
+                } else {
+                    match item.tmdb_id {
+                        Some(tmdb_id) => {
+                            client
+                                .search_by_tmdb(tmdb_id, language, item_type)
+                                .await
+                        }
+                        None => match &item.imdb_id {
+                            Some(imdb) => {
+                                client
+                                    .search_by_imdb(imdb, language, item_type)
+                                    .await
+                            }
+                            None => {
+                                client
+                                    .search_by_query(&item.title, language)
+                                    .await
+                            }
+                        },
+                    }
+                };
+
+                match results {
+                    Ok(search_results) => {
+                        if let Some(fetched) = try_download_and_save_os(
+                            &client,
+                            search_results,
+                            language,
+                            want_hi,
+                            want_forced,
+                            &media_file,
+                            &state.pool,
+                            media_item_id,
+                            subtitle_providers.opensubtitles.prefer_hearing_impaired,
+                        )
+                        .await?
+                        {
+                            return Ok(FetchSubtitlesResponse {
+                                fetched: vec![fetched],
+                                provider_used: Some("opensubtitles".to_string()),
+                                no_results: false,
+                            });
+                        }
+                    }
+                    Err(SubtitleError::ProviderUnavailable { .. })
+                    | Err(SubtitleError::ProviderRateLimited { .. }) => {
+                        tracing::warn!("OpenSubtitles provider error, no more providers");
+                        continue;
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+            _ => {}
+        }
+    }
+
+    Ok(FetchSubtitlesResponse {
+        fetched: vec![],
+        provider_used: None,
+        no_results: true,
+    })
+}
+
+struct MediaItemForFetch {
+    title: String,
+    tmdb_id: Option<u64>,
+    imdb_id: Option<String>,
+    media_type: String,
+}
+
+async fn get_media_item_for_fetch(
+    pool: &PgPool,
+    media_item_id: Uuid,
+) -> Result<MediaItemForFetch, SubtitleError> {
+    let row = sqlx::query(
+        r#"SELECT title, tmdb_id, imdb_id, media_type
+           FROM media_items
+           WHERE id = $1"#,
+    )
+    .bind(media_item_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(SubtitleError::MediaItemNotFound { media_item_id })?;
+
+    let tmdb_raw: Option<i64> = row.try_get("tmdb_id").unwrap_or(None);
+    let tmdb_id = tmdb_raw.map(|v| v as u64);
+
+    Ok(MediaItemForFetch {
+        title: row.try_get("title").unwrap_or_default(),
+        tmdb_id,
+        imdb_id: row.try_get("imdb_id").unwrap_or(None),
+        media_type: row.try_get("media_type").unwrap_or_default(),
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn try_download_and_save_subdl(
+    client: &SubdlClient,
+    results: Vec<SubtitleSearchResult>,
+    language: &str,
+    want_hi: bool,
+    want_forced: bool,
+    media_file: &Path,
+    pool: &PgPool,
+    media_item_id: Uuid,
+    prefer_hi: bool,
+) -> Result<Option<SubtitleFileResponse>, SubtitleError> {
+    let best = pick_best_result(results, language, want_hi, want_forced, prefer_hi);
+    let Some(best) = best else {
+        return Ok(None);
+    };
+
+    let raw_bytes = client.download(&best.download_url).await?;
+    let subtitle_bytes = extract_subtitle_from_zip(&raw_bytes)?;
+    let file_ext = &best.format;
+    let saved_path = save_subtitle_file(media_file, language, file_ext, &subtitle_bytes).await?;
+    let saved_path_str = saved_path.to_string_lossy().to_string();
+
+    let row = insert_fetched_subtitle(
+        pool,
+        media_item_id,
+        &saved_path_str,
+        &best.language,
+        best.is_forced,
+        best.is_hearing_impaired,
+        "subdl",
+    )
+    .await?;
+
+    Ok(Some(row))
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn try_download_and_save_os(
+    client: &OpensubtitlesClient,
+    results: Vec<SubtitleSearchResult>,
+    language: &str,
+    want_hi: bool,
+    want_forced: bool,
+    media_file: &Path,
+    pool: &PgPool,
+    media_item_id: Uuid,
+    prefer_hi: bool,
+) -> Result<Option<SubtitleFileResponse>, SubtitleError> {
+    let best = pick_best_result(results, language, want_hi, want_forced, prefer_hi);
+    let Some(best) = best else {
+        return Ok(None);
+    };
+
+    let parts: Vec<&str> = best.download_url.split(':').collect();
+    if parts.len() != 2 {
+        return Err(SubtitleError::FetchFailed {
+            reason: format!("invalid OpenSubtitles download URL: {}", best.download_url),
+        });
+    }
+    let file_id: u64 = parts[1].parse().map_err(|_| SubtitleError::FetchFailed {
+        reason: format!("invalid file_id in OpenSubtitles result: {}", parts[1]),
+    })?;
+
+    let (raw_bytes, _server_filename) = client.download(file_id).await?;
+    let subtitle_bytes = if is_zip(&raw_bytes) {
+        extract_subtitle_from_zip(&raw_bytes)?
+    } else {
+        raw_bytes
+    };
+    let file_ext = if best.format.is_empty() { "srt" } else { best.format.as_str() };
+    let saved_path = save_subtitle_file(media_file, language, file_ext, &subtitle_bytes).await?;
+    let saved_path_str = saved_path.to_string_lossy().to_string();
+
+    let row = insert_fetched_subtitle(
+        pool,
+        media_item_id,
+        &saved_path_str,
+        &best.language,
+        best.is_forced,
+        best.is_hearing_impaired,
+        "opensubtitles",
+    )
+    .await?;
+
+    Ok(Some(row))
+}
+
+fn pick_best_result(
+    results: Vec<SubtitleSearchResult>,
+    language: &str,
+    want_hi: bool,
+    want_forced: bool,
+    prefer_hi: bool,
+) -> Option<SubtitleSearchResult> {
+    let lang_lower = language.to_lowercase();
+
+    let mut lang_matches: Vec<SubtitleSearchResult> = results
+        .into_iter()
+        .filter(|r| {
+            let r_lang = r.language.to_lowercase();
+            r_lang == lang_lower || r_lang.starts_with(&lang_lower)
+        })
+        .collect();
+
+    if lang_matches.is_empty() {
+        return None;
+    }
+
+    let forced_matches: Vec<SubtitleSearchResult> = lang_matches
+        .iter()
+        .filter(|r| r.is_forced == want_forced)
+        .cloned()
+        .collect();
+    let hi_matches: Vec<SubtitleSearchResult> = lang_matches
+        .iter()
+        .filter(|r| r.is_hearing_impaired == want_hi)
+        .cloned()
+        .collect();
+
+    if !forced_matches.is_empty() {
+        lang_matches = forced_matches;
+    } else if !hi_matches.is_empty() {
+        lang_matches = hi_matches;
+    }
+
+    lang_matches.sort_by(|a, b| {
+        let a_score = score_result(a, prefer_hi);
+        let b_score = score_result(b, prefer_hi);
+        b_score.cmp(&a_score)
+    });
+
+    lang_matches.into_iter().next()
+}
+
+fn score_result(r: &SubtitleSearchResult, prefer_hi: bool) -> u32 {
+    let mut score = r.vote_count;
+    if r.is_hearing_impaired == prefer_hi {
+        score += 10;
+    }
+    if r.format == "srt" {
+        score += 5;
+    }
+    score
+}
+
+fn extract_subtitle_from_zip(data: &[u8]) -> Result<Vec<u8>, SubtitleError> {
+    let reader = Cursor::new(data);
+    let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
+        SubtitleError::FetchFailed {
+            reason: format!("ZIP parse error: {e}"),
+        }
+    })?;
+
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| SubtitleError::FetchFailed {
+                reason: format!("ZIP entry read error: {e}"),
+            })?;
+
+        let name = entry.name().to_lowercase();
+        if name.ends_with(".srt")
+            || name.ends_with(".vtt")
+            || name.ends_with(".ass")
+            || name.ends_with(".ssa")
+            || name.ends_with(".ttml")
+        {
+            let mut buf = Vec::new();
+            entry
+                .read_to_end(&mut buf)
+                .map_err(|e| SubtitleError::FetchFailed {
+                    reason: format!("ZIP content read error: {e}"),
+                })?;
+            return Ok(buf);
+        }
+    }
+
     Err(SubtitleError::FetchFailed {
-        reason: "subtitle provider fetching not yet implemented (Task 6)".into(),
+        reason: "ZIP archive contains no subtitle files".to_string(),
+    })
+}
+
+fn is_zip(data: &[u8]) -> bool {
+    data.len() >= 4 && data[0..2] == [0x50, 0x4b]
+}
+
+async fn save_subtitle_file(
+    media_file: &Path,
+    language: &str,
+    ext: &str,
+    content: &[u8],
+) -> Result<PathBuf, SubtitleError> {
+    let stem = media_file
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "subtitle".to_string());
+    let parent = media_file.parent().unwrap_or_else(|| std::path::Path::new("."));
+
+    let filename = format!("{stem}.{language}.{ext}");
+    let target = parent.join(&filename);
+
+    tokio::fs::write(&target, content)
+        .await
+        .map_err(|e| SubtitleError::FetchFailed {
+            reason: format!("failed to write subtitle file {target:?}: {e}"),
+        })?;
+
+    tracing::info!(path = %target.display(), "saved fetched subtitle");
+    Ok(target)
+}
+
+async fn insert_fetched_subtitle(
+    pool: &PgPool,
+    media_item_id: Uuid,
+    file_path: &str,
+    language: &str,
+    is_forced: bool,
+    is_hearing_impaired: bool,
+    provider: &str,
+) -> Result<SubtitleFileResponse, SubtitleError> {
+    let row = sqlx::query(
+        r#"INSERT INTO subtitle_files (id, media_item_id, file_path, language, subtitle_type, is_forced, is_hearing_impaired, source_provider)
+           VALUES (uuidv7(), $1, $2, $3, 'fetched', $4, $5, $6)
+           RETURNING id, media_item_id, file_path, language, subtitle_type, is_forced, is_hearing_impaired, source_provider"#,
+    )
+    .bind(media_item_id)
+    .bind(file_path)
+    .bind(language)
+    .bind(is_forced)
+    .bind(is_hearing_impaired)
+    .bind(provider)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(SubtitleFileResponse {
+        id: row.try_get("id").unwrap_or_default(),
+        media_item_id: row.try_get("media_item_id").unwrap_or_default(),
+        file_path: row.try_get("file_path").unwrap_or_default(),
+        language: row.try_get("language").unwrap_or_default(),
+        subtitle_type: row.try_get("subtitle_type").unwrap_or_default(),
+        is_forced: row.try_get("is_forced").unwrap_or(false),
+        is_hearing_impaired: row.try_get("is_hearing_impaired").unwrap_or(false),
+        source_provider: row.try_get("source_provider").ok().flatten(),
     })
 }
 

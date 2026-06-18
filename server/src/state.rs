@@ -453,7 +453,34 @@ pub struct NotificationConfig {}
 pub struct BackupConfig {}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct IntegrationsConfig {}
+pub struct IntegrationsConfig {
+    pub subtitle_providers: SubtitleProviderConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SubtitleProviderConfig {
+    pub subdl: SubdlProviderConfig,
+    pub opensubtitles: OpensubtitlesProviderConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SubdlProviderConfig {
+    pub enabled: bool,
+    pub api_key: Option<String>,
+    pub auto_fetch_enabled: bool,
+    pub auto_fetch_languages: Vec<String>,
+    pub prefer_hearing_impaired: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct OpensubtitlesProviderConfig {
+    pub enabled: bool,
+    pub api_key: Option<String>,
+    pub api_token: Option<String>,
+    pub auto_fetch_enabled: bool,
+    pub auto_fetch_languages: Vec<String>,
+    pub prefer_hearing_impaired: bool,
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LoggingConfig {

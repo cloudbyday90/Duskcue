@@ -77,7 +77,7 @@ pub async fn fetch_subtitles(
     Path(item_id): Path<Uuid>,
     Json(req): Json<FetchSubtitlesRequest>,
 ) -> Result<Json<FetchSubtitlesResponse>, AppError> {
-    let result = service::fetch_subtitles(&state.pool, item_id, &req).await?;
+    let result = service::fetch_subtitles(&state, item_id, &req).await?;
     Ok(Json(result))
 }
 

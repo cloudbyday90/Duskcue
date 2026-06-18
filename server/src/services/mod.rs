@@ -25,6 +25,8 @@ pub mod media_matching;
 pub mod metadata;
 pub mod nfo_parser;
 pub mod omdb_client;
+pub mod opensubtitles_client;
+pub mod subdl_client;
 pub mod sandbox;
 pub mod scheduler;
 pub mod subtitle_discovery;

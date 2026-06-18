@@ -1035,3 +1035,17 @@ Provider metrics are exposed via the existing Prometheus endpoint (see [LOGGING_
 - **Why inherent methods for Fanart/OMDb:** Adding `test_connection()` to `ArtworkProvider` or `RatingsProvider` traits would require every implementor to provide it; TvdbClient implements both `MetadataProvider` (which already has it) and `ArtworkProvider`, causing duplicate impl. Inherent methods avoid the conflict.
 - **Error codes:** `SYS_013` (InvalidProvider, 400) for unknown provider name; `SYS_014` (MissingCredential, 400) for missing required credential. Provider-specific auth failures returned in response body as `{valid: false, error: "..."}` with HTTP 200.
 - **Validation in response body, not HTTP status:** Only input errors (bad provider name, missing credential) return 4xx. Actual key test results always return 200 with `{valid, error}` to simplify client handling.
+
+### Subtitle Provider Clients (Phase 9 Task 6)
+
+Subtitle provider clients are implemented as standalone service modules (not metadata provider traits) because subtitle search/download is a different pattern from metadata enrichment:
+
+- **`SubdlClient`** (`services/subdl_client.rs`) — `reqwest::Client` with redirect disabled (SSRF hardening), 30s timeout. Search endpoints return JSON with `subtitles[]` array. Download URLs are relative (`/subtitle/...`) — prefixed with `https://dl.subdl.com`. API key passed as `api_key` query parameter on both search and download. Returns `Vec<SubtitleSearchResult>` (shared type with OpenSubtitles client).
+
+- **`OpensubtitlesClient`** (`services/opensubtitles_client.rs`) — `reqwest::Client` with redirect disabled, 30s timeout. Requires `Api-Key` header and `User-Agent` header (`Duskcue v1.0`). Search returns `{ data: [...] }` with `attributes.file_id` for download. Two-step download: `POST /download {file_id: N}` → `{ link, file_name }` → GET link → subtitle bytes. OpenSubtitles may return plain text or ZIP — checked via PK magic bytes before extraction.
+
+- **Shared `SubtitleSearchResult`** — Defined in `subdl_client.rs`, imported by `opensubtitles_client.rs`. Normalized fields: `provider`, `language`, `release_name`, `file_name`, `format`, `is_hearing_impaired`, `is_forced`, `download_url`, `vote_count`. Both clients convert their provider-specific response shapes into this common type.
+
+- **Config in `IntegrationsConfig`** — Subtitle provider credentials stored in `server_config.integrations.subtitle_providers` JSONB (not in `MetadataConfig.providers` where metadata provider keys live). Each provider has `enabled`, `api_key`, `auto_fetch_enabled`, `auto_fetch_languages`, `prefer_hearing_impaired`. See [CONFIGURATION.md](../operations/CONFIGURATION.md) for struct definition.
+
+- **OSHash for OpenSubtitles** — `compute_oshash()` in `services/subtitles.rs` computes the OpenSubtitles file hash for exact-match subtitle search. Algorithm: `file_size + sum_uint64_le(first_64KB) + sum_uint64_le(last_64KB)`, wrapping at 64 bits. Minimum file size 128KB. See [SUBTITLES.md](SUBTITLES.md) for full details.

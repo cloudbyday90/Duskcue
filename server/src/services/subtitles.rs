@@ -800,6 +800,50 @@ fn cross_correlate(speech_starts: &[u64], cue_starts: &[u64]) -> CrossCorrelatio
     }
 }
 
+const CHUNK_SIZE: u64 = 65536;
+const MIN_OSHASH_FILE_SIZE: u64 = 131072;
+
+pub async fn compute_oshash(path: &Path) -> Result<String, std::io::Error> {
+    use tokio::io::{AsyncReadExt, AsyncSeekExt};
+
+    let mut file = tokio::fs::File::open(path).await?;
+    let metadata = file.metadata().await?;
+    let file_size = metadata.len();
+
+    if file_size < MIN_OSHASH_FILE_SIZE {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "file too small for OSHash (minimum 128 KB)",
+        ));
+    }
+
+    let mut hash: u64 = file_size;
+
+    let mut first_chunk = vec![0u8; CHUNK_SIZE as usize];
+    file.seek(std::io::SeekFrom::Start(0)).await?;
+    file.read_exact(&mut first_chunk).await?;
+
+    for chunk in first_chunk.chunks_exact(8) {
+        let val = u64::from_le_bytes([
+            chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
+        ]);
+        hash = hash.wrapping_add(val);
+    }
+
+    let mut last_chunk = vec![0u8; CHUNK_SIZE as usize];
+    file.seek(std::io::SeekFrom::Start(file_size - CHUNK_SIZE)).await?;
+    file.read_exact(&mut last_chunk).await?;
+
+    for chunk in last_chunk.chunks_exact(8) {
+        let val = u64::from_le_bytes([
+            chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
+        ]);
+        hash = hash.wrapping_add(val);
+    }
+
+    Ok(format!("{hash:016x}"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

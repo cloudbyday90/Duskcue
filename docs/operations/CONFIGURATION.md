@@ -387,6 +387,52 @@ impl Default for SubtitleConfig {
 
 Full subtitle domain design documented in [SUBTITLES.md](../design/SUBTITLES.md).
 
+### IntegrationsConfig Rust Struct
+
+```rust
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct IntegrationsConfig {
+    pub subtitle_providers: SubtitleProviderConfig,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct SubtitleProviderConfig {
+    pub subdl: SubdlProviderConfig,
+    pub opensubtitles: OpensubtitlesProviderConfig,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct SubdlProviderConfig {
+    pub enabled: bool,
+    pub api_key: Option<String>,
+    pub auto_fetch_enabled: bool,
+    pub auto_fetch_languages: Vec<String>,
+    pub prefer_hearing_impaired: bool,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
+pub struct OpensubtitlesProviderConfig {
+    pub enabled: bool,
+    pub api_key: Option<String>,
+    pub api_token: Option<String>,
+    pub auto_fetch_enabled: bool,
+    pub auto_fetch_languages: Vec<String>,
+    pub prefer_hearing_impaired: bool,
+}
+```
+
+**Field semantics:**
+- `subtitle_providers.subdl.enabled` — enable SubDL as subtitle source. Default: false (opt-in).
+- `subtitle_providers.subdl.api_key` — SubDL API key (free at `subdl.com/api-doc`). Required for search/download.
+- `subtitle_providers.subdl.auto_fetch_enabled` — auto-download subtitles from SubDL during library scan. Default: false.
+- `subtitle_providers.subdl.auto_fetch_languages` — languages to auto-fetch from SubDL. Empty = disabled.
+- `subtitle_providers.subdl.prefer_hearing_impaired` — prefer HI subtitles when multiple matches exist. Default: false.
+- `subtitle_providers.opensubtitles.*` — same fields as SubDL, plus `api_token` for OpenSubtitles user token (optional, increases download quota).
+
+Both providers default to `enabled: false`. The `auto_fetch_enabled` and `auto_fetch_languages` fields are consumed by the auto-fetch worker (Task 7, not yet implemented).
+
+Subtitle provider design documented in [SUBTITLES.md](../design/SUBTITLES.md) and provider client details in [METADATA_PROVIDERS.md](../design/METADATA_PROVIDERS.md).
+
 ### AuthConfig Rust Struct
 
 ```rust
@@ -806,7 +852,8 @@ Common alternatives considered:
 - `RuntimeConfig` struct with all 21 fields matching `server_config` table columns
 - 5 fully-defined sub-configs: `AuthConfig` (with `RateLimitConfig`, `NetworkMode`), `SecurityConfig` (with `TlsConfig`, `StreamSigningConfig`, `VpnDetectionConfig`, `AcmeChallengeType`), `QualityConfig`, `SubtitleConfig`, `ResourceLimitsConfig`
 - 1 expanded sub-config (Phase 6): `MetadataConfig` — 22 fields covering artwork, overlays, collections, and provider configuration (`ProviderConfig` with `TmdbProviderConfig` + `OptionalProviderConfig` for TVDB/Fanart/OMDb); defined in POSTER_MANAGEMENT.md and METADATA_PROVIDERS.md
-- 9 placeholder sub-configs with `Default`: `NetworkConfig`, `TranscodingConfig`, `NotificationConfig`, `BackupConfig`, `IntegrationsConfig`, `LoggingConfig`, `StorageConfig`, `MaintenanceConfig`, `CpuConfig` — expanded in their respective domain phases
+- 1 expanded sub-config (Phase 9): `IntegrationsConfig` — subtitle provider config (`SubtitleProviderConfig` with SubDL/OpenSubtitles sub-configs); defined in SUBTITLES.md
+- 8 placeholder sub-configs with `Default`: `NetworkConfig`, `TranscodingConfig`, `NotificationConfig`, `BackupConfig`, `LoggingConfig`, `StorageConfig`, `MaintenanceConfig`, `CpuConfig` — expanded in their respective domain phases
 - `load_runtime_config(pool)` — queries `server_config` table, deserializes JSONB columns with `unwrap_or_default()` fallback, returns `RuntimeConfig::default()` for empty table (first-run)
 - `AppState::reload_runtime_config()` — atomic swap via `ArcSwap` for admin API config changes
 - `arc-swap` v1.9.1 added as workspace dependency for lock-free config reads

@@ -205,6 +205,8 @@ project/
 │       │   ├── tvdb_client.rs    # TVDB v4 API client (JWT auth, Arc<Inner> for Clone, search/series/movies/artworks)
 │       │   ├── fanart_client.rs  # Fanart.tv v3 API client (api_key query param, movie/TV artwork by TMDB/TVDB ID)
 │       │   ├── omdb_client.rs    # OMDb API client (apikey query param, ratings lookup by IMDb ID)
+│       │   ├── subdl_client.rs   # SubDL subtitle API client (api_key query param, search by TMDB/IMDb/name, ZIP download) — **implemented**
+│       │   ├── opensubtitles_client.rs  # OpenSubtitles subtitle API client (Api-Key header, hash/TMDB/IMDb/query search, two-step download) — **implemented**
 │       │   ├── notifications.rs  # Notification dispatch
 │       │   ├── search.rs         # Full-text search coordination
 │       │   ├── security.rs       # TLS (rustls), HMAC signing (ring), security headers
