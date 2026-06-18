@@ -14,7 +14,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use axum::body::Body;
 use axum::extract::{Path, Query, State};
+use axum::http::header;
+use axum::http::StatusCode;
 use axum::response::Response;
 use axum::Json;
 use uuid::Uuid;
@@ -44,12 +47,28 @@ pub async fn get_subtitle(
 }
 
 pub async fn get_subtitle_content(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
-    Path((_item_id, _subtitle_id)): Path<(Uuid, Uuid)>,
-    Query(_query): Query<SubtitleContentQuery>,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path((item_id, subtitle_id)): Path<(Uuid, Uuid)>,
+    Query(query): Query<SubtitleContentQuery>,
 ) -> Result<Response, AppError> {
-    todo!()
+    let user_offset_ms = get_user_subtitle_offset(&state.pool, user.user_id, item_id).await;
+
+    let (content, content_type) = service::get_subtitle_content(
+        &state.pool,
+        item_id,
+        subtitle_id,
+        query.format.as_deref(),
+        user_offset_ms,
+    )
+    .await?;
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CACHE_CONTROL, "no-cache")
+        .body(Body::from(content))
+        .unwrap())
 }
 
 pub async fn fetch_subtitles(
@@ -106,4 +125,27 @@ pub async fn delete_subtitle(
 ) -> Result<axum::http::StatusCode, AppError> {
     service::delete_subtitle(&state.pool, item_id, subtitle_id).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+async fn get_user_subtitle_offset(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    media_item_id: Uuid,
+) -> Option<i32> {
+    let row = sqlx::query(
+        "SELECT metadata->>'subtitle_offset_ms' AS offset_ms \
+         FROM user_item_data \
+         WHERE user_id = $1 AND media_item_id = $2",
+    )
+    .bind(user_id)
+    .bind(media_item_id)
+    .fetch_optional(pool)
+    .await
+    .ok()??;
+
+    use sqlx::Row;
+    row.try_get::<Option<String>, _>("offset_ms")
+        .ok()
+        .flatten()
+        .and_then(|s| s.parse::<i32>().ok())
 }

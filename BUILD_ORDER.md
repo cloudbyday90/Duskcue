@@ -1831,8 +1831,33 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`ON CONFLICT DO NOTHING`** — All subtitle inserts use `INSERT ... ON CONFLICT (media_item_id, file_path) DO NOTHING` for idempotent re-scans; existing subtitles are preserved, new ones are added, deleted sidecars are NOT removed (cleanup deferred)
 - **Embedded stream metadata from ffprobe** — `probe_file` now captures subtitle streams with: `index` (stream position), `codec_name` (e.g., `subrip`, `ass`, `hdmv_pgs_subtitle`, `dvd_subtitle`), `language` (from `tags.language`), `title` (from `tags.title`), `is_forced` (from disposition or title containing "forced"), `is_hearing_impaired` (from disposition or title containing "hearing impaired"/"sdh"/"cc")
 - **13 unit tests** — Cover language code detection, flag parsing (forced, hi, sdh, cc, hearing_impaired, multiple flags), subtitle file detection, simple filename parsing, 3-letter language code, region suffix, no-language-with-flag edge case
-4. Implement subtitle delivery — serve WebVTT for HLS streams, serve text-based subtitles directly
-5. Implement `server/src/services/subtitles.rs`:
+4. ~~Implement subtitle delivery — serve WebVTT for HLS streams, serve text-based subtitles directly~~ **DONE**
+
+**What was built for Task 4:**
+
+| File | Purpose |
+|---|---|
+| `server/migrations/20260617_080000_add_user_item_data_metadata.sql` | Adds `metadata JSONB NOT NULL DEFAULT '{}'` column to `user_item_data` for per-user per-item subtitle offset storage (`metadata->>'subtitle_offset_ms'`) |
+| `server/src/domains/subtitles/service.rs` | Full delivery implementation: `list_subtitles` (ordered by type priority: external→fetched→embedded, then forced, then language), `get_subtitle`, `get_subtitle_content` (read file, detect format, convert, apply offset, return content+content_type), `set_subtitle_offset` (upsert into `user_item_data.metadata` JSONB), `get_subtitle_sync_data` (query `subtitle_sync_data`), `delete_subtitle` (fetched-only deletion guard); format conversion: `srt_to_webvtt`, `vtt_to_srt`, `ass_to_srt` (parse `[Events]`, strip override tags, reformat timestamps), `apply_offset` (timestamp arithmetic with negative-clamp); 13 unit tests |
+| `server/src/domains/subtitles/handlers.rs` | Replaced `get_subtitle_content` `todo!()` with working handler: extracts user offset from `user_item_data.metadata`, delegates to service, returns `Response` with format-specific `Content-Type` (`text/vtt`, `application/x-subrip`, `text/plain`) and `Cache-Control: no-cache`; added `get_user_subtitle_offset()` DB helper |
+
+**Key decisions from Task 4:**
+
+- **SRT→WebVTT conversion inline in service.rs** — The conversion is trivial text transformation (`,` → `.` in timestamps, `WEBVTT` header, sequential cue numbering). No external dependency, no subprocess. Runs synchronously during delivery with negligible cost. Task 5 will extract heavier processing (FPS adjustment, OCR, voice activity) into `server/src/services/subtitles.rs`
+- **ASS→SRT via Rust-native text parsing** — Per SUBTITLES.md design: parse `[Events]` section, extract `Dialogue:` lines, strip override tags (`{\.*?}` via state machine), reformat timestamps from `H:MM:SS.CC` (centiseconds) to `HH:MM:SS,mmm` (milliseconds), replace `\N`/`\n` with newlines. ~60 lines of Rust, no regex dependency, no FFmpeg subprocess
+- **Delivery-time offset via timestamp arithmetic** — `apply_offset()` finds all timecode lines (containing `-->`), parses each timestamp to milliseconds, adds offset, clamps to ≥0, reformats. Handles both SRT (`,` separator) and WebVTT (`.` separator) formats. Zero I/O cost beyond the string parsing
+- **`user_item_data.metadata` JSONB for offset storage** — New migration adds `metadata JSONB NOT NULL DEFAULT '{}'` column to `user_item_data`. Per SUBTITLES.md design, offset stored as `{"subtitle_offset_ms": -2500}`. Uses `INSERT ... ON CONFLICT DO UPDATE SET metadata = COALESCE(metadata, '{}') || $3::jsonb` for atomic upsert. If no `user_item_data` row exists, one is created with just the offset (minimal row, no play state)
+- **Handler auto-resolves user offset** — `get_subtitle_content` handler queries `user_item_data.metadata->>'subtitle_offset_ms'` for the authenticated user + media item before calling the service. This means clients don't need to manually pass offset — the server transparently applies the stored offset
+- **Embedded subtitles return error** — `file_path` containing `::embedded::` marker returns `InvalidSubtitleFormat` error. Embedded text subtitle extraction requires FFmpeg subprocess (`ffmpeg -i input.mkv -map 0:s:N output.srt`), which is a Task 5 concern. Delivery focuses on external/fetched text subtitle files
+- **Image subtitle formats rejected** — PGS (`.sup`), VobSub (`.sub`), and `.idx` return `InvalidSubtitleFormat` error pointing to Task 5 (OCR). Image subtitles require OCR→SRT conversion before they can be served as text
+- **Delete limited to fetched subtitles** — `delete_subtitle` checks `subtitle_type` and rejects deletion of `embedded` or `external` rows. Only `fetched` subtitles (provider-downloaded, OCR-generated) are user-deletable, matching SUBTITLES.md design
+- **Subtitle ordering for client selection** — `list_subtitles` orders by type priority (external > fetched > embedded, matching the subtitle selection algorithm's preference for external subtitles), then forced subtitles first, then alphabetical language. This helps clients auto-select the best subtitle without complex client-side sorting
+- **Content types per SUBTITLES.md** — WebVTT: `text/vtt; charset=utf-8` (HLS-ready); SRT: `application/x-subrip; charset=utf-8`; ASS/SSA: `text/plain; charset=utf-8`. All include charset to prevent encoding issues
+- **`Cache-Control: no-cache` on subtitle content** — Subtitle content may change (offset updated, file re-fetched), so clients must not cache. Individual metadata endpoints (`list`, `get`) inherit standard JSON caching behavior
+- **No new workspace dependencies** — All format conversion, offset application, and delivery uses standard Rust string manipulation. No regex, no XML parser, no FFmpeg subprocess for Task 4
+- **13 unit tests** covering: SRT→WebVTT conversion, WebVTT→SRT conversion, ASS→SRT conversion (with override tag stripping), ASS timestamp format conversion, override tag stripping, positive offset application, negative offset clamping, VTT separator handling, timecode parsing, timecode formatting, format detection, content type mapping, language code validation
+
+ 5. Implement `server/src/services/subtitles.rs`:
    - SRT ↔ ASS ↔ WebVTT format conversion
    - FPS adjustment (23.976 ↔ 24 ↔ 25 ↔ 29.97)
    - Offset correction (user-applied timestamp shift)

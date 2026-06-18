@@ -1203,6 +1203,8 @@ CREATE TABLE user_item_data (
     audio_stream_index INT,
     subtitle_stream_index INT,
 
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+
     UNIQUE(user_id, media_item_id)
 ) WITH (fillfactor = 85);
 
@@ -1221,6 +1223,8 @@ CREATE INDEX idx_user_item_data_user_rating ON user_item_data (user_id, user_rat
 `resume_position_ms` is updated frequently during playback (every 10-30 seconds via heartbeat). When an item is marked fully watched, `resume_position_ms` resets to 0 and `is_watched` becomes true.
 
 The partial index `idx_user_item_data_continue_watching` is specifically optimized for the Continue Watching query — it only indexes rows that are in-progress, making the query a fast index scan.
+
+The `metadata` JSONB column stores per-user per-item extensible data. Currently used for `subtitle_offset_ms` (per-user subtitle sync offset, see [SUBTITLES.md](SUBTITLES.md)). Uses PostgreSQL `||` operator for shallow merge on update.
 
 `fillfactor = 85` reserves 15% of each data page for HOT updates. During playback, `resume_position_ms` is updated every 10-30 seconds but no indexed column changes — this makes every heartbeat update eligible for HOT (Heap-Only Tuple), keeping the new row version on the same page without touching indexes. This is the primary defense against index bloat on the highest-UPDATE-frequency table in the system. Full rationale documented in [DATABASE_MAINTENANCE.md](../operations/DATABASE_MAINTENANCE.md).
 

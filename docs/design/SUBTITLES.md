@@ -620,5 +620,46 @@ Processed extensions: `.srt`, `.ass`, `.ssa`, `.vtt`, `.sub`, `.sup`. The `.idx`
 **Scan integration** — `discover_subtitles()` is called after Phase 4 (Identify) in `scan_path_pipeline`, when `media_items` and `media_files` rows already exist in the database. The count of newly inserted rows is returned as `subtitles_discovered` in `ScanResult` and aggregated across scan paths in `scan_library`.
 
 **13 unit tests** — Cover language code detection (2-char, 3-char, region suffix, non-language), flag parsing (forced, hi, sdh, cc, hearing_impaired, multiple flags, no language with flag), subtitle file detection (all extensions, non-subtitle exclusion), and simple filename parsing.
-- hls.js WebVTT support: WebVTT sidecar tracks, WebVTT-in-ISOBMFF rendering
-- WebRTC VAD: lightweight voice activity detection for audio analysis
+
+### Phase 9 Task 4 — Subtitle Delivery (Complete)
+
+Subtitle delivery is implemented in `server/src/domains/subtitles/service.rs` with inline format conversion and offset application. The delivery endpoint (`GET /api/v1/items/{item_id}/subtitles/{subtitle_id}/content`) serves text-based subtitles in the client's requested format with per-user offset correction applied transparently.
+
+**Delivery pipeline:**
+
+1. Query `subtitle_files` row by id + media_item_id
+2. Reject embedded subtitles (`::embedded::` path marker) — extraction requires FFmpeg (Task 5)
+3. Reject image subtitles (`.sup`, `.sub`, `.idx`) — require OCR (Task 5)
+4. Read subtitle file content from disk (`tokio::fs::read_to_string`)
+5. Convert to intermediate SRT format (source format detected from file extension)
+6. Convert from SRT to requested delivery format (`vtt` or native `srt`)
+7. Apply per-user offset (timestamp arithmetic, clamped to ≥0)
+8. Return `(content, content_type)` tuple
+
+**Format conversions implemented:**
+
+| Source | Target | Method |
+|---|---|---|
+| SRT | WebVTT | Replace `,` with `.` in timestamps, add `WEBVTT` header, sequential cue numbers |
+| WebVTT | SRT | Replace `.` with `,` in timestamps, add sequential cue numbers, strip `WEBVTT`/`NOTE` blocks |
+| ASS/SSA | SRT | Parse `[Events]` section, strip `{\.*?}` override tags via state machine, reformat `H:MM:SS.CC` → `HH:MM:SS,mmm`, replace `\N`/`\n` with newlines |
+| ASS/SSA | WebVTT | ASS → SRT → WebVTT (two-step) |
+
+**Per-user offset storage** — Offset stored in `user_item_data.metadata` JSONB as `{"subtitle_offset_ms": -2500}`. Requires `metadata` column added via migration `20260617_080000`. The delivery handler transparently queries this before serving content — clients never need to pass offset explicitly. Uses `INSERT ... ON CONFLICT DO UPDATE SET metadata = COALESCE(metadata, '{}') || $3::jsonb` for atomic upsert.
+
+**Content types** — WebVTT: `text/vtt; charset=utf-8`; SRT: `application/x-subrip; charset=utf-8`; ASS/SSA: `text/plain; charset=utf-8`. All include charset.
+
+**Subtitle ordering** — `list_subtitles` returns subtitles ordered by type priority (external → fetched → embedded, matching the subtitle selection algorithm's preference for external subtitles), then forced subtitles first, then alphabetical language. This helps clients auto-select the best subtitle.
+
+**Delete protection** — `delete_subtitle` rejects deletion of `embedded` or `external` subtitle rows. Only `fetched` subtitles (provider-downloaded, OCR-generated) are user-deletable via API.
+
+**13 unit tests** covering SRT→WebVTT, WebVTT→SRT, ASS→SRT (with override tag stripping and multi-format timestamp parsing), ASS timestamp conversion, offset application (positive, negative-clamped, VTT separator), timecode parsing/formatting, format detection, content type mapping, language code validation.
+
+**Deferred to later tasks:**
+- Embedded text subtitle extraction (FFmpeg `-map 0:s:N`) — Task 5
+- Image subtitle OCR → SRT — Task 5
+- FPS rate adjustment at scan time — Task 5
+- Voice activity alignment — Task 5
+- Subtitle fetching from SubDL/OpenSubtitles — Task 6
+- Auto-fetch during scan — Task 7
+- Subtitle settings UI — Task 8
