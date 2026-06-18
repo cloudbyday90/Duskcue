@@ -1857,17 +1857,40 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **No new workspace dependencies** — All format conversion, offset application, and delivery uses standard Rust string manipulation. No regex, no XML parser, no FFmpeg subprocess for Task 4
 - **13 unit tests** covering: SRT→WebVTT conversion, WebVTT→SRT conversion, ASS→SRT conversion (with override tag stripping), ASS timestamp format conversion, override tag stripping, positive offset application, negative offset clamping, VTT separator handling, timecode parsing, timecode formatting, format detection, content type mapping, language code validation
 
- 5. Implement `server/src/services/subtitles.rs`:
+ 5. ~~Implement `server/src/services/subtitles.rs`:~~ **DONE**
    - SRT ↔ ASS ↔ WebVTT format conversion
    - FPS adjustment (23.976 ↔ 24 ↔ 25 ↔ 29.97)
    - Offset correction (user-applied timestamp shift)
    - PGS/VobSub OCR stub (PaddleOCR — one-time background task)
-6. Implement subtitle fetching from providers:
-   - SubDL client — search by TMDB ID, download, save
-   - OpenSubtitles client — search by hash/filename, download, save
-   - Provider priority: SubDL first, OpenSubtitles fallback
-7. Implement `server/src/workers/subtitle_processor.rs` — auto-fetch during scan
-8. Implement subtitle settings UI in web client
+
+   **What was built for Task 5:**
+
+   | File | Purpose |
+   |---|---|
+   | `server/src/services/subtitles.rs` | Shared subtitle processing service: format conversion (`srt_to_webvtt`, `vtt_to_srt`, `ass_to_srt`, `srt_to_ass`, `to_srt`), timestamp primitives (`parse_timecode_to_ms`, `ms_to_timecode`), `apply_offset` (constant ms shift, clamped ≥0), `adjust_fps` (timestamp rescaling by `source_fps/target_fps`), `detect_ocr_engine()` (PaddleOCR/Tesseract CLI probe), `extract_subtitle_to_sup()` (FFmpeg stream extraction), `run_ocr()` (OCR pipeline scaffold — engine detection + extraction + stub), `analyze_voice_activity()` (FFmpeg silencedetect + speech-segment computation + cross-correlation against SRT cue starts over [-30s,+30s] range); `OcrEngine`, `OcrResult`, `VoiceAlignmentResult` types; 21 unit tests |
+   | `server/src/services/mod.rs` | Added `pub mod subtitles;` |
+   | `server/src/domains/subtitles/service.rs` | Removed ~250 lines of duplicated inline conversion functions (`srt_to_webvtt`, `vtt_to_srt`, `ass_to_srt`, `ass_timestamp_to_srt`, `strip_ass_override_tags`, `apply_offset`, `apply_offset_to_timecode_line`, `parse_timecode_to_ms`, `ms_to_timecode`); now delegates to `crate::services::subtitles as sub_svc`; `trigger_ocr` now calls `sub_svc::run_ocr` instead of returning `OcrUnavailable` unconditionally — resolves subtitle row, parses embedded path, resolves media file path, invokes OCR service; added `parse_embedded_path`, `is_image_subtitle`, `parse_engine_override`, `resolve_media_file_path` helpers; 5 new domain tests |
+
+   **Key decisions from Task 5:**
+
+   - **Service module, not domain module** — Subtitle text processing is cross-cutting: used by the domain layer (delivery), the scanner (FPS adjustment at scan time), and future workers (OCR, voice analysis, auto-fetch). Placing it in `services/` follows the established pattern (`media_matching.rs`, `subtitle_discovery.rs`, `enrichment_persistence.rs`)
+   - **Deduplication over copy** — The ~250 lines of conversion functions were extracted from `domains/subtitles/service.rs` (where Task 4 placed them inline) into the shared service. The domain service now delegates via `use crate::services::subtitles as sub_svc;`. This eliminates duplicated parsing logic and creates a single source of truth for subtitle text manipulation
+   - **FPS adjustment via simple rescaling** — `adjust_fps` multiplies every timestamp by `scale = source_fps / target_fps`. PAL→NTSC: scale = 25/23.976 = 1.0427; NTSC→PAL: scale = 23.976/25 = 0.9590. Separator auto-detected from first `-->` line so function works on both SRT and WebVTT. Noop when `source_fps == target_fps` or either is zero
+   - **OCR stub rationale** — PaddleOCR (v3.6, PP-OCRv6 as of June 2026) requires a Python runtime and ~34.5M model parameters. The full pipeline (FFmpeg overlays bitmap subtitles onto blank video → extract PNG frames → paddleocr CLI per frame → assemble SRT with timestamps) is a one-time background task that belongs in `workers/subtitle_processor.rs` (Task 7). Task 5 delivers engine detection + FFmpeg `.sup` extraction + Blake3 source hashing + result types that the future worker will call. `run_ocr` returns `OcrUnavailable` after extraction because the actual image-OCR subprocess orchestration requires Python
+   - **`OcrEngine` priority order** — `detect_ocr_engine()` checks PaddleOCR first (CLI binary or `python3 -m paddleocr`), Tesseract second. Matches SUBTITLES.md OCR Tool Selection table (PaddleOCR primary, Tesseract fallback)
+   - **Voice activity alignment full implementation** — `analyze_voice_activity()` runs FFmpeg `silencedetect=noise=-30dB:d=0.5` on the first audio track, parses silence intervals from stderr (`silence_start:`/`silence_end:` lines), computes speech segments (gaps between silence intervals), parses SRT cue start times, cross-correlates speech starts against cue starts across [-30000ms, +30000ms] in 250ms steps (241 candidates), returns offset with highest match count + confidence (peak/mean ratio). When tied, prefers offset closest to zero. Tolerance is ±1000ms per candidate pairing. Confidence below 0.60 → caller should not auto-apply
+   - **Cross-correlation tiebreaker** — When multiple offsets have the same match count, the algorithm prefers the offset with smallest absolute value. This prevents returning large spurious offsets when the correlation is flat across a tolerance band
+   - **`trigger_ocr` wired to service** — Previously returned `OcrUnavailable` unconditionally. Now resolves the subtitle row, parses the embedded path (`{media_path}::embedded::{stream_index}`), validates it's an image subtitle, resolves the media file path from DB, and calls `sub_svc::run_ocr`. When no engine is available, `OcrUnavailable` surfaces immediately with a clear path through the service
+   - **`is_image_subtitle` accepts embedded paths** — For external files, checks `.sup`/`.sub`/`.idx`/`.pgs` extensions. For embedded subtitles (synthetic `{path}::embedded::{N}` format), the codec isn't in the path — accepts all embedded paths since OCR is only applicable to embedded bitmap subtitles anyway (text subtitles don't need OCR). The OCR process itself fails gracefully if the subtitle is text-based
+   - **`srt_to_ass` added** — Produces minimal valid ASS with default `[V4+ Styles]` and `[Events]`. Completes the bidirectional conversion matrix (SRT↔ASS↔WebVTT)
+   - **No new workspace dependencies** — FFmpeg invocation uses `tokio::process::Command` (already in workspace); OCR engine detection uses `std::process::Command` (already used by `hw_accel.rs`); Blake3 hashing uses existing `blake3` workspace dep; all text parsing is standard library string manipulation
+
+ 6. Implement subtitle fetching from providers:
+    - SubDL client — search by TMDB ID, download, save
+    - OpenSubtitles client — search by hash/filename, download, save
+    - Provider priority: SubDL first, OpenSubtitles fallback
+ 7. Implement `server/src/workers/subtitle_processor.rs` — auto-fetch during scan
+ 8. Implement subtitle settings UI in web client
 
 **Verification:** Media items show available subtitles. User can select subtitle during playback. Auto-fetch downloads missing subtitles during scan. SubDL returns results by TMDB ID.
 

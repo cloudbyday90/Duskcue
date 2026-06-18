@@ -209,7 +209,7 @@ project/
 │       │   ├── search.rs         # Full-text search coordination
 │       │   ├── security.rs       # TLS (rustls), HMAC signing (ring), security headers
 │       │   ├── subtitle_discovery.rs  # External + embedded subtitle discovery during library scan — **implemented**
-│       │   ├── subtitles.rs      # OCR (PaddleOCR bridge), sync correction, fetching
+│       │   ├── subtitles.rs      # Subtitle text processing (format conversion SRT/ASS/WebVTT, FPS adjustment, offset correction, OCR scaffold, voice activity alignment) — **implemented**
 │       │   ├── quality.rs        # Device capability probing, network assessment
 │       │   ├── overlays.rs       # Compositing pipeline (image + ab_glyph + resvg)
 │       │   ├── collections.rs    # Builder engine, external API polling, template import

@@ -28,6 +28,7 @@ pub mod omdb_client;
 pub mod sandbox;
 pub mod scheduler;
 pub mod subtitle_discovery;
+pub mod subtitles;
 pub mod tmdb_client;
 pub mod transcoding;
 pub mod tvdb_client;
