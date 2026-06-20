@@ -2018,12 +2018,50 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **Validator error mapping follows subtitles domain convention** — `e.field_errors().into_iter().flat_map(...)` with `field.to_string()`/`err.code.to_string()`/`err.message.as_ref().map(|m| m.to_string()).unwrap_or_default()` (Cow → String conversions); `instance` set to the route pattern for client-side field correlation
 - **No new workspace dependencies** — all functionality uses existing `sqlx`, `validator`, `serde`, `uuid`, `chrono`, `axum` crates
 
-2. Implement `server/src/services/segments.rs`:
-   - Chapter marker extraction from container metadata
-   - Chromaprint fingerprinting for intro detection
-   - Black frame detection via FFmpeg
-   - Silence detection via FFmpeg
-   - Confidence scoring and 2s padding
+2. ~~Implement `server/src/services/segments.rs`~~ **DONE**
+   - ~~Chapter marker extraction from container metadata~~
+   - ~~Chromaprint fingerprinting for intro detection~~
+   - ~~Black frame detection via FFmpeg~~
+   - ~~Silence detection via FFmpeg~~
+   - ~~Confidence scoring and 2s padding~~
+
+**What was built for Task 2:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/segments.rs` | Stateless detection library: 4 methods (chapter regex, chromaprint fingerprinting + cross-episode comparison, FFmpeg `blackframe` parser, FFmpeg `silencedetect` parser), search-window helpers, confidence scoring table, 2s `intro_end_padding_ms` applier, combined blackframe+silence credits detector (multi-method validation per design) |
+| `server/src/services/mod.rs` | Added `pub mod segments;` (the empty stub is now a real module wired into the crate) |
+| `server/src/domains/segments/service.rs` | Replaced 4 `todo!()` CRUD stubs with runtime `sqlx::query` implementations: `list_segments` (optional type filter, media-item existence check, `can_edit` propagation), `create_segment` (type+timestamp validation, `confidence=1.0`/`skip_to_ms=end_ms` defaults, `source='manual'`/`is_manual=true`, unique-violation → `ManualSegmentExists`), `update_segment` (SELECT-then-COALESCE partial update with re-validation), `delete_segment` (existence check + rows-affected → `SegmentNotFound`). `trigger_library_analysis` stays as `todo!()` per design (Task 5 territory). |
+| `Cargo.toml` | Added `chromaprint-next = "0.1"` to workspace deps |
+| `server/Cargo.toml` | Added `chromaprint-next.workspace = true` |
+
+**Key decisions from Task 2:**
+
+- **`chromaprint-next` 0.1 confirmed via crates.io research** — Released Feb 20 2026 by Attila Györffy; pure-Rust, bit-identical to C reference across all 5 algorithm variants; MIT AND LGPL-2.1-or-later; MSRV 1.88.0; API matches the design pseudocode exactly. Default algorithm is `test2` (matches the `media_fingerprints.fingerprint_algorithm` DB default).
+- **Runtime `sqlx::query` over compile-time `query!`** — Consistent with the auth/users/etc. domain convention; no `DATABASE_URL` required at build time. `SegmentRow` does not need `#[derive(sqlx::FromRow)]` because all queries map columns via `row.get("col")` directly into `SegmentResponse`.
+- **`SegmentPipelineError` is separate from `SegmentError`** — The pipeline (services layer) surfaces operational failures (FFmpeg spawn, IO, chromaprint calculation) that the worker logs and skips; `SegmentError` (domain layer) surfaces API failures (not-found, validation, conflict) that bubble through `AppError` to the HTTP client. The two are deliberately not linked — the worker is the explicit translation point.
+- **Chapter regex adapted for Rust `regex` crate (no look-around)** — The design's Jellyfin Intro Skipper patterns used `(?!End)` negative lookahead, which Rust's `regex` crate deliberately omits. Patterns rewritten with `\b` word boundaries; minor loss of "IntroEnd" disambiguation is acceptable for chapter classification (rare case, no safety impact).
+- **FFmpeg `blackframe` parameter defaults stricter than FFmpeg** — FFmpeg defaults `amount=98, threshold=32`; SEGMENT_DETECTION.md specifies `amount=75, threshold=2` (credit sequences have text against dim backgrounds, not pure black). Both are configurable via `BlackframeParams`; design's values are defaults.
+- **FFmpeg `silencedetect` parameter defaults** — FFmpeg defaults `noise=-60dB`; design specifies `noise=-55dB` (end-credits music has low but non-zero volume). Configurable via `SilenceParams`; design's value is default.
+- **Stderr-only parsing for FFmpeg filters** — Both `blackframe` and `silencedetect` emit log lines on stderr at INFO loglevel (FFmpeg's default). The implementation captures `output.stderr` and uses simple `find("silence_start:")`/`find("blackframe")` scans. `-f json` metadata export is not used because FFmpeg's JSON metadata output does not include filter log lines.
+- **Streaming chromaprint via FFmpeg pipe** — `ffmpeg -i <file> -vn -ac 1 -ar 11025 -f s16le pipe:1` writes raw PCM to stdout in real time; the implementation reads in 8 KiB chunks, casts bytes to `i16` via `from_le_bytes`, and feeds each chunk to `Fingerprinter::feed()`. A separate task drains stderr to prevent deadlock when the buffer fills. The fingerprinter's internal resampler is bypassed because FFmpeg already downmixed and resampled.
+- **Fingerprint storage as raw `u32` bytes in BYTEA** — `media_fingerprints.fingerprint` stores the raw `&[u32]` reinterpreted as bytes (4 bytes per sub-fingerprint, native LE). The encoded base64 form (`Fingerprinter::encode()`) is NOT persisted — only used for debug logging — because comparison happens in-process via raw u32 arrays, not via AcoustID lookups.
+- **Cross-episode comparison: sliding-window bit-agreement** — For each ordered pair of fingerprints, slide one against the other; at each offset compute the fraction of sub-fingerprint pairs with Hamming similarity ≥ 30/32 bits (the standard Chromaprint "exact-ish match" threshold). Longest contiguous run above 30/32 within the intro search window that meets the 15–120s duration rule is a candidate. 3+ episode matches score 0.9 base; 2-episode matches score 0.7 base; modifiers (`+0.05` blackframe confirms, `+0.1` silence confirms) applied additively and clamped to `[0, 1]`.
+- **Credits multi-method validation per design** — When blackframe and silence agree on overlapping windows, `source='combined'` with base confidence 0.8 and `metadata.methods=["blackframe", "silence"]`; lone blackframe caps at 0.5 (not surfaced by default); lone silence caps at 0.5 (also not surfaced). The admin can lower `min_confidence` to surface these.
+- **2s `intro_end_padding_ms` applied as `skip_to_ms` shortening** — `apply_safety_padding` sets `skip_to_ms = end_ms - intro_end_padding_ms` for intros (clamped to `start_ms` floor); `skip_to_ms = end_ms + credits_end_padding_ms` for credits (clamped to `end_ms` ceiling); recap/preview/outro use `skip_to_ms = end_ms`. Manual segments skip the applier — admin-supplied timestamps are authoritative.
+- **`mark_surfaced()` writes `metadata.surfaced = true/false`** — Segments below `min_confidence` are still written to the DB (so the admin can lower the threshold without re-analysis) but flagged via the metadata flag; the client filters on this.
+- **Validation statics reused, not duplicated** — `VALID_SEGMENT_TYPES` and `VALID_SEGMENT_SOURCES` from `domains/segments/types.rs` are re-exported from `services/segments.rs` via `pub use`, so the pipeline library and CRUD layer share a single source of truth.
+- **Chapter timecode parser handles both ffprobe formats** — Most containers emit `SS.mmmmmm` (decimal seconds); some legacy MKVs emit `H:MM:SS.mmmmmm`. `parse_chapter_time_ms(&str) -> Option<i32>` detects `:` and dispatches accordingly; returns `None` on malformed input so the extractor skips that chapter rather than failing the whole file.
+- **25 unit tests cover the pipeline library** — Chapter timecode parsing (3 tests), chapter title classification (1), JSONB extraction (2), search windows (3), safety padding (2), FFmpeg output parsers (5), bit-agreement (1), cluster coalescing (2), combined credits detector (2), duration thresholds (2), surfaced-flag (1), enum round-trips (2). All 159 server tests pass.
+- **`trigger_library_analysis` left as `todo!()`** — Deliberate. Task 5 will replace it with a scheduler enqueue (mirroring `subtitle_auto_fetch` from Phase 9 Task 7). The handler and route are already wired; only the service body changes when Task 5 lands.
+
+**Not yet implemented (deferred to Task 5 / worker):**
+
+- `trigger_library_analysis` — still `todo!()`; will enqueue the `segment_analysis` scheduled task
+- The `segment_analysis` task seeding migration
+- Per-file orchestration (loop fingerprinting + comparison + blackframe/silence, write results)
+- The `outro` segment type via silence-gap detection (requires reading existing `credits` segments; chicken-and-egg within a single library scan)
+
 3. Create `server/src/domains/storyboards/` — five-file pattern
 4. Implement `server/src/services/storyboards.rs`:
    - FFmpeg thumbnail extraction at adaptive intervals
