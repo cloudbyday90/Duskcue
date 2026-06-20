@@ -772,8 +772,45 @@ Each provider config: `enabled: bool`, `api_key: Option<String>`, `auto_fetch_en
 
 **Deferred to later tasks:**
 
-- Auto-fetch during scan — Task 7
 - Subtitle settings UI — Task 8
 - Full PaddleOCR/Tesseract image OCR pipeline (PNG frame rendering, per-frame OCR, SRT assembly from bitmap subtitles) — future enhancement, requires Python runtime orchestration in a background worker
 - Scan-time FPS mismatch detection and automatic `subtitle_sync_data` row creation — future enhancement (the `adjust_fps` function is ready; scanner integration is deferred)
 - Automatic voice-alignment scheduled task (`subtitle_voice_analysis`) — future enhancement (the `analyze_voice_activity` function is ready; scheduler registration is deferred)
+
+### Phase 9 Task 7 — Auto-Fetch Worker (Complete)
+
+Auto-fetch is implemented in `server/src/workers/subtitle_processor.rs` as a scheduled-task worker that follows the same pattern as `workers/metadata_refresh.rs`. Rather than running inline during the scan pipeline (which would block scan completion on slow provider responses and risk rate-limit exhaustion during bulk imports), auto-fetch runs as a periodic scheduled task that picks up newly-scanned items shortly after the scan completes.
+
+**Worker entry point:** `run_subtitle_auto_fetch(state: &AppState, task_id: Uuid, config: serde_json::Value)`
+
+**Pipeline:**
+
+1. **Gate on global config** — Load `SubtitleConfig` from `RuntimeConfig`. If `auto_fetch_enabled = false` OR `auto_fetch_languages` is empty, log and return immediately (no-op run).
+2. **Gate on providers** — Inspect `IntegrationsConfig.subtitle_providers`. If no enabled provider (SubDL/OpenSubtitles) has both `enabled = true` AND a non-empty API key, log and return. The per-provider `auto_fetch_enabled` flag is an additional gate; if neither provider opts into auto-fetch, the run is a no-op.
+3. **Resolve target languages** — The effective language set is the union of:
+   - `SubtitleConfig.auto_fetch_languages` (global preference)
+   - `SubdlProviderConfig.auto_fetch_languages` (when SubDL enabled)
+   - `OpensubtitlesProviderConfig.auto_fetch_languages` (when OpenSubtitles enabled)
+   - Task config `languages` override (if present in `scheduled_tasks.config`, takes precedence and replaces the runtime-derived set)
+4. **Find items missing subtitles** — Per target language, query `media_items` for movie/episode types (the playable leaves that own `media_files`) that:
+   - Are not soft-deleted (`deleted_at IS NULL`)
+   - Have at least one healthy `media_files` row (so the file is on disk for OSHash + sidecar placement)
+   - Do NOT have any `subtitle_files` row whose `language` matches the target (prefix match: `"en"` matches `"en"`, `"en-US"`, `"eng"`)
+   - Are capped at `max_items_per_language` per run (default 50, overridable via task config `max_items_per_language`) to respect provider rate limits and bound runtime
+5. **Fetch** — For each (item, language) pair, construct a `FetchSubtitlesRequest { language, provider: None, is_forced: None, is_hearing_impaired: None }` and call the existing `domains::subtitles::service::fetch_subtitles()`. The service handles provider priority (SubDL → OpenSubtitles), `pick_best_result` ranking, ZIP extraction, sidecar save, and `subtitle_files` insert.
+6. **Track results** — Counters for `items_processed`, `subtitles_fetched`, `no_results`, and `failures` are accumulated and logged at the end of the run. Individual item failures are logged at WARN but do not abort the run.
+
+**Scheduled task wiring:**
+
+- New migration `20260619_080000_seed_subtitle_auto_fetch_task.sql` inserts the `subtitle_auto_fetch` task into `scheduled_tasks` with `interval_seconds = 1800` (30 min), `is_enabled = false` (opt-in per SUBTITLES.md), `timeout_seconds = 1800`. The 30-minute interval approximates the "event-triggered after scan" semantics: the Library Scan runs daily at 03:00, and the auto-fetch task picks up new items within ~30 minutes of any scan (scheduled or handler-triggered).
+- Executor registered in `main.rs` via `.register_executor("subtitle_auto_fetch", ...)` capturing `AppState` (for runtime config + `fetch_subtitles` access).
+- Added to runtime `seed_default_tasks()` so fresh installs that skip the migration seed (e.g., test databases) still register the task.
+
+**Key decisions:**
+
+- **Scheduled task over inline scan integration** — Inline auto-fetch during `scan_library` would block scan completion on provider HTTP calls (SubDL/OpenSubtitles rate limits, network latency). For bulk imports (1000+ items), this could take hours and exceed HTTP request timeouts. A periodic background task decouples scan completion from subtitle availability and naturally batches work across runs. Newly-scanned items get subtitles within ~30 minutes — acceptable latency for a non-blocking background process.
+- **`max_items_per_language` cap (50)** — SubDL free tier is 300 downloads/day; OpenSubtitles free tier is 5 downloads/IP/24h. Capping at 50 items per language per run prevents exhausting the daily quota in a single run and leaves budget for manual fetches via the API. The cap is configurable via task config for deployments with VIP provider subscriptions.
+- **Movie/episode only** — Series and seasons are container types without direct `media_files`; `fetch_subtitles` would fail with `MediaItemNotFound` from `resolve_media_file_path`. Filtering at the query level avoids wasted API calls.
+- **Language prefix match** — `"en"` matches `"en"`, `"en-US"`, `"eng"` (ISO 639-1, IETF tag, ISO 639-2/T). This prevents re-fetching when the existing subtitle has a region/code variant of the same base language. The `LIKE 'en%'` pattern is deliberately broad — it's a "good enough" deduplication; the cost of a redundant fetch is low (provider returns no results or the existing file), but the cost of missing a needed fetch is high (user has no subtitle).
+- **Task config overrides runtime config** — Admins can override the auto-fetch behavior per-task via `scheduled_tasks.config`: `{ "languages": ["en", "es"], "max_items_per_language": 100, "providers": ["subdl"] }`. This enables scenarios like a one-off Spanish subtitle backfill run without changing global config.
+- **No new workspace dependencies** — All functionality uses existing `sqlx`, `serde_json`, `uuid`, and the already-built `fetch_subtitles` service.

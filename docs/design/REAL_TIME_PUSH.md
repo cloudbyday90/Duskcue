@@ -1,0 +1,312 @@
+# Real-Time Push
+
+## Overview
+
+This document is the authoritative design for how the Duskcue server pushes events to connected clients (web browser, Smart TV, Tauri desktop, Flutter mobile) in real time. The goal is to deliver state changes — transcode progress, scan progress, notifications, admin session kicks, remote-control commands — without requiring clients to poll REST endpoints.
+
+The decision documented here: **adopt Server-Sent Events (SSE) as Duskcue's sole real-time push mechanism**. WebSocket was previously spec'd in [API_CONVENTIONS.md](API_CONVENTIONS.md) but is superseded by this document. Long-polling and WebTransport are considered and rejected.
+
+## Scope — What This Document Covers
+
+**Covers:**
+
+- Transport choice (SSE vs WebSocket vs long-polling vs WebTransport)
+- Event taxonomy, wire format, endpoint structure
+- Authentication and authorization of event streams
+- Reconnection, missed-event recovery, heartbeat/keepalive
+- Edge cases: proxies/CDNs, mobile OS backgrounding, multi-tab connection sharing
+- Implementation status across the codebase
+
+**Does NOT cover:**
+
+- HTTP-layer caching of normal request/response traffic — see [HTTP_CACHING.md](HTTP_CACHING.md)
+- WebSocket-based voice/video chat (not a Duskcue feature)
+- Mobile OS push notifications (FCM/APNs) — Phase 16 concern; documented here only as a complement to SSE for offline delivery
+- The actual event payload schemas for each event type — those live with their domain (transcode events in [STREAMING.md](STREAMING.md), scan events in [MEDIA_SCANNING.md](MEDIA_SCANNING.md), notifications in Phase 13)
+
+## Decision — SSE Over WebSocket
+
+**Duskcue adopts Server-Sent Events (SSE) — RFC 8895 / HTML5 `EventSource` — as the only real-time push transport.**
+
+### Why SSE Is the Right Fit
+
+Every Duskcue real-time use case is **unidirectional server→client**:
+
+| Use case | Direction | Frequency | Source phase |
+|---|---|---|---|
+| Transcode progress | Server → Client | 1/sec during transcode | Phase 7 |
+| Scan progress | Server → Client | 1/sec during scan | Phase 5 |
+| Notification delivery | Server → Client | Rare (only on event) | Phase 13 |
+| Session kicked (admin force-logout) | Server → Client | Rare | Phase 4 |
+| Playback command (remote control) | Server → Client | Rare (only when remote triggers) | Phase 7/16 |
+| Analytics dashboard live update | Server → Client | 1-5/sec while viewing | Phase 11 |
+| Trust alert (impossible travel) | Server → Client | Rare | Phase 11 |
+
+**Zero client→server push use cases exist.** The `can_remote_control` capability sounds bidirectional but isn't: the controlling client (e.g., phone) sends commands via standard REST `POST` endpoints; the server pushes the resulting command to the *target* client (e.g., TV) via SSE. The "remote" is the phone, not the SSE connection.
+
+WebSocket's bidirectional capability is overhead Duskcue doesn't need. SSE matches the actual traffic shape exactly.
+
+### SSE vs WebSocket — Detailed Comparison
+
+| Concern | SSE | WebSocket | Winner for Duskcue |
+|---|---|---|---|
+| Directionality | Server→Client only | Bidirectional | SSE — all use cases are server→client |
+| Browser API | `EventSource` (built-in) | `WebSocket` (built-in) | Tie |
+| Auto-reconnect | Built into `EventSource` | Manual (library like `reconnecting-websocket`) | **SSE** |
+| Missed-event recovery | Built-in via `Last-Event-ID` header | Must implement application-level replay | **SSE** |
+| Authentication | HTTP — session cookies work natively | Browser API can't set headers; token must go in query string | **SSE** (avoids token-in-URL leak risk) |
+| HTTP/2 multiplexing | Shares HTTP/2 connection with other requests | Opens separate TCP connection (doesn't benefit from H2) | **SSE** |
+| Connection limit (HTTP/1.1) | Counts against 6-connection-per-origin limit | Doesn't count (separate protocol) | WebSocket (but moot on HTTP/2) |
+| Proxy/CDN friendliness | Plain HTTP — works everywhere `Content-Type: text/event-stream` is understood | Requires HTTP Upgrade handshake support; some proxies block | **SSE** |
+| Axum support | First-class: `axum::response::sse::{Event, Sse, KeepAlive}` | First-class: `axum::extract::ws` | Tie |
+| Wire format | Human-readable text frames (`event:`, `data:`, `id:`, `retry:`) | Binary or text frames; application defines framing | SSE simpler |
+| Compression | HTTP gzip/brotli applies | Per-message deflate extension (`permessage-deflate`) | Tie |
+| Mobile background | OS kills connection when app backgrounded (same as WS) | Same | Tie — both need mobile push as fallback |
+| Smart TV support | ✅ All Chromium-based (Tizen 6.0+/webOS 5.x+) | ✅ Same | Tie |
+
+### Why Not Long-Polling
+
+Long-polling (client `GET` with long timeout, server holds until data, client immediately re-`GET`s) was the pre-WebSocket fallback. It's strictly dominated by SSE for Duskcue's needs:
+
+- Higher latency (request-response cycle for each event batch)
+- Higher server load (connection churn, request parsing overhead)
+- No standard missed-event recovery mechanism
+- All browsers that Duskcue targets support SSE — no fallback needed
+
+Long-polling is retained only as a documented "if a client's HTTP stack buffers SSE indefinitely" escape hatch (see Edge Cases), not as a primary transport.
+
+### Why Not WebTransport
+
+WebTransport (over HTTP/3) is the emerging high-performance bidirectional web transport. As of June 2026 it is **not viable for Duskcue**:
+
+- ❌ No Safari support (desktop or iOS)
+- ❌ No production-ready Rust server ecosystem (Axum/hyper have no stable WebTransport)
+- ❌ Requires HTTP/3 end-to-end (Duskcue serves HTTP/1.1 + HTTP/2 today; HTTP/3 is a future Phase 15 consideration)
+- ❌ Marginal benefit for unidirectional, low-frequency events like Duskcue's
+
+WebTransport's wins (low-latency unreliable datagrams, bidirectional streams) target cloud gaming, collaborative editing, and live video — use cases Duskcue doesn't have. Revisit if Duskcue adds real-time sync (e.g., watch parties) where WebTransport's QoS matters.
+
+## SSE Endpoint Design
+
+### Endpoint
+
+```
+GET /api/v1/events
+Accept: text/event-stream
+```
+
+Returns `Content-Type: text/event-stream` and holds the connection open, emitting events as they occur.
+
+A single endpoint serves all event types. Clients filter to the events they care about via query parameter:
+
+```
+GET /api/v1/events?types=transcode_progress,scan_progress
+```
+
+When `types` is omitted, the client receives all event types it's authorized for.
+
+### Authentication
+
+SSE uses standard HTTP — the session cookie (`Cookie: session=<token>`) is sent automatically by the browser on the `EventSource` connection. No query-string token. No credential leakage in URLs/logs/proxy caches. This is the same auth path as every other authenticated endpoint.
+
+The connection is authenticated once at handshake; subsequent events on the same connection are considered authenticated for that user. The server revalidates the session on reconnect.
+
+**EventSource and the Authorization header:** The browser's native `EventSource` API cannot set custom headers (no `Authorization: Bearer ...`). Duskcue's web client uses HttpOnly session cookies (not bearer tokens) as the primary auth, so this is not a limitation. For non-browser clients (Tauri, Flutter) that prefer bearer tokens, use the [`@microsoft/fetch-event-source`](https://github.com/Azure/fetch-event-source) polyfill or an equivalent library that allows header customization. This is the standard pattern for SSE with bearer auth.
+
+### Authorization
+
+Event visibility is scoped to the authenticated user. A regular user receives only their own events (their transcode sessions, their notifications). An admin receives their own events plus any events targeting users they can manage (per `can_manage_users`, `can_manage_server` capabilities). The server enforces this at event-publish time, not at the transport layer — the SSE handler simply subscribes the connection to the user's authorized event channels.
+
+### Wire Format
+
+Each event follows the [SSE wire format](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events):
+
+```
+event: transcode_progress
+id: 01950abc-7def-4012-9b6c-4f8d2e1a0001
+data: {"session_id":"01950abc-...","progress":42.5,"speed":"2.1x","eta_seconds":300}
+
+```
+
+- `event:` — the event type (matches the `?types=` filter values)
+- `id:` — opaque event ID used for `Last-Event-ID` replay (UUIDv7, naturally time-ordered)
+- `data:` — JSON payload, UTF-8; may span multiple `data:` lines for multi-line content (rare for Duskcue)
+- Trailing blank line — event delimiter
+
+A `retry: 5000` field is sent once on connection open to suggest a 5-second reconnect delay if the connection drops.
+
+### Heartbeat (KeepAlive)
+
+Axum's `Sse::keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))` emits an SSE comment (`:keep-alive\n\n`) every 15 seconds when no events are flowing. This serves three purposes:
+
+1. **Detect dead connections** — TCP keepalive alone is unreliable for detecting broken routes; application-level heartbeats surface dead connections faster so the server can free the subscriber slot
+2. **Flush proxy/CDN buffers** — some proxies buffer responses; periodic writes flush them so genuine events reach the client promptly
+3. **Defeat idle-connection timeouts** — nginx default `proxy_read_timeout` is 60 seconds; Cloudflare's free-tier idle timeout is 100 seconds. A 15-second heartbeat is comfortably below both
+
+### Reconnection and `Last-Event-ID`
+
+When the connection drops, the browser's `EventSource` automatically reconnects (after the `retry:` delay). It includes the last-received event ID in the `Last-Event-ID` request header.
+
+The server maintains a short ring buffer (default: 100 events per user, ~5 minutes of activity) of recently-published events keyed by ID. On reconnect with `Last-Event-ID`, the server replays any events newer than that ID before subscribing to live events. This closes the "client briefly disconnected and missed events" gap.
+
+**Event loss beyond the ring buffer is acceptable for Duskcue's use cases.** Transcode and scan progress events are overwriting state (latest value wins), so missing an old event is harmless. Notifications and trust alerts are also persisted in the database — clients fetch any missed notifications via REST on reconnect.
+
+## Event Taxonomy
+
+| Event Type | Source | Payload Schema Location | Notes |
+|---|---|---|---|
+| `transcode_progress` | `services/transcoding.rs` | [STREAMING.md](STREAMING.md) | 1/sec during active transcode; updates `TranscodeSession.progress` |
+| `scan_progress` | `workers/library_scanner.rs` | [MEDIA_SCANNING.md](MEDIA_SCANNING.md) | 1/sec during active library scan |
+| `notification` | Phase 13 notification system | Phase 13 (TBD) | New in-app notification created |
+| `session_kicked` | `domains/auth/service.rs` | [AUTH.md](AUTH.md) | Admin force-logout; client must clear session and redirect to login |
+| `playback_command` | `domains/playback/` | [STREAMING.md](STREAMING.md) | Server-initiated stop/pause (e.g., streaming policy auto-terminate) |
+| `analytics_update` | Phase 11 analytics | Phase 11 (TBD) | Live dashboard refresh tick |
+| `trust_alert` | Phase 11 security | [ANALYTICS_SECURITY.md](../security/ANALYTICS_SECURITY.md) | Impossible-travel detection fired |
+
+Event types are named in `snake_case`. Future phases add new event types without breaking existing clients (clients ignore unknown event types per the SSE spec).
+
+## Edge Cases
+
+### Mobile OS Background Connection Killing
+
+iOS and Android aggressively suspend background apps and close their network sockets. SSE connections — like WebSocket connections — die when the app is backgrounded. This is not solvable at the transport layer.
+
+**Mitigation (Phase 16):** Mobile clients use OS-level push notifications (APNs for iOS, FCM for Android) for offline event delivery. The server's notification dispatch fan-outs to both SSE (for foreground web/desktop/TV clients) and the push gateway (for offline mobile clients). The push gateway is a Phase 16 concern; for now, mobile clients reconnect on app-foreground and fetch missed state via REST.
+
+### Multi-Tab Connection Sharing (HTTP/1.1)
+
+On HTTP/1.1, each browser tab opens its own SSE connection, which counts against the 6-connections-per-origin limit. Opening 6+ tabs to the same Duskcue server could starve other HTTP requests.
+
+**Mitigation:** Serve over HTTP/2 (default whenever TLS is enabled — see [SECURITY.md](../security/SECURITY.md)). HTTP/2 multiplexes all requests over one connection, so SSE shares the pipe with regular API traffic and there is no per-tab connection cost. The HTTP/1.1 concern is moot on local (non-TLS) deployments where a single user rarely opens 6+ tabs.
+
+**Future optimization:** Web clients can use the [BroadcastChannel API](https://developer.mozilla.org/en-US/docs/Web/API/BroadcastChannel) to elect a leader tab that holds the single SSE connection and relays events to other tabs. This is over-engineering for Duskcue's deployment scale and is not planned.
+
+### Proxy/CDN/Enterprise Firewall Buffering
+
+Some reverse proxies (notably nginx with default config, Cloudflare, and enterprise "antivirus" proxies) buffer HTTP responses. For SSE this is fatal — buffered events arrive in batches after long delays rather than streaming live.
+
+**Mitigations:**
+
+1. **Server emits `X-Accel-Buffering: no`** header on the SSE response — this is the nginx-specific escape hatch that disables buffering for that response. Axum handlers set this in the response builder.
+2. **15-second KeepAlive heartbeat** — flushes buffers periodically even when no events are flowing
+3. **Document exposed-mode proxy config** — operators deploying Duskcue behind nginx/Cloudflare in exposed mode must disable buffering for the `/api/v1/events` route. Example nginx config:
+
+   ```nginx
+   location /api/v1/events {
+       proxy_pass http://duskcue;
+       proxy_buffering off;
+       proxy_cache off;
+       proxy_set_header Connection '';
+       proxy_http_version 1.1;
+       chunked_transfer_encoding on;
+   }
+   ```
+
+4. **Cloudflare-specific** — Cloudflare supports SSE but buffers by default on the free tier. Operators can either disable buffering via Cloudflare Rules or accept periodic heartbeat-paced delivery. Documented in [DOCKER_DEPLOYMENT.md](../operations/DOCKER_DEPLOYMENT.md) when Phase 15 lands.
+
+### Antivirus Proxies That Buffer Indefinitely
+
+Some enterprise antivirus proxies buffer the entire response body before forwarding — for SSE, this means the client never sees any events. The 15-second heartbeat typically defeats this (the proxy eventually gives up waiting for "the rest" of the response), but not always.
+
+**Mitigation:** Document a fallback to REST polling for users in such environments. The current API_CONVENTIONS.md note "WebSocket events are supplementary — clients must not rely on WebSocket for critical state" carries forward to SSE: every event-stream use case is also achievable via REST polling, and clients SHOULD implement a polling fallback when SSE is unavailable.
+
+This is also the only legitimate use case for the long-polling transport — if a deployment environment buffers SSE indefinitely but allows long-polling, a client may switch. This is explicitly a last resort and Duskcue does not implement long-polling server-side; affected clients fall through to REST polling at 5-second intervals.
+
+### Event Ordering and Per-User Sequencing
+
+Events for a single user are published via a single `tokio::sync::broadcast` channel per user, so they're naturally ordered per-user. There is no global ordering guarantee across users (and no use case requires one). The `id:` field is a UUIDv7 — naturally time-ordered, useful for `Last-Event-ID` replay only within a user's stream.
+
+### Connection Limits per User
+
+To prevent abuse (a malicious user opening thousands of SSE connections), the server enforces a per-user connection limit. Default: 5 concurrent SSE connections per user (covers reasonable multi-tab + multi-device scenarios). Excess connections receive HTTP 429 with the standard rate-limit Problem Details response. Configurable via `AuthConfig` (Phase 13 admin settings).
+
+## Implementation Strategy
+
+### Server (Rust / Axum)
+
+- **`GET /api/v1/events`** handler returns `Sse<Stream>` with `KeepAlive::new().interval(15s)`
+- **`AppState`** gains an `event_bus: Arc<EventBus>` field — a `DashMap<Uuid, broadcast::Sender<Event>>` keyed by user ID
+- **Event publishing**: any domain code that needs to push an event calls `state.event_bus.publish(user_id, event)`. The `EventBus::publish` method sends to the user's broadcast channel (lazily created on first subscriber).
+- **Subscription**: the SSE handler obtains the user's `broadcast::Receiver`, wraps it in a stream, applies the `?types=` filter, prepends any `Last-Event-ID` replay, and returns the `Sse` response
+- **Heartbeat**: Axum's built-in `KeepAlive` handles this — no custom code
+- **Replay ring buffer**: `EventBus` keeps a `VecDeque<Event>` per user (max 100, ~5 minutes of activity) protected by the same lock as the broadcast sender; on reconnect with `Last-Event-ID`, drains the buffer up to the named ID and emits those events first
+
+### Client (SvelteKit Web)
+
+- **`clients/web/src/lib/stores/events.js`** — new store managing the `EventSource` connection lifecycle
+- Subscribes on login (`auth.init()` success), unsubscribes on logout
+- Dispatches events to domain stores (`player.js` listens for `transcode_progress`, `libraries.js` listens for `scan_progress`, `notifications.js` listens for `notification`, etc.)
+- Reconnect is automatic (built into `EventSource`); store reflects connection state for UI ("live" vs "reconnecting" indicator in nav bar, optional)
+
+### Client (Tauri Desktop)
+
+- Reuses the web client's `events.js` via the embedded WebView
+- For non-webview native UI surfaces (system tray notifications), Tauri can listen to the SSE via Rust-side `reqwest` and bridge events to the Tauri event bus (Phase 16 detail)
+
+### Client (Flutter Mobile)
+
+- Dart's `http` package supports SSE via streaming response bodies
+- Mobile clients ONLY maintain the SSE connection while the app is foregrounded; backgrounded apps drop the connection and rely on FCM/APNs push for offline events (Phase 16)
+
+## Comparison to Other Duskcue Transports
+
+| Transport | Use case | Doc |
+|---|---|---|
+| **SSE** (`GET /api/v1/events`) | Server→client push of state changes | This document |
+| **REST** (`GET/POST/...` `/api/v1/...`) | Request/response CRUD operations | [API_CONVENTIONS.md](API_CONVENTIONS.md) |
+| **HTTP media stream** (`GET /api/v1/stream/{id}`) | Video/audio file bytes (Range requests) | [STREAMING.md](STREAMING.md) |
+| **HLS** (`GET /api/v1/transcode/{id}/...`) | Adaptive bitrate streaming via FFmpeg | [STREAMING.md](STREAMING.md) |
+
+SSE complements these — it carries metadata about state changes ("your transcode is 50% done"), while the actual media bytes flow over the dedicated streaming transports.
+
+## Implementation Status
+
+| Component | Status | Notes |
+|---|---|---|
+| `/api/v1/ws` endpoint (previous design) | Superseded | Replaced by `/api/v1/events` SSE endpoint per this document |
+| SSE endpoint `/api/v1/events` | Spec only | Implementation will land alongside Phase 7 Task follow-up (transcode progress is the first consumer) |
+| `EventBus` in `AppState` | Not implemented | Will be added alongside the SSE endpoint |
+| `Last-Event-ID` ring-buffer replay | Spec only | Bundled with the SSE endpoint implementation |
+| Svelte `events.js` store | Not implemented | Phase 8 follow-up or Phase 11 (first live dashboard consumer) |
+| Mobile push gateway (FCM/APNs) | Not implemented | Phase 16 |
+
+The first concrete consumer of SSE is **transcode progress** (Phase 7) — currently the `Player.svelte` component polls `GET /api/v1/playback/{session_id}` every few seconds. Migrating to SSE is a Phase 7 follow-up or a Phase 11 enhancement.
+
+## Key Decisions
+
+1. **SSE over WebSocket** — All Duskcue real-time use cases are unidirectional server→client. WebSocket's bidirectional capability is pure overhead. SSE matches the traffic shape exactly, with simpler auth (session cookies work natively), simpler Axum code (built-in `axum::response::sse`), and universal browser/TV support.
+2. **Single endpoint with `?types=` filter** — One `GET /api/v1/events` serves all event types. Clients filter via query string. Simpler than per-domain SSE endpoints (one connection, one auth check, one reconnect path) and avoids the HTTP/1.1 6-connection limit.
+3. **Session cookie auth, not query-string token** — The previous WebSocket design used `?token=...` query param auth because the WebSocket browser API can't set headers. SSE uses standard HTTP so the session cookie flows automatically. No credential leakage in URLs/logs.
+4. **`Last-Event-ID` replay via per-user ring buffer** — 100 events (~5 min) per user. Covers brief disconnects (wifi handoff, tab sleep) without database queries. Events older than the buffer are recoverable via REST polling because they're overwriting-state (progress) or already-persisted (notifications).
+5. **15-second KeepAlive heartbeat** — Well below nginx's 60s `proxy_read_timeout` and Cloudflare's 100s idle timeout. Flushes proxy buffers. Detects dead connections without waiting for TCP keepalive.
+6. **`X-Accel-Buffering: no` for nginx operators** — Documented escape hatch for the most common proxy buffering issue. Operators in exposed mode must disable buffering on `/api/v1/events`; documented in deployment guide.
+7. **REST polling is always a fallback** — Every SSE event carries information also available via REST. Clients SHOULD implement polling fallback (5-second interval) when SSE is unavailable. SSE is an optimization, not a critical-path dependency.
+8. **No long-polling server-side** — Long-polling is strictly dominated by SSE for Duskcue's needs. Documented as a client-side fallback only (clients poll REST), not as a server transport.
+9. **No WebTransport** — Not ready as of June 2026 (no Safari, no stable Rust server, requires HTTP/3). Revisit only if Duskcue adds latency-sensitive bidirectional features (watch parties, collaborative editing).
+10. **Per-user connection limit (5)** — Prevents SSE-based DoS. Configurable via admin settings.
+
+## Relationship to Other Domains
+
+| Document | Relationship |
+|---|---|
+| [API_CONVENTIONS.md](API_CONVENTIONS.md) | Authoritative API contract — the per-endpoint SSE contract lives there; this document explains the transport decision and strategy |
+| [HTTP_CACHING.md](HTTP_CACHING.md) | Sister "transport strategy" doc — HTTP_CACHING covers request/response caching, this covers server→client push. Both are cross-cutting infrastructure decisions. |
+| [STREAMING.md](STREAMING.md) | First SSE consumer — `transcode_progress` events. HLS video transport is separate from SSE. |
+| [MEDIA_SCANNING.md](MEDIA_SCANNING.md) | Second SSE consumer — `scan_progress` events. |
+| [AUTH.md](AUTH.md) | Session-cookie auth flows natively into SSE; `session_kicked` event source. |
+| [ANALYTICS_SECURITY.md](../security/ANALYTICS_SECURITY.md) | `trust_alert` event source for impossible-travel detection (Phase 11). |
+| [DOCKER_DEPLOYMENT.md](../operations/DOCKER_DEPLOYMENT.md) | Exposed-mode proxy config (nginx `proxy_buffering off` for `/api/v1/events`). |
+| [BUILD_ORDER.md](../../BUILD_ORDER.md) | First consumer: Phase 7 (transcode progress); Phase 11 (analytics dashboard); Phase 13 (notifications); Phase 16 (mobile push gateway). |
+
+## Research Sources
+
+- **[RFC 8895](https://www.rfc-editor.org/rfc/rfc8895.html)** — Server-Sent Events (the wire format spec; technically the WHATWG HTML spec, but referenced as RFC 8895 in some places)
+- **[WHATWG HTML §9.2 Server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html)** — The authoritative spec for `EventSource` and the `text/event-stream` format
+- **[Mark Nottingham: Server-Sent Events, WebSockets, and HTTP](https://mnot.net/blog/2022/websockets)** — HTTP WG chair's analysis arguing SSE is the right pub/sub mechanism for the web, especially over HTTP/2
+- **[MDN: Using Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)** — Reference for `EventSource` API, reconnection, `Last-Event-ID`
+- **[web.dev: Real-time updates with Server-Sent Events](https://web.dev/articles/eventsource-basics)** — Practical guide and patterns
+- **[RxDB: WebSockets vs SSE vs Long-Polling vs WebRTC vs WebTransport](https://rxdb.info/articles/websockets-sse-polling-webrtc-webtransport.html)** — Comprehensive comparison with latency/throughput analysis
+- **[Axum SSE docs](https://docs.rs/axum/latest/axum/response/sse/index.html)** — `axum::response::sse::{Event, Sse, KeepAlive}` API
+- **[Samsung Tizen Web Engine Specifications](https://developer.samsung.com/smarttv/develop/specifications/web-engine-specifications.html)** — Per-year Tizen Chromium version (Tizen 6.0 = M76, all support EventSource)
+- **[LG webOS Web API and Web Engine](https://webostv.developer.lge.com/develop/specifications/web-api-and-web-engine)** — webOS TV Chromium history (all versions support EventSource)
+- **[`@microsoft/fetch-event-source`](https://github.com/Azure/fetch-event-source)** — Standard polyfill for SSE with custom headers (Authorization) when needed by non-browser clients

@@ -90,7 +90,7 @@ These documents apply to every phase. Consult them when making implementation de
 | `20260530_050000_create_system_domain.sql` | `server_config`, `scheduled_tasks`, `scheduled_task_runs`, `notification_types`, `notifications`, `user_notification_preferences` |
 | `20260530_060000_create_cross_cutting_concerns.sql` | `pg_trgm` + `pgstattuple` extensions, `audit_log` (partitioned) |
 | `20260530_060100_create_audit_triggers.sql` | `audit_trigger_fn()` + 10 audit triggers |
-| `20260530_060200_create_full_text_search.sql` | `rebuild_media_search_vector()` + 4 search triggers + trigram index |
+| `20260530_060200_create_full_text_search.sql` | `rebuild_media_search_vector()` + 4 search triggers + trigram index (the PG FTS foundation for v1.0 search; see [SEARCH.md](docs/design/SEARCH.md) for the full search-engine decision and migration path to Meilisearch at scale) |
 | `20260530_070000_seed_default_data.sql` | Default `server_config` row, 5 streaming policies, 11 notification types, 18 scheduled tasks |
 | `20260530_070100_create_analytics_security.sql` | `user_location_history` + 6 per-table autovacuum overrides |
 | `20260530_070200_create_migration_domain.sql` | `migration_sources`, `migration_user_mapping`, `migration_import_log` |
@@ -684,7 +684,8 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - Series/season/episode-specific endpoints — `GET /api/v1/series/{id}/seasons`, etc. deferred to when the web client needs them
 - Full-text search — `GET /api/v1/search?q=...` uses `search_vector` column; deferred to Phase 6 (metadata providers populate the column) or Phase 8 (web client needs search)
 - Genre/tag/credit endpoints — `GET /api/v1/media-items/{id}/genres`, `/credits`, etc. deferred to Phase 6
-- ETag / Cache-Control headers — deferred to Phase 8 web client performance optimization
+- ETag / Cache-Control headers — deferred to Phase 8 web client performance optimization. **Note (June 2026):** Full strategy now documented in [HTTP_CACHING.md](docs/design/HTTP_CACHING.md) — two-layer design (HTTP `stale-while-revalidate` directive now; `@tanstack/svelte-query` deferred to Phase 11+). The [API_CONVENTIONS.md](docs/design/API_CONVENTIONS.md) Cache-Control table is extended with `stale-while-revalidate` values per endpoint. The directive is supported on Chromium-based Smart TVs (Tizen 6.0+/webOS 5.x+, 2019–2021+), all desktop browsers except Safari; unsupported clients (Safari, older TV WebKit) silently fall back to `max-age` per RFC 9111.
+- Artwork delivery endpoint and WebP variant generation — deferred to Phase 8 follow-up or alongside Phase 10 storyboards. **Note (June 2026):** Full image format policy documented in [IMAGE_FORMATS.md](docs/design/IMAGE_FORMATS.md) — WebP as primary delivery format (AVIF rejected for encode cost on NAS hardware; JPEG XL rejected for browser support). `MediaCard.svelte` currently renders a gradient placeholder because no artwork serving endpoint exists yet; the endpoint will serve WebP variants at standard sizes (w185/w342/w500/original) with `<picture>` JPEG fallback.
 - Nullable field clearing — same `Option<T>` limitation as users domain; `Option<Option<T>>` deferred to admin UI
 
 **Tasks:**
@@ -1511,6 +1512,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
   - Paused session auto-termination per `streaming_policies.auto_terminate_paused_minutes` — requires querying user's streaming policy on every heartbeat; deferred to a background task or future enhancement
   - Streaming policy enforcement at playback start (`resolve_streaming_limits` is implemented but not called by `start_playback` — deferred to a future integration task)
   - IP range checking against client IP (`allowed_ip_ranges`/`blocked_ip_ranges` stored but not evaluated)
+  - SSE real-time push for `transcode_progress` events — `Player.svelte` currently polls `GET /api/v1/playback/{session_id}` every few seconds. Migration to SSE (`GET /api/v1/events?types=transcode_progress`) is the first consumer of the SSE transport decided in [REAL_TIME_PUSH.md](docs/design/REAL_TIME_PUSH.md). Tracked as Phase 7 follow-up.
 
 **Verification:** User clicks play on a movie, HLS stream starts, segments are served, play session is tracked, resume position updates. Transcoding activates for incompatible formats. HW acceleration detected and used when available. Watch data is readable and settable (favorite, rating). Bookmarks can be created, listed, and deleted. Playlists support full CRUD with ordered items.
 
@@ -1912,7 +1914,31 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
      - **`pick_best_result` ranking** — Filters by language match, then prefers forced/non-forced match, then hearing-impaired match, then scores by vote count + HI preference + SRT format bonus
      - **Graceful provider fallback** — `ProviderUnavailable` and `ProviderRateLimited` errors cause fallthrough to the next provider rather than hard failure. All other errors propagate immediately
      - **`zip` crate v2** added to workspace — needed for SubDL ZIP archive extraction; `flate2` already present for gzip
- 7. Implement `server/src/workers/subtitle_processor.rs` — auto-fetch during scan
+ 7. ~~Implement `server/src/workers/subtitle_processor.rs` — auto-fetch during scan~~ **DONE**
+
+ **What was built for Task 7:**
+
+ | File | Purpose |
+|---|---|
+ | `server/src/workers/subtitle_processor.rs` | Subtitle auto-fetch worker: `run_subtitle_auto_fetch()` entry point; `resolve_targets()` gate logic (global `auto_fetch_enabled` + per-provider `enabled`/`auto_fetch_enabled`/API key checks + language set resolution); `find_items_missing_subtitles()` DB query (movie/episode types with healthy media_files, no subtitle in target language, prefix-match deduplication, `max_items_per_language` cap); per-language iteration calling existing `fetch_subtitles()` service; result counters |
+ | `server/src/workers/mod.rs` | Added `pub mod subtitle_processor;` |
+ | `server/src/main.rs` | Registered `subtitle_auto_fetch` executor on scheduler with `AppState` capture |
+ | `server/src/services/scheduler.rs` | Added "Subtitle Auto-Fetch" to runtime `seed_default_tasks()` (interval 1800s, disabled by default) |
+ | `server/migrations/20260619_080000_seed_subtitle_auto_fetch_task.sql` | Seeds `subtitle_auto_fetch` scheduled task (1800s interval, `is_enabled = false`, 1800s timeout) for existing deployments |
+
+ **Key decisions from Task 7:**
+
+ - **Scheduled task over inline scan integration** — Inline auto-fetch during `scan_library` would block scan completion on provider HTTP calls (SubDL/OpenSubtitles rate limits, network latency). For bulk imports (1000+ items), this could take hours and exceed HTTP request timeouts. A periodic background task (30-min interval) decouples scan completion from subtitle availability and naturally batches work across runs. Newly-scanned items get subtitles within ~30 minutes — acceptable latency for a non-blocking background process. The 30-min interval approximates the "event-triggered after scan" semantics from SUBTITLES.md since the scheduler has no native event-trigger mechanism.
+ - **Reuse `fetch_subtitles()` service** — The worker is a thin orchestration layer that queries for items missing subtitles and delegates to the existing `domains::subtitles::service::fetch_subtitles()`. All provider priority logic (SubDL → OpenSubtitles), `pick_best_result` ranking, ZIP extraction, sidecar save, and `subtitle_files` insert are reused without duplication.
+ - **Three-tier gate** — (1) Global `SubtitleConfig.auto_fetch_enabled` must be `true`; (2) At least one provider must be `enabled` AND `auto_fetch_enabled` AND have a non-empty API key; (3) The effective language set must be non-empty. All three gates must pass or the run is a no-op logged at INFO. This prevents wasted API calls when providers are misconfigured.
+ - **Language set is the union of global + per-provider lists** — `SubtitleConfig.auto_fetch_languages` ∪ `SubdlProviderConfig.auto_fetch_languages` ∪ `OpensubtitlesProviderConfig.auto_fetch_languages` (for eligible providers). This lets admins set a global default (`["en"]`) while allowing per-provider overrides (e.g., OpenSubtitles-only for Spanish). Task config `languages` array overrides everything when present (enables one-off backfill runs).
+ - **`max_items_per_language` cap (50)** — SubDL free tier is 300 downloads/day; OpenSubtitles free tier is 5 downloads/IP/24h. Capping at 50 items per language per run prevents exhausting the daily quota in a single run and leaves budget for manual fetches via the API. Configurable via task config `max_items_per_language` for VIP deployments.
+ - **Movie/episode only** — Series and seasons are container types without direct `media_files`; `fetch_subtitles` would fail with `MediaItemNotFound` from `resolve_media_file_path`. Filtering at the query level (`mi.type IN ('movie', 'episode')`) avoids wasted API calls. Uses the correct `media_items.type` column (not `media_type`).
+ - **Language prefix match via ILIKE** — `"en"` matches `"en"`, `"en-US"`, `"eng"` (ISO 639-1, IETF tag, ISO 639-2/T). Prevents re-fetching when the existing subtitle has a region/code variant of the same base language. The broad `LIKE` is "good enough" deduplication — redundant fetches are cheap (provider returns no results), missed fetches are costly (user has no subtitle).
+ - **Healthy media_files required** — `EXISTS (SELECT 1 FROM media_files WHERE is_healthy = true)` guard ensures we only fetch for items with on-disk files. `fetch_subtitles` reads the media file for OShash (OpenSubtitles) and writes the sidecar next to it — both require a healthy file. Without this guard, the worker would attempt fetches that fail at the service layer.
+ - **Opt-in by default** — Migration seeds the task with `is_enabled = false` per SUBTITLES.md design ("auto_fetch_enabled: false" default). Admins must enable both the scheduled task AND the global `auto_fetch_enabled` config flag to activate auto-fetch.
+ - **No new workspace dependencies** — All functionality uses existing `sqlx`, `serde_json`, `uuid`, and the already-built `fetch_subtitles` service.
+
  8. Implement subtitle settings UI in web client
 
 **Verification:** Media items show available subtitles. User can select subtitle during playback. Auto-fetch downloads missing subtitles during scan. SubDL returns results by TMDB ID.
@@ -1949,7 +1975,14 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 7. Implement skip button in web client player — `SkipButton.svelte`
 8. Implement seek preview in web client player — `SeekPreview.svelte`
 
-**Verification:** After detection runs, media items have intro/credit markers. Skip button appears during intros in player. Seek bar shows thumbnail previews.
+**Strategic implementation debt absorbed into Phase 10** (per [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md) — storyboards are the first consumer of these items):
+
+9. Implement `server/src/services/image_pipeline.rs` — WebP encode, resize, variant generation (debt from [IMAGE_FORMATS.md](docs/design/IMAGE_FORMATS.md); storyboards produce WebP sprites via this same service)
+10. Implement artwork delivery endpoint `GET /api/v1/items/{id}/artwork/{type}?size={size}` — serves WebP variants from `image_pipeline.rs` (debt from [IMAGE_FORMATS.md](docs/design/IMAGE_FORMATS.md); web client currently renders gradient placeholders)
+11. Implement SSE endpoint `GET /api/v1/events` + `EventBus` in AppState — `DashMap<Uuid, broadcast::Sender>` per user (debt from [REAL_TIME_PUSH.md](docs/design/REAL_TIME_PUSH.md); storyboard generation progress is the first SSE consumer)
+12. Implement `clients/web/src/lib/stores/events.js` — Svelte store managing `EventSource` lifecycle; dispatches to domain stores (debt from [REAL_TIME_PUSH.md](docs/design/REAL_TIME_PUSH.md); player subscribes to storyboard-ready events)
+
+**Verification:** After detection runs, media items have intro/credit markers. Skip button appears during intros in player. Seek bar shows thumbnail previews. Artwork renders on MediaCard (no more gradient placeholders). Storyboard generation progress streams via SSE.
 
 ---
 
@@ -2024,9 +2057,11 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 ---
 
-## Phase 13 — System Operations
+## Phase 13a — System Operations Core
 
-**Goal:** Backup system, scheduled task management, system settings, notifications.
+**Goal:** Server config management, backup system, scheduled maintenance workers, admin settings UI. The operational backbone of Duskcue.
+
+**Prerequisites:** Phase 12 complete. Phase 5 scheduler (workers).
 
 **Authoritative docs:**
 
@@ -2035,22 +2070,50 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 | [BACKUP_RECOVERY.md](docs/operations/BACKUP_RECOVERY.md) | WAL-G continuous archiving, pg_dump logical backups, AES-256-GCM encryption, 3-2-1 storage |
 | [CACHE_STORAGE.md](docs/operations/CACHE_STORAGE.md) | Three-tier storage, per-cache-type limits, LRU eviction, disk space monitoring |
 | [DATABASE_MAINTENANCE.md](docs/operations/DATABASE_MAINTENANCE.md) | REINDEX CONCURRENTLY task, partition ANALYZE, `pgstattuple` bloat measurement |
+| [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md) | **Phase split rationale** — explains why Phase 13 is divided into 13a + 13b; dependency analysis showing clean boundary |
 
 **Tasks:**
 
-1. Create `server/src/domains/system/` — five-file pattern
-2. Implement `server_config` runtime API — get/update JSONB config fields
-3. Implement scheduled task management — list, trigger, cancel, view history
-4. Implement notification system — notification types, user preferences, dispatch
-5. Implement `server/src/domains/backup/` — five-file pattern
-6. Implement backup coordination — WAL-G status check, pg_dump trigger, verification
-7. Implement `server/src/workers/backup_runner.rs` — scheduled backup execution
-8. Implement `server/src/workers/reindex_maintenance.rs` — weekly REINDEX CONCURRENTLY
-9. Implement `server/src/workers/disk_space_check.rs` — 30-minute disk monitoring
-10. Build admin settings UI — all `server_config` JSONB fields as toggles, sliders, dropdowns
-11. Build notifications UI — notification center, preferences
+1. Create `server/src/domains/system/` — five-file pattern (already partially built from Phase 6 Task 12 — provider validation endpoint)
+2. Implement `server_config` runtime API — get/update JSONB config fields; generic CRUD for all config groups including push/webhook settings (which activate in Phase 13b)
+3. Implement scheduled task management — list, trigger, cancel, view history; register `notification_cleanup` executor (DB cleanup of old notifications; no dispatch dependency)
+4. Implement `server/src/domains/backup/` — five-file pattern
+5. Implement backup coordination — WAL-G status check, pg_dump trigger, verification
+6. Implement `server/src/workers/backup_runner.rs` — scheduled backup execution
+7. Implement `server/src/workers/reindex_maintenance.rs` — weekly REINDEX CONCURRENTLY
+8. Implement `server/src/workers/disk_space_check.rs` — 30-minute disk monitoring
+9. Build admin settings UI — all `server_config` JSONB fields as toggles, sliders, dropdowns; push/webhook config fields visible but annotated "Activation requires Phase 13b — notification dispatch"
 
-**Verification:** Admin can configure all settings via UI. Backups run on schedule. Disk space alerts trigger when thresholds are exceeded.
+**Verification:** Admin can configure all settings via UI. Backups run on schedule. Disk space alerts trigger when thresholds are exceeded. Scheduled tasks are visible and triggerable.
+
+---
+
+## Phase 13b — Notification System
+
+**Goal:** Notification dispatch with multi-channel delivery (in-app + SSE + webhook), localized templates via Fluent, and push device registration for future mobile push.
+
+**Prerequisites:** Phase 10 (SSE EventBus), Phase 13a Task 2 (server_config API for push/webhook config). Can overlap with Phase 14 if capacity allows.
+
+**Authoritative docs:**
+
+| Doc | What to build from it |
+|---|---|
+| [I18N.md](docs/design/I18N.md) | **i18n prerequisite** — Fluent server-side infrastructure; notification templates use Fluent message IDs, not English template strings |
+| [MOBILE_PUSH.md](docs/design/MOBILE_PUSH.md) | **Multi-channel dispatch architecture** — in-app + SSE + webhook always available; mobile push via FCM/APNs/UnifiedPush opt-in |
+| [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md) | **Phase split rationale** — Phase 13b's 6 tasks; dependency analysis; MVP fallback |
+
+**Tasks:**
+
+1. Set up Fluent server-side i18n — `fluent-i18n` crate, `server/locales/en/notifications.ftl`, migrate `notification_types.in_app_template` from English strings to Fluent message IDs (debt item #5 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))
+2. Implement multi-channel dispatch pipeline — notification record always in DB; fan-out to in-app + SSE + webhook simultaneously; mobile push channel included in fan-out but client implementation deferred to Phase 16 (debt item #6 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))
+3. Implement notification CRUD — create, list, mark-as-read, delete; notification types and user preferences from Phase 2 tables
+4. Implement webhook dispatch — HTTP POST to operator-configured URL with ntfy/Gotify/Discord/Slack/generic formats; HMAC signing; retry with backoff (debt item #8 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))
+5. Create `user_push_devices` table + `POST /api/v1/user/push-devices` API — device registration for FCM/APNs/UnifiedPush tokens; token lifecycle (heartbeat, auto-invalidation, manual revoke) (debt item #7 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))
+6. Build notifications UI — notification center, preferences, push device management, per-channel opt-in per notification type
+
+**Verification:** Admin triggers a test notification. Notification appears in-app (notification center), via SSE (live update if web client is open), and via webhook (operator-configured endpoint). Notification templates render in the user's preferred locale via Fluent. Push devices register and display in user settings.
+
+**MVP fallback:** If Phase 13b takes longer than estimated, ship in-app + SSE + webhook only. Defer FCM/APNs/UnifiedPush client implementations to Phase 16. The `user_push_devices` table and API still ship (schema-only) to avoid Phase 16 schema migration. See [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md) for details.
 
 ---
 
@@ -2078,6 +2141,30 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 ---
 
+## Pre-v1.0 Hardening
+
+**Goal:** Close implementation debt from strategic design decisions that doesn't block features but improves v1.0 quality. Per [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md).
+
+**Authoritative docs:**
+
+| Doc | What to build from it |
+|---|---|
+| [HTTP_CACHING.md](docs/design/HTTP_CACHING.md) | Cache-Control + ETag response headers on metadata/artwork endpoints |
+| [I18N.md](docs/design/I18N.md) | Paraglide JS adoption — extract web client strings to `en.json` |
+| [SEARCH.md](docs/design/SEARCH.md) | Faceted search UI (genre/year/rating filter pills) |
+| [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md) | Full debt catalog and scheduling rationale |
+
+**Tasks:**
+
+1. Implement Cache-Control + ETag response headers — `SetResponseHeaderLayer` per resource group in `router.rs`; SHA-256 ETag on single-item metadata endpoints; per-endpoint `max-age` + `stale-while-revalidate` per [HTTP_CACHING.md](docs/design/HTTP_CACHING.md) table
+2. Adopt Paraglide JS — `@inlang/paraglide-js` Vite plugin; extract existing web client UI strings to `clients/web/messages/en.json`; configure URL prefix + cookie locale strategy per [I18N.md](docs/design/I18N.md)
+3. Build faceted search UI — genre/year/rating/type filter pills on search results page; uses existing PG FTS with parallel GROUP BY queries per [SEARCH.md](docs/design/SEARCH.md)
+4. Add Prometheus metrics for new infrastructure — SSE connection count, event publish rate, image variant generation throughput + cache hit rate, search query latency p50/p95/p99, push delivery success rate per channel; extends existing `init_metrics()` from Phase 3
+
+**Verification:** Metadata endpoints return ETag headers; conditional requests return 304. Web client strings are in `en.json` and wrapped in Paraglide `m.*` calls. Search results page has genre/year/rating filters. Grafana dashboard shows SSE connections and search latency.
+
+---
+
 ## Phase 15 — Docker & Deployment
 
 **Goal:** Production-ready Docker image with embedded PostgreSQL.
@@ -2089,6 +2176,9 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 | [DOCKER_DEPLOYMENT.md](docs/operations/DOCKER_DEPLOYMENT.md) | **Primary** — hybrid embedded/external PG, volume strategy, security hardening |
 | [OS_HARDENING.md](docs/operations/OS_HARDENING.md) | Docker Engine version minimums, Alpine 3.22 pinning |
 | [CACHE_STORAGE.md](docs/operations/CACHE_STORAGE.md) | Docker volumes: `duskcue-data`, `duskcue-cache`, tmpfs for transcode |
+| [SEARCH.md](docs/design/SEARCH.md) | **Post-v1.0 follow-up** — optional Meilisearch sidecar (loopback, same container) for libraries exceeding 50k items; default v1.0 ships PG FTS only, no sidecar |
+| [MULTI_INSTANCE.md](docs/design/MULTI_INSTANCE.md) | **Deployment topology constraint** — Duskcue is single-instance by design. Phase 15 must ship single-container as the canonical topology (`replicas: 1` for any Kubernetes examples). No load-balancer-multi-instance pattern; HA via container `restart: unless-stopped` + embedded PG crash recovery. |
+| [REVERSE_PROXY.md](docs/design/REVERSE_PROXY.md) | **Exposed-mode operator guidance** — built-in rustls TLS handles simple single-domain exposed mode (no proxy needed); Caddy is the recommended external proxy for multi-service routing. Canonical Caddyfile + docker-compose.yml + Nginx/Traefik alternatives documented. Critical `DUSKCUE_TRUSTED_PROXIES` config for client IP detection. |
 
 **Tasks:**
 
@@ -2154,15 +2244,20 @@ Phase 7: Streaming & Playback (COMPLETE — 13 tasks)              │
 Phase 8: Web Client Core (COMPLETE — 6 tasks) ←─── (consumes all above) ←──────┘
     ↓
     ├── Phase 9:  Subtitles
-    ├── Phase 10: Segments & Storyboards
+    ├── Phase 10: Segments & Storyboards (+ SSE + image pipeline + artwork endpoint)
     ├── Phase 11: Analytics & Trakt
     ├── Phase 12: Kometa-Like System
-    ├── Phase 13: System Operations
-    └── Phase 14: Platform Migration
-    ↓
-Phase 15: Docker & Deployment
-    ↓
-Phase 16: Desktop & Mobile Clients
+    ├── Phase 13a: System Operations Core (config + backup + maintenance)
+    │       ↓
+    │   Phase 13b: Notification System (Fluent + dispatch + push)  ←── can overlap with Phase 14
+    │       │
+    ├── Phase 14: Platform Migration  ←── proceeds after 13a, independent of 13b
+    │       │
+    ├── Pre-v1.0 Hardening (Cache-Control/ETag + Paraglide + faceted search + metrics)
+    │       │
+    └── Phase 15: Docker & Deployment  ←── needs 13a + 13b + 14 for complete v1.0 image
+            ↓
+        Phase 16: Desktop & Mobile Clients  ←── mobile push needs 13b
 ```
 
-Phases 9–14 can be built in any order after Phase 8, since they are independent domains that each add functionality on top of the core.
+Phases 9–13a can be built in any order after Phase 8, since they are independent domains. Phase 13b depends on Phase 10 (SSE EventBus) + Phase 13a (server_config API). Phase 14 depends on Phase 13a only (not 13b). Phase 15 needs all prior phases for a complete v1.0 image. See [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md) for the full dependency analysis.

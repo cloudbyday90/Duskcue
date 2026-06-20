@@ -6,6 +6,10 @@ This document defines the authoritative conventions for the server's REST API. C
 
 Application-layer security patterns (input validation, BOLA prevention, response DTO separation, SSRF prevention, request payload limits, admin endpoint isolation) are documented in [API_SECURITY.md](../security/API_SECURITY.md). This document covers API structure and conventions; that document covers API security against OWASP Top 10.
 
+HTTP response caching strategy and semantics (`ETag`, `Cache-Control`, `stale-while-revalidate` platform support, client-side SWR pattern) are documented in [HTTP_CACHING.md](HTTP_CACHING.md). This document retains the per-endpoint Cache-Control contract table that API consumers depend on; that document explains the strategy, RFC references, and platform behavior behind those values.
+
+Real-time server→client event push (SSE transport choice, missed-event recovery, proxy/CDN configuration) is documented in [REAL_TIME_PUSH.md](REAL_TIME_PUSH.md). This document retains the per-event-type contract table that API consumers depend on; that document explains the transport strategy, edge cases, and platform behavior.
+
 All clients — SvelteKit web, Tauri desktop, Flutter mobile, TV apps, and third-party integrations (Classifarr) — consume this API.
 
 ## URL Structure
@@ -710,37 +714,19 @@ GET /api/v1/system/tasks/01950abc-def0-7000-8000-000000000002
 | Collection sync | `collection_sync` |
 | Overlay application | `overlay_application` |
 
-## Conditional Requests
+## Conditional Requests and Caching
 
-### ETag for Cache Validation
+The authoritative strategy, semantics, and platform-support analysis for HTTP response caching (`ETag`, `Cache-Control`, `stale-while-revalidate`, client-side SWR pattern) is documented in [HTTP_CACHING.md](HTTP_CACHING.md). This section captures the per-endpoint contract that API consumers depend on.
 
-Media metadata endpoints return `ETag` headers:
+### ETag
+
+Single-resource metadata endpoints return strong `ETag` headers (SHA-256 of the JSON body) so clients can revalidate cheaply with `If-None-Match` → `304 Not Modified`. Collection endpoints do NOT use ETag.
 
 ```
+GET /api/v1/media-items/01950abc... → 200 with ETag: "abc123def456"
 GET /api/v1/media-items/01950abc...
-
-HTTP/1.1 200 OK
-ETag: "abc123def456"
-Content-Type: application/json
-
-{ "id": "01950abc...", "title": "The Matrix", ... }
+If-None-Match: "abc123def456"        → 304 Not Modified (no body)
 ```
-
-Client revalidation:
-
-```
-GET /api/v1/media-items/01950abc...
-If-None-Match: "abc123def456"
-
-HTTP/1.1 304 Not Modified
-ETag: "abc123def456"
-```
-
-The `304 Not Modified` response has no body — the client uses its cached copy.
-
-**ETag generation:** SHA-256 hash of the JSON response body. Computed after serialization.
-
-**Endpoints with ETag:**
 
 | Endpoint | ETag Scope |
 |---|---|
@@ -748,32 +734,37 @@ The `304 Not Modified` response has no body — the client uses its cached copy.
 | `GET /api/v1/libraries/{id}` | Library config |
 | `GET /api/v1/system/config` | Full server config |
 
-Collection list endpoints do not use ETag (paginated responses change frequently).
-
 ### Cache-Control Headers
+
+The per-endpoint Cache-Control policy. See [HTTP_CACHING.md](HTTP_CACHING.md) for the full `stale-while-revalidate` platform support matrix, the `stale-if-error` exclusion rationale, ETag interaction, and the client-side SWR (TanStack Svelte Query) decision.
 
 | Endpoint | Cache-Control | Rationale |
 |---|---|---|
-| Media item metadata | `private, max-age=300` | 5 minutes; per-user due to watch status |
-| Library config | `private, max-age=60` | 1 minute; changes are rare but visible |
-| Static artwork URLs | `public, max-age=86400` | 24 hours; artwork rarely changes |
+| Media item metadata | `private, max-age=300, stale-while-revalidate=600` | 5 min fresh; 10 min stale-serve; per-user due to watch status |
+| Library config | `private, max-age=60, stale-while-revalidate=300` | 1 min fresh; 5 min stale-serve; changes are rare but visible |
+| Static artwork URLs | `public, max-age=86400, stale-while-revalidate=604800, immutable` | 24 hr fresh; 7 day stale-serve; artwork rarely changes |
 | HLS segments | `no-cache` | Always revalidate for streaming session validity |
 | Search results | `no-store` | Dynamic, personalized |
 
-## WebSocket
+**Safety note:** `stale-while-revalidate` degrades gracefully to `max-age` on unsupported clients (Safari, older Smart TV WebKit) per RFC 9111 §5.2. Supported on Chromium-based Smart TVs (Tizen 6.0+/webOS 5.x+, 2019–2021+) and all desktop browsers except Safari.
 
-WebSocket connections are used for real-time events that benefit from push delivery.
+## Real-Time Events (SSE)
+
+The authoritative transport decision, edge-case analysis, and platform-support rationale for server→client event push are documented in [REAL_TIME_PUSH.md](REAL_TIME_PUSH.md). This section captures the per-endpoint contract that API consumers depend on. **Decision (June 2026): SSE replaces the previously-spec'd WebSocket endpoint.**
 
 ### Endpoint
 
 ```
-WS /api/v1/ws
+GET /api/v1/events
+Accept: text/event-stream
 ```
 
-Authentication via query parameter (WebSocket doesn't support headers in browser API):
+Returns `Content-Type: text/event-stream`. Authentication via session cookie (`Cookie: session=<token>`) — flows automatically because SSE uses standard HTTP. **No query-string token auth** (avoids the credential-leakage-in-URLs problem that the previous WebSocket design had).
+
+Optional event-type filter:
 
 ```
-WS /api/v1/ws?token=eyJ0eXAiOiJKV1QiLCJhbGc...
+GET /api/v1/events?types=transcode_progress,scan_progress
 ```
 
 ### Event Types
@@ -786,7 +777,15 @@ WS /api/v1/ws?token=eyJ0eXAiOiJKV1QiLCJhbGc...
 | `session_kicked` | Server → Client | `{ reason }` |
 | `playback_command` | Server → Client | `{ command: "stop" \| "pause", reason }` |
 
-WebSocket events are supplementary — clients must not rely on WebSocket for critical state. All data is also available via REST polling.
+### Reconnection and Replay
+
+The browser's `EventSource` API auto-reconnects on disconnect. Clients send `Last-Event-ID` on reconnect; the server replays missed events from a per-user ring buffer (100 events, ~5 min). Events beyond the buffer are recoverable via REST polling.
+
+### Fallback
+
+Real-time events are supplementary — clients MUST NOT rely on SSE for critical state. Every event payload is also available via REST polling at 5-second intervals. Clients SHOULD implement polling fallback when SSE is unavailable (e.g., enterprise proxy buffering).
+
+See [REAL_TIME_PUSH.md](REAL_TIME_PUSH.md) for the full transport comparison (SSE vs WebSocket vs long-polling vs WebTransport), proxy/CDN configuration, mobile OS backgrounding considerations, and implementation status.
 
 ## Health Check
 

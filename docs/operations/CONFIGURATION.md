@@ -429,7 +429,7 @@ pub struct OpensubtitlesProviderConfig {
 - `subtitle_providers.subdl.prefer_hearing_impaired` — prefer HI subtitles when multiple matches exist. Default: false.
 - `subtitle_providers.opensubtitles.*` — same fields as SubDL, plus `api_token` for OpenSubtitles user token (optional, increases download quota).
 
-Both providers default to `enabled: false`. The `auto_fetch_enabled` and `auto_fetch_languages` fields are consumed by the auto-fetch worker (Task 7, not yet implemented).
+Both providers default to `enabled: false`. The `auto_fetch_enabled` and `auto_fetch_languages` fields are consumed by the auto-fetch worker (`workers/subtitle_processor.rs`, Phase 9 Task 7), which runs as the `subtitle_auto_fetch` scheduled task (30-minute interval, opt-in).
 
 Subtitle provider design documented in [SUBTITLES.md](../design/SUBTITLES.md) and provider client details in [METADATA_PROVIDERS.md](../design/METADATA_PROVIDERS.md).
 

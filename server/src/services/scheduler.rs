@@ -637,6 +637,7 @@ pub async fn seed_default_tasks(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> 
         ("Disk Space Check", "disk_space_check", None, Some(1800)),
         ("Media Health Check", "media_health_check", Some("0 6 * * 0"), None::<i32>),
         ("Soft Delete Purge", "soft_delete_purge", Some("0 1 * * *"), None::<i32>),
+        ("Subtitle Auto-Fetch", "subtitle_auto_fetch", None, Some(1800)),
     ];
 
     for (name, task_type, cron_expr, interval_secs) in &defaults {

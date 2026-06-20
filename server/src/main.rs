@@ -293,6 +293,7 @@ async fn main() {
     let enrichment = state.enrichment.clone();
     let cache_dir = state.bootstrap.cache_dir.clone();
 
+    let subtitle_state = state.clone();
     let scheduler = Arc::new(
         Scheduler::new(state.pool.clone())
             .register_executor("library_scan", |pool, task_id, config| {
@@ -359,6 +360,17 @@ async fn main() {
                         &pool,
                         &cache_dir,
                         &enrichment,
+                        task_id,
+                        config,
+                    )
+                    .await;
+                }
+            })
+            .register_executor("subtitle_auto_fetch", move |_pool, task_id, config| {
+                let state = subtitle_state.clone();
+                async move {
+                    duskcue::workers::subtitle_processor::run_subtitle_auto_fetch(
+                        &state,
                         task_id,
                         config,
                     )

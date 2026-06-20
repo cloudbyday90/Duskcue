@@ -46,6 +46,8 @@ WebVTT + WebP sprite sheets are web standards. hls.js has native thumbnail suppo
 - Alpha channel support if needed (transparent padding for aspect ratio mismatch)
 - Hardware decoding support on most platforms
 
+> The WebP choice aligns with the unified image format policy — see [IMAGE_FORMATS.md](IMAGE_FORMATS.md) for the project-wide format decision covering artwork, storyboards, overlays, and thumbnails. The decision research (AVIF rejected for encode cost on NAS hardware, JPEG XL rejected for browser support) applies here too.
+
 ### Sprite Sheet Layout
 
 Each sprite sheet is a grid of thumbnail images. One sprite sheet holds N×M thumbnails.

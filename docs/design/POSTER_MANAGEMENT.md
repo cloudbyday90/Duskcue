@@ -45,6 +45,8 @@ This document is one of three pillars in the artwork customization architecture:
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+> **Format policy:** All server-generated image content (resized variants, overlay composites, storyboard sprites, user-upload derivatives) is delivered as **WebP**. Source originals from upstream providers (JPEG/PNG) are preserved untouched. See [IMAGE_FORMATS.md](IMAGE_FORMATS.md) for the full format decision, platform support matrix, encoding settings, and edge cases.
+
 ## Artwork Sources
 
 ### TMDb (Primary)
@@ -354,11 +356,11 @@ impl Default for MetadataConfig {
 **Field semantics:**
 - `artwork_language_priority` — ISO 639-1 language codes in priority order for TMDb artwork fetching. First language tried first, then fallbacks.
 - `artwork_auto_download` — automatically download artwork during scan enrichment. When false, artwork is only downloaded on explicit admin request.
-- `artwork_download_originals_only` — download only `original` size from TMDb (best quality, for overlay compositing). Resized versions are generated server-side.
+- `artwork_download_originals_only` — download only `original` size from TMDb (best quality, for overlay compositing). Resized versions are generated server-side as WebP variants per [IMAGE_FORMATS.md](IMAGE_FORMATS.md).
 - `asset_directory` — path to the asset directory on disk. When null, asset directory is not used.
 - `overlays_enabled` — master toggle for the overlay engine. When false, source artwork is served directly without compositing.
 - `overlay_apply_schedule` — cron schedule for the overlay application task.
-- `overlay_image_format` — output format for composited images. Options: `webp` (default, best compression), `png` (lossless), `jpeg`.
+- `overlay_image_format` — output format for composited images. Options: `webp` (default, best compression), `png` (lossless), `jpeg`. See [IMAGE_FORMATS.md](IMAGE_FORMATS.md) for why WebP is the recommended default.
 - `overlay_image_quality` — quality for lossy formats (1-100). Ignored for PNG.
 - `overlay_max_image_size_mb` — maximum composited image size. Images exceeding this are quality-reduced.
 - `overlay_default_font` — default font for text overlays. Must be a font file in `/data/fonts/`.

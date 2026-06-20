@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document is the authoritative design for the security and remote access domain. It covers: network security tiers, TLS configuration, streaming URL authentication, HTTP security hardening, HTTP compression and BREACH mitigation, timing attack resistance, WebSocket security (future), security event monitoring, remote access patterns, Cloudflare TOS constraints, and FFmpeg per-process sandboxing (Landlock + seccomp).
+This document is the authoritative design for the security and remote access domain. It covers: network security tiers, TLS configuration, streaming URL authentication, HTTP security hardening, HTTP compression and BREACH mitigation, timing attack resistance, real-time event security (SSE), security event monitoring, remote access patterns, Cloudflare TOS constraints, and FFmpeg per-process sandboxing (Landlock + seccomp).
 
 The platform is **local-first** — security features are **opt-in**, not opt-out. A server on a trusted LAN needs no TLS, no signed URLs, and minimal auth friction. When the admin enables remote access, security hardening activates progressively.
 
@@ -333,28 +333,43 @@ No additional action is needed. The `ring` library handles all secret comparison
 
 ---
 
-## WebSocket Security (Future)
+## Real-Time Event Security (SSE)
 
 ### When This Applies
 
-The server does not currently use WebSockets. If real-time features are added in the future (transcode progress, live session counts, notification push), this section defines the security requirements.
+Server-Sent Events (SSE) carries server→client push: transcode progress, scan progress, notifications, session kicks, playback commands. The transport decision is documented in [REAL_TIME_PUSH.md](../design/REAL_TIME_PUSH.md); this section defines the security posture. SSE is **unidirectional server→client over standard HTTP** — most of the WebSocket-specific attack surface (client-injected frames, subprotocol abuse, binary message handling) does not apply.
 
 ### Requirements
 
 | Requirement | Implementation |
 |---|---|
-| **Authenticated handshake** | WebSocket upgrade request must carry the same session token as HTTP API requests; reject unauthenticated upgrades |
-| **Same-origin enforcement** | `Origin` header checked against `server_config.security.allowed_origins` in exposed mode |
-| **Message size limit** | 1 MB per message (same as HTTP request body limit) |
-| **Message rate limit** | 30 messages per second per connection; disconnect abusers |
-| **Idle timeout** | 5-minute idle timeout; client must send ping or server disconnects |
-| **No binary framing of SQL or commands** | WebSocket messages are JSON with validated schemas, not raw commands |
+| **Authenticated connection** | SSE `GET /api/v1/events` requires a valid session cookie, identical to any authenticated REST endpoint. No unauthenticated streams. Revalidated on every reconnect. |
+| **Same-origin enforcement** | `Origin` header checked against `server_config.security.allowed_origins` in exposed mode (same CORS policy as REST endpoints — SSE is just HTTP) |
+| **Per-user connection limit** | 5 concurrent SSE connections per user (covers multi-tab + multi-device); excess connections rejected with HTTP 429 rate-limit response. Prevents SSE-based DoS. |
+| **Per-user event rate limit** | Inherits the authenticated-user rate-limit tier (300 req/min). Publishing beyond the limit triggers backpressure, not connection drop. |
+| **Idle timeout / heartbeat** | 15-second KeepAlive comment frames (`:keep-alive\n\n`) detect dead connections without waiting for TCP keepalive; dead connections free their subscriber slot promptly. |
+| **Authorization scoped at publish time** | The server publishes events only to the owning user's stream; admins receive their own events plus events for users they can manage (`can_manage_users`). No cross-user event leakage even if a connection is hijacked. |
+| **No client→server payload over SSE** | SSE is server→client only. Client→server actions (e.g., remote-control commands from a phone) go via authenticated REST POST endpoints with full input validation. There is no attack surface for client-injected event-stream data. |
+| **Event payloads are server-authored JSON** | All event payloads originate from typed Rust structs serialized via `serde_json` — no string interpolation, no SQL, no shell arguments. Same DTO/validator pattern as REST responses per [API_SECURITY.md](API_SECURITY.md). |
+| **No `Last-Event-ID` injection** | The `Last-Event-ID` header on reconnect is parsed as a UUID; malformed values are ignored (full ring-buffer replay is skipped, client falls through to live events). The header never reaches SQL or command layers. |
+
+### Why SSE Reduces Attack Surface vs WebSocket
+
+The prior design (WebSocket, see git history) required dedicated security controls that SSE obviates:
+
+| WebSocket risk | SSE status |
+|---|---|
+| Authenticated handshake via query-string token (token leaks in URLs/logs) | ✅ Eliminated — SSE uses session cookies like every other HTTP request |
+| Client message rate limiting (30 msg/sec) | ✅ Eliminated — clients cannot send messages over SSE |
+| Binary frame injection (potential deserialization bugs) | ✅ Eliminated — SSE is text-only with a fixed wire format |
+| Subprotocol negotiation abuse | ✅ Eliminated — no subprotocol negotiation in SSE |
+| Cross-origin WebSocket smuggling via crafted `Upgrade` headers | ✅ Eliminated — no protocol upgrade; standard CORS applies |
+| Ping/pong spoofing for keepalive bypass | ✅ Eliminated — KeepAlive is server→client only |
 
 ### Out of Scope
 
-- WebSocket-specific error codes — will use existing AUTH and SYS error codes
-- WebSocket message protocol — will be defined when the feature is designed
-- Server push vs client pull trade-offs — architectural decision for the feature design phase
+- **Mobile OS push notifications (FCM/APNs)** — separate transport with its own security profile; documented in Phase 16
+- **Event payload schemas per event type** — defined in their domain docs (transcode events in [STREAMING.md](../design/STREAMING.md), scan events in [MEDIA_SCANNING.md](../design/MEDIA_SCANNING.md), notifications in Phase 13)
 
 ---
 

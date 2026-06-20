@@ -343,6 +343,8 @@ fn apply_overlays(item: MediaItem, artwork: RgbaImage, definitions: &[OverlayDef
 
 Composited images are stored as WebP (lossless, supports transparency, smaller than PNG) in the cache directory:
 
+> The WebP output format is the project-wide image format policy — see [IMAGE_FORMATS.md](IMAGE_FORMATS.md). Lossy WebP (q90) is used for photographic posters/backdrops; lossless WebP is used for logos/clearart with alpha. The `overlay_image_format` config field defaults to `webp` and aligns with the unified policy.
+
 ```
 /cache/images/overlays/
 ├── posters/{media_item_id}.webp

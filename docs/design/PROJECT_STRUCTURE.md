@@ -335,7 +335,7 @@ project/
 │   │   │   │   ├── composables/  # Reusable logic (Svelte actions/runes)
 │   │   │   │   │   ├── useInfiniteScroll.js
 │   │   │   │   │   ├── useMediaQuery.js
-│   │   │   │   │   └── useWebSocket.js
+│   │   │   │   │   └── useEventSource.js
 │   │   │   │   │
 │   │   │   │   └── utils/        # Utility functions
 │   │   │   │       ├── format.js

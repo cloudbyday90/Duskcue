@@ -16,3 +16,4 @@
 
 pub mod library_scanner;
 pub mod metadata_refresh;
+pub mod subtitle_processor;
