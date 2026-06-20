@@ -29,6 +29,7 @@ pub mod opensubtitles_client;
 pub mod sandbox;
 pub mod scheduler;
 pub mod segments;
+pub mod storyboards;
 pub mod subtitle_discovery;
 pub mod subtitles;
 pub mod subdl_client;

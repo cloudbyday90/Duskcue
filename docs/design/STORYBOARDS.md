@@ -468,15 +468,49 @@ Storyboard retrieval, serving, generation-trigger, and deletion API surface impl
 
 **Not yet implemented (deferred to Tasks 4 and 6):**
 
-- All six service functions are `todo!()` stubs — Task 4 implements `get_storyboard`, `get_storyboard_index`, `get_storyboard_sprite`, and `delete_storyboard` (DB queries + disk reads); Task 6 (`workers/storyboard_generator.rs`) implements the generation triggers (`trigger_library_generation`, `trigger_item_generation`) by enqueuing work on the scheduler.
-- FFmpeg two-phase pipeline (frame extraction → sprite assembly) — Task 4 (`services/storyboards.rs`) implements the generation library; Task 6 wires it into a scheduled task worker.
-- Adaptive interval selection — `adaptive_interval()` function per the Generation Pipeline spec; lands in `services/storyboards.rs` (Task 4).
+- ~~All six service functions are `todo!()` stubs~~ — Task 4 implements `get_storyboard`, `get_storyboard_index`, `get_storyboard_sprite`, and `delete_storyboard` (DB queries + disk reads); Task 6 (`workers/storyboard_generator.rs`) implements the generation triggers (`trigger_library_generation`, `trigger_item_generation`) by enqueuing work on the scheduler.
+- ~~FFmpeg two-phase pipeline (frame extraction → sprite assembly)~~ — Task 4 (`services/storyboards.rs`) implements the generation library using a refined single-command-per-sheet filtergraph (see Task 4 notes below); Task 6 wires it into a scheduled task worker.
+- ~~Adaptive interval selection~~ — `adaptive_interval()` function per the Generation Pipeline spec; landed in `services/storyboards.rs` (Task 4).
 - Storyboard metadata in playback start response — When `start_playback` is updated to include the storyboard block per the "Integration with Playback" spec, the playback service will call `storyboards::service::get_storyboard` and embed the result in `PlaybackStartResponse`.
 - `storyboard_generation` scheduled task already seeded (migration `20260530_070000_seed_default_data.sql`, daily 04:00) — Task 6 registers the executor on the scheduler in `main.rs`.
 
+### Phase 10 Task 4 — Generation Library + Domain Service Implementation (Complete)
+
+The generation pipeline (FFmpeg frame extraction, WebP sprite assembly, WebVTT index authoring) and the four read/delete domain service functions are now implemented. The trigger functions (Task 6 worker territory) remain `todo!()` stubs.
+
+**Files built:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/storyboards.rs` | Generation library: `GenerationConfig`, `SpriteLayout`, `GenerationResult`, `StoryboardPipelineError`; `adaptive_interval()`, `compute_sprite_layout()`, `generate_storyboard()` (one FFmpeg invocation per sprite sheet), `build_webvtt_index()` (pure function), `format_timecode_secs()`, `validate_sprite_filename()`, `sprite_filename()`, `inspect_sprite_height()` (WebP RIFF parser); 39 unit tests |
+| `server/src/services/mod.rs` | Added `pub mod storyboards;` |
+| `server/src/domains/storyboards/service.rs` | Replaced 4 of 6 `todo!()` stubs: `get_storyboard`, `get_storyboard_index`, `get_storyboard_sprite`, `delete_storyboard`. `trigger_library_generation`/`trigger_item_generation` remain for Task 6. 13 new domain tests |
+
+**Decisions reconciled with this design doc:**
+
+- **Single-command per-sheet filtergraph replaces two-phase pipeline** — The "Generation Pipeline" section describes a two-phase approach: (1) extract individual frames to a temp directory via FFmpeg, then (2) assemble sprite sheets from those frames via a second FFmpeg invocation per batch of 200. Research (June 2026) showed the modern best practice is a single FFmpeg filtergraph per sprite sheet: `fps=1/N,scale=W:trunc(ow/a/2)*2,tile=COLSxROWS -frames:v 1`. This eliminates temp-frame disk I/O entirely (no `/tmp/storyboards/{session_id}/frame_%08d.jpg` directory to manage), simplifies cleanup (FFmpeg owns its own temp state), and is the pattern used by the design's own Research Sources (Jellyfin 10.9+, the MTG and Id_rs implementations). For multi-sheet videos, the generator makes one FFmpeg call per sheet with `-ss <start> -t <window>` seek windows. The two-phase pipeline in the design doc is retained as historical context but the implementation uses the single-command refinement.
+- **`-ss` before `-i` for fast keyframe-accurate seek** — The seek window `-ss <start_secs>` is placed *before* the `-i <source>` argument so the demuxer jumps directly to the keyframe at or before the start timestamp. Placing `-ss` after `-i` forces FFmpeg to decode every frame from the beginning of the file up to the seek point — catastrophic for long content. The masonwritescode reference implementation calls this out explicitly.
+- **`-skip_frame nokey` placement** — When `keyframe_only = true` (the default), `-skip_frame nokey` is placed *before* `-i` so the demuxer skips non-keyframe packets during demuxing. The FFmpeg documentation's canonical spritesheet example uses this exact ordering: `ffmpeg -skip_frame nokey -i file.avi -vf 'scale=128:72,tile=8x8' -an -vsync 0 keyframes.png`. Placing it after `-i` still works but loses most of the speedup because frames are demuxed before being discarded.
+- **Final WebVTT cue extends to `duration_seconds`** — The "no gap at the end" rule: the cue for the last thumbnail covers `[N*interval, duration)` rather than `[N*interval, (N+1)*interval)`. Without this, clients show a dead zone at the end of the seek bar where no thumbnail appears. Implemented via `duration.max((i + 1) * interval)` in `build_webvtt_index`.
+- **Drift prevention** — Research identified "WebVTT interval must equal FFmpeg's `fps=1/N`" as the #1 source of preview drift (thumbnails wander away from the seek position as the user scrubs). Mitigated by generating the WebVTT index inside `generate_storyboard()` — the same call that invokes FFmpeg — so both consume the same `GenerationConfig.interval_seconds` value. The `build_webvtt_index` doc-comment carries a "Drift warning" callout.
+- **Sprite filename validation enforces 1-based 1-4 digit numbers** — `sprite_NNN.webp` where NNN is `[1-9999]`. 3-digit zero-padding matches the WebVTT cue examples in this design doc; the validator accepts up to 4 digits so a 4-hour movie at 5s interval (~288 sheets) and pathological longer content still parse. `sprite_000` is rejected (1-based). Path separators (`/`, `\`), `..` traversal attempts, non-`.webp` suffixes, and non-`sprite_` prefixes all rejected with descriptive error strings. Mapped to `VALID_001` (422) at the HTTP boundary.
+- **WebP RIFF header parser replaces image-library dependency** — The design stores thumbnail `height` in the DB row (computed from source aspect ratio). Rather than add a Rust image-library dependency, `inspect_sprite_height()` parses the WebP container directly: VP8 lossy (`b"VP8 "`) reads 16-bit LE width/height at byte offsets 26/28; VP8 lossless (`b"VP8L"`) reads the 14-bit packed width/height from bytes 22-24; falls back to 180px (16:9 at 320 wide) for unparseable headers. Same approach as services/subtitles.rs OCR engine detection — avoid heavy dependencies for trivial parsing.
+- **Grid shape recovered from `metadata.columns`/`metadata.rows` JSONB** — The `storyboards` table has no explicit columns/rows fields, but `SpriteResponse` includes them per the design's Response Format. The worker (Task 6) writes `metadata.columns` and `metadata.rows` when creating the row; the domain service's `read_grid_shape()` recovers them, defaulting to the design's 10×20 when missing (handles externally-authored or future-config rows). Validation rejects zero/negative so a malformed metadata payload cannot break URL construction.
+- **`resolve_primary_media_file` mirrors playback domain** — Same query (`is_healthy=true ORDER BY file_size DESC LIMIT 1`) as `domains::playback::service::resolve_media_file`. Storyboards correspond to the file the user will actually stream; keeping the selection identical means the storyboard is always for the right file. Multi-version items (4K + 1080p) get one storyboard for the primary file, matching the "media_file_id" rationale in the Storage Path section.
+- **Delete is idempotent + best-effort disk cleanup** — DB deletion via `DELETE ... RETURNING` is the source of truth; if no row exists, returns `StoryboardNotFound` *after* still attempting on-disk cleanup (handles crashed-generation drift). On-disk `remove_dir_all` failures (except NotFound) are logged at WARN but do not invalidate the committed DB deletion — derived data can always regenerate.
+
+**Not yet implemented (deferred to Task 6 / worker):**
+
+- `trigger_library_generation` and `trigger_item_generation` — still `todo!()`; Task 6 will replace them with scheduler enqueue (mirroring `subtitle_auto_fetch` from Phase 9 Task 7 and `segment_analysis` from Phase 10 Task 5)
+- `storyboard_generation` scheduled task already seeded (migration `20260530_070000_seed_default_data.sql`, daily 04:00) — Task 6 registers the executor on the scheduler in `main.rs`
+- `RuntimeConfig.transcoding.storyboard_*` config fields — Task 6 expands `TranscodingConfig` with the 8 storyboard fields from the Configuration section and constructs `GenerationConfig` per-file
+- Per-library config overrides (`libraries.metadata.storyboards_*`) — Task 6 worker reads these and overrides the server-wide config when constructing `GenerationConfig`
+- Sandbox application — Task 6 worker calls `services::sandbox::apply_sandbox` before each FFmpeg invocation (Linux landlock + seccomp per [SECURITY.md](../security/SECURITY.md); no-op on Windows/macOS)
+- Web client `SeekPreview.svelte` — Task 8 consumes the `/storyboard/index.vtt` endpoint via hls.js or a custom seek-bar component
+
 ---
 
-## Research Sources
+
 
 ### Platform Approaches
 - Plex Support — Video Preview Thumbnails (BIF format, 2-second intervals, 10-50 MB per item)

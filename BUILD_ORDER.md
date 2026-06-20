@@ -2089,14 +2089,46 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`#![allow(unused_variables)]` on service.rs** — All 6 service functions are `todo!()` stubs; the module-level allow suppresses unused parameter warnings until actual implementations are added in Tasks 4 and 6.
 - **No new workspace dependencies** — all functionality uses existing `sqlx`, `serde`, `uuid`, `chrono`, `axum` crates.
 
-4. Implement `server/src/services/storyboards.rs`:
-   - FFmpeg thumbnail extraction at adaptive intervals
-   - WebP spritesheet generation
-   - WebVTT seek file generation
-5. Implement `server/src/workers/segment_detector.rs` — background segment detection
-6. Implement `server/src/workers/storyboard_generator.rs` — background thumbnail generation
-7. Implement skip button in web client player — `SkipButton.svelte`
-8. Implement seek preview in web client player — `SeekPreview.svelte`
+4. ~~Implement `server/src/services/storyboards.rs`~~ **DONE**
+   - ~~FFmpeg thumbnail extraction at adaptive intervals~~
+   - ~~WebP spritesheet generation~~
+   - ~~WebVTT seek file generation~~
+
+   **What was built for Task 4:**
+
+   | File | Purpose |
+   |---|---|
+   | `server/src/services/storyboards.rs` | Storyboard generation library: `GenerationConfig` (width, interval, quality, keyframe_only, sprite grid), `GenerationResult`, `SpriteLayout`, `StoryboardPipelineError`; `adaptive_interval()` per STORYBOARDS.md table; `compute_sprite_layout()` (handles partial last sheet, zero-duration edge case); `generate_storyboard()` (one FFmpeg invocation per sprite sheet via single-command `fps+scale+tile` filtergraph); `build_webvtt_index()` (pure function emitting `WEBVTT` header + `#xywh=` Media Fragment URI cues); `format_timecode_secs()` (WebVTT `HH:MM:SS.mmm` formatter); `validate_sprite_filename()` (path-traversal protection for `sprite_NNN.webp`); `sprite_filename()` (canonical 3-digit filename formatter); `inspect_sprite_height()` (RIFF/VP8/VP8L header parser with 16:9 fallback); 39 unit tests |
+   | `server/src/services/mod.rs` | Added `pub mod storyboards;` |
+   | `server/src/domains/storyboards/service.rs` | Replaced 4 of 6 `todo!()` stubs with real implementations: `get_storyboard` (resolves primary media file via `is_healthy=true ORDER BY file_size DESC`, loads storyboards row, builds sprite URLs, reads grid shape from metadata JSONB with 10×20 fallback), `get_storyboard_index` (path resolution + disk read), `get_storyboard_sprite` (filename validation via `sb_svc::validate_sprite_filename` + sprite_count bounds check + disk read), `delete_storyboard` (DB row delete via `RETURNING` + best-effort recursive dir cleanup with NotFound-tolerant error handling). `trigger_library_generation` and `trigger_item_generation` remain `todo!()` per Task 6 scope. Added `#![allow(unused_variables)]` until Task 6 lands. 13 new domain tests |
+
+   **Key decisions from Task 4:**
+
+   - **Single-command per-sheet approach over STORYBOARDS.md two-phase** — The design doc describes extracting frames to a temp directory, then assembling sprites via separate FFmpeg calls. Research confirmed the modern best practice (2025-2026) is a single FFmpeg filtergraph per sprite sheet: `fps=1/N,scale=W:trunc(ow/a/2)*2,tile=COLSxROWS`. This eliminates temp-frame disk I/O, simplifies cleanup (no per-frame temp files), and is the pattern used by current FFmpeg documentation and the Jellyfin/MTG/Id_rs implementations cited in the design's Research Sources. For multi-sheet videos, one FFmpeg invocation per sheet with `-ss`/`-t` seek windows is used (placing `-ss` *before* `-i` for fast keyframe-accurate seek). STORYBOARDS.md updated to document this refinement.
+   - **`-skip_frame nokey` for ~100x speedup** — Per the design's "Keyframe-Only Mode (Fast Generation)" section and confirmed by FFmpeg docs (`ffmpeg -skip_frame nokey -i file.avi -vf 'scale=128:72,tile=8x8' -an -vsync 0 keyframes.png` is the canonical example). Placed *before* `-i` so the demuxer skips non-keyframe packets. The trade-off (timestamps snap to nearest keyframe rather than exact interval) is imperceptible for seek-bar previews.
+   - **Library types mirror segments.rs pattern** — `GenerationConfig`, `SpriteLayout`, `StoryboardPipelineError` are pure library types with no DB/state coupling, exactly like `BlackframeParams`, `SafetyConfig`, `SegmentPipelineError` in services/segments.rs. The worker (Task 6) will bridge `RuntimeConfig.transcoding.storyboard_*` → `GenerationConfig`; the domain service (`domains/storyboards/service.rs`) consumes only the sprite-filename validator (`sb_svc::validate_sprite_filename`) for HTTP path-traversal protection. This keeps the service library testable without an HTTP or DB harness.
+   - **Final WebVTT cue extends to `duration_seconds`** — Per the "no gap at the end" rule from research: a cue covering `[N*interval, (N+1)*interval)` for the last thumbnail is wrong when the content ends earlier — clients show a dead-zone at the end of the seek bar. The final cue is `(i+1)*interval` clamped via `duration.max(...)` so it covers `[last_thumb, duration)`. This matches the masonwritescode/dev.to reference implementation.
+   - **Drift prevention** — Research identified "WebVTT interval must equal FFmpeg's `fps=1/N`" as the #1 source of preview drift. Mitigated by generating the WebVTT index in the same `generate_storyboard()` call that invokes FFmpeg, both consuming the same `GenerationConfig.interval_seconds`. The `build_webvtt_index` doc-comment carries a "Drift warning" callout for future maintainers.
+   - **Sprite filename validation enforces 1-based 1-4 digit numbers** — `sprite_NNN.webp` where NNN is `[1-9999]`. 3-digit zero-padding (`sprite_001.webp`) matches the design's WebVTT examples; the validator accepts up to 4 digits so a 4-hour movie at 5s interval (~288 sheets) and pathological longer content still parse. `sprite_000` is rejected (1-based). Path separators (`/`, `\`), `..`, non-`.webp` suffixes, and non-`sprite_` prefixes all rejected with descriptive error strings.
+   - **WebP RIFF header parser for height** — The design stores thumbnail `height` in the DB row (computed from source aspect ratio at generation time). Rather than add a Rust image-library dependency, `inspect_sprite_height()` parses the WebP container directly: VP8 lossy (`b"VP8 "`) reads 16-bit LE width/height at offsets 26/28; VP8 lossless (`b"VP8L"`) reads the 14-bit packed width/height from bytes 22-24; falls back to 180px (16:9 at 320 wide) for unparseable headers. Same approach as services/subtitles.rs OCR engine detection — avoid heavy dependencies for trivial parsing.
+   - **Grid shape recovery from `metadata.columns`/`metadata.rows` JSONB** — The `storyboards` table has no explicit columns/rows fields, but `SpriteResponse` includes them per the design. The worker (Task 6) writes `metadata.columns` and `metadata.rows` when creating the row; `read_grid_shape()` in the domain service recovers them, defaulting to the design's 10×20 when missing (handles externally-authored or future-config rows). Validation rejects zero/negative so a malformed metadata payload cannot break URL construction.
+   - **`resolve_primary_media_file` mirrors playback domain** — Same query (`is_healthy=true ORDER BY file_size DESC LIMIT 1`) as `domains::playback::service::resolve_media_file`. Storyboards correspond to the file the user will actually stream; keeping the selection identical means the storyboard is always for the right file. Multi-version items (4K + 1080p) get one storyboard for the primary file, matching STORYBOARDS.md's `media_file_id` rationale.
+   - **Delete is idempotent + best-effort disk cleanup** — DB deletion via `DELETE ... RETURNING` is the source of truth; if no row exists, returns `StoryboardNotFound` *after* still attempting on-disk cleanup (handles crashed-generation drift). On-disk `remove_dir_all` failures (except NotFound) are logged at WARN but do not invalidate the committed DB deletion — derived data can always regenerate.
+   - **`#![allow(unused_variables)]` retained on domain service** — Two `todo!()` stubs remain for Task 6 (`trigger_library_generation`, `trigger_item_generation`); the module-level allow silences their unused-parameter warnings until Task 6 implements them, matching the segments domain's scaffolding-to-implementation transition pattern.
+   - **No new workspace dependencies** — All FFmpeg invocation uses `tokio::process::Command` (already in workspace); WebP header parsing uses byte slicing (`u16::from_le_bytes`); no `image`, `webp`, or `tempfile` crates needed since sprite generation is pure FFmpeg and temp-file management is internal to FFmpeg's filtergraph.
+
+   **Not yet implemented (deferred to Task 6 / worker):**
+
+   - `trigger_library_generation` and `trigger_item_generation` — still `todo!()`; Task 6 will replace them with scheduler enqueue (mirroring `subtitle_auto_fetch` from Phase 9 Task 7 and `segment_analysis` from Phase 10 Task 5)
+   - `storyboard_generation` scheduled task already seeded (migration `20260530_070000_seed_default_data.sql`, daily 04:00) — Task 6 registers the executor on the scheduler in `main.rs`
+   - `RuntimeConfig.transcoding.storyboard_*` config fields — Task 6 expands `TranscodingConfig` with the 8 storyboard fields from STORYBOARDS.md Configuration table and constructs `GenerationConfig` per-file
+   - Per-library config overrides (`libraries.metadata.storyboards_*`) — Task 6 worker reads these and overrides the server-wide config when constructing `GenerationConfig`
+   - Sandbox application — Task 6 worker calls `services::sandbox::apply_sandbox` before each FFmpeg invocation (Linux landlock + seccomp; no-op on Windows/macOS)
+   - Web client `SeekPreview.svelte` — Task 8 consumes the `/storyboard/index.vtt` endpoint via hls.js or a custom seek-bar component
+   5. Implement `server/src/workers/segment_detector.rs` — background segment detection
+   6. Implement `server/src/workers/storyboard_generator.rs` — background thumbnail generation
+   7. Implement skip button in web client player — `SkipButton.svelte`
+   8. Implement seek preview in web client player — `SeekPreview.svelte`
 
 **Strategic implementation debt absorbed into Phase 10** (per [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md) — storyboards are the first consumer of these items):
 
