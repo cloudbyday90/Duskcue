@@ -426,6 +426,8 @@ fn subtitle_error_to_http(err: &crate::domains::subtitles::SubtitleError) -> (St
         SubtitleError::MediaItemNotFound { .. } => (StatusCode::NOT_FOUND, "SUB_001", "Media item not found".into()),
         SubtitleError::InvalidSubtitleFormat(f) => (StatusCode::BAD_REQUEST, "SUB_001", format!("Invalid subtitle format: {}", f)),
         SubtitleError::InvalidLanguageCode(c) => (StatusCode::BAD_REQUEST, "SUB_001", format!("Invalid language code: {}", c)),
+        SubtitleError::InvalidSubtitleMode(m) => (StatusCode::BAD_REQUEST, "SUB_001", format!("Invalid subtitle mode: {}", m)),
+        SubtitleError::InvalidOcrEngine(e) => (StatusCode::BAD_REQUEST, "SUB_001", format!("Invalid OCR engine: {}", e)),
         SubtitleError::FetchFailed { reason } => (StatusCode::SERVICE_UNAVAILABLE, "SUB_004", format!("Subtitle fetch failed: {}", reason)),
         SubtitleError::ConversionFailed { reason } => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", format!("Subtitle conversion failed: {}", reason)),
         SubtitleError::SyncDataNotFound { .. } => (StatusCode::NOT_FOUND, "SUB_001", "Subtitle sync data not found".into()),

@@ -16,3 +16,68 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { writable, derived } from 'svelte/store';
+import {
+    getSubtitleSettings as apiGetSettings,
+    updateSubtitleSettings as apiUpdateSettings,
+    updateSubtitleProviderSettings as apiUpdateProviders,
+} from '../api/subtitles.js';
+
+function createSubtitleSettingsStore() {
+    const { subscribe, set, update } = writable({
+        settings: null,
+        loading: false,
+        saving: false,
+        error: null,
+    });
+
+    return {
+        subscribe,
+
+        async fetch() {
+            update((s) => ({ ...s, loading: true, error: null }));
+            try {
+                const settings = await apiGetSettings();
+                set({ settings, loading: false, saving: false, error: null });
+                return settings;
+            } catch (err) {
+                update((s) => ({ ...s, loading: false, error: err }));
+                throw err;
+            }
+        },
+
+        async saveSettings(data) {
+            update((s) => ({ ...s, saving: true, error: null }));
+            try {
+                const settings = await apiUpdateSettings(data);
+                set({ settings, loading: false, saving: false, error: null });
+                return settings;
+            } catch (err) {
+                update((s) => ({ ...s, saving: false, error: err }));
+                throw err;
+            }
+        },
+
+        async saveProviders(data) {
+            update((s) => ({ ...s, saving: true, error: null }));
+            try {
+                const settings = await apiUpdateProviders(data);
+                set({ settings, loading: false, saving: false, error: null });
+                return settings;
+            } catch (err) {
+                update((s) => ({ ...s, saving: false, error: err }));
+                throw err;
+            }
+        },
+
+        clearError() {
+            update((s) => ({ ...s, error: null }));
+        },
+    };
+}
+
+export const subtitleSettings = createSubtitleSettingsStore();
+
+export const subtitleSettingsLoading = derived(subtitleSettings, ($s) => $s.loading);
+export const subtitleSettingsSaving = derived(subtitleSettings, ($s) => $s.saving);
+export const subtitleSettingsError = derived(subtitleSettings, ($s) => $s.error);

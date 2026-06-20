@@ -814,3 +814,36 @@ Auto-fetch is implemented in `server/src/workers/subtitle_processor.rs` as a sch
 - **Language prefix match** — `"en"` matches `"en"`, `"en-US"`, `"eng"` (ISO 639-1, IETF tag, ISO 639-2/T). This prevents re-fetching when the existing subtitle has a region/code variant of the same base language. The `LIKE 'en%'` pattern is deliberately broad — it's a "good enough" deduplication; the cost of a redundant fetch is low (provider returns no results or the existing file), but the cost of missing a needed fetch is high (user has no subtitle).
 - **Task config overrides runtime config** — Admins can override the auto-fetch behavior per-task via `scheduled_tasks.config`: `{ "languages": ["en", "es"], "max_items_per_language": 100, "providers": ["subdl"] }`. This enables scenarios like a one-off Spanish subtitle backfill run without changing global config.
 - **No new workspace dependencies** — All functionality uses existing `sqlx`, `serde_json`, `uuid`, and the already-built `fetch_subtitles` service.
+
+### Phase 9 Task 8 — Subtitle Settings UI (Complete)
+
+The subtitle settings UI is implemented as a full admin settings page in the web client, backed by three new endpoints in the subtitles domain that read and write the `SubtitleConfig` (`server_config.subtitles` JSONB) and the subtitle provider config (`server_config.integrations.subtitle_providers` JSONB).
+
+**Backend endpoints (added to the subtitles domain router):**
+
+- `GET /api/v1/settings/subtitles` — returns `SubtitleSettingsResponse` containing all `SubtitleConfig` fields plus a `providers` object with masked provider credentials (`api_key_masked` via `mask_secret()`, `has_api_key` boolean). Never returns raw API keys. Admin-only (`Require<CanManageServer>`).
+- `PUT /api/v1/settings/subtitles` — accepts `UpdateSubtitleSettingsRequest` (the `SubtitleConfig` fields with `validator` constraints), validates subtitle mode against `VALID_SUBTITLE_MODES`, OCR engine against `VALID_OCR_ENGINES`, and language codes, then writes `server_config.subtitles` JSONB and hot-reloads the `ArcSwap<RuntimeConfig>`.
+- `PUT /api/v1/settings/subtitles/providers` — accepts `UpdateSubtitleProviderSettingsRequest` with optional `subdl`/`opensubtitles` sub-objects. API keys are encrypted at rest via `EncryptionKey` (AES-256-GCM) before writing; `null`/omitted key fields preserve the existing encrypted value. Writes via `jsonb_set(integrations, '{subtitle_providers}', ...)`, then hot-reloads config.
+
+**Config hot-reload:** After each DB write, `reload_runtime_config()` calls `load_runtime_config()` and atomically swaps the result into `AppState.runtime_config` (`Arc<ArcSwap<RuntimeConfig>>`). Changes take effect immediately without a server restart — the auto-fetch worker, OCR pipeline, and delivery service all read the live config on next access.
+
+**Frontend implementation:**
+
+- `clients/web/src/lib/api/subtitles.js` — full API client module: `getSubtitleSettings`, `updateSubtitleSettings`, `updateSubtitleProviderSettings` for settings, plus the player-facing per-item functions (`listSubtitles`, `fetchSubtitles`, `setSubtitleOffset`, `triggerOcr`, `getSubtitleSyncData`, `deleteSubtitle`, `getSubtitleContentUrl`).
+- `clients/web/src/lib/stores/subtitles.js` — `subtitleSettings` store with `fetch`/`saveSettings`/`saveProviders`; derived loading/saving/error stores.
+- `clients/web/src/routes/settings/subtitles/+page.svelte` — full settings UI with three sections:
+  1. **Subtitle Behavior** — default subtitle mode (select), default language, auto-fetch toggle + languages (comma-separated)
+  2. **OCR (Image Subtitles)** — enabled toggle, engine select, confidence threshold range slider, voice activity toggle + cron schedule
+  3. **Subtitle Providers** — SubDL and OpenSubtitles cards with enabled toggle, masked API key fields (password inputs with "leave blank to keep" placeholder), per-provider auto-fetch languages, and hearing-impaired preference
+  - Uses Svelte 5 runes: `$state` for form fields, `$derived` for per-section dirty-state detection (`behaviorDirty`, `providersDirty`) that gates each save button, `$effect` for the `can_manage_server` capability subscription. Non-admins see a permission message instead of the form.
+- `clients/web/src/routes/settings/+page.svelte` — removed the `soon: true` tag from the subtitles navigation link.
+
+**Key decisions:**
+
+- **Backend endpoints required for functional UI** — No general `server_config` read/write endpoint exists yet (Phase 13a). Subtitle-specific endpoints were added to the subtitles domain rather than waiting for Phase 13a, following the established pattern where `/api/v1/settings/providers/validate` already lives in a domain router. This keeps subtitle logic in the subtitle domain and avoids cross-domain coupling into the system domain.
+- **Two separate write endpoints** — `PUT /settings/subtitles` (behavior config) and `PUT /settings/subtitles/providers` (provider config) match the SUBTITLES.md design separation between subtitle behavior and provider credentials. The UI has two corresponding save buttons, each gated by independent dirty-state tracking.
+- **API key masking over plaintext** — `GET` returns `api_key_masked` (via existing `mask_secret()`) and `has_api_key`, never the raw key. The client sends `api_key` only when changing it; `null`/omitted preserves the existing encrypted value. This avoids the masked-value-roundtrip problem.
+- **Provider key encryption reuses Phase 6 pattern** — `encrypt_subtitle_provider_keys()` encrypts SubDL/OpenSubtitles API keys + OpenSubtitles API token via the existing `EncryptionKey` (AES-256-GCM), the same pattern as metadata provider config encryption from Phase 6 Task 13. Skips already-encrypted values (idempotent).
+- **Comma-separated language input** — `auto_fetch_languages` edited as a comma-separated text field, split/trimmed on save. Simpler than a multi-select for the small number of language codes.
+- **No new workspace dependencies** — backend uses existing `sqlx`, `serde_json`, `validator`, `ring` (encryption); frontend uses the existing `core.js` HTTP client and Svelte stores.
+

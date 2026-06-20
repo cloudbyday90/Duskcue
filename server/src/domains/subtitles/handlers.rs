@@ -26,7 +26,10 @@ use crate::error::AppError;
 use crate::domains::subtitles::service;
 use crate::domains::subtitles::types::*;
 use crate::extractors::AuthenticatedUser;
+use crate::extractors::Require;
+use crate::extractors::CanManageServer;
 use crate::state::AppState;
+use validator::Validate;
 
 pub async fn list_subtitles(
     State(state): State<AppState>,
@@ -125,6 +128,68 @@ pub async fn delete_subtitle(
 ) -> Result<axum::http::StatusCode, AppError> {
     service::delete_subtitle(&state.pool, item_id, subtitle_id).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
+}
+
+pub async fn get_subtitle_settings(
+    _auth: Require<CanManageServer>,
+    State(state): State<AppState>,
+) -> Result<Json<SubtitleSettingsResponse>, AppError> {
+    let result = service::get_subtitle_settings(&state).await?;
+    Ok(Json(result))
+}
+
+pub async fn update_subtitle_settings(
+    _auth: Require<CanManageServer>,
+    State(state): State<AppState>,
+    Json(req): Json<UpdateSubtitleSettingsRequest>,
+) -> Result<Json<SubtitleSettingsResponse>, AppError> {
+    req.validate().map_err(|e| {
+        let errors: Vec<crate::error::FieldError> = e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errs)| {
+                errs.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect();
+        AppError::Validation {
+            errors,
+            instance: Some("/api/v1/settings/subtitles".to_string()),
+        }
+    })?;
+
+    let result = service::update_subtitle_settings(&state, &req).await?;
+    Ok(Json(result))
+}
+
+pub async fn update_subtitle_provider_settings(
+    _auth: Require<CanManageServer>,
+    State(state): State<AppState>,
+    Json(req): Json<UpdateSubtitleProviderSettingsRequest>,
+) -> Result<Json<SubtitleSettingsResponse>, AppError> {
+    req.validate().map_err(|e| {
+        let errors: Vec<crate::error::FieldError> = e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errs)| {
+                errs.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect();
+        AppError::Validation {
+            errors,
+            instance: Some("/api/v1/settings/subtitles/providers".to_string()),
+        }
+    })?;
+
+    let result = service::update_subtitle_provider_settings(&state, &req).await?;
+    Ok(Json(result))
 }
 
 async fn get_user_subtitle_offset(

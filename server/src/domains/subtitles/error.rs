@@ -45,6 +45,12 @@ pub enum SubtitleError {
     #[error("invalid language code: {0}")]
     InvalidLanguageCode(String),
 
+    #[error("invalid subtitle mode: {0}")]
+    InvalidSubtitleMode(String),
+
+    #[error("invalid OCR engine: {0}")]
+    InvalidOcrEngine(String),
+
     #[error("subtitle fetch failed: {reason}")]
     FetchFailed { reason: String },
 

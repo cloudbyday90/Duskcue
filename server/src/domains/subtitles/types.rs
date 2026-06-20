@@ -25,6 +25,7 @@ pub static VALID_OCR_ENGINES: &[&str] = &["paddleocr", "tesseract"];
 pub static VALID_SYNC_METHODS: &[&str] = &["voice_activity", "fps_adjust", "manual"];
 pub static VALID_DELIVERY_FORMATS: &[&str] = &["srt", "vtt"];
 pub static VALID_SUBTITLE_PROVIDERS: &[&str] = &["subdl", "opensubtitles"];
+pub static VALID_SUBTITLE_MODES: &[&str] = &["default", "always", "none", "forced_only"];
 
 pub struct SubtitleFileRow {
     pub id: Uuid,
@@ -135,4 +136,91 @@ pub struct SubtitleSyncDataResponse {
     pub confidence: Option<f64>,
     pub fps_source: Option<f64>,
     pub fps_target: Option<f64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct UpdateSubtitleSettingsRequest {
+    pub ocr_enabled: bool,
+    #[validate(length(min = 1, max = 32))]
+    pub ocr_engine: String,
+    #[validate(range(min = 0.0, max = 1.0))]
+    pub ocr_confidence_threshold: f64,
+    pub voice_activity_analysis: bool,
+    #[validate(length(min = 1, max = 64))]
+    pub voice_activity_schedule: String,
+    #[validate(length(min = 1, max = 32))]
+    pub default_subtitle_mode: String,
+    #[validate(length(min = 2, max = 10))]
+    pub default_subtitle_language: String,
+    pub auto_fetch_enabled: bool,
+    pub auto_fetch_languages: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct UpdateSubtitleProviderSettingsRequest {
+    #[validate(nested)]
+    pub subdl: Option<SubdlProviderUpdate>,
+    #[validate(nested)]
+    pub opensubtitles: Option<OpensubtitlesProviderUpdate>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct SubdlProviderUpdate {
+    pub enabled: bool,
+    pub api_key: Option<String>,
+    pub auto_fetch_enabled: bool,
+    pub auto_fetch_languages: Vec<String>,
+    pub prefer_hearing_impaired: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct OpensubtitlesProviderUpdate {
+    pub enabled: bool,
+    pub api_key: Option<String>,
+    pub api_token: Option<String>,
+    pub auto_fetch_enabled: bool,
+    pub auto_fetch_languages: Vec<String>,
+    pub prefer_hearing_impaired: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SubtitleSettingsResponse {
+    pub ocr_enabled: bool,
+    pub ocr_engine: String,
+    pub ocr_confidence_threshold: f64,
+    pub voice_activity_analysis: bool,
+    pub voice_activity_schedule: String,
+    pub default_subtitle_mode: String,
+    pub default_subtitle_language: String,
+    pub auto_fetch_enabled: bool,
+    pub auto_fetch_languages: Vec<String>,
+    pub providers: SubtitleProvidersResponse,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SubtitleProvidersResponse {
+    pub subdl: SubdlProviderResponse,
+    pub opensubtitles: OpensubtitlesProviderResponse,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SubdlProviderResponse {
+    pub enabled: bool,
+    pub api_key_masked: String,
+    pub has_api_key: bool,
+    pub auto_fetch_enabled: bool,
+    pub auto_fetch_languages: Vec<String>,
+    pub prefer_hearing_impaired: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct OpensubtitlesProviderResponse {
+    pub enabled: bool,
+    pub api_key_masked: String,
+    pub has_api_key: bool,
+    pub api_token_masked: String,
+    pub has_api_token: bool,
+    pub auto_fetch_enabled: bool,
+    pub auto_fetch_languages: Vec<String>,
+    pub prefer_hearing_impaired: bool,
 }

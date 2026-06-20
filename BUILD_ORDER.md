@@ -1939,9 +1939,39 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
  - **Opt-in by default** — Migration seeds the task with `is_enabled = false` per SUBTITLES.md design ("auto_fetch_enabled: false" default). Admins must enable both the scheduled task AND the global `auto_fetch_enabled` config flag to activate auto-fetch.
  - **No new workspace dependencies** — All functionality uses existing `sqlx`, `serde_json`, `uuid`, and the already-built `fetch_subtitles` service.
 
- 8. Implement subtitle settings UI in web client
+ 8. ~~Implement subtitle settings UI in web client~~ **DONE**
 
-**Verification:** Media items show available subtitles. User can select subtitle during playback. Auto-fetch downloads missing subtitles during scan. SubDL returns results by TMDB ID.
+ **What was built for Task 8:**
+
+ | File | Purpose |
+|---|---|
+| `server/src/domains/subtitles/types.rs` | Added settings DTOs: `UpdateSubtitleSettingsRequest` (Deserialize + Validate, SubtitleConfig fields), `UpdateSubtitleProviderSettingsRequest` with nested `SubdlProviderUpdate`/`OpensubtitlesProviderUpdate`, response types `SubtitleSettingsResponse`/`SubtitleProvidersResponse`/`SubdlProviderResponse`/`OpensubtitlesProviderResponse` (with masked secrets); added `VALID_SUBTITLE_MODES` static |
+| `server/src/domains/subtitles/error.rs` | Added `InvalidSubtitleMode` and `InvalidOcrEngine` variants (both SUB_001 / 400) |
+| `server/src/error.rs` | Mapped `InvalidSubtitleMode` and `InvalidOcrEngine` in `subtitle_error_to_http()` |
+| `server/src/domains/subtitles/service.rs` | Added 4 functions: `get_subtitle_settings` (reads `RuntimeConfig` from ArcSwap, masks provider keys via `mask_secret`), `update_subtitle_settings` (validates mode/engine/languages, writes `server_config.subtitles` JSONB, reloads config), `update_subtitle_provider_settings` (merges updates keeping existing keys when null, encrypts new keys via `EncryptionKey`, `jsonb_set` on `integrations.subtitle_providers`, reloads config), `reload_runtime_config` helper; `encrypt_subtitle_provider_keys` helper |
+| `server/src/domains/subtitles/handlers.rs` | Added 3 handlers: `get_subtitle_settings`, `update_subtitle_settings`, `update_subtitle_provider_settings` — all `Require<CanManageServer>` with validator `Validation` error mapping |
+| `server/src/domains/subtitles/mod.rs` | Added 2 routes: `GET/PUT /api/v1/settings/subtitles`, `PUT /api/v1/settings/subtitles/providers` |
+| `clients/web/src/lib/api/subtitles.js` | Full API client module: `getSubtitleSettings`, `updateSubtitleSettings`, `updateSubtitleProviderSettings` + per-item functions (`listSubtitles`, `fetchSubtitles`, `setSubtitleOffset`, `triggerOcr`, `getSubtitleSyncData`, `deleteSubtitle`, `getSubtitleContentUrl`) |
+| `clients/web/src/lib/stores/subtitles.js` | Settings store (`subtitleSettings`) with `fetch`/`saveSettings`/`saveProviders`; derived loading/saving/error stores |
+| `clients/web/src/routes/settings/subtitles/+page.svelte` | Full settings UI: Subtitle Behavior section (default mode/language, auto-fetch languages), OCR section (enabled, engine, confidence slider, voice activity toggle + cron schedule), Subtitle Providers section (SubDL + OpenSubtitles cards with masked API key fields); dirty-state-gated save buttons, Svelte 5 runes (`$state`/`$derived`), capability gating |
+| `clients/web/src/routes/settings/+page.svelte` | Removed `soon: true` from subtitles nav link |
+
+ **Key decisions from Task 8:**
+
+ - **Backend settings endpoints required for functional UI** — No general `server_config` read/write endpoint exists (Phase 13a). Added subtitle-specific endpoints in the subtitles domain at `/api/v1/settings/subtitles` and `/api/v1/settings/subtitles/providers`, following the established pattern where `/api/v1/settings/providers/validate` already lives in a domain router. Keeps subtitle logic in the subtitle domain; avoids cross-domain coupling into system domain.
+ - **Two separate write endpoints** — `PUT /settings/subtitles` (behavior config → `server_config.subtitles` JSONB) and `PUT /settings/subtitles/providers` (provider config → `server_config.integrations.subtitle_providers` JSONB via `jsonb_set`). Matches the SUBTITLES.md design separation between subtitle behavior and provider credentials. The UI has two corresponding save buttons, each gated by independent dirty-state tracking.
+ - **API key masking, not plaintext** — `GET /settings/subtitles` returns `api_key_masked` (via existing `mask_secret()`) and `has_api_key` boolean, never the raw key. The client sends `api_key` only when changing it; `null`/omitted preserves the existing encrypted value. This avoids the masked-value-roundtrip problem and means the masked value never travels back as a "real" key.
+ - **Config hot-reload via ArcSwap swap** — After each DB write, `reload_runtime_config()` calls `load_runtime_config()` and atomically swaps the result into `AppState.runtime_config` (`Arc<ArcSwap<RuntimeConfig>>`). Changes take effect immediately without a server restart — auto-fetch worker, OCR pipeline, and delivery service all read the live config on next access.
+ - **Provider key encryption at rest** — `encrypt_subtitle_provider_keys()` encrypts SubDL/OpenSubtitles API keys + OpenSubtitles API token via the existing `EncryptionKey` (AES-256-GCM) before writing. Skips already-encrypted values (idempotent). This is the same pattern as the metadata provider config encryption from Phase 6 Task 13, applied to subtitle provider credentials.
+ - **Admin-only (`Require<CanManageServer>`)** — All three settings endpoints require server-management capability. Non-admins see a permission message instead of the form. This matches the subtitle settings being server-wide configuration rather than per-user preferences.
+ - **Svelte 5 runes for form state** — Local `$state` for form fields, `$derived` for per-section dirty detection (`behaviorDirty`, `providersDirty`) comparing a snapshot of loaded values, `$effect` for capability subscription. The dirty check gates each save button so accidental saves of unchanged data are prevented.
+ - **Comma-separated language input** — `auto_fetch_languages` edited as a comma-separated text field, split/trimmed on save. Simpler than a multi-select for the small number of language codes; matches the subtitle language code format (ISO 639-1).
+ - **Per-item subtitle API functions added for completeness** — The API client module includes the player-facing endpoints (`listSubtitles`, `getSubtitleContentUrl`, `setSubtitleOffset`, etc.) so the module covers the full subtitle API surface, even though Task 8 focuses on settings. The Player component already sends `subtitle_stream_index` from Phase 8.
+ - **No new workspace dependencies** — backend uses existing `sqlx`, `serde_json`, `validator`, `ring` (encryption); frontend uses existing `core.js` HTTP client and Svelte stores.
+
+**Verification:** Media items show available subtitles. User can select subtitle during playback. Auto-fetch downloads missing subtitles during scan. SubDL returns results by TMDB ID. Subtitle settings page loads config, admin can edit OCR/auto-fetch/defaults and provider credentials, changes persist and hot-reload without restart.
+
+**Phase 9 status:** All 8 tasks complete.
 
 ---
 
@@ -2243,7 +2273,7 @@ Phase 7: Streaming & Playback (COMPLETE — 13 tasks)              │
     ↓                                                      │
 Phase 8: Web Client Core (COMPLETE — 6 tasks) ←─── (consumes all above) ←──────┘
     ↓
-    ├── Phase 9:  Subtitles
+    ├── Phase 9:  Subtitles (COMPLETE — 8 tasks)
     ├── Phase 10: Segments & Storyboards (+ SSE + image pipeline + artwork endpoint)
     ├── Phase 11: Analytics & Trakt
     ├── Phase 12: Kometa-Like System

@@ -16,3 +16,48 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { get, post, put, del, buildApiUrl } from './core.js';
+
+export async function getSubtitleSettings() {
+    return get('/settings/subtitles');
+}
+
+export async function updateSubtitleSettings(data) {
+    return put('/settings/subtitles', data);
+}
+
+export async function updateSubtitleProviderSettings(data) {
+    return put('/settings/subtitles/providers', data);
+}
+
+export async function listSubtitles(itemId) {
+    return get(`/items/${itemId}/subtitles`);
+}
+
+export async function getSubtitle(itemId, subtitleId) {
+    return get(`/items/${itemId}/subtitles/${subtitleId}`);
+}
+
+export function getSubtitleContentUrl(itemId, subtitleId, format = null) {
+    return buildApiUrl(`/items/${itemId}/subtitles/${subtitleId}/content`, format ? { format } : {});
+}
+
+export async function fetchSubtitles(itemId, data) {
+    return post(`/items/${itemId}/subtitles`, data);
+}
+
+export async function setSubtitleOffset(itemId, subtitleId, offsetMs) {
+    return put(`/items/${itemId}/subtitles/${subtitleId}/offset`, { offset_ms: offsetMs });
+}
+
+export async function triggerOcr(itemId, subtitleId, engine = null) {
+    return post(`/items/${itemId}/subtitles/${subtitleId}/ocr`, engine ? { engine } : {});
+}
+
+export async function getSubtitleSyncData(itemId, subtitleId) {
+    return get(`/items/${itemId}/subtitles/${subtitleId}/sync`);
+}
+
+export async function deleteSubtitle(itemId, subtitleId) {
+    return del(`/items/${itemId}/subtitles/${subtitleId}`);
+}

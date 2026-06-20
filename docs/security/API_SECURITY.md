@@ -561,6 +561,8 @@ pub fn mask_secret(value: &str) -> String {
 }
 ```
 
+The first concrete admin settings endpoints implementing this masking pattern are Phase 9 Task 8's subtitle settings (`GET /api/v1/settings/subtitles` returns `api_key_masked` + `has_api_key`, never raw keys; `PUT /api/v1/settings/subtitles/providers` encrypts SubDL/OpenSubtitles keys at rest via `EncryptionKey` AES-256-GCM and only overwrites when a new value is provided). See [SUBTITLES.md](../design/SUBTITLES.md) Task 8.
+
 ---
 
 ## 11. Error Response Sanitization

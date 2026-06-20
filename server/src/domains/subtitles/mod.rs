@@ -52,5 +52,13 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/api/v1/items/{item_id}/subtitles/{subtitle_id}/sync",
             get(handlers::get_subtitle_sync_data),
         )
+        .route(
+            "/api/v1/settings/subtitles",
+            get(handlers::get_subtitle_settings).put(handlers::update_subtitle_settings),
+        )
+        .route(
+            "/api/v1/settings/subtitles/providers",
+            axum::routing::put(handlers::update_subtitle_provider_settings),
+        )
         .with_state(state)
 }

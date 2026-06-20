@@ -791,6 +791,194 @@ pub fn validate_language_code(code: &str) -> bool {
     code.len() >= 2 && code.len() <= 10 && code.chars().all(|c| c.is_ascii_alphabetic())
 }
 
+pub async fn get_subtitle_settings(
+    state: &AppState,
+) -> Result<SubtitleSettingsResponse, SubtitleError> {
+    let config = state.runtime_config.load();
+    let sub = &config.subtitles;
+    let providers = &config.integrations.subtitle_providers;
+
+    let subdl_api_key = providers.subdl.api_key.as_deref().unwrap_or("");
+    let os_api_key = providers.opensubtitles.api_key.as_deref().unwrap_or("");
+    let os_api_token = providers.opensubtitles.api_token.as_deref().unwrap_or("");
+
+    Ok(SubtitleSettingsResponse {
+        ocr_enabled: sub.ocr_enabled,
+        ocr_engine: sub.ocr_engine.clone(),
+        ocr_confidence_threshold: sub.ocr_confidence_threshold,
+        voice_activity_analysis: sub.voice_activity_analysis,
+        voice_activity_schedule: sub.voice_activity_schedule.clone(),
+        default_subtitle_mode: sub.default_subtitle_mode.clone(),
+        default_subtitle_language: sub.default_subtitle_language.clone(),
+        auto_fetch_enabled: sub.auto_fetch_enabled,
+        auto_fetch_languages: sub.auto_fetch_languages.clone(),
+        providers: SubtitleProvidersResponse {
+            subdl: SubdlProviderResponse {
+                enabled: providers.subdl.enabled,
+                api_key_masked: crate::services::encryption::mask_secret(subdl_api_key),
+                has_api_key: !subdl_api_key.is_empty(),
+                auto_fetch_enabled: providers.subdl.auto_fetch_enabled,
+                auto_fetch_languages: providers.subdl.auto_fetch_languages.clone(),
+                prefer_hearing_impaired: providers.subdl.prefer_hearing_impaired,
+            },
+            opensubtitles: OpensubtitlesProviderResponse {
+                enabled: providers.opensubtitles.enabled,
+                api_key_masked: crate::services::encryption::mask_secret(os_api_key),
+                has_api_key: !os_api_key.is_empty(),
+                api_token_masked: crate::services::encryption::mask_secret(os_api_token),
+                has_api_token: !os_api_token.is_empty(),
+                auto_fetch_enabled: providers.opensubtitles.auto_fetch_enabled,
+                auto_fetch_languages: providers.opensubtitles.auto_fetch_languages.clone(),
+                prefer_hearing_impaired: providers.opensubtitles.prefer_hearing_impaired,
+            },
+        },
+    })
+}
+
+pub async fn update_subtitle_settings(
+    state: &AppState,
+    req: &UpdateSubtitleSettingsRequest,
+) -> Result<SubtitleSettingsResponse, SubtitleError> {
+    if !VALID_SUBTITLE_MODES.contains(&req.default_subtitle_mode.as_str()) {
+        return Err(SubtitleError::InvalidSubtitleMode(req.default_subtitle_mode.clone()));
+    }
+    if !VALID_OCR_ENGINES.contains(&req.ocr_engine.as_str()) {
+        return Err(SubtitleError::InvalidOcrEngine(req.ocr_engine.clone()));
+    }
+    for lang in &req.auto_fetch_languages {
+        if !validate_language_code(lang) {
+            return Err(SubtitleError::InvalidLanguageCode(lang.clone()));
+        }
+    }
+
+    let payload = serde_json::json!({
+        "ocr_enabled": req.ocr_enabled,
+        "ocr_engine": req.ocr_engine,
+        "ocr_confidence_threshold": req.ocr_confidence_threshold,
+        "voice_activity_analysis": req.voice_activity_analysis,
+        "voice_activity_schedule": req.voice_activity_schedule,
+        "default_subtitle_mode": req.default_subtitle_mode,
+        "default_subtitle_language": req.default_subtitle_language,
+        "auto_fetch_enabled": req.auto_fetch_enabled,
+        "auto_fetch_languages": req.auto_fetch_languages,
+    });
+
+    sqlx::query("UPDATE server_config SET subtitles = $1::jsonb")
+        .bind(serde_json::to_value(&payload).unwrap_or(serde_json::Value::Null))
+        .execute(&state.pool)
+        .await?;
+
+    reload_runtime_config(state).await?;
+    get_subtitle_settings(state).await
+}
+
+pub async fn update_subtitle_provider_settings(
+    state: &AppState,
+    req: &UpdateSubtitleProviderSettingsRequest,
+) -> Result<SubtitleSettingsResponse, SubtitleError> {
+    let config = state.runtime_config.load();
+    let mut providers = config.integrations.subtitle_providers.clone();
+
+    if let Some(subdl) = &req.subdl {
+        for lang in &subdl.auto_fetch_languages {
+            if !validate_language_code(lang) {
+                return Err(SubtitleError::InvalidLanguageCode(lang.clone()));
+            }
+        }
+        providers.subdl.enabled = subdl.enabled;
+        providers.subdl.auto_fetch_enabled = subdl.auto_fetch_enabled;
+        providers.subdl.auto_fetch_languages = subdl.auto_fetch_languages.clone();
+        providers.subdl.prefer_hearing_impaired = subdl.prefer_hearing_impaired;
+        if let Some(ref key) = subdl.api_key {
+            if key.is_empty() {
+                providers.subdl.api_key = None;
+            } else {
+                providers.subdl.api_key = Some(key.clone());
+            }
+        }
+    }
+
+    if let Some(os) = &req.opensubtitles {
+        for lang in &os.auto_fetch_languages {
+            if !validate_language_code(lang) {
+                return Err(SubtitleError::InvalidLanguageCode(lang.clone()));
+            }
+        }
+        providers.opensubtitles.enabled = os.enabled;
+        providers.opensubtitles.auto_fetch_enabled = os.auto_fetch_enabled;
+        providers.opensubtitles.auto_fetch_languages = os.auto_fetch_languages.clone();
+        providers.opensubtitles.prefer_hearing_impaired = os.prefer_hearing_impaired;
+        if let Some(ref key) = os.api_key {
+            if key.is_empty() {
+                providers.opensubtitles.api_key = None;
+            } else {
+                providers.opensubtitles.api_key = Some(key.clone());
+            }
+        }
+        if let Some(ref token) = os.api_token {
+            if token.is_empty() {
+                providers.opensubtitles.api_token = None;
+            } else {
+                providers.opensubtitles.api_token = Some(token.clone());
+            }
+        }
+    }
+
+    encrypt_subtitle_provider_keys(&mut providers, &state.encryption_key);
+
+    let payload = serde_json::json!({ "subtitle_providers": providers });
+    sqlx::query("UPDATE server_config SET integrations = jsonb_set(COALESCE(integrations, '{}'), '{subtitle_providers}', $1::jsonb)")
+        .bind(serde_json::to_value(&payload).unwrap_or(serde_json::Value::Null))
+        .execute(&state.pool)
+        .await?;
+
+    reload_runtime_config(state).await?;
+    get_subtitle_settings(state).await
+}
+
+async fn reload_runtime_config(state: &AppState) -> Result<(), SubtitleError> {
+    let reloaded =
+        crate::state::load_runtime_config(&state.pool, Some(&state.encryption_key)).await?;
+    state
+        .runtime_config
+        .store(std::sync::Arc::new(reloaded));
+    Ok(())
+}
+
+fn encrypt_subtitle_provider_keys(
+    providers: &mut crate::state::SubtitleProviderConfig,
+    key: &crate::services::encryption::EncryptionKey,
+) {
+    if let Some(ref api_key) = providers.subdl.api_key
+        && !api_key.is_empty()
+        && !api_key.starts_with(crate::services::encryption::ENCRYPTED_PREFIX)
+    {
+        match key.encrypt(api_key) {
+            Ok(enc) => providers.subdl.api_key = Some(enc),
+            Err(e) => tracing::error!(error = %e, "Failed to encrypt SubDL api_key"),
+        }
+    }
+    if let Some(ref api_key) = providers.opensubtitles.api_key
+        && !api_key.is_empty()
+        && !api_key.starts_with(crate::services::encryption::ENCRYPTED_PREFIX)
+    {
+        match key.encrypt(api_key) {
+            Ok(enc) => providers.opensubtitles.api_key = Some(enc),
+            Err(e) => tracing::error!(error = %e, "Failed to encrypt OpenSubtitles api_key"),
+        }
+    }
+    if let Some(ref token) = providers.opensubtitles.api_token
+        && !token.is_empty()
+        && !token.starts_with(crate::services::encryption::ENCRYPTED_PREFIX)
+    {
+        match key.encrypt(token) {
+            Ok(enc) => providers.opensubtitles.api_token = Some(enc),
+            Err(e) => tracing::error!(error = %e, "Failed to encrypt OpenSubtitles api_token"),
+        }
+    }
+}
+
+
 fn row_to_response(row: &sqlx::postgres::PgRow) -> SubtitleFileResponse {
     SubtitleFileResponse {
         id: row.try_get("id").unwrap_or_default(),

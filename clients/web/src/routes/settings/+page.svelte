@@ -26,7 +26,7 @@
         { href: '/settings/users', label: 'Users', icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01', desc: 'Manage user accounts and invitations' },
         { href: '/settings/libraries', label: 'Libraries', icon: 'M2 3h20v18H2zM2 8h20', desc: 'Configure media libraries and scan paths' },
         { href: '/settings/quality', label: 'Quality', icon: 'M3 3v18h18', desc: 'Streaming quality and transcoding', soon: true },
-        { href: '/settings/subtitles', label: 'Subtitles', icon: 'M4 4h16v16H4z', desc: 'Subtitle preferences and providers', soon: true },
+        { href: '/settings/subtitles', label: 'Subtitles', icon: 'M4 4h16v16H4z', desc: 'Subtitle preferences and providers' },
         { href: '/settings/overlays', label: 'Overlays', icon: 'M3 3h18v18H3z', desc: 'Artwork overlays and posters', soon: true },
         { href: '/settings/collections', label: 'Collections', icon: 'M3 3h18v18H3z', desc: 'Collection management', soon: true },
         { href: '/settings/backups', label: 'Backups', icon: 'M21 8v13H3V8M1 3h22v5H1z', desc: 'Backup and recovery', soon: true },

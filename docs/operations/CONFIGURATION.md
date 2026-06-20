@@ -804,6 +804,8 @@ database_url = "postgresql://duskcue:changeme@localhost:5432/duskcue"
 
 Hot-reload is only supported for runtime config via the admin API. This maintains the audit trail — every config change is recorded in `audit_log`. File-based hot-reload would bypass the audit system.
 
+The first admin-write-triggered hot-reload endpoints are Phase 9 Task 8's subtitle settings (`GET/PUT /api/v1/settings/subtitles`, `PUT /api/v1/settings/subtitles/providers`). Each write endpoint updates the relevant `server_config` JSONB column, then swaps the reloaded `RuntimeConfig` into the `ArcSwap`. Phase 13a will introduce the general `PUT /api/v1/server/config` endpoint.
+
 ## Integration with Existing Systems
 
 ### Error Handling (ERROR_HANDLING.md)
@@ -855,7 +857,7 @@ Common alternatives considered:
 - 1 expanded sub-config (Phase 9): `IntegrationsConfig` — subtitle provider config (`SubtitleProviderConfig` with SubDL/OpenSubtitles sub-configs); defined in SUBTITLES.md
 - 8 placeholder sub-configs with `Default`: `NetworkConfig`, `TranscodingConfig`, `NotificationConfig`, `BackupConfig`, `LoggingConfig`, `StorageConfig`, `MaintenanceConfig`, `CpuConfig` — expanded in their respective domain phases
 - `load_runtime_config(pool)` — queries `server_config` table, deserializes JSONB columns with `unwrap_or_default()` fallback, returns `RuntimeConfig::default()` for empty table (first-run)
-- `AppState::reload_runtime_config()` — atomic swap via `ArcSwap` for admin API config changes
+- Config hot-reload — atomic swap via `ArcSwap<RuntimeConfig>` after admin writes. First realized in Phase 9 Task 8 as a `reload_runtime_config(state)` free function in the subtitles domain service: each settings `PUT` endpoint writes to `server_config` JSONB, then calls `load_runtime_config()` and `runtime_config.store(Arc::new(reloaded))`. Phase 13a's general `PUT /api/v1/server/config` endpoint will likely extract this into a shared `AppState` method.
 - `arc-swap` v1.9.1 added as workspace dependency for lock-free config reads
 - Environment detection wired: `set_environment()` in `error.rs` uses `OnceLock<String>` set during `AppState` construction
 
@@ -879,4 +881,4 @@ Common alternatives considered:
 
 **Not yet implemented:**
 
-- Admin API endpoint (`PUT /api/v1/server/config`) that triggers `reload_runtime_config()` — Phase 13
+- General admin API endpoint (`PUT /api/v1/server/config`) that triggers config reload for arbitrary sections — Phase 13a. Phase 9 Task 8 implemented the first domain-specific settings endpoints (subtitle settings) with inline `reload_runtime_config()`; the general endpoint will consolidate this pattern.
