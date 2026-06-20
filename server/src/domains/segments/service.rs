@@ -14,3 +14,51 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+#![allow(unused_variables)]
+
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use crate::domains::segments::error::SegmentError;
+use crate::domains::segments::types::*;
+
+pub async fn list_segments(
+    pool: &PgPool,
+    media_item_id: Uuid,
+    segment_type_filter: Option<&str>,
+    can_edit: bool,
+) -> Result<SegmentListResponse, SegmentError> {
+    todo!("Task 2 — query media_segments with optional type filter, map rows to SegmentResponse with can_edit computed from caller capabilities")
+}
+
+pub async fn create_segment(
+    pool: &PgPool,
+    media_item_id: Uuid,
+    req: &CreateSegmentRequest,
+) -> Result<SegmentResponse, SegmentError> {
+    todo!("Task 2 — validate timestamps, insert with source='manual' is_manual=true confidence=req.confidence.unwrap_or(1.0), compute skip_to_ms defaulting to end_ms, map unique violation to ManualSegmentExists")
+}
+
+pub async fn update_segment(
+    pool: &PgPool,
+    media_item_id: Uuid,
+    segment_id: Uuid,
+    req: &UpdateSegmentRequest,
+) -> Result<SegmentResponse, SegmentError> {
+    todo!("Task 2 — COALESCE partial update on start_ms/end_ms/skip_to_ms/confidence, revalidate end_ms > start_ms and skip_to_ms in [start_ms, end_ms]")
+}
+
+pub async fn delete_segment(
+    pool: &PgPool,
+    media_item_id: Uuid,
+    segment_id: Uuid,
+) -> Result<(), SegmentError> {
+    todo!("Task 2 — DELETE FROM media_segments WHERE id=$1 AND media_item_id=$2; not-found -> SegmentNotFound")
+}
+
+pub async fn trigger_library_analysis(
+    pool: &PgPool,
+    library_id: Uuid,
+) -> Result<AnalyzeSegmentsResponse, SegmentError> {
+    todo!("Task 5 — verify library exists, enqueue segment_analysis scheduled task (or run synchronously for Task 5), return queued status")
+}

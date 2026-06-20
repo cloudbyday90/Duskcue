@@ -110,6 +110,9 @@ pub enum AppError {
     #[error(transparent)]
     Subtitle(#[from] crate::domains::subtitles::SubtitleError),
 
+    #[error(transparent)]
+    Segment(#[from] crate::domains::segments::SegmentError),
+
     #[error("internal server error")]
     Internal(#[source] anyhow::Error),
 }
@@ -147,6 +150,10 @@ impl IntoResponse for AppError {
             }
             AppError::Subtitle(e) => {
                 let (s, c, d) = subtitle_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Segment(e) => {
+                let (s, c, d) = segment_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", Cow::Borrowed(msg.as_str())),
@@ -432,5 +439,22 @@ fn subtitle_error_to_http(err: &crate::domains::subtitles::SubtitleError) -> (St
         SubtitleError::ConversionFailed { reason } => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", format!("Subtitle conversion failed: {}", reason)),
         SubtitleError::SyncDataNotFound { .. } => (StatusCode::NOT_FOUND, "SUB_001", "Subtitle sync data not found".into()),
         SubtitleError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
+    }
+}
+
+fn segment_error_to_http(err: &crate::domains::segments::SegmentError) -> (StatusCode, &'static str, String) {
+    use crate::domains::segments::SegmentError;
+    use axum::http::StatusCode;
+
+    match err {
+        SegmentError::MediaItemNotFound { .. } => (StatusCode::NOT_FOUND, "MEDIA_001", "Media item not found".into()),
+        SegmentError::SegmentNotFound { .. } => (StatusCode::NOT_FOUND, "MEDIA_001", "Segment not found".into()),
+        SegmentError::LibraryNotFound { .. } => (StatusCode::NOT_FOUND, "LIB_001", "Library not found".into()),
+        SegmentError::InvalidSegmentType(t) => (StatusCode::UNPROCESSABLE_ENTITY, "VALID_001", format!("Invalid segment type: {}", t)),
+        SegmentError::InvalidSegmentSource(s) => (StatusCode::UNPROCESSABLE_ENTITY, "VALID_001", format!("Invalid segment source: {}", s)),
+        SegmentError::InvalidTimestamps { start_ms, end_ms, skip_to_ms } => (StatusCode::UNPROCESSABLE_ENTITY, "VALID_001", format!("Invalid timestamps: start_ms={}, end_ms={}, skip_to_ms={} (must satisfy start_ms >= 0, end_ms > start_ms, start_ms <= skip_to_ms <= end_ms)", start_ms, end_ms, skip_to_ms)),
+        SegmentError::ManualSegmentExists { segment_type } => (StatusCode::CONFLICT, "CONFLICT", format!("Manual segment already exists for type {} on this item", segment_type)),
+        SegmentError::AnalysisAlreadyInProgress { .. } => (StatusCode::CONFLICT, "CONFLICT", "Segment analysis already in progress for this library".into()),
+        SegmentError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
     }
 }

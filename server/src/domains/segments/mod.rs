@@ -14,3 +14,31 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod error;
+pub mod handlers;
+pub mod service;
+pub mod types;
+
+pub use error::SegmentError;
+
+use axum::routing::{get, post};
+use axum::Router;
+
+use crate::state::AppState;
+
+pub fn router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/v1/items/{item_id}/segments",
+            get(handlers::list_segments).post(handlers::create_segment),
+        )
+        .route(
+            "/api/v1/items/{item_id}/segments/{segment_id}",
+            axum::routing::put(handlers::update_segment).delete(handlers::delete_segment),
+        )
+        .route(
+            "/api/v1/libraries/{library_id}/analyze-segments",
+            post(handlers::analyze_library_segments),
+        )
+        .with_state(state)
+}

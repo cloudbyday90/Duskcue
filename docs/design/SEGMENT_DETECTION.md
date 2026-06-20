@@ -548,3 +548,40 @@ Analysis failures are logged and tracked in `scheduled_task_runs` — they don't
 - XDA Developers — Jellyfin Intro Skipper review: "sometimes skips content" (false positive concern)
 - JellyWatch — Intro Skipper configuration guide, CPU impact benchmarks, troubleshooting (March 2026)
 - Reddit r/PleX — intro and credit detection discussion: Plex uses audio for intros, visual analysis for credits; ~95% accuracy; cloud marker sharing
+
+---
+
+## Implementation Notes
+
+### Phase 10 Task 1 — Domain Scaffolding (Complete)
+
+Segment retrieval and manual override API surface implemented. The detection pipeline itself (Methods 1–4) lands in Tasks 2 and 5.
+
+**Files built:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/segments/mod.rs` | Module declarations + router assembly with 3 route groups (5 endpoints) |
+| `server/src/domains/segments/error.rs` | `SegmentError` enum with 9 variants covering not-found, validation, conflict, and Database catch-all |
+| `server/src/domains/segments/types.rs` | Three-type DTOs: `SegmentRow` (internal), `CreateSegmentRequest`/`UpdateSegmentRequest` (Deserialize + Validate), `SegmentResponse`/`SegmentListResponse`/`AnalyzeSegmentsResponse` (Serialize); `SegmentListQuery` for `?type=` filter; `VALID_SEGMENT_TYPES`/`VALID_SEGMENT_SOURCES` statics matching the DB CHECK constraints |
+| `server/src/domains/segments/service.rs` | 5 `todo!()` service function stubs — list/create/update/delete + trigger_library_analysis |
+| `server/src/domains/segments/handlers.rs` | 5 working handlers wired to Axum extractors; mutation endpoints use `Require<CanManageLibraries>` |
+| `server/src/error.rs` | `AppError::Segment(#[from] SegmentError)` variant + `segment_error_to_http()` mapping |
+| `server/src/router.rs` | Segments router merged via `.merge(crate::domains::segments::router(state.clone()))` |
+| `server/src/domains/mod.rs` | `pub mod segments;` added |
+
+**Decisions reconciled with this design doc:**
+
+- **Error code mapping confirmed** — The "No new error codes" rule is honored. `SegmentError` variants map: `MediaItemNotFound`/`SegmentNotFound` → `MEDIA_001` (404); `LibraryNotFound` → `LIB_001` (404); `InvalidSegmentType`/`InvalidSegmentSource`/`InvalidTimestamps` → `VALID_001` (422); `ManualSegmentExists`/`AnalysisAlreadyInProgress` → `CONFLICT` (409). `PLAY_001` is reserved for playback-path segment lookups (will be used if/when the playback start endpoint embeds segments in its response per the "Streaming" integration section above).
+- **`PUT` (not PATCH) for manual override** — Honors the API Endpoints table verbatim. The semantic is full replacement of the segment's timestamp triple (`start_ms`/`end_ms`/`skip_to_ms`) plus optional `confidence`, with all fields using `COALESCE` partial update semantics for fields the client omits (Task 2 implementation detail).
+- **`can_edit` field computed in handler** — Per the Response Format spec, `can_edit` reflects whether the requesting user can mutate the segment. Handler computes it once from `AuthenticatedUser` (true if `role == "owner"` or `capabilities` contains `can_manage_libraries`), then passes the boolean to `list_segments`. This avoids per-row DB capability lookups and keeps the service layer user-agnostic.
+- **Mutation capability: `CanManageLibraries`** — The spec says "admin or owner". Owner bypass is built into the capability framework (owner passes any `Require<C>`); "admin" maps to `can_manage_libraries` rather than `can_manage_server` because segments are library-scoped resources, consistent with the libraries domain (`scan_library` uses `CanManageLibraries`).
+- **`skip_to_ms` optional on create** — Defaults to `end_ms` when not provided, matching the design's "For credits, this is typically `end_ms`" guidance. The analysis pipeline (Task 5) sets `skip_to_ms = end_ms - intro_end_padding_ms` for intros; manual creation lets the user pick (most users will accept the default).
+- **`confidence` optional on create, defaults to 1.0** — Matches the design's "Chapter markers are always 1.0" precedent for human-authored segments. Manual segments are authoritative.
+
+**Not yet implemented (deferred to Tasks 2–5):**
+
+- All five service functions are `todo!()` stubs — Task 2 implements list/create/update/delete against the `media_segments` table; Task 5 (`workers/segment_detector.rs`) implements `trigger_library_analysis` enqueuing work on the scheduler.
+- `segment_analysis` scheduled task seeding — Task 5 adds the task to `seed_default_tasks()` (mirroring `subtitle_auto_fetch` from Phase 9 Task 7) plus a migration seeding it for existing deployments.
+- Detection methods (chapter regex matching, chromaprint fingerprinting, black frame + silence via FFmpeg) — Task 2 implements the `services/segments.rs` module containing all four methods and the confidence scoring/2s padding logic.
+- `PlaybackError::MediaNotFound` integration — When `start_playback` is updated to embed segments in its response (per "Streaming" integration above), the playback service will call `segments::service::list_segments` and include the results in `PlaybackStartResponse`. The `PLAY_001` mapping is reserved for this path.

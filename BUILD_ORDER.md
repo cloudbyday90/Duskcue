@@ -1988,7 +1988,36 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Tasks:**
 
-1. Create `server/src/domains/segments/` — five-file pattern
+1. ~~Create `server/src/domains/segments/` — five-file pattern~~ **DONE**
+
+**What was built for Task 1:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/segments/mod.rs` | Module declarations + router assembly with 3 route groups (5 endpoints) |
+| `server/src/domains/segments/error.rs` | `SegmentError` enum with 9 variants covering media-item/segment/library not-found, validation (type/source/timestamps), conflict (manual exists, analysis in-progress), and Database catch-all |
+| `server/src/domains/segments/types.rs` | Three-type DTOs: `SegmentRow` (internal), `CreateSegmentRequest`/`UpdateSegmentRequest` (Deserialize + Validate), `SegmentResponse`/`SegmentListResponse`/`AnalyzeSegmentsResponse` (Serialize); `SegmentListQuery` for `?type=` filter; `VALID_SEGMENT_TYPES`/`VALID_SEGMENT_SOURCES` statics matching the DB CHECK constraints |
+| `server/src/domains/segments/service.rs` | 5 `todo!()` service function stubs (`list_segments`, `create_segment`, `update_segment`, `delete_segment`, `trigger_library_analysis`) — implemented in Task 2+ |
+| `server/src/domains/segments/handlers.rs` | 5 working handlers wired to Axum extractors (`State`, `AuthenticatedUser`, `Path`, `Query`, `Json`, `Require<CanManageLibraries>`); list endpoint accepts any authenticated user and computes `can_edit` from role/capabilities; create/update/delete/analyze endpoints require `CanManageLibraries` capability |
+| `server/src/error.rs` | Added `AppError::Segment(#[from] SegmentError)` variant + `segment_error_to_http()` mapping all 9 error variants to existing error codes per SEGMENT_DETECTION.md (MEDIA_001, LIB_001, VALID_001, CONFLICT) — no new error codes registered |
+| `server/src/domains/mod.rs` | Added `pub mod segments;` |
+| `server/src/router.rs` | Merged segments router via `.merge(crate::domains::segments::router(state.clone()))`, removed Phase 10 segments comment |
+
+**Key decisions from Task 1:**
+
+- **No new error codes per SEGMENT_DETECTION.md** — The design doc explicitly states "No new error codes — segment retrieval uses existing codes". The `SegmentError` enum variants map to existing codes: `MediaItemNotFound`/`SegmentNotFound` → MEDIA_001 (404); `LibraryNotFound` → LIB_001 (404); `InvalidSegmentType`/`InvalidSegmentSource`/`InvalidTimestamps` → VALID_001 (422); `ManualSegmentExists`/`AnalysisAlreadyInProgress` → CONFLICT (409). This follows the SubtitleError precedent of mapping multiple domain variants to a small set of existing codes
+- **Routes match SEGMENT_DETECTION.md API table exactly** — `GET /api/v1/items/{id}/segments` (list with optional `?type=intro` filter), `POST /api/v1/items/{id}/segments` (create manual), `PUT /api/v1/items/{id}/segments/{segment_id}` (override), `DELETE /api/v1/items/{id}/segments/{segment_id}` (remove), `POST /api/v1/libraries/{id}/analyze-segments` (trigger analysis). No single-segment GET endpoint — not in the spec, and segment detail is always returned by create/update operations
+- **`can_edit` computed in handler, not service** — The `SegmentResponse.can_edit` field is per-user (true if user is owner or has `can_manage_libraries`). The handler computes it once from `AuthenticatedUser` and passes the boolean to `service::list_segments`, avoiding a DB lookup per segment row. For create/update/delete, `can_edit` is implicitly enforced via the `Require<CanManageLibraries>` extractor
+- **`PUT` (not PATCH) for segment updates** — Matches SEGMENT_DETECTION.md API table exactly. PUT chosen because manual overrides typically replace the timestamp set rather than partially modify it; also distinguishes manual override (PUT, sets `is_manual=true`) from future auto-detected updates (would be PATCH or internal-only)
+- **Manual segment uniqueness at service layer** — The DB has `UNIQUE (media_item_id, segment_type) WHERE is_manual = true` (partial index). Task 2's `create_segment` will catch `sqlx::Error::Database::is_unique_violation()` and map to `ManualSegmentExists` (CONFLICT) rather than surfacing as a generic 500
+- **`skip_to_ms` optional in `CreateSegmentRequest`** — Defaults to `end_ms` (skip to the very end of the detected segment) when not provided. This matches SEGMENT_DETECTION.md's typical usage: "For credits, this is typically `end_ms`". Intro segments will have `skip_to_ms = end_ms - intro_end_padding_ms` set by the analysis pipeline (Task 5), not by manual creation
+- **`confidence` optional in `CreateSegmentRequest`** — Manual segments default to `1.0` (authoritative, same as chapter markers) when not provided. This matches the design's "Chapter markers are always 1.0" precedent for human-authored segments
+- **`AnalyzeSegmentsResponse` returns `queued: bool`** — For Task 5, `trigger_library_analysis` will likely enqueue work on the scheduler (`queued: true`) or run synchronously for small libraries (`queued: false`). The response shape is stable across both implementations; only the `message` text changes
+- **Validation statics match DB CHECK constraints exactly** — `VALID_SEGMENT_TYPES = ["intro", "credits", "recap", "preview", "outro"]` and `VALID_SEGMENT_SOURCES = ["chapter", "chromaprint", "blackframe", "silence", "manual", "combined"]` mirror the `media_segments.segment_type` and `media_segments.source` CHECK constraints from migration `20260530_070500_create_segments_storyboards.sql`. Service-layer validation (Task 2) will catch invalid values before they hit the DB constraint, returning VALID_001 instead of INTERNAL
+- **`#![allow(unused_variables)]` on service.rs** — All 5 service functions are `todo!()` stubs; the module-level allow suppresses unused parameter warnings until actual implementations are added in Tasks 2 and 5
+- **Validator error mapping follows subtitles domain convention** — `e.field_errors().into_iter().flat_map(...)` with `field.to_string()`/`err.code.to_string()`/`err.message.as_ref().map(|m| m.to_string()).unwrap_or_default()` (Cow → String conversions); `instance` set to the route pattern for client-side field correlation
+- **No new workspace dependencies** — all functionality uses existing `sqlx`, `validator`, `serde`, `uuid`, `chrono`, `axum` crates
+
 2. Implement `server/src/services/segments.rs`:
    - Chapter marker extraction from container metadata
    - Chromaprint fingerprinting for intro detection
