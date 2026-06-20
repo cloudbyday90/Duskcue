@@ -113,6 +113,9 @@ pub enum AppError {
     #[error(transparent)]
     Segment(#[from] crate::domains::segments::SegmentError),
 
+    #[error(transparent)]
+    Storyboard(#[from] crate::domains::storyboards::StoryboardError),
+
     #[error("internal server error")]
     Internal(#[source] anyhow::Error),
 }
@@ -154,6 +157,10 @@ impl IntoResponse for AppError {
             }
             AppError::Segment(e) => {
                 let (s, c, d) = segment_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Storyboard(e) => {
+                let (s, c, d) = storyboard_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", Cow::Borrowed(msg.as_str())),
@@ -456,5 +463,20 @@ fn segment_error_to_http(err: &crate::domains::segments::SegmentError) -> (Statu
         SegmentError::ManualSegmentExists { segment_type } => (StatusCode::CONFLICT, "CONFLICT", format!("Manual segment already exists for type {} on this item", segment_type)),
         SegmentError::AnalysisAlreadyInProgress { .. } => (StatusCode::CONFLICT, "CONFLICT", "Segment analysis already in progress for this library".into()),
         SegmentError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
+    }
+}
+
+fn storyboard_error_to_http(err: &crate::domains::storyboards::StoryboardError) -> (StatusCode, &'static str, String) {
+    use crate::domains::storyboards::StoryboardError;
+    use axum::http::StatusCode;
+
+    match err {
+        StoryboardError::MediaItemNotFound { .. } => (StatusCode::NOT_FOUND, "MEDIA_001", "Media item not found".into()),
+        StoryboardError::MediaFileNotFound { .. } => (StatusCode::NOT_FOUND, "MEDIA_002", "Media file not found".into()),
+        StoryboardError::StoryboardNotFound { .. } => (StatusCode::NOT_FOUND, "MEDIA_007", "Storyboard not found (not yet generated for this item)".into()),
+        StoryboardError::LibraryNotFound { .. } => (StatusCode::NOT_FOUND, "LIB_001", "Library not found".into()),
+        StoryboardError::GenerationAlreadyInProgress { .. } => (StatusCode::CONFLICT, "SYS_002", "Storyboard generation already in progress for this library".into()),
+        StoryboardError::InvalidSpriteFilename(f) => (StatusCode::UNPROCESSABLE_ENTITY, "VALID_001", format!("Invalid sprite filename: {}", f)),
+        StoryboardError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
     }
 }

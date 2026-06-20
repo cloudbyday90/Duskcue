@@ -14,3 +14,39 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod error;
+pub mod handlers;
+pub mod service;
+pub mod types;
+
+pub use error::StoryboardError;
+
+use axum::routing::{get, post};
+use axum::Router;
+
+use crate::state::AppState;
+
+pub fn router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/v1/items/{item_id}/storyboard",
+            get(handlers::get_storyboard).delete(handlers::delete_storyboard),
+        )
+        .route(
+            "/api/v1/items/{item_id}/storyboard/index.vtt",
+            get(handlers::get_storyboard_index),
+        )
+        .route(
+            "/api/v1/items/{item_id}/storyboard/{sprite}",
+            get(handlers::get_storyboard_sprite),
+        )
+        .route(
+            "/api/v1/libraries/{library_id}/generate-storyboards",
+            post(handlers::generate_library_storyboards),
+        )
+        .route(
+            "/api/v1/items/{item_id}/generate-storyboards",
+            post(handlers::generate_item_storyboards),
+        )
+        .with_state(state)
+}

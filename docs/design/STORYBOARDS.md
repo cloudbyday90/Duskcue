@@ -436,6 +436,46 @@ Generation failures are logged and tracked in `scheduled_task_runs` — they don
 
 ---
 
+## Implementation Notes
+
+### Phase 10 Task 3 — Domain Scaffolding (Complete)
+
+Storyboard retrieval, serving, generation-trigger, and deletion API surface implemented. The generation pipeline itself (FFmpeg frame extraction, WebP sprite assembly, WebVTT index authoring) lands in Task 4 (`services/storyboards.rs`) and Task 6 (`workers/storyboard_generator.rs`).
+
+**Files built:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/storyboards/mod.rs` | Module declarations + router assembly with 5 route groups (6 endpoints) |
+| `server/src/domains/storyboards/error.rs` | `StoryboardError` enum with 7 variants covering not-found, conflict, validation, and Database catch-all |
+| `server/src/domains/storyboards/types.rs` | Three-type DTOs: `StoryboardRow` (internal, 14 fields matching `storyboards` table schema), `StoryboardResponse`/`SpriteResponse`/`GenerateStoryboardsResponse`/`DeleteStoryboardResponse` (Serialize); `VALID_STORYBOARD_WIDTHS`/`VALID_INTERVAL_MODES` statics |
+| `server/src/domains/storyboards/service.rs` | 6 `todo!()` service function stubs — get_storyboard, get_storyboard_index, get_storyboard_sprite, trigger_library_generation, trigger_item_generation, delete_storyboard |
+| `server/src/domains/storyboards/handlers.rs` | 6 working handlers wired to Axum extractors; retrieval endpoints use `AuthenticatedUser`, mutation/generation endpoints use `Require<CanManageLibraries>` |
+| `server/src/error.rs` | `AppError::Storyboard(#[from] StoryboardError)` variant + `storyboard_error_to_http()` mapping |
+| `server/src/router.rs` | Storyboards router merged via `.merge(crate::domains::storyboards::router(state.clone()))` |
+| `server/src/domains/mod.rs` | `pub mod storyboards;` added |
+
+**Decisions reconciled with this design doc:**
+
+- **Error code mapping confirmed** — The "Storyboard API errors use existing error codes" rule is honored. `StoryboardError` variants map: `MediaItemNotFound` → `MEDIA_001` (404); `MediaFileNotFound` → `MEDIA_002` (404); `StoryboardNotFound` → `MEDIA_007` (404, already registered in the error code table); `LibraryNotFound` → `LIB_001` (404); `GenerationAlreadyInProgress` → `SYS_002` (409, the scheduled-task-already-running code); `InvalidSpriteFilename` → `VALID_001` (422); `Database` → `INTERNAL` (500). No new error codes registered.
+- **Binary-serving endpoints follow playback domain pattern** — `get_storyboard_index` and `get_storyboard_sprite` return `Result<Response, AppError>` (not `Json<T>`) because they serve non-JSON content: `text/vtt; charset=utf-8` for the WebVTT index, `image/webp` for sprite sheets. This mirrors the playback domain's `stream_file` / `get_transcode_segment` handlers that serve HLS manifests and fMP4 segments.
+- **Cache headers per content type** — WebVTT index: `Cache-Control: public, max-age=3600` (regenerable, may change if storyboard is re-generated). Sprite sheets: `Cache-Control: public, max-age=86400, immutable` (immutable once written — sprite filenames are stable per generation since they're keyed by `media_file_id` which doesn't change). This differs from the playback HLS pattern (`no-cache` for live transcode manifests) because storyboards are static derived data, not live session state.
+- **`index.vtt` static route coexists with `{sprite}` capture** — Axum's matchit router prioritizes static path segments over dynamic captures at the same depth, so `GET /storyboard/index.vtt` routes to the index handler and `GET /storyboard/sprite_001.webp` routes to the sprite handler without conflict. No explicit disambiguation needed.
+- **Authorization splits retrieval from mutation** — Retrieval endpoints (`GET storyboard`, `GET index.vtt`, `GET sprite`) require `AuthenticatedUser` only — any logged-in user can view seek previews during playback. Generation and deletion endpoints (`POST generate-storyboards`, `DELETE storyboard`) require `Require<CanManageLibraries>` — storyboard generation is CPU-intensive and cache eviction is an administrative action. This matches the segments domain convention where `analyze-segments` is admin-only but segment retrieval is open to all authenticated users.
+- **`cache_dir` from `BootstrapConfig.data_dir`** — Handlers construct `state.bootstrap.data_dir.join("cache")` and pass as `&Path` to service functions. Storyboards live in `{data_dir}/cache/storyboards/{media_file_id}/` per the Storage Path spec. Service signatures use `&Path` (not `&PathBuf`) per clippy `ptr_arg` convention.
+- **`GenerateStoryboardsResponse` is scope-agnostic** — Single response type `{ queued: bool, message: String }` serves both library and item trigger endpoints. The route context (`/libraries/{id}/` vs `/items/{id}/`) tells the client which scope was triggered. Follows the segments domain's `AnalyzeSegmentsResponse` minimal shape; avoids type duplication for two endpoints with identical response semantics.
+- **`InvalidSpriteFilename` reserved for path traversal protection** — Task 4 service implementation will validate sprite filenames against the expected `sprite_NNN.webp` pattern before constructing disk paths, rejecting names containing `..`, `/`, `\`, or non-matching patterns. Mapped to `VALID_001` (422) — matches the playback domain's segment filename validation approach (`validate_segment_filename` rejects `..`, `/`, `\`, names >64 chars, non-`seg_` prefixed).
+
+**Not yet implemented (deferred to Tasks 4 and 6):**
+
+- All six service functions are `todo!()` stubs — Task 4 implements `get_storyboard`, `get_storyboard_index`, `get_storyboard_sprite`, and `delete_storyboard` (DB queries + disk reads); Task 6 (`workers/storyboard_generator.rs`) implements the generation triggers (`trigger_library_generation`, `trigger_item_generation`) by enqueuing work on the scheduler.
+- FFmpeg two-phase pipeline (frame extraction → sprite assembly) — Task 4 (`services/storyboards.rs`) implements the generation library; Task 6 wires it into a scheduled task worker.
+- Adaptive interval selection — `adaptive_interval()` function per the Generation Pipeline spec; lands in `services/storyboards.rs` (Task 4).
+- Storyboard metadata in playback start response — When `start_playback` is updated to include the storyboard block per the "Integration with Playback" spec, the playback service will call `storyboards::service::get_storyboard` and embed the result in `PlaybackStartResponse`.
+- `storyboard_generation` scheduled task already seeded (migration `20260530_070000_seed_default_data.sql`, daily 04:00) — Task 6 registers the executor on the scheduler in `main.rs`.
+
+---
+
 ## Research Sources
 
 ### Platform Approaches

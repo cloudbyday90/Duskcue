@@ -2062,7 +2062,33 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - Per-file orchestration (loop fingerprinting + comparison + blackframe/silence, write results)
 - The `outro` segment type via silence-gap detection (requires reading existing `credits` segments; chicken-and-egg within a single library scan)
 
-3. Create `server/src/domains/storyboards/` — five-file pattern
+3. ~~Create `server/src/domains/storyboards/` — five-file pattern~~ **DONE**
+
+**What was built for Task 3:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/storyboards/mod.rs` | Module declarations + router assembly with 5 route groups (6 endpoints) |
+| `server/src/domains/storyboards/error.rs` | `StoryboardError` enum with 7 variants: `MediaItemNotFound` (MEDIA_001), `MediaFileNotFound` (MEDIA_002), `StoryboardNotFound` (MEDIA_007), `LibraryNotFound` (LIB_001), `GenerationAlreadyInProgress` (SYS_002), `InvalidSpriteFilename` (VALID_001), `Database` catch-all |
+| `server/src/domains/storyboards/types.rs` | Three-type DTOs: `StoryboardRow` (internal, 14 fields matching DB schema), `StoryboardResponse`/`SpriteResponse`/`GenerateStoryboardsResponse`/`DeleteStoryboardResponse` (Serialize); `VALID_STORYBOARD_WIDTHS`/`VALID_INTERVAL_MODES` statics |
+| `server/src/domains/storyboards/service.rs` | 6 `todo!()` service function stubs (`get_storyboard`, `get_storyboard_index`, `get_storyboard_sprite`, `trigger_library_generation`, `trigger_item_generation`, `delete_storyboard`) — implemented in Tasks 4 and 6 |
+| `server/src/domains/storyboards/handlers.rs` | 6 handlers wired to Axum extractors: `get_storyboard` + `delete_storyboard` (JSON return), `get_storyboard_index` + `get_storyboard_sprite` (`Result<Response, AppError>` binary serving), `generate_library_storyboards` + `generate_item_storyboards` (JSON) |
+| `server/src/error.rs` | Added `AppError::Storyboard(#[from] StoryboardError)` variant + `storyboard_error_to_http()` mapping all 7 error variants |
+| `server/src/domains/mod.rs` | Added `pub mod storyboards;` |
+| `server/src/router.rs` | Merged storyboards router via `.merge(crate::domains::storyboards::router(state.clone()))`, removed Phase 10 storyboards comment |
+
+**Key decisions from Task 3:**
+
+- **Routes match STORYBOARDS.md API table exactly** — `GET /api/v1/items/{id}/storyboard` (metadata), `GET /api/v1/items/{id}/storyboard/index.vtt` (WebVTT index), `GET /api/v1/items/{id}/storyboard/{sprite}` (WebP sprite), `POST /api/v1/libraries/{id}/generate-storyboards` (library trigger), `POST /api/v1/items/{id}/generate-storyboards` (item trigger), `DELETE /api/v1/items/{id}/storyboard` (cache eviction). Static `index.vtt` segment coexists with `{sprite}` capture — axum's matchit router prioritizes static over dynamic segments at the same depth.
+- **Binary endpoints return `Result<Response, AppError>`** — `get_storyboard_index` and `get_storyboard_sprite` serve non-JSON content (WebVTT text and WebP binary), following the playback domain's `stream_file`/`get_transcode_segment` pattern. Content types: `text/vtt; charset=utf-8` for the index, `image/webp` for sprites. Cache headers: `max-age=3600` for index (regenerable), `max-age=86400, immutable` for sprites (immutable once written — sprite filenames are hash-stable per generation).
+- **Authorization follows segments domain convention** — Retrieval endpoints (`GET storyboard`, `GET index.vtt`, `GET sprite`) require `AuthenticatedUser` only (consumed during playback by any user); generation/deletion endpoints (`POST generate-*`, `DELETE storyboard`) require `Require<CanManageLibraries>` (admin-only). Matches STORYBOARDS.md design where generation is an admin operation and retrieval is part of the playback experience.
+- **No new error codes per STORYBOARDS.md** — All 7 error variants map to existing codes from ERROR_HANDLING.md registry: MEDIA_001 (media item not found), MEDIA_002 (media file not found), MEDIA_007 (storyboard not found — already registered by media domain in Phase 5), LIB_001 (library not found), SYS_002 (generation already running — already registered for scheduled task conflicts), VALID_001 (invalid sprite filename), INTERNAL (database catch-all). Follows the SegmentError precedent of mapping multiple domain variants to a small set of existing codes.
+- **`InvalidSpriteFilename` variant for path traversal protection** — Reserved for Task 4 service implementation; will validate sprite filenames against the expected `sprite_NNN.webp` pattern before constructing disk paths, rejecting names containing `..`, `/`, `\`, or non-matching patterns. Mapped to VALID_001 (422) — matches the playback domain's segment filename validation approach.
+- **`cache_dir` derived from `BootstrapConfig.data_dir`** — Handlers construct `state.bootstrap.data_dir.join("cache")` and pass as `&Path` to service functions. Storyboards live in `{data_dir}/cache/storyboards/{media_file_id}/` per STORYBOARDS.md design principle 1 (cache data, regenerable). Service signatures use `&Path` (not `&PathBuf`) per clippy `ptr_arg` convention.
+- **`GenerateStoryboardsResponse` is scope-agnostic** — Single response type `{ queued: bool, message: String }` serves both library and item trigger endpoints. The route context (library vs item URL) tells the client which scope was triggered. Follows the segments domain's `AnalyzeSegmentsResponse` minimal shape; avoids type duplication for two endpoints with identical response semantics.
+- **`#![allow(unused_variables)]` on service.rs** — All 6 service functions are `todo!()` stubs; the module-level allow suppresses unused parameter warnings until actual implementations are added in Tasks 4 and 6.
+- **No new workspace dependencies** — all functionality uses existing `sqlx`, `serde`, `uuid`, `chrono`, `axum` crates.
+
 4. Implement `server/src/services/storyboards.rs`:
    - FFmpeg thumbnail extraction at adaptive intervals
    - WebP spritesheet generation

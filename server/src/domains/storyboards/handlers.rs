@@ -14,3 +14,89 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use axum::body::Body;
+use axum::extract::{Path, State};
+use axum::http::{header, StatusCode};
+use axum::response::Response;
+use axum::Json;
+use uuid::Uuid;
+
+use crate::domains::storyboards::service;
+use crate::domains::storyboards::types::*;
+use crate::error::AppError;
+use crate::extractors::{AuthenticatedUser, CanManageLibraries, Require};
+use crate::state::AppState;
+
+pub async fn get_storyboard(
+    State(state): State<AppState>,
+    _user: AuthenticatedUser,
+    Path(item_id): Path<Uuid>,
+) -> Result<Json<StoryboardResponse>, AppError> {
+    let result = service::get_storyboard(&state.pool, item_id).await?;
+    Ok(Json(result))
+}
+
+pub async fn get_storyboard_index(
+    State(state): State<AppState>,
+    _user: AuthenticatedUser,
+    Path(item_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    let cache_dir = state.bootstrap.data_dir.join("cache");
+    let content =
+        service::get_storyboard_index(&state.pool, item_id, &cache_dir).await?;
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "text/vtt; charset=utf-8")
+        .header(header::CACHE_CONTROL, "public, max-age=3600")
+        .body(Body::from(content))
+        .unwrap())
+}
+
+pub async fn get_storyboard_sprite(
+    State(state): State<AppState>,
+    _user: AuthenticatedUser,
+    Path((item_id, sprite)): Path<(Uuid, String)>,
+) -> Result<Response, AppError> {
+    let cache_dir = state.bootstrap.data_dir.join("cache");
+    let data =
+        service::get_storyboard_sprite(&state.pool, item_id, &sprite, &cache_dir).await?;
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "image/webp")
+        .header(header::CACHE_CONTROL, "public, max-age=86400, immutable")
+        .body(Body::from(data))
+        .unwrap())
+}
+
+pub async fn generate_library_storyboards(
+    State(state): State<AppState>,
+    _auth: Require<CanManageLibraries>,
+    Path(library_id): Path<Uuid>,
+) -> Result<Json<GenerateStoryboardsResponse>, AppError> {
+    let result = service::trigger_library_generation(&state.pool, library_id).await?;
+    Ok(Json(result))
+}
+
+pub async fn generate_item_storyboards(
+    State(state): State<AppState>,
+    _auth: Require<CanManageLibraries>,
+    Path(item_id): Path<Uuid>,
+) -> Result<Json<GenerateStoryboardsResponse>, AppError> {
+    let result = service::trigger_item_generation(&state.pool, item_id).await?;
+    Ok(Json(result))
+}
+
+pub async fn delete_storyboard(
+    State(state): State<AppState>,
+    _auth: Require<CanManageLibraries>,
+    Path(item_id): Path<Uuid>,
+) -> Result<Json<DeleteStoryboardResponse>, AppError> {
+    let cache_dir = state.bootstrap.data_dir.join("cache");
+    service::delete_storyboard(&state.pool, item_id, &cache_dir).await?;
+    Ok(Json(DeleteStoryboardResponse {
+        deleted: true,
+        media_item_id: item_id,
+    }))
+}

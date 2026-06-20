@@ -20,6 +20,7 @@ pub mod media;
 pub mod playback;
 pub mod quality;
 pub mod segments;
+pub mod storyboards;
 pub mod subtitles;
 pub mod system;
 pub mod users;

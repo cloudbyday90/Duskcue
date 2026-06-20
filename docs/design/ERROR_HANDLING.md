@@ -694,9 +694,9 @@ Valid values: `development`, `staging`, `production`. Default: `production`.
 
 ### Phase 3 — error.rs (Task 3)
 
-`server/src/error.rs` implements the application-layer `AppError` enum and RFC 9457 response format. Phase 3 implemented generic variants; Phase 4 Task 1 added the first domain-specific variant: `Auth(#[from] AuthError)` with `auth_error_to_http()` mapping all 22 auth error codes (AUTH_001–AUTH_022) to HTTP status codes. Remaining domain-specific variants (`Database`, `Library`, `Media`, etc.) will be added as each domain module is built in Phases 5–14.
+`server/src/error.rs` implements the application-layer `AppError` enum and RFC 9457 response format. Phase 3 implemented generic variants; each subsequent domain phase adds its own domain-specific variant with a `xxx_error_to_http()` mapping function. All domain variants use `#[from]` for ergonomic `?` propagation from domain errors to the central `AppError`.
 
-**Implemented variants:** `NotFound`, `BadRequest`, `Conflict`, `Unauthorized`, `Forbidden`, `UnprocessableEntity`, `ServiceUnavailable`, `GatewayTimeout`, `Validation` (carries `Vec<FieldError>` + optional `instance` for `VALID_001`), `RateLimited` (carries error code string), `Internal` (wraps `anyhow::Error`), `Auth` (wraps `AuthError` from `domains/auth/error.rs`, Phase 4 Task 1).
+**Implemented variants:** `NotFound`, `BadRequest`, `Conflict`, `Unauthorized`, `Forbidden`, `UnprocessableEntity`, `ServiceUnavailable`, `GatewayTimeout`, `Validation` (carries `Vec<FieldError>` + optional `instance` for `VALID_001`), `RateLimited` (carries error code string), `Internal` (wraps `anyhow::Error`), plus domain-specific variants: `Auth` (Phase 4), `Users` (Phase 4), `Library` (Phase 5), `Media` (Phase 5), `System` (Phase 6), `Playback` (Phase 7), `Quality` (Phase 7), `Subtitle` (Phase 9), `Segment` (Phase 10), `Storyboard` (Phase 10). Each domain variant wraps its domain error enum and maps all variants to HTTP status codes + error code strings via a dedicated `xxx_error_to_http()` function.
 
 **Deferred decisions:**
 - `is_development_env()` reads from `OnceLock<String>` global set by `AppState::new()` (via `set_environment()`), falling back to `DUSKCUE_ENVIRONMENT` env var if not yet initialized. Wired in Phase 3, Task 2 (`state.rs`).

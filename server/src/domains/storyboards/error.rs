@@ -14,3 +14,28 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum StoryboardError {
+    #[error("media item not found: {media_item_id}")]
+    MediaItemNotFound { media_item_id: uuid::Uuid },
+
+    #[error("media file not found: {media_file_id}")]
+    MediaFileNotFound { media_file_id: uuid::Uuid },
+
+    #[error("storyboard not found for media item: {media_item_id}")]
+    StoryboardNotFound { media_item_id: uuid::Uuid },
+
+    #[error("library not found: {library_id}")]
+    LibraryNotFound { library_id: uuid::Uuid },
+
+    #[error("storyboard generation already in progress for library {library_id}")]
+    GenerationAlreadyInProgress { library_id: uuid::Uuid },
+
+    #[error("invalid sprite filename: {0}")]
+    InvalidSpriteFilename(String),
+
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+}
