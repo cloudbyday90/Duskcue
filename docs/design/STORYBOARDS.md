@@ -539,11 +539,36 @@ at 04:00, and FFmpeg invocations are sandboxed on Linux.
 
 **Not yet implemented (deferred to later tasks/phases):**
 
-- Web client `SeekPreview.svelte` — Task 8 consumes the `/storyboard/index.vtt` endpoint via hls.js or a custom seek-bar component
+- ~~Web client `SeekPreview.svelte` — Task 8 consumes the `/storyboard/index.vtt` endpoint via hls.js or a custom seek-bar component~~ — **Complete (Task 8)**
 - Storyboard metadata in playback start response — When `start_playback` is updated to include the storyboard block per the "Integration with Playback" spec, the playback service will call `storyboards::service::get_storyboard` and embed the result in `PlaybackStartResponse`
 - Prometheus metrics from the Metrics table (`storyboard_files_processed_total`, `storyboard_generation_duration_seconds`, etc.) — deferred to Pre-v1.0 Hardening
 - Per-task timeout enforcement — the scheduler executor uses a hardcoded 3600s timeout; the `timeout_seconds` column is stored but not enforced
 - `outro` segment type via silence-gap detection — unrelated to Task 6; deferred to a follow-up of Task 5
+
+### Phase 10 Task 8 — Seek Preview Component (Complete)
+
+The web client seek-preview tooltip that displays storyboard thumbnails when the user hovers or scrubs the seek bar. The component lazily fetches the WebVTT index, resolves sprite references, and renders the correct sprite-sheet region via CSS background positioning.
+
+**Files built:**
+
+| File | Purpose |
+|---|---|
+| `clients/web/src/lib/api/storyboards.js` | Full storyboard API client: `getStoryboard`, `storyboardIndexUrl`, `storyboardSpriteUrl`, `generateLibraryStoryboards`, `generateItemStoryboards`, `deleteStoryboard` |
+| `clients/web/src/lib/utils/storyboards.js` | Pure-function WebVTT utilities: `parseTimecodeToMs`, `parseStoryboardVtt` (cue extraction with sprite URL + xywh region), `findCueForTime` (binary search) |
+| `clients/web/src/lib/components/SeekPreview.svelte` | Thumbnail tooltip — lazy VTT fetch, CSS background-image sprite rendering, edge-clamped positioning, time label |
+| `clients/web/src/lib/api/index.js` | Added `storyboards.js` to barrel export |
+| `clients/web/src/lib/components/Player.svelte` | Wired SeekPreview: storyboard fetch in onMount, hover/touch tracking, 20px seek-bar hit area |
+
+**Decisions reconciled with this design doc:**
+
+- **Custom seek-bar component over hls.js native thumbnail tracks** — The design doc's "hls.js Integration" section describes `hls.addTrack({ kind: 'thumbnails', url })` for HLS transcoded streams. However, the player uses a custom seek bar across all playback modes (direct play, remux, transcode), so a custom seek-preview component works uniformly for all stream types. hls.js thumbnail tracks only apply when hls.js manages the stream (transcode/remux), not for direct play. The design doc's own guidance ("For native HLS (Safari, Chrome 142+), the client uses a custom seek bar component") confirms this as the cross-platform approach. The hls.js `addTrack` integration path is documented for future consideration if the project adds native hls.js-managed thumbnail rendering.
+- **CSS background-image + background-position for sprite rendering** — The industry-standard approach (confirmed by JW Player, Video.js, FluidPlayer, Radiant Media Player). The `#xywh=X,Y,W,H` fragment from each WebVTT cue maps to negative `background-position` offsets; `background-size` scales the full sprite sheet to the display thumbnail dimensions. No canvas or clip-path needed.
+- **WebVTT cue payload parsing** — The parser extracts `spriteUrl`, `x`, `y`, `w`, `h` from each cue's `sprite_NNN.webp#xywh=X,Y,W,H` payload. Relative sprite references are resolved to absolute URLs via `new URL(ref, absoluteIndexUrl)` so CSS `background-image: url(...)` works correctly across dev (Vite proxy) and production (reverse proxy / same-origin).
+- **Binary search cue lookup** — `findCueForTime(cues, timeMs)` uses O(log n) binary search. For a 2-hour movie at 10s intervals (~720 cues), this is ~10 comparisons. Cues before the first timestamp clamp to the first cue; cues after the last timestamp clamp to the last cue — no dead zones on the seek bar.
+- **Lazy VTT fetch with race protection** — The WebVTT index is fetched on first storyboard availability via `$effect`. A `fetchId` counter discards stale responses if the user switches items mid-fetch.
+- **CSS clamp() for edge-aware positioning** — `left: clamp(half-width, ratio × 100%, 100% − half-width)` with `transform: translateX(-50%)` prevents tooltip overflow without JavaScript measurement.
+- **Preview during hover AND active seek** — Matches YouTube/Netflix behavior where the preview follows the thumb during scrubbing. During `isSeeking`, the preview tracks `seekValue` (range input); during hover, it tracks the mouse position.
+- **Graceful degradation** — 404 (MEDIA_007) from `getStoryboard` when no storyboard exists is caught silently; the `{#if storyboard}` guard prevents SeekPreview from rendering. No visual regression for items without storyboards.
 
 ---
 

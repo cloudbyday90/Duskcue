@@ -16,3 +16,28 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { get, post, del, buildApiUrl } from './core.js';
+
+export async function getStoryboard(itemId) {
+    return get(`/items/${itemId}/storyboard`);
+}
+
+export function storyboardIndexUrl(itemId) {
+    return buildApiUrl(`/items/${itemId}/storyboard/index.vtt`);
+}
+
+export function storyboardSpriteUrl(itemId, spriteName) {
+    return buildApiUrl(`/items/${itemId}/storyboard/${spriteName}`);
+}
+
+export async function generateLibraryStoryboards(libraryId) {
+    return post(`/libraries/${libraryId}/generate-storyboards`);
+}
+
+export async function generateItemStoryboards(itemId) {
+    return post(`/items/${itemId}/generate-storyboards`);
+}
+
+export async function deleteStoryboard(itemId) {
+    return del(`/items/${itemId}/storyboard`);
+}

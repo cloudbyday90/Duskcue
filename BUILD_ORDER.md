@@ -2201,7 +2201,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
      - Prometheus metrics from STORYBOARDS.md Metrics table (`storyboard_files_processed_total`, `storyboard_generation_duration_seconds`, etc.) — deferred to Pre-v1.0 Hardening
      - Per-task timeout enforcement — the scheduler executor uses a hardcoded 3600s timeout; the `timeout_seconds` column is stored but not enforced
      7. ~~Implement skip button in web client player — `SkipButton.svelte`~~ **DONE**
-     8. Implement seek preview in web client player — `SeekPreview.svelte`
+     8. ~~Implement seek preview in web client player — `SeekPreview.svelte`~~ **DONE**
 
      **What was built for Task 7:**
 
@@ -2225,7 +2225,35 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
      - **No new npm dependencies** — SkipButton uses Svelte 5 built-in transitions (`fly`); no animation library added. Derives active segment via `$derived.by` — no external reactive helper
      - **Svelte 5 patterns matched** — `$props()` with defaults, `$state` for entry-tracking, `$derived`/`$derived.by` for computed visibility/prominence/timeout, `$effect` for segment-entry side-effects (auto-skip firing). Auto-skip firing inside `$effect` is safe because `autoSkippedIds` deduplication guarantees it runs at most once per segment entry — the effect re-runs on position changes but the Set guard short-circuits
      - **SkipButton is purely presentational** — Fetches nothing itself; receives `segments`, `positionMs`, `autoSkipTypes`, `onskip` as props. This makes it testable in isolation and reusable if other surfaces ever need skip affordances (e.g., a future mini-player). All I/O (segment fetch, seek dispatch, preference reads) is in Player.svelte
-     - **0 svelte-check warnings, 0 build errors** — Matches the verification bar set by Phase 8 Task 4 (0 svelte-check warnings across all components)
+      - **0 svelte-check warnings, 0 build errors** — Matches the verification bar set by Phase 8 Task 4 (0 svelte-check warnings across all components)
+
+     **What was built for Task 8:**
+
+     | File | Purpose |
+     |---|---|
+     | `clients/web/src/lib/api/storyboards.js` | Full storyboard API client: `getStoryboard` (GET storyboard metadata), `storyboardIndexUrl` / `storyboardSpriteUrl` URL builders, `generateLibraryStoryboards`, `generateItemStoryboards`, `deleteStoryboard` |
+     | `clients/web/src/lib/utils/storyboards.js` | Pure-function WebVTT utilities: `parseTimecodeToMs` (HH:MM:SS.mmm parser), `parseStoryboardVtt` (full WebVTT index parser extracting cues with `spriteUrl`, `x`, `y`, `w`, `h`, `startMs`, `endMs`), `findCueForTime` (binary search for the cue containing a given timestamp) |
+     | `clients/web/src/lib/components/SeekPreview.svelte` | Seek-preview thumbnail tooltip — lazily fetches and parses the WebVTT index, resolves sprite references to absolute URLs, renders the correct sprite-sheet region via CSS `background-image` + `background-position` + `background-size` scaling, edge-clamped horizontal positioning via CSS `clamp()`, time label bar below the thumbnail |
+     | `clients/web/src/lib/api/index.js` | Added `storyboards.js` to barrel export (was missing) |
+     | `clients/web/src/lib/components/Player.svelte` | Wired SeekPreview — fetches storyboard metadata in `onMount` alongside segments; tracks hover state (`isSeekHovering`, `seekHoverRatio`, `seekHoverMs`) via mousemove/touchmove on the seek-bar-wrapper; renders SeekPreview during hover and active seeking; expanded seek-bar-wrapper hit area from 6px to 20px for comfortable hover detection |
+
+     **Key decisions from Task 8:**
+
+     - **Custom seek-bar component over hls.js native thumbnail tracks** — STORYBOARDS.md `hls.js Integration` section describes `hls.addTrack({ kind: 'thumbnails', url })` for HLS transcoded streams. However, the player uses a custom seek bar (`<input type="range">` with opacity 0 overlaid on a visual track) across all playback modes (direct play, remux, transcode). A custom seek-preview component works uniformly for all stream types, while hls.js thumbnail tracks only apply when hls.js manages the stream (transcode/remux, not direct play). The design doc's "For native HLS (Safari, Chrome 142+), the client uses a custom seek bar component" guidance confirms this as the correct cross-platform approach.
+     - **CSS `background-image` + `background-position` for sprite rendering** — The industry-standard approach confirmed by research (JW Player, Video.js, FluidPlayer, Radiant Media Player all use this pattern). The `#xywh=X,Y,W,H` Media Fragment URI from each WebVTT cue maps directly to negative `background-position` offsets. `background-size` scales the full sprite sheet so the region maps to the display thumbnail dimensions. No `canvas` or `clip-path` needed — pure CSS.
+     - **Sprite URL resolution via `new URL(ref, baseUrl)`** — WebVTT cue payloads reference sprites by relative name (`sprite_001.webp`), relative to the index file URL. The component constructs the absolute index URL via `new URL(index_url, window.location.href)` and passes it to the VTT parser, which resolves each sprite reference to an absolute URL. This works correctly in dev (Vite proxy) and production (same-origin or reverse proxy).
+     - **Lazy VTT fetch with request-ID race protection** — The WebVTT index is fetched on first storyboard availability via a `$effect` that tracks `storyboard.media_file_id`. A `fetchId` counter discards stale responses if the user switches media items before the previous fetch completes. No `AbortController` needed (the VTT is a few KB; ignoring stale results is sufficient).
+     - **Binary search for cue lookup** — `findCueForTime` uses binary search (O(log n)) over the sorted cues array. For a 2-hour movie at 10s intervals (~720 cues), this is ~10 comparisons vs 720 for linear scan. Cues before the first timestamp clamp to the first cue; cues after the last timestamp clamp to the last cue (no dead zones).
+     - **CSS `clamp()` for edge-aware positioning** — The tooltip's horizontal position uses `left: clamp(half-width, ratio × 100%, 100% − half-width)` with `transform: translateX(-50%)`. This prevents the tooltip from overflowing the player edges without any JavaScript measurement. Pure CSS, automatically responsive.
+     - **Display width capped at native thumbnail width** — Default display width is 160px (YouTube-standard preview size), but capped at `storyboard.width` so 160px-native thumbnails display at native resolution (no upscaling). The thumbnail height is derived from the storyboard's native aspect ratio.
+     - **Preview shown during both hover and active seek drag** — When the user drags the seek bar (`isSeeking = true`), the preview tracks `seekValue` (the range input value); when hovering without dragging, it tracks `seekHoverMs` (computed from mouse X position). This matches YouTube/Netflix behavior where the preview follows the thumb during scrubbing.
+     - **Touch support via `ontouchmove`** — On mobile, `touchmove` events on the seek-bar-wrapper compute the hover ratio from `touches[0].clientX`, showing the preview during touch-drag seek. `touchend` hides the preview.
+     - **Graceful degradation when no storyboard exists** — `getStoryboard` returns 404 (MEDIA_007) when no storyboard has been generated for the item. The Player catches this silently (`storyboard = null`), and the `{#if storyboard}` guard prevents SeekPreview from rendering. The seek bar works normally without preview — no visual regression for items without storyboards.
+     - **`role="presentation"` on seek-bar-wrapper** — The wrapper has mouse/touch handlers for hover tracking but is not itself an interactive element (the nested `<input type="range">` handles actual seeking). `role="presentation"` satisfies Svelte's a11y rule (`a11y_no_static_element_interactions`) without implying false semantics.
+     - **Seek-bar hit area expanded from 6px to 20px** — The original `.seek-bar-wrapper` was 6px tall, making precise hover difficult. Expanded to 20px with the visual track remaining 4px (absolutely positioned, vertically centered). The invisible range input fills the full 20px. `cursor: pointer` added for affordance.
+     - **No new npm dependencies** — WebVTT parsing is pure string manipulation (no `vtt.js` or WebVTT parser library). CSS sprite rendering uses native browser APIs. All functionality uses existing Svelte 5 runes, `svelte/transition`, and standard DOM events.
+     - **Svelte 5 patterns** — `$props()` with defaults, `$state` for hover/loaded state, `$derived`/`$derived.by` for cue lookup/thumbnail style/positioning, `$effect` for VTT fetch lifecycle. The `loadedKey` guard variable is a plain `let` (non-reactive) since it only serves as an idempotency guard inside the effect, not a value the template reads.
+     - **0 svelte-check warnings, 0 build errors** — Matches the verification bar from Task 7 and Phase 8 Task 4.
 
 
 

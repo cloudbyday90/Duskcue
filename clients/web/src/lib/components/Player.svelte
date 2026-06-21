@@ -23,9 +23,11 @@
     import { notifications } from '../stores/notifications.js';
     import { submitQoeReport } from '../api/quality.js';
     import { listSegments } from '../api/segments.js';
+    import { getStoryboard } from '../api/storyboards.js';
     import { formatTimestamp, formatDuration } from '../utils/format.js';
     import { PLAYER_CONTROLS_TIMEOUT_MS, PLAYER_SEEK_STEP_S, PLAYER_VOLUME_STEP } from '../utils/constants.js';
     import SkipButton from './SkipButton.svelte';
+    import SeekPreview from './SeekPreview.svelte';
 
     let {
         mediaItem = null,
@@ -49,6 +51,10 @@
     let qoeTimer = null;
     let lastBufferStart = $state(null);
     let segments = $state([]);
+    let storyboard = $state(null);
+    let isSeekHovering = $state(false);
+    let seekHoverRatio = $state(0);
+    let seekHoverMs = $state(0);
 
     const SEGMENT_CONFIDENCE_THRESHOLD = 0.7;
     const SEGMENT_AUTO_SKIP_TYPES = ['intro', 'credits', 'recap', 'preview', 'outro'];
@@ -87,6 +93,11 @@
                 segments = response?.segments || [];
             } catch {
                 segments = [];
+            }
+            try {
+                storyboard = await getStoryboard(itemId);
+            } catch {
+                storyboard = null;
             }
         }
 
@@ -270,6 +281,29 @@
         }
     }
 
+    function handleSeekBarMouseMove(event) {
+        if (!durationMs) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        const ratio = Math.max(0, Math.min(1, (event.clientX - rect.left) / rect.width));
+        seekHoverRatio = ratio;
+        seekHoverMs = ratio * durationMs;
+        isSeekHovering = true;
+    }
+
+    function handleSeekBarTouchMove(event) {
+        if (!durationMs || !event.touches || event.touches.length === 0) return;
+        const rect = event.currentTarget.getBoundingClientRect();
+        const touch = event.touches[0];
+        const ratio = Math.max(0, Math.min(1, (touch.clientX - rect.left) / rect.width));
+        seekHoverRatio = ratio;
+        seekHoverMs = ratio * durationMs;
+        isSeekHovering = true;
+    }
+
+    function handleSeekBarHoverEnd() {
+        isSeekHovering = false;
+    }
+
     function handleSkip(skipToMs) {
         if (!videoEl || skipToMs == null) return;
         const decision = $streamDecision;
@@ -434,6 +468,10 @@
         const secs = mediaItem?.runtime_seconds || $currentMediaItem?.runtime_seconds;
         return secs ? formatDuration(secs) : null;
     });
+
+    let seekPreviewVisible = $derived((isSeekHovering || isSeeking) && !!storyboard);
+    let seekPreviewMs = $derived(isSeeking ? seekValue : seekHoverMs);
+    let seekPreviewRatio = $derived(durationMs > 0 ? Math.max(0, Math.min(1, seekPreviewMs / durationMs)) : 0);
 </script>
 
 <svelte:window onfullscreenchange={() => player.setFullscreen(!!document.fullscreenElement)} onkeydown={handleKeydown} />
@@ -493,7 +531,23 @@
     {/if}
 
     <div class="player-controls" class:visible={controlsVisible}>
-        <div class="seek-bar-wrapper">
+        <div
+            class="seek-bar-wrapper"
+            role="presentation"
+            onmousemove={handleSeekBarMouseMove}
+            onmouseenter={() => { isSeekHovering = true; }}
+            onmouseleave={handleSeekBarHoverEnd}
+            ontouchmove={handleSeekBarTouchMove}
+            ontouchend={handleSeekBarHoverEnd}
+        >
+            {#if storyboard}
+                <SeekPreview
+                    storyboard={storyboard}
+                    visible={seekPreviewVisible}
+                    positionMs={seekPreviewMs}
+                    hoverRatio={seekPreviewRatio}
+                />
+            {/if}
             <div class="seek-bar-track">
                 <div class="seek-buffered" style="width: {bufferedPercent}%"></div>
                 <div class="seek-progress" style="width: {durationMs > 0 ? Math.min(100, (seekDisplayValue / durationMs) * 100) : 0}%"></div>
@@ -702,8 +756,9 @@
 
     .seek-bar-wrapper {
         position: relative;
-        height: 6px;
-        margin-bottom: 0.625rem;
+        height: 20px;
+        margin-bottom: 0.375rem;
+        cursor: pointer;
     }
 
     .seek-bar-track {

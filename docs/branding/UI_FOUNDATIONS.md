@@ -256,6 +256,8 @@ The 4 core components (`MediaCard`, `Player`, `SearchBar`, `NotificationToast`) 
 
 A fifth component, `SkipButton.svelte`, was added in Phase 10 Task 7 (per [SEGMENT_DETECTION.md](../design/SEGMENT_DETECTION.md)). It instantiates the "Player HUD and transport controls" primitive (item 5 of the UI primitives list) — a bottom-right overlay rendered during detected intro/credits/recap/preview/outro windows. It consumes the same design tokens (`--color-accent` brass/amber for the high-prominence button surface, `--color-bg-elevated` graphite with `backdrop-filter: blur(8px)` for the medium-prominence surface), implements two-tier prominence (10s timeout for high-confidence segments; 5s for medium-confidence), and respects the focus-visible ring + fly-transition motion rules defined above.
 
+A sixth component, `SeekPreview.svelte`, was added in Phase 10 Task 8 (per [STORYBOARDS.md](../design/STORYBOARDS.md)). It instantiates a seek-preview thumbnail tooltip above the player seek bar — appearing when the user hovers or scrubs the timeline. It consumes the same design tokens (`--color-bg-deep` charcoal for the thumbnail background, `--color-text-primary` for the time label, `--shadow-elevated` for the tooltip shadow, `--radius-sm` for rounded corners), uses the `fade` transition for appearance, and includes a responsive mobile breakpoint at 480px.
+
 ### Responsive Layout (Phase 8 Task 6)
 
 The web client implements a responsive layout with a two-breakpoint system covering desktop, tablet, and mobile per the navigation model section above ("On mobile, keep the same product nouns even if the navigation compresses into tabs and nested views"):
