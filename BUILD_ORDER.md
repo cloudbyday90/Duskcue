@@ -2196,13 +2196,38 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
      **Not yet implemented (deferred to later tasks/phases):**
 
-     - Task 7: Implement skip button in web client player — `SkipButton.svelte`
      - Task 8: Implement seek preview in web client player — `SeekPreview.svelte` (will consume the `/storyboard/index.vtt` endpoint via hls.js or a custom seek-bar component)
      - Storyboard metadata in playback start response — when `start_playback` is updated to include the storyboard block per the "Integration with Playback" spec, the playback service will call `storyboards::service::get_storyboard` and embed the result in `PlaybackStartResponse`
      - Prometheus metrics from STORYBOARDS.md Metrics table (`storyboard_files_processed_total`, `storyboard_generation_duration_seconds`, etc.) — deferred to Pre-v1.0 Hardening
      - Per-task timeout enforcement — the scheduler executor uses a hardcoded 3600s timeout; the `timeout_seconds` column is stored but not enforced
-     7. Implement skip button in web client player — `SkipButton.svelte`
+     7. ~~Implement skip button in web client player — `SkipButton.svelte`~~ **DONE**
      8. Implement seek preview in web client player — `SeekPreview.svelte`
+
+     **What was built for Task 7:**
+
+     | File | Purpose |
+     |---|---|
+     | `clients/web/src/lib/api/segments.js` | Full segment API client — `listSegments(itemId, type?)`, `createSegment`, `updateSegment`, `deleteSegment`, `analyzeLibrarySegments` covering all 5 segment endpoints |
+     | `clients/web/src/lib/api/index.js` | Barrel export extended with `segments.js` and `subtitles.js` (subtitles was missing from Phase 9 Task 8) |
+     | `clients/web/src/lib/components/SkipButton.svelte` | Skip-button overlay component — derives active segment from `positionMs` against the `[start_ms, end_ms]` window; renders bottom-right button per industry convention; auto-hide 10s (high-confidence) or 5s (medium-confidence) per SEGMENT_DETECTION.md; per-segment deduplication of auto-skip + dismiss; Svelte 5 runes throughout |
+     | `clients/web/src/lib/components/Player.svelte` | Wired SkipButton — fetches segments via `listSegments(mediaItem.id)` after playback starts; filters by `confidence ≥ 0.7 OR is_manual` (design's default min_confidence); computes `autoSkipTypes` from user preferences; `handleSkip(skipToMs)` performs direct-play seek via `videoEl.currentTime` or transcode seek via `player.seek()` |
+     | `clients/web/src/lib/stores/user.js` | Extended `DEFAULT_PREFS` with 5 per-type auto-skip toggles (`autoSkipIntro`, `autoSkipCredits`, `autoSkipRecap`, `autoSkipPreview`, `autoSkipOutro`) — all default `false` per design |
+
+     **Key decisions for Task 7:**
+
+     - **Bottom-right placement per industry standard** — Research (June 2026) confirmed Netflix, Disney+, Amazon Prime, Crunchyroll, and Max all place skip buttons bottom-right, above the controls bar. Jellyfin-web issue #6591 (March 2025) explicitly criticized centered placement as "too far offset into the middle of the player" — the maintainer agreed and moved it bottom-right. SkipButton uses `position: absolute; right: 1.25rem; bottom: 5.5rem` (4.75rem on mobile) to sit just above the controls gradient
+     - **Two-tier prominence per SEGMENT_DETECTION.md confidence bands** — High-confidence segments (≥0.8 OR `is_manual`) get the brass accent button (10s timeout); medium-confidence segments (0.5–0.79, only visible if admin lowers `min_confidence`) get a smaller subdued backdrop-blurred button (5s timeout). Matches the design's "show skip button with reduced prominence (smaller, shorter timeout)" rule for medium confidence
+     - **Confidence filter client-side at 0.7 default** — The server returns all segments without filtering on `metadata.surfaced`. Player filters via `seg.is_manual || seg.confidence >= 0.7` (matching `SegmentSafetyConfig.min_confidence` default). Manual segments always surface regardless of confidence (admin-authored = authoritative)
+     - **Auto-skip via localStorage preferences (server-side `users.metadata.auto_skip` deferred)** — SEGMENT_DETECTION.md specifies per-user auto-skip stored in `users.metadata.auto_skip`; no users.metadata API exists yet. Stored in `DEFAULT_PREFS` (localStorage) under 5 typed toggles. Default OFF for all types per design ("Off by default for all types"). Server-side persistence deferred to Phase 13a `server_config`/user metadata API
+     - **Per-segment deduplication** — `autoSkippedIds` Set prevents double-firing auto-skip if the position wobbles around `start_ms` (e.g., user scrubs back into the intro after auto-skipping); `dismissedIds` Set prevents re-showing the button after manual click until the user exits and re-enters the segment window. Both Sets are cleared on segment transition via the `$effect` that watches `activeSegment.id`
+     - **Skip dispatch respects stream decision** — `handleSkip` checks `$streamDecision`: `direct_play` → `videoEl.currentTime = skipToMs/1000` (no server round-trip); `transcode`/`direct_stream` → `player.seek(skipToMs)` (server restarts the transcode at the new position, returns new `transcode_session_id`). Matches the existing `handleSeekEnd` pattern
+     - **Player also calls `showControls()` on skip** — Skipping reveals the transport controls so the user sees feedback (position jump in seek bar, new time display). Skipped segments often transition into content where the user wants controls visible
+     - **No new npm dependencies** — SkipButton uses Svelte 5 built-in transitions (`fly`); no animation library added. Derives active segment via `$derived.by` — no external reactive helper
+     - **Svelte 5 patterns matched** — `$props()` with defaults, `$state` for entry-tracking, `$derived`/`$derived.by` for computed visibility/prominence/timeout, `$effect` for segment-entry side-effects (auto-skip firing). Auto-skip firing inside `$effect` is safe because `autoSkippedIds` deduplication guarantees it runs at most once per segment entry — the effect re-runs on position changes but the Set guard short-circuits
+     - **SkipButton is purely presentational** — Fetches nothing itself; receives `segments`, `positionMs`, `autoSkipTypes`, `onskip` as props. This makes it testable in isolation and reusable if other surfaces ever need skip affordances (e.g., a future mini-player). All I/O (segment fetch, seek dispatch, preference reads) is in Player.svelte
+     - **0 svelte-check warnings, 0 build errors** — Matches the verification bar set by Phase 8 Task 4 (0 svelte-check warnings across all components)
+
+
 
 **Strategic implementation debt absorbed into Phase 10** (per [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md) — storyboards are the first consumer of these items):
 

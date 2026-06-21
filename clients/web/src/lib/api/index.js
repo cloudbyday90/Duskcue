@@ -25,4 +25,6 @@ export * from './playback.js';
 export * from './settings.js';
 export * from './search.js';
 export * from './quality.js';
+export * from './segments.js';
+export * from './subtitles.js';
 

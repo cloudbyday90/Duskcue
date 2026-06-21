@@ -663,3 +663,28 @@ The orchestration worker that ties the detection library (`services/segments.rs`
 - Movie intro detection via chromaprint — design specifies chromaprint for TV episodes (≥2 episodes in a season for comparison); movies fall through to chapters + blackframe only.
 - Prometheus metrics from the Metrics table (`segment_analysis_files_total`, `segment_segments_created_total`, etc.) — deferred to Pre-v1.0 Hardening.
 - Per-task timeout enforcement in the scheduler executor wrapper.
+
+### Phase 10 Task 7 — Web Client Skip Button (Complete)
+
+The web client `SkipButton.svelte` overlay lands in `clients/web/src/lib/components/`, wired into `Player.svelte`. Consumes the segment retrieval endpoint (`GET /api/v1/items/{id}/segments`) implemented in Task 1 and renders an industry-standard skip affordance during detected intro/credits/recap/preview/outro windows.
+
+**Files built:**
+
+| File | Purpose |
+|---|---|
+| `clients/web/src/lib/api/segments.js` | Segment API client — `listSegments`, `createSegment`, `updateSegment`, `deleteSegment`, `analyzeLibrarySegments` |
+| `clients/web/src/lib/components/SkipButton.svelte` | Skip-button overlay — derives active segment from `positionMs` vs `[start_ms, end_ms]` window; bottom-right placement; two-tier prominence; per-segment auto-skip + dismiss deduplication |
+| `clients/web/src/lib/components/Player.svelte` | Wired SkipButton — fetches segments on mount, filters by `confidence ≥ 0.7 OR is_manual`, computes `autoSkipTypes` from user prefs, dispatches direct-play vs transcode seeks via `handleSkip` |
+| `clients/web/src/lib/stores/user.js` | `DEFAULT_PREFS` extended with 5 per-type auto-skip toggles (all default `false`) |
+
+**Key decisions reconciled with this design doc:**
+
+- **Bottom-right placement** — Per the "How Skip Buttons Work" section and June 2026 research confirming Netflix/Disney+/Amazon/Crunchyroll/Max all place the button bottom-right above the controls bar. Jellyfin-web issue #6591 (March 2025) explicitly corrected Jellyfin's centered placement to bottom-right after community feedback. Implemented via `position: absolute; right: 1.25rem; bottom: 5.5rem` (4.75rem mobile).
+- **Default: show button, user presses to skip** — Honors the "Skip Button Behavior" rule exactly. Auto-skip is opt-in per-type via user preferences (`autoSkipIntro`, `autoSkipCredits`, etc.), all default `false`.
+- **Button visibility window: 10s timeout** — Matches the design's "default 10 seconds into the intro" auto-hide rule. Reduced to 5s for medium-confidence segments (0.5–0.79 band) per the "Reduced prominence" rule.
+- **Client responsibility respected** — Per the design: "The server provides segment timestamps; the client renders the skip button and handles the seek." `SkipButton.svelte` is purely presentational; all I/O (segment fetch, seek dispatch, preference reads) lives in `Player.svelte`.
+- **Confidence filter at 0.7 default** — Matches `SegmentSafetyConfig.min_confidence` default. Manual segments always surface regardless of confidence (authoritative per the design's "Chapter markers are always 1.0" precedent).
+- **Auto-skip deduplication** — When `autoSkip<Type>` is enabled, auto-skip fires at most once per segment entry (tracked via `autoSkippedIds` Set). Prevents double-firing if playback position wobbles around `start_ms` (e.g., re-buffering pulls position back into the intro briefly).
+- **Skip seeks to `skip_to_ms`** — The client does not recompute padding; it honors the server-provided `skip_to_ms` (which already includes `intro_end_padding_ms` shortening per Task 5's `apply_safety_padding`). Direct-play seeks set `videoEl.currentTime` directly (no server round-trip); transcode/direct_stream seeks call `player.seek()` for server-side transcode restart.
+- **Auto-skip preferences in localStorage (interim)** — The design specifies `users.metadata.auto_skip` JSONB for server-side persistence. No `users.metadata` API exists yet (Phase 13a territory). Stored in `DEFAULT_PREFS` localStorage until the user-metadata API lands; the client prefs structure uses the same shape (`autoSkipIntro`, etc.) for trivial future migration.
+

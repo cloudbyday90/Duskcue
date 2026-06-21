@@ -16,3 +16,25 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { get, post, put, del } from './core.js';
+
+export async function listSegments(itemId, type = null) {
+    const params = type ? { type } : {};
+    return get(`/items/${itemId}/segments`, params);
+}
+
+export async function createSegment(itemId, data) {
+    return post(`/items/${itemId}/segments`, data);
+}
+
+export async function updateSegment(itemId, segmentId, data) {
+    return put(`/items/${itemId}/segments/${segmentId}`, data);
+}
+
+export async function deleteSegment(itemId, segmentId) {
+    return del(`/items/${itemId}/segments/${segmentId}`);
+}
+
+export async function analyzeLibrarySegments(libraryId) {
+    return post(`/libraries/${libraryId}/analyze-segments`);
+}

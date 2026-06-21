@@ -762,21 +762,22 @@ export const libraries = createLibrariesStore();
 | Store | Exports | Responsibility |
 |---|---|---|
 | `stores/auth.js` | `auth` + 7 derived + `hasCapability()` | Session lifecycle, login flows, user identity, capability checks with owner bypass; caches user in localStorage |
-| `stores/user.js` | `user` + 4 derived | Active sessions, passkey management, UI preferences (localStorage) |
+| `stores/user.js` | `user` + 4 derived | Active sessions, passkey management, UI preferences (localStorage) including per-type segment auto-skip toggles (`autoSkipIntro`/`autoSkipCredits`/`autoSkipRecap`/`autoSkipPreview`/`autoSkipOutro`, all default `false` — added Phase 10 Task 7) |
 | `stores/libraries.js` | `libraries` + 4 derived | Library CRUD, selection context, path management, per-library scanning flags |
 | `stores/player.js` | `player` + 11 derived | Playback lifecycle, 15s heartbeat timer, stream URL resolution (direct file vs HLS), volume persistence |
 | `stores/notifications.js` | `notifications` + 1 derived | Toast system with auto-dismiss (5s default, 8s errors), FIFO eviction (max 5) |
 
 All stores consume API client functions from `../api/*.js` — never calling `fetch` directly. All localStorage access is SSR-safe (`typeof localStorage !== 'undefined'` checks) for `adapter-node`. WebAuthn credential API calls (`navigator.credentials.get()`/`create()`) are delegated to the caller via injected callbacks, keeping stores framework-agnostic and testable.
 
-**Implemented components (Phase 8 Task 4):** 4 core components built using Svelte 5 runes (`$props`, `$state`, `$derived`, `$effect`) alongside `svelte/store` auto-subscription. All components consume stores and API client functions — never calling `fetch` directly.
+**Implemented components (Phase 8 Task 4 + Phase 10 Task 7):** 5 components built using Svelte 5 runes (`$props`, `$state`, `$derived`, `$effect`) alongside `svelte/store` auto-subscription. All components consume stores and API client functions — never calling `fetch` directly.
 
 | Component | Props | Responsibility |
 |---|---|---|
 | `NotificationToast.svelte` | (none — subscribes to store) | Fixed-position toast container; subscribes to `notifications` store; per-type accent colors + SVG icons; fly/fade/flip transitions; dismiss button |
 | `SearchBar.svelte` | `value` (bindable), `placeholder`, `compact`, `autofocus`, `navigate`, `onsearch`, `oninput` | Debounced search input (300ms); navigates to `/search?q=...` via `goto()`; compact mode for nav bar |
 | `MediaCard.svelte` | `item`, `posterUrl`, `progress`, `showOverview`, `onclick` | Content-first media card — `<a>` linking to `/media/{id}`; poster or gradient placeholder; rating/type badges; hover overview overlay; optional progress bar |
-| `Player.svelte` | `mediaItem`, `mediaFileId`, `startPositionMs`, `sessionId`, `title`, `onstop` | Full HLS player with hls.js 1.6.16; transport controls (play/pause, seek, volume, speed, fullscreen); keyboard shortcuts; QoE telemetry; auto-hide controls |
+| `Player.svelte` | `mediaItem`, `mediaFileId`, `startPositionMs`, `sessionId`, `title`, `onstop` | Full HLS player with hls.js 1.6.16; transport controls (play/pause, seek, volume, speed, fullscreen); keyboard shortcuts; QoE telemetry; auto-hide controls; wires `SkipButton` — fetches segments on mount, filters by `confidence ≥ 0.7 OR is_manual`, dispatches direct-play vs transcode seeks via `handleSkip` (Phase 10 Task 7) |
+| `SkipButton.svelte` | `segments`, `positionMs`, `autoSkipTypes`, `onskip` | Skip-button overlay rendered during detected intro/credits/recap/preview/outro windows; bottom-right placement per industry standard; two-tier prominence by confidence (high=brass accent/10s, medium=subdued blur/5s); per-segment auto-skip + dismiss deduplication via Sets; purely presentational (Phase 10 Task 7) |
 
 Design tokens are established in `app.css` as CSS custom properties implementing UI_FOUNDATIONS.md's low-light editorial palette (deep charcoal surfaces, warm off-white text, brass/amber accent, muted semantic colors). `utils/format.js` provides `formatDuration`, `formatTimestamp`, `formatYear`, `formatRating`, `formatPercent`. `utils/constants.js` provides `MEDIA_TYPE_LABELS`, `NOTIFICATION_ICONS`, and player/search timing constants.
 

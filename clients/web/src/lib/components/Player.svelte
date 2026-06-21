@@ -19,10 +19,13 @@
         playerLoading,
         progressPercent,
     } from '../stores/player.js';
+    import { preferences } from '../stores/user.js';
     import { notifications } from '../stores/notifications.js';
     import { submitQoeReport } from '../api/quality.js';
+    import { listSegments } from '../api/segments.js';
     import { formatTimestamp, formatDuration } from '../utils/format.js';
     import { PLAYER_CONTROLS_TIMEOUT_MS, PLAYER_SEEK_STEP_S, PLAYER_VOLUME_STEP } from '../utils/constants.js';
+    import SkipButton from './SkipButton.svelte';
 
     let {
         mediaItem = null,
@@ -45,8 +48,22 @@
     let hideControlsTimer = null;
     let qoeTimer = null;
     let lastBufferStart = $state(null);
+    let segments = $state([]);
+
+    const SEGMENT_CONFIDENCE_THRESHOLD = 0.7;
+    const SEGMENT_AUTO_SKIP_TYPES = ['intro', 'credits', 'recap', 'preview', 'outro'];
 
     let displayTitle = $derived(title || mediaItem?.title || $currentMediaItem?.title || 'Playing');
+
+    let surfaceableSegments = $derived(
+        segments.filter((seg) => seg.is_manual || (seg.confidence ?? 0) >= SEGMENT_CONFIDENCE_THRESHOLD),
+    );
+
+    let autoSkipTypes = $derived.by(() => {
+        const prefs = $preferences;
+        if (!prefs) return [];
+        return SEGMENT_AUTO_SKIP_TYPES.filter((type) => prefs[`autoSkip${type.charAt(0).toUpperCase() + type.slice(1)}`]);
+    });
 
     onMount(async () => {
         isMounted = true;
@@ -61,6 +78,16 @@
             }
         } catch (err) {
             notifications.error(`Failed to start playback: ${err.message || err}`);
+        }
+
+        const itemId = mediaItem?.id || $currentMediaItem?.id;
+        if (itemId) {
+            try {
+                const response = await listSegments(itemId);
+                segments = response?.segments || [];
+            } catch {
+                segments = [];
+            }
         }
 
         startQoeReporting();
@@ -240,6 +267,19 @@
             player.setPosition(positionMs);
         } else {
             player.seek(positionMs);
+        }
+    }
+
+    function handleSkip(skipToMs) {
+        if (!videoEl || skipToMs == null) return;
+        const decision = $streamDecision;
+        showControls();
+        if (decision === 'direct_play') {
+            const clamped = Math.max(0, Math.min(videoEl.duration || skipToMs / 1000, skipToMs / 1000));
+            videoEl.currentTime = clamped;
+            player.setPosition(clamped * 1000);
+        } else {
+            player.seek(skipToMs);
         }
     }
 
@@ -441,6 +481,15 @@
                 <button class="error-retry" onclick={handleRetry}>Retry</button>
             </div>
         </div>
+    {/if}
+
+    {#if surfaceableSegments.length > 0 && !$playerLoading && !$playerError}
+        <SkipButton
+            segments={surfaceableSegments}
+            positionMs={$player?.positionMs || 0}
+            autoSkipTypes={autoSkipTypes}
+            onskip={handleSkip}
+        />
     {/if}
 
     <div class="player-controls" class:visible={controlsVisible}>

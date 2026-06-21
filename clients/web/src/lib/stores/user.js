@@ -38,6 +38,11 @@ const DEFAULT_PREFS = {
     autoplay: true,
     subtitleLanguage: null,
     audioLanguage: null,
+    autoSkipIntro: false,
+    autoSkipCredits: false,
+    autoSkipRecap: false,
+    autoSkipPreview: false,
+    autoSkipOutro: false,
 };
 
 function loadPrefs() {
