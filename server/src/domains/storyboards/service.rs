@@ -14,8 +14,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-#![allow(unused_variables)]
-
 //! Storyboard domain service — DB access for the `storyboards` table plus
 //! file-path resolution for serving the WebVTT index and WebP sprite sheets.
 //!
@@ -44,6 +42,7 @@ use uuid::Uuid;
 use crate::domains::storyboards::error::StoryboardError;
 use crate::domains::storyboards::types::*;
 use crate::services::storyboards as sb_svc;
+use crate::state::AppState;
 
 /// Subdirectory under `cache_dir` that holds all storyboard artifacts.
 const STORYBOARDS_SUBDIR: &str = "storyboards";
@@ -184,27 +183,44 @@ pub async fn get_storyboard_sprite(
 
 /// Trigger storyboard generation for all missing items in a library.
 ///
-/// Verifies the library exists, checks that no generation is already running
-/// for it (SYS_002 on conflict), then enqueues the `storyboard_generation`
-/// scheduled task. Returns a queued acknowledgement — actual generation runs
-/// in the background worker (Task 6).
+/// Verifies the library exists, then runs the worker synchronously and
+/// returns a summary. Honors server-wide and per-library enablement: when
+/// storyboards are disabled the result is an empty summary (not an error),
+/// matching the segment domain's `trigger_library_analysis` pattern.
 pub async fn trigger_library_generation(
-    pool: &PgPool,
+    state: &AppState,
     library_id: Uuid,
 ) -> Result<GenerateStoryboardsResponse, StoryboardError> {
-    todo!("Task 6 — verify library, check in-progress, enqueue storyboard_generation task")
+    verify_library_exists(&state.pool, library_id).await?;
+
+    let result = crate::workers::storyboard_generator::generate_for_library_one(state, library_id)
+        .await
+        .map_err(StoryboardError::Database)?;
+
+    Ok(GenerateStoryboardsResponse {
+        queued: false,
+        message: result.message(),
+    })
 }
 
 /// Trigger storyboard generation for a specific media item (force regen).
 ///
-/// Resolves the item's primary media file and enqueues a single-file
-/// generation job. Unlike the library endpoint this forces regeneration even
-/// if a storyboard already exists (the worker deletes and regenerates).
+/// Resolves the item's primary media file and runs the worker on it. Unlike
+/// the library endpoint this forces regeneration even if a storyboard
+/// already exists (the worker deletes and regenerates). Returns
+/// `MediaItemNotFound` when the item or its primary media file does not
+/// exist.
 pub async fn trigger_item_generation(
-    pool: &PgPool,
+    state: &AppState,
     media_item_id: Uuid,
 ) -> Result<GenerateStoryboardsResponse, StoryboardError> {
-    todo!("Task 6 — verify item, enqueue single-file storyboard generation")
+    let result =
+        crate::workers::storyboard_generator::generate_for_item_one(state, media_item_id).await?;
+
+    Ok(GenerateStoryboardsResponse {
+        queued: false,
+        message: result.message(),
+    })
 }
 
 /// Delete cached storyboard data for a media item.
@@ -281,6 +297,21 @@ async fn resolve_primary_media_file(
     .await?;
 
     Ok(row.map(|r| r.get::<Uuid, _>("id")))
+}
+
+/// Verify a library exists and is not soft-deleted. Returns
+/// `LibraryNotFound` (LIB_001, 404) otherwise. Shared by the trigger
+/// functions to surface a clear error before the worker silently skips.
+async fn verify_library_exists(pool: &PgPool, library_id: Uuid) -> Result<(), StoryboardError> {
+    let exists: Option<(Uuid,)> =
+        sqlx::query_as("SELECT id FROM libraries WHERE id = $1 AND deleted_at IS NULL")
+            .bind(library_id)
+            .fetch_optional(pool)
+            .await?;
+    if exists.is_none() {
+        return Err(StoryboardError::LibraryNotFound { library_id });
+    }
+    Ok(())
 }
 
 /// Resolve the media file that owns a storyboard, *requiring* that a

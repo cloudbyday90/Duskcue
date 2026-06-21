@@ -527,6 +527,14 @@ pub async fn generate_storyboard(
 /// it FFmpeg decodes from the start of the file for every sheet, which is
 /// catastrophic for long content. With `keyframe_only = true`, FFmpeg's
 /// decoder skips inter-frame decoding entirely (~100x speedup).
+///
+/// On Linux, the FFmpeg subprocess is sandboxed via `pre_exec` (landlock +
+/// seccomp) — see [`crate::services::sandbox`]. The sandbox grants
+/// read-only access to system paths + the source media path, and
+/// read-write access to the per-file storyboard output directory. Sandbox
+/// failures are non-fatal: the closure logs a warning and returns `Ok(())`
+/// so FFmpeg still starts without the sandbox. Non-Linux platforms are
+/// no-ops (no `pre_exec` hook).
 async fn invoke_ffmpeg_for_sheet(
     source: &Path,
     output: &Path,
@@ -570,6 +578,37 @@ async fn invoke_ffmpeg_for_sheet(
         .arg("-q:v").arg(config.quality.to_string())
         .arg("-y")
         .arg(output);
+
+    // Sandbox the FFmpeg child on Linux. The closure captures owned PathBufs
+    // because `pre_exec` runs in the forked child process — borrows would not
+    // survive the fork. Sandbox failures degrade gracefully (warn + continue)
+    // per SECURITY.md so generation never hard-fails on a kernel without
+    // landlock or on a misconfigured mount.
+    #[cfg(target_os = "linux")]
+    {
+        let media = source.to_path_buf();
+        let out_dir = output
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from("."));
+        cmd.pre_exec(move || {
+            use crate::services::sandbox::{SandboxConfig, apply_sandbox};
+            let config = SandboxConfig {
+                media_path: &media,
+                transcode_dir: &out_dir,
+            };
+            match apply_sandbox(&config) {
+                Ok(()) => Ok(()),
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        "storyboard ffmpeg sandbox setup failed (continuing without sandbox)"
+                    );
+                    Ok(())
+                }
+            }
+        });
+    }
 
     cmd.stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())

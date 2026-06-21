@@ -340,6 +340,44 @@ pub struct TranscodingConfig {
     pub segment_safety: SegmentSafetyConfig,
     #[serde(default)]
     pub segment_analysis: SegmentAnalysisConfig,
+    #[serde(default)]
+    pub storyboards_enabled: bool,
+    #[serde(default = "default_storyboard_interval_mode")]
+    pub storyboard_interval_mode: String,
+    #[serde(default = "default_storyboard_fixed_interval_seconds")]
+    pub storyboard_fixed_interval_seconds: u32,
+    #[serde(default = "default_storyboard_width")]
+    pub storyboard_width: u32,
+    #[serde(default = "default_storyboard_quality")]
+    pub storyboard_quality: u32,
+    #[serde(default = "default_storyboard_keyframe_only")]
+    pub storyboard_keyframe_only: bool,
+    #[serde(default = "default_storyboard_sprite_columns")]
+    pub storyboard_sprite_columns: u32,
+    #[serde(default = "default_storyboard_sprite_rows")]
+    pub storyboard_sprite_rows: u32,
+}
+
+fn default_storyboard_interval_mode() -> String {
+    "adaptive".to_string()
+}
+fn default_storyboard_fixed_interval_seconds() -> u32 {
+    10
+}
+fn default_storyboard_width() -> u32 {
+    320
+}
+fn default_storyboard_quality() -> u32 {
+    75
+}
+fn default_storyboard_keyframe_only() -> bool {
+    true
+}
+fn default_storyboard_sprite_columns() -> u32 {
+    10
+}
+fn default_storyboard_sprite_rows() -> u32 {
+    20
 }
 
 impl Default for TranscodingConfig {
@@ -361,6 +399,14 @@ impl Default for TranscodingConfig {
             segment_detection_enabled: true,
             segment_safety: SegmentSafetyConfig::default(),
             segment_analysis: SegmentAnalysisConfig::default(),
+            storyboards_enabled: true,
+            storyboard_interval_mode: default_storyboard_interval_mode(),
+            storyboard_fixed_interval_seconds: default_storyboard_fixed_interval_seconds(),
+            storyboard_width: default_storyboard_width(),
+            storyboard_quality: default_storyboard_quality(),
+            storyboard_keyframe_only: default_storyboard_keyframe_only(),
+            storyboard_sprite_columns: default_storyboard_sprite_columns(),
+            storyboard_sprite_rows: default_storyboard_sprite_rows(),
         }
     }
 }

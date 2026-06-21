@@ -75,7 +75,7 @@ pub async fn generate_library_storyboards(
     _auth: Require<CanManageLibraries>,
     Path(library_id): Path<Uuid>,
 ) -> Result<Json<GenerateStoryboardsResponse>, AppError> {
-    let result = service::trigger_library_generation(&state.pool, library_id).await?;
+    let result = service::trigger_library_generation(&state, library_id).await?;
     Ok(Json(result))
 }
 
@@ -84,7 +84,7 @@ pub async fn generate_item_storyboards(
     _auth: Require<CanManageLibraries>,
     Path(item_id): Path<Uuid>,
 ) -> Result<Json<GenerateStoryboardsResponse>, AppError> {
-    let result = service::trigger_item_generation(&state.pool, item_id).await?;
+    let result = service::trigger_item_generation(&state, item_id).await?;
     Ok(Json(result))
 }
 

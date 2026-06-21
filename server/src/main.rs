@@ -295,6 +295,7 @@ async fn main() {
 
     let worker_state = state.clone();
     let segment_state = state.clone();
+    let storyboard_state = state.clone();
     let scheduler = Arc::new(
         Scheduler::new(state.pool.clone())
             .register_executor("library_scan", |pool, task_id, config| {
@@ -382,6 +383,17 @@ async fn main() {
                 let state = segment_state.clone();
                 async move {
                     duskcue::workers::segment_detector::run_segment_analysis(
+                        &state,
+                        task_id,
+                        config,
+                    )
+                    .await;
+                }
+            })
+            .register_executor("storyboard_generation", move |_pool, task_id, config| {
+                let state = storyboard_state.clone();
+                async move {
+                    duskcue::workers::storyboard_generator::run_storyboard_generation(
                         &state,
                         task_id,
                         config,
