@@ -65,6 +65,8 @@ flate2.workspace = true
 zip.workspace = true
 libc.workspace = true
 chromaprint-next.workspace = true
+image.workspace = true
+webp.workspace = true
 duskcue-types = { path = "../crates/types" }
 duskcue-db = { path = "../crates/db" }
 

@@ -248,8 +248,8 @@ If the source JPEG/PNG is corrupt (truncated download, disk error), WebP encodin
 
 | Crate | Purpose | Status |
 |---|---|---|
-| [`image`](https://crates.io/crates/image) | Decoding JPEG/PNG/WebP source images; resizing; pixel manipulation | ✅ Already in workspace (Phase 12 overlay compositing) |
-| [`webp`](https://crates.io/crates/webp) | WebP encoding via libwebp bindings — supports lossy + lossless + alpha | To add when implementing artwork variant generation |
+| [`image`](https://crates.io/crates/image) `0.25` | Decoding JPEG/PNG/WebP source images; resizing; pixel manipulation | ✅ In workspace (Phase 10 Task 9 — `image_pipeline.rs`) |
+| [`webp`](https://crates.io/crates/webp) `0.3` | WebP encoding via libwebp bindings — supports lossy + lossless + alpha | ✅ In workspace (Phase 10 Task 9 — `image_pipeline.rs`) |
 | `fast_image_resize` (optional) | SIMD-accelerated resizing for high-throughput variant generation | Optional — `image` crate's built-in resize is adequate for typical workloads |
 
 **Rejected alternatives:**
@@ -267,19 +267,29 @@ The `webp` crate uses libwebp (Google's C library) via `std::ffi`. Build require
 
 The `bundled` feature is the right choice for Duskcue — ensures consistent builds across all target platforms without requiring operators to install libwebp system-wide.
 
+### `image` + `webp` Crate Integration (Task 9 implementation)
+
+The `webp` crate's default features include `img` which activates `Encoder::from_image(&DynamicImage)`. **Duskcue disables this feature** (`webp = { version = "0.3", default-features = false }`) and uses `Encoder::from_rgba(bytes, w, h)` directly instead. Rationale:
+
+1. **Decouples version selection** — the `webp` crate internally pins `image = "0.25.6"`; if we let it dictate our `image` version, a future `image` release (e.g. `0.26`) couldn't be adopted until `webp` bumps its dep. By disabling `img` and passing raw RGBA bytes ourselves, the two crates evolve independently.
+2. **Explicit format control** — Duskcue pins `image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }` so only the decoders we actually need are compiled (no GIF/TIFF/BMP/AVIF decoder bloat).
+3. **No API loss** — `from_rgba` is available without the `img` feature; the only thing we lose is `from_image`, which is a trivial `to_rgba8()` wrapper anyway.
+
+RGBA bytes are extracted via `DynamicImage::to_rgba8().into_raw()` and handed to `Encoder::from_rgba`. The `image` crate's resize uses `FilterType::Lanczos3` (highest-quality downscale filter) for all variant generation.
+
 ## Implementation Status
 
 | Component | Status | Notes |
 |---|---|---|
 | TMDb artwork download (originals) | ✅ Implemented | `services/artwork_downloader.rs` — downloads `original` size, stores in `/data/metadata/artwork/tmdb/` |
-| WebP variant generation | Spec only | Future: `services/image_pipeline.rs` + `artwork_variant_generator` scheduled task |
-| Artwork delivery endpoint | Spec only | Future: `GET /api/v1/items/{id}/artwork/{type}?size={size}&format={format}` |
-| Storyboard WebP generation | Spec only | Phase 10 — per [STORYBOARDS.md](STORYBOARDS.md) |
+| WebP variant generation | ✅ Implemented | `services/image_pipeline.rs` (Phase 10 Task 9) — stateless decode → resize → encode library; alpha-aware (lossy for opaque, lossless for transparency); `variants_for_category` encodes the per-category size catalog below |
+| Artwork delivery endpoint | Spec only | Future: Task 10 — `GET /api/v1/items/{id}/artwork/{type}?size={size}&format={format}` will call `image_pipeline::generate_variant` on cache miss |
+| Storyboard WebP generation | ✅ Implemented | Phase 10 Task 4 — per [STORYBOARDS.md](STORYBOARDS.md); FFmpeg emits WebP directly (does not use `image_pipeline.rs` — different code path, FFmpeg's own libwebp encoder) |
 | Overlay compositing to WebP | Spec only | Phase 12 — per [METADATA_OVERLAYS.md](METADATA_OVERLAYS.md); `overlay_image_format: "webp"` already configured |
 | User upload pipeline | Spec only | Phase 13 (admin UI) |
 | `<picture>` fallback in web client | Spec only | Phase 8 follow-up or when artwork delivery endpoint lands |
 
-The next concrete implementation step is wiring the artwork delivery endpoint with WebP variant generation — naturally lands alongside Phase 10 (storyboards, which also produce WebP) or as a Phase 8 follow-up when the web client needs real artwork URLs instead of placeholder gradients.
+The next concrete implementation step is wiring the artwork delivery endpoint (Task 10) with on-demand WebP variant generation via `image_pipeline::generate_variant` — lazily builds missing variants on first request and caches them under `/cache/images/webp/`. A background `artwork_variant_generator` scheduled task pre-warms the cache after library scans for the common case.
 
 ## Key Decisions
 

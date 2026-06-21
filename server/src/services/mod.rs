@@ -21,6 +21,7 @@ pub mod enrichment_persistence;
 pub mod fanart_client;
 pub mod fs_watcher;
 pub mod hw_accel;
+pub mod image_pipeline;
 pub mod media_matching;
 pub mod metadata;
 pub mod nfo_parser;

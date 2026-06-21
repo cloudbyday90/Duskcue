@@ -220,6 +220,7 @@ project/
 │       │   ├── geoip.rs          # MaxMind GeoLite2 MMDB lookups (maxminddb + ArcSwap)
 │       │   ├── sandbox.rs        # FFmpeg per-process sandboxing (landlock + seccompiler) — **implemented**
 │       │   ├── hw_accel.rs       # Hardware acceleration runtime detection (FFmpeg probe, platform checks, priority selection) — **implemented**
+│       │   ├── image_pipeline.rs # WebP encode/resize/variant generation (image 0.25 decode + webp 0.3 libwebp encode; alpha-aware lossy/lossless) — **implemented**
 │       │
 │       └── workers/              # Background task definitions
 │           ├── mod.rs
@@ -461,6 +462,8 @@ flate2 = "1"
 zip = "2"
 libc = "0.2"
 chromaprint-next = "0.1"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
+webp = { version = "0.3", default-features = false }
 ```
 
 **TLS backend note:** `rustls`, `tokio-rustls`, and `reqwest` use the `ring` crypto backend instead of the default `aws-lc-rs`. The `aws-lc-sys` crate requires NASM and CMake on Windows, which are not present in standard development environments. `ring` is pure Rust + precompiled assembly, builds everywhere, and is the same library used by `ring` 0.17 for HMAC signing. This is a workspace-level decision that applies to all workspace members.
