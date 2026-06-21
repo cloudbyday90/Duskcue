@@ -32,6 +32,8 @@ use uuid::Uuid;
 
 use crate::domains::segments::error::SegmentError;
 use crate::domains::segments::types::*;
+use crate::state::AppState;
+use crate::workers::segment_detector;
 
 /// List all segments for a media item, optionally filtered by type.
 ///
@@ -235,17 +237,27 @@ pub async fn delete_segment(
 
 /// Trigger segment analysis for a library.
 ///
-/// Reserved for Task 5 (the worker). The handler at
-/// `handlers::analyze_library_segments` is already wired through to this
-/// function via the router; once Task 5 lands the worker this function body
-/// is replaced with a scheduler enqueue (mirroring `subtitle_auto_fetch`
-/// from Phase 9 Task 7) and the API surface remains stable.
+/// Runs the detection pipeline synchronously (matching the `scan_library`
+/// pattern from Phase 5 Task 5) and returns a summary of what was detected.
+/// The scheduled `segment_analysis` task iterates all libraries via the
+/// scheduler; this function services the per-library admin trigger endpoint.
+///
+/// Returns `LibraryNotFound` if the library does not exist or is soft-deleted.
 pub async fn trigger_library_analysis(
-    pool: &PgPool,
+    state: &AppState,
     library_id: Uuid,
 ) -> Result<AnalyzeSegmentsResponse, SegmentError> {
-    let _ = (pool, library_id);
-    todo!("Task 5 — verify library exists, enqueue segment_analysis scheduled task")
+    verify_library_exists(&state.pool, library_id).await?;
+
+    let result = segment_detector::analyze_library_one(state, library_id)
+        .await
+        .map_err(SegmentError::Database)?;
+
+    Ok(AnalyzeSegmentsResponse {
+        library_id,
+        queued: false,
+        message: result.message(),
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -259,6 +271,18 @@ async fn ensure_media_item_exists(pool: &PgPool, media_item_id: Uuid) -> Result<
         .await?;
     if exists.is_none() {
         return Err(SegmentError::MediaItemNotFound { media_item_id });
+    }
+    Ok(())
+}
+
+async fn verify_library_exists(pool: &PgPool, library_id: Uuid) -> Result<(), SegmentError> {
+    let exists: Option<(Uuid,)> =
+        sqlx::query_as("SELECT id FROM libraries WHERE id = $1 AND deleted_at IS NULL")
+            .bind(library_id)
+            .fetch_optional(pool)
+            .await?;
+    if exists.is_none() {
+        return Err(SegmentError::LibraryNotFound { library_id });
     }
     Ok(())
 }

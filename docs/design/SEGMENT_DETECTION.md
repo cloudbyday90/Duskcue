@@ -630,3 +630,36 @@ The four detection methods, confidence scoring, and 2-second safety padding land
 - The `segment_analysis` task seeding migration — will be added with Task 5.
 - Per-file orchestration (loop fingerprinting + comparison + blackframe/silence, write results) — the worker ties together the functions in `services/segments.rs` with the CRUD in `domains/segments/service.rs`.
 - The `outro` segment type via silence-gap detection — implemented in the worker because it requires reading existing `credits` segments (chicken-and-egg within a single library scan).
+
+### Phase 10 Task 5 — Background Detector Worker (Complete)
+
+The orchestration worker that ties the detection library (`services/segments.rs`) to the DB CRUD layer (`domains/segments/service.rs`) lands in `server/src/workers/segment_detector.rs`. The `trigger_library_analysis` stub is replaced with a synchronous call into the worker, matching the Phase 5 Task 5 `scan_library` pattern.
+
+**Files built:**
+
+| File | Purpose |
+|---|---|
+| `server/src/workers/segment_detector.rs` | Full background detector — `run_segment_analysis()` scheduled-task entry point (iterates all libraries, or one when `config.library_id` is set), `analyze_library_one()` synchronous API entry point, `analyze_library()` 6-phase pipeline, incremental candidate resolution, chapter/chromaprint/blackframe/silence dispatch, `LibraryAnalysisResult` summary, 2 unit tests |
+| `server/src/services/segments.rs` | Added `media_item_id: Uuid` field to `RecurringMatch` — previously discarded by `find_recurring_segments` when collecting HashMap values; worker needs the association to persist per-item results |
+| `server/src/domains/segments/service.rs` | `trigger_library_analysis` replaced: now verifies the library exists and calls `segment_detector::analyze_library_one()` synchronously; added `verify_library_exists` helper |
+| `server/src/state.rs` | `TranscodingConfig` expanded with 3 segment fields (`segment_detection_enabled`, `segment_safety`, `segment_analysis`); added `SegmentSafetyConfig` and `SegmentAnalysisConfig` structs with `Default` impls matching the configuration table |
+| `server/src/main.rs` | Registered `segment_analysis` executor on the scheduler |
+| `server/src/services/scheduler.rs` | Added "Segment Analysis" to `seed_default_tasks()` (daily 03:00) |
+| `server/migrations/20260621_030000_seed_segment_analysis_task.sql` | Seeds `segment_analysis` task for existing deployments |
+
+**Key decisions reconciled with this design doc:**
+
+- **Synchronous API over scheduler enqueue** — The design said "scheduler enqueue (mirroring `subtitle_auto_fetch` from Phase 9 Task 7)". In practice, the library_scan pattern (synchronous API + scheduled task that iterates all libraries) is more consistent with the existing codebase and avoids building background-queue infrastructure that doesn't exist yet. The `AnalyzeSegmentsResponse.queued` field is always `false` in this implementation; the message carries the summary. The `segment_analysis` scheduled task (daily 03:00) iterates all libraries via `run_segment_analysis()` for the unattended background pass. HTTP timeout risk for large libraries is accepted per the library_scan precedent (BUILD_ORDER Phase 5 Task 5).
+- **`media_item_id` on `RecurringMatch`** — The `find_recurring_segments` function built a `HashMap<Uuid, RecurringMatch>` internally but discarded the keys on `into_values()`. The worker needs to know which episode each recurring intro belongs to. Added `media_item_id: Uuid` to `RecurringMatch`, populated before collecting. Non-breaking: existing tests don't construct `RecurringMatch` directly; `chromaprint_match_to_segment` ignores the new field.
+- **Chapter extraction always runs** — Even for files with cached fingerprints. Chapter data lives in `media_files.additional_streams` JSONB and may change without the audio stream changing (e.g., re-muxing with updated chapter metadata). The fingerprint cache only skips the expensive FFmpeg audio extraction + chromaprint calculation, not the cheap chapter regex match.
+- **Credits detection supplementary** — Items resolved by chapter markers are excluded from credits detection (passed via `chapter_resolved` list). Items already having a `credits` segment are also excluded. This prevents redundant FFmpeg `blackframe` + `silencedetect` invocations on files that already have credits markers from a prior pass.
+- **`outro` segment deferred** — The design notes outro detection requires reading existing `credits` segments (chicken-and-egg within a single pass). The worker leaves this as a follow-up: a second pass after credits are established across the library would detect silence gaps between content end and credits start.
+- **Task enabled by default** — Unlike `subtitle_auto_fetch` (disabled by default because it consumes external API quota), segment analysis uses only local FFmpeg + CPU. Safe and expected behavior for a media server. The daily 03:00 schedule matches the design's "after the daily library scan" intent.
+- **Per-task timeout stored but not enforced** — Migration seeds `timeout_seconds = 14400` (4 hours) per the design. The current scheduler executor wrapper uses a hardcoded `tokio::time::timeout(Duration::from_secs(3600), ...)` — the DB column is not yet consulted. Large library analysis may hit the 3600s wrapper before the 14400s column value. This is a pre-existing scheduler limitation.
+
+**Not yet implemented (deferred):**
+
+- `outro` segment type via silence-gap detection after credits — requires a second pass after credits are established across the library.
+- Movie intro detection via chromaprint — design specifies chromaprint for TV episodes (≥2 episodes in a season for comparison); movies fall through to chapters + blackframe only.
+- Prometheus metrics from the Metrics table (`segment_analysis_files_total`, `segment_segments_created_total`, etc.) — deferred to Pre-v1.0 Hardening.
+- Per-task timeout enforcement in the scheduler executor wrapper.

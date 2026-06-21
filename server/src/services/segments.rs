@@ -177,6 +177,10 @@ pub struct FingerprintWithContext {
 /// A recurring audio segment found across multiple episodes of a season.
 #[derive(Debug, Clone)]
 pub struct RecurringMatch {
+    /// The media item this match belongs to. Populated by
+    /// `find_recurring_segments` so the worker can persist results without
+    /// re-deriving the association.
+    pub media_item_id: uuid::Uuid,
     pub segment_type: SegmentType,
     pub start_ms: i32,
     pub end_ms: i32,
@@ -708,11 +712,19 @@ pub fn find_recurring_segments(
                 continue;
             }
 
-            let Some(match_) = best_pair_match(a, b, thresholds, min_run, max_run) else {
+            let Some(match_a) = best_pair_match(a, b, thresholds, min_run, max_run) else {
                 continue;
             };
+            let match_b = RecurringMatch {
+                media_item_id: b.media_item_id,
+                ..match_a.clone()
+            };
+            let match_a = RecurringMatch {
+                media_item_id: a.media_item_id,
+                ..match_a
+            };
 
-            for media_item_id in [a.media_item_id, b.media_item_id] {
+            for (media_item_id, match_) in [(a.media_item_id, match_a), (b.media_item_id, match_b)] {
                 matches_by_item
                     .entry(media_item_id)
                     .and_modify(|existing| {
@@ -722,7 +734,7 @@ pub fn find_recurring_segments(
                         existing.matching_episodes =
                             existing.matching_episodes.saturating_add(1).max(2);
                     })
-                    .or_insert_with(|| match_.clone());
+                    .or_insert_with(|| match_);
             }
         }
     }
@@ -818,6 +830,7 @@ fn best_pair_match(
     }
 
     Some(RecurringMatch {
+        media_item_id: uuid::Uuid::nil(),
         segment_type: SegmentType::Intro,
         start_ms,
         end_ms,

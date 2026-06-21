@@ -334,6 +334,12 @@ pub struct TranscodingConfig {
     pub thread_count: Option<u32>,
     pub thread_type: String,
     pub prefer_hw_decode: bool,
+    #[serde(default)]
+    pub segment_detection_enabled: bool,
+    #[serde(default)]
+    pub segment_safety: SegmentSafetyConfig,
+    #[serde(default)]
+    pub segment_analysis: SegmentAnalysisConfig,
 }
 
 impl Default for TranscodingConfig {
@@ -352,6 +358,49 @@ impl Default for TranscodingConfig {
             thread_count: None,
             thread_type: "frame".to_string(),
             prefer_hw_decode: true,
+            segment_detection_enabled: true,
+            segment_safety: SegmentSafetyConfig::default(),
+            segment_analysis: SegmentAnalysisConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SegmentSafetyConfig {
+    pub intro_end_padding_ms: i32,
+    pub credits_end_padding_ms: i32,
+    pub min_confidence: f32,
+}
+
+impl Default for SegmentSafetyConfig {
+    fn default() -> Self {
+        Self {
+            intro_end_padding_ms: 2_000,
+            credits_end_padding_ms: 0,
+            min_confidence: 0.7,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SegmentAnalysisConfig {
+    pub max_concurrent_analyses: u32,
+    pub chromaprint_sample_rate: u32,
+    pub blackframe_amount: u8,
+    pub blackframe_threshold: u8,
+    pub silence_noise_db: i16,
+    pub silence_min_duration_ms: i32,
+}
+
+impl Default for SegmentAnalysisConfig {
+    fn default() -> Self {
+        Self {
+            max_concurrent_analyses: 1,
+            chromaprint_sample_rate: 11_025,
+            blackframe_amount: 75,
+            blackframe_threshold: 2,
+            silence_noise_db: -55,
+            silence_min_duration_ms: 2_000,
         }
     }
 }

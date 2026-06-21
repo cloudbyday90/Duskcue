@@ -2125,10 +2125,45 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
    - Per-library config overrides (`libraries.metadata.storyboards_*`) — Task 6 worker reads these and overrides the server-wide config when constructing `GenerationConfig`
    - Sandbox application — Task 6 worker calls `services::sandbox::apply_sandbox` before each FFmpeg invocation (Linux landlock + seccomp; no-op on Windows/macOS)
    - Web client `SeekPreview.svelte` — Task 8 consumes the `/storyboard/index.vtt` endpoint via hls.js or a custom seek-bar component
-   5. Implement `server/src/workers/segment_detector.rs` — background segment detection
-   6. Implement `server/src/workers/storyboard_generator.rs` — background thumbnail generation
-   7. Implement skip button in web client player — `SkipButton.svelte`
-   8. Implement seek preview in web client player — `SeekPreview.svelte`
+    5. ~~Implement `server/src/workers/segment_detector.rs` — background segment detection~~ **DONE**
+
+    **What was built for Task 5:**
+
+    | File | Purpose |
+    |---|---|
+    | `server/src/workers/segment_detector.rs` | Full background segment detector: `run_segment_analysis()` entry point (scheduled task — iterates all non-deleted, scan-enabled libraries, or a single library when `config.library_id` is set); `analyze_library_one()` (synchronous API entry point for the per-library admin trigger); `analyze_library()` 6-phase pipeline implementation; candidate resolution, chapter extraction + classification, chromaprint fingerprinting + storage, cross-season comparison, blackframe+silence credits detection; `LibraryAnalysisResult` summary struct; 2 unit tests |
+    | `server/src/workers/mod.rs` | Added `pub mod segment_detector;` |
+    | `server/src/services/segments.rs` | Added `media_item_id: Uuid` field to `RecurringMatch` (previously discarded by `find_recurring_segments` when collecting HashMap values — the worker needs the association to persist results per-item) |
+    | `server/src/domains/segments/service.rs` | Replaced `trigger_library_analysis` `todo!()` with synchronous implementation: verifies library exists, calls `segment_detector::analyze_library_one()`, returns `AnalyzeSegmentsResponse` with summary message; added `verify_library_exists` helper |
+    | `server/src/domains/segments/handlers.rs` | Updated `analyze_library_segments` to pass `&state` instead of `&state.pool` |
+    | `server/src/state.rs` | Expanded `TranscodingConfig` with 3 segment fields: `segment_detection_enabled: bool`, `segment_safety: SegmentSafetyConfig` (intro_end_padding_ms, credits_end_padding_ms, min_confidence), `segment_analysis: SegmentAnalysisConfig` (max_concurrent_analyses, chromaprint_sample_rate, blackframe_amount, blackframe_threshold, silence_noise_db, silence_min_duration_ms); added both nested structs with `Default` impls matching SEGMENT_DETECTION.md configuration table |
+    | `server/src/main.rs` | Registered `segment_analysis` executor on scheduler; renamed `subtitle_state` capture to `worker_state` and added separate `segment_state` clone for the segment closure |
+    | `server/src/services/scheduler.rs` | Added "Segment Analysis" to runtime `seed_default_tasks()` (cron `0 3 * * *`, enabled by default) |
+    | `server/migrations/20260621_030000_seed_segment_analysis_task.sql` | Seeds `segment_analysis` scheduled task (cron daily 03:00, 14400s timeout, enabled) for existing deployments |
+
+    **Key decisions for Task 5:**
+
+    - **Synchronous API + scheduled task for all libraries** — The `POST /api/v1/libraries/{id}/analyze-segments` endpoint runs `analyze_library_one()` synchronously and returns the summary, matching the Phase 5 Task 5 `scan_library` pattern exactly. The `segment_analysis` scheduled task iterates all non-deleted, scan-enabled libraries via `run_segment_analysis()`. The design's "scheduler enqueue" language was prescriptive but the library_scan precedent (synchronous API + scheduled iteration) is more pragmatic, avoids background-queue infrastructure that doesn't exist yet, and keeps the `AnalyzeSegmentsResponse.queued: bool` field honest (always `false` in this implementation). HTTP timeout risk for large libraries is accepted per the library_scan precedent; an async 202 Accepted flow can be layered on later if needed
+    - **6-phase pipeline per SEGMENT_DETECTION.md** — (1) Resolve candidates incrementally — files without a matching `media_fingerprints` row (same `file_hash`) are candidates; (2) Extract chapters from `media_files.additional_streams` JSONB and classify against chapter title regex patterns; (3) For items not resolved by chapters, fingerprint via FFmpeg PCM extraction → chromaprint-next → store raw `u32` LE bytes in `media_fingerprints.fingerprint` BYTEA; (4) Group fingerprints by season, run cross-episode `find_recurring_segments()` comparison (≥2 episodes); (5) For items without credits segments, run FFmpeg `blackframe` + `silencedetect` in the credits search window, combine via `combine_credits_signals()`; (6) Aggregate counters and log results
+    - **`media_item_id` added to `RecurringMatch`** — The `find_recurring_segments` function built a `HashMap<Uuid, RecurringMatch>` internally but discarded the UUID keys when collecting values. The worker needs the association to know which media item each recurring segment belongs to. Added `media_item_id: Uuid` field to `RecurringMatch`, populated by `find_recurring_segments` before collecting. This is a non-breaking change — existing tests don't construct `RecurringMatch` directly, and `chromaprint_match_to_segment` doesn't read the new field
+    - **Chapter markers always re-evaluated** — Even for files with cached fingerprints, chapter data lives in `media_files.additional_streams` and may change without the file hash changing (e.g., re-muxing preserves the stream but updates chapter metadata). The worker extracts chapters for all candidates regardless of fingerprint cache state; fingerprint cache only skips the expensive audio extraction
+    - **Credits detection is supplementary** — Items already resolved by chapter markers are skipped (passed in `chapter_resolved` list). Items already having a `credits` segment are also skipped (checked via `has_segment_for_type`). This prevents redundant FFmpeg invocations. Blackframe + silence are always run together so `combine_credits_signals` can produce `source='combined'` high-confidence credits when both methods agree
+    - **`outro` segment type deferred** — The design notes outro detection requires reading existing `credits` segments (chicken-and-egg within a single library pass). Implemented as a comment in the worker module; will be addressed in a follow-up that runs after credits are established across the library
+    - **`segment_analysis` task enabled by default** — Unlike `subtitle_auto_fetch` (disabled by default because it consumes external API quota), segment analysis uses local FFmpeg and is safe to run by default. The daily 03:00 schedule matches the design's "after the daily library scan" timing (both fire at 03:00; the scheduler processes them sequentially within the same tick)
+    - **14400s (4-hour) timeout** — Per SEGMENT_DETECTION.md "Timeout: 4 hours". Note: the current scheduler executor wrapper uses a hardcoded 3600s timeout (`tokio::time::timeout(Duration::from_secs(3600), ...)`); the `timeout_seconds` DB column is stored but not yet enforced. Large library analysis may hit the 3600s wrapper timeout before the 14400s column value — this is a pre-existing scheduler limitation to be addressed when per-task timeout enforcement is added
+    - **`ON CONFLICT DO NOTHING` on segment insert** — Prevents duplicate segments when re-analyzing unchanged files. The `media_segments` table has no unique constraint on `(media_item_id, segment_type)` for non-manual segments (only `WHERE is_manual = true`), so the `has_segment_for_type` pre-check is the primary deduplication mechanism; `ON CONFLICT DO NOTHING` is a safety net for race conditions
+    - **No new workspace dependencies** — All functionality uses existing `sqlx`, `serde_json`, `tokio::process::Command`, and the already-present `chromaprint-next`, `regex` crates. FFmpeg invocation reuses the subprocess pattern from `services/segments.rs`
+
+    **Not yet implemented (deferred to later tasks/phases):**
+
+    - `outro` segment type via silence-gap detection after credits — requires a second pass after credits are established
+    - Movie intro detection via chromaprint — design specifies chromaprint for TV episodes (≥2 episodes in a season); movies fall through to chapters + blackframe only. Movie-specific audio matching (against a database of known studio logos) is a future enhancement
+    - Per-task timeout enforcement — the scheduler executor uses a hardcoded 3600s timeout; the `timeout_seconds` column is stored but not enforced
+    - Prometheus metrics from SEGMENT_DETECTION.md Metrics table — `segment_analysis_files_total`, `segment_segments_created_total`, etc. deferred to Pre-v1.0 Hardening
+
+    6. Implement `server/src/workers/storyboard_generator.rs` — background thumbnail generation
+    7. Implement skip button in web client player — `SkipButton.svelte`
+    8. Implement seek preview in web client player — `SeekPreview.svelte`
 
 **Strategic implementation debt absorbed into Phase 10** (per [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md) — storyboards are the first consumer of these items):
 

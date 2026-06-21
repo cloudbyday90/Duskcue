@@ -116,6 +116,6 @@ pub async fn analyze_library_segments(
     _auth: Require<CanManageLibraries>,
     Path(library_id): Path<Uuid>,
 ) -> Result<Json<AnalyzeSegmentsResponse>, AppError> {
-    let result = service::trigger_library_analysis(&state.pool, library_id).await?;
+    let result = service::trigger_library_analysis(&state, library_id).await?;
     Ok(Json(result))
 }
