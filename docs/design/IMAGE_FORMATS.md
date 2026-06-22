@@ -283,11 +283,42 @@ RGBA bytes are extracted via `DynamicImage::to_rgba8().into_raw()` and handed to
 |---|---|---|
 | TMDb artwork download (originals) | ✅ Implemented | `services/artwork_downloader.rs` — downloads `original` size, stores in `/data/metadata/artwork/tmdb/` |
 | WebP variant generation | ✅ Implemented | `services/image_pipeline.rs` (Phase 10 Task 9) — stateless decode → resize → encode library; alpha-aware (lossy for opaque, lossless for transparency); `variants_for_category` encodes the per-category size catalog below |
-| Artwork delivery endpoint | Spec only | Future: Task 10 — `GET /api/v1/items/{id}/artwork/{type}?size={size}&format={format}` will call `image_pipeline::generate_variant` on cache miss |
+| Artwork delivery endpoint | ✅ Implemented | `services/artwork_delivery.rs` + `domains/media/handlers.rs::get_artwork` (Phase 10 Task 10) — `GET /api/v1/items/{id}/artwork/{type}?size={size}`; on-demand WebP variant generation via `image_pipeline::generate_variant` on cache miss; `ETag` from `artwork_id + variant_label`; `Cache-Control: public, max-age=86400, stale-while-revalidate=604800, immutable` |
 | Storyboard WebP generation | ✅ Implemented | Phase 10 Task 4 — per [STORYBOARDS.md](STORYBOARDS.md); FFmpeg emits WebP directly (does not use `image_pipeline.rs` — different code path, FFmpeg's own libwebp encoder) |
 | Overlay compositing to WebP | Spec only | Phase 12 — per [METADATA_OVERLAYS.md](METADATA_OVERLAYS.md); `overlay_image_format: "webp"` already configured |
 | User upload pipeline | Spec only | Phase 13 (admin UI) |
 | `<picture>` fallback in web client | Spec only | Phase 8 follow-up or when artwork delivery endpoint lands |
+
+### Artwork Delivery Endpoint (Task 10 implementation)
+
+**Route:** `GET /api/v1/items/{id}/artwork/{type}?size={size}`
+
+**Path parameters:**
+- `{id}` — media item UUID
+- `{type}` — artwork category: `poster`, `backdrop`, `thumbnail`, `logo`, `banner`, `season_poster`
+
+**Query parameters:**
+- `size` — variant label (e.g., `w185`, `w342`, `w500`, `original`). Defaults per type: poster/season_poster → `w342`, backdrop → `w780`, thumbnail → `w300`, logo → `original`, banner → `w780`.
+
+**Delivery flow:**
+1. Query `artwork` table for the primary artwork row (`order = 0`, the best artwork by TMDb vote count) matching `{type}` for the media item
+2. If no artwork row exists → `404` (MEDIA_004 `ArtworkNotFound`)
+3. Compute the WebP cache path via `image_pipeline::variant_path` using the artwork row's UUID as `source_stem`
+4. If the cache file exists → serve it directly (fast path)
+5. If the cache file is missing → read the source original from `artwork.local_path`, call `image_pipeline::generate_variant` to decode → resize → encode WebP, write the variant to cache, serve the bytes (on-demand generation, <500ms per image per the latency budget)
+6. If the source file is corrupt or unreadable → `404` (graceful degradation per the "Corrupt Source Image" edge case)
+
+**HTTP headers:**
+- `Content-Type: image/webp`
+- `Cache-Control: public, max-age=86400, stale-while-revalidate=604800, immutable`
+- `ETag: "{artwork_id}-{variant_label}"` — strong validator; deterministic WebP encode means the same source + label always produces identical bytes; when TMDb refresh replaces artwork, a new `artwork` row is created (new UUID), invalidating the old ETag naturally
+
+**Client-side URL construction:** The web client constructs artwork URLs from the item ID (e.g., `/api/v1/items/{id}/artwork/poster?size=w342`). No server-side URL embedding in media item responses — avoids expensive `artwork` table JOINs on list endpoints. The browser sends the session cookie automatically on `<img>` loads (same-origin), so `AuthenticatedUser` extraction works for image requests. The `<img onerror>` handler falls back to the gradient placeholder when the server returns 404.
+
+**Module structure:**
+- `services/artwork_delivery.rs` — delivery orchestration (resolve artwork row, cache lookup, on-demand generation, return bytes); a shared service module following the project's "shared services over singletons" convention
+- `domains/media/handlers.rs::get_artwork` — thin HTTP handler returning `Result<Response, AppError>` with binary WebP bytes (same pattern as storyboard sprite serving)
+- `domains/media/mod.rs` — route registered at `/api/v1/items/{id}/artwork/{type}`
 
 The next concrete implementation step is wiring the artwork delivery endpoint (Task 10) with on-demand WebP variant generation via `image_pipeline::generate_variant` — lazily builds missing variants on first request and caches them under `/cache/images/webp/`. A background `artwork_variant_generator` scheduled task pre-warms the cache after library scans for the common case.
 

@@ -14,6 +14,7 @@
     import { notifications } from '$lib/stores/notifications.js';
     import { formatDuration, formatYear, formatRating } from '$lib/utils/format.js';
     import { MEDIA_TYPE_LABELS } from '$lib/utils/constants.js';
+    import { posterUrl, backdropUrl } from '$lib/utils/artwork.js';
 
     let itemId = $derived($page.params.id);
     let loading = $state(true);
@@ -22,6 +23,8 @@
     let watchData = $state(null);
     let isFavorite = $state(false);
     let userRating = $state(0);
+    let backdropError = $state(false);
+    let posterError = $state(false);
 
     onMount(async () => {
         await loadData();
@@ -83,6 +86,8 @@
     let runtimeLabel = $derived(
         item?.runtime_seconds ? formatDuration(item.runtime_seconds) : null,
     );
+    let backdropSrc = $derived(item ? backdropUrl(item.id, 'w1280') : null);
+    let posterSrc = $derived(item ? posterUrl(item.id, 'w500') : null);
     let resumeMs = $derived(watchData?.resume_position_ms || 0);
     let progressPct = $derived(
         item && resumeMs > 0 && item.runtime_seconds
@@ -98,8 +103,13 @@
         </div>
     {:else if item}
     <div class="detail-backdrop">
-        {#if item.backdrop_url}
-            <img src={item.backdrop_url} alt="" class="backdrop-image" />
+        {#if backdropSrc && !backdropError}
+            <img
+                src={backdropSrc}
+                alt=""
+                class="backdrop-image"
+                onerror={() => backdropError = true}
+            />
         {/if}
         <div class="backdrop-overlay"></div>
     </div>
@@ -107,8 +117,13 @@
     <div class="detail-content">
         <div class="detail-header">
             <div class="poster-area">
-                {#if item.poster_url}
-                    <img src={item.poster_url} alt={item.title} class="poster" />
+                {#if posterSrc && !posterError}
+                    <img
+                        src={posterSrc}
+                        alt={item.title}
+                        class="poster"
+                        onerror={() => posterError = true}
+                    />
                 {:else}
                     <div class="poster-placeholder">{item.title?.[0]?.toUpperCase()}</div>
                 {/if}

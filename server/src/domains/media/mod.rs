@@ -46,5 +46,9 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/api/v1/media-items/{id}/files/{file_id}",
             get(handlers::get_media_file),
         )
+        .route(
+            "/api/v1/items/{id}/artwork/{type}",
+            get(handlers::get_artwork),
+        )
         .with_state(state)
 }

@@ -9,16 +9,19 @@
     import { goto } from '$app/navigation';
     import { formatYear, formatRating } from '../utils/format.js';
     import { MEDIA_TYPE_LABELS } from '../utils/constants.js';
+    import { posterUrl } from '../utils/artwork.js';
 
     let {
         item,
-        posterUrl = null,
+        posterSize = 'w342',
         progress = 0,
         showOverview = true,
         onclick = null,
     } = $props();
 
     let imgError = $state(false);
+
+    let posterSrc = $derived(posterUrl(item.id, posterSize));
 
     let year = $derived(formatYear(item?.premiere_date));
     let rating = $derived(formatRating(item?.rating_average));
@@ -52,9 +55,9 @@
     onclick={handleClick}
 >
     <div class="poster-wrapper">
-        {#if posterUrl && !imgError}
+        {#if !imgError}
             <img
-                src={posterUrl}
+                src={posterSrc}
                 alt={item.title}
                 class="poster"
                 loading="lazy"

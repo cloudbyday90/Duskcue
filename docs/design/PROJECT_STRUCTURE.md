@@ -221,7 +221,8 @@ project/
 │       │   ├── sandbox.rs        # FFmpeg per-process sandboxing (landlock + seccompiler) — **implemented**
 │       │   ├── hw_accel.rs       # Hardware acceleration runtime detection (FFmpeg probe, platform checks, priority selection) — **implemented**
 │       │   ├── image_pipeline.rs # WebP encode/resize/variant generation (image 0.25 decode + webp 0.3 libwebp encode; alpha-aware lossy/lossless) — **implemented**
-│       │
+│       │   ├── artwork_delivery.rs # Artwork delivery orchestration (resolve artwork row, cache lookup, on-demand WebP variant generation) — **implemented**
+│       │  
 │       └── workers/              # Background task definitions
 │           ├── mod.rs
 │           ├── library_scanner.rs

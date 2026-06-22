@@ -139,6 +139,8 @@ Processed/resized versions of artwork images. When a client requests a poster at
 
 Original artwork is stored in `/data/metadata/artwork/` (persistent hot tier). Only resized derivatives go in the image cache.
 
+**Implementation status:** The image cache is populated on-demand by the artwork delivery endpoint (`GET /api/v1/items/{id}/artwork/{type}?size={size}`, Phase 10 Task 10) via `services/image_pipeline.rs`. Variant files are stored as `{cache_root}/webp/{category}/{variant_label}/{artwork_id}.webp`. A future `artwork_variant_generator` scheduled task will pre-warm the cache after library scans per IMAGE_FORMATS.md "Background-first strategy".
+
 ### Search Index
 
 **Path:** `/cache/search`

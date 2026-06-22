@@ -14,7 +14,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use axum::extract::{Query, State};
+use axum::body::Body;
+use axum::extract::{Path, Query, State};
+use axum::http::{header, StatusCode};
+use axum::response::Response;
 use axum::Json;
 use serde::Deserialize;
 use uuid::Uuid;
@@ -22,6 +25,8 @@ use validator::Validate;
 
 use crate::error::AppError;
 use crate::extractors::AuthenticatedUser;
+use crate::services::artwork_delivery;
+use crate::services::image_pipeline::{self, ArtworkCategory, EncodeConfig};
 use crate::state::AppState;
 
 use super::service;
@@ -150,4 +155,62 @@ pub async fn get_media_file(
 ) -> Result<Json<MediaFileResponse>, AppError> {
     let file = service::get_media_file(&state.pool, item_id, file_id).await?;
     Ok(Json(file))
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ArtworkQuery {
+    pub size: Option<String>,
+}
+
+pub async fn get_artwork(
+    State(state): State<AppState>,
+    _user: AuthenticatedUser,
+    Path((item_id, artwork_type)): Path<(Uuid, String)>,
+    Query(query): Query<ArtworkQuery>,
+) -> Result<Response, AppError> {
+    let category = ArtworkCategory::from_db_str(&artwork_type)
+        .ok_or_else(|| AppError::BadRequest(format!("unknown artwork type: {artwork_type}")))?;
+
+    let variant_label = match &query.size {
+        Some(size) => {
+            if image_pipeline::resolve_variant(category, size).is_none() {
+                return Err(AppError::BadRequest(format!(
+                    "invalid size `{size}` for artwork type `{artwork_type}`"
+                )));
+            }
+            size.as_str()
+        }
+        None => artwork_delivery::default_variant_label(category),
+    };
+
+    let config = state.runtime_config.load();
+    let encode_config = EncodeConfig {
+        lossy_quality: config.metadata.overlay_image_quality as f32,
+    };
+    drop(config);
+
+    let images_cache_root = state.bootstrap.data_dir.join("cache").join("images");
+
+    let resolved = artwork_delivery::resolve_variant(
+        &state.pool,
+        item_id,
+        category,
+        variant_label,
+        &images_cache_root,
+        &encode_config,
+    )
+    .await?;
+
+    let etag = format!("\"{}-{}\"", resolved.artwork_id, variant_label);
+
+    Ok(Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "image/webp")
+        .header(
+            header::CACHE_CONTROL,
+            "public, max-age=86400, stale-while-revalidate=604800, immutable",
+        )
+        .header(header::ETAG, etag)
+        .body(Body::from(resolved.bytes))
+        .unwrap())
 }
