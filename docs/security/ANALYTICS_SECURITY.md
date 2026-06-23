@@ -4,7 +4,7 @@
 
 This document is the authoritative design for security-focused analytics — detecting suspicious account activity using IP geolocation, impossible travel detection, and behavioral analysis. It covers: IP geolocation enrichment, the impossible travel detection algorithm, false positive suppression, automated responses, the GeoIP database update pipeline, and the trusted IP management system.
 
-The database schema for play sessions, trust events, and trust scores is documented in [DATABASE.md](../design/DATABASE.md). This document describes the application-layer engine that populates geolocation data, detects anomalies, and triggers trust events.
+The database schema for play sessions, trust events, and trust scores is documented in [DATABASE.md](../design/DATABASE.md). This document describes the application-layer engine that populates geolocation data, detects anomalies, and triggers trust events. The HTTP API surface for the analytics dashboard (routes, DTOs, query parameters) is documented in [ANALYTICS.md](../design/ANALYTICS.md).
 
 The design is **hands-off by default** — it runs automatically in the background, surfaces alerts in the admin dashboard when something looks wrong, and never blocks a user without the admin choosing to act. For a personal or family Duskcue, this means the system quietly watches for problems and tells you when it sees one.
 

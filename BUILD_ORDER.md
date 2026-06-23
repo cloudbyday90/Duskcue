@@ -2389,13 +2389,14 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 | Doc | What to build from it |
 |---|---|
+| [ANALYTICS.md](docs/design/ANALYTICS.md) | **Primary** — analytics API surface, route table, query parameter conventions, DTO design, pagination strategy |
 | [DATABASE.md](docs/design/DATABASE.md) | `play_sessions`, `play_events`, `user_trust_events`, `user_trust_scores`, `trakt_accounts`, `trakt_sync_state` |
 | [ANALYTICS_SECURITY.md](docs/security/ANALYTICS_SECURITY.md) | Impossible travel detection, GeoIP (MaxMind GeoLite2), 5-layer false positive suppression |
 | [AUTH.md](docs/design/AUTH.md) | Trakt.tv account linking flow |
 
 **Tasks:**
 
-1. Create `server/src/domains/analytics/` — five-file pattern
+1. ~~Create `server/src/domains/analytics/` — five-file pattern~~ **DONE**
 2. Implement analytics dashboard — play history, top media, concurrent streams, bandwidth usage
 3. Implement `server/src/domains/trakt/` — five-file pattern
 4. Implement Trakt OAuth flow — account linking, token refresh
@@ -2410,6 +2411,40 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
    - 5-layer false positive suppression
    - Notification-first response (admin dashboard alert, no auto-blocking)
 9. Implement `server/src/workers/geoip_updater.rs` — weekly MMDB download
+
+**What was built for Task 1:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/analytics/mod.rs` | Module declarations + router assembly with 9 routes across 5 path groups |
+| `server/src/domains/analytics/error.rs` | `AnalyticsError` enum with 5 variants: `UserNotFound`, `TrustEventNotFound`, `InvalidDateRange`, `InvalidTimePreset`, `Database` catch-all |
+| `server/src/domains/analytics/types.rs` | Three-type DTOs: 3 Row types (`PlaySessionRow`, `TrustEventRow`, `TrustScoreRow`), 4 query param types (`AnalyticsQuery`, `PlayHistoryQuery`, `TopMediaQuery`, `TrustEventQuery`), 12 Response types; validation statics (`VALID_TIME_PRESETS`, `VALID_STREAM_DECISIONS`, `VALID_SEVERITIES`) |
+| `server/src/domains/analytics/service.rs` | 9 `todo!()` service function stubs: `get_analytics_overview`, `list_play_history`, `get_top_media`, `get_bandwidth_usage`, `get_concurrent_streams`, `list_trust_scores`, `list_trust_events`, `acknowledge_trust_event`, `get_geoip_status` |
+| `server/src/domains/analytics/handlers.rs` | 9 handlers wired to `Require<CanViewAnalytics>` + `State`, `Query`, `Path` extractors; all return `Result<Json<T>, AppError>` |
+| `server/src/error.rs` | Added `AppError::Analytics(#[from] AnalyticsError)` variant + `analytics_error_to_http()` mapping all 5 error variants to existing error codes |
+| `server/src/domains/mod.rs` | Added `pub mod analytics;` |
+| `server/src/router.rs` | Merged analytics router via `.merge(crate::domains::analytics::router(state.clone()))`, removed Phase 11 analytics comment |
+| `docs/design/ANALYTICS.md` | Created — domain design document covering API surface, route table, query conventions, pagination strategy, error handling |
+
+**Key decisions from Task 1:**
+
+- **No new error codes per ANALYTICS_SECURITY.md** — The security design doc states "No new API error codes are needed — trust events are created in the background and surfaced via the admin dashboard, not as API errors." The `AnalyticsError` enum variants map to existing codes: `UserNotFound` → USER_001 (404), `TrustEventNotFound` → NOT_FOUND (404), `InvalidDateRange`/`InvalidTimePreset` → VALID_001 (422), `Database` → INTERNAL (500). This follows the SegmentError/StoryboardError precedent of domain-specific enums mapping to a small set of existing codes.
+- **Routes under `/api/v1/analytics/*`** — Per API_CONVENTIONS.md route table: `| Analytics | /api/v1/analytics/* | Dashboard, play history, bandwidth, transcode stats |`. Trust events are nested under `/api/v1/analytics/trust/*` and GeoIP status under `/api/v1/analytics/geoip/status`.
+- **All endpoints require `Require<CanViewAnalytics>`** — The `can_view_analytics` capability (one of the 12 marker types from Phase 4 Task 11) gates all 9 endpoints. No user self-service endpoints in the initial scaffolding; a future `GET /api/v1/analytics/me/history` can be added if user-facing play history is needed.
+- **9 routes covering both Task 2 and Task 8 scope** — Dashboard analytics (overview, play-history, top-media, bandwidth, concurrent) for Task 2; security analytics (trust/scores, trust/events, trust/events/{id}/acknowledge, geoip/status) for Tasks 7–9. The scaffolding defines the full route surface upfront so the router is stable; service stubs are `todo!()` and will be filled in as each task is implemented.
+- **Cursor pagination for play history, offset for trust events** — Play sessions are high-volume time-series (partitioned by month, append-only) so cursor pagination avoids offset degradation. Trust events are lower volume and the admin dashboard benefits from page numbers.
+- **Common query parameters (`range`, `from`, `to`, `user_id`, `library_id`)** — Shared `AnalyticsQuery` struct used by overview/bandwidth endpoints; `PlayHistoryQuery` and `TopMediaQuery` extend it with domain-specific filters. Time presets (`24h`, `7d`, `30d`, `90d`, `all`) are validated against `VALID_TIME_PRESETS` static. Explicit `from`/`to` ISO 8601 dates override presets when both are provided.
+- **`#![allow(unused_variables)]` on service.rs** — All 9 service functions are `todo!()` stubs; the module-level allow suppresses unused parameter warnings until actual implementations are added in Task 2 (and Tasks 7–9 for security analytics).
+- **No new workspace dependencies** — all functionality uses existing `sqlx`, `serde`, `uuid`, `chrono`, `axum`, `thiserror` crates.
+- **`docs/design/ANALYTICS.md` created** — Domain design document covering the API surface, route table, query conventions, pagination strategy, error handling, and implementation notes. The DB schema is already documented in DATABASE.md (Activity domain); the security engine is documented in ANALYTICS_SECURITY.md. ANALYTICS.md covers the HTTP API layer that reads from those tables.
+
+**Context from Task 1 for Task 2:**
+
+- All 9 routes are wired and return `Result<Json<T>, AppError>`; service functions are `todo!()` stubs accepting `&PgPool` and query params
+- The `AnalyticsQuery`, `PlayHistoryQuery`, `TopMediaQuery`, and `TrustEventQuery` structs define the query parameter interface; Task 2 implements the actual SQL queries that consume them
+- Play history uses cursor pagination — the `PlayHistoryResponse` has `has_more` + `next_cursor` fields matching the media domain's cursor pattern
+- Trust events use offset pagination — the `TrustEventListResponse` has `total`, `page`, `page_size`, `total_pages` matching the users domain's offset pattern
+- The `AnalyticsOverviewResponse` aggregates counts for the dashboard summary in a single response (total plays, unique users, watch time, concurrent streams, transcode breakdown)
 
 **Verification:** Play sessions generate analytics data visible in dashboard. Trakt-linked users sync watch state. Impossible travel alerts appear in admin dashboard for suspicious logins.
 

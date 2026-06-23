@@ -87,6 +87,9 @@ pub enum AppError {
     GatewayTimeout(String),
 
     #[error(transparent)]
+    Analytics(#[from] crate::domains::analytics::AnalyticsError),
+
+    #[error(transparent)]
     Auth(#[from] crate::domains::auth::AuthError),
 
     #[error(transparent)]
@@ -123,6 +126,10 @@ pub enum AppError {
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code, detail): (StatusCode, &str, Cow<'_, str>) = match &self {
+            AppError::Analytics(e) => {
+                let (s, c, d) = analytics_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
             AppError::Auth(e) => {
                 let (s, c, d) = auth_error_to_http(e);
                 (s, c, Cow::Owned(d))
@@ -257,6 +264,19 @@ fn is_development_env() -> bool {
         .get()
         .map(|v| v == "development")
         .unwrap_or_else(|| std::env::var("DUSKCUE_ENVIRONMENT").map(|v| v == "development").unwrap_or(false))
+}
+
+fn analytics_error_to_http(err: &crate::domains::analytics::AnalyticsError) -> (StatusCode, &'static str, String) {
+    use crate::domains::analytics::AnalyticsError;
+    use axum::http::StatusCode;
+
+    match err {
+        AnalyticsError::UserNotFound => (StatusCode::NOT_FOUND, "USER_001", "User not found".into()),
+        AnalyticsError::TrustEventNotFound => (StatusCode::NOT_FOUND, "NOT_FOUND", "Trust event not found".into()),
+        AnalyticsError::InvalidDateRange(msg) => (StatusCode::UNPROCESSABLE_ENTITY, "VALID_001", format!("Invalid date range: {}", msg)),
+        AnalyticsError::InvalidTimePreset(p) => (StatusCode::UNPROCESSABLE_ENTITY, "VALID_001", format!("Invalid time preset: {}", p)),
+        AnalyticsError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
+    }
 }
 
 fn auth_error_to_http(err: &crate::domains::auth::AuthError) -> (StatusCode, &'static str, String) {

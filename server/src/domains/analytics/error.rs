@@ -14,3 +14,22 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum AnalyticsError {
+    #[error("user not found")]
+    UserNotFound,
+
+    #[error("trust event not found")]
+    TrustEventNotFound,
+
+    #[error("invalid date range: {0}")]
+    InvalidDateRange(String),
+
+    #[error("invalid time preset: {0}")]
+    InvalidTimePreset(String),
+
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+}
