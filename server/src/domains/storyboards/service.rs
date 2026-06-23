@@ -187,15 +187,23 @@ pub async fn get_storyboard_sprite(
 /// returns a summary. Honors server-wide and per-library enablement: when
 /// storyboards are disabled the result is an empty summary (not an error),
 /// matching the segment domain's `trigger_library_analysis` pattern.
+///
+/// `requesting_user_id` — when `Some`, emits `storyboard_progress` SSE
+/// events to the admin's channel so the UI can show live progress.
 pub async fn trigger_library_generation(
     state: &AppState,
     library_id: Uuid,
+    requesting_user_id: Option<Uuid>,
 ) -> Result<GenerateStoryboardsResponse, StoryboardError> {
     verify_library_exists(&state.pool, library_id).await?;
 
-    let result = crate::workers::storyboard_generator::generate_for_library_one(state, library_id)
-        .await
-        .map_err(StoryboardError::Database)?;
+    let result = crate::workers::storyboard_generator::generate_for_library_one(
+        state,
+        library_id,
+        requesting_user_id,
+    )
+    .await
+    .map_err(StoryboardError::Database)?;
 
     Ok(GenerateStoryboardsResponse {
         queued: false,
@@ -210,12 +218,20 @@ pub async fn trigger_library_generation(
 /// already exists (the worker deletes and regenerates). Returns
 /// `MediaItemNotFound` when the item or its primary media file does not
 /// exist.
+///
+/// `requesting_user_id` — when `Some`, emits `storyboard_progress` SSE
+/// events to the admin's channel.
 pub async fn trigger_item_generation(
     state: &AppState,
     media_item_id: Uuid,
+    requesting_user_id: Option<Uuid>,
 ) -> Result<GenerateStoryboardsResponse, StoryboardError> {
-    let result =
-        crate::workers::storyboard_generator::generate_for_item_one(state, media_item_id).await?;
+    let result = crate::workers::storyboard_generator::generate_for_item_one(
+        state,
+        media_item_id,
+        requesting_user_id,
+    )
+    .await?;
 
     Ok(GenerateStoryboardsResponse {
         queued: false,

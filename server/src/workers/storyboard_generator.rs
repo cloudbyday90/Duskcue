@@ -60,6 +60,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::domains::storyboards::StoryboardError;
+use crate::services::event_bus::ServerEvent;
 use crate::services::storyboards as sb_svc;
 use crate::services::storyboards::GenerationConfig;
 use crate::state::AppState;
@@ -121,8 +122,14 @@ pub async fn run_storyboard_generation(state: &AppState, task_id: Uuid, config: 
 
     let mut total = AggregateResult::default();
     for library_id in &library_ids {
-        match generate_for_library(state, *library_id, &cache_dir, interval_mode_override.as_deref())
-            .await
+        match generate_for_library(
+            state,
+            *library_id,
+            &cache_dir,
+            interval_mode_override.as_deref(),
+            None,
+        )
+        .await
         {
             Ok(result) => {
                 tracing::info!(
@@ -164,12 +171,17 @@ pub async fn run_storyboard_generation(state: &AppState, task_id: Uuid, config: 
 /// Runs the pipeline inline and returns a summary. `interval_mode_override`
 /// is `None` (use server-wide config). Per-library enablement is respected
 /// (returns an empty result with `skipped = 0` when disabled, not an error).
+///
+/// `requesting_user_id` — when `Some`, emits `storyboard_progress` events
+/// to the user's SSE channel so the admin UI can show live progress. The
+/// scheduled task passes `None` (no progress events for background runs).
 pub async fn generate_for_library_one(
     state: &AppState,
     library_id: Uuid,
+    requesting_user_id: Option<Uuid>,
 ) -> Result<LibraryGenerationResult, sqlx::Error> {
     let cache_dir = state.bootstrap.data_dir.join("cache");
-    generate_for_library(state, library_id, &cache_dir, None).await
+    generate_for_library(state, library_id, &cache_dir, None, requesting_user_id).await
 }
 
 /// Synchronous per-item generation entry point — services the admin
@@ -178,9 +190,13 @@ pub async fn generate_for_library_one(
 /// Forces regeneration: any existing `storyboards` row and on-disk directory
 /// are deleted before generating fresh. This matches the design's "force
 /// regen" semantics for the per-item endpoint.
+///
+/// `requesting_user_id` — when `Some`, emits `storyboard_progress` events
+/// to the user's SSE channel.
 pub async fn generate_for_item_one(
     state: &AppState,
     media_item_id: Uuid,
+    requesting_user_id: Option<Uuid>,
 ) -> Result<LibraryGenerationResult, StoryboardError> {
     let pool = &state.pool;
     let cache_dir = state.bootstrap.data_dir.join("cache");
@@ -192,6 +208,18 @@ pub async fn generate_for_item_one(
     let file = load_single_file_for_generation(pool, media_file_id)
         .await?
         .ok_or(StoryboardError::MediaFileNotFound { media_file_id })?;
+
+    publish_progress(
+        state,
+        requesting_user_id,
+        media_file_id,
+        Some(media_item_id),
+        ProgressPhase::Started,
+        1,
+        0,
+        0,
+        0,
+    );
 
     delete_existing_storyboard(pool, media_file_id, &cache_dir).await;
 
@@ -218,6 +246,17 @@ pub async fn generate_for_item_one(
             "Source file missing, skipping storyboard generation"
         );
         result.errors = 1;
+        publish_progress(
+            state,
+            requesting_user_id,
+            media_file_id,
+            Some(media_item_id),
+            ProgressPhase::Completed,
+            1,
+            0,
+            0,
+            1,
+        );
         return Ok(result);
     }
 
@@ -249,6 +288,17 @@ pub async fn generate_for_item_one(
                 duration_ms = gen_result.generation_duration_ms,
                 "Storyboard generated"
             );
+            publish_progress(
+                state,
+                requesting_user_id,
+                media_file_id,
+                Some(media_item_id),
+                ProgressPhase::Completed,
+                1,
+                1,
+                1,
+                0,
+            );
         }
         Err(e) => {
             tracing::warn!(
@@ -258,6 +308,17 @@ pub async fn generate_for_item_one(
                 "Storyboard generation failed"
             );
             result.errors = 1;
+            publish_progress(
+                state,
+                requesting_user_id,
+                media_file_id,
+                Some(media_item_id),
+                ProgressPhase::Completed,
+                1,
+                1,
+                0,
+                1,
+            );
         }
     }
 
@@ -274,11 +335,16 @@ pub async fn generate_for_item_one(
 /// metadata override), resolves the effective config, fetches incremental
 /// candidates, and processes each file. Per-file errors are logged and
 /// counted but do not abort the library run.
+///
+/// `requesting_user_id` — when `Some`, emits `storyboard_progress` events
+/// to the user's SSE channel after each file. The scheduled task passes
+/// `None`.
 async fn generate_for_library(
     state: &AppState,
     library_id: Uuid,
     cache_dir: &Path,
     interval_mode_override: Option<&str>,
+    requesting_user_id: Option<Uuid>,
 ) -> Result<LibraryGenerationResult, sqlx::Error> {
     let pool = &state.pool;
     let mut result = LibraryGenerationResult::default();
@@ -325,6 +391,18 @@ async fn generate_for_library(
         return Ok(result);
     }
     result.candidates = candidates.len() as u64;
+
+    publish_progress(
+        state,
+        requesting_user_id,
+        Uuid::nil(),
+        None,
+        ProgressPhase::Started,
+        result.candidates,
+        0,
+        0,
+        0,
+    );
 
     let server_cfg = state.runtime_config.load();
     let server_transcoding = &server_cfg.transcoding;
@@ -399,7 +477,31 @@ async fn generate_for_library(
                 result.errors += 1;
             }
         }
+
+        publish_progress(
+            state,
+            requesting_user_id,
+            file.media_file_id,
+            None,
+            ProgressPhase::Progress,
+            result.candidates,
+            result.generated + result.errors,
+            result.generated,
+            result.errors,
+        );
     }
+
+    publish_progress(
+        state,
+        requesting_user_id,
+        Uuid::nil(),
+        None,
+        ProgressPhase::Completed,
+        result.candidates,
+        result.generated + result.errors,
+        result.generated,
+        result.errors,
+    );
 
     Ok(result)
 }
@@ -440,6 +542,64 @@ impl AggregateResult {
         self.skipped += other.skipped;
         self.errors += other.errors;
     }
+}
+
+// ---------------------------------------------------------------------------
+// Progress event publishing
+// ---------------------------------------------------------------------------
+
+/// Lifecycle phase reported in `storyboard_progress` event payloads.
+#[derive(Debug, Clone, Copy)]
+enum ProgressPhase {
+    Started,
+    Progress,
+    Completed,
+}
+
+impl ProgressPhase {
+    fn as_str(self) -> &'static str {
+        match self {
+            ProgressPhase::Started => "started",
+            ProgressPhase::Progress => "progress",
+            ProgressPhase::Completed => "completed",
+        }
+    }
+}
+
+/// Publish a `storyboard_progress` SSE event to the requesting user's
+/// channel (if any). No-op when `requesting_user_id` is `None` (scheduled
+/// task invocation). Errors are silently swallowed — SSE is best-effort
+/// progress feedback, not critical state.
+#[allow(clippy::too_many_arguments)]
+fn publish_progress(
+    state: &AppState,
+    requesting_user_id: Option<Uuid>,
+    media_file_id: Uuid,
+    media_item_id: Option<Uuid>,
+    phase: ProgressPhase,
+    candidates: u64,
+    processed: u64,
+    generated: u64,
+    errors: u64,
+) {
+    let Some(user_id) = requesting_user_id else {
+        return;
+    };
+
+    let payload = serde_json::json!({
+        "phase": phase.as_str(),
+        "library_id": null,
+        "media_file_id": media_file_id,
+        "media_item_id": media_item_id,
+        "candidates": candidates,
+        "processed": processed,
+        "generated": generated,
+        "errors": errors,
+    });
+
+    state
+        .event_bus
+        .publish(user_id, ServerEvent::new("storyboard_progress", payload));
 }
 
 // ---------------------------------------------------------------------------

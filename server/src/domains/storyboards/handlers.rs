@@ -72,19 +72,21 @@ pub async fn get_storyboard_sprite(
 
 pub async fn generate_library_storyboards(
     State(state): State<AppState>,
-    _auth: Require<CanManageLibraries>,
+    auth: Require<CanManageLibraries>,
     Path(library_id): Path<Uuid>,
 ) -> Result<Json<GenerateStoryboardsResponse>, AppError> {
-    let result = service::trigger_library_generation(&state, library_id).await?;
+    let result =
+        service::trigger_library_generation(&state, library_id, Some(auth.user.user_id)).await?;
     Ok(Json(result))
 }
 
 pub async fn generate_item_storyboards(
     State(state): State<AppState>,
-    _auth: Require<CanManageLibraries>,
+    auth: Require<CanManageLibraries>,
     Path(item_id): Path<Uuid>,
 ) -> Result<Json<GenerateStoryboardsResponse>, AppError> {
-    let result = service::trigger_item_generation(&state, item_id).await?;
+    let result =
+        service::trigger_item_generation(&state, item_id, Some(auth.user.user_id)).await?;
     Ok(Json(result))
 }
 

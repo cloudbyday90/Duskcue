@@ -195,6 +195,8 @@ project/
 │       ├── services/             # Cross-domain services
 │       │   ├── mod.rs
 │       │   ├── encryption.rs    # AES-256-GCM encryption at rest (ring::aead, provider key encrypt/decrypt, secret masking)
+│       │   ├── event_bus.rs     # Per-user pub/sub for SSE: DashMap<Uuid, broadcast::Sender>, 100-event ring buffer, ConnectionGuard — **implemented**
+│       │   ├── events_handler.rs # SSE transport: GET /api/v1/events handler (?types= filter, Last-Event-ID replay, X-Accel-Buffering, 15s KeepAlive) — **implemented**
 │       │   ├── scheduler.rs      # Scheduled task runner
 │       │   ├── fs_watcher.rs     # Filesystem watcher (notify + notify-debouncer-full)
 │       │   ├── media_matching.rs # 5-layer identification cascade (.media-match, provider ID tags)

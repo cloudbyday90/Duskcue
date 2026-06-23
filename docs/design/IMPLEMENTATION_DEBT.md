@@ -24,7 +24,7 @@ No artificial "Phase 8.5" or dedicated "refactoring sprint" is created. The rese
 
 | # | Debt Item | Source Decision | Estimated Effort | Scheduled Phase | Blocks | Status |
 |---|---|---|---|---|---|---|
-| 1 | **SSE endpoint + EventBus** (`/api/v1/events` + `DashMap<Uuid, broadcast::Sender>` in AppState) | [REAL_TIME_PUSH.md](REAL_TIME_PUSH.md) | 2-3 days | **Phase 10** (storyboard progress is first consumer) | Phase 7 transcode progress migration; Phase 11 analytics dashboard; Phase 13 notification delivery | Spec only |
+| 1 | **SSE endpoint + EventBus** (`/api/v1/events` + `DashMap<Uuid, broadcast::Sender>` in AppState) | [REAL_TIME_PUSH.md](REAL_TIME_PUSH.md) | 2-3 days | **Phase 10** (storyboard progress is first consumer) | Phase 7 transcode progress migration; Phase 11 analytics dashboard; Phase 13 notification delivery | ✅ Phase 10 Task 11 |
 | 2 | **Image pipeline service** (`services/image_pipeline.rs` — WebP encode, resize, variant generation) | [IMAGE_FORMATS.md](IMAGE_FORMATS.md) | 3-5 days | **Phase 10** (storyboard WebP sprites use same service) | Artwork WebP variants; storyboard sprites; overlay composites (Phase 12) | ✅ Phase 10 Task 9 |
 | 3 | **Artwork delivery endpoint** (`GET /api/v1/items/{id}/artwork/{type}?size={size}`) | [IMAGE_FORMATS.md](IMAGE_FORMATS.md) | 2-3 days | **Phase 10** (shares `image_pipeline.rs`) | Web client poster rendering (currently gradient placeholders) | ✅ Phase 10 Task 10 |
 | 4 | **Web client `events.js` store** (Svelte store managing `EventSource` lifecycle) | [REAL_TIME_PUSH.md](REAL_TIME_PUSH.md) | 1-2 days | **Phase 10** (storyboard progress feed in player) | Player transcode progress; notification center; scan progress | Spec only |

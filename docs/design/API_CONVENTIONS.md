@@ -771,11 +771,14 @@ GET /api/v1/events?types=transcode_progress,scan_progress
 
 | Event | Direction | Payload |
 |---|---|---|
+| `storyboard_progress` | Server → Client | `{ phase: "started"\|"progress"\|"completed", library_id, media_file_id, media_item_id, candidates, processed, generated, errors }` |
 | `transcode_progress` | Server → Client | `{ session_id, progress, speed, eta_seconds }` |
 | `scan_progress` | Server → Client | `{ library_id, files_found, files_processed, percent }` |
 | `notification` | Server → Client | `{ type, title, message, action_url }` |
 | `session_kicked` | Server → Client | `{ reason }` |
 | `playback_command` | Server → Client | `{ command: "stop" \| "pause", reason }` |
+
+`storyboard_progress` is the first implemented event type (Phase 10 Task 11). The others are documented for forward compatibility; clients ignore unknown event types per the SSE spec.
 
 ### Reconnection and Replay
 

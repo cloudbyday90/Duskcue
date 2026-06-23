@@ -30,6 +30,7 @@ use crate::config::BootstrapConfig;
 use crate::error::set_environment;
 use crate::middleware::RateLimitState;
 use crate::services::encryption::EncryptionKey;
+use crate::services::event_bus::EventBus;
 use crate::services::fs_watcher::LibraryWatcherManager;
 use crate::services::metadata::EnrichmentOrchestrator;
 
@@ -725,6 +726,7 @@ pub struct AppState {
     pub enrichment: Arc<EnrichmentOrchestrator>,
     pub encryption_key: Arc<EncryptionKey>,
     pub transcode_manager: Arc<crate::services::transcoding::TranscodeManager>,
+    pub event_bus: Arc<EventBus>,
 }
 
 impl AppState {
@@ -757,6 +759,7 @@ impl AppState {
             enrichment,
             encryption_key: Arc::new(encryption_key),
             transcode_manager,
+            event_bus: Arc::new(EventBus::with_default_limit()),
         }
     }
 
@@ -804,6 +807,7 @@ impl AppState {
             enrichment,
             encryption_key: Arc::new(encryption_key),
             transcode_manager,
+            event_bus: Arc::new(EventBus::with_default_limit()),
         }
     }
 

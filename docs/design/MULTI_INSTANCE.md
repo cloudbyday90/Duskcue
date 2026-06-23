@@ -58,7 +58,7 @@ The Nextcloud scaling guide (linked in Research Sources) illustrates the cost: 1
 
 For Duskcue, the distributed-coordination cost would manifest as:
 
-- **Redis or NATS JetStream dependency** for shared rate-limiting state, WebAuthn challenge state, future SSE event bus
+- **Redis or NATS JetStream dependency** for shared rate-limiting state, WebAuthn challenge state, SSE event bus
 - **Distributed lock manager** for scheduled task single-execution (only one instance runs each scheduled task)
 - **Sticky sessions or shared transcode session state** so playback start→heartbeat→stop lands on the same instance that owns the FFmpeg process
 - **Coordinated filesystem watcher** (only one instance can hold kernel `inotify` handles per directory; others must receive events via pub/sub)
@@ -78,7 +78,7 @@ The current codebase has substantial in-process mutable state that assumes a sin
 | `Scheduler` | Single-executor-per-task-type registry; tasks fire once per tick | High — needs distributed lock or leader election |
 | `RateLimitState` | `governor` direct rate limiters (in-memory counters) | Medium — Redis-backed rate limiter alternative |
 | `webauthn_challenges` | `Arc<DashMap<String, WebauthnChallenge>>` — 5-minute TTL ceremonies | Medium — Redis or PG table |
-| `EventBus` (future, SSE) | `DashMap<Uuid, broadcast::Sender>` per user | High — Redis pub/sub or NATS |
+| `EventBus` (SSE) | `DashMap<Uuid, broadcast::Sender>` per user | High — Redis pub/sub or NATS |
 | `TvdbClient.token_state` | `RwLock<TokenState>` — JWT token cache | Low — per-instance cache is fine (token is per-client; each instance fetches its own) |
 
 Migrating all of this is multiple person-months of work for zero user-visible benefit on the realistic deployment target.
@@ -261,7 +261,7 @@ This is the authoritative list of in-process mutable state in Duskcue. Future au
 | **Filesystem watcher** | `LibraryWatcherManager` internals (`Mutex<HashMap>`, debouncer) | Long-lived, references kernel handles | Only one instance can hold kernel handles; requires pub/sub fan-out to others |
 | **Scheduler executors** | `Scheduler.executors` (`Vec<(String, TaskExecutor)>`) | Static registration; task execution is the concern | Distributed lock (PG advisory lock, Redis SETNX, or dedicated leader election) |
 | **Rate limiters** | `RateLimitState` (governor in-memory state stores) | Per-key counters, high frequency | Redis-backed governor alternative (`governor-redis`) |
-| **EventBus (future SSE)** | `DashMap<Uuid, broadcast::Sender>` per user | Long-lived per connection | Redis pub/sub or NATS JetStream |
+| **EventBus (SSE)** | `DashMap<Uuid, broadcast::Sender>` per user | Long-lived per connection | Redis pub/sub or NATS JetStream |
 | **TVDB JWT cache** | `TvdbClient.token_state` (`RwLock<TokenState>`) | Per-client auth; each instance has its own | No migration needed — each instance fetches its own token |
 | **Process-wide constants** | `pub static VALID_*` arrays, `LazyLock<Regex>` | Read-only after init | No migration needed |
 | **Server start time** | `OnceLock<Instant> START_TIME` | Per-process | No migration needed (each instance has its own uptime) |

@@ -19,6 +19,8 @@ pub mod artwork_downloader;
 pub mod decision_engine;
 pub mod encryption;
 pub mod enrichment_persistence;
+pub mod event_bus;
+pub mod events_handler;
 pub mod fanart_client;
 pub mod fs_watcher;
 pub mod hw_accel;

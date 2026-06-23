@@ -413,7 +413,7 @@ If an admin switches from FCM to APNs (or vice versa):
 |---|---|---|
 | `notifications` table + `notification_types` seed | ✅ Implemented | Phase 2 migration |
 | In-app notification center (REST API) | Not started | Phase 13 |
-| SSE event bus for `notification` events | Not started | Phase 13; uses EventBus from REAL_TIME_PUSH.md |
+| SSE event bus for `notification` events | ✅ EventBus implemented (Phase 10 Task 11) | `services/event_bus.rs` — `DashMap<Uuid, broadcast::Sender>` per user; `notification` event fan-out not yet wired (Phase 13 dispatch will call `state.event_bus.publish(user_id, ServerEvent::new("notification", payload))`) |
 | Webhook dispatch | Not started | Phase 13 |
 | `user_push_devices` table | Not started | Phase 13 schema migration |
 | FCM HTTP v1 client (Rust) | Not started | Phase 13 (or Phase 16 prerequisite) |

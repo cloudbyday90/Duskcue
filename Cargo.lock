@@ -1648,6 +1648,7 @@ dependencies = [
  "tokio",
  "tokio-process-tools",
  "tokio-rustls",
+ "tokio-stream",
  "tokio-util",
  "toml 0.8.23",
  "tower",
@@ -6480,6 +6481,7 @@ dependencies = [
  "futures-core",
  "pin-project-lite",
  "tokio",
+ "tokio-util",
 ]
 
 [[package]]

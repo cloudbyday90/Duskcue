@@ -157,6 +157,7 @@ The server maintains a short ring buffer (default: 100 events per user, ~5 minut
 |---|---|---|---|
 | `transcode_progress` | `services/transcoding.rs` | [STREAMING.md](STREAMING.md) | 1/sec during active transcode; updates `TranscodeSession.progress` |
 | `scan_progress` | `workers/library_scanner.rs` | [MEDIA_SCANNING.md](MEDIA_SCANNING.md) | 1/sec during active library scan |
+| `storyboard_progress` | `workers/storyboard_generator.rs` | [STORYBOARDS.md](STORYBOARDS.md) | Emitted on admin-triggered generation (`phase: started|progress|completed`); scheduled task does not emit |
 | `notification` | Phase 13 notification system | Phase 13 (TBD) | New in-app notification created |
 | `session_kicked` | `domains/auth/service.rs` | [AUTH.md](AUTH.md) | Admin force-logout; client must clear session and redirect to login |
 | `playback_command` | `domains/playback/` | [STREAMING.md](STREAMING.md) | Server-initiated stop/pause (e.g., streaming policy auto-terminate) |
@@ -264,13 +265,28 @@ SSE complements these — it carries metadata about state changes ("your transco
 | Component | Status | Notes |
 |---|---|---|
 | `/api/v1/ws` endpoint (previous design) | Superseded | Replaced by `/api/v1/events` SSE endpoint per this document |
-| SSE endpoint `/api/v1/events` | Spec only | Implementation will land alongside Phase 7 Task follow-up (transcode progress is the first consumer) |
-| `EventBus` in `AppState` | Not implemented | Will be added alongside the SSE endpoint |
-| `Last-Event-ID` ring-buffer replay | Spec only | Bundled with the SSE endpoint implementation |
-| Svelte `events.js` store | Not implemented | Phase 8 follow-up or Phase 11 (first live dashboard consumer) |
+| SSE endpoint `/api/v1/events` | ✅ Implemented | `server/src/services/events_handler.rs` — `GET /api/v1/events` with `?types=` filter, `Last-Event-ID` replay, `X-Accel-Buffering: no`, 15s KeepAlive, `retry: 5000` on open |
+| `EventBus` in `AppState` | ✅ Implemented | `server/src/services/event_bus.rs` — `DashMap<Uuid, UserChannel>` with per-user `broadcast::Sender`, 100-event ring buffer, `ConnectionGuard` enforcing 5-connection-per-user limit |
+| `Last-Event-ID` ring-buffer replay | ✅ Implemented | `EventBus::replay_after(user_id, last_id)` drains the per-user `VecDeque`; drained before live event subscription in the SSE handler |
+| First consumer: `storyboard_progress` events | ✅ Implemented | `workers/storyboard_generator.rs` publishes `started`/`progress`/`completed` events for admin-triggered generation (per-library + per-item); scheduled-task invocation passes `None` for `requesting_user_id` (no SSE noise for background runs) |
+| Per-user connection limit | ✅ Implemented | `EventBus::register_connection()` enforces `DEFAULT_MAX_CONNECTIONS_PER_USER = 5`; excess returns `AppError::RateLimited { code: "SSE_LIMIT_REACHED" }` |
+| `tokio-stream` dependency | ✅ Added | `tokio-stream = { version = "0.1", features = ["sync"] }` — `BroadcastStream` wraps `broadcast::Receiver` as a `Stream` for Axum's `Sse` response |
+| Svelte `events.js` store | Not implemented | Phase 10 Task 12 — consumes the SSE endpoint; dispatches to domain stores (`libraries.js` for `storyboard_progress`, future `player.js` for `transcode_progress`) |
 | Mobile push gateway (FCM/APNs) | Not implemented | Phase 16 |
 
-The first concrete consumer of SSE is **transcode progress** (Phase 7) — currently the `Player.svelte` component polls `GET /api/v1/playback/{session_id}` every few seconds. Migrating to SSE is a Phase 7 follow-up or a Phase 11 enhancement.
+The first concrete consumer of SSE is **storyboard generation progress** (Phase 10 Task 11) — admin clicks "Generate Storyboards" and sees per-file progress streamed to the libraries page. Transcode progress migration (Phase 7 follow-up) is the next consumer; the `Player.svelte` currently polls `GET /api/v1/playback/{session_id}` every few seconds.
+
+### Architecture decisions (Phase 10 Task 11)
+
+- **`EventBus` is a `services/` module, not a domain** — Cross-cutting infrastructure consumed by every domain (auth, playback, libraries, storyboards, notifications). Same convention as `encryption.rs`, `event_bus.rs` siblings. The SSE *transport* lives in `services/events_handler.rs`; the SSE *endpoint route* is registered in `router.rs` alongside `/health` and `/metrics`.
+- **`UserChannel` lazily created and never removed** — `channel_for(user_id)` does a `DashMap::get` fast-path, falling back to `entry().or_insert()` for first-touch. A one-time active user never re-incurs the allocation; the memory cost is bounded by `CHANNEL_CAPACITY (256) + RING_BUFFER_CAPACITY (100)` events per user.
+- **Per-connection task owns the `ConnectionGuard`** — The SSE handler spawns a `tokio::spawn`'d forwarder task that owns the broadcast receiver, replay drain, type-filter check, and the `ConnectionGuard`. When the client disconnects, Axum drops the response future → `ReceiverStream` sender closes → forwarder task exits on next `tx.send().await` → guard drops → connection count decrements. Deterministic, no leak window.
+- **`BroadcastStream` lag handling** — If a subscriber falls >256 events behind, `broadcast::Receiver::recv()` returns `RecvError::Lagged`. The forwarder task logs at `debug` and continues; the client sees a brief gap. The 100-event ring buffer absorbs typical disconnect/reconnect windows without hitting this path.
+- **`retry: 5000` on connection open** — Axum's `Event::default().retry(Duration::from_millis(5000))` emits the `retry:` SSE field once, suggesting a 5-second reconnect delay to the browser's `EventSource`. After the first event, only live/replayed events flow.
+- **Replay strategy: drain the per-user ring buffer** — On reconnect with `Last-Event-ID: <uuid>`, the handler calls `EventBus::replay_after(user_id, id)` which returns all events strictly newer than the ID. UUIDv7 ids are time-ordered so the comparison is canonical. If the last-event-id is no longer in the buffer (older than ~5 minutes of activity), the entire buffer is returned — clients may receive redundant events, which is safe because progress events are idempotent overwrites and notifications carry their own `id` for client-side dedup.
+- **`storyboard_progress` payload schema** — `{"phase":"started|progress|completed","library_id":null,"media_file_id":"uuid","media_item_id":"uuid|null","candidates":N,"processed":N,"generated":N,"errors":N}`. `phase` lets the client distinguish the initial fan-out (`started`, all zeros), per-file ticks (`progress`, incrementing counters), and the terminal state (`completed`, final counts).
+- **Scheduled task does not emit SSE events** — `run_storyboard_generation()` (the scheduled 04:00 task) passes `None` for `requesting_user_id`. Rationale: there is no admin watching at 04:00; events would buffer into the ring buffer with no subscriber, wasting memory. Admin-triggered generation passes `Some(user_id)` from `Require<CanManageLibraries>::user.user_id`. The scheduled task's results are visible in the scheduled-task-run history via Phase 13a.
+- **No background-task per event type** — Each domain worker that wants to push events simply calls `state.event_bus.publish(user_id, ServerEvent::new("type", payload))`. No registration, no trait wiring. New event types are documented in §Event Taxonomy but require no code changes to the bus or transport.
 
 ## Key Decisions
 

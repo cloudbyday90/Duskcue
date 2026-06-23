@@ -118,6 +118,10 @@ pub fn build_router(state: AppState) -> Router<AppState> {
                 metrics_subnet_guard,
             )),
         )
+        .route(
+            "/api/v1/events",
+            get(crate::services::events_handler::events_handler),
+        )
         .merge(crate::domains::auth::router(state.clone()))
         .merge(crate::domains::users::router(state.clone()))
         .merge(crate::domains::libraries::router(state.clone()))

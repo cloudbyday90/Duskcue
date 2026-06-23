@@ -38,6 +38,7 @@ reqwest.workspace = true
 config.workspace = true
 clap.workspace = true
 tokio-util.workspace = true
+tokio-stream.workspace = true
 mimalloc.workspace = true
 tracing-appender.workspace = true
 tracing-error.workspace = true
