@@ -2262,7 +2262,27 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 9. ~~Implement `server/src/services/image_pipeline.rs` — WebP encode, resize, variant generation (debt from [IMAGE_FORMATS.md](docs/design/IMAGE_FORMATS.md); storyboards produce WebP sprites via this same service)~~ **DONE**
 10. ~~Implement artwork delivery endpoint `GET /api/v1/items/{id}/artwork/{type}?size={size}` — serves WebP variants from `image_pipeline.rs` (debt from [IMAGE_FORMATS.md](docs/design/IMAGE_FORMATS.md); web client currently renders gradient placeholders)~~ **DONE**
 11. ~~Implement SSE endpoint `GET /api/v1/events` + `EventBus` in AppState — `DashMap<Uuid, broadcast::Sender>` per user (debt from [REAL_TIME_PUSH.md](docs/design/REAL_TIME_PUSH.md); storyboard generation progress is the first SSE consumer)~~ **DONE**
-12. Implement `clients/web/src/lib/stores/events.js` — Svelte store managing `EventSource` lifecycle; dispatches to domain stores (debt from [REAL_TIME_PUSH.md](docs/design/REAL_TIME_PUSH.md); player subscribes to storyboard-ready events)
+12. ~~Implement `clients/web/src/lib/stores/events.js` — Svelte store managing `EventSource` lifecycle; dispatches to domain stores (debt from [REAL_TIME_PUSH.md](docs/design/REAL_TIME_PUSH.md); player subscribes to storyboard-ready events)~~ **DONE**
+
+**What was built for Task 12:**
+
+| File | Purpose |
+|---|---|
+| `clients/web/src/lib/stores/events.js` | SSE client store — `EventSource` lifecycle management with handler registry. `connect()`/`disconnect()` methods; `on(type, handler)` returns unsubscribe fn; `off(type, handler)` for manual removal. Connection state writable: `'disconnected'`/`'connecting'`/`'connected'`. Fatal HTTP errors (401/403/429/500 → `readyState === CLOSED`) disconnect cleanly; network errors rely on native `EventSource` auto-reconnect. Handler registry (`Map<type, Set<fn>>`) dispatches named SSE events to domain stores. SSR-safe via `typeof EventSource` guard. Derived exports: `connectionState`, `isConnected`, `isConnecting`, `lastEventId` |
+| `clients/web/src/routes/+layout.svelte` | SSE lifecycle wiring — new `$effect` calls `events.connect()` when `$isAuthenticated` becomes true, `events.disconnect()` on logout/cleanup. Imported `events` from `$lib/stores/events.js` |
+| `clients/web/src/lib/stores/libraries.js` | First SSE consumer — registers `storyboard_progress` handler at module load. Tracks progress in `storyboardProgress` state field (set to latest event payload, cleared on `phase: 'completed'`). Fires toast notification on completion (success for 0 errors, warning for >0 errors). Exported new derived stores: `storyboardProgress`, `isGeneratingStoryboards` |
+
+**Key decisions from Task 12:**
+
+- **Handler registry over `onmessage`** — The browser's `EventSource` only fires `onmessage` for unnamed events. Duskcue uses named SSE events (`event: storyboard_progress`), so the store uses `addEventListener(type, dispatcher)` per type. A `Map<type, Set<handler>>` is the source of truth; `attachAllListeners()` re-registers on new `EventSource` creation. The dispatcher catches per-handler errors so one failing handler doesn't break others
+- **No `?types=` query filter** — Store receives all authorized events, dispatches client-side. Simpler than tracking registered types and reconnecting when the set changes. Negligible bandwidth at Duskcue's scale (1–5 users). Server already enforces per-user authorization
+- **Native `EventSource` auto-reconnect** — No custom exponential backoff. `onerror` with `readyState === CLOSED` → fatal HTTP error → disconnect. `readyState === CONNECTING` → network error → browser auto-reconnecting. The server's `retry: 5000` field guides reconnect delay
+- **`Last-Event-ID` handled by the browser** — No manual tracking. `EventSource` sends the header automatically on reconnect; server `EventBus::replay_after()` handles the ring-buffer drain. The store records `lastEventId` for diagnostics only
+- **Layout-managed connection lifecycle** — Avoids circular dependency (events store would need to import auth, while domain stores import both events and auth). The layout already manages auth redirects; adding SSE lifecycle is one `$effect` with cleanup return
+- **Handler registration at module load** — Domain stores call `events.on(type, fn)` inside factory functions. Handler enters the registry immediately; `attachAllListeners()` wires it to the `EventSource` when `connect()` runs later. No race between handler registration and connection establishment
+- **SSR-safe** — `connect()` guards with `typeof EventSource === 'undefined'`; domain store handler registration guards with `typeof window !== 'undefined'`. SvelteKit `adapter-node` SSR doesn't crash
+- **`storyboard_progress` is the first consumer** — `libraries.js` registers a handler that tracks progress state and fires completion toasts. Future consumers: `player.js` for `transcode_progress`, `notifications.js` for `notification`, `auth.js` for `session_kicked`
+- **0 svelte-check warnings, 0 build errors** — Matches the verification bar from Phase 10 Tasks 7–8 and Phase 8 Task 4
 
 **What was built for Task 11:**
 
@@ -2356,6 +2376,8 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - Alternate artwork selection (`?order=N`) — only the primary artwork (order=0) is served. Phase 12 (poster management) adds multi-source selection
 
 **Verification:** After detection runs, media items have intro/credit markers. Skip button appears during intros in player. Seek bar shows thumbnail previews. Artwork renders on MediaCard (no more gradient placeholders). Storyboard generation progress streams via SSE.
+
+**Phase 10 status:** All 12 tasks complete (8 core + 4 strategic implementation debt items).
 
 ---
 
@@ -2617,7 +2639,7 @@ Phase 7: Streaming & Playback (COMPLETE — 13 tasks)              │
 Phase 8: Web Client Core (COMPLETE — 6 tasks) ←─── (consumes all above) ←──────┘
     ↓
     ├── Phase 9:  Subtitles (COMPLETE — 8 tasks)
-    ├── Phase 10: Segments & Storyboards (+ SSE + image pipeline + artwork endpoint)
+    ├── Phase 10: Segments & Storyboards (COMPLETE — 12 tasks: 8 core + SSE + image pipeline + artwork endpoint + events store)
     ├── Phase 11: Analytics & Trakt
     ├── Phase 12: Kometa-Like System
     ├── Phase 13a: System Operations Core (config + backup + maintenance)

@@ -29,6 +29,8 @@ import {
     updateLibraryPath as apiUpdateLibraryPath,
     deleteLibraryPath as apiDeleteLibraryPath,
 } from '../api/libraries.js';
+import { events } from './events.js';
+import { notifications } from './notifications.js';
 
 function extractItems(response) {
     if (Array.isArray(response)) return response;
@@ -43,9 +45,31 @@ function createLibrariesStore() {
         currentLibrary: null,
         paths: {},
         scanning: {},
+        storyboardProgress: null,
         loading: false,
         error: null,
     });
+
+    if (typeof window !== 'undefined') {
+        events.on('storyboard_progress', (payload) => {
+            if (payload.phase === 'completed') {
+                const generated = payload.generated || 0;
+                const errors = payload.errors || 0;
+                if (errors > 0) {
+                    notifications.warning(
+                        `Storyboard generation complete: ${generated} generated, ${errors} failed`,
+                    );
+                } else {
+                    notifications.success(
+                        `Storyboard generation complete: ${generated} generated`,
+                    );
+                }
+                update((s) => ({ ...s, storyboardProgress: null }));
+            } else {
+                update((s) => ({ ...s, storyboardProgress: payload }));
+            }
+        });
+    }
 
     return {
         subscribe,
@@ -270,3 +294,13 @@ export const currentLibrary = derived(
 export const librariesLoading = derived(libraries, ($libraries) => $libraries.loading);
 
 export const librariesError = derived(libraries, ($libraries) => $libraries.error);
+
+export const storyboardProgress = derived(
+    libraries,
+    ($libraries) => $libraries.storyboardProgress,
+);
+
+export const isGeneratingStoryboards = derived(
+    libraries,
+    ($libraries) => $libraries.storyboardProgress !== null,
+);

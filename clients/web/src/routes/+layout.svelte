@@ -12,6 +12,7 @@
     import { goto } from '$app/navigation';
     import { auth, isAuthenticated, currentUser } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
+    import { events } from '$lib/stores/events.js';
     import NotificationToast from '$lib/components/NotificationToast.svelte';
     import SearchBar from '$lib/components/SearchBar.svelte';
 
@@ -41,6 +42,16 @@
             goto('/auth/login');
         } else if ($isAuthenticated && isAuthRoute) {
             goto('/dashboard');
+        }
+    });
+
+    $effect(() => {
+        if (!authChecked) return;
+        if ($isAuthenticated) {
+            events.connect();
+            return () => events.disconnect();
+        } else {
+            events.disconnect();
         }
     });
 
