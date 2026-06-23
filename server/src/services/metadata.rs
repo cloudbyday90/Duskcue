@@ -783,10 +783,12 @@ impl EnrichmentOrchestrator {
             if let Some(tid) = effective_tmdb_id {
                 let tmdb_cfg = self.tmdb_config();
                 artwork_downloader::download_and_store_artwork(
-                    &self.db,
-                    &self.http,
-                    &tmdb_cfg,
-                    &self.data_dir,
+                    &artwork_downloader::ArtworkDownloadContext {
+                        pool: &self.db,
+                        http: &self.http,
+                        tmdb_config: &tmdb_cfg,
+                        data_dir: &self.data_dir,
+                    },
                     item_id,
                     tid,
                     images,
@@ -888,10 +890,12 @@ impl EnrichmentOrchestrator {
             if let Some(tid) = effective_tmdb_id {
                 let tmdb_cfg = self.tmdb_config();
                 artwork_downloader::download_and_store_artwork(
-                    &self.db,
-                    &self.http,
-                    &tmdb_cfg,
-                    &self.data_dir,
+                    &artwork_downloader::ArtworkDownloadContext {
+                        pool: &self.db,
+                        http: &self.http,
+                        tmdb_config: &tmdb_cfg,
+                        data_dir: &self.data_dir,
+                    },
                     item_id,
                     tid,
                     images,

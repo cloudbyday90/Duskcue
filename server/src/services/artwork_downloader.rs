@@ -32,11 +32,26 @@ pub struct ArtworkDownloadResult {
     pub failed: u32,
 }
 
+pub struct ArtworkDownloadContext<'a> {
+    pub pool: &'a PgPool,
+    pub http: &'a Client,
+    pub tmdb_config: &'a TmdbConfig,
+    pub data_dir: &'a Path,
+}
+
+pub struct NewArtworkRow<'a> {
+    pub media_item_id: Uuid,
+    pub artwork_type: &'a str,
+    pub source_url: &'a str,
+    pub local_path: &'a Path,
+    pub width: u32,
+    pub height: u32,
+    pub language: Option<&'a str>,
+    pub order: i32,
+}
+
 pub async fn download_and_store_artwork(
-    pool: &PgPool,
-    http: &Client,
-    tmdb_config: &TmdbConfig,
-    data_dir: &Path,
+    ctx: &ArtworkDownloadContext<'_>,
     media_item_id: Uuid,
     tmdb_id: u64,
     images: &ImagesData,
@@ -61,18 +76,8 @@ pub async fn download_and_store_artwork(
     let sorted_logos = sort_by_votes(&images.logos);
 
     for (order, image) in sorted_posters.iter().take(MAX_POSTERS).enumerate() {
-        match download_single_artwork(
-            pool,
-            http,
-            tmdb_config,
-            data_dir,
-            media_item_id,
-            tmdb_id,
-            image,
-            "poster",
-            order as i32,
-        )
-        .await
+        match download_single_artwork(ctx, media_item_id, tmdb_id, image, "poster", order as i32)
+            .await
         {
             DownloadOutcome::Downloaded => result.downloaded += 1,
             DownloadOutcome::SkippedExisting => result.skipped_existing += 1,
@@ -81,18 +86,8 @@ pub async fn download_and_store_artwork(
     }
 
     for (order, image) in sorted_backdrops.iter().take(MAX_BACKDROPS).enumerate() {
-        match download_single_artwork(
-            pool,
-            http,
-            tmdb_config,
-            data_dir,
-            media_item_id,
-            tmdb_id,
-            image,
-            "backdrop",
-            order as i32,
-        )
-        .await
+        match download_single_artwork(ctx, media_item_id, tmdb_id, image, "backdrop", order as i32)
+            .await
         {
             DownloadOutcome::Downloaded => result.downloaded += 1,
             DownloadOutcome::SkippedExisting => result.skipped_existing += 1,
@@ -101,18 +96,8 @@ pub async fn download_and_store_artwork(
     }
 
     for (order, image) in sorted_logos.iter().take(MAX_LOGOS).enumerate() {
-        match download_single_artwork(
-            pool,
-            http,
-            tmdb_config,
-            data_dir,
-            media_item_id,
-            tmdb_id,
-            image,
-            "logo",
-            order as i32,
-        )
-        .await
+        match download_single_artwork(ctx, media_item_id, tmdb_id, image, "logo", order as i32)
+            .await
         {
             DownloadOutcome::Downloaded => result.downloaded += 1,
             DownloadOutcome::SkippedExisting => result.skipped_existing += 1,
@@ -141,10 +126,7 @@ enum DownloadOutcome {
 }
 
 async fn download_single_artwork(
-    pool: &PgPool,
-    http: &Client,
-    tmdb_config: &TmdbConfig,
-    data_dir: &Path,
+    ctx: &ArtworkDownloadContext<'_>,
     media_item_id: Uuid,
     tmdb_id: u64,
     image: &ImageEntry,
@@ -153,7 +135,7 @@ async fn download_single_artwork(
 ) -> DownloadOutcome {
     let source_url = format!(
         "{}original{}",
-        tmdb_config.secure_image_base_url, image.file_path
+        ctx.tmdb_config.secure_image_base_url, image.file_path
     );
 
     let existing = sqlx::query_scalar::<_, i64>(
@@ -161,7 +143,7 @@ async fn download_single_artwork(
     )
     .bind(media_item_id)
     .bind(&source_url)
-    .fetch_one(pool)
+    .fetch_one(ctx.pool)
     .await
     .unwrap_or(0);
 
@@ -169,20 +151,22 @@ async fn download_single_artwork(
         return DownloadOutcome::SkippedExisting;
     }
 
-    let local_path = build_local_path(data_dir, tmdb_id, artwork_type, &image.file_path);
+    let local_path = build_local_path(ctx.data_dir, tmdb_id, artwork_type, &image.file_path);
 
-    match download_image(http, &source_url, &local_path).await {
+    match download_image(ctx.http, &source_url, &local_path).await {
         Ok(()) => {
             match insert_artwork_row(
-                pool,
-                media_item_id,
-                artwork_type,
-                &source_url,
-                &local_path,
-                image.width,
-                image.height,
-                image.language.as_deref(),
-                order,
+                ctx.pool,
+                &NewArtworkRow {
+                    media_item_id,
+                    artwork_type,
+                    source_url: &source_url,
+                    local_path: &local_path,
+                    width: image.width,
+                    height: image.height,
+                    language: image.language.as_deref(),
+                    order,
+                },
             )
             .await
             {
@@ -284,32 +268,22 @@ async fn download_image(
     Ok(())
 }
 
-async fn insert_artwork_row(
-    pool: &PgPool,
-    media_item_id: Uuid,
-    artwork_type: &str,
-    source_url: &str,
-    local_path: &Path,
-    width: u32,
-    height: u32,
-    language: Option<&str>,
-    order: i32,
-) -> Result<(), sqlx::Error> {
-    let local_path_str = local_path.to_string_lossy().to_string();
+async fn insert_artwork_row(pool: &PgPool, row: &NewArtworkRow<'_>) -> Result<(), sqlx::Error> {
+    let local_path_str = row.local_path.to_string_lossy().to_string();
 
     sqlx::query(
         r#"INSERT INTO artwork (media_item_id, artwork_type, source_url, local_path, width, height, language, provider, "order", source_type)
            VALUES ($1, $2, $3, $4, $5, $6, $7, 'tmdb', $8, 'tmdb')
            ON CONFLICT (media_item_id, artwork_type, "order") DO NOTHING"#,
     )
-    .bind(media_item_id)
-    .bind(artwork_type)
-    .bind(source_url)
+    .bind(row.media_item_id)
+    .bind(row.artwork_type)
+    .bind(row.source_url)
     .bind(&local_path_str)
-    .bind(width as i32)
-    .bind(height as i32)
-    .bind(language)
-    .bind(order)
+    .bind(row.width as i32)
+    .bind(row.height as i32)
+    .bind(row.language)
+    .bind(row.order)
     .execute(pool)
     .await?;
 

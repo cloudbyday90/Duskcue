@@ -1068,24 +1068,19 @@ mod tests {
 
     #[test]
     fn config_rejects_bad_width() {
-        let mut c = GenerationConfig::default();
-        c.width = 200;
+        let c = GenerationConfig { width: 200, ..Default::default() };
         assert!(c.validate().is_err());
     }
 
     #[test]
     fn config_rejects_bad_interval() {
-        let mut c = GenerationConfig::default();
-        c.interval_seconds = 1;
-        assert!(c.validate().is_err());
-        c.interval_seconds = 121;
-        assert!(c.validate().is_err());
+        assert!(GenerationConfig { interval_seconds: 1, ..Default::default() }.validate().is_err());
+        assert!(GenerationConfig { interval_seconds: 121, ..Default::default() }.validate().is_err());
     }
 
     #[test]
     fn config_rejects_zero_grid() {
-        let mut c = GenerationConfig::default();
-        c.sprite_columns = 0;
+        let c = GenerationConfig { sprite_columns: 0, ..Default::default() };
         assert!(c.validate().is_err());
     }
 

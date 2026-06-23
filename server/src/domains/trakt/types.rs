@@ -150,3 +150,22 @@ pub struct TraktHistoryResponse {
     pub page_size: u32,
     pub total_pages: u32,
 }
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct UpdateTraktSettingsRequest {
+    #[validate(length(max = 256))]
+    pub client_id: Option<String>,
+    #[validate(length(max = 512))]
+    pub client_secret: Option<String>,
+    #[validate(length(max = 512))]
+    pub redirect_uri: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TraktSettingsResponse {
+    pub client_id: String,
+    pub client_secret_masked: String,
+    pub has_client_secret: bool,
+    pub redirect_uri: String,
+    pub is_configured: bool,
+}

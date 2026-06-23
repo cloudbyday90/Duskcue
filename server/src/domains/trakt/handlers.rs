@@ -19,7 +19,8 @@ use axum::Json;
 use validator::Validate;
 
 use crate::error::AppError;
-use crate::extractors::AuthenticatedUser;
+use crate::extractors::{AuthenticatedUser, Require};
+use crate::extractors::CanManageServer;
 use crate::state::AppState;
 
 use super::service;
@@ -29,7 +30,7 @@ pub async fn get_account(
     State(state): State<AppState>,
     user: AuthenticatedUser,
 ) -> Result<Json<TraktAccountResponse>, AppError> {
-    let result = service::get_account(&state.pool, user.user_id).await?;
+    let result = service::get_account(&state, user.user_id).await?;
     Ok(Json(result))
 }
 
@@ -37,7 +38,7 @@ pub async fn start_link(
     State(state): State<AppState>,
     user: AuthenticatedUser,
 ) -> Result<Json<DeviceCodeResponse>, AppError> {
-    let result = service::start_device_link(&state.pool, user.user_id).await?;
+    let result = service::start_device_link(&state, user.user_id).await?;
     Ok(Json(result))
 }
 
@@ -64,7 +65,7 @@ pub async fn poll_link(
         }
     })?;
 
-    let result = service::poll_device_code(&state.pool, user.user_id, &req.device_code).await?;
+    let result = service::poll_device_code(&state, user.user_id, &req.device_code).await?;
     Ok(Json(result))
 }
 
@@ -72,7 +73,7 @@ pub async fn unlink_account(
     State(state): State<AppState>,
     user: AuthenticatedUser,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    service::unlink_account(&state.pool, user.user_id).await?;
+    service::unlink_account(&state, user.user_id).await?;
     Ok(Json(serde_json::json!({ "unlinked": true })))
 }
 
@@ -142,5 +143,40 @@ pub async fn list_ratings(
     Query(query): Query<HistoryQuery>,
 ) -> Result<Json<TraktHistoryResponse>, AppError> {
     let result = service::list_ratings(&state.pool, user.user_id, &query).await?;
+    Ok(Json(result))
+}
+
+pub async fn get_integration_settings(
+    State(state): State<AppState>,
+    _auth: Require<CanManageServer>,
+) -> Result<Json<TraktSettingsResponse>, AppError> {
+    let result = service::get_settings(&state).await?;
+    Ok(Json(result))
+}
+
+pub async fn update_integration_settings(
+    State(state): State<AppState>,
+    _auth: Require<CanManageServer>,
+    Json(req): Json<UpdateTraktSettingsRequest>,
+) -> Result<Json<TraktSettingsResponse>, AppError> {
+    req.validate().map_err(|e| {
+        let errors: Vec<crate::error::FieldError> = e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errs)| {
+                errs.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                })
+            })
+            .collect();
+        AppError::Validation {
+            errors,
+            instance: Some("/api/v1/settings/trakt".to_string()),
+        }
+    })?;
+
+    let result = service::update_settings(&state, &req).await?;
     Ok(Json(result))
 }

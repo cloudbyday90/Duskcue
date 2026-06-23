@@ -23,7 +23,7 @@ use uuid::Uuid;
 use crate::domains::playback::error::PlaybackError;
 use crate::domains::playback::types::*;
 use crate::services::decision_engine::{self, DeviceCapabilities, MediaFileInfo, NetworkConditions, DecisionEngineConfig, StreamDecision};
-use crate::services::transcoding::{TranscodeManager, TranscodeRendition};
+use crate::services::transcoding::{StartSessionParams, TranscodeManager, TranscodeRendition};
 use crate::state::RuntimeConfig;
 
 pub async fn start_playback(
@@ -104,17 +104,19 @@ pub async fn start_playback(
 
             let session = transcode_manager
                 .start_session(
-                    media_file_details.id,
-                    user_id,
-                    PathBuf::from(&media_file_details.file_path),
-                    media_info.video_codec.clone(),
-                    media_info.video_resolution,
-                    media_info.audio_codec.clone(),
-                    target_v,
-                    target_a,
-                    target_res,
-                    target_bitrate,
-                    None,
+                    StartSessionParams {
+                        media_file_id: media_file_details.id,
+                        user_id,
+                        source_path: PathBuf::from(&media_file_details.file_path),
+                        source_video_codec: media_info.video_codec.clone(),
+                        source_video_resolution: media_info.video_resolution,
+                        source_audio_codec: media_info.audio_codec.clone(),
+                        target_video_codec: target_v,
+                        target_audio_codec: target_a,
+                        target_resolution: target_res,
+                        target_bitrate,
+                        seek_position_ms: None,
+                    },
                     data_dir,
                 )
                 .await?;

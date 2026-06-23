@@ -229,6 +229,19 @@ pub fn encrypt_provider_config(
     }
 }
 
+pub fn decrypt_trakt_config(config: &mut crate::state::TraktConfig, key: &EncryptionKey) {
+    config.client_secret = key.decrypt_if_encrypted(&config.client_secret);
+}
+
+pub fn encrypt_trakt_config(config: &mut crate::state::TraktConfig, key: &EncryptionKey) {
+    if !config.client_secret.is_empty() && !config.client_secret.starts_with(ENCRYPTED_PREFIX) {
+        match key.encrypt(&config.client_secret) {
+            Ok(encrypted) => config.client_secret = encrypted,
+            Err(e) => tracing::error!(error = %e, "Failed to encrypt Trakt client_secret"),
+        }
+    }
+}
+
 pub fn ensure_encryption_key(bootstrap: &crate::config::BootstrapConfig) -> Result<(EncryptionKey, Option<String>), EncryptionError> {
     if let Some(ref hex) = bootstrap.encryption_key {
         let key = EncryptionKey::from_hex(hex)?;

@@ -32,6 +32,10 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/api/v1/trakt/account/link", post(handlers::start_link))
         .route("/api/v1/trakt/account/poll", post(handlers::poll_link))
         .route("/api/v1/trakt/settings", get(handlers::get_settings).put(handlers::update_settings))
+        .route(
+            "/api/v1/settings/trakt",
+            get(handlers::get_integration_settings).put(handlers::update_integration_settings),
+        )
         .route("/api/v1/trakt/sync", post(handlers::trigger_sync))
         .route("/api/v1/trakt/sync/status", get(handlers::get_sync_status))
         .route("/api/v1/trakt/history", get(handlers::list_history))

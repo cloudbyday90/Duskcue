@@ -551,6 +551,30 @@ pub struct BackupConfig {}
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IntegrationsConfig {
     pub subtitle_providers: SubtitleProviderConfig,
+    pub trakt: TraktConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraktConfig {
+    pub client_id: String,
+    pub client_secret: String,
+    pub redirect_uri: String,
+}
+
+impl Default for TraktConfig {
+    fn default() -> Self {
+        Self {
+            client_id: String::new(),
+            client_secret: String::new(),
+            redirect_uri: "http://localhost:48027/trakt/callback".to_string(),
+        }
+    }
+}
+
+impl TraktConfig {
+    pub fn is_configured(&self) -> bool {
+        !self.client_id.is_empty() && !self.client_secret.is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -929,7 +953,13 @@ pub async fn load_runtime_config(pool: &PgPool, encryption_key: Option<&Encrypti
         security: serde_json::from_value(security).unwrap_or_default(),
         notifications: serde_json::from_value(notifications).unwrap_or_default(),
         backup: serde_json::from_value(backup).unwrap_or_default(),
-        integrations: serde_json::from_value(integrations).unwrap_or_default(),
+        integrations: {
+            let mut ic: IntegrationsConfig = serde_json::from_value(integrations).unwrap_or_default();
+            if let Some(key) = encryption_key {
+                crate::services::encryption::decrypt_trakt_config(&mut ic.trakt, key);
+            }
+            ic
+        },
         logging: serde_json::from_value(logging).unwrap_or_default(),
         storage: serde_json::from_value(storage).unwrap_or_default(),
         maintenance: serde_json::from_value(maintenance).unwrap_or_default(),

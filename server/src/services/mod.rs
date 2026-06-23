@@ -39,4 +39,5 @@ pub mod subtitles;
 pub mod subdl_client;
 pub mod tmdb_client;
 pub mod transcoding;
+pub mod trakt_client;
 pub mod tvdb_client;

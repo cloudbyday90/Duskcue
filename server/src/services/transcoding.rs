@@ -175,6 +175,20 @@ impl TranscodeRendition {
     }
 }
 
+pub struct StartSessionParams {
+    pub media_file_id: Uuid,
+    pub user_id: Uuid,
+    pub source_path: PathBuf,
+    pub source_video_codec: String,
+    pub source_video_resolution: (u32, u32),
+    pub source_audio_codec: String,
+    pub target_video_codec: Option<String>,
+    pub target_audio_codec: Option<String>,
+    pub target_resolution: Option<(u32, u32)>,
+    pub target_bitrate: Option<u32>,
+    pub seek_position_ms: Option<i64>,
+}
+
 #[derive(Debug, Clone)]
 pub struct TranscodeSession {
     pub id: Uuid,
@@ -258,19 +272,23 @@ impl TranscodeManager {
 
     pub async fn start_session(
         &self,
-        media_file_id: Uuid,
-        user_id: Uuid,
-        source_path: PathBuf,
-        source_video_codec: String,
-        source_video_resolution: (u32, u32),
-        source_audio_codec: String,
-        target_video_codec: Option<String>,
-        target_audio_codec: Option<String>,
-        target_resolution: Option<(u32, u32)>,
-        target_bitrate: Option<u32>,
-        seek_position_ms: Option<i64>,
+        params: StartSessionParams,
         data_dir: &Path,
     ) -> Result<TranscodeSession, PlaybackError> {
+        let StartSessionParams {
+            media_file_id,
+            user_id,
+            source_path,
+            source_video_codec,
+            source_video_resolution,
+            source_audio_codec,
+            target_video_codec,
+            target_audio_codec,
+            target_resolution,
+            target_bitrate,
+            seek_position_ms,
+        } = params;
+
         let permit = Arc::clone(&self.semaphore)
             .try_acquire_owned()
             .map_err(|_| PlaybackError::TranscodeCapacityReached)?;
@@ -452,17 +470,19 @@ impl TranscodeManager {
         });
 
         self.start_session(
-            old_session.media_file_id,
-            old_session.user_id,
-            old_session.source_path,
-            old_session.source_video_codec,
-            old_session.source_video_resolution,
-            old_session.source_audio_codec,
-            Some(old_session.target_video_codec),
-            Some(old_session.target_audio_codec),
-            Some(old_session.target_video_resolution),
-            Some(old_session.target_bitrate),
-            Some(position_ms),
+            StartSessionParams {
+                media_file_id: old_session.media_file_id,
+                user_id: old_session.user_id,
+                source_path: old_session.source_path,
+                source_video_codec: old_session.source_video_codec,
+                source_video_resolution: old_session.source_video_resolution,
+                source_audio_codec: old_session.source_audio_codec,
+                target_video_codec: Some(old_session.target_video_codec),
+                target_audio_codec: Some(old_session.target_audio_codec),
+                target_resolution: Some(old_session.target_video_resolution),
+                target_bitrate: Some(old_session.target_bitrate),
+                seek_position_ms: Some(position_ms),
+            },
             data_dir,
         )
         .await

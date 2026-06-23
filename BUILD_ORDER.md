@@ -2399,7 +2399,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 1. ~~Create `server/src/domains/analytics/` — five-file pattern~~ **DONE**
 2. ~~Implement analytics dashboard — play history, top media, concurrent streams, bandwidth usage~~ **DONE**
  3. ~~Create `server/src/domains/trakt/` — five-file pattern~~ **DONE**
-4. Implement Trakt OAuth flow — account linking, token refresh
+4. ~~Implement Trakt OAuth flow — account linking, token refresh~~ **DONE**
 5. Implement Trakt sync — watch state push/pull, play count sync
 6. Implement `server/src/workers/trakt_sync.rs` — periodic sync scheduled task
 7. Implement `server/src/services/geoip.rs`:
@@ -2496,7 +2496,42 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`#![allow(unused_variables)]` on service.rs** — All 10 service functions are `todo!()` stubs; the module-level allow suppresses unused parameter warnings until actual implementations are added in Tasks 4–6
 - **No new workspace dependencies** — all functionality uses existing `sqlx`, `validator`, `serde`, `uuid`, `chrono`, `axum` crates
 
-**Context from Task 3 for Tasks 4–6:**
+**What was built for Task 4:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/trakt_client.rs` | Trakt OAuth HTTP client — `TraktClient` (stateless: holds `client_id`, `client_secret`, `redirect_uri`, `reqwest::Client`); methods: `request_device_code()`, `exchange_device_code()`, `refresh_token_pair()`, `get_user_settings()`; deserialization types (`TraktTokenResponse`, `TraktUserSettings`, `TraktSettingsUser`, `TraktAccount`, `TraktTokenErrorResponse`); error mapping (`map_network_error` → Timeout/ServiceUnavailable; `map_oauth_error` → RateLimited/DeviceCodePending/Expired/Denied); 16 unit tests |
+| `server/src/services/mod.rs` | Added `pub mod trakt_client;` |
+| `server/src/state.rs` | `IntegrationsConfig` expanded with `trakt: TraktConfig`; `TraktConfig { client_id, client_secret, redirect_uri }` with `is_configured()` helper and default `redirect_uri = "http://localhost:48027/trakt/callback"`; `load_runtime_config()` now decrypts `integrations.trakt.client_secret` via `decrypt_trakt_config()` |
+| `server/src/services/encryption.rs` | Added `decrypt_trakt_config()` and `encrypt_trakt_config()` — same AES-256-GCM pattern as metadata/subtitle provider keys; only `client_secret` encrypted (client_id/redirect_uri are public) |
+| `server/src/domains/trakt/service.rs` | Implemented 4 OAuth service functions: `get_account` (queries `trakt_accounts`, returns `linked: false` when absent), `start_device_link` (builds `TraktClient` from config, calls `request_device_code()`), `poll_device_code` (exchanges device code → fetches `/users/settings` → upserts `trakt_accounts` row), `unlink_account` (DELETE row); plus `ensure_valid_token` (proactive refresh with write-back) and 2 admin settings functions (`get_settings`, `update_settings`); helper functions: `trakt_client()`, `load_account()`, `upsert_account()`, `update_tokens()`, `token_expires_at()`, `row_to_account()`, `account_to_response()`, `reload_runtime_config()` |
+| `server/src/domains/trakt/handlers.rs` | Updated `get_account`, `start_link`, `poll_link`, `unlink_account` to pass `&state` (not `&state.pool`); added `get_integration_settings` + `update_integration_settings` handlers (`Require<CanManageServer>`) |
+| `server/src/domains/trakt/types.rs` | Added `UpdateTraktSettingsRequest` (Deserialize + Validate) and `TraktSettingsResponse` (Serialize with masked secret) DTOs |
+| `server/src/domains/trakt/mod.rs` | Added `/api/v1/settings/trakt` route (GET + PUT, admin-only) for OAuth credential configuration |
+
+**Key decisions from Task 4:**
+
+- **`services/trakt_client.rs` over inline service HTTP** — Dedicated module following the established pattern (`tvdb_client.rs`, `subdl_client.rs`, `fanart_client.rs`). The OAuth HTTP calls are cross-cutting infrastructure consumed by the domain service + future sync worker (Task 6); keeping HTTP in a service module keeps the domain service focused on DB + orchestration. Returns `TraktError` directly (no separate `TraktClientError` mapping layer) since the client is trakt-specific
+- **⚠️ Access token TTL corrected from 7 days to 90 days** — Research (GitHub issue #48, maintainer `@tysonkerridge`) confirmed `expires_in ≈ 7776000` seconds (~3 months). The original TRAKT.md stated "7 days" which was incorrect. TRAKT.md updated with the correction and source citation
+- **⚠️ Refresh token rotation (critical)** — Trakt (Doorkeeper-backed) rotates the refresh_token on every refresh; the old one is revoked. Maintainer `@rectifyer`: *"revoked once it is used and a new access token + refresh token is generated."* The service MUST persist the new token pair after every refresh — failing to do so permanently locks the account. This rules out a lazy "refresh on 401, read-only" pattern
+- **Proactive `ensure_valid_token()` with write-back** — Refreshes when `token_expires_at - now() < 5 min` (5-min buffer), writes the new pair back to `trakt_accounts` in the same call, then returns the access token. Safe under refresh_token rotation. Infrastructure for Task 5/6 (sync) to call before every Trakt API request
+- **Single-poll-per-request** — `POST /api/v1/trakt/account/poll` makes exactly one `/oauth/token` attempt and returns the RFC 8628 result (`authorization_pending`/`slow_down` → `DeviceCodePending`; `expired_token` → `DeviceCodeExpired`; `access_denied` → `DeviceCodeDenied`; success → `TraktAccountResponse`). The client (web UI) drives the retry loop at the `interval` (5s). Keeps HTTP connections short; matches the `DeviceCodeResponse` DTO contract
+- **`/users/settings` mapping** — `account.id` (numeric) → `trakt_user_id` (BIGINT); `user.username` → `trakt_username` (TEXT). Extra fields (`user.vip`, `account.timezone_id`, `connections`) ignored by serde. Fetched once on successful device-code exchange
+- **Re-link as upsert** — `poll_device_code()` success does `INSERT ... ON CONFLICT (user_id) DO UPDATE` (the `user_id` UNIQUE constraint), so re-linking replaces the old Trakt account cleanly. `created_at` is `GENERATED ALWAYS` (excluded from INSERT); `updated_at = now()` on update
+- **`client_secret` encrypted at rest** — Same AES-256-GCM pattern as metadata/subtitle provider keys (`encrypt_trakt_config`/`decrypt_trakt_config`). Decrypted in `load_runtime_config()`; encrypted before DB write in `update_settings()`. `client_id` and `redirect_uri` are public (not encrypted)
+- **`redirect_uri` in config with default** — Trakt/Doorkeeper requires `redirect_uri` for the refresh-token grant to match an app-registered URI. Stored in `TraktConfig` with default `http://localhost:48027/trakt/callback`. Not used for the device-code request or initial token exchange
+- **`Content-Type: application/json`** for all Trakt OAuth requests — Confirmed via HAR capture in GitHub issue #48 (differs from RFC 8628's form-urlencoded example). The `TraktClient` sets `Content-Type` + `trakt-api-version: 2` + `trakt-api-key` as default headers
+- **Admin settings endpoint at `/api/v1/settings/trakt`** — `Require<CanManageServer>` (admin-only); `GET` returns masked `client_secret` (`***...***` via `mask_secret`); `PUT` encrypts + persists + hot-reloads config. Mirrors the subtitle provider settings pattern (Phase 9 Task 8). Separate from `/api/v1/trakt/settings` (sync toggles, user-scoped) to avoid conflating operator credentials with per-user sync preferences
+- **No new workspace dependencies** — All HTTP via existing `reqwest`; JSON via existing `serde`/`serde_json`; encryption via existing `ring`; no new crates added
+- **16 unit tests** covering: token response parsing (with/without scope), user settings parsing (minimal + extra fields ignored), OAuth error response parsing (pending, slow_down with description), error code mapping (pending, slow_down, expired, denied, 5xx, unknown fallback), raw device code parsing (with/without complete URL), client construction (with creds + empty creds). All 312 server tests pass (296 prior + 16 new)
+
+**Context from Task 4 for Tasks 5–6:**
+
+- `ensure_valid_token(state, user_id)` is ready for Task 5/6 to call before every Trakt API request — it returns `(access_token, TraktAccountRow)` and handles proactive refresh + write-back automatically
+- `trakt_client(state)` helper builds a `TraktClient` from the live config; returns `NotConfigured` when credentials are missing
+- `TraktClient` has the OAuth methods ready but no sync methods yet — Task 5 will add `get_watched()`, `add_to_history()`, `get_ratings()`, etc. to the client
+- `trakt_accounts` rows now store valid tokens with correct `token_expires_at`; Task 6 worker iterates `WHERE sync_enabled = true` and calls `ensure_valid_token` per user
+- The `trakt_sync` scheduled task is already seeded (migration `20260530_070000_seed_default_data.sql`, 1800s interval, disabled by default per TRAKT.md) — Task 6 registers the executor on the scheduler
 
 - All 10 routes are wired and return `Result<Json<T>, AppError>`; service functions are `todo!()` stubs accepting `&PgPool` and `user_id`
 - The `TraktAccountRow` and `TraktSyncStateRow` types match the DB schema exactly — Task 4 (OAuth) will use `TraktAccountRow` for INSERT/SELECT on `trakt_accounts`; Task 5 (sync) will use `TraktSyncStateRow` for upserts on `trakt_sync_state`
