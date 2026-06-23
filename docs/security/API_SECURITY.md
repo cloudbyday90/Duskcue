@@ -534,6 +534,40 @@ Reproducible builds — where anyone can verify that the published binary was co
 
 This may be revisited in a future phase when the CI pipeline is more mature.
 
+### Known Dismissed Vulnerabilities
+
+Vulnerabilities that are flagged but cannot or should not be fixed, with documented rationale. Each entry corresponds to a dismissed Dependabot/RustSec alert.
+
+#### GHSA-wrw7-89jp-8q8g — `glib` unsoundness in `VariantStrIter` (medium)
+
+| Field | Value |
+|---|---|
+| Advisory | [GHSA-wrw7-89jp-8q8g](https://github.com/advisories/GHSA-wrw7-89jp-8q8g) |
+| Package | `glib` (Rust GLib bindings) |
+| Affected range | `>= 0.15.0, < 0.20.0` (Duskcue pins `0.18.5`) |
+| Fixed in | `0.20.0` |
+| Severity | medium |
+| Dependabot alert | #1 |
+| Dismissal reason | `not_used` |
+| Date dismissed | 2026-06-23 |
+
+**Source:** Transitive dependency via `tauri 2.11.2` (Phase 16 desktop client stub) → `gtk 0.18` → `glib 0.18.5`. The chain is Linux-only (`gtk`/`webkit2gtk` are `cfg(target_os = "linux")` windowing crates); it does not appear in the server or web-client build graphs.
+
+**Why it cannot be fixed:**
+
+1. **gtk3-rs (gtk 0.18) is EOL/unmaintained** — the gtk-rs project has moved to GTK4 bindings only; no gtk 0.19+ will ever release, so glib 0.20+ (which requires the gtk-rs 0.20 series) is unreachable through this chain.
+2. **`[patch.crates-io]` is not viable** — gtk 0.18 declares `glib = "^0.18"`; forcing glib 0.20 via a patch breaks the Linux build because the 0.18→0.20 API is incompatible (trait re-exports, `glib::Object` changes).
+3. **No Tauri upgrade resolves it** — every Tauri 2.x release uses gtk 0.18 on Linux.
+4. **Upstream Tauri explicitly wontfixed it** ([tauri-apps/tauri#12048](https://github.com/tauri-apps/tauri/issues/12048)) — maintainer FabianLars: "Since the gtk3 bindings are unmaintained I think this is a wontfix sadly. (We don't use glib directly ourselves)" and "this unsound issue doesn't seem to affect us".
+
+**Why it does not affect Duskcue:**
+
+- The vulnerability is in `glib::VariantStrIter::impl_get`, which passes an immutable `&*mut c_char` to a C function that mutates in place — a soundness bug that can cause NULL-pointer dereferences **only when iterating a `GVariant` string array**. Neither Tauri nor Duskcue calls this iterator; Duskcue's desktop crate is an empty stub (`fn main() {}`) with zero Tauri API usage.
+- The affected code is Linux-only and does not ship in the server or web-client artifacts.
+- The desktop client is Phase 16 (future) — when it is built, the Tauri→GTK4 migration (tracked upstream in tauri-apps/tauri#7335) is the path that will retire gtk3-rs and this transitive advisory.
+
+**Re-evaluation trigger:** Revisit if (a) a fix lands in gtk3-rs or a Tauri release adopts glib 0.20+, (b) the desktop client moves out of stub status (Phase 16), or (c) a Duskcue code path is added that iterates `GVariant` strings.
+
 ---
 
 ## 10. Secret Scanning
