@@ -22,5 +22,8 @@
     },
     "dependencies": {
         "hls.js": "^1.6.16"
+    },
+    "overrides": {
+        "cookie": "^0.7.0"
     }
 }
