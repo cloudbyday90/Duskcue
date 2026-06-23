@@ -88,3 +88,77 @@ The GeoIP service (`server/src/services/geoip.rs`) and impossible travel detecti
 ### Trust Score Decay
 
 Trust score recovery (`+1 per day` of normal activity) is a background concern handled by a scheduled task (future), not by the analytics read API. The analytics API only reads the current `user_trust_scores` snapshot.
+
+---
+
+## Implementation Notes — Task 2 (Dashboard)
+
+Task 2 implements the five dashboard service functions: `get_analytics_overview`, `list_play_history`, `get_top_media`, `get_bandwidth_usage`, `get_concurrent_streams`.
+
+### Time Range Resolution (`resolve_time_range`)
+
+A shared helper resolves the `range`/`from`/`to` query parameters into `(Option<DateTime<Utc>>, DateTime<Utc>>)` = `(from, to)`:
+
+- `to` defaults to `Utc::now()` when not provided.
+- If `from` is provided: validated `from <= to` (else `InvalidDateRange`); lower bound = `Some(from)`.
+- Else: `range` preset (default `7d`) resolved to a lower bound; validated against `VALID_TIME_PRESETS` (else `InvalidTimePreset`). `all` → `None` (unbounded).
+- Per the Query Parameter Conventions table, explicit `from`/`to` takes precedence over `range`.
+
+All range-bound queries bind `from` via the static-SQL pattern `AND ($N::timestamptz IS NULL OR started_at >= $N)`, keeping `started_at` (the partition key) in the `WHERE` clause for partition pruning on the range-partitioned `play_sessions` table.
+
+### Bucket-Interval Resolution (`resolve_bucket_interval`)
+
+Bandwidth time-series bucketing adapts the bucket stride to the selected range so the chart always renders a bounded number of points:
+
+| Range | Bucket stride | Points |
+|---|---|---|
+| `24h` | 1 hour | ~24 |
+| `7d` | 6 hours | ~28 |
+| `30d` | 1 day | ~30 |
+| `90d` | 1 day | ~90 |
+| `all` | 1 day (range clamped to 90d) | ~90 |
+
+The bandwidth endpoint requires a concrete lower bound for `generate_series`. When the range is `all` (unbounded), the bandwidth query clamps the effective range to the last 90 days so the series has a finite axis; this is documented because an unbounded `generate_series` is undefined.
+
+### Bandwidth Time Series — `generate_series` + `date_bin` + `LEFT JOIN` + `COALESCE`
+
+Per current PostgreSQL best practice (Crunchy Data, Paul Ramsey), the bandwidth query produces a gap-free chart axis:
+
+```sql
+WITH buckets AS (
+    SELECT generate_series($2, $3, $1::interval) AS bucket_start
+),
+agg AS (
+    SELECT date_bin($1::interval, started_at, $2) AS bucket_start,
+           COALESCE(SUM(bandwidth_bps), 0) AS bandwidth_bps,
+           COUNT(*) AS session_count
+    FROM play_sessions
+    WHERE started_at >= $2 AND started_at <= $3
+      AND ($4::uuid IS NULL OR user_id = $4)
+      AND ($5::uuid IS NULL OR library_id = $5)
+    GROUP BY 1
+)
+SELECT b.bucket_start, COALESCE(a.bandwidth_bps, 0), COALESCE(a.session_count, 0)
+FROM buckets b LEFT JOIN agg a ON a.bucket_start = b.bucket_start
+ORDER BY b.bucket_start
+```
+
+The bucket stride is bound as a parameter (`$1::interval`) — a value parameter, not SQL structure — so the query remains a static string satisfying sqlx 0.9's `SqlSafeStr` requirement. `date_bin` (PG14+) aligns session timestamps to the same stride/origin as `generate_series`, guaranteeing the `LEFT JOIN` matches. `COALESCE` fills empty buckets with zero so charts render without dead zones.
+
+**Bandwidth semantics:** `bandwidth_bps` is a per-session point estimate recorded at session time. Each bucket sums the `bandwidth_bps` of sessions that *started* in that bucket and counts those sessions. This is a "bandwidth demand by start time" aggregation — the standard media-server dashboard semantics (Plex/Jellyfin). Concurrent-bandwidth-over-time (range-overlap integration) is intentionally deferred as it requires expensive overlap queries against a point estimate that isn't a sustained rate.
+
+### Cursor Pagination — Play History
+
+`list_play_history` uses the same cursor pattern as the media domain: base64-encoded `{"id":"<uuid>"}` JSON, `LIMIT N+1` for `has_more` detection, `WHERE id < cursor` for pagination. `play_sessions.id` is UUIDv7 (naturally time-ordered), so `ORDER BY id DESC` gives reverse-chronological order without a separate sort column. `stream_decision` is an additional filter bound via `($N::text IS NULL OR stream_decision = $N)`.
+
+### Concurrent Streams
+
+`get_concurrent_streams` selects sessions where `stopped_at IS NULL`, restricted to `started_at > now() - interval '24 hours'`. The 24-hour guard prunes to at most two partitions and excludes stale crash-recovery sessions (an unstopped session older than 24h is an artifact, not a real concurrent stream). `count` is derived from the result-set length; per-stream rows join `users.display_name` and `media_items.title` for the dashboard detail list.
+
+### Transcode Breakdown (Overview)
+
+The overview computes the stream-decision breakdown directly from the `play_sessions.stream_decision` column (`COUNT(*) FILTER (WHERE stream_decision = 'direct_play')`), not from `metadata` JSONB — `stream_decision` is a real NOT NULL column with a CHECK constraint. This differs from the quality domain's `get_transcode_breakdown` (Phase 7 Task 6) which queries `metadata->>'playback_type'`; that query targets a different (older) schema assumption and is not used by the analytics dashboard.
+
+### Display-Name / Title Enrichment
+
+Play-history and concurrent-stream queries use `LEFT JOIN users` / `LEFT JOIN media_items` with `COALESCE` fallbacks. Because `play_sessions` has `ON DELETE CASCADE` on both FKs, a deleted user or media item removes the session entirely, so `INNER JOIN` would be functionally equivalent; `LEFT JOIN` is defensive against partial-state edge cases and never drops analytics rows.

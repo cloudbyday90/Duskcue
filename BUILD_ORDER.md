@@ -2397,7 +2397,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 **Tasks:**
 
 1. ~~Create `server/src/domains/analytics/` — five-file pattern~~ **DONE**
-2. Implement analytics dashboard — play history, top media, concurrent streams, bandwidth usage
+2. ~~Implement analytics dashboard — play history, top media, concurrent streams, bandwidth usage~~ **DONE**
 3. Implement `server/src/domains/trakt/` — five-file pattern
 4. Implement Trakt OAuth flow — account linking, token refresh
 5. Implement Trakt sync — watch state push/pull, play count sync
@@ -2445,6 +2445,29 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - Play history uses cursor pagination — the `PlayHistoryResponse` has `has_more` + `next_cursor` fields matching the media domain's cursor pattern
 - Trust events use offset pagination — the `TrustEventListResponse` has `total`, `page`, `page_size`, `total_pages` matching the users domain's offset pattern
 - The `AnalyticsOverviewResponse` aggregates counts for the dashboard summary in a single response (total plays, unique users, watch time, concurrent streams, transcode breakdown)
+
+**What was built for Task 2:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/analytics/service.rs` | Replaced 5 of 9 `todo!()` stubs with working implementations: `get_analytics_overview` (range-bound aggregation + separate concurrent count), `list_play_history` (cursor pagination over `play_sessions` joined to users/media_items), `get_top_media` (GROUP BY media_item_id, two static SQL variants for play_count vs watch_time sort), `get_bandwidth_usage` (gap-free time series via `generate_series` + `date_bin` + `LEFT JOIN` + `COALESCE`), `get_concurrent_streams` (active sessions where `stopped_at IS NULL`); shared helpers: `resolve_time_range`, `resolve_bucket_interval`, `encode_cursor`/`parse_cursor`, `row_to_play_session_response`; 13 unit tests. The 4 security-analytics stubs (`list_trust_scores`, `list_trust_events`, `acknowledge_trust_event`, `get_geoip_status`) remain `todo!()` for Tasks 7–9. |
+| `docs/design/ANALYTICS.md` | Added "Implementation Notes — Task 2 (Dashboard)" section documenting: time-range resolution semantics, adaptive bucket-interval table, the `generate_series`/`date_bin` bandwidth query rationale (Crunchy Data best practice), cursor-pagination approach, concurrent-stream 24h partition-pruning guard, transcode-breakdown-from-column decision, and LEFT JOIN defensiveness. |
+
+**Key decisions from Task 2:**
+
+- **Time-range resolution (`resolve_time_range`)** — Shared helper returns `(Option<DateTime<Utc>>, DateTime<Utc>>)`. `to` defaults to `Utc::now()`; explicit `from` (validated `<= to`, else `InvalidDateRange`) takes precedence over the `range` preset per the design's "explicit from/to overrides range" rule; `range` defaults to `7d` and is validated against `VALID_TIME_PRESETS` (else `InvalidTimePreset`); `all` → `None` (unbounded lower bound). All range-bound queries bind `from` via `($N::timestamptz IS NULL OR started_at >= $N)` keeping `started_at` in the WHERE clause for partition pruning on the range-partitioned `play_sessions` table.
+- **Adaptive bucket interval** — Bandwidth time-series stride adapts to range span: ≤24h → 1h, ≤7d → 6h, else 1d. Bounds the chart to a sensible point count regardless of range. When range is `all` (unbounded), bandwidth clamps the effective range to the last 90 days so `generate_series` has a finite axis.
+- **Bandwidth query = `generate_series` + `date_bin` + `LEFT JOIN` + `COALESCE`** — Per current PostgreSQL best practice (Crunchy Data / Paul Ramsey, June 2026 research): `generate_series` produces the complete bucket axis, `date_bin` (PG14+) bins session timestamps to the same stride/origin guaranteeing JOIN alignment, `LEFT JOIN` + `COALESCE(..., 0)` fills empty buckets so charts render without dead zones. The bucket stride is bound as a parameter (`$1::interval`) — a value parameter, not SQL structure — so the query remains a static string satisfying sqlx 0.9's `SqlSafeStr` requirement.
+- **Bandwidth semantics = per-session point estimate bucketed by start time** — `bandwidth_bps` is a per-session point estimate; each bucket sums the `bandwidth_bps` of sessions that *started* in that bucket. This is "bandwidth demand by start time" (standard Plex/Jellyfin dashboard semantics). Concurrent-bandwidth-over-time (range-overlap integration) is intentionally deferred as it requires expensive overlap queries against a non-sustained point estimate.
+- **Cursor pagination reuses media-domain pattern** — base64-encoded `{"id":"<uuid>"}` JSON, `LIMIT N+1` for `has_more`, `WHERE id < cursor`. `play_sessions.id` is UUIDv7 (naturally time-ordered) so `ORDER BY id DESC` gives reverse-chronological order. `limit` clamped to `[1, 100]` (default 20).
+- **Top-media sort via two static SQL constants** — sqlx 0.9 requires static SQL (no `format!()`), so `TOP_MEDIA_BY_PLAY_COUNT_SQL` and `TOP_MEDIA_BY_WATCH_TIME_SQL` are separate constants differing only in `ORDER BY`. `sort_by` defaults to `play_count`; unknown values fall back to `play_count` (lenient). `GROUP BY mi.id` relies on PG functional-dependency rule (PK in GROUP BY allows selecting other columns from the same table).
+- **Concurrent streams 24h guard** — `WHERE stopped_at IS NULL AND started_at > now() - interval '24 hours'` prunes to at most two partitions and excludes stale crash-recovery sessions (an unstopped session older than 24h is an artifact, not a real concurrent stream). `count` derived from result-set length (no separate COUNT query).
+- **Transcode breakdown from the real column, not metadata** — Overview computes the stream-decision split directly from the `play_sessions.stream_decision` column (`COUNT(*) FILTER (WHERE stream_decision = 'direct_play')`), not from `metadata` JSONB. `stream_decision` is a NOT NULL column with a CHECK constraint. (The Phase 7 quality-domain `get_transcode_breakdown` queries `metadata->>'playback_type'` against an older schema assumption; the analytics dashboard does not use that path.)
+- **Overview uses two queries** — One range-bound aggregation query + one concurrent-count query, combined in Rust. Concurrent streams is a "right now" metric independent of the selected time range, so a separate query is cleaner than a subquery; the concurrent query is sub-millisecond on the partitioned table.
+- **LEFT JOIN + COALESCE for display-name/title enrichment** — Play-history and concurrent-stream queries use `LEFT JOIN users` / `LEFT JOIN media_items` with `COALESCE(..., 'Unknown')`. `play_sessions` has `ON DELETE CASCADE` on both FKs so INNER JOIN would be functionally equivalent, but LEFT JOIN is defensive against partial-state edge cases and never drops analytics rows.
+- **`#![allow(unused_variables)]` retained** — The 4 security-analytics service stubs (Tasks 7–9) are still `todo!()`; the module-level allow suppresses their unused-parameter warnings.
+- **No new workspace dependencies** — all functionality uses existing `sqlx`, `chrono`, `base64`, `uuid`, `serde_json` crates.
+- **13 unit tests** covering: time-range resolution (default 7d, 24h, all-unbounded, explicit from/to, from>to rejection, bad-preset rejection, from-precedence-over-range), bucket-interval selection (hourly/six-hourly/daily), cursor encode/decode roundtrip, cursor garbage rejection, cursor missing-id-field rejection. All 296 server tests pass (283 prior + 13 new).
 
 **Verification:** Play sessions generate analytics data visible in dashboard. Trakt-linked users sync watch state. Impossible travel alerts appear in admin dashboard for suspicious logins.
 
