@@ -24,4 +24,5 @@ pub mod segments;
 pub mod storyboards;
 pub mod subtitles;
 pub mod system;
+pub mod trakt;
 pub mod users;

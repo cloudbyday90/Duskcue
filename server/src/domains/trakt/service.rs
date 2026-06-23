@@ -14,3 +14,78 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+#![allow(unused_variables)]
+
+use sqlx::PgPool;
+use uuid::Uuid;
+
+use crate::domains::trakt::error::TraktError;
+use crate::domains::trakt::types::*;
+
+pub async fn get_account(pool: &PgPool, user_id: Uuid) -> Result<TraktAccountResponse, TraktError> {
+    todo!()
+}
+
+pub async fn start_device_link(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<DeviceCodeResponse, TraktError> {
+    todo!()
+}
+
+pub async fn poll_device_code(
+    pool: &PgPool,
+    user_id: Uuid,
+    device_code: &str,
+) -> Result<TraktAccountResponse, TraktError> {
+    todo!()
+}
+
+pub async fn unlink_account(pool: &PgPool, user_id: Uuid) -> Result<(), TraktError> {
+    todo!()
+}
+
+pub async fn get_sync_settings(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<SyncSettingsResponse, TraktError> {
+    todo!()
+}
+
+pub async fn update_sync_settings(
+    pool: &PgPool,
+    user_id: Uuid,
+    settings: &UpdateSyncSettingsRequest,
+) -> Result<SyncSettingsResponse, TraktError> {
+    todo!()
+}
+
+pub async fn trigger_sync(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<SyncTriggerResponse, TraktError> {
+    todo!()
+}
+
+pub async fn get_sync_status(
+    pool: &PgPool,
+    user_id: Uuid,
+) -> Result<SyncStatusResponse, TraktError> {
+    todo!()
+}
+
+pub async fn list_history(
+    pool: &PgPool,
+    user_id: Uuid,
+    query: &HistoryQuery,
+) -> Result<TraktHistoryResponse, TraktError> {
+    todo!()
+}
+
+pub async fn list_ratings(
+    pool: &PgPool,
+    user_id: Uuid,
+    query: &HistoryQuery,
+) -> Result<TraktHistoryResponse, TraktError> {
+    todo!()
+}

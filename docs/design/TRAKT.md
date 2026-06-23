@@ -1,0 +1,187 @@
+# Trakt.tv Integration — Domain Design
+
+## Purpose
+
+This document is the authoritative design for the Trakt.tv integration domain (`server/src/domains/trakt/`). It covers the HTTP API surface, OAuth device code flow, sync architecture, error handling, and configuration. The DB schema is defined in [DATABASE.md](DATABASE.md) (Trakt.tv Integration section); the error code registry is in [ERROR_HANDLING.md](ERROR_HANDLING.md) (TRAKT section).
+
+## Overview
+
+Trakt.tv is a first-class, per-user integration — not a plugin. Each Duskcue user can link their own Trakt account to sync watched history, watchlist, collection, and ratings bidirectionally. This supports local users, remote users, and shared users equally — each with their own Trakt identity.
+
+The integration is a user-scoped resource: every endpoint requires `AuthenticatedUser`, and all queries are scoped to the requesting user's `user_id`. No admin capability is needed to manage one's own Trakt link.
+
+## API Surface
+
+All routes are under `/api/v1/trakt/*` per [API_CONVENTIONS.md](API_CONVENTIONS.md) route table.
+
+### Account Linking (OAuth Device Code Flow)
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/trakt/account` | Get linked account status (trakt username, token expiry, sync settings) |
+| `POST` | `/api/v1/trakt/account/link` | Start device code flow — returns `device_code`, `user_code`, `verification_url` |
+| `POST` | `/api/v1/trakt/account/poll` | Poll for device code completion — exchanges device code for access token |
+| `DELETE` | `/api/v1/trakt/account` | Unlink account — deletes `trakt_accounts` row (cascades to `trakt_sync_state`) |
+
+### Sync Settings
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/trakt/settings` | Get per-category sync toggles (watched, watchlist, collection, ratings) |
+| `PUT` | `/api/v1/trakt/settings` | Update per-category sync toggles |
+
+### Sync Operations
+
+| Method | Route | Purpose |
+|---|---|---|
+| `POST` | `/api/v1/trakt/sync` | Trigger a manual sync (push local → Trakt, pull Trakt → local) |
+| `GET` | `/api/v1/trakt/sync/status` | Get last sync timestamp, item counts, error state |
+
+### Synced Data (Read-Only Views)
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/trakt/history` | List items in `trakt_sync_state` with pagination (offset) |
+| `GET` | `/api/v1/trakt/ratings` | List rated items from `trakt_sync_state` where `rating IS NOT NULL` |
+
+## OAuth Device Code Flow
+
+The device code flow (RFC 8628) is the primary linking method for Duskcue because the server runs headless and the user authenticates via a separate device (phone/laptop browser). This is the same pattern used by the auth domain's device linking ([AUTH.md](AUTH.md)).
+
+### Flow
+
+1. **Start** — `POST /api/v1/trakt/account/link` calls Trakt `POST /oauth/device/code` with `{ client_id }`. Returns:
+   ```json
+   {
+     "device_code": "<long-lived code>",
+     "user_code": "ABC12345",
+     "verification_url": "https://trakt.tv/activate",
+     "verification_url_complete": "https://trakt.tv/activate?user_code=ABC12345",
+     "expires_in": 600,
+     "interval": 5
+   }
+   ```
+
+2. **User authorizes** — The user visits `verification_url` (or `verification_url_complete` for a one-click QR-code link), logs into Trakt, and enters the `user_code`.
+
+3. **Poll** — `POST /api/v1/trakt/account/poll` calls Trakt `POST /oauth/token` with `{ code: device_code, client_id, client_secret, grant_type: "urn:ietf:params:oauth:grant-type:device_code" }`. The client polls at the `interval` (default 5s):
+   - HTTP 200 → success: `{ access_token, refresh_token, expires_in, created_at, scope, token_type }` — store in `trakt_accounts`
+   - HTTP 400 `authorization_pending` → retry after `interval` seconds
+   - HTTP 400 `slow_down` → increase interval by 5 seconds, retry
+   - HTTP 400 `expired_token` → device code expired, user must restart
+   - HTTP 400 `access_denied` → user denied the request
+
+4. **Token storage** — On success, Duskcue calls Trakt `GET /users/settings` with the access token to get the `trakt_username` and `trakt_user_id`, then inserts a row into `trakt_accounts`.
+
+### Token Refresh
+
+Access tokens expire after 7 days. Before each Trakt API call, the service checks `token_expires_at` and refreshes if needed via `POST /oauth/token` with `{ refresh_token, client_id, client_secret, redirect_uri, grant_type: "refresh_token" }`. The new `access_token`, `refresh_token`, and `expires_in` are persisted to `trakt_accounts`.
+
+If refresh fails (refresh token revoked), the account is marked as needing re-link — the user sees `TRAKT_003 Token expired` and must re-link via the device code flow.
+
+## Sync Architecture
+
+Bidirectional sync between Duskcue's `user_item_data` and Trakt's sync endpoints. The sync worker (`server/src/workers/trakt_sync.rs`, Task 6) runs as a scheduled task every 30 minutes.
+
+### Push (Duskcue → Trakt)
+
+When a user marks an item watched, rates it, or adds it to a collection, the change is pushed to Trakt:
+- **Watched** → `POST /sync/history` with `{ movies: [{ ids, watched_at }], episodes: [...] }`
+- **Ratings** → `POST /sync/ratings` with `{ movies: [{ ids, rating, rated_at }], ... }`
+- **Collection** → `POST /sync/collection` with `{ movies: [{ ids, collected_at }], ... }`
+
+### Pull (Trakt → Duskcue)
+
+On scheduled sync, Duskcue pulls the user's Trakt state:
+- `GET /sync/watched/movies?page=N&limit=250` — paginated watched movies
+- `GET /sync/watched/shows?page=N&limit=250&extended=progress` — paginated watched shows with season progress
+- `GET /sync/watched/episodes?page=N&limit=250&extended=min` — compact watched episodes
+- `GET /sync/watchlist` — watchlist items
+- `GET /sync/collection` — collection items
+- `GET /sync/ratings` — ratings
+
+Pulled data is matched against `media_items` by `trakt_id` (primary), then `tmdb_id`/`imdb_id`/`tvdb_id` (fallback), then title+year (last resort). Matched items update `trakt_sync_state` rows and, if the local `user_item_data` is stale, propagate the watched/rating state.
+
+### Merge Strategy
+
+Per [DATABASE.md](DATABASE.md) `user_item_data` design:
+- `is_watched` — logical OR (if either source says watched, it's watched)
+- `play_count` — MAX (highest count wins)
+- `resume_position_ms` — MAX (furthest progress wins; cleared to 0 if either says watched)
+- `rating` — Trakt rating overrides local if `rated_at` is newer (per-item; user can override locally after)
+
+### Pagination (June 2026 API changes)
+
+Per Trakt API discussion #775 (April 2026, enforced after June 30, 2026):
+- Watched endpoints (`/sync/watched/{type}`) require `page` + `limit` query params
+- Max page size: 250 items
+- Default page size without `limit`: 100 items
+- New `episodes` type for watched episodes
+- `extended=min` returns compact format (`{ "trakt_id": ["watched_at"] }`) for efficient syncing
+- `extended=progress` required for season progress data (shows)
+- Always paginate until empty array `[]`; never assume one request returns everything
+
+### Rate Limiting
+
+Per [DATABASE.md](DATABASE.md) Trakt API summary:
+- **POST**: 1 request/second (authed) — sync pushes throttled to 1/sec
+- **GET**: 1000 requests/5 minutes (authed) — sync pulls can burst
+- Respect `Retry-After` header on 429 responses
+- The sync worker uses a `governor` rate limiter (1 req/sec for POST, burst-controlled for GET)
+
+## Error Handling
+
+Per [ERROR_HANDLING.md](ERROR_HANDLING.md) TRAKT section:
+
+| Code | HTTP | Meaning |
+|---|---|---|
+| `TRAKT_001` | 409 | Trakt account not linked |
+| `TRAKT_002` | 429 | Trakt API rate limited |
+| `TRAKT_003` | 409 | Trakt token expired (needs re-link) |
+| `TRAKT_004` | 503 | Trakt API unavailable |
+| `TRAKT_005` | 504 | Trakt API timeout |
+
+Additional domain-specific variants (mapped to existing error codes, following the Segment/Storyboard precedent):
+- `DeviceCodeExpired` → 400 BAD_REQUEST (OAuth device code expired)
+- `DeviceCodePending` → 400 BAD_REQUEST (authorization pending — client should retry)
+- `DeviceCodeDenied` → 403 FORBIDDEN (user denied authorization)
+- `SyncInProgress` → 409 CONFLICT (a sync is already running for this user)
+- `NotConfigured` → 500 INTERNAL (admin hasn't configured Trakt client_id/secret)
+- `Database` → 500 INTERNAL (sqlx catch-all)
+
+`TRAKT_004` (ServiceUnavailable) and `TRAKT_005` (Timeout) are included in the `Retry-After` header group per [ERROR_HANDLING.md](ERROR_HANDLING.md) reference implementation.
+
+## Configuration
+
+Trakt OAuth credentials (`client_id`, `client_secret`) are operator-configured. The admin registers a Trakt app at `https://trakt.tv/oauth/applications` to obtain these. They are stored in `server_config.integrations.trakt` JSONB and encrypted at rest via the existing `EncryptionKey` (AES-256-GCM), following the same pattern as subtitle provider credentials (Phase 9 Task 8) and metadata provider keys (Phase 6 Task 13).
+
+The `client_id` is public (sent to the browser during device code flow); the `client_secret` is server-side only. Both are required for the OAuth token exchange and refresh.
+
+## Scheduled Task
+
+Per [DATABASE.md](DATABASE.md) scheduled tasks table:
+- **Name**: `trakt_sync`
+- **Interval**: 1800s (30 min)
+- **Timeout**: 30 min
+- **Config**: `{}` (empty — per-user sync settings come from `trakt_accounts` rows)
+
+The worker iterates all `trakt_accounts` where `sync_enabled = true` and `token_expires_at > now()`, performing bidirectional sync for each user. Task 6 implements the worker; Task 3 (this scaffolding) registers the domain structure only.
+
+## Implementation Status
+
+| Component | Status | Phase |
+|---|---|---|
+| Domain scaffolding (five-file pattern) | ✅ Implemented | Phase 11 Task 3 |
+| OAuth device code flow | ⏳ Pending | Phase 11 Task 4 |
+| Token refresh | ⏳ Pending | Phase 11 Task 4 |
+| Bidirectional sync | ⏳ Pending | Phase 11 Task 5 |
+| Sync worker | ⏳ Pending | Phase 11 Task 6 |
+
+## Research Sources
+
+- Trakt API Official Documentation: https://trakt.docs.apiary.io/
+- Trakt API Source Code (GitHub): https://github.com/trakt/trakt-api
+- Trakt API Pagination & Extended Defaults Discussion (GitHub #775, April-June 2026): https://github.com/trakt/trakt-api/discussions/775
+- Trakt API Pagination & Sorting Updates Discussion (GitHub #681, January 2026)
+- Trakt Forums — Updating Trakt Limits for 2026 (February 2026)
+- Trakt Forums — Rate Limit Discussion (January 2025)

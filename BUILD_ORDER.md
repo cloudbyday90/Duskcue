@@ -2398,7 +2398,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 1. ~~Create `server/src/domains/analytics/` — five-file pattern~~ **DONE**
 2. ~~Implement analytics dashboard — play history, top media, concurrent streams, bandwidth usage~~ **DONE**
-3. Implement `server/src/domains/trakt/` — five-file pattern
+ 3. ~~Create `server/src/domains/trakt/` — five-file pattern~~ **DONE**
 4. Implement Trakt OAuth flow — account linking, token refresh
 5. Implement Trakt sync — watch state push/pull, play count sync
 6. Implement `server/src/workers/trakt_sync.rs` — periodic sync scheduled task
@@ -2468,6 +2468,41 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`#![allow(unused_variables)]` retained** — The 4 security-analytics service stubs (Tasks 7–9) are still `todo!()`; the module-level allow suppresses their unused-parameter warnings.
 - **No new workspace dependencies** — all functionality uses existing `sqlx`, `chrono`, `base64`, `uuid`, `serde_json` crates.
 - **13 unit tests** covering: time-range resolution (default 7d, 24h, all-unbounded, explicit from/to, from>to rejection, bad-preset rejection, from-precedence-over-range), bucket-interval selection (hourly/six-hourly/daily), cursor encode/decode roundtrip, cursor garbage rejection, cursor missing-id-field rejection. All 296 server tests pass (283 prior + 13 new).
+
+**What was built for Task 3:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/trakt/mod.rs` | Module declarations + router assembly with 8 routes (10 endpoints) across 5 path groups |
+| `server/src/domains/trakt/error.rs` | `TraktError` enum with 11 variants: TRAKT_001–005 (AccountNotLinked, RateLimited, TokenExpired, ServiceUnavailable, Timeout) per ERROR_HANDLING.md + 5 domain-specific (DeviceCodeExpired, DeviceCodePending, DeviceCodeDenied, SyncInProgress, NotConfigured) + Database catch-all |
+| `server/src/domains/trakt/types.rs` | Three-type DTOs: 2 Row types (`TraktAccountRow`, `TraktSyncStateRow`) matching DATABASE.md schema; 2 Request DTOs with Validate (`PollDeviceCodeRequest`, `UpdateSyncSettingsRequest`); 1 query param type (`HistoryQuery`); 6 Response DTOs (`TraktAccountResponse`, `DeviceCodeResponse`, `SyncSettingsResponse`, `SyncTriggerResponse`, `SyncStatusResponse`, `TraktHistoryResponse`/`TraktHistoryItem`) |
+| `server/src/domains/trakt/service.rs` | 10 `todo!()` service function stubs: `get_account`, `start_device_link`, `poll_device_code`, `unlink_account`, `get_sync_settings`, `update_sync_settings`, `trigger_sync`, `get_sync_status`, `list_history`, `list_ratings` — implemented in Tasks 4–6 |
+| `server/src/domains/trakt/handlers.rs` | 10 handlers wired to Axum extractors (`State`, `AuthenticatedUser`, `Query`, `Json`); all return `Result<Json<T>, AppError>`; validation error mapping for `PollDeviceCodeRequest` and `UpdateSyncSettingsRequest` following subtitles domain convention |
+| `server/src/error.rs` | Added `AppError::Trakt(#[from] TraktError)` variant + `trakt_error_to_http()` mapping all 11 variants; Trakt `ServiceUnavailable`/`Timeout` added to `Retry-After` header group per ERROR_HANDLING.md reference implementation |
+| `server/src/domains/mod.rs` | Added `pub mod trakt;` |
+| `server/src/router.rs` | Merged trakt router via `.merge(crate::domains::trakt::router(state.clone()))`, removed Phase 11 trakt comment |
+| `docs/design/TRAKT.md` | Created — domain design document covering API surface, OAuth device code flow, sync architecture (push/pull), merge strategy, pagination (June 2026 API changes), rate limiting, error handling, configuration |
+
+**Key decisions from Task 3:**
+
+- **Routes match API_CONVENTIONS.md** — `/api/v1/trakt/*` path prefix per the route table: "Link account, sync, history, ratings". 8 route paths yielding 10 endpoints (GET+DELETE on `/account`, GET+PUT on `/settings`)
+- **OAuth device code flow (RFC 8628) as primary linking method** — Duskcue runs headless; the user authenticates via a separate browser device. Same pattern as the auth domain's device linking. Three-step flow: `POST /account/link` (get device code) → user visits Trakt activate URL → `POST /account/poll` (exchange device code for access token)
+- **All endpoints require `AuthenticatedUser`** — Trakt is a per-user resource; each user manages their own Trakt link. No admin capability needed (self-service). All queries scoped by `user_id` from the authenticated session — BOLA prevention at the query level
+- **TraktError matches ERROR_HANDLING.md reference exactly** — The 5 prescribed TRAKT variants (AccountNotLinked → 409, RateLimited → 429, TokenExpired → 409, ServiceUnavailable → 503, Timeout → 504) implemented verbatim. `RateLimited` carries `{ retry_after_secs: Option<u32> }` field for the Trakt `Retry-After` header. 5 additional domain-specific variants mapped to existing codes (DeviceCodeExpired/Pending → BAD_REQUEST, DeviceCodeDenied → FORBIDDEN, SyncInProgress → CONFLICT, NotConfigured → INTERNAL) following the Segment/Storyboard precedent
+- **Retry-After on Trakt 503/504** — `ServiceUnavailable` gets `Retry-After: 60`, `Timeout` gets `Retry-After: 30` — matches the generic ServiceUnavailable/GatewayTimeout pattern and the ERROR_HANDLING.md reference implementation
+- **Token fields never in responses** — `TraktAccountRow` includes `access_token`/`refresh_token` for service-layer use, but `TraktAccountResponse` omits them entirely. The response has `linked: bool` and `token_expires_at` for client display but never the actual tokens
+- **Offset pagination for history/ratings** — `trakt_sync_state` is user-scoped and moderate volume (bounded by the user's Trakt library size, typically hundreds to low-thousands). Offset pagination with `page`/`page_size` is appropriate and lets the UI show page numbers. Same pattern as the users domain
+- **`docs/design/TRAKT.md` created** — Domain design document covering the full API surface, OAuth device code flow, bidirectional sync architecture (push/pull), merge strategy per DATABASE.md user_item_data design, June 2026 pagination changes (enforced after June 30, per GitHub discussion #775), rate limits, error handling, and configuration. References the DB schema in DATABASE.md (authoritative for DDL) and error codes in ERROR_HANDLING.md (authoritative for the registry)
+- **`#![allow(unused_variables)]` on service.rs** — All 10 service functions are `todo!()` stubs; the module-level allow suppresses unused parameter warnings until actual implementations are added in Tasks 4–6
+- **No new workspace dependencies** — all functionality uses existing `sqlx`, `validator`, `serde`, `uuid`, `chrono`, `axum` crates
+
+**Context from Task 3 for Tasks 4–6:**
+
+- All 10 routes are wired and return `Result<Json<T>, AppError>`; service functions are `todo!()` stubs accepting `&PgPool` and `user_id`
+- The `TraktAccountRow` and `TraktSyncStateRow` types match the DB schema exactly — Task 4 (OAuth) will use `TraktAccountRow` for INSERT/SELECT on `trakt_accounts`; Task 5 (sync) will use `TraktSyncStateRow` for upserts on `trakt_sync_state`
+- `TraktError::NotConfigured` is reserved for Task 4 — when `IntegrationsConfig` lacks Trakt `client_id`/`client_secret`, the OAuth endpoints will return this error. Task 4 will expand `IntegrationsConfig` (similar to how Phase 9 Task 8 added subtitle provider config)
+- `DeviceCodeResponse` matches the Trakt `/oauth/device/code` response shape — Task 4 will call Trakt's API and map directly into this struct
+- `SyncTriggerResponse.queued` follows the segments/storyboards pattern (synchronous API + scheduled iteration); Task 6 will register the `trakt_sync` executor on the scheduler
 
 **Verification:** Play sessions generate analytics data visible in dashboard. Trakt-linked users sync watch state. Impossible travel alerts appear in admin dashboard for suspicious logins.
 

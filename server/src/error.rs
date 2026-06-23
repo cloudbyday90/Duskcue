@@ -119,6 +119,9 @@ pub enum AppError {
     #[error(transparent)]
     Storyboard(#[from] crate::domains::storyboards::StoryboardError),
 
+    #[error(transparent)]
+    Trakt(#[from] crate::domains::trakt::TraktError),
+
     #[error("internal server error")]
     Internal(#[source] anyhow::Error),
 }
@@ -168,6 +171,10 @@ impl IntoResponse for AppError {
             }
             AppError::Storyboard(e) => {
                 let (s, c, d) = storyboard_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Trakt(e) => {
+                let (s, c, d) = trakt_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::NotFound(msg) => (StatusCode::NOT_FOUND, "NOT_FOUND", Cow::Borrowed(msg.as_str())),
@@ -230,6 +237,8 @@ impl IntoResponse for AppError {
             AppError::RateLimited { .. }
                 | AppError::ServiceUnavailable(_)
                 | AppError::GatewayTimeout(_)
+                | AppError::Trakt(crate::domains::trakt::TraktError::ServiceUnavailable)
+                | AppError::Trakt(crate::domains::trakt::TraktError::Timeout)
         );
 
         if wants_retry_after {
@@ -237,6 +246,8 @@ impl IntoResponse for AppError {
                 AppError::RateLimited { .. } => "0",
                 AppError::GatewayTimeout(_) => "30",
                 AppError::ServiceUnavailable(_) => "60",
+                AppError::Trakt(crate::domains::trakt::TraktError::Timeout) => "30",
+                AppError::Trakt(crate::domains::trakt::TraktError::ServiceUnavailable) => "60",
                 _ => "60",
             };
             if let Ok(value) = HeaderValue::from_str(retry_seconds) {
@@ -276,6 +287,25 @@ fn analytics_error_to_http(err: &crate::domains::analytics::AnalyticsError) -> (
         AnalyticsError::InvalidDateRange(msg) => (StatusCode::UNPROCESSABLE_ENTITY, "VALID_001", format!("Invalid date range: {}", msg)),
         AnalyticsError::InvalidTimePreset(p) => (StatusCode::UNPROCESSABLE_ENTITY, "VALID_001", format!("Invalid time preset: {}", p)),
         AnalyticsError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
+    }
+}
+
+fn trakt_error_to_http(err: &crate::domains::trakt::TraktError) -> (StatusCode, &'static str, String) {
+    use crate::domains::trakt::TraktError;
+    use axum::http::StatusCode;
+
+    match err {
+        TraktError::AccountNotLinked => (StatusCode::CONFLICT, "TRAKT_001", "Trakt account not linked".into()),
+        TraktError::RateLimited { .. } => (StatusCode::TOO_MANY_REQUESTS, "TRAKT_002", "Trakt API rate limited".into()),
+        TraktError::TokenExpired => (StatusCode::CONFLICT, "TRAKT_003", "Trakt token expired — re-link required".into()),
+        TraktError::ServiceUnavailable => (StatusCode::SERVICE_UNAVAILABLE, "TRAKT_004", "Trakt API unavailable".into()),
+        TraktError::Timeout => (StatusCode::GATEWAY_TIMEOUT, "TRAKT_005", "Trakt API timeout".into()),
+        TraktError::DeviceCodeExpired => (StatusCode::BAD_REQUEST, "BAD_REQUEST", "Device code expired".into()),
+        TraktError::DeviceCodePending => (StatusCode::BAD_REQUEST, "BAD_REQUEST", "Device authorization pending".into()),
+        TraktError::DeviceCodeDenied => (StatusCode::FORBIDDEN, "FORBIDDEN", "Device authorization denied".into()),
+        TraktError::SyncInProgress => (StatusCode::CONFLICT, "CONFLICT", "A sync is already in progress".into()),
+        TraktError::NotConfigured => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Trakt integration not configured".into()),
+        TraktError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
     }
 }
 
