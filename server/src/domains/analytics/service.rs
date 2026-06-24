@@ -411,10 +411,21 @@ pub async fn acknowledge_trust_event(
 }
 
 pub async fn get_geoip_status(
-    pool: &PgPool,
-    data_dir: &std::path::Path,
+    geoip: &crate::services::geoip::GeoIpService,
+    enabled: bool,
 ) -> Result<GeoIpStatusResponse, AnalyticsError> {
-    todo!()
+    let status = geoip.status();
+    Ok(GeoIpStatusResponse {
+        enabled,
+        database_present: status.present_on_disk,
+        database_path: if status.path.as_os_str().is_empty() {
+            None
+        } else {
+            Some(status.path.to_string_lossy().into_owned())
+        },
+        database_age_days: status.age_days,
+        database_size_bytes: status.size_bytes.map(|s| s as i64),
+    })
 }
 
 #[cfg(test)]

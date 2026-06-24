@@ -100,6 +100,7 @@ pub async fn get_geoip_status(
     State(state): State<AppState>,
     _auth: Require<CanViewAnalytics>,
 ) -> Result<Json<GeoIpStatusResponse>, AppError> {
-    let result = service::get_geoip_status(&state.pool, &state.bootstrap.data_dir).await?;
+    let enabled = state.runtime_config.load().analytics.geoip_enabled;
+    let result = service::get_geoip_status(&state.geoip, enabled).await?;
     Ok(Json(result))
 }

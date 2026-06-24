@@ -23,6 +23,7 @@ pub mod event_bus;
 pub mod events_handler;
 pub mod fanart_client;
 pub mod fs_watcher;
+pub mod geoip;
 pub mod hw_accel;
 pub mod image_pipeline;
 pub mod media_matching;

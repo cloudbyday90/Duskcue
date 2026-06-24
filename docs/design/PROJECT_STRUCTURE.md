@@ -220,7 +220,7 @@ project/
 │       │   ├── collections.rs    # Builder engine, external API polling, template import
 │       │   ├── segments.rs       # Chromaprint, black frame, silence detection
 │       │   ├── storyboards.rs    # FFmpeg thumbnail extraction, WebP sprite generation
-│       │   ├── geoip.rs          # MaxMind GeoLite2 MMDB lookups (maxminddb + ArcSwap)
+│       │   ├── geoip.rs          # MaxMind GeoLite2 MMDB lookups (maxminddb + ArcSwap) — **implemented**
 │       │   ├── sandbox.rs        # FFmpeg per-process sandboxing (landlock + seccompiler) — **implemented**
 │       │   ├── hw_accel.rs       # Hardware acceleration runtime detection (FFmpeg probe, platform checks, priority selection) — **implemented**
 │       │   ├── image_pipeline.rs # WebP encode/resize/variant generation (image 0.25 decode + webp 0.3 libwebp encode; alpha-aware lossy/lossless) — **implemented**

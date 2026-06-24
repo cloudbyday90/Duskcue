@@ -33,6 +33,7 @@ use crate::middleware::RateLimitState;
 use crate::services::encryption::EncryptionKey;
 use crate::services::event_bus::EventBus;
 use crate::services::fs_watcher::LibraryWatcherManager;
+use crate::services::geoip::GeoIpService;
 use crate::services::metadata::EnrichmentOrchestrator;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -629,6 +630,33 @@ pub struct StorageConfig {}
 pub struct MaintenanceConfig {}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AnalyticsConfig {
+    pub geoip_enabled: bool,
+    pub impossible_travel_enabled: bool,
+    pub velocity_threshold_kmh: u32,
+    pub min_distance_km: u32,
+    pub lookback_hours: u32,
+    pub same_country_suppress: bool,
+    pub trusted_ips: Vec<String>,
+    pub trusted_cidrs: Vec<String>,
+}
+
+impl Default for AnalyticsConfig {
+    fn default() -> Self {
+        Self {
+            geoip_enabled: true,
+            impossible_travel_enabled: true,
+            velocity_threshold_kmh: 1000,
+            min_distance_km: 500,
+            lookback_hours: 24,
+            same_country_suppress: true,
+            trusted_ips: Vec::new(),
+            trusted_cidrs: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CpuConfig {
     pub transcode_cpu_threshold_percent: u8,
     pub cpu_warning_percent: u8,
@@ -686,6 +714,7 @@ pub struct RuntimeConfig {
     pub cpu: CpuConfig,
     pub quality: QualityConfig,
     pub subtitles: SubtitleConfig,
+    pub analytics: AnalyticsConfig,
 }
 
 impl Default for RuntimeConfig {
@@ -712,6 +741,7 @@ impl Default for RuntimeConfig {
             cpu: CpuConfig::default(),
             quality: QualityConfig::default(),
             subtitles: SubtitleConfig::default(),
+            analytics: AnalyticsConfig::default(),
         }
     }
 }
@@ -753,6 +783,7 @@ pub struct AppState {
     pub encryption_key: Arc<EncryptionKey>,
     pub transcode_manager: Arc<crate::services::transcoding::TranscodeManager>,
     pub event_bus: Arc<EventBus>,
+    pub geoip: Arc<GeoIpService>,
 }
 
 impl AppState {
@@ -787,6 +818,7 @@ impl AppState {
             encryption_key: Arc::new(encryption_key),
             transcode_manager,
             event_bus: Arc::new(EventBus::with_default_limit()),
+            geoip: Arc::new(GeoIpService::disabled()),
         }
     }
 
@@ -821,6 +853,8 @@ impl AppState {
             crate::services::transcoding::TranscodeManager::new(config_arc.clone()),
         );
 
+        let geoip = Arc::new(GeoIpService::new(&bootstrap.data_dir));
+
         Self {
             pool,
             runtime_config: config_arc,
@@ -836,6 +870,7 @@ impl AppState {
             encryption_key: Arc::new(encryption_key),
             transcode_manager,
             event_bus: Arc::new(EventBus::with_default_limit()),
+            geoip,
         }
     }
 
@@ -936,6 +971,7 @@ pub async fn load_runtime_config(pool: &PgPool, encryption_key: Option<&Encrypti
     let cpu: serde_json::Value = row.try_get("cpu").unwrap_or(serde_json::Value::Object(Default::default()));
     let quality: serde_json::Value = row.try_get("quality").unwrap_or(serde_json::Value::Object(Default::default()));
     let subtitles: serde_json::Value = row.try_get("subtitles").unwrap_or(serde_json::Value::Object(Default::default()));
+    let analytics: serde_json::Value = row.try_get("analytics").unwrap_or(serde_json::Value::Object(Default::default()));
 
     Ok(RuntimeConfig {
         server_name,
@@ -971,5 +1007,6 @@ pub async fn load_runtime_config(pool: &PgPool, encryption_key: Option<&Encrypti
         cpu: serde_json::from_value(cpu).unwrap_or_default(),
         quality: serde_json::from_value(quality).unwrap_or_default(),
         subtitles: serde_json::from_value(subtitles).unwrap_or_default(),
+        analytics: serde_json::from_value(analytics).unwrap_or_default(),
     })
 }

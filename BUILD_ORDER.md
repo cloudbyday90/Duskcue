@@ -2402,11 +2402,11 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 4. ~~Implement Trakt OAuth flow — account linking, token refresh~~ **DONE**
  5. ~~Implement Trakt sync — watch state push/pull, play count sync~~ **DONE**
  6. ~~Implement `server/src/workers/trakt_sync.rs` — periodic sync scheduled task~~ **DONE**
-7. Implement `server/src/services/geoip.rs`:
-   - MaxMind GeoLite2 City MMDB loading with `maxminddb` crate (mmap)
-   - `ArcSwap` hot-reload on weekly update
-   - Graceful degradation when MMDB absent
-8. Implement impossible travel detection:
+ 7. ~~Implement `server/src/services/geoip.rs`:~~ **DONE**
+    - ~~MaxMind GeoLite2 City MMDB loading with `maxminddb` crate (mmap)~~
+    - ~~`ArcSwap` hot-reload on weekly update~~
+    - ~~Graceful degradation when MMDB absent~~
+ 8. Implement impossible travel detection:
    - Haversine distance + 1,000 km/h threshold
    - 5-layer false positive suppression
    - Notification-first response (admin dashboard alert, no auto-blocking)
@@ -2580,6 +2580,38 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`trakt_sync` task enabled by default (no-op when unlinked)** — Unlike `subtitle_auto_fetch` (disabled by default because it consumes external API quota unconditionally), `trakt_sync` is enabled by default because it is a pure no-op when zero `trakt_accounts` rows exist. The opt-in is at the account-linking level (`sync_enabled` per user), not the task level. Matches the original Phase 2 seed (`20260530_070000_seed_default_data.sql`: `is_enabled = true`, `interval_seconds = 1800`). The BUILD_ORDER Task 4 context note ("disabled by default per TRAKT.md") referred to the account-linking opt-in, not the task enablement — the task itself is safely enabled
 - **Registered in `seed_default_tasks`** — Added to `scheduler.rs::seed_default_tasks` alongside `subtitle_auto_fetch`, `segment_analysis`, and `storyboard_generation` for fresh-install consistency. The Phase 2 migration seed already creates the row for existing deployments, so no re-seed migration is needed (unlike segment_analysis/storyboard_generation which each shipped dedicated re-seed migrations for existing deployments)
 - **No new workspace dependencies** — the worker uses existing `sqlx`, `uuid`, and the Task 5 `run_sync` engine. All 327 server tests pass (323 prior + 4 new)
+
+**What was built for Task 7:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/geoip.rs` | GeoLite2-City MMDB reader service: `GeoIpService` with `ArcSwap<Option<Reader<Vec<u8>>>>` for lock-free hot-reload; `lookup(ip)` returning owned `GeoLocation` (city, region, country, continent, coordinates, accuracy radius, timezone); `reload()` for atomic MMDB swap after weekly download; `status()` for the admin GeoIP status endpoint; `classify_location(ip, server_subnets)` returning `LocationType` (Lan/Wan/Relay); `is_private_ip()` covering RFC 1918 + CGNAT + loopback + link-local + ULA; `LocationType`, `GeoLocation`, `GeoIpStatus`, `GeoIpError` types; 20 unit tests |
+| `server/src/services/mod.rs` | Added `pub mod geoip;` |
+| `server/src/state.rs` | Added `AnalyticsConfig` struct (8 fields from ANALYTICS_SECURITY.md config table: `geoip_enabled`, `impossible_travel_enabled`, `velocity_threshold_kmh`, `min_distance_km`, `lookback_hours`, `same_country_suppress`, `trusted_ips`, `trusted_cidrs`); added `analytics: AnalyticsConfig` to `RuntimeConfig` + `Default`; added `geoip: Arc<GeoIpService>` to `AppState`; `new()` uses `GeoIpService::disabled()`, `new_with_config()` creates real service from `bootstrap.data_dir`; `load_runtime_config()` reads `analytics` JSONB column |
+| `server/src/domains/analytics/service.rs` | Replaced `get_geoip_status` `todo!()` stub with working implementation using `GeoIpService::status()` — reads database file presence/age/size from filesystem, reports `enabled` from config |
+| `server/src/domains/analytics/handlers.rs` | `get_geoip_status` handler now reads `geoip_enabled` from `RuntimeConfig.analytics` and delegates to the `GeoIpService` |
+| `docs/security/ANALYTICS_SECURITY.md` | Added "Task 7 Implementation Notes" section documenting: module location decision (`services/geoip.rs` cross-cutting vs `domains/analytics/geolocation.rs`), `maxminddb` 0.28 API changes, `Reader<Vec<u8>>` buffer type rationale, `ArcSwap<Option<...>>` graceful degradation pattern, location classification design |
+
+**Key decisions from Task 7:**
+
+- **`services/geoip.rs` over `domains/analytics/geolocation.rs`** — BUILD_ORDER Task 7 prescribes the `services/` location; ANALYTICS_SECURITY.md §Rust Implementation suggested the domain location. The service is cross-cutting: consumed by analytics (impossible travel detection, Task 8) and playback (play-session geolocation enrichment at session start). Placing it in `services/` follows the established convention (`encryption.rs`, `event_bus.rs`, `artwork_delivery.rs`, `decision_engine.rs`). The impossible-travel trust engine (Haversine, 5-layer suppression) remains in `domains/analytics/service.rs` (Task 8 scope)
+- **`maxminddb` 0.28 API** — Verified against docs.rs (June 2026): `lookup(ip)` returns `Result<LookupResult>`; `result.decode::<geoip2::City>()` returns `Result<Option<City>>` (double-unwrap needed: `.ok()??`). `geoip2` is a module *within* the `maxminddb` crate (`use maxminddb::{Reader, geoip2}`), not a separate dependency. Decoded records borrow the reader's internal buffer (`geoip2::City<'a>`), so `lookup()` extracts owned data (`String`, `f64`, `u16`) into `GeoLocation` within the ArcSwap-guard scope before returning
+- **`Reader<Vec<u8>>` over `Reader<Mmap>`** — `open_readfile()` loads the entire 70 MB file into an owned `Vec<u8>` (not mmap). Rationale: `'static`, `Send + Sync`, clean `ArcSwap` storage with no file-handle/mmap lifetime entanglement. 70 MB is negligible for a media server (FFmpeg transcoding uses GBs). The `mmap` *feature* remains enabled (per design doc Cargo.toml) for future flexibility — switching to `Reader::from_source(mmap)` is a one-line change if memory pressure ever warrants it
+- **`ArcSwap<Option<Reader<Vec<u8>>>>` graceful degradation** — When MMDB is absent/corrupt at startup, `None` is stored; `lookup()` returns `None` (geolocation silently skips); `is_available()` returns `false` (admin dashboard shows "GeoIP not configured"). `reload()` (Task 9 updater) populates `Some(reader)` — lookups begin working without restart. Matches design: "If the MMDB file is missing at startup, geolocation enrichment is skipped"
+- **`reload()` preserves existing reader on failure** — If the new MMDB fails to open, the ArcSwap is not touched; the old reader keeps serving. A failed weekly update does not take geolocation offline
+- **`GeoLocation` includes continent code + accuracy radius** — Beyond the `play_sessions` schema's `geo_city/geo_region/geo_country/geo_lat/geo_lon`, the owned struct also carries `continent_code` (for impossible-travel severity: new continent → high severity, Task 8), `country_name` (for admin dashboard display), `accuracy_radius_km` (MaxMind's 67% confidence radius — useful for trust-event detail), and `time_zone` (for future client-side timezone display). All are cheap to extract during the single decode call
+- **CGNAT `100.64.0.0/10` classified as LAN** — Tailscale (default `100.x.x.x` range) and WireGuard meshes use RFC 6598 CGNAT space. `is_private_ip()` checks this range via bitmask (`octets[1] & 0xC0 == 0x40`) alongside the std `Ipv4Addr::is_private()` (RFC 1918 only). Matches ANALYTICS_SECURITY.md: "LAN and VPN connections (Tailscale `100.x.x.x`, WireGuard `10.x.x.x`) are classified as LAN"
+- **IPv6 ULA `fc00::/7` and link-local `fe80::/10` via bitmask** — `std::net::Ipv6Addr` lacks stable `is_unique_local()`/`is_link_local()` methods (as of Rust 1.88); implemented via `segments()[0]` bitmask checks. ULA: `& 0xFE00 == 0xFC00`; link-local: `& 0xFFC0 == 0xFE80`. Deprecated `fec0::/10` (old site-local) correctly classified as WAN (not private) — covered by an explicit test
+- **`classify_location` as free function in the service module** — Pure IP-classification concern (no MMDB dependency); consumed by both playback enrichment and impossible-travel suppression. Uses `ipnet::IpNet::contains()` (already a workspace dep, used by `middleware.rs` metrics-subnet guard). `server_subnets` parameter lets operators mark point-to-point public IPs as LAN
+- **No new workspace dependencies** — `maxminddb = { version = "0.28", features = ["mmap"] }` and `ipnet = "2"` were already in workspace Cargo.toml (pre-added in anticipation of Phase 11). All 347 server tests pass (327 prior + 20 new geoip tests); 0 clippy warnings on new code
+
+**Not yet implemented (deferred to Tasks 8–9):**
+
+- Impossible travel detection (Task 8) — Haversine formula, 5-layer false-positive suppression, trust event creation. The `GeoIpService::lookup()` + `classify_location()` infrastructure is ready for Task 8 to consume
+- `geoip_updater.rs` scheduled task (Task 9) — weekly MaxMind download, temp-file + atomic-rename, calls `GeoIpService::reload()`. The `reload()` method is implemented and tested; the worker that triggers it is not
+- Play-session geolocation enrichment — `start_playback` in the playback domain does not yet call `GeoIpService::lookup()` to populate `play_sessions.geo_*` columns. Deferred to Task 8 (which needs the same enrichment for the impossible-travel pipeline) or a dedicated enrichment-wiring task
+- `user_location_history` population — the table exists (Phase 2 migration); the enrichment flow that writes to it (per ANALYTICS_SECURITY.md §Enrichment Flow) is part of the impossible-travel pipeline (Task 8)
+- `geoip_database_update` scheduled task seeding — the task type is in the `scheduled_tasks` CHECK constraint (Phase 2); seeding the default row and registering the executor is Task 9
 
 **Verification:** Play sessions generate analytics data visible in dashboard. Trakt-linked users sync watch state. Impossible travel alerts appear in admin dashboard for suspicious logins.
 

@@ -162,3 +162,13 @@ The overview computes the stream-decision breakdown directly from the `play_sess
 ### Display-Name / Title Enrichment
 
 Play-history and concurrent-stream queries use `LEFT JOIN users` / `LEFT JOIN media_items` with `COALESCE` fallbacks. Because `play_sessions` has `ON DELETE CASCADE` on both FKs, a deleted user or media item removes the session entirely, so `INNER JOIN` would be functionally equivalent; `LEFT JOIN` is defensive against partial-state edge cases and never drops analytics rows.
+
+---
+
+## Implementation Notes — Task 7 (GeoIP Status Endpoint)
+
+Task 7 implements the `GET /api/v1/analytics/geoip/status` endpoint, which was a `todo!()` stub after Task 2 (Task 2 implemented only the 5 dashboard endpoints; the 4 security-analytics endpoints — trust/scores, trust/events, acknowledge, geoip/status — remained stubs for Tasks 7–9).
+
+The endpoint delegates to the cross-cutting `GeoIpService` (`server/src/services/geoip.rs`) rather than querying the database directly — the GeoIP status is filesystem state (MMDB file presence, size, age) plus the in-memory reader's loaded/unloaded state, not database state. The handler reads `geoip_enabled` from `RuntimeConfig.analytics` and passes it alongside the `GeoIpService` reference to `service::get_geoip_status()`, which calls `GeoIpService::status()` to read the MMDB file metadata from disk.
+
+The `GeoIpService` itself, the impossible-travel detection engine, and the weekly MMDB updater are documented in [ANALYTICS_SECURITY.md](../security/ANALYTICS_SECURITY.md) — they are security-domain infrastructure, not analytics-API concerns. The analytics domain only surfaces the status; the enrichment pipeline (populating `play_sessions.geo_*` columns) and trust-event creation land in Task 8.

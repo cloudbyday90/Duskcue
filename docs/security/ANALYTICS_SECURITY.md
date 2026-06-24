@@ -466,6 +466,56 @@ impl GeoIpService {
 
 ---
 
+## Task 7 Implementation Notes (GeoIP Service)
+
+### Module Location: `services/geoip.rs` (cross-cutting service)
+
+The Rust Implementation section above suggested `domains/analytics/geolocation.rs`. The actual implementation lives at `server/src/services/geoip.rs` per [BUILD_ORDER.md](../design/BUILD_ORDER.md) Task 7. Rationale:
+
+- GeoIP is **cross-cutting** — consumed by both the analytics domain (impossible travel detection, Task 8) and the playback domain (play-session geolocation enrichment at session start). Placing it in `services/` follows the established convention for cross-cutting infrastructure (`encryption.rs`, `event_bus.rs`, `artwork_delivery.rs`, `decision_engine.rs`).
+- The impossible-travel trust engine (Haversine, 5-layer suppression) remains in `domains/analytics/service.rs` (Task 8). Only the MMDB reader + IP lookup + location classification live in the shared service.
+- The `AnalyticsConfig` (trusted IPs, velocity thresholds, toggles) lives in `RuntimeConfig.analytics` in `state.rs`, not in the service module — keeping configuration with the rest of the config tree.
+
+### `maxminddb` 0.28 API (verified against docs.rs, June 2026)
+
+The 0.28 release reworked the lookup API. The pseudocode above (`result.decode()`, `city.city?.name?`) reflects the older 0.27 API. The implemented code uses the 0.28 API:
+
+| 0.27 API (pseudocode above) | 0.28 API (implemented) |
+|---|---|
+| `reader.lookup::<geoip2::City>(ip)` → `Result<geoip2::City>` | `reader.lookup(ip)` → `Result<LookupResult>`; then `result.decode::<geoip2::City>()` → `Result<Option<geoip2::City>>` |
+| `city.city?.names?.get("en")` (Option-chained) | `city.city.names.english` (direct `Option<&str>` field — 0.28 structs default-deserialize missing fields to `None`, no `Option` unwrap needed) |
+
+- **`geoip2` is a module *within* the `maxminddb` crate** (`use maxminddb::{Reader, geoip2}`), not a separate dependency. No extra crate needed.
+- **`geoip2::City<'a>` borrows from the reader's buffer** — the decoded struct's lifetime `'a` is tied to the `&'a Reader`. Lookups must extract owned data (`String`, `f64`) within the scope where the ArcSwap guard lives. The `GeoLocation` return struct is fully owned, sidestepping the lifetime constraint.
+
+### Buffer Type: `Reader<Vec<u8>>` (not `Reader<Mmap>`)
+
+The `mmap` feature is enabled (per the workspace `Cargo.toml` directive) but `Reader::open_readfile()` is used for actual loading, returning `Reader<Vec<u8>>`:
+
+- **Owned, `'static`, `Send + Sync`** — the simplest type that composes cleanly with `ArcSwap<Reader<Vec<u8>>>`. No file-handle or `Mmap`-borrows-from-`File` lifetime entanglement.
+- **70 MB memory cost is negligible** for a media server (FFmpeg transcoding uses GBs). The mmap benefit (OS can page out cold regions) is marginal at this size.
+- The `mmap` feature remains enabled for future flexibility — switching to `Reader::from_source(mmap)` is a one-line change if memory pressure ever warrants it.
+
+### Graceful Degradation: `ArcSwap<Option<Reader<Vec<u8>>>>`
+
+When the MMDB file is absent or corrupt at startup, the service initializes with `None` stored in the ArcSwap:
+
+- `lookup()` returns `None` → callers (playback enrichment, impossible travel) silently skip geo columns; the server runs normally without geolocation.
+- `is_available()` returns `false` → the `GET /api/v1/analytics/geoip/status` endpoint surfaces "GeoIP not configured" in the admin dashboard.
+- `reload()` (called by the Task 9 updater after a successful download) populates the `Some(reader)` — lookups begin working without a restart.
+
+This matches the design's "If the MMDB file is missing at startup, geolocation enrichment is skipped; impossible travel detection is disabled; a warning appears in the admin dashboard."
+
+### Location Classification
+
+`classify_location(ip, server_subnets) -> LocationType` lives in the geoip service (not the analytics domain) because it is a pure IP-classification concern consumed by both the playback enrichment path and the impossible-travel suppression layer. It uses `ipnet::IpNet::contains()` (already a workspace dependency, used by `middleware.rs` metrics-subnet guarding):
+
+- **Lan** — RFC 1918 private ranges (`10/8`, `172.16/12`, `192.168/16`), IPv6 ULA (`fc00::/7`), link-local (`169.254/16`, `fe80::/10`), loopback (`127/8`, `::1`), or any CIDR matching the server's own subnet.
+- **Wan** — any public IP not matching Lan/Relay.
+- **Relay** — reserved for future known-relay/proxy IP list matching (Tailscale `100.64/10` CGNAT range is classified as Lan since it represents the operator's own mesh).
+
+---
+
 ## New Error Codes
 
 Analytics security uses the existing trust event system. No new API error codes are needed — trust events are created in the background and surfaced via the admin dashboard, not as API errors.
