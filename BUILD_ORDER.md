@@ -2400,8 +2400,8 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 2. ~~Implement analytics dashboard — play history, top media, concurrent streams, bandwidth usage~~ **DONE**
  3. ~~Create `server/src/domains/trakt/` — five-file pattern~~ **DONE**
 4. ~~Implement Trakt OAuth flow — account linking, token refresh~~ **DONE**
-5. ~~Implement Trakt sync — watch state push/pull, play count sync~~ **DONE**
-6. Implement `server/src/workers/trakt_sync.rs` — periodic sync scheduled task
+ 5. ~~Implement Trakt sync — watch state push/pull, play count sync~~ **DONE**
+ 6. ~~Implement `server/src/workers/trakt_sync.rs` — periodic sync scheduled task~~ **DONE**
 7. Implement `server/src/services/geoip.rs`:
    - MaxMind GeoLite2 City MMDB loading with `maxminddb` crate (mmap)
    - `ArcSwap` hot-reload on weekly update
@@ -2560,6 +2560,26 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **Per-user sync lock (in-memory)** — `DashMap<Uuid, Instant>` in `AppState` with 15-min TTL guards `run_sync` against concurrent manual+manual or manual+worker races; returns `TraktError::SyncInProgress`. Matches the existing in-memory `DashMap` pattern (WebAuthn challenges). The merge logic is idempotent (ON CONFLICT/GREATEST/OR) so a crash-leaving-stale-lock is non-fatal (TTL reclaims).
 - **`trigger_sync` implemented in Task 5 (not 6)** — the manual `POST /api/v1/trakt/sync` endpoint now runs the engine inline and returns a summary; Task 6 adds the *scheduled* worker that iterates all `sync_enabled` users calling the same `run_sync()`.
 - **No new workspace dependencies** — sync uses existing `reqwest`, `serde`, `sqlx`, `chrono`, `uuid`, `dashmap`. All 323 server tests pass (312 prior + 11 new).
+
+**What was built for Task 6:**
+
+| File | Purpose |
+|---|---|
+| `server/src/workers/trakt_sync.rs` | Scheduled Trakt sync worker: `run_trakt_sync(state, task_id, config)` entry point — iterates all `trakt_accounts WHERE sync_enabled = true`, calls `run_sync()` per user; per-user error isolation with global-abort classification (`NotConfigured`/`RateLimited`/`ServiceUnavailable`/`Timeout` abort the batch; `AccountNotLinked`/`TokenExpired`/`SyncInProgress`/`Database` skip and continue); optional `config.user_id` for single-user sync; `AggregateResult` summary struct; `fetch_sync_enabled_users` ordered `last_full_sync_at ASC NULLS FIRST`; `is_global_failure` classifier; 4 unit tests |
+| `server/src/workers/mod.rs` | Added `pub mod trakt_sync;` |
+| `server/src/main.rs` | Registered `trakt_sync` executor on scheduler (6th executor) with `trakt_state` capture clone |
+| `server/src/services/scheduler.rs` | Added "Trakt Sync" to runtime `seed_default_tasks` (interval 1800s) |
+
+**Key decisions from Task 6:**
+
+- **Scheduled iteration over `run_sync`** — Mirrors the `subtitle_auto_fetch`/`segment_analysis`/`storyboard_generation` pattern: query candidate users → call existing `run_sync()` per user → aggregate results. The worker is a thin orchestration layer; all pull/merge/push logic, token refresh, and per-user locking live in Task 5's `run_sync`. This matches the established "synchronous API + scheduled iteration" precedent and keeps `SyncTriggerResponse.queued` semantics honest (the manual `POST /api/v1/trakt/sync` endpoint calls `run_sync` inline; the worker just iterates it)
+- **Error classification: global abort vs per-user skip** — `NotConfigured`, `RateLimited`, `ServiceUnavailable`, `Timeout` abort the entire batch (every subsequent user would fail identically against the Trakt API); `AccountNotLinked`, `TokenExpired`, `SyncInProgress`, `Database` skip the user and continue. `RateLimited` abort is explicit per the Task 5 design ("a `Retry-After` 429 aborts the sync; the worker retries next interval"). Aborting on global API failures avoids hammering a down/rate-limited service for every user and worsening the rate limit. The scheduler retries the whole task on the next 30-min interval
+- **`token_expires_at > now()` guard intentionally omitted (deviation from TRAKT.md §Scheduled Task)** — The design doc specifies `WHERE sync_enabled = true AND token_expires_at > now()`. The `token_expires_at` filter is NOT applied. `token_expires_at` tracks the *access* token (90-day TTL), but `ensure_valid_token` (Task 4) refreshes expired access tokens via the long-lived *refresh* token. A user whose access token lapsed but whose refresh token is still valid would be incorrectly skipped forever — permanently halting sync after the first 90-day access token expired. The candidate query filters only on `sync_enabled = true`; unrecoverable tokens surface as `TokenExpired` and are skipped per-user. This deviation is documented in the worker's module docs
+- **`ORDER BY last_full_sync_at ASC NULLS FIRST`** — Users who have never synced (or synced longest ago) are processed first. After server downtime or a backlog, this clears the stalest accounts fairly rather than always favoring the most-recently-synced user
+- **Optional `config.user_id` for single-user sync** — Mirrors `segment_detector`'s `library_id` and `storyboard_generator`'s `library_id`. Enables targeted admin triggers and testing without iterating all users. The default scheduled task config is `{}` (empty), iterating all sync-enabled users
+- **`trakt_sync` task enabled by default (no-op when unlinked)** — Unlike `subtitle_auto_fetch` (disabled by default because it consumes external API quota unconditionally), `trakt_sync` is enabled by default because it is a pure no-op when zero `trakt_accounts` rows exist. The opt-in is at the account-linking level (`sync_enabled` per user), not the task level. Matches the original Phase 2 seed (`20260530_070000_seed_default_data.sql`: `is_enabled = true`, `interval_seconds = 1800`). The BUILD_ORDER Task 4 context note ("disabled by default per TRAKT.md") referred to the account-linking opt-in, not the task enablement — the task itself is safely enabled
+- **Registered in `seed_default_tasks`** — Added to `scheduler.rs::seed_default_tasks` alongside `subtitle_auto_fetch`, `segment_analysis`, and `storyboard_generation` for fresh-install consistency. The Phase 2 migration seed already creates the row for existing deployments, so no re-seed migration is needed (unlike segment_analysis/storyboard_generation which each shipped dedicated re-seed migrations for existing deployments)
+- **No new workspace dependencies** — the worker uses existing `sqlx`, `uuid`, and the Task 5 `run_sync` engine. All 327 server tests pass (323 prior + 4 new)
 
 **Verification:** Play sessions generate analytics data visible in dashboard. Trakt-linked users sync watch state. Impossible travel alerts appear in admin dashboard for suspicious logins.
 

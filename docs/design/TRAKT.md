@@ -222,7 +222,7 @@ The worker iterates all `trakt_accounts` where `sync_enabled = true` and `token_
 | Token refresh (proactive, with write-back) | ✅ Implemented | Phase 11 Task 4 |
 | Sync settings / status / history / ratings views | ✅ Implemented | Phase 11 Task 5 |
 | Bidirectional sync engine (push/pull/merge) | ✅ Implemented | Phase 11 Task 5 |
-| Sync worker (scheduled task iteration) | ⏳ Pending | Phase 11 Task 6 |
+| Sync worker (scheduled task iteration) | ✅ Implemented | Phase 11 Task 6 |
 
 ### Task 4 — OAuth Implementation Notes
 
@@ -244,6 +244,17 @@ The worker iterates all `trakt_accounts` where `sync_enabled = true` and `token_
 - **Conservative rating merge** — pull applies a Trakt rating to `user_item_data.user_rating` only when that column is NULL (no local rating timestamp exists to do timestamp-based override). Documented above in Merge Strategy.
 - **`trakt_sync_state` upsert** — `INSERT ... ON CONFLICT (user_id, media_item_id) DO UPDATE` per matched item, keyed by the UNIQUE constraint. Stores the Trakt-side view (`trakt_id`, `is_watched`, `plays`, `rating`, `is_in_collection`, timestamps) so the next push can diff against it for incremental sends.
 - **No new workspace dependencies** — sync uses the existing `reqwest`, `serde`, `sqlx`, `chrono`, `uuid` stack already wired in Task 4.
+
+### Task 6 — Sync Worker Implementation Notes
+
+- **Scheduled iteration over `run_sync`** — `workers/trakt_sync.rs::run_trakt_sync(state, task_id, config)` is a thin orchestration layer mirroring `subtitle_auto_fetch`, `segment_analysis`, and `storyboard_generation`: query candidate users → call `run_sync` per user → aggregate results. All pull/merge/push logic, token refresh, and per-user locking live in `run_sync` (Task 5); the worker adds only iteration, per-user error isolation, and aggregate logging.
+- **Error classification: global abort vs per-user skip** — `NotConfigured`, `RateLimited`, `ServiceUnavailable`, and `Timeout` are global failures (every subsequent user would fail identically), so the worker aborts the batch and lets the scheduler retry the whole task next interval. `AccountNotLinked`, `TokenExpired`, `SyncInProgress`, and `Database` are per-user; the worker logs and continues. `RateLimited` abort is explicit per the Task 5 design ("a `Retry-After` 429 maps to `TraktError::RateLimited` and aborts the sync; the worker retries next interval").
+- **`token_expires_at > now()` guard intentionally omitted** — §Scheduled Task specifies `WHERE sync_enabled = true AND token_expires_at > now()`. The `token_expires_at` filter is NOT applied. `token_expires_at` tracks the *access* token (90-day TTL), but `ensure_valid_token` refreshes expired access tokens via the long-lived *refresh* token. A user whose access token lapsed but whose refresh token is valid would be incorrectly skipped forever. The candidate query filters only on `sync_enabled = true`; unrecoverable tokens surface as `TokenExpired` and are skipped per-user. This deviation is documented in the worker's module docs.
+- **`ORDER BY last_full_sync_at ASC NULLS FIRST`** — users who have never synced (or synced longest ago) are processed first, so a backlog after server downtime clears fairly rather than always favoring the most-recently-synced user.
+- **Optional `config.user_id` for single-user sync** — mirrors `segment_detector`'s `library_id` and `storyboard_generator`'s `library_id`. Enables targeted admin triggers and testing without iterating all users.
+- **`trakt_sync` task enabled by default (no-op when unlinked)** — unlike `subtitle_auto_fetch` (disabled by default because it consumes external API quota unconditionally), `trakt_sync` is enabled by default because it is a pure no-op when zero `trakt_accounts` rows exist. The opt-in is at the account-linking level (`sync_enabled` per user), not the task level. Matches the original Phase 2 seed (`20260530_070000_seed_default_data.sql`: `is_enabled = true`, `interval_seconds = 1800`).
+- **Registered in `seed_default_tasks`** — added to `scheduler.rs::seed_default_tasks` alongside `subtitle_auto_fetch`, `segment_analysis`, and `storyboard_generation` for fresh-install consistency. The Phase 2 migration seed already creates the row for existing deployments, so no re-seed migration is needed (unlike segment_analysis/storyboard_generation which shipped dedicated re-seed migrations).
+- **No new workspace dependencies** — the worker uses existing `sqlx`, `uuid`, and the Task 5 `run_sync` engine.
 
 ## Research Sources
 
