@@ -117,6 +117,17 @@ pub struct SyncTriggerResponse {
     pub message: String,
 }
 
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct SyncSummary {
+    pub completed: bool,
+    pub pulled_watched: i64,
+    pub pulled_ratings: i64,
+    pub pulled_collection: i64,
+    pub pushed_watched: i64,
+    pub unmatched: i64,
+    pub last_full_sync_at: Option<DateTime<Utc>>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct SyncStatusResponse {
     pub last_full_sync_at: Option<DateTime<Utc>>,

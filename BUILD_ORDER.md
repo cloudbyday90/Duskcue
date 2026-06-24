@@ -2400,7 +2400,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 2. ~~Implement analytics dashboard — play history, top media, concurrent streams, bandwidth usage~~ **DONE**
  3. ~~Create `server/src/domains/trakt/` — five-file pattern~~ **DONE**
 4. ~~Implement Trakt OAuth flow — account linking, token refresh~~ **DONE**
-5. Implement Trakt sync — watch state push/pull, play count sync
+5. ~~Implement Trakt sync — watch state push/pull, play count sync~~ **DONE**
 6. Implement `server/src/workers/trakt_sync.rs` — periodic sync scheduled task
 7. Implement `server/src/services/geoip.rs`:
    - MaxMind GeoLite2 City MMDB loading with `maxminddb` crate (mmap)
@@ -2538,6 +2538,28 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - `TraktError::NotConfigured` is reserved for Task 4 — when `IntegrationsConfig` lacks Trakt `client_id`/`client_secret`, the OAuth endpoints will return this error. Task 4 will expand `IntegrationsConfig` (similar to how Phase 9 Task 8 added subtitle provider config)
 - `DeviceCodeResponse` matches the Trakt `/oauth/device/code` response shape — Task 4 will call Trakt's API and map directly into this struct
 - `SyncTriggerResponse.queued` follows the segments/storyboards pattern (synchronous API + scheduled iteration); Task 6 will register the `trakt_sync` executor on the scheduler
+
+**What was built for Task 5:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/trakt_client.rs` | Added 7 sync HTTP methods: `get_watched_movies`, `get_watched_episodes`, `get_ratings`, `get_collection_movies` (GET, paginated) + `add_to_history`, `add_to_ratings`, `add_to_collection` (POST). Generic `paginate<T>()` helper loops `page` with `limit=250` until empty array (with a 1000-page runaway guard). `authed_post()` helper maps 401→TokenExpired, 429→RateLimited (Retry-After). Raw API types: `TraktIds` (with `to_id_object()`/`is_empty()`), `TraktMediaObject`, `TraktEpisodeObject`, `TraktWatchedMovie`, `TraktWatchedEpisode`, `TraktRating`, `TraktCollectionMovie`, `TraktSyncCounts` (with `total()` + `AddAssign`), `TraktSyncPostResponse`. 11 unit tests. |
+| `server/src/domains/trakt/service.rs` | Replaced 6 `todo!()` stubs: `get_sync_settings`, `update_sync_settings` (DB COALESCE upsert on `trakt_accounts` sync_* columns), `get_sync_status` (aggregate counts on `trakt_sync_state`), `list_history`/`list_ratings` (offset pagination, `div_ceil` page count), `trigger_sync`. Added core `run_sync()` engine: pull (watched movies+episodes, ratings all 4 types, collection) → merge into `trakt_sync_state` + propagate to `user_item_data` per merge strategy → push local-watched-not-on-Trakt in one batched POST. `MediaMatcher` (in-memory `HashMap` lookup by trakt/tmdb/imdb/tvdb priority, scoped to media_item type). Per-category merge upserts (`upsert_sync_watched`, `apply_uid_watched`, `upsert_sync_rating`, `apply_uid_rating`, `upsert_sync_collection`, `mark_pushed_as_synced`). `try_acquire_sync_lock` (per-user DashMap lock with 15-min TTL). |
+| `server/src/domains/trakt/types.rs` | Added `SyncSummary` (pulled/pushed/unmatched counts + completion flag). |
+| `server/src/domains/trakt/handlers.rs` | `trigger_sync` now passes `&state` (not `&state.pool`) since `run_sync` needs the client + lock. |
+| `server/src/state.rs` | Added `trakt_sync_locks: Arc<DashMap<Uuid, Instant>>` to `AppState` (both constructors). |
+
+**Key decisions from Task 5:**
+
+- **Pull granularity = leaf items (movies + episodes)** — Duskcue tracks `is_watched` at the leaf level, so it pulls `/sync/watched/movies` and the new `/sync/watched/episodes` type directly (episodes confirmed live per #775 maintainer reply, April 2026), avoiding the expensive `shows`→`seasons`→`episodes` flattening. Series/season containers are not propagated to `user_item_data`.
+- **In-memory matcher over per-item SQL** — one query loads all `media_items` carrying external IDs into four `HashMap`s keyed by `(type, id)`; matches resolve in O(1) with priority order trakt→tmdb→imdb→tvdb. No title/year fuzzy matching for automated watched-state writes (too error-prone).
+- **All POST responses return `added` as an object** — confirmed via the OpenAPI spec; `add_to_history`, `add_to_ratings`, `add_to_collection` all return `{added:{movies,shows,seasons,episodes}, not_found:{...}}`. `existing`/`updated` appear only on collection. `not_found` arrays are logged at WARN, never fail the sync.
+- **Merge strategy implementation** — pull: `is_watched`=OR, `play_count`=GREATEST, `last_played_at`=GREATEST, `resume_position_ms`=0 when watched (mirrors playback `upsert_user_item_data_stop`). Rating is applied to `user_item_data.user_rating` **only when NULL** (no local `rated_at` column exists for timestamp-based override; conservative — documented as a known limitation in TRAKT.md). Push is incremental: only `user_item_data.is_watched=true` rows where `trakt_sync_state.is_watched IS DISTINCT FROM true`.
+- **Trakt type → media_items type mapping** — `movie`→`movie`, `show`→`series`, `episode`→`episode`, `season`→`season` (Trakt uses "show"; Duskcue's `media_items.type` uses "series").
+- **Pagination stop = empty array, not headers** — the `X-Pagination-*` headers are inconsistently present on sync endpoints (per OpenAPI spec); Duskcue loops pages until `[]` with a 1000-page hard cap to guard against the ignored-pagination bug reported in #775.
+- **Per-user sync lock (in-memory)** — `DashMap<Uuid, Instant>` in `AppState` with 15-min TTL guards `run_sync` against concurrent manual+manual or manual+worker races; returns `TraktError::SyncInProgress`. Matches the existing in-memory `DashMap` pattern (WebAuthn challenges). The merge logic is idempotent (ON CONFLICT/GREATEST/OR) so a crash-leaving-stale-lock is non-fatal (TTL reclaims).
+- **`trigger_sync` implemented in Task 5 (not 6)** — the manual `POST /api/v1/trakt/sync` endpoint now runs the engine inline and returns a summary; Task 6 adds the *scheduled* worker that iterates all `sync_enabled` users calling the same `run_sync()`.
+- **No new workspace dependencies** — sync uses existing `reqwest`, `serde`, `sqlx`, `chrono`, `uuid`, `dashmap`. All 323 server tests pass (312 prior + 11 new).
 
 **Verification:** Play sessions generate analytics data visible in dashboard. Trakt-linked users sync watch state. Impossible travel alerts appear in admin dashboard for suspicious logins.
 

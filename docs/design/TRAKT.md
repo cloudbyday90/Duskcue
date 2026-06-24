@@ -96,41 +96,50 @@ Bidirectional sync between Duskcue's `user_item_data` and Trakt's sync endpoints
 
 ### Push (Duskcue → Trakt)
 
-When a user marks an item watched, rates it, or adds it to a collection, the change is pushed to Trakt:
-- **Watched** → `POST /sync/history` with `{ movies: [{ ids, watched_at }], episodes: [...] }`
-- **Ratings** → `POST /sync/ratings` with `{ movies: [{ ids, rating, rated_at }], ... }`
-- **Collection** → `POST /sync/collection` with `{ movies: [{ ids, collected_at }], ... }`
+When a user marks an item watched, rates it, or adds it to a collection, the change is pushed to Trakt. Duskcue batches a full push into **one POST per category** (the endpoints accept arrays), which respects the 1 req/sec POST limit naturally:
+- **Watched** → `POST /sync/history` with `{ movies: [{ ids, watched_at }], episodes: [...] }` → 201 `{ added: { movies, episodes, shows, seasons }, not_found: { movies: [...], ... } }`
+- **Ratings** → `POST /sync/ratings` with `{ movies: [{ ids, rating, rated_at }], ... }` → 201 `{ added: { ... }, not_found: { ... } }`
+- **Collection** → `POST /sync/collection` with `{ movies: [{ ids, collected_at }], ... }` → 201 `{ added: {...}, existing: {...}, updated: {...}, not_found: {...} }`
+
+**All three POST responses return `added` as an object** with per-type integer counts (movies/shows/seasons/episodes), not a flat integer. `existing`/`updated` appear **only** on the collection response. `watched_at`/`rated_at`/`collected_at` are optional in the request body (server uses the current time if omitted), but Duskcue always includes them to preserve the original timestamp. The `ids` object may use any ID namespace Trakt matches (trakt/imdb/tmdb/tvdb in that order), so Duskcue pushes whichever IDs the `media_item` has (`trakt_id` preferred, falling back to `tmdb_id`/`imdb_id`/`tvdb_id`). The `not_found` arrays are logged at WARN for operator visibility but never fail the sync.
 
 ### Pull (Trakt → Duskcue)
 
-On scheduled sync, Duskcue pulls the user's Trakt state:
-- `GET /sync/watched/movies?page=N&limit=250` — paginated watched movies
-- `GET /sync/watched/shows?page=N&limit=250&extended=progress` — paginated watched shows with season progress
-- `GET /sync/watched/episodes?page=N&limit=250&extended=min` — compact watched episodes
-- `GET /sync/watchlist` — watchlist items
-- `GET /sync/collection` — collection items
-- `GET /sync/ratings` — ratings
+On scheduled sync, Duskcue pulls the user's Trakt state. As of June 2026, **all sync GET endpoints require pagination** (#775, #681): always send `page`+`limit` (max 250), loop until an empty array `[]` is returned. Do not rely on the `X-Pagination-*` headers for stop logic.
 
-Pulled data is matched against `media_items` by `trakt_id` (primary), then `tmdb_id`/`imdb_id`/`tvdb_id` (fallback), then title+year (last resort). Matched items update `trakt_sync_state` rows and, if the local `user_item_data` is stale, propagate the watched/rating state.
+- `GET /sync/watched/movies?page=N&limit=250` — paginated watched movies (leaf granularity)
+- `GET /sync/watched/episodes?page=N&limit=250` — paginated watched episodes (🆕 type, live since April 2026 per #775 maintainer reply). Episodes are the leaf granularity for TV, so Duskcue pulls episodes directly rather than flattening `shows` → `seasons` → `episodes`
+- `GET /sync/watched/shows?page=N&limit=250` — optional aggregate show progress (`extended=progress`); used only for derived series-level status, not for leaf `user_item_data`
+- `GET /sync/collection/{movies,shows}?page=N&limit=250` — paginated collection
+- `GET /sync/ratings/{type}?page=N&limit=250` — paginated ratings (`type` = movies/shows/seasons/episodes)
+- `GET /sync/watchlist/{type}?page=N&limit=250` — paginated watchlist
+
+**Matching strategy.** Trakt returns every item with an `ids` object. Duskcue loads all `media_items` that carry an external ID once per sync into in-memory lookup maps keyed by `(type, trakt_id|tmdb_id|imdb_id|tvdb_id)`, then matches each Trakt item in priority order (`trakt` → `tmdb` → `imdb` → `tvdb`), scoped to the matching `media_items.type`. Unmatched items are skipped (logged at debug); title+year fuzzy matching is deliberately not used for sync (too error-prone for automated watched-state writes). Matched items upsert `trakt_sync_state` rows and propagate to `user_item_data` per the merge strategy.
+
+**`ids` shapes per media type** (from the OpenAPI spec, verified against live #775 examples): movie = `{trakt, slug, imdb, tmdb}` (no tvdb); show = `{trakt, slug, imdb, tmdb, tvdb}`; episode = `{trakt, imdb, tmdb, tvdb}` (no slug; `tvdb` frequently null). Every id field is modelled `Option` to absorb nulls.
 
 ### Merge Strategy
 
-Per [DATABASE.md](DATABASE.md) `user_item_data` design:
-- `is_watched` — logical OR (if either source says watched, it's watched)
-- `play_count` — MAX (highest count wins)
-- `resume_position_ms` — MAX (furthest progress wins; cleared to 0 if either says watched)
-- `rating` — Trakt rating overrides local if `rated_at` is newer (per-item; user can override locally after)
+Per [DATABASE.md](DATABASE.md) `user_item_data` design, on **pull** (Trakt → local) for each matched media item:
+- `is_watched` — logical OR (if either source says watched, it's watched) — mirrors `upsert_user_item_data_stop` in the playback domain
+- `play_count` — MAX (highest count wins; Trakt `plays` vs local `play_count`)
+- `last_played_at` — MAX (Trakt `last_watched_at` vs local `last_played_at`)
+- `resume_position_ms` — cleared to 0 if `is_watched` becomes true; otherwise left untouched (Trakt has no resume position)
+- `rating` — `user_item_data.user_rating` is set **only when currently NULL** (Trakt rating applied to unrated items). Because `user_item_data` has no `rated_at` timestamp, Duskcue never overwrites an existing local rating on pull — the user's explicit local choice wins. This is a conservative simplification of the "Trakt rating overrides if newer" rule; a future migration adding a `user_rating_at` column to `user_item_data` would enable timestamp-based override.
+
+On **push** (local → Trakt), Duskcue pushes `user_item_data` rows where `is_watched = true` but the corresponding `trakt_sync_state.is_watched` is false/absent (incremental push — only items not already confirmed on Trakt). Trakt's `add_to_history` is idempotent for existing history entries, so re-pushing is safe but wasteful; the `trakt_sync_state` check avoids redundant pushes.
 
 ### Pagination (June 2026 API changes)
 
-Per Trakt API discussion #775 (April 2026, enforced after June 30, 2026):
-- Watched endpoints (`/sync/watched/{type}`) require `page` + `limit` query params
-- Max page size: 250 items
-- Default page size without `limit`: 100 items
-- New `episodes` type for watched episodes
-- `extended=min` returns compact format (`{ "trakt_id": ["watched_at"] }`) for efficient syncing
-- `extended=progress` required for season progress data (shows)
-- Always paginate until empty array `[]`; never assume one request returns everything
+Per Trakt API discussions #775 (April 2026, enforced after **June 30, 2026**) and #681 (January 2026, enforced from **June 15, 2026**):
+- **All** sync GET endpoints (`watched`, `collection`, `ratings`, `watchlist`) require `page` + `limit` query params
+- Max page size: **250** items (requesting more returns at most 250)
+- Default page size without `limit`: 100 items (10 for watchlist)
+- New `episodes` type for `/sync/watched` (leaf-level watched episodes, returns `{plays, last_watched_at, episode:{ids, season, number, ...}}`)
+- `extended=min` returns a compact `{ "trakt_id": ["watched_at", ...] }` map (not used by Duskcue — we need the full ids object for matching)
+- `extended=progress` required for season progress on `/sync/watched/shows` only
+- **Loop until an empty array `[]`** is returned; never assume one request returns everything, and never assume the requested `limit` is the applied limit
+- The `X-Pagination-Page`/`X-Pagination-Limit`/`X-Pagination-Page-Count`/`X-Pagination-Item-Count` headers exist but are inconsistently present on sync endpoints — Duskcue ignores them and uses the empty-array stop condition
 
 ### Rate Limiting
 
@@ -211,8 +220,9 @@ The worker iterates all `trakt_accounts` where `sync_enabled = true` and `token_
 | Domain scaffolding (five-file pattern) | ✅ Implemented | Phase 11 Task 3 |
 | OAuth device code flow | ✅ Implemented | Phase 11 Task 4 |
 | Token refresh (proactive, with write-back) | ✅ Implemented | Phase 11 Task 4 |
-| Bidirectional sync | ⏳ Pending | Phase 11 Task 5 |
-| Sync worker | ⏳ Pending | Phase 11 Task 6 |
+| Sync settings / status / history / ratings views | ✅ Implemented | Phase 11 Task 5 |
+| Bidirectional sync engine (push/pull/merge) | ✅ Implemented | Phase 11 Task 5 |
+| Sync worker (scheduled task iteration) | ⏳ Pending | Phase 11 Task 6 |
 
 ### Task 4 — OAuth Implementation Notes
 
@@ -223,12 +233,25 @@ The worker iterates all `trakt_accounts` where `sync_enabled = true` and `token_
 - **Single-poll-per-request** — `poll_device_code()` performs one `/oauth/token` attempt and maps the RFC 8628 error strings (`authorization_pending`, `slow_down`, `expired_token`, `access_denied`) to `TraktError` variants. The client drives the retry loop.
 - **Re-link as upsert** — `poll_device_code()` success does `INSERT ... ON CONFLICT (user_id) DO UPDATE` on `trakt_accounts` (the `user_id` UNIQUE constraint), so re-linking the same Duskcue user to a new Trakt account replaces the old row cleanly.
 
+### Task 5 — Sync Implementation Notes
+
+- **Pull granularity = leaf items (movies + episodes)** — Duskcue tracks `is_watched` at the leaf level (`media_items.type IN ('movie','episode')`). Series/season are containers, so Duskcue pulls `/sync/watched/movies` and the new `/sync/watched/episodes` type (live since April 2026 per #775) directly, avoiding the expensive `shows` → `seasons` → `episodes` flattening. `user_item_data` propagation only touches movie/episode rows.
+- **In-memory matcher** — one query loads all `media_items` carrying any external ID (`SELECT id, type, trakt_id, tmdb_id, imdb_id, tvdb_id ...`), then four `HashMap<(MediaType, i64/String), Uuid>` maps answer matches in O(1). Priority order on collision: `trakt` → `tmdb` → `imdb` → `tvdb`. No title/year fuzzy matching for automated watched-state writes.
+- **Pagination loop** — every sync GET iterates `page=1..` with `limit=250` until the response is an empty array. The page count is not parsed from headers (the `X-Pagination-*` headers are inconsistently present on sync endpoints per the OpenAPI spec); the empty-array stop is authoritative.
+- **Rate limiting** — push is one POST per category (batched array), naturally within the 1 req/sec POST limit. Pull GETs are burst-tolerant (1000/5min) so no artificial throttling between pages; a `Retry-After` 429 maps to `TraktError::RateLimited` and aborts the sync (the worker retries next interval).
+- **`run_sync(state, user_id)` is the single entry point** — performs pull → merge → push inside one logical operation, guarded against concurrent execution by a per-user advisory lock (`pg_try_advisory_xact_lock`) that returns `TraktError::SyncInProgress`. `trigger_sync` (manual `POST /api/v1/trakt/sync`) calls it inline and returns a summary; Task 6 will reuse it from the scheduled worker that iterates all `sync_enabled` users.
+- **POST response shapes** — all three sync POSTs return `added` as an object `{movies, episodes, shows, seasons}` (per the OpenAPI spec — not a flat integer, even for ratings). `not_found` arrays are logged at WARN and never fail the sync. `existing`/`updated` appear only on collection.
+- **Conservative rating merge** — pull applies a Trakt rating to `user_item_data.user_rating` only when that column is NULL (no local rating timestamp exists to do timestamp-based override). Documented above in Merge Strategy.
+- **`trakt_sync_state` upsert** — `INSERT ... ON CONFLICT (user_id, media_item_id) DO UPDATE` per matched item, keyed by the UNIQUE constraint. Stores the Trakt-side view (`trakt_id`, `is_watched`, `plays`, `rating`, `is_in_collection`, timestamps) so the next push can diff against it for incremental sends.
+- **No new workspace dependencies** — sync uses the existing `reqwest`, `serde`, `sqlx`, `chrono`, `uuid` stack already wired in Task 4.
+
 ## Research Sources
 
 - Trakt API Official Documentation: https://trakt.docs.apiary.io/
+- Trakt API OpenAPI 3.0 spec (authoritative for exact request/response field shapes): https://api.apis.guru/v2/specs/trakt.tv/1.0.0/openapi.json
 - Trakt API Source Code (GitHub): https://github.com/trakt/trakt-api
-- Trakt API Pagination & Extended Defaults Discussion (GitHub #775, April-June 2026): https://github.com/trakt/trakt-api/discussions/775
-- Trakt API Pagination & Sorting Updates Discussion (GitHub #681, January 2026)
+- Trakt API Pagination & Extended Defaults Discussion (GitHub #775, April-June 2026): https://github.com/trakt/trakt-api/discussions/775 — confirmed `/sync/watched/episodes` is live, pagination enforced after June 30 2026, and `added` is a per-type object on all sync POSTs
+- Trakt API Pagination & Sorting Updates Discussion (GitHub #681, January 2026): max `limit` reduced to 250 on all paginated endpoints from June 15 2026
 - Trakt Forums — Updating Trakt Limits for 2026 (February 2026)
 - Trakt Forums — Rate Limit Discussion (January 2025)
 - Token TTL + refresh_token rotation (GitHub #48): https://github.com/trakt/trakt-api/issues/48 — confirmed 90-day `expires_in` (~7776000s) and that refresh_token rotates/revokes on each refresh (maintainer `@rectifyer`, `@tysonkerridge`)

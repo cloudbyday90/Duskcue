@@ -116,7 +116,7 @@ pub async fn trigger_sync(
     State(state): State<AppState>,
     user: AuthenticatedUser,
 ) -> Result<Json<SyncTriggerResponse>, AppError> {
-    let result = service::trigger_sync(&state.pool, user.user_id).await?;
+    let result = service::trigger_sync(&state, user.user_id).await?;
     Ok(Json(result))
 }
 
