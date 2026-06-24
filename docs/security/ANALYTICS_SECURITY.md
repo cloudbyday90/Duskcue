@@ -583,6 +583,59 @@ IP addresses in logs are masked per the rules in [LOGGING_OBSERVABILITY.md](../o
 
 ---
 
+## Task 8 Implementation Notes (Impossible Travel Detection)
+
+### Trust Engine Location
+
+The trust engine (Haversine + velocity + 5-layer suppression) lives in `domains/analytics/service.rs` per BUILD_ORDER.md Task 8 — not in a separate `services/` module. Rationale:
+
+- The trust engine is tightly coupled to the analytics domain's DB tables (`user_trust_events`, `user_trust_scores`, `user_location_history`, `play_sessions`). Placing it alongside the trust event CRUD functions keeps the detection logic with the data it reads and writes.
+- The pure math functions (`haversine_distance`, `implied_velocity_kmh`) are private functions in the same module, tested via unit tests without a DB.
+- The cross-cutting `GeoIpService` remains in `services/geoip.rs` (Task 7); the analytics domain consumes it.
+
+### Fire-and-Forget Enrichment
+
+Play-session geo enrichment and impossible travel detection run asynchronously after `start_playback` returns:
+
+1. The `start_playback` handler extracts the client IP via `middleware::extract_client_ip(&headers, Some(&connect_info))`.
+2. After `PlaybackStartResponse` is ready, the handler spawns `tokio::spawn(analytics::service::enrich_and_detect(...))`.
+3. The spawned task updates `play_sessions` geo columns, upserts `user_location_history`, and runs the detection engine.
+4. All errors are logged at `WARN` — enrichment never blocks playback.
+
+This matches the design's "notification-first, never blocks" philosophy. A crashed enrichment task leaves the session without geo data (graceful degradation — the session is valid, just untracked).
+
+### `INET` Column Handling
+
+PostgreSQL `INET` columns (`play_sessions.ip_address`) are bound and decoded as strings, not `std::net::IpAddr`:
+
+- **Bind**: `ip.to_string()` with SQL cast `$N::inet` (PostgreSQL implicitly converts text to INET)
+- **Decode**: `row.try_get::<String, _>("ip_address")` then `.parse::<IpAddr>()`
+
+sqlx 0.9 requires the `ipnetwork` feature for native `IpAddr` support. Adding it was rejected to avoid pulling in the `ipnetwork` crate for a single column. String conversion is zero-cost for the typical use case (one IP per session).
+
+### Severity Determination
+
+The design specifies "new continent → high, same continent → medium". The `play_sessions` table has no `geo_continent` column. Severity is determined by Haversine distance instead:
+
+| Condition | Severity | Score Impact |
+|---|---|---|
+| Either IP is trusted (trusted_ips/trusted_cidrs) | low | -2 |
+| Destination country in user's 90-day baseline | low | -2 |
+| New country, distance > 4000 km (intercontinental) | high | -10 |
+| New country, distance ≤ 4000 km (regional) | medium | -5 |
+
+4000 km approximates the width of a continent or a transatlantic hop. This is a distance-based proxy for the continent comparison.
+
+### `ConnectInfo` Availability
+
+Task 8 added `into_make_service_with_connect_info::<SocketAddr>()` to the `axum::serve` call in `main.rs`. Previously, `ConnectInfo<SocketAddr>` was not available in request extensions, causing the rate limiter and metrics subnet guard to always fall back to `0.0.0.1` for direct connections. Now:
+
+- Handlers can use `ConnectInfo<SocketAddr>` as an axum extractor.
+- `extract_client_ip` gets the real socket address as a fallback after X-Forwarded-For and X-Real-IP headers.
+- Both proxy-header and direct-connection modes work correctly.
+
+---
+
 ## Research Sources
 
 ### Impossible Travel Detection

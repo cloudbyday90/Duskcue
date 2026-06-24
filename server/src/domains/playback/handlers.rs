@@ -15,11 +15,12 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::{ConnectInfo, Path, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::Response;
 use axum::Json;
 use sqlx::Row;
+use std::net::SocketAddr;
 use validator::Validate;
 
 use crate::error::AppError;
@@ -32,6 +33,8 @@ use crate::state::AppState;
 pub async fn start_playback(
     State(state): State<AppState>,
     user: AuthenticatedUser,
+    headers: HeaderMap,
+    ConnectInfo(connect_info): ConnectInfo<SocketAddr>,
     Json(req): Json<StartPlaybackRequest>,
 ) -> Result<Json<PlaybackStartResponse>, AppError> {
     req.validate().map_err(|e| {
@@ -61,6 +64,20 @@ pub async fn start_playback(
     )
     .await?;
     drop(config);
+
+    let client_ip = crate::middleware::extract_client_ip(&headers, Some(&connect_info));
+    let enrichment_state = state.clone();
+    let session_id = result.session_id;
+    let enrichment_user_id = user.user_id;
+    tokio::spawn(async move {
+        crate::domains::analytics::service::enrich_and_detect(
+            &enrichment_state,
+            session_id,
+            enrichment_user_id,
+            client_ip,
+        )
+        .await;
+    });
 
     Ok(Json(result))
 }

@@ -93,8 +93,11 @@ impl MakeRequestId for UuidV7RequestId {
     }
 }
 
-fn extract_client_ip(request: &Request) -> Option<IpAddr> {
-    if let Some(xff) = request.headers().get("x-forwarded-for")
+pub fn extract_client_ip(
+    headers: &axum::http::HeaderMap,
+    connect_info: Option<&std::net::SocketAddr>,
+) -> Option<IpAddr> {
+    if let Some(xff) = headers.get("x-forwarded-for")
         && let Ok(val) = xff.to_str()
         && let Some(first) = val.split(',').next()
         && let Ok(ip) = first.trim().parse::<IpAddr>()
@@ -102,16 +105,13 @@ fn extract_client_ip(request: &Request) -> Option<IpAddr> {
         return Some(ip);
     }
 
-    if let Some(xri) = request.headers().get("x-real-ip")
+    if let Some(xri) = headers.get("x-real-ip")
         && let Ok(val) = xri.to_str()
         && let Ok(ip) = val.parse::<IpAddr>()
     {
         return Some(ip);
     }
-    request
-        .extensions()
-        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
-        .map(|ci| ci.0.ip())
+    connect_info.map(|ci| ci.ip())
 }
 
 pub async fn rate_limit_global(
@@ -119,7 +119,10 @@ pub async fn rate_limit_global(
     request: Request,
     next: Next,
 ) -> Result<Response, AppError> {
-    let ip = extract_client_ip(&request).unwrap_or(IpAddr::from([0, 0, 0, 1]));
+    let ci = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>();
+    let ip = extract_client_ip(request.headers(), ci.map(|c| &c.0)).unwrap_or(IpAddr::from([0, 0, 0, 1]));
     match state.rate_limits.ip_global.check_key(&ip) {
         Ok(()) => Ok(next.run(request).await),
         Err(_) => Err(AppError::RateLimited {
@@ -237,7 +240,10 @@ pub async fn metrics_subnet_guard(
     request: Request,
     next: Next,
 ) -> Result<Response, AppError> {
-    let ip = extract_client_ip(&request).unwrap_or(IpAddr::from([0, 0, 0, 1]));
+    let ci = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>();
+    let ip = extract_client_ip(request.headers(), ci.map(|c| &c.0)).unwrap_or(IpAddr::from([0, 0, 0, 1]));
 
     let is_allowed = state
         .metrics_allowed_subnets

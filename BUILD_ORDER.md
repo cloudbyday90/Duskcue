@@ -2406,10 +2406,10 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
     - ~~MaxMind GeoLite2 City MMDB loading with `maxminddb` crate (mmap)~~
     - ~~`ArcSwap` hot-reload on weekly update~~
     - ~~Graceful degradation when MMDB absent~~
- 8. Implement impossible travel detection:
-   - Haversine distance + 1,000 km/h threshold
-   - 5-layer false positive suppression
-   - Notification-first response (admin dashboard alert, no auto-blocking)
+ 8. ~~Implement impossible travel detection:~~ **DONE**
+   - ~~Haversine distance + 1,000 km/h threshold~~
+   - ~~5-layer false positive suppression~~
+   - ~~Notification-first response (admin dashboard alert, no auto-blocking)~~
 9. Implement `server/src/workers/geoip_updater.rs` — weekly MMDB download
 
 **What was built for Task 1:**
@@ -2605,13 +2605,33 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`classify_location` as free function in the service module** — Pure IP-classification concern (no MMDB dependency); consumed by both playback enrichment and impossible-travel suppression. Uses `ipnet::IpNet::contains()` (already a workspace dep, used by `middleware.rs` metrics-subnet guard). `server_subnets` parameter lets operators mark point-to-point public IPs as LAN
 - **No new workspace dependencies** — `maxminddb = { version = "0.28", features = ["mmap"] }` and `ipnet = "2"` were already in workspace Cargo.toml (pre-added in anticipation of Phase 11). All 347 server tests pass (327 prior + 20 new geoip tests); 0 clippy warnings on new code
 
-**Not yet implemented (deferred to Tasks 8–9):**
+**Not yet implemented (deferred to Task 9):**
 
-- Impossible travel detection (Task 8) — Haversine formula, 5-layer false-positive suppression, trust event creation. The `GeoIpService::lookup()` + `classify_location()` infrastructure is ready for Task 8 to consume
 - `geoip_updater.rs` scheduled task (Task 9) — weekly MaxMind download, temp-file + atomic-rename, calls `GeoIpService::reload()`. The `reload()` method is implemented and tested; the worker that triggers it is not
-- Play-session geolocation enrichment — `start_playback` in the playback domain does not yet call `GeoIpService::lookup()` to populate `play_sessions.geo_*` columns. Deferred to Task 8 (which needs the same enrichment for the impossible-travel pipeline) or a dedicated enrichment-wiring task
-- `user_location_history` population — the table exists (Phase 2 migration); the enrichment flow that writes to it (per ANALYTICS_SECURITY.md §Enrichment Flow) is part of the impossible-travel pipeline (Task 8)
 - `geoip_database_update` scheduled task seeding — the task type is in the `scheduled_tasks` CHECK constraint (Phase 2); seeding the default row and registering the executor is Task 9
+
+**What was built for Task 8:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/analytics/service.rs` | Full trust engine: `haversine_distance()` (pure `f64` math, Earth radius 6371 km), `implied_velocity_kmh()`, `enrich_and_detect()` fire-and-forget entry point, `detect_impossible_travel()` 5-layer suppression engine, `update_session_geo()` (populates `play_sessions.ip_address`/`location_type`/`geo_*`), `upsert_location_history()` (90-day baseline tracking), `is_ip_trusted()` (trusted IP + CIDR matching), `is_country_in_baseline()`, `create_trust_event()` + `upsert_trust_score()` (GREATEST(0, ...) clamping). Replaced 3 `todo!()` stubs: `list_trust_scores`, `list_trust_events` (offset pagination + severity/acknowledged filters), `acknowledge_trust_event`. 15 new unit tests. |
+| `server/src/middleware.rs` | `extract_client_ip` refactored from private `fn(&Request)` to `pub fn(&HeaderMap, Option<&SocketAddr>)` — reusable by handlers; 2 existing call sites updated |
+| `server/src/main.rs` | `into_make_service_with_connect_info::<SocketAddr>()` added to `axum::serve` call — makes `ConnectInfo<SocketAddr>` available as an axum extractor (benefits rate limiter + metrics subnet guard + geo enrichment) |
+| `server/src/domains/playback/handlers.rs` | `start_playback` handler now extracts client IP via `extract_client_ip(&headers, Some(&connect_info))` and spawns `tokio::spawn(analytics::service::enrich_and_detect(...))` after session creation — fire-and-forget enrichment never blocks playback |
+
+**Key decisions from Task 8:**
+
+- **Fire-and-forget enrichment via `tokio::spawn`** — Play-session geo enrichment + impossible travel detection runs asynchronously after `start_playback` returns. Enrichment failures are logged at `WARN` and never block playback or surface to the API caller. The spawned task clones `AppState` (all fields are `Arc`/pool-backed, cheap to clone). This matches the design's "notification-first, never blocks" philosophy
+- **Haversine as pure `f64` math** — No external crate (`geo` / `haversine`) added. The formula is ~5 lines using `f64::to_radians()`/`sin()`/`cos()`/`asin()`. Verified against known distances: Chicago→London ~6360 km, NYC→LA ~3940 km. Earth radius = 6371 km (mean radius per IUGG)
+- **`INET` column bound as string** — sqlx 0.9 doesn't implement `Encode`/`Decode` for `std::net::IpAddr` without the `ipnetwork` feature. IP addresses are bound as `ip.to_string()` with `$N::inet` SQL cast; decoded as `String` then parsed to `IpAddr`. Adding the `ipnetwork` feature was considered but rejected to avoid pulling in the `ipnetwork` crate for a single use case
+- **Severity based on distance, not continent** — The design doc specifies "new continent → high, same continent → medium". The `play_sessions` table has no `geo_continent` column. Severity is determined by Haversine distance: > 4000 km (roughly transcontinental/transatlantic) → "high"; 500–4000 km → "medium"; destination in user's 90-day baseline → "low" regardless of distance. 4000 km approximates the width of a continent
+- **5-layer suppression order** — Evaluated per ANALYTICS_SECURITY.md §Suppression Decision Flow: (1) LAN/VPN → suppress entirely [WAN-only query filter]; (2) trusted IP/CIDR → reduce to "low"; (3) same country → suppress; (4) same device → suppress [currently no-op since `client_device` is NULL]; (5) distance < min → suppress; velocity ≤ threshold → skip; velocity > threshold → check baseline → determine severity
+- **Trust score upsert with `GREATEST(0, ...)`** — Score never goes below 0. New users start at 100; first violation: `INSERT ... VALUES (100 - impact)`. Existing users: `ON CONFLICT DO UPDATE SET score = GREATEST(0, score - impact)`. Impact: low=-2, medium=-5, high=-10 per design's severity levels table
+- **`into_make_service_with_connect_info`** — Added to the `axum::serve` call so `ConnectInfo<SocketAddr>` is available. Previously, the rate limiter and metrics subnet guard fell back to `0.0.0.1` for direct connections without proxy headers. Now they get the actual socket address. This is a pre-existing infrastructure gap that Task 8 needed to close
+- **`extract_client_ip` made public** — Refactored to accept `&HeaderMap` + `Option<&SocketAddr>` so handlers can extract the client IP without duplicating the X-Forwarded-For → X-Real-IP → ConnectInfo fallback chain. Both middleware call sites updated to pass headers + connect_info extracted from request extensions
+- **Same-device suppression is no-op until device tracking lands** — `play_sessions.client_device` is currently NULL (not set by `create_play_session`). The same-device check is implemented correctly (`prev_device.is_some() && prev_device == current_device`) but will always be false until a future phase sends device identifiers. This is documented as a deferred enhancement
+- **`div_ceil` for pagination** — `total.div_ceil(page_size)` instead of manual `(total + page_size - 1) / page_size` (clippy suggestion; Rust 1.73+ stable)
+- **No new workspace dependencies** — All functionality uses existing `sqlx`, `chrono`, `serde_json`, `uuid`, `ipnet`, and the already-built `services::geoip` module
 
 **Verification:** Play sessions generate analytics data visible in dashboard. Trakt-linked users sync watch state. Impossible travel alerts appear in admin dashboard for suspicious logins.
 

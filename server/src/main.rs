@@ -420,7 +420,10 @@ async fn main() {
 
     tracker.spawn(async move {
         tokio::select! {
-            result = axum::serve(listener, app) => {
+            result = axum::serve(
+                listener,
+                app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+            ) => {
                 result.expect("server error");
             }
             _ = server_shutdown.cancelled() => {}

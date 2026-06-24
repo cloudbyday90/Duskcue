@@ -172,3 +172,19 @@ Task 7 implements the `GET /api/v1/analytics/geoip/status` endpoint, which was a
 The endpoint delegates to the cross-cutting `GeoIpService` (`server/src/services/geoip.rs`) rather than querying the database directly — the GeoIP status is filesystem state (MMDB file presence, size, age) plus the in-memory reader's loaded/unloaded state, not database state. The handler reads `geoip_enabled` from `RuntimeConfig.analytics` and passes it alongside the `GeoIpService` reference to `service::get_geoip_status()`, which calls `GeoIpService::status()` to read the MMDB file metadata from disk.
 
 The `GeoIpService` itself, the impossible-travel detection engine, and the weekly MMDB updater are documented in [ANALYTICS_SECURITY.md](../security/ANALYTICS_SECURITY.md) — they are security-domain infrastructure, not analytics-API concerns. The analytics domain only surfaces the status; the enrichment pipeline (populating `play_sessions.geo_*` columns) and trust-event creation land in Task 8.
+
+---
+
+## Implementation Notes — Task 8 (Trust Events + Impossible Travel)
+
+Task 8 implements the remaining 3 security-analytics endpoints (`list_trust_scores`, `list_trust_events`, `acknowledge_trust_event`) — all were `todo!()` stubs since Task 1. It also adds the trust engine that populates the data these endpoints read.
+
+### Trust Event CRUD
+
+- **`list_trust_scores`** — `SELECT` from `user_trust_scores` joined to `users` for display name; ordered by score ASC (lowest trust first) then `last_violation_at DESC NULLS LAST`. No pagination — the dataset is bounded by the number of users.
+- **`list_trust_events`** — offset pagination over `user_trust_events` joined to `users`; filterable by `user_id`, `severity`, and `acknowledged` via the standard `($N::T IS NULL OR column = $N)` pattern. `total_pages` computed via `div_ceil`. Ordered `created_at DESC`.
+- **`acknowledge_trust_event`** — `UPDATE ... SET acknowledged = true, acknowledged_at = now() WHERE id = $1 RETURNING ...`; returns `TrustEventNotFound` when the event doesn't exist. Idempotent — acknowledging an already-acknowledged event is a no-op that refreshes the timestamp.
+
+### Trust Engine (Detection)
+
+The impossible-travel detection engine and the play-session geo enrichment pipeline live in `domains/analytics/service.rs` (not a separate `services/` module) because they are tightly coupled to the analytics domain's DB tables. See [ANALYTICS_SECURITY.md](../security/ANALYTICS_SECURITY.md) Task 8 Implementation Notes for the full design rationale, including: fire-and-forget enrichment via `tokio::spawn`, Haversine as pure `f64` math, `INET` column string handling, distance-based severity proxy, and `ConnectInfo` availability.
