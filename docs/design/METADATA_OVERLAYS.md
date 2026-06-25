@@ -596,6 +596,53 @@ Overlay settings are stored in `server_config.metadata` JSONB:
 
 Full `MetadataConfig` Rust struct documented in [POSTER_MANAGEMENT.md](POSTER_MANAGEMENT.md).
 
+## Implementation Notes
+
+### Phase 12 Task 1 — Domain Scaffolding (Complete)
+
+Created `server/src/domains/overlays/` following the project's domain five-file pattern (`mod.rs`, `error.rs`, `types.rs`, `service.rs`, `handlers.rs`). This is the scaffolding task — all service and handler bodies are `todo!()` stubs with concrete return types so the project compiles and routes are wired. The compositing pipeline (Task 2), condition evaluation (Task 3), and clean-art preservation (Task 4) replace the stubs in subsequent tasks.
+
+**Route design** (base `/api/v1/overlays` per API_CONVENTIONS.md):
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/api/v1/overlays` | List overlay definitions (optional `library_id`, `enabled` filters) |
+| POST | `/api/v1/overlays` | Create overlay definition |
+| GET | `/api/v1/overlays/{id}` | Get overlay definition |
+| PATCH | `/api/v1/overlays/{id}` | Update overlay definition (partial) |
+| DELETE | `/api/v1/overlays/{id}` | Delete overlay definition |
+| POST | `/api/v1/overlays/apply` | Trigger bulk overlay application (Task 8 worker integration) |
+| POST | `/api/v1/overlays/preview` | Render a preview composite for the editor (Task 2 compositing) |
+| GET | `/api/v1/overlays/templates` | List community templates |
+| POST | `/api/v1/overlays/templates` | Import a community template (JSON) |
+
+**Capability gate:** All overlay endpoints require `CanManageLibraries` (artwork customization is a library-management function, matching the libraries domain gate). Enforced via the generic `Require<CanManageLibraries>` extractor rather than inline `check_capability()` calls, consistent with the Phase 4 Task 11 extractor pattern.
+
+**Error mapping** — `OverlayError` enum with exactly the 6 registered OVERLAY codes plus the `Database` catch-all (no invented codes, respecting the fixed registry of 94 total codes):
+
+| Variant | Code | HTTP |
+|---|---|---|
+| `NotFound` | OVERLAY_001 | 404 |
+| `InvalidConditions(String)` | OVERLAY_002 | 422 |
+| `InvalidTextTemplate(String)` | OVERLAY_003 | 422 |
+| `ImageFileNotFound(String)` | OVERLAY_004 | 503 |
+| `ApplicationInProgress` | OVERLAY_005 | 409 |
+| `CompositingFailed(String)` | OVERLAY_006 | 500 |
+| `Database(#[from] sqlx::Error)` | INTERNAL | 500 |
+
+The domain error converts to `AppError` via `#[from]` and maps in `overlay_error_to_http()` in `server/src/error.rs`, following the established per-domain mapping convention. System-overlay deletion protection (system overlays can be disabled but not deleted) is enforced in the CRUD implementation (later task) via `AppError::Conflict`, since no dedicated OVERLAY code exists for that business rule — consistent with how other domains reuse generic codes for policy violations.
+
+**DTO design** — three-type pattern per API_SECURITY.md:
+- `OverlayDefinitionRow` — internal row struct (no `Serialize`); mirrors all 30 columns of `overlay_definitions`
+- `CreateOverlayRequest` / `UpdateOverlayRequest` — `Deserialize + Validate`; update uses all-`Option` fields for PATCH partial-update semantics
+- `OverlayDefinitionResponse` / `OverlayListResponse` — `Serialize` only
+- `ApplyOverlaysRequest`, `PreviewOverlayRequest`, `OverlayTemplateImport`, `OverlayTemplateResponse` — operation-specific DTOs
+- Validation statics: `VALID_OVERLAY_TYPES` (`image`/`text`/`backdrop`), `VALID_APPLIES_TO` (`poster`/`backdrop`/`season_poster`/`episode_thumb`), `VALID_HORIZONTAL_ALIGN`, `VALID_VERTICAL_ALIGN` — sourced from the `CHECK` constraints in the DDL
+
+**No new DB migration** — `overlay_definitions` and `artwork_overlay_state` tables (plus `artwork.is_locked`/`source_type` columns) were created in Phase 2 migration 14 (`20260530_070400_create_overlays_collections.sql`).
+
+**No new workspace dependencies** — the domain scaffolding uses existing `axum`, `sqlx`, `serde`, `validator`, `uuid`, `chrono`. The compositing crates (`ab_glyph`, `fontdb`, `resvg`) are added in Task 2.
+
 ## Cross-References
 
 - [POSTER_MANAGEMENT.md](POSTER_MANAGEMENT.md) — artwork sourcing, selection, locking; `artwork` table extensions; artwork lifecycle

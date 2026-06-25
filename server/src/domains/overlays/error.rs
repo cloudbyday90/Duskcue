@@ -14,3 +14,28 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum OverlayError {
+    #[error("overlay definition not found")]
+    NotFound,
+
+    #[error("invalid overlay conditions: {0}")]
+    InvalidConditions(String),
+
+    #[error("invalid text template: {0}")]
+    InvalidTextTemplate(String),
+
+    #[error("overlay image file not found or unreadable: {0}")]
+    ImageFileNotFound(String),
+
+    #[error("overlay application already in progress")]
+    ApplicationInProgress,
+
+    #[error("overlay compositing failed: {0}")]
+    CompositingFailed(String),
+
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+}

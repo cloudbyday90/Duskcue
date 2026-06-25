@@ -102,6 +102,9 @@ pub enum AppError {
     Media(#[from] crate::domains::media::MediaError),
 
     #[error(transparent)]
+    Overlay(#[from] crate::domains::overlays::OverlayError),
+
+    #[error(transparent)]
     System(#[from] crate::domains::system::SystemError),
 
     #[error(transparent)]
@@ -147,6 +150,10 @@ impl IntoResponse for AppError {
             }
             AppError::Media(e) => {
                 let (s, c, d) = media_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Overlay(e) => {
+                let (s, c, d) = overlay_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::System(e) => {
@@ -404,6 +411,21 @@ fn media_error_to_http(err: &crate::domains::media::MediaError) -> (StatusCode, 
         MediaError::DuplicateSeasonNumber(n) => (StatusCode::CONFLICT, "MEDIA_006", format!("Duplicate season number {} for series", n)),
         MediaError::DuplicateEpisodeNumber(n) => (StatusCode::CONFLICT, "MEDIA_006", format!("Duplicate episode number {} for season", n)),
         MediaError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
+    }
+}
+
+fn overlay_error_to_http(err: &crate::domains::overlays::OverlayError) -> (StatusCode, &'static str, String) {
+    use crate::domains::overlays::OverlayError;
+    use axum::http::StatusCode;
+
+    match err {
+        OverlayError::NotFound => (StatusCode::NOT_FOUND, "OVERLAY_001", "Overlay definition not found".into()),
+        OverlayError::InvalidConditions(msg) => (StatusCode::UNPROCESSABLE_ENTITY, "OVERLAY_002", format!("Invalid overlay conditions: {}", msg)),
+        OverlayError::InvalidTextTemplate(msg) => (StatusCode::UNPROCESSABLE_ENTITY, "OVERLAY_003", format!("Invalid text template: {}", msg)),
+        OverlayError::ImageFileNotFound(path) => (StatusCode::SERVICE_UNAVAILABLE, "OVERLAY_004", format!("Overlay image file not found or unreadable: {}", path)),
+        OverlayError::ApplicationInProgress => (StatusCode::CONFLICT, "OVERLAY_005", "Overlay application already in progress".into()),
+        OverlayError::CompositingFailed(msg) => (StatusCode::INTERNAL_SERVER_ERROR, "OVERLAY_006", format!("Overlay compositing failed: {}", msg)),
+        OverlayError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error".into()),
     }
 }
 

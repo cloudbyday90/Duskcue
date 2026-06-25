@@ -2688,13 +2688,15 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Tasks:**
 
-1. Create `server/src/domains/overlays/` — five-file pattern
+1. ~~Create `server/src/domains/overlays/` — five-file pattern~~ **DONE**
 2. Implement `server/src/services/overlays.rs`:
    - Compositing pipeline using `image` + `ab_glyph` + `resvg`
    - Image overlay (alpha blending)
    - Text overlay (with special variables: resolution, ratings, codecs)
    - Backdrop overlay
    - Group mutual exclusion, queue auto-stacking
+
+   **Context from Task 1:** The `overlays` domain is scaffolded with `todo!()` stubs. Task 2 builds the compositing service at `server/src/services/overlays.rs` (a shared service module, not part of the domain five-file) and wires it into `service::preview_overlay` (the editor live-preview endpoint). The `OverlayDefinitionRow` (all 30 columns) and validation statics are ready for the compositor to read overlay config. The `image` (0.25, features `jpeg`/`png`/`webp`) and `webp` (0.3) crates are already in the workspace from Phase 10; `ab_glyph`, `fontdb`, and `resvg` need to be added. Output is WebP per [IMAGE_FORMATS.md](docs/design/IMAGE_FORMATS.md). The full pipeline design (group/queue resolution, suppress rules, layer ordering) is in the Compositing Pipeline section of [METADATA_OVERLAYS.md](docs/design/METADATA_OVERLAYS.md).
 3. Implement condition evaluation — JSONB filter rules against `media_items`/`media_files`
 4. Implement clean art preservation — source artwork never modified
 5. Create `server/src/domains/collections/` — five-file pattern
@@ -2706,6 +2708,30 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 9. Implement poster management — asset directory scanning, poster locking, community pack import
 10. Build admin UI for overlays — overlay editor, template browser, condition builder
 11. Build admin UI for collections — collection list, builder configuration, template import
+
+**What was built for Task 1:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/overlays/mod.rs` | Module declarations + router assembly with 9 routes across 5 paths |
+| `server/src/domains/overlays/error.rs` | `OverlayError` enum with 7 variants covering OVERLAY_001–OVERLAY_006 + Database catch-all |
+| `server/src/domains/overlays/types.rs` | Three-type DTOs: `OverlayDefinitionRow` (internal, 30 columns), `CreateOverlayRequest`/`UpdateOverlayRequest` (Deserialize + Validate), `OverlayDefinitionResponse`/`OverlayListResponse` (Serialize); operation DTOs (`ApplyOverlaysRequest`, `PreviewOverlayRequest`, `OverlayTemplateImport`, `OverlayTemplateResponse`, `OverlayTemplateSummary`); validation statics (`VALID_OVERLAY_TYPES`, `VALID_APPLIES_TO`, `VALID_HORIZONTAL_ALIGN`, `VALID_VERTICAL_ALIGN`) |
+| `server/src/domains/overlays/service.rs` | Validation helpers (`validate_overlay_type`, `validate_applies_to`, `validate_horizontal_align`, `validate_vertical_align`, `generate_slug`); 9 service function stubs with `todo!()` and concrete return signatures |
+| `server/src/domains/overlays/handlers.rs` | 9 handler stubs with concrete `Result<Json<T>, AppError>` return types; validation-error mapping inline; `Require<CanManageLibraries>` gate on all endpoints |
+| `server/src/domains/mod.rs` | Added `pub mod overlays;` |
+| `server/src/error.rs` | Added `AppError::Overlay(#[from] OverlayError)` variant + `overlay_error_to_http()` mapping all 7 codes |
+| `server/src/router.rs` | Replaced Phase 12 overlays comment with real `.merge(crate::domains::overlays::router(state.clone()))` |
+
+**Key decisions from Task 1:**
+
+- **Scaffolding scope mirrors playback Task 1** — All service and handler bodies are `todo!()` stubs with concrete return types so the project compiles and all 9 routes are wired. The compositing pipeline (Task 2), condition evaluation (Task 3), clean-art preservation (Task 4), and CRUD DB operations are filled in by subsequent tasks. This matches the established precedent for the "Create X domain — five-file pattern" task granularity.
+- **Exactly 6 registered OVERLAY codes** — `OverlayError` defines precisely OVERLAY_001–OVERLAY_006 plus the `Database` catch-all, respecting the fixed error registry (94 total codes). No invented OVERLAY_007+ codes. Validation-type errors (invalid overlay_type/align) route through `OverlayError::InvalidConditions` (OVERLAY_002) in the service validators, which is the closest semantically-matching registered code for "invalid overlay configuration."
+- **System-overlay deletion deferred** — System overlays can be disabled but not deleted (per design doc). Since no dedicated OVERLAY code exists for this business rule, the delete handler will enforce it via `AppError::Conflict` when CRUD is implemented (later task) — consistent with how other domains reuse generic codes for policy violations. Documented in [METADATA_OVERLAYS.md](docs/design/METADATA_OVERLAYS.md) Implementation Notes.
+- **`CanManageLibraries` capability gate** — All overlay endpoints require `CanManageLibraries` (artwork customization is a library-management function), enforced via the generic `Require<CanManageLibraries>` extractor. Matches the libraries domain gate and the Phase 4 Task 11 extractor pattern.
+- **Route design per API_CONVENTIONS.md** — Base `/api/v1/overlays` for CRUD; `/api/v1/overlays/apply` for bulk application (Task 8 worker integration); `/api/v1/overlays/preview` for editor live-preview (Task 2 compositing); `/api/v1/overlays/templates` for community template import/export. Literal `{id}` path segment per axum 0.8 syntax.
+- **`TemplateOverlayEntry` derives `Serialize`** — The `validator` 0.20 derive macro requires nested types in `Validate` structs to implement `Serialize` (`ValidationError::add_param` bound). `OverlayTemplateImport` validates its `overlays: Vec<TemplateOverlayEntry>` field, so the entry type derives both `Deserialize` and `Serialize`.
+- **No new DB migration** — `overlay_definitions` and `artwork_overlay_state` tables (plus `artwork.is_locked`/`source_type`) were created in Phase 2 migration 14; no schema changes needed.
+- **No new workspace dependencies** — scaffolding uses existing `axum`, `sqlx`, `serde`, `validator`, `uuid`, `chrono`. Compositing crates (`ab_glyph`, `fontdb`, `resvg`) added in Task 2.
 
 **Verification:** Default overlays (resolution badge, audio codec) are applied to poster artwork. Dynamic collections auto-populate from TMDB popular/trending. Admin can create custom overlays and collections. Source artwork is preserved.
 

@@ -14,3 +14,41 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod error;
+pub mod handlers;
+pub mod service;
+pub mod types;
+
+pub use error::OverlayError;
+
+use axum::routing::{get, post};
+use axum::Router;
+
+use crate::state::AppState;
+
+pub fn router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/v1/overlays",
+            get(handlers::list_overlays).post(handlers::create_overlay),
+        )
+        .route(
+            "/api/v1/overlays/apply",
+            post(handlers::apply_overlays),
+        )
+        .route(
+            "/api/v1/overlays/preview",
+            post(handlers::preview_overlay),
+        )
+        .route(
+            "/api/v1/overlays/templates",
+            get(handlers::list_templates).post(handlers::import_template),
+        )
+        .route(
+            "/api/v1/overlays/{id}",
+            get(handlers::get_overlay)
+                .patch(handlers::update_overlay)
+                .delete(handlers::delete_overlay),
+        )
+        .with_state(state)
+}

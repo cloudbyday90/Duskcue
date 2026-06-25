@@ -18,6 +18,7 @@ pub mod analytics;
 pub mod auth;
 pub mod libraries;
 pub mod media;
+pub mod overlays;
 pub mod playback;
 pub mod quality;
 pub mod segments;

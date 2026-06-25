@@ -133,8 +133,8 @@ pub fn build_router(state: AppState) -> Router<AppState> {
         .merge(crate::domains::segments::router(state.clone()))
         .merge(crate::domains::storyboards::router(state.clone()))
         .merge(crate::domains::analytics::router(state.clone()))
-        .merge(crate::domains::trakt::router(state.clone()));
-    // Phase 12: .merge(crate::domains::overlays::router())
+        .merge(crate::domains::trakt::router(state.clone()))
+        .merge(crate::domains::overlays::router(state.clone()));
     // Phase 12: .merge(crate::domains::collections::router())
     // Phase 13: .merge(crate::domains::system::router())
     // Phase 14: .merge(crate::domains::migration::router())
