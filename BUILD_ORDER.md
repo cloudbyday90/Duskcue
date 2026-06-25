@@ -2823,7 +2823,30 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Verification:** `cargo check -p duskcue` passes. `cargo test -p duskcue services::collections` passes (11 tests). `cargo clippy -p duskcue --all-targets --all-features -- -A clippy::unnecessary-sort-by -D warnings` passes.
 
-7. Implement `server/src/workers/collection_sync.rs` — periodic builder execution
+7. ~~Implement `server/src/workers/collection_sync.rs` — periodic builder execution~~ **DONE**
+
+**What was built for Task 7:**
+
+| File | Purpose |
+|---|---|
+| `server/src/workers/collection_sync.rs` | Scheduled collection sync worker: resolves runtime/task config, gates on `metadata.collections_enabled`, fetches enabled dynamic collections, classifies internal vs external builders, invokes the shared `services::collections::sync_dynamic_collection()` engine per collection, records per-collection failures in `last_sync_result`, aggregates sync stats, and aborts remaining work on external API rate limits |
+| `server/src/workers/mod.rs` | Added `pub mod collection_sync;` |
+| `server/src/main.rs` | Registered `collection_sync` executor on the scheduler with `AppState` capture for runtime metadata provider config |
+| `server/src/services/scheduler.rs` | Added `Collection Sync` to first-run default scheduled task seeding |
+| `server/migrations/20260625_060000_seed_collection_sync_task.sql` | Idempotent migration to seed `collection_sync` for existing deployments |
+| `docs/design/COLLECTIONS.md` | Added Task 7 implementation notes and updated deferred items |
+| `PROJECT.md` | Updated Phase 12 implementation status |
+
+**Key decisions from Task 7:**
+
+- **Thin scheduled worker over shared builder engine** — Task 7 does not reimplement builders. It reuses `services::collections::sync_dynamic_collection()` from Task 6 so manual and scheduled sync share the same persistence path (`collection_items`, counts, duration, `last_synced_at`, `last_sync_result`).
+- **Per-collection iteration instead of all-or-nothing batch** — The worker fetches candidate collection IDs and syncs them one at a time. Invalid configs or source failures are logged and recorded on that collection's `last_sync_result`, then the worker continues with the next collection. This avoids one bad dynamic row blocking unrelated collections.
+- **External builders are gated and paced** — Task config supports `sync_external`/`include_external` (default `true`) and `max_external_requests_per_minute` (default from `MetadataConfig.collection_external_rate_limit_per_minute`, currently 30). External builders run sequentially with a conservative delay between external collections. A provider 429 (`ExternalRateLimited`) aborts the remaining run so the next scheduled interval can retry without worsening the rate limit.
+- **Runtime provider config reused** — The worker constructs `TmdbClient` from `RuntimeConfig.metadata.providers.tmdb` and `metadata_language`, matching the manual sync endpoint behavior. If TMDB is disabled or missing an access token, external TMDB builders fail gracefully and store failure details in `last_sync_result`.
+- **No schema change needed** — `collection_sync` already exists in the `scheduled_tasks.task_type` CHECK constraint from Phase 2. Task 7 only adds an idempotent seed migration for deployments whose initial seed data predates this worker.
+
+**Verification:** `cargo check -p duskcue` passes.
+
 8. Implement `server/src/workers/overlay_compositor.rs` — apply overlays to artwork
 9. Implement poster management — asset directory scanning, poster locking, community pack import
 10. Build admin UI for overlays — overlay editor, template browser, condition builder

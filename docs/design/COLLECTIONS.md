@@ -514,9 +514,33 @@ Manual sync endpoints now execute the builder immediately:
 
 Persistence updates `collection_items`, `item_count`, `total_duration_seconds`, `last_synced_at`, and `last_sync_result`. Sync statistics compare item ID sets, so replacements are counted accurately even when the total item count is unchanged.
 
-Deferred to Task 7: scheduled `collection_sync` worker registration, background execution, and any queue semantics. Deferred to later CRUD/template tasks: automatic creation of one collection row per multi-key builder result and template import/export.
+Scheduled sync is implemented by `server/src/workers/collection_sync.rs` and registered as the `collection_sync` scheduled task. The worker reuses the same `sync_dynamic_collection()` path as manual sync, so scheduled and manual runs write identical `collection_items`, `item_count`, `total_duration_seconds`, `last_synced_at`, and `last_sync_result` data.
+
+Deferred to later CRUD/template tasks: automatic creation of one collection row per multi-key builder result and template import/export.
 
 **Missing external items:** `collection_items.media_item_id` is `NOT NULL`, so unmatched TMDB chart entries cannot be stored in `collection_items` as missing rows without a schema change. Task 6 records missing counts and external IDs in `last_sync_result`; the admin UI can surface that JSON directly, or a later migration can introduce a dedicated missing external items table.
+
+### Phase 12 Task 7
+
+The scheduled collection sync worker is implemented at `server/src/workers/collection_sync.rs`.
+
+| Area | Implementation |
+|---|---|
+| Scheduler integration | `collection_sync` is registered in `main.rs` with `AppState` capture and seeded by `20260625_060000_seed_collection_sync_task.sql` |
+| Runtime gates | Skips when `metadata.collections_enabled` is false or task config sets `"sync_dynamic": false` |
+| Scope controls | Supports optional `library_id` and `collection_id` task config fields for targeted runs |
+| External builders | Honors `sync_external` / `include_external`; paces external builder collections with `max_external_requests_per_minute`; aborts the remaining run on provider 429 |
+| Failure recording | Writes failed attempts to `collections.last_sync_result` without updating `last_synced_at` |
+
+Task 7 intentionally keeps queue semantics out of scope. The existing scheduler already prevents the same scheduled task from running concurrently via `scheduled_tasks.state`, and the worker processes collections sequentially so external API usage is predictable.
+
+Research findings for Task 7:
+
+| Topic | Finding | Tradeoff | Recommendation |
+|---|---|---|---|
+| External API pacing | TMDB documents active API rate limiting but does not expose a stable hard number in the getting-started docs. | A hard-coded high concurrency strategy risks 429s as TMDB policy changes. | Keep scheduled collection sync sequential and configurable via `max_external_requests_per_minute`, defaulting to the existing metadata config value of 30/minute. |
+| Async concurrency control | Tokio's semaphore pattern is appropriate when many outbound requests are spawned concurrently. | It adds complexity when the worker already processes a small number of collection definitions sequentially. | Defer semaphore-based fan-out until collection sync has enough volume to justify parallelism. |
+| Queue-style locking | PostgreSQL `SKIP LOCKED` is useful for multi-consumer queue tables but intentionally returns an inconsistent queue view. | Duskcue's scheduler already serializes each scheduled task by `scheduled_tasks.state`, and Duskcue is single-instance. | Do not introduce per-collection queue locks in Task 7; use scheduler-level exclusivity plus sequential processing. |
 
 ## Cross-References
 
