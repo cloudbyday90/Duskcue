@@ -14,3 +14,4 @@ clients/web/build/
 *.db
 *.db-journal
 opencode.jsonc
+.vscode/
