@@ -693,6 +693,55 @@ Built `server/src/services/overlays.rs` as a stateless shared-service module (no
 
 **Error model** — `OverlayPipelineError` enum with variants: `Decode`, `Encode`, `FontLoad`, `NoFontAvailable`, `SvgParse`, `InvalidColor`, `Io`. Separate from the domain `OverlayError` (which surfaces API-facing OVERLAY_001–006 codes). The worker/domain layer translates `OverlayPipelineError` to `OverlayError::CompositingFailed` for API responses, matching the `segments`/`storyboards` precedent of separate pipeline vs domain error types.
 
+### Phase 12 Task 3 — Condition Evaluation (Complete)
+
+Built `server/src/services/conditions.rs` as a pure, stateless condition evaluation engine — no DB, no `AppState`, no async. Takes a condition JSONB `Value` + a typed [`MediaFilterContext`] struct, returns `bool`. Shared between overlay definitions (this document §Conditions) and smart collections/playlists (COLLECTIONS.md §Smart Filter Syntax).
+
+**Module location** — `services/conditions.rs` follows the established cross-cutting service convention (`decision_engine.rs`, `segments.rs`, `storyboards.rs`). The condition system is shared between overlays and collections — placing it in `services/` rather than `domains/overlays/` avoids coupling collections (Phase 12 Task 5+) to the overlay domain module.
+
+**No external JSON rule engine crate** — Research (June 2026) evaluated `datalogic-rs` and `json-eval-rs` (JSONLogic implementations). Rejected because: (1) JSONLogic uses a different schema (`{"==": [...]}`) than Duskcue's documented schema (`{"operator": "and", "rules": [...]}`), requiring a translation layer; (2) existing crates are heavy form-validation engines with WASM/C#/React Native bindings — overkill for media filtering; (3) Duskcue's condition schema is simple enough (8 operators, 16 fields, nested AND/OR) for a hand-written recursive evaluator with zero new dependencies. The `regex` crate (already in workspace) handles the `matches` operator.
+
+**Recursive evaluator** — `evaluate_group()` handles `{operator, rules}` objects; `evaluate_node()` dispatches between nested groups (have `operator` key) and leaf rules (have `field` key); `evaluate_leaf()` dispatches on the `op` string. Recursion confirmed as the recommended Rust pattern for JSON rule evaluation (per `datalogic-rs` author benchmarks). Nesting depth is bounded by the JSONB structure size (admin-authored, typically ≤3 levels).
+
+**Condition semantics** — per the Conditions section above:
+
+| Operator | Behavior |
+|---|---|
+| `eq` | Case-insensitive text equality; numeric equality; boolean equality; array-membership for `genre`/`streaming_on` |
+| `neq` | Negation of `eq` |
+| `in` | Case-insensitive membership in `values` array; array-membership for `genre`/`streaming_on` |
+| `gt`/`gte`/`lt`/`lte` | Numeric comparison on `critic_rating`/`critic_rating_above`/`audio_channels` |
+| `exists` | Field presence check: `value: true` → field must be present; `value: false` → field must be absent/null |
+| `matches` | Regex match via the `regex` crate on text fields; invalid regex → no match (warning logged) |
+
+**Case-insensitivity** — All text comparisons use `eq_ignore_ascii_case`. Admin-facing values like `"4k"` match DB-stored `"4K"`. The `matches` operator uses standard regex; admins add `(?i)` for case-insensitive regex.
+
+**Malformed conditions** — At evaluation time, a malformed rule (missing `field`/`op` key, unknown field name, unknown operator) logs a warning and returns `false` (overlay not applied). The `validate_structure()` function provides structural validation for the create/update API path, returning `ConditionError` for malformed conditions to surface as `OVERLAY_002`.
+
+**`MediaFilterContext` struct** — Carries all 16 condition-testable fields plus derived booleans:
+- Text fields from `media_items`: `media_type`, `content_rating`
+- Text fields from `media_files`: `video_resolution`, `video_codec`, `video_dynamic_range`, `audio_codec`, `container_format`
+- Numeric fields: `critic_rating` (from `media_items.rating_average`), `audio_channels` (from `media_files`)
+- UUID: `library_id` (from `media_items`)
+- Array: `genres` (from `genres` via `media_genres`), `streaming_on` (from `media_items.metadata` JSONB)
+- Boolean: `has_dolby_vision` (derived: `video_dynamic_range LIKE 'dolby_vision%'`), `has_multiple_versions` (derived: `COUNT(media_files) > 1`)
+- From `media_items.metadata` JSONB: `original_language`, `edition`
+
+**Domain integration** — `domains/overlays/service.rs::preview_overlay()` now filters overlay definitions by their `conditions` JSONB before group/suppress/queue resolution:
+1. Load all enabled overlay definitions for the artwork type
+2. Load `OverlayMediaContext` from DB (single query with `LEFT JOIN LATERAL` for primary media file + file count + genre aggregation)
+3. Convert to `MediaFilterContext` via `to_filter_context()`
+4. Filter definitions: `definitions.filter(|d| conditions::evaluate(&d.conditions, &filter_ctx))`
+5. Convert surviving definitions to `ResolvedOverlay`s and proceed with compositing
+
+**`OverlayMediaContext` vs `MediaFilterContext`** — The domain layer uses a richer `OverlayMediaContext` struct that includes both condition-testable fields and text-variable fields (`title`, `year`, `runtime_seconds`, `audience_rating`, `rating_vote_count`). `to_filter_context()` extracts the condition-relevant subset. This avoids a second DB query for text variable resolution while keeping `MediaFilterContext` focused on condition-testable fields.
+
+**Expanded text variable resolution** — Task 2's `resolve_text_variables()` handled 6 variables. Task 3 expands to 16 variables per the Special Text Variables table: `<<title>>`, `<<year>>`, `<<resolution>>`, `<<video_codec>>`, `<<audio_codec>>`, `<<critic_rating>>`, `<<critic_rating/>>` (÷2 for /5 scale), `<<audience_rating>>`, `<<rating_vote_count>>`, `<<video_dynamic_range>>`, `<<container>>`, `<<audio_channels>>` (formatted as "5.1", "7.1", etc.), `<<content_rating>>`, `<<runtime>>`/`<<runtimeH>>`/`<<runtimeM>>`, `<<edition>>`.
+
+**DB query** — `load_media_context()` uses a single query with three `LEFT JOIN LATERAL` subqueries: (1) primary media file (healthiest, largest), (2) healthy file count for `has_multiple_versions`, (3) genre aggregation via `media_genres` + `genres`. This replaces Task 2's three separate correlated subqueries with a more efficient join-based approach. Metadata JSONB fields (`original_language`, `streaming_on`, `edition`, `audience_rating`) are extracted from the `media_items.metadata` JSONB column via `serde_json::Value::get()`.
+
+**64 unit tests** covering: empty/null/bool conditions, all 8 operators (eq, neq, in, gt/gte/lt/lte, exists, matches), case-insensitive text comparison, numeric comparison (integer and float, string-parsed numbers), boolean field equality, array-membership fields (genre, streaming_on), UUID field, nested AND/OR groups (including 3-level nesting), empty rules, malformed conditions (missing keys, unknown fields/operators), structural validation (valid/invalid structures, missing keys, invalid operators, `in` requires `values`), default context (all fields empty).
+
 ## Cross-References
 
 - [POSTER_MANAGEMENT.md](POSTER_MANAGEMENT.md) — artwork sourcing, selection, locking; `artwork` table extensions; artwork lifecycle

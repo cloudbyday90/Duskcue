@@ -195,6 +195,7 @@ project/
 │       ├── services/             # Cross-domain services
 │       │   ├── mod.rs
 │       │   ├── encryption.rs    # AES-256-GCM encryption at rest (ring::aead, provider key encrypt/decrypt, secret masking)
+│       │   ├── conditions.rs    # Media condition/filter evaluation engine (JSONB rule evaluator, 8 operators, nested AND/OR, shared by overlays + smart collections) — **implemented**
 │       │   ├── event_bus.rs     # Per-user pub/sub for SSE: DashMap<Uuid, broadcast::Sender>, 100-event ring buffer, ConnectionGuard — **implemented**
 │       │   ├── events_handler.rs # SSE transport: GET /api/v1/events handler (?types= filter, Last-Event-ID replay, X-Accel-Buffering, 15s KeepAlive) — **implemented**
 │       │   ├── scheduler.rs      # Scheduled task runner

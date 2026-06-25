@@ -416,7 +416,7 @@ Smart collections and smart playlists share the same filter syntax:
 }
 ```
 
-This is the same condition system used by overlay definitions (see [METADATA_OVERLAYS.md](METADATA_OVERLAYS.md)).
+This is the same condition system used by overlay definitions (see [METADATA_OVERLAYS.md](METADATA_OVERLAYS.md)). The condition evaluator is implemented as a shared service at `server/src/services/conditions.rs` — pure, stateless, no DB. Smart collections (Task 5+) and smart playlists will call `conditions::evaluate()` against a `MediaFilterContext` built from the media item's metadata.
 
 ## Admin UI
 

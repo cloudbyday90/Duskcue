@@ -18,6 +18,7 @@ use image::Rgba;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
+use crate::services::conditions::{self, MediaFilterContext};
 use crate::services::image_pipeline::{self, EncodeConfig};
 use crate::services::overlays as overlay_svc;
 use crate::services::overlays::{
@@ -156,8 +157,14 @@ pub async fn preview_overlay(
     let definitions = load_overlay_definitions_for_preview(pool, req.overlay_ids.as_deref(), artwork_type).await?;
 
     let media_ctx = load_media_context(pool, media_item_id).await?;
+    let filter_ctx = media_ctx.to_filter_context();
 
-    let mut resolved: Vec<ResolvedOverlay> = definitions
+    let matching_definitions: Vec<_> = definitions
+        .into_iter()
+        .filter(|d| conditions::evaluate(&d.conditions, &filter_ctx))
+        .collect();
+
+    let mut resolved: Vec<ResolvedOverlay> = matching_definitions
         .into_iter()
         .map(|d| row_to_resolved(&d, &media_ctx))
         .collect::<Result<Vec<_>, _>>()?;
@@ -207,45 +214,179 @@ pub async fn import_template(
     todo!("Phase 12 — community template import")
 }
 
-struct MediaContext {
+struct OverlayMediaContext {
     title: String,
     year: Option<i32>,
-    resolution: Option<String>,
-    video_codec: Option<String>,
-    audio_codec: Option<String>,
+    runtime_seconds: Option<i32>,
+    content_rating: Option<String>,
     critic_rating: Option<f64>,
+    audience_rating: Option<f64>,
+    rating_vote_count: Option<i32>,
+    media_type: String,
+    library_id: Option<Uuid>,
+    genres: Vec<String>,
+    video_resolution: Option<String>,
+    video_codec: Option<String>,
+    video_dynamic_range: Option<String>,
+    audio_codec: Option<String>,
+    audio_channels: Option<i32>,
+    container_format: Option<String>,
+    has_dolby_vision: bool,
+    has_multiple_versions: bool,
+    edition: Option<String>,
+    original_language: Option<String>,
+    streaming_on: Vec<String>,
 }
 
-async fn load_media_context(pool: &PgPool, media_item_id: Uuid) -> Result<MediaContext, OverlayError> {
+impl OverlayMediaContext {
+    fn to_filter_context(&self) -> MediaFilterContext {
+        MediaFilterContext {
+            media_type: self.media_type.clone(),
+            library_id: self.library_id,
+            content_rating: self.content_rating.clone(),
+            critic_rating: self.critic_rating,
+            genres: self.genres.clone(),
+            video_resolution: self.video_resolution.clone(),
+            video_codec: self.video_codec.clone(),
+            video_dynamic_range: self.video_dynamic_range.clone(),
+            audio_codec: self.audio_codec.clone(),
+            audio_channels: self.audio_channels,
+            container_format: self.container_format.clone(),
+            has_dolby_vision: self.has_dolby_vision,
+            has_multiple_versions: self.has_multiple_versions,
+            edition: self.edition.clone(),
+            original_language: self.original_language.clone(),
+            streaming_on: self.streaming_on.clone(),
+        }
+    }
+}
+
+async fn load_media_context(pool: &PgPool, media_item_id: Uuid) -> Result<OverlayMediaContext, OverlayError> {
     let row = sqlx::query(
-        r#"SELECT mi.title, mi.year, mi.rating_average,
-                  (SELECT video_resolution FROM media_files WHERE media_item_id = mi.id AND is_healthy = true ORDER BY file_size DESC LIMIT 1) AS resolution,
-                  (SELECT video_codec FROM media_files WHERE media_item_id = mi.id AND is_healthy = true ORDER BY file_size DESC LIMIT 1) AS video_codec,
-                  (SELECT audio_codec FROM media_files WHERE media_item_id = mi.id AND is_healthy = true ORDER BY file_size DESC LIMIT 1) AS audio_codec
-           FROM media_items mi WHERE mi.id = $1"#,
+        r#"SELECT mi.title,
+                  mi.year,
+                  mi.runtime_seconds,
+                  mi.content_rating,
+                  mi.rating_average,
+                  mi.rating_vote_count,
+                  mi.type,
+                  mi.library_id,
+                  mi.metadata,
+                  mf.video_resolution,
+                  mf.video_codec,
+                  mf.video_dynamic_range,
+                  mf.audio_codec,
+                  mf.audio_channels,
+                  mf.container_format,
+                  fc.cnt AS file_count,
+                  COALESCE(gl.genres, '{}'::text[]) AS genres
+           FROM media_items mi
+           LEFT JOIN LATERAL (
+               SELECT video_resolution, video_codec, video_dynamic_range,
+                      audio_codec, audio_channels, container_format
+               FROM media_files
+               WHERE media_item_id = mi.id AND is_healthy = true
+               ORDER BY file_size DESC
+               LIMIT 1
+           ) mf ON true
+           LEFT JOIN LATERAL (
+               SELECT COUNT(*)::int AS cnt
+               FROM media_files
+               WHERE media_item_id = mi.id AND is_healthy = true
+           ) fc ON true
+           LEFT JOIN LATERAL (
+               SELECT array_agg(g.name) AS genres
+               FROM media_genres mg
+               JOIN genres g ON g.id = mg.genre_id
+               WHERE mg.media_item_id = mi.id
+           ) gl ON true
+           WHERE mi.id = $1"#,
     )
     .bind(media_item_id)
     .fetch_optional(pool)
     .await?
     .ok_or(OverlayError::NotFound)?;
 
-    Ok(MediaContext {
+    let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::Value::Null);
+
+    let video_dynamic_range: Option<String> = row.try_get("video_dynamic_range").ok().flatten();
+    let has_dolby_vision = video_dynamic_range
+        .as_deref()
+        .map(|v| v.to_ascii_lowercase().starts_with("dolby_vision"))
+        .unwrap_or(false);
+
+    let file_count: i32 = row.try_get("file_count").unwrap_or(1);
+    let has_multiple_versions = file_count > 1;
+
+    let genres: Vec<String> = row
+        .try_get::<Vec<String>, _>("genres")
+        .unwrap_or_default();
+
+    let original_language = metadata
+        .get("original_language")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    let streaming_on = extract_streaming_services(&metadata);
+
+    let edition = metadata
+        .get("edition")
+        .and_then(|v| v.as_str())
+        .map(String::from);
+
+    Ok(OverlayMediaContext {
         title: row.try_get("title").unwrap_or_default(),
         year: row.try_get("year").ok().flatten(),
-        resolution: row.try_get("resolution").ok().flatten(),
-        video_codec: row.try_get("video_codec").ok().flatten(),
-        audio_codec: row.try_get("audio_codec").ok().flatten(),
+        runtime_seconds: row.try_get("runtime_seconds").ok().flatten(),
+        content_rating: row.try_get("content_rating").ok().flatten(),
         critic_rating: row.try_get("rating_average").ok().flatten(),
+        audience_rating: metadata
+            .get("audience_rating")
+            .and_then(|v| v.as_f64()),
+        rating_vote_count: row.try_get("rating_vote_count").ok().flatten(),
+        media_type: row.try_get("type").unwrap_or_default(),
+        library_id: row.try_get("library_id").ok().flatten(),
+        genres,
+        video_resolution: row.try_get("video_resolution").ok().flatten(),
+        video_codec: row.try_get("video_codec").ok().flatten(),
+        video_dynamic_range,
+        audio_codec: row.try_get("audio_codec").ok().flatten(),
+        audio_channels: row.try_get("audio_channels").ok().flatten(),
+        container_format: row.try_get("container_format").ok().flatten(),
+        has_dolby_vision,
+        has_multiple_versions,
+        edition,
+        original_language,
+        streaming_on,
     })
 }
 
-fn resolve_text_variables(template: &str, ctx: &MediaContext) -> String {
+fn extract_streaming_services(metadata: &serde_json::Value) -> Vec<String> {
+    if let Some(arr) = metadata.get("streaming_on").and_then(|v| v.as_array()) {
+        return arr
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
+    }
+    if let Some(arr) = metadata.get("watch_providers").and_then(|v| v.as_array()) {
+        return arr
+            .iter()
+            .filter_map(|v| v.as_str().map(String::from))
+            .collect();
+    }
+    if let Some(s) = metadata.get("streaming_provider").and_then(|v| v.as_str()) {
+        return vec![s.to_string()];
+    }
+    Vec::new()
+}
+
+fn resolve_text_variables(template: &str, ctx: &OverlayMediaContext) -> String {
     let mut result = template.to_string();
     result = result.replace("<<title>>", &ctx.title);
     if let Some(year) = ctx.year {
         result = result.replace("<<year>>", &year.to_string());
     }
-    if let Some(res) = &ctx.resolution {
+    if let Some(res) = &ctx.video_resolution {
         result = result.replace("<<resolution>>", res);
     }
     if let Some(codec) = &ctx.video_codec {
@@ -256,8 +397,47 @@ fn resolve_text_variables(template: &str, ctx: &MediaContext) -> String {
     }
     if let Some(rating) = ctx.critic_rating {
         result = result.replace("<<critic_rating>>", &format!("{:.1}", rating));
+        result = result.replace("<<critic_rating/>>", &format!("{:.1}", rating / 2.0));
+    }
+    if let Some(rating) = ctx.audience_rating {
+        result = result.replace("<<audience_rating>>", &format!("{:.1}", rating));
+    }
+    if let Some(votes) = ctx.rating_vote_count {
+        result = result.replace("<<rating_vote_count>>", &votes.to_string());
+    }
+    if let Some(dr) = &ctx.video_dynamic_range {
+        result = result.replace("<<video_dynamic_range>>", dr);
+    }
+    if let Some(container) = &ctx.container_format {
+        result = result.replace("<<container>>", container);
+    }
+    if let Some(channels) = ctx.audio_channels {
+        result = result.replace("<<audio_channels>>", &format_audio_channels(channels));
+    }
+    if let Some(content_rating) = &ctx.content_rating {
+        result = result.replace("<<content_rating>>", content_rating);
+    }
+    if let Some(runtime) = ctx.runtime_seconds {
+        let minutes = runtime / 60;
+        result = result.replace("<<runtime>>", &minutes.to_string());
+        result = result.replace("<<runtimeH>>", &(minutes / 60).to_string());
+        result = result.replace("<<runtimeM>>", &(minutes % 60).to_string());
+    }
+    if let Some(edition) = &ctx.edition {
+        result = result.replace("<<edition>>", edition);
     }
     result
+}
+
+fn format_audio_channels(channels: i32) -> String {
+    match channels {
+        1 => "1.0".into(),
+        2 => "2.0".into(),
+        6 => "5.1".into(),
+        7 => "6.1".into(),
+        8 => "7.1".into(),
+        n => format!("{}.0", n),
+    }
 }
 
 async fn load_overlay_definitions_for_preview(
@@ -342,7 +522,7 @@ fn row_to_definition_row(row: &sqlx::postgres::PgRow) -> Result<OverlayDefinitio
     })
 }
 
-fn row_to_resolved(row: &OverlayDefinitionRow, ctx: &MediaContext) -> Result<ResolvedOverlay, OverlayError> {
+fn row_to_resolved(row: &OverlayDefinitionRow, ctx: &OverlayMediaContext) -> Result<ResolvedOverlay, OverlayError> {
     let overlay_type = OverlayType::from_db_str(&row.overlay_type)
         .ok_or_else(|| OverlayError::InvalidConditions(format!("invalid overlay_type: {}", row.overlay_type)))?;
 
