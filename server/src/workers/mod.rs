@@ -18,6 +18,7 @@ pub mod collection_sync;
 pub mod geoip_updater;
 pub mod library_scanner;
 pub mod metadata_refresh;
+pub mod overlay_compositor;
 pub mod segment_detector;
 pub mod storyboard_generator;
 pub mod subtitle_processor;

@@ -118,10 +118,21 @@ pub async fn delete_overlay(_pool: &PgPool, _overlay_id: Uuid) -> Result<(), Ove
 }
 
 pub async fn apply_overlays(
-    _pool: &PgPool,
-    _req: ApplyOverlaysRequest,
+    state: &AppState,
+    req: ApplyOverlaysRequest,
 ) -> Result<ApplyOverlaysResponse, OverlayError> {
-    todo!("Phase 12 — overlay definition update (CRUD)")
+    let result = crate::workers::overlay_compositor::apply_overlays_now(
+        state,
+        req.library_id,
+        req.reapply_all.unwrap_or(false),
+        req.max_concurrent,
+    )
+    .await?;
+
+    Ok(ApplyOverlaysResponse {
+        status: "completed".to_string(),
+        queued_items: result.candidates as i64,
+    })
 }
 
 /// The outcome of a single-item compositing pass.
@@ -168,14 +179,17 @@ pub async fn composite_and_persist(
     };
     drop(config);
 
-    let definitions = load_overlay_definitions_for_preview(pool, None, artwork_type).await?;
-
     let media_ctx = load_media_context(pool, media_item_id).await?;
     let filter_ctx = media_ctx.to_filter_context();
 
+    let definitions = load_overlay_definitions_for_preview(pool, None, artwork_type).await?;
+
     let matching: Vec<OverlayDefinitionRow> = definitions
         .into_iter()
-        .filter(|d| conditions::evaluate(&d.conditions, &filter_ctx))
+        .filter(|d| {
+            (d.library_id.is_none() || d.library_id == media_ctx.library_id)
+                && conditions::evaluate(&d.conditions, &filter_ctx)
+        })
         .collect();
 
     if matching.is_empty() {
@@ -304,7 +318,10 @@ pub async fn preview_overlay(
 
     let matching_definitions: Vec<_> = definitions
         .into_iter()
-        .filter(|d| conditions::evaluate(&d.conditions, &filter_ctx))
+        .filter(|d| {
+            (d.library_id.is_none() || d.library_id == media_ctx.library_id)
+                && conditions::evaluate(&d.conditions, &filter_ctx)
+        })
         .collect();
 
     let mut resolved: Vec<ResolvedOverlay> = matching_definitions
@@ -600,7 +617,7 @@ async fn load_overlay_definitions_for_preview(
         && !ids.is_empty()
     {
         sqlx::query(
-            r#"SELECT id, name, slug, library_id, overlay_type, image_path, text_template,
+            r#"SELECT id, created_at, updated_at, name, slug, library_id, overlay_type, image_path, text_template,
                       font_family, font_size, font_color, stroke_color, stroke_width,
                       back_color, back_width, back_height, back_radius, back_padding,
                       horizontal_offset, horizontal_align, vertical_offset, vertical_align,
@@ -614,7 +631,7 @@ async fn load_overlay_definitions_for_preview(
         .await?
     } else {
         sqlx::query(
-            r#"SELECT id, name, slug, library_id, overlay_type, image_path, text_template,
+            r#"SELECT id, created_at, updated_at, name, slug, library_id, overlay_type, image_path, text_template,
                       font_family, font_size, font_color, stroke_color, stroke_width,
                       back_color, back_width, back_height, back_radius, back_padding,
                       horizontal_offset, horizontal_align, vertical_offset, vertical_align,

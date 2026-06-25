@@ -2847,7 +2847,34 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Verification:** `cargo check -p duskcue` passes.
 
-8. Implement `server/src/workers/overlay_compositor.rs` — apply overlays to artwork
+8. ~~Implement `server/src/workers/overlay_compositor.rs` — apply overlays to artwork~~ **DONE**
+
+**What was built for Task 8:**
+
+| File | Purpose |
+|---|---|
+| `server/src/workers/overlay_compositor.rs` | Scheduled/manual overlay application worker: gates on `metadata.overlays_enabled`, resolves primary artwork targets, supports `library_id`, `media_item_id`, `artwork_types`, `reapply_all`, `max_concurrent`, and `batch_limit` config, applies overlays with bounded `JoinSet` concurrency, aggregates composited/current/no-match/failed counts, and reuses `domains::overlays::service::composite_and_persist()` for all persistence |
+| `server/src/workers/mod.rs` | Added `pub mod overlay_compositor;` |
+| `server/src/main.rs` | Registered `overlay_application` executor on the scheduler with `AppState` capture |
+| `server/src/services/scheduler.rs` | Added `Overlay Application` to first-run default scheduled task seeding |
+| `server/migrations/20260625_070000_seed_overlay_application_task.sql` | Idempotent migration to seed `overlay_application` for existing deployments |
+| `server/src/domains/overlays/service.rs` | Manual `POST /api/v1/overlays/apply` now invokes the worker path synchronously; `composite_and_persist()` now respects `overlay_definitions.library_id` scoping and overlay definition loads include `created_at`/`updated_at` for config hashing |
+| `server/src/domains/overlays/handlers.rs` | Apply handler passes `AppState` to the service layer so runtime config and worker orchestration are available |
+| `docs/design/METADATA_OVERLAYS.md` | Added Task 8 implementation notes |
+| `PROJECT.md` | Updated Phase 12 implementation status |
+
+**Key decisions from Task 8:**
+
+- **Worker reuses the single-item pipeline** — `overlay_compositor` does not duplicate compositing, clean-art, condition evaluation, or DB state logic. It selects targets and calls `composite_and_persist()` per media item + artwork type, so scheduled and manual application use the same hash/change-detection path as preview/clean-art work from Tasks 2–4.
+- **`overlay_application` is scheduler-owned** — The `scheduled_tasks.task_type` CHECK constraint already includes `overlay_application`. Task 8 registers that executor and seeds the row for existing deployments; first-run installs get the same task through `seed_default_tasks()`.
+- **Primary artwork drives targets** — The worker processes only media items with primary artwork (`artwork.order = 0`) and a non-empty `local_path`. DB `thumbnail` artwork is mapped to overlay `episode_thumb`, matching the clean-art/display-layer mapping from Task 4.
+- **Bounded concurrency without a new queue table** — The worker uses `tokio::task::JoinSet` capped by `max_concurrent` (default 2, max 8). No per-item queue locks are introduced because Duskcue is single-instance and the scheduler already serializes each scheduled task via `scheduled_tasks.state`.
+- **Manual apply is synchronous** — `POST /api/v1/overlays/apply` now runs the same worker path inline and returns `"completed"` with the number of candidate targets. A background job/202 response can be added with Phase 13a scheduled task management if the admin UI needs non-blocking progress.
+- **Library-scoped overlays enforced** — `overlay_definitions.library_id` now restricts definitions to that library; global overlays (`NULL`) continue to apply everywhere. This fixes the production path before scheduled application can touch all libraries.
+- **Research-backed concurrency stance** — Tokio docs advise moving blocking/CPU-heavy work out of async futures or bounding it carefully; PostgreSQL `SKIP LOCKED` is useful for multi-consumer queues but unnecessary here because the scheduler serializes this single task in a single-instance system.
+
+**Verification:** `cargo check -p duskcue` passes.
+
 9. Implement poster management — asset directory scanning, poster locking, community pack import
 10. Build admin UI for overlays — overlay editor, template browser, condition builder
 11. Build admin UI for collections — collection list, builder configuration, template import

@@ -781,6 +781,30 @@ This is the function the Task 8 worker will call per-item. The hash check makes 
 
 **14 unit tests** covering: config hash determinism, order-independence, sensitivity to overlay addition/removal/update, sensitivity to source artwork change, empty-overlays hash, hex format; type-subdir and artwork-table-type mappings; clean/overlaid path format; source decode rejection of garbage input; `save_overlaid_result` directory creation + file write.
 
+### Implementation Notes — Task 8 (Overlay Application Worker)
+
+Built `server/src/workers/overlay_compositor.rs` as the scheduled/manual orchestration layer for production overlay application.
+
+**Entry points** — `run_overlay_application(state, task_id, config)` is registered as the `overlay_application` scheduled-task executor. `apply_overlays_now(state, library_id, reapply_all, max_concurrent)` backs `POST /api/v1/overlays/apply` and calls the same implementation path synchronously.
+
+**Target selection** — The worker selects primary artwork rows (`artwork.order = 0`) with a non-empty `local_path`, joined through non-deleted scan-enabled libraries. It supports optional `library_id`, `media_item_id`, `artwork_types`, and `batch_limit` config filters. DB artwork type `thumbnail` is mapped to overlay type `episode_thumb`; other overlay-supported types are `poster`, `backdrop`, and `season_poster`.
+
+**Single-item reuse** — Each target calls `domains::overlays::service::composite_and_persist()`. The worker does not duplicate condition evaluation, group/queue resolution, clean-art creation, WebP encoding, config-hash comparison, or `artwork_overlay_state` upsert/delete logic.
+
+**Bounded concurrency** — The worker uses `tokio::task::JoinSet` with `max_concurrent` from task config/request (default 2, clamped to 1-8). This keeps manual and scheduled application from processing an unbounded number of images at once.
+
+**No queue table or `SKIP LOCKED`** — PostgreSQL `FOR UPDATE SKIP LOCKED` is useful for multi-consumer queue workflows, but Task 8 intentionally avoids a queue table. Duskcue is single-instance, and the scheduler already serializes a scheduled task through `scheduled_tasks.state`; adding per-target locks would add state without improving correctness.
+
+**Scheduler integration** — `overlay_application` is already allowed by the Phase 2 `scheduled_tasks.task_type` CHECK constraint. Task 8 registers the executor in `main.rs`, adds first-run seeding in `seed_default_tasks()`, and adds `20260625_070000_seed_overlay_application_task.sql` for existing deployments. Default schedule: daily 05:00, timeout 7200s, config `{ "reapply_all": false, "max_concurrent": 2 }`.
+
+**Manual apply semantics** — `POST /api/v1/overlays/apply` now runs inline and returns `"completed"` with the number of candidate artwork targets. A future Phase 13a scheduled-task API can expose non-blocking trigger/history semantics if the admin UI needs progress tracking.
+
+**Library-scoped overlays** — Production application now enforces `overlay_definitions.library_id`: global definitions (`NULL`) apply everywhere, library-specific definitions apply only to matching media items. The overlay definition query also includes `created_at` and `updated_at`, which are required for `OverlayDefinitionRow` and config-hash invalidation.
+
+**Research notes** — Tokio's official `spawn_blocking` docs warn that blocking or compute-heavy work inside async futures can prevent executor progress if unbounded; Task 8 therefore caps image work with bounded concurrency. PostgreSQL's official `SELECT` docs describe `SKIP LOCKED` as skipping locked rows rather than waiting; this is intentionally not used because there is no multi-consumer queue in Duskcue's single-instance scheduler model.
+
+**Verification:** `cargo check -p duskcue` passes.
+
 ## Cross-References
 
 - [POSTER_MANAGEMENT.md](POSTER_MANAGEMENT.md) — artwork sourcing, selection, locking; `artwork` table extensions; artwork lifecycle

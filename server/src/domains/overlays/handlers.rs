@@ -174,7 +174,7 @@ pub async fn apply_overlays(
         instance: Some("/api/v1/overlays/apply".into()),
     })?;
 
-    let response = service::apply_overlays(&state.pool, req).await?;
+    let response = service::apply_overlays(&state, req).await?;
     Ok(Json(response))
 }
 

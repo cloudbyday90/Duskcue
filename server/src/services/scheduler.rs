@@ -693,6 +693,12 @@ pub async fn seed_default_tasks(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> 
             Some("0 6 * * *"),
             None::<i32>,
         ),
+        (
+            "Overlay Application",
+            "overlay_application",
+            Some("0 5 * * *"),
+            None::<i32>,
+        ),
     ];
 
     for (name, task_type, cron_expr, interval_secs) in &defaults {
