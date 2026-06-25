@@ -18,6 +18,7 @@ use image::Rgba;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
+use crate::services::clean_art::{self, OverlayHashInput};
 use crate::services::conditions::{self, MediaFilterContext};
 use crate::services::image_pipeline::{self, EncodeConfig};
 use crate::services::overlays as overlay_svc;
@@ -114,7 +115,143 @@ pub async fn apply_overlays(
     _pool: &PgPool,
     _req: ApplyOverlaysRequest,
 ) -> Result<ApplyOverlaysResponse, OverlayError> {
-    todo!("Phase 12 Task 8 — overlay application worker integration")
+    todo!("Phase 12 — overlay definition update (CRUD)")
+}
+
+/// The outcome of a single-item compositing pass.
+#[derive(Debug, Clone)]
+pub struct CompositeResult {
+    pub media_item_id: Uuid,
+    pub artwork_type: String,
+    pub composited: bool,
+    pub applied_count: usize,
+}
+
+/// Composite overlays for a single media item + artwork type, using the clean
+/// art preservation pipeline.
+///
+/// This is the single-item entry point called by the `overlay_compositor`
+/// worker (Task 8) and by the admin-triggered apply endpoint. It:
+///
+/// 1. Loads enabled overlay definitions for the artwork type.
+/// 2. Evaluates conditions against the media item context.
+/// 3. Computes a config hash from the matching definitions + source artwork ID.
+/// 4. Compares against stored state — if the hash matches and `reapply_all` is
+///    false, skips re-compositing (returns `composited: false`).
+/// 5. Otherwise: ensures a clean backup exists, composites from it, saves the
+///    overlaid result to cache, and upserts `artwork_overlay_state`.
+///
+/// Source artwork is never modified — only the clean backup (derived) and the
+/// overlaid result (derived) are written, both under `/cache/images/`.
+pub async fn composite_and_persist(
+    state: &AppState,
+    media_item_id: Uuid,
+    artwork_type: &str,
+    reapply_all: bool,
+) -> Result<CompositeResult, OverlayError> {
+    let pool = &state.pool;
+    let data_dir = &state.bootstrap.data_dir;
+
+    let canvas = CanvasPreset::from_artwork_type(artwork_type)
+        .ok_or_else(|| OverlayError::InvalidConditions(format!("unsupported artwork_type: {artwork_type}")))?;
+
+    let config = state.runtime_config.load();
+    let encode_config = EncodeConfig {
+        lossy_quality: config.metadata.overlay_image_quality as f32,
+    };
+    drop(config);
+
+    let definitions = load_overlay_definitions_for_preview(pool, None, artwork_type).await?;
+
+    let media_ctx = load_media_context(pool, media_item_id).await?;
+    let filter_ctx = media_ctx.to_filter_context();
+
+    let matching: Vec<OverlayDefinitionRow> = definitions
+        .into_iter()
+        .filter(|d| conditions::evaluate(&d.conditions, &filter_ctx))
+        .collect();
+
+    if matching.is_empty() {
+        let removed = clean_art::delete_overlay_state(pool, media_item_id, artwork_type).await?;
+        if removed {
+            tracing::debug!(%media_item_id, %artwork_type, "no matching overlays — removed existing overlay state");
+        }
+        return Ok(CompositeResult {
+            media_item_id,
+            artwork_type: artwork_type.to_string(),
+            composited: false,
+            applied_count: 0,
+        });
+    }
+
+    let clean = clean_art::ensure_clean_backup(pool, data_dir, media_item_id, artwork_type, &encode_config).await?;
+
+    let hash_inputs: Vec<OverlayHashInput> = matching
+        .iter()
+        .map(|d| OverlayHashInput {
+            id: d.id,
+            updated_at: d.updated_at,
+        })
+        .collect();
+    let config_hash = clean_art::compute_config_hash(&hash_inputs, clean.source_artwork_id);
+
+    if !reapply_all
+        && let Some(ref existing) = clean_art::get_overlay_state(pool, media_item_id, artwork_type).await?
+        && existing.overlay_config_hash == config_hash
+        && existing.overlaid_art_path.is_some()
+    {
+        return Ok(CompositeResult {
+            media_item_id,
+            artwork_type: artwork_type.to_string(),
+            composited: false,
+            applied_count: matching.len(),
+        });
+    }
+
+    let mut resolved: Vec<ResolvedOverlay> = matching
+        .iter()
+        .map(|d| row_to_resolved(d, &media_ctx))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    resolved = overlay_svc::resolve_groups(resolved);
+    resolved = overlay_svc::apply_suppress_rules(resolved);
+    overlay_svc::resolve_queue_positions(&mut resolved, overlay_svc::DEFAULT_QUEUE_SPACING);
+
+    let fonts_dir = data_dir.join("fonts");
+    let font_registry = overlay_svc::FontRegistry::scan_dir(&fonts_dir);
+
+    let composited = overlay_svc::composite(&clean.image, canvas, &resolved, &font_registry)
+        .map_err(|e| OverlayError::CompositingFailed(e.to_string()))?;
+
+    let (webp_bytes, _) = image_pipeline::encode_webp(&image::DynamicImage::ImageRgba8(composited), &encode_config)
+        .map_err(|e| OverlayError::CompositingFailed(format!("failed to encode composited WebP: {e}")))?;
+
+    let overlaid_path = clean_art::save_overlaid_result(data_dir, media_item_id, artwork_type, &webp_bytes)?;
+
+    let applied_ids: Vec<Uuid> = resolved.iter().map(|o| o.id).collect();
+    clean_art::upsert_overlay_state(
+        pool,
+        media_item_id,
+        artwork_type,
+        &applied_ids,
+        &config_hash,
+        &clean.path.to_string_lossy(),
+        Some(&overlaid_path.to_string_lossy()),
+    )
+    .await?;
+
+    tracing::info!(
+        %media_item_id, %artwork_type,
+        applied = applied_ids.len(),
+        "overlays composited and persisted"
+    );
+
+    Ok(CompositeResult {
+        media_item_id,
+        artwork_type: artwork_type.to_string(),
+        composited: true,
+        applied_count: applied_ids.len(),
+    })
 }
 
 pub async fn preview_overlay(
@@ -128,31 +265,13 @@ pub async fn preview_overlay(
     let canvas = CanvasPreset::from_artwork_type(artwork_type)
         .ok_or_else(|| OverlayError::InvalidConditions(format!("unsupported artwork_type: {artwork_type}")))?;
 
-    let artwork_row = sqlx::query(
-        r#"SELECT id, local_path FROM artwork
-           WHERE media_item_id = $1 AND artwork_type = $2 AND "order" = 0
-           LIMIT 1"#,
-    )
-    .bind(media_item_id)
-    .bind(artwork_type)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(OverlayError::ImageFileNotFound(
-        "no primary artwork found for media item".into(),
-    ))?;
+    let config = state.runtime_config.load();
+    let encode_config = EncodeConfig {
+        lossy_quality: config.metadata.overlay_image_quality as f32,
+    };
+    drop(config);
 
-    let local_path: Option<String> = artwork_row.try_get("local_path")?;
-    let source_path = local_path
-        .as_ref()
-        .ok_or_else(|| OverlayError::ImageFileNotFound("artwork has no local_path".into()))?;
-
-    let source_bytes = std::fs::read(source_path).map_err(|e| {
-        OverlayError::ImageFileNotFound(format!("failed to read source artwork: {e}"))
-    })?;
-
-    let source_img = image::load_from_memory(&source_bytes)
-        .map_err(|e| OverlayError::CompositingFailed(format!("failed to decode source artwork: {e}")))?
-        .to_rgba8();
+    let clean = clean_art::ensure_clean_backup(pool, &state.bootstrap.data_dir, media_item_id, artwork_type, &encode_config).await?;
 
     let definitions = load_overlay_definitions_for_preview(pool, req.overlay_ids.as_deref(), artwork_type).await?;
 
@@ -176,10 +295,9 @@ pub async fn preview_overlay(
     let fonts_dir = state.bootstrap.data_dir.join("fonts");
     let font_registry = overlay_svc::FontRegistry::scan_dir(&fonts_dir);
 
-    let composite_result = overlay_svc::composite(&source_img, canvas, &resolved, &font_registry)
+    let composite_result = overlay_svc::composite(&clean.image, canvas, &resolved, &font_registry)
         .map_err(|e| OverlayError::CompositingFailed(e.to_string()))?;
 
-    let encode_config = EncodeConfig::default();
     let (webp_bytes, _) = image_pipeline::encode_webp(&image::DynamicImage::ImageRgba8(composite_result), &encode_config)
         .map_err(|e| OverlayError::CompositingFailed(format!("failed to encode WebP: {e}")))?;
 

@@ -225,7 +225,10 @@ project/
 │       │   ├── sandbox.rs        # FFmpeg per-process sandboxing (landlock + seccompiler) — **implemented**
 │       │   ├── hw_accel.rs       # Hardware acceleration runtime detection (FFmpeg probe, platform checks, priority selection) — **implemented**
 │       │   ├── image_pipeline.rs # WebP encode/resize/variant generation (image 0.25 decode + webp 0.3 libwebp encode; alpha-aware lossy/lossless) — **implemented**
-│       │   ├── artwork_delivery.rs # Artwork delivery orchestration (resolve artwork row, cache lookup, on-demand WebP variant generation) — **implemented**
+│       │   ├── artwork_delivery.rs # Artwork delivery orchestration (resolve artwork row, cache lookup, on-demand WebP variant generation, overlaid-result check) — **implemented**
+│       │   ├── overlays.rs       # Overlay compositing pipeline (image + text + backdrop; ab_glyph + resvg; group/suppress/queue resolution) — **implemented**
+│       │   ├── conditions.rs     # Pure condition evaluation engine (JSONB filter rules, 8 operators, nested AND/OR) — **implemented**
+│       │   ├── clean_art.rs      # Clean art preservation (content-addressed clean backups, Blake3 config hash, artwork_overlay_state CRUD, overlaid-result resolution) — **implemented**
 │       │  
 │       └── workers/              # Background task definitions
 │           ├── mod.rs

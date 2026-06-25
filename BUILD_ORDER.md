@@ -2747,8 +2747,30 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
    - **Single LATERAL JOIN query** — `load_media_context()` replaces Task 2's three correlated subqueries with one `LEFT JOIN LATERAL` for the primary media file + one for file count + one for genre aggregation. More efficient and extensible.
    - **64 unit tests** — All 8 operators, case-insensitive matching, numeric comparison (integer/float/string-parsed), boolean equality, array-membership (genre/streaming_on), UUID field, nested AND/OR (3 levels), empty/null/bool conditions, malformed conditions, structural validation. All 493 server tests pass (429 prior + 64 new). 0 clippy warnings.
 
-4. Implement clean art preservation — source artwork never modified
-5. Create `server/src/domains/collections/` — five-file pattern
+**What was built for Task 4:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/clean_art.rs` | Clean art preservation service — `ensure_clean_backup()` (content-addressed scaling of source artwork to canvas), `compute_config_hash()` (Blake3 hash of applied overlay IDs + updated_at + source artwork ID for change detection), `get_overlay_state()` / `upsert_overlay_state()` / `delete_overlay_state()` (artwork_overlay_state CRUD), `save_overlaid_result()` (write composited result to cache), `resolve_overlaid_artwork()` (display-layer check for overlaid results); 14 unit tests |
+| `server/src/services/mod.rs` | Added `pub mod clean_art;` |
+| `server/src/services/overlays.rs` | Made `resize_to_canvas()` public so the clean art service can scale source artwork to canvas |
+| `server/src/services/artwork_delivery.rs` | `resolve_variant()` now checks `clean_art::resolve_overlaid_artwork()` first — if an overlaid result exists, serves it (downscaled to requested variant) instead of source artwork; overlaid variants cached with `{artwork_id}_overlay` stem to avoid overwriting source-variant cache entries; `overlay_artwork_type()` helper maps `ArtworkCategory` → overlay-type vocabulary (returns `None` for Logo/Banner) |
+| `server/src/domains/overlays/service.rs` | Refactored `preview_overlay()` to use `ensure_clean_backup()` instead of reading source directly (consistent with production compositing path + creates clean backup as side-effect); added `composite_and_persist()` single-item compositing entry point (load definitions → evaluate conditions → config-hash change detection → ensure clean backup → composite → save result → upsert state); added `CompositeResult` struct; reads `overlay_image_quality` from RuntimeConfig for encode config |
+
+**Key decisions from Task 4:**
+
+- **Content-addressed clean backups via artwork UUID** — Clean backup filename: `/cache/images/clean/{type_subdir}/{artwork_id}.webp`. When the primary artwork changes (new TMDb download, user upload), the new artwork row has a new UUID, so the old clean backup is naturally orphaned (cache miss) and a fresh one is created from the new source. No explicit invalidation needed — stale files cleaned by the Overlay Cleanup scheduled task. Confirmed via June 2026 web research of Kometa's approach
+- **Source artwork immutability guarantee** — Source files at `artwork.local_path` are opened read-only (`std::fs::read`); never written to. All derived artifacts (clean backups, composited results) live in the regenerable `/cache/images/` directory. The clean backup is an intermediate cache artifact, not a modification of the source
+- **Blake3 for config hash** — Already in workspace (used by scanner for file hashing); faster than SHA-256; API is `Hasher::new().update().finalize().to_hex()`. Hash includes: source artwork UUID, each applied overlay's UUID + `updated_at` (sorted by UUID for determinism). Detects overlay addition/removal (different UUID set), overlay property changes (`updated_at` bump), and source artwork changes (different artwork UUID)
+- **`composite_and_persist()` as single-item entry point** — Ties together the full preservation pipeline: condition evaluation → config-hash change detection → ensure clean backup → composite from clean backup → save overlaid result → upsert `artwork_overlay_state`. The Task 8 worker iterates items and calls this function. Returns `CompositeResult { composited: bool, applied_count }` so callers can aggregate metrics. When hash matches and `reapply_all` is false, re-compositing is skipped (idempotent)
+- **No-overlays cleanup** — When `composite_and_persist` finds zero matching overlays, it deletes any existing `artwork_overlay_state` row (and the overlaid result file) and returns `composited: false`. This handles the "Remove All Overlays" scenario gracefully — the display layer falls back to source artwork automatically
+- **Display integration with separate cache stems** — Overlaid variants cached with stem `{artwork_id}_overlay` (e.g., `.../w342/{artwork_id}_overlay.webp`), distinct from source-variant cache (`.../w342/{artwork_id}.webp`). This avoids overwrite when overlays are toggled on/off — both cache entries coexist. The check is a no-op until Task 8 produces overlaid results (currently returns `None` for all items)
+- **`episode_thumb` → `thumbnail` type mapping** — The overlay system uses `episode_thumb` but the `artwork` table stores it as `thumbnail`. The `artwork_table_type()` helper in clean_art.rs handles this transparently for all DB queries. `overlay_artwork_type()` in artwork_delivery.rs maps `ArtworkCategory::Thumbnail` → `episode_thumb` for the overlay state check
+- **Preview uses clean backup** — `preview_overlay()` now calls `ensure_clean_backup()` instead of reading the source directly. This creates the clean backup as a side-effect (speeding up subsequent previews and the eventual production composite), and ensures the preview pipeline is identical to the production path. Preview still writes to `/cache/images/overlays/previews/` (not the production overlay state)
+- **No new workspace dependencies** — Blake3 already in workspace (Phase 5 scanner); all image decode/encode uses existing `image` + `webp` crates; all DB access uses existing `sqlx`. All 507 server tests pass (493 prior + 14 new). 0 clippy warnings.
+
+4. ~~Implement clean art preservation — source artwork never modified~~ **DONE**
+ 5. Create `server/src/domains/collections/` — five-file pattern
 6. Implement collection builders:
    - Internal: genre, decade, actor, director, franchise, resolution, audio_codec
    - External: `tmdb_popular`, `tmdb_top_rated`, `tmdb_trending`, `tmdb_now_playing`, `tmdb_upcoming`

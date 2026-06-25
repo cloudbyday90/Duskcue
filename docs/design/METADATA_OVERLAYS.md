@@ -742,6 +742,45 @@ Built `server/src/services/conditions.rs` as a pure, stateless condition evaluat
 
 **64 unit tests** covering: empty/null/bool conditions, all 8 operators (eq, neq, in, gt/gte/lt/lte, exists, matches), case-insensitive text comparison, numeric comparison (integer and float, string-parsed numbers), boolean field equality, array-membership fields (genre, streaming_on), UUID field, nested AND/OR groups (including 3-level nesting), empty rules, malformed conditions (missing keys, unknown fields/operators), structural validation (valid/invalid structures, missing keys, invalid operators, `in` requires `values`), default context (all fields empty).
 
+### Phase 12 Task 4 — Clean Art Preservation (Complete)
+
+Implemented `server/src/services/clean_art.rs` as the clean art preservation service — the infrastructure that guarantees source artwork is **never modified** during overlay compositing. All derived artifacts (clean backups, composited results) live in the regenerable `/cache/images/` directory; the source files at `artwork.local_path` are opened read-only.
+
+**Module location** — `services/clean_art.rs` follows the cross-cutting service convention (`artwork_delivery.rs`, `image_pipeline.rs`). It is consumed by the overlay domain (preview + compositing) and the future `overlay_compositor` worker (Task 8). Returns `OverlayError` directly (no separate `CleanArtError` translation layer) since all consumers are overlay-specific — matches the `artwork_delivery` → `MediaError` precedent.
+
+**Three-tier artwork state** per the Clean Art Management section:
+
+| Tier | Location | Keyed by |
+|---|---|---|
+| Source (immutable) | `artwork.local_path` | `artwork.id` (UUID) |
+| Clean backup (scaled to canvas) | `/cache/images/clean/{type_subdir}/{artwork_id}.webp` | `artwork.id` — content-addressed |
+| Overlaid result | `/cache/images/overlays/{type_subdir}/{media_item_id}.webp` | `media_item_id` |
+
+**Content-addressed clean backups** — The clean backup filename includes the source `artwork_id` UUID. When the primary artwork changes (new TMDb download, user upload, community import), the new artwork row has a new UUID, so the old clean backup is naturally orphaned (cache miss) and a fresh one is created from the new source. No explicit invalidation needed — the stale file is cleaned up by the Overlay Cleanup scheduled task. This mirrors Kometa's proven approach (confirmed via June 2026 web research): "Kometa takes a copy of the current clean art, scales it to a standard size, then composites the overlays."
+
+**`ensure_clean_backup()`** — The core function. On cache hit (clean backup file exists for the current artwork UUID), it reads and decodes the WebP, returning the canvas-sized `RgbaImage` ready for compositing. On cache miss, it reads the source (read-only), scales to canvas via `overlay_svc::resize_to_canvas()` (now public), encodes as WebP, writes to the clean cache directory, and returns. Source artwork is never written to.
+
+**Config hash for change detection** — `compute_config_hash()` uses Blake3 (already in workspace) to hash: (1) the source `artwork_id`, (2) each applied overlay's `id` + `updated_at` (sorted by ID for determinism). The hash changes when: overlays are added/removed (different ID set), overlay properties change (`updated_at` bump), or the source artwork changes (different `artwork_id`). When the stored hash in `artwork_overlay_state.overlay_config_hash` matches the newly computed hash, re-compositing is skipped — the overlaid result is already current.
+
+**`composite_and_persist()`** — The single-item compositing entry point in `domains/overlays/service.rs` that ties together the full preservation pipeline:
+1. Load enabled overlay definitions → evaluate conditions → filter matching
+2. If no overlays match: delete existing overlay state (cleanup), return early
+3. Compute config hash from matching definitions + source artwork ID
+4. Compare against stored state — skip if hash matches and `reapply_all` is false
+5. Ensure clean backup exists → composite from clean backup → save overlaid result → upsert state
+
+This is the function the Task 8 worker will call per-item. The hash check makes it idempotent: re-running with no changes is a no-op (returns `composited: false`).
+
+**`artwork_overlay_state` upsert** — Uses `ON CONFLICT (media_item_id, artwork_type) DO UPDATE` on the unique constraint. The upsert stores: `applied_overlay_ids` (UUID array), `overlay_config_hash`, `clean_art_path` (absolute path to the clean backup), `overlaid_art_path` (absolute path to the composited result). Both `applied_at` and `updated_at` are set to `now()`.
+
+**Display integration** — `artwork_delivery::resolve_variant()` now checks `clean_art::resolve_overlaid_artwork()` before falling back to source artwork. If an overlaid result exists, it is used as the source for WebP variant generation (downscaled from canvas size to the requested variant). Cache stem is `{artwork_id}_overlay` to keep overlaid and source variants in separate cache entries (no overwrite on add/remove). Categories without overlay support (`Logo`, `Banner`) skip the check entirely. The check is a no-op until Task 8 produces overlaid results — current behavior (serve source) is unchanged.
+
+**Preview endpoint refactoring** — `preview_overlay()` now uses `ensure_clean_backup()` instead of reading the source directly. This ensures the preview pipeline is consistent with the production compositing path, and the clean backup is created as a side-effect (speeding up subsequent previews and the eventual production composite). The preview still writes to the separate `/cache/images/overlays/previews/` directory — it does not update `artwork_overlay_state`.
+
+**Artwork type mapping** — The overlay system uses `episode_thumb` but the `artwork` table stores it as `thumbnail`. The `artwork_table_type()` helper in `clean_art.rs` handles this translation transparently for all DB queries. The `overlay_artwork_type()` helper in `artwork_delivery.rs` maps `ArtworkCategory` enum values to overlay-type strings, returning `None` for categories that don't participate in overlays.
+
+**14 unit tests** covering: config hash determinism, order-independence, sensitivity to overlay addition/removal/update, sensitivity to source artwork change, empty-overlays hash, hex format; type-subdir and artwork-table-type mappings; clean/overlaid path format; source decode rejection of garbage input; `save_overlaid_result` directory creation + file write.
+
 ## Cross-References
 
 - [POSTER_MANAGEMENT.md](POSTER_MANAGEMENT.md) — artwork sourcing, selection, locking; `artwork` table extensions; artwork lifecycle

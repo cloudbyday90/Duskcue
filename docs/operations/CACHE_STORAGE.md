@@ -141,6 +141,13 @@ Original artwork is stored in `/data/metadata/artwork/` (persistent hot tier). O
 
 **Implementation status:** The image cache is populated on-demand by the artwork delivery endpoint (`GET /api/v1/items/{id}/artwork/{type}?size={size}`, Phase 10 Task 10) via `services/image_pipeline.rs`. Variant files are stored as `{cache_root}/webp/{category}/{variant_label}/{artwork_id}.webp`. A future `artwork_variant_generator` scheduled task will pre-warm the cache after library scans per IMAGE_FORMATS.md "Background-first strategy".
 
+**Overlay cache subdirectories (Phase 12 Task 4):** The image cache also hosts overlay-derived artifacts under two additional subdirectories:
+- `/cache/images/clean/{type_subdir}/{artwork_id}.webp` — scaled-to-canvas source artwork (clean backups), content-addressed by the source artwork UUID so source changes auto-invalidate. See [METADATA_OVERLAYS.md](../design/METADATA_OVERLAYS.md) Clean Art Management.
+- `/cache/images/overlays/{type_subdir}/{media_item_id}.webp` — composited results served to clients when overlays are active.
+- `/cache/images/overlays/previews/` — one-off editor preview renders (not persisted in `artwork_overlay_state`).
+
+Both are regenerable — deleting them triggers re-creation on the next overlay application or preview request. The clean backup and overlaid result are tracked in `artwork_overlay_state` (see [DATABASE.md](../design/DATABASE.md)).
+
 ### Search Index
 
 **Path:** `/cache/search`

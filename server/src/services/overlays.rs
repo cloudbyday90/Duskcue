@@ -344,7 +344,7 @@ pub fn composite(
 // Canvas scaling
 // ---------------------------------------------------------------------------
 
-fn resize_to_canvas(source: &RgbaImage, canvas: CanvasPreset) -> RgbaImage {
+pub fn resize_to_canvas(source: &RgbaImage, canvas: CanvasPreset) -> RgbaImage {
     let (target_w, target_h) = canvas.dimensions();
     let (src_w, src_h) = source.dimensions();
     if src_w == target_w && src_h == target_h {

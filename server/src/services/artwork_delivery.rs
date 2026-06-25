@@ -38,6 +38,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::domains::media::MediaError;
+use crate::services::clean_art;
 use crate::services::image_pipeline::{self, ArtworkCategory, EncodeConfig};
 
 /// The resolved bytes and identity of a served artwork variant.
@@ -73,6 +74,60 @@ pub async fn resolve_variant(
     images_cache_root: &Path,
     encode_config: &EncodeConfig,
 ) -> Result<ResolvedArtwork, MediaError> {
+    let overlay_type = overlay_artwork_type(category);
+    let overlaid = if let Some(ot) = overlay_type {
+        clean_art::resolve_overlaid_artwork(pool, media_item_id, ot).await?
+    } else {
+        None
+    };
+
+    if let Some(overlaid) = overlaid {
+        let stem = format!("{}_overlay", overlaid.artwork_id);
+        let cache_path = image_pipeline::variant_path(
+            images_cache_root,
+            category,
+            variant_label,
+            &stem,
+        );
+
+        if let Some(bytes) = try_read_cache(&cache_path).await {
+            return Ok(ResolvedArtwork { bytes, artwork_id: overlaid.artwork_id });
+        }
+
+        let variant = image_pipeline::generate_variant(
+            &overlaid.bytes,
+            category,
+            variant_label,
+            encode_config,
+        )
+        .map_err(|e| {
+            tracing::warn!(
+                error = %e,
+                %media_item_id,
+                "overlaid variant generation failed"
+            );
+            MediaError::ArtworkNotFound
+        })?;
+
+        if let Err(e) = image_pipeline::write_variant(
+            images_cache_root,
+            category,
+            &stem,
+            &variant,
+        ) {
+            tracing::warn!(
+                error = %e,
+                path = %cache_path.display(),
+                "failed to cache overlaid variant; serving uncached"
+            );
+        }
+
+        return Ok(ResolvedArtwork {
+            bytes: variant.bytes,
+            artwork_id: overlaid.artwork_id,
+        });
+    }
+
     let row = sqlx::query(
         r#"SELECT id, local_path FROM artwork
            WHERE media_item_id = $1 AND artwork_type = $2 AND "order" = 0
@@ -166,6 +221,19 @@ pub fn default_variant_label(category: ArtworkCategory) -> &'static str {
 
 async fn try_read_cache(path: &Path) -> Option<Vec<u8>> {
     tokio::fs::read(path).await.ok()
+}
+
+/// Map an artwork category to the overlay system's artwork type vocabulary.
+/// Returns `None` for categories that don't participate in the overlay system
+/// (logos, banners).
+fn overlay_artwork_type(category: ArtworkCategory) -> Option<&'static str> {
+    match category {
+        ArtworkCategory::Poster => Some("poster"),
+        ArtworkCategory::Backdrop => Some("backdrop"),
+        ArtworkCategory::SeasonPoster => Some("season_poster"),
+        ArtworkCategory::Thumbnail => Some("episode_thumb"),
+        ArtworkCategory::Logo | ArtworkCategory::Banner => None,
+    }
 }
 
 #[cfg(test)]

@@ -16,6 +16,7 @@
 
 pub mod artwork_delivery;
 pub mod artwork_downloader;
+pub mod clean_art;
 pub mod conditions;
 pub mod decision_engine;
 pub mod encryption;

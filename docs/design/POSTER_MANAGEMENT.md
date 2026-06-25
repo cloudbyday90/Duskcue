@@ -419,4 +419,14 @@ The artwork management section provides:
 - **Vote-sorted selection** — images sorted by `vote_count` desc, then `vote_average` desc; top 5 posters, 3 backdrops, 2 logos downloaded per item.
 - **Deduplication** — `source_url` column checked before download; existing artwork rows are skipped.
 - **`artwork` table rows** — inserted with `source_type = 'tmdb'`, `provider = 'tmdb'`, `order` by vote ranking (0 = primary), `width`/`height` from TMDB API, `language` from TMDB `iso_639_1`. Uses `ON CONFLICT DO NOTHING` on `(media_item_id, artwork_type, "order")`.
-- **Not yet implemented:** User upload, asset directory scanning, community packs, overlay compositing, resized cache generation — deferred to Phases 8, 12, 13.
+- **Not yet implemented:** User upload, asset directory scanning, community packs, resized cache generation — deferred to Phases 12–13.
+
+### Clean Art Preservation (Phase 12, Task 4)
+
+- **Module:** `server/src/services/clean_art.rs` — see [METADATA_OVERLAYS.md](METADATA_OVERLAYS.md) Task 4 Implementation Notes for full details.
+- **Source artwork immutability** — source files at `artwork.local_path` are opened read-only; never written to. All derived artifacts (clean backups, composited results) live in the regenerable `/cache/images/` directory.
+- **Content-addressed clean backups** — scaled-to-canvas source stored at `/cache/images/clean/{type}/{artwork_id}.webp`, keyed by the source artwork UUID. When the primary artwork changes (new TMDb download, user upload), the new UUID auto-invalidates the old backup.
+- **Config hash change detection** — Blake3 hash over `(source_artwork_id, sorted (overlay_id, updated_at))` stored in `artwork_overlay_state.overlay_config_hash`. When the hash matches, re-compositing is skipped.
+- **Display integration** — `artwork_delivery::resolve_variant()` checks `artwork_overlay_state` first; serves the overlaid result (downscaled to variant size) when overlays are active, falls back to source artwork otherwise. Overlaid variants cached separately (`{artwork_id}_overlay` stem).
+- **Single-item compositing** — `composite_and_persist()` in `domains/overlays/service.rs` is the entry point the Task 8 worker will call per-item.
+- **Not yet implemented:** Overlay compositor worker (`workers/overlay_compositor.rs` — Task 8), poster locking UI, asset directory scanning, community pack import.
