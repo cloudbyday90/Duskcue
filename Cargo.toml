@@ -79,3 +79,5 @@ libc = "0.2"
 chromaprint-next = "0.1"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 webp = { version = "0.3", default-features = false }
+ab_glyph = "0.2"
+resvg = "0.47"

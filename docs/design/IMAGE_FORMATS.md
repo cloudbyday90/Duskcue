@@ -285,7 +285,7 @@ RGBA bytes are extracted via `DynamicImage::to_rgba8().into_raw()` and handed to
 | WebP variant generation | ✅ Implemented | `services/image_pipeline.rs` (Phase 10 Task 9) — stateless decode → resize → encode library; alpha-aware (lossy for opaque, lossless for transparency); `variants_for_category` encodes the per-category size catalog below |
 | Artwork delivery endpoint | ✅ Implemented | `services/artwork_delivery.rs` + `domains/media/handlers.rs::get_artwork` (Phase 10 Task 10) — `GET /api/v1/items/{id}/artwork/{type}?size={size}`; on-demand WebP variant generation via `image_pipeline::generate_variant` on cache miss; `ETag` from `artwork_id + variant_label`; `Cache-Control: public, max-age=86400, stale-while-revalidate=604800, immutable` |
 | Storyboard WebP generation | ✅ Implemented | Phase 10 Task 4 — per [STORYBOARDS.md](STORYBOARDS.md); FFmpeg emits WebP directly (does not use `image_pipeline.rs` — different code path, FFmpeg's own libwebp encoder) |
-| Overlay compositing to WebP | Spec only | Phase 12 — per [METADATA_OVERLAYS.md](METADATA_OVERLAYS.md); `overlay_image_format: "webp"` already configured |
+| Overlay compositing to WebP | ✅ Implemented | Phase 12 Task 2 — `services/overlays.rs::composite()` returns `RgbaImage`, encoded to WebP via `image_pipeline::encode_webp()` (now public); preview endpoint at `POST /api/v1/overlays/preview` writes to `/cache/images/overlays/previews/`; per [METADATA_OVERLAYS.md](METADATA_OVERLAYS.md) |
 | User upload pipeline | Spec only | Phase 13 (admin UI) |
 | `<picture>` fallback in web client | Spec only | Phase 8 follow-up or when artwork delivery endpoint lands |
 

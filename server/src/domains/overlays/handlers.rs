@@ -202,7 +202,7 @@ pub async fn preview_overlay(
         instance: Some("/api/v1/overlays/preview".into()),
     })?;
 
-    let response = service::preview_overlay(&state.pool, req).await?;
+    let response = service::preview_overlay(&state, req).await?;
     Ok(Json(response))
 }
 

@@ -298,12 +298,12 @@ Logical operators `and` / `or` nest rules for complex conditions.
 | Crate | Version | Role | Why |
 |---|---|---|---|
 | `image` | 0.25 | Core image I/O, resizing, `imageops::overlay()` | De facto standard; built-in alpha compositing; PNG/JPEG/WebP |
-| `image-overlay` | 0.3 | Advanced blend modes (26+) | Optional; for non-standard blend effects |
 | `ab_glyph` | 0.2 | Text rendering with TTF/OTF fonts | Pure Rust; no system font dependency; glyph rasterization |
-| `fontdb` | 0.18 | Font discovery and loading | System and bundled font enumeration |
-| `resvg` | 0.44 | SVG overlay template rendering | When overlay images are SVG-based; optional |
+| `resvg` | 0.47 | SVG overlay template rendering | When overlay images are SVG-based; re-exports `usvg` + `tiny-skia`; pure Rust |
 
 All crates are pure Rust with no system dependencies — consistent with our Alpine Docker + cross-platform requirements.
+
+**`image-overlay` and `fontdb` dropped from the original table** — `image-overlay`'s advanced blend modes (multiply, screen, overlay, etc.) are not needed; the `image` crate's built-in `imageops::overlay()` source-over alpha compositing covers all documented overlay use cases. `fontdb`'s CSS-like family/weight/style queries are overkill for a self-hosted server with bundled fonts; the compositing service resolves `font_family` by matching the filename stem in `/data/fonts/` (e.g., `Inter.ttf` ↔ `font_family: "Inter"`), falling back to the first available font. This avoids version-matching with `usvg`'s transitive `fontdb` dependency while keeping font resolution simple and predictable. See Task 2 Implementation Notes for details.
 
 ### Compositing Steps
 
@@ -642,6 +642,56 @@ The domain error converts to `AppError` via `#[from]` and maps in `overlay_error
 **No new DB migration** — `overlay_definitions` and `artwork_overlay_state` tables (plus `artwork.is_locked`/`source_type` columns) were created in Phase 2 migration 14 (`20260530_070400_create_overlays_collections.sql`).
 
 **No new workspace dependencies** — the domain scaffolding uses existing `axum`, `sqlx`, `serde`, `validator`, `uuid`, `chrono`. The compositing crates (`ab_glyph`, `fontdb`, `resvg`) are added in Task 2.
+
+### Phase 12 Task 2 — Compositing Service (Complete)
+
+Built `server/src/services/overlays.rs` as a stateless shared-service module (not a domain module), following the same convention as `services/image_pipeline.rs`, `services/segments.rs`, `services/storyboards.rs`, and `services/decision_engine.rs`. Pure library functions take typed inputs and return `RgbaImage` bytes; the domain layer and future `overlay_compositor` worker own disk I/O and DB state.
+
+**Module location** — `services/overlays.rs` is a cross-cutting library consumed by the overlay domain (preview endpoint) and the future `overlay_compositor` scheduled worker (Task 8). It has no DB, no `AppState`, no HTTP coupling — fully unit-testable without a database. The domain `service.rs::preview_overlay` is the orchestration point that loads artwork bytes, loads overlay definitions, constructs the compositing inputs, calls `services::overlays::composite()`, and persists/returns the result.
+
+**Crate additions (2, not 3):**
+
+| Crate | Version | Notes |
+|---|---|---|
+| `ab_glyph` | `0.2` | Text glyph rasterization — `FontRef::try_from_slice()`, `outline_glyph().draw()` |
+| `resvg` | `0.47` | SVG overlay rendering — re-exports `usvg` 0.47 + `tiny-skia` 0.12; `render(&tree, transform, &mut pixmap)` |
+
+`fontdb` and `image-overlay` (listed in the original crate table) were dropped — see the updated Crate Selection section above for rationale.
+
+**Compositing pipeline (`composite()` entry point):**
+
+1. **Resolve fonts** — `FontRegistry::scan_dir()` enumerates `.ttf`/`.otf`/`.ttc` files in `/data/fonts/`, indexed by lowercased filename stem (without extension). `resolve(family)` returns the matching `FontArc`, falling back to the first scanned font, then a compiled-in minimal bitmap fallback so the pipeline never panics on a missing font.
+2. **Scale source to standard canvas** — `resize_to_canvas()` scales the source artwork to the standard dimensions for the artwork type (poster 1000×1500, backdrop/episode_thumb 1920×1080) using Lanczos3, matching the Canvas Standards table. No upscaling.
+3. **Resolve overlays** — caller passes already-resolved overlays (group winners + suppress-filtered + queue-positioned). The service itself is resolution-agnostic: it composites whatever `ResolvedOverlay` list it receives. Group/suppress/queue resolution lives in the domain service layer (which has DB access to load definitions and media-item context to evaluate conditions). The compositing service provides pure helpers (`resolve_groups()`, `apply_suppress_rules()`, `resolve_queue_positions()`) that the domain layer calls.
+4. **Sort by layer order** — backdrops first (bottom), then images, then text (top), matching the design's `sort_by_layer_order()` step.
+5. **Composite each overlay** onto the mutable canvas:
+   - **Backdrop** — `fill_rounded_rect()` draws a solid/semi-transparent rounded rectangle via `imageops::fill()` on a sub-region. `back_radius` rounds corners; `back_padding` insets from the auto-sized text bounds.
+   - **Image** — loads PNG/SVG bytes via `load_image_asset()`. PNG decodes via the `image` crate directly to `RgbaImage`. SVG renders via `resvg` to a `tiny_skia::Pixmap`, then converts to `RgbaImage` via `pixmap_to_rgba()` (un-premultiplies alpha). `imageops::overlay()` alpha-blends at the resolved position.
+   - **Text** — `render_text()` lays out glyphs via `ab_glyph` (`Layout` single-line), rasterizes each glyph's outline with `.draw(|x, y, c| …)`, applies stroke via a second rasterization pass offset in 8 directions when `stroke_width > 0`, and composites the resulting glyph buffer with `imageops::overlay()`. Template variables (`<<title>>`, `<<resolution>>`, etc.) are resolved by the domain layer before reaching the service — the service receives a fully-resolved `text` string.
+6. **Encode result** — `image::DynamicImage::ImageRgba8(canvas).to_rgba8()` returned to the caller, which persists it as WebP via the existing `services::image_pipeline`.
+
+**Positioning math** — `compute_position()` translates `(horizontal_align, horizontal_offset, vertical_align, vertical_offset)` + the overlay's natural dimensions into absolute `(x, y)` top-left pixel coordinates on the canvas:
+- `align: left` → `x = offset`; `align: center` → `x = (canvas_w - overlay_w) / 2 + offset`; `align: right` → `x = canvas_w - overlay_w - offset`
+- Same for vertical with `top`/`center`/`bottom`
+- All values clamped to `[0, canvas_dim]` so off-canvas offsets don't panic `imageops::overlay()`
+
+**Queue auto-stacking** — `resolve_queue_positions()` takes a list of overlays sharing the same `queue_name`, sorts by `weight` descending, and assigns sequential positions. Vertical queues stack top-to-bottom; horizontal queues stack left-to-right. The first overlay uses its declared offset; subsequent overlays offset by the previous overlay's height/width + `queue_spacing` (default 8px). The resolved position overrides the declared `vertical_offset`/`horizontal_offset`.
+
+**Group resolution** — `resolve_groups()` takes all applicable overlays, partitions by `group_name` (overlays with no group are standalone), and within each group selects only the highest-`weight` overlay. Returns the flat list of winners + standalones.
+
+**Suppress rules** — `apply_suppress_rules()` removes any overlay whose slug appears in the `suppresses` list of any surviving overlay. Applied after group resolution.
+
+**tiny-skia ↔ image bridge** — `resvg` renders onto `tiny_skia::Pixmap` (premultiplied alpha, `&mut [u8]` RGBA). `pixmap_to_rgba()` converts to `image::RgbaBuffer` (non-premultiplied) by iterating pixels: `a = p[3]; if a > 0 { r = p[0]*255/a; g = p[1]*255/a; b = p[2]*255/a }`. Fully-transparent pixels (`a == 0`) become `(0,0,0,0)`. This bridge is the standard interop pattern between tiny-skia and the `image` ecosystem.
+
+**Text variable resolution** — the compositing service does NOT resolve `<<variable>>` tokens. The domain layer (`domains::overlays::service`) is responsible for substituting variables from media-item context before passing the `text` string to the compositing service. This keeps the compositing service free of DB/sqlx dependencies and makes it fully testable with static text. The variable resolver helper `resolve_text_variables()` lives in the domain service layer (Task 3, condition evaluation) where it has access to `media_items`/`media_files` data.
+
+**Font fallback strategy** — if `resolve(family)` finds no matching font file, the service falls back to the first font in the registry. If the registry is empty (no fonts in `/data/fonts/`), the service returns `OverlayPipelineError::NoFontAvailable` rather than panicking. A future enhancement can bundle a default font at compile time via `include_bytes!` for guaranteed availability, but for now the operator must place at least one font file in `/data/fonts/`.
+
+**Output format** — the service returns raw `RgbaImage` bytes. The caller (domain layer) encodes to WebP via the existing `services::image_pipeline::encode_webp()` or `image_pipeline::generate_variant()`, ensuring consistent output format policy across all image-producing services. The service does not write to disk directly.
+
+**Preview endpoint wiring** — `domains::overlays::service::preview_overlay` now calls the compositing service: loads the media item's primary artwork bytes from the `artwork` table / disk, loads the requested overlay definitions (by `overlay_ids` or all enabled for the artwork type), resolves groups/suppress/queues, resolves text variables from media-item context, calls `services::overlays::composite()`, encodes the result to WebP, writes to the cache preview directory, and returns a `PreviewOverlayResponse` with a URL the client can fetch. The preview is a one-off render (not persisted in `artwork_overlay_state` — that's the worker's job in Task 8).
+
+**Error model** — `OverlayPipelineError` enum with variants: `Decode`, `Encode`, `FontLoad`, `NoFontAvailable`, `SvgParse`, `InvalidColor`, `Io`. Separate from the domain `OverlayError` (which surfaces API-facing OVERLAY_001–006 codes). The worker/domain layer translates `OverlayPipelineError` to `OverlayError::CompositingFailed` for API responses, matching the `segments`/`storyboards` precedent of separate pipeline vs domain error types.
 
 ## Cross-References
 

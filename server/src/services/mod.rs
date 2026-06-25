@@ -31,6 +31,7 @@ pub mod metadata;
 pub mod nfo_parser;
 pub mod omdb_client;
 pub mod opensubtitles_client;
+pub mod overlays;
 pub mod sandbox;
 pub mod scheduler;
 pub mod segments;

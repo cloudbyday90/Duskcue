@@ -216,7 +216,7 @@ project/
 │       │   ├── subtitle_discovery.rs  # External + embedded subtitle discovery during library scan — **implemented**
 │       │   ├── subtitles.rs      # Subtitle text processing (format conversion SRT/ASS/WebVTT, FPS adjustment, offset correction, OCR scaffold, voice activity alignment) — **implemented**
 │       │   ├── quality.rs        # Device capability probing, network assessment
-│       │   ├── overlays.rs       # Compositing pipeline (image + ab_glyph + resvg)
+│       │   ├── overlays.rs       # Compositing pipeline (image + ab_glyph + resvg) — **implemented**
 │       │   ├── collections.rs    # Builder engine, external API polling, template import
 │       │   ├── segments.rs       # Chromaprint, black frame, silence detection
 │       │   ├── storyboards.rs    # FFmpeg thumbnail extraction, WebP sprite generation
@@ -470,6 +470,8 @@ libc = "0.2"
 chromaprint-next = "0.1"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
 webp = { version = "0.3", default-features = false }
+ab_glyph = "0.2"
+resvg = "0.47"
 ```
 
 **TLS backend note:** `rustls`, `tokio-rustls`, and `reqwest` use the `ring` crypto backend instead of the default `aws-lc-rs`. The `aws-lc-sys` crate requires NASM and CMake on Windows, which are not present in standard development environments. `ring` is pure Rust + precompiled assembly, builds everywhere, and is the same library used by `ring` 0.17 for HMAC signing. This is a workspace-level decision that applies to all workspace members.

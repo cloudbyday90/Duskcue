@@ -69,6 +69,8 @@ libc.workspace = true
 chromaprint-next.workspace = true
 image.workspace = true
 webp.workspace = true
+ab_glyph.workspace = true
+resvg.workspace = true
 duskcue-types = { path = "../crates/types" }
 duskcue-db = { path = "../crates/db" }
 

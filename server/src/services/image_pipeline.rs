@@ -231,7 +231,7 @@ fn resize_to_width(img: &DynamicImage, target_width: u32) -> DynamicImage {
     img.resize_exact(target_width, target_height, FilterType::Lanczos3)
 }
 
-fn encode_webp(
+pub fn encode_webp(
     img: &DynamicImage,
     config: &EncodeConfig,
 ) -> Result<(Vec<u8>, bool), ImagePipelineError> {
