@@ -22,7 +22,9 @@ use dashmap::mapref::entry::Entry;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use crate::services::trakt_client::{TraktClient, TraktIds, TraktRating, TraktTokenResponse, TraktUserSettings};
+use crate::services::trakt_client::{
+    TraktClient, TraktIds, TraktRating, TraktTokenResponse, TraktUserSettings,
+};
 use crate::state::AppState;
 
 use crate::domains::trakt::error::TraktError;
@@ -76,8 +78,9 @@ pub async fn ensure_valid_token(
     state: &AppState,
     user_id: Uuid,
 ) -> Result<(String, TraktAccountRow), TraktError> {
-    let account =
-        load_account(&state.pool, user_id).await?.ok_or(TraktError::AccountNotLinked)?;
+    let account = load_account(&state.pool, user_id)
+        .await?
+        .ok_or(TraktError::AccountNotLinked)?;
 
     let buffer_ago = Utc::now() - TOKEN_REFRESH_BUFFER;
     if account.token_expires_at > buffer_ago {
@@ -184,8 +187,9 @@ pub async fn trigger_sync(
 }
 
 pub async fn run_sync(state: &AppState, user_id: Uuid) -> Result<SyncSummary, TraktError> {
-    let account =
-        load_account(&state.pool, user_id).await?.ok_or(TraktError::AccountNotLinked)?;
+    let account = load_account(&state.pool, user_id)
+        .await?
+        .ok_or(TraktError::AccountNotLinked)?;
     if !account.sync_enabled {
         return Err(TraktError::AccountNotLinked);
     }
@@ -211,22 +215,49 @@ async fn run_sync_inner(
     let mut summary = SyncSummary::default();
 
     if account.sync_watched {
-        match pull_watched(state, user_id, &client, &access_token, &matcher, &mut summary).await {
+        match pull_watched(
+            state,
+            user_id,
+            &client,
+            &access_token,
+            &matcher,
+            &mut summary,
+        )
+        .await
+        {
             Ok(()) => {}
             Err(TraktError::RateLimited { .. }) => {
                 tracing::warn!(user_id = %user_id, "Trakt rate limited during watched pull; aborting sync");
-                return Err(TraktError::RateLimited { retry_after_secs: None });
+                return Err(TraktError::RateLimited {
+                    retry_after_secs: None,
+                });
             }
             Err(e) => return Err(e),
         }
     }
 
     if account.sync_ratings {
-        pull_ratings(state, user_id, &client, &access_token, &matcher, &mut summary).await?;
+        pull_ratings(
+            state,
+            user_id,
+            &client,
+            &access_token,
+            &matcher,
+            &mut summary,
+        )
+        .await?;
     }
 
     if account.sync_collection {
-        pull_collection(state, user_id, &client, &access_token, &matcher, &mut summary).await?;
+        pull_collection(
+            state,
+            user_id,
+            &client,
+            &access_token,
+            &matcher,
+            &mut summary,
+        )
+        .await?;
     }
 
     if account.sync_watched {
@@ -278,8 +309,23 @@ async fn pull_watched(
     let movies = client.get_watched_movies(access_token).await?;
     for item in &movies {
         if let Some(media_item_id) = matcher.find("movie", &item.movie.ids) {
-            upsert_sync_watched(&mut tx, user_id, media_item_id, &item.movie.ids, item.plays, &item.last_watched_at).await?;
-            apply_uid_watched(&mut tx, user_id, media_item_id, item.plays, &item.last_watched_at).await?;
+            upsert_sync_watched(
+                &mut tx,
+                user_id,
+                media_item_id,
+                &item.movie.ids,
+                item.plays,
+                &item.last_watched_at,
+            )
+            .await?;
+            apply_uid_watched(
+                &mut tx,
+                user_id,
+                media_item_id,
+                item.plays,
+                &item.last_watched_at,
+            )
+            .await?;
             matched += 1;
         } else {
             unmatched += 1;
@@ -289,8 +335,23 @@ async fn pull_watched(
     let episodes = client.get_watched_episodes(access_token).await?;
     for item in &episodes {
         if let Some(media_item_id) = matcher.find("episode", &item.episode.ids) {
-            upsert_sync_watched(&mut tx, user_id, media_item_id, &item.episode.ids, item.plays, &item.last_watched_at).await?;
-            apply_uid_watched(&mut tx, user_id, media_item_id, item.plays, &item.last_watched_at).await?;
+            upsert_sync_watched(
+                &mut tx,
+                user_id,
+                media_item_id,
+                &item.episode.ids,
+                item.plays,
+                &item.last_watched_at,
+            )
+            .await?;
+            apply_uid_watched(
+                &mut tx,
+                user_id,
+                media_item_id,
+                item.plays,
+                &item.last_watched_at,
+            )
+            .await?;
             matched += 1;
         } else {
             unmatched += 1;
@@ -353,7 +414,14 @@ async fn pull_collection(
     let items = client.get_collection_movies(access_token).await?;
     for item in &items {
         if let Some(media_item_id) = matcher.find("movie", &item.movie.ids) {
-            upsert_sync_collection(&mut tx, user_id, media_item_id, &item.movie.ids, &item.collected_at).await?;
+            upsert_sync_collection(
+                &mut tx,
+                user_id,
+                media_item_id,
+                &item.movie.ids,
+                &item.collected_at,
+            )
+            .await?;
             matched += 1;
         } else {
             unmatched += 1;
@@ -441,13 +509,11 @@ pub async fn get_sync_status(
     pool: &PgPool,
     user_id: Uuid,
 ) -> Result<SyncStatusResponse, TraktError> {
-    let account = sqlx::query(
-        "SELECT last_full_sync_at FROM trakt_accounts WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await
-    .map_err(TraktError::Database)?;
+    let account = sqlx::query("SELECT last_full_sync_at FROM trakt_accounts WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(TraktError::Database)?;
 
     let last_full_sync_at = match account {
         Some(r) => r
@@ -490,13 +556,11 @@ pub async fn list_history(
     let page_size = query.page_size.unwrap_or(25).clamp(1, 100);
     let offset = ((page - 1) * page_size) as i64;
 
-    let total: i64 = sqlx::query_scalar(
-        "SELECT COUNT(*) FROM trakt_sync_state WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_one(pool)
-    .await
-    .map_err(TraktError::Database)?;
+    let total: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM trakt_sync_state WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await
+        .map_err(TraktError::Database)?;
 
     let rows = sqlx::query(
         "SELECT media_item_id, trakt_id, is_watched, watched_at, plays, \
@@ -634,10 +698,7 @@ fn trakt_client(state: &AppState) -> Result<TraktClient, TraktError> {
     ))
 }
 
-async fn load_account(
-    pool: &PgPool,
-    user_id: Uuid,
-) -> Result<Option<TraktAccountRow>, TraktError> {
+async fn load_account(pool: &PgPool, user_id: Uuid) -> Result<Option<TraktAccountRow>, TraktError> {
     let row = sqlx::query(
         r#"
         SELECT id, user_id, trakt_username, trakt_user_id,
@@ -818,12 +879,10 @@ impl MediaMatcher {
 }
 
 async fn build_media_matcher(pool: &PgPool) -> Result<MediaMatcher, TraktError> {
-    let rows = sqlx::query(
-        "SELECT id, type, trakt_id, tmdb_id, imdb_id, tvdb_id FROM media_items",
-    )
-    .fetch_all(pool)
-    .await
-    .map_err(TraktError::Database)?;
+    let rows = sqlx::query("SELECT id, type, trakt_id, tmdb_id, imdb_id, tvdb_id FROM media_items")
+        .fetch_all(pool)
+        .await
+        .map_err(TraktError::Database)?;
 
     let mut matcher = MediaMatcher::default();
     for row in &rows {
@@ -1062,10 +1121,7 @@ fn row_to_history_item(row: &sqlx::postgres::PgRow) -> TraktHistoryItem {
     }
 }
 
-fn try_acquire_sync_lock(
-    locks: &dashmap::DashMap<Uuid, Instant>,
-    user_id: Uuid,
-) -> bool {
+fn try_acquire_sync_lock(locks: &dashmap::DashMap<Uuid, Instant>, user_id: Uuid) -> bool {
     let now = Instant::now();
     match locks.entry(user_id) {
         Entry::Occupied(mut entry) => {

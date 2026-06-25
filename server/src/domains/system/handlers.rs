@@ -14,13 +14,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use axum::extract::State;
 use axum::Json;
+use axum::extract::State;
 use validator::Validate;
 
 use crate::error::AppError;
-use crate::extractors::Require;
 use crate::extractors::CanManageServer;
+use crate::extractors::Require;
 use crate::state::AppState;
 
 use super::service;
@@ -39,7 +39,11 @@ pub async fn validate_provider_key(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();

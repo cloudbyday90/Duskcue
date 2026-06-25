@@ -14,13 +14,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use axum::extract::{Query, State};
 use axum::Json;
+use axum::extract::{Query, State};
 use validator::Validate;
 
 use crate::error::AppError;
-use crate::extractors::{AuthenticatedUser, Require};
 use crate::extractors::CanManageServer;
+use crate::extractors::{AuthenticatedUser, Require};
 use crate::state::AppState;
 
 use super::service;
@@ -55,7 +55,11 @@ pub async fn poll_link(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
@@ -98,7 +102,11 @@ pub async fn update_settings(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
@@ -167,7 +175,11 @@ pub async fn update_integration_settings(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();

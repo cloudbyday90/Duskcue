@@ -14,19 +14,23 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use uuid::Uuid;
 use validator::Validate;
 
-use crate::error::AppError;
 use crate::domains::segments::service;
 use crate::domains::segments::types::*;
+use crate::error::AppError;
 use crate::extractors::{AuthenticatedUser, CanManageLibraries, Require};
 use crate::state::AppState;
 
 fn can_edit_segment(user: &AuthenticatedUser) -> bool {
-    user.role == "owner" || user.capabilities.iter().any(|c| c == "can_manage_libraries")
+    user.role == "owner"
+        || user
+            .capabilities
+            .iter()
+            .any(|c| c == "can_manage_libraries")
 }
 
 pub async fn list_segments(
@@ -36,13 +40,8 @@ pub async fn list_segments(
     Query(query): Query<SegmentListQuery>,
 ) -> Result<Json<SegmentListResponse>, AppError> {
     let can_edit = can_edit_segment(&user);
-    let result = service::list_segments(
-        &state.pool,
-        item_id,
-        query.r#type.as_deref(),
-        can_edit,
-    )
-    .await?;
+    let result =
+        service::list_segments(&state.pool, item_id, query.r#type.as_deref(), can_edit).await?;
     Ok(Json(result))
 }
 
@@ -60,7 +59,11 @@ pub async fn create_segment(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
@@ -88,7 +91,11 @@ pub async fn update_segment(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
@@ -108,7 +115,9 @@ pub async fn delete_segment(
     Path((item_id, segment_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     service::delete_segment(&state.pool, item_id, segment_id).await?;
-    Ok(Json(serde_json::json!({ "deleted": true, "segment_id": segment_id })))
+    Ok(Json(
+        serde_json::json!({ "deleted": true, "segment_id": segment_id }),
+    ))
 }
 
 pub async fn analyze_library_segments(

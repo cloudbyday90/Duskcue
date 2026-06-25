@@ -237,20 +237,18 @@ pub async fn update_media_item(
 
     let item = row_to_base_row(&row);
 
-    let series_status: Option<String> = sqlx::query_scalar(
-        "SELECT status FROM series WHERE id = $1",
-    )
-    .bind(item.id)
-    .fetch_optional(pool)
-    .await?
-    .flatten();
+    let series_status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM series WHERE id = $1")
+            .bind(item.id)
+            .fetch_optional(pool)
+            .await?
+            .flatten();
 
-    let season_row: Option<(Option<Uuid>, Option<i32>, Option<Uuid>)> = sqlx::query_as(
-        "SELECT series_id, season_number, id FROM seasons WHERE id = $1",
-    )
-    .bind(item.id)
-    .fetch_optional(pool)
-    .await?;
+    let season_row: Option<(Option<Uuid>, Option<i32>, Option<Uuid>)> =
+        sqlx::query_as("SELECT series_id, season_number, id FROM seasons WHERE id = $1")
+            .bind(item.id)
+            .fetch_optional(pool)
+            .await?;
 
     let (series_id, season_number, season_id) = season_row
         .map(|r| (r.0, r.1, r.2))
@@ -265,12 +263,11 @@ pub async fn update_media_item(
 
     let (episode_number, absolute_episode_number) = episode_row.unwrap_or((None, None));
 
-    let file_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM media_files WHERE media_item_id = $1",
-    )
-    .bind(item.id)
-    .fetch_one(pool)
-    .await?;
+    let file_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM media_files WHERE media_item_id = $1")
+            .bind(item.id)
+            .fetch_one(pool)
+            .await?;
 
     Ok(MediaItemResponse {
         id: item.id,
@@ -305,10 +302,7 @@ pub async fn update_media_item(
     })
 }
 
-pub async fn delete_media_item(
-    pool: &sqlx::PgPool,
-    item_id: Uuid,
-) -> Result<(), MediaError> {
+pub async fn delete_media_item(pool: &sqlx::PgPool, item_id: Uuid) -> Result<(), MediaError> {
     let result = sqlx::query("DELETE FROM media_items WHERE id = $1")
         .bind(item_id)
         .execute(pool)
@@ -383,10 +377,7 @@ pub fn validate_media_type(media_type: &str) -> Result<(), MediaError> {
     }
 }
 
-async fn verify_library_exists(
-    pool: &sqlx::PgPool,
-    library_id: Uuid,
-) -> Result<(), MediaError> {
+async fn verify_library_exists(pool: &sqlx::PgPool, library_id: Uuid) -> Result<(), MediaError> {
     sqlx::query("SELECT id FROM libraries WHERE id = $1 AND deleted_at IS NULL")
         .bind(library_id)
         .fetch_optional(pool)
@@ -395,10 +386,7 @@ async fn verify_library_exists(
     Ok(())
 }
 
-async fn verify_media_item_exists(
-    pool: &sqlx::PgPool,
-    item_id: Uuid,
-) -> Result<(), MediaError> {
+async fn verify_media_item_exists(pool: &sqlx::PgPool, item_id: Uuid) -> Result<(), MediaError> {
     sqlx::query("SELECT id FROM media_items WHERE id = $1")
         .bind(item_id)
         .fetch_optional(pool)
@@ -442,7 +430,8 @@ pub fn row_to_response(row: &sqlx::postgres::PgRow) -> MediaItemResponse {
     let season_number: Option<i32> = row.try_get("season_number").ok().flatten();
     let season_id: Option<Uuid> = row.try_get("season_id").ok().flatten();
     let episode_number: Option<i32> = row.try_get("episode_number").ok().flatten();
-    let absolute_episode_number: Option<i32> = row.try_get("absolute_episode_number").ok().flatten();
+    let absolute_episode_number: Option<i32> =
+        row.try_get("absolute_episode_number").ok().flatten();
     let file_count: i64 = row.try_get("file_count").unwrap_or(0);
 
     MediaItemResponse {
@@ -474,7 +463,11 @@ pub fn row_to_response(row: &sqlx::postgres::PgRow) -> MediaItemResponse {
         season_id,
         episode_number,
         absolute_episode_number,
-        file_count: if file_count > 0 { Some(file_count) } else { None },
+        file_count: if file_count > 0 {
+            Some(file_count)
+        } else {
+            None
+        },
     }
 }
 
@@ -534,7 +527,9 @@ fn parse_cursor(cursor: Option<&str>) -> Option<Uuid> {
     cursor.and_then(|c| {
         let bytes = base64::engine::general_purpose::STANDARD.decode(c).ok()?;
         let json: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-        json.get("id")?.as_str().and_then(|s| s.parse::<Uuid>().ok())
+        json.get("id")?
+            .as_str()
+            .and_then(|s| s.parse::<Uuid>().ok())
     })
 }
 

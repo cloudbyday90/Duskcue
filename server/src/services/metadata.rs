@@ -19,8 +19,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use governor::{
-    clock::DefaultClock, state::direct::NotKeyed,
-    state::InMemoryState, Quota, RateLimiter,
+    Quota, RateLimiter, clock::DefaultClock, state::InMemoryState, state::direct::NotKeyed,
 };
 use nonzero_ext::nonzero;
 use reqwest::Client;
@@ -52,9 +51,7 @@ pub struct ProviderValidationResponse {
     pub error: Option<String>,
 }
 
-pub async fn validate_provider_key(
-    req: &ProviderValidationRequest,
-) -> ProviderValidationResponse {
+pub async fn validate_provider_key(req: &ProviderValidationRequest) -> ProviderValidationResponse {
     let result = match req.provider.as_str() {
         "tmdb" => validate_tmdb(req.access_token.as_deref()).await,
         "tvdb" => validate_tvdb(req.api_key.as_deref()).await,
@@ -62,7 +59,11 @@ pub async fn validate_provider_key(
         "omdb" => validate_omdb(req.api_key.as_deref()).await,
         _ => Err(MetadataError::InvalidResponse {
             provider: req.provider.clone(),
-            message: format!("Unknown provider: {}. Valid providers: {}", req.provider, VALID_PROVIDERS.join(", ")),
+            message: format!(
+                "Unknown provider: {}. Valid providers: {}",
+                req.provider,
+                VALID_PROVIDERS.join(", ")
+            ),
         }),
     };
 
@@ -383,11 +384,7 @@ pub trait MetadataProvider: Send + Sync {
         year: Option<u32>,
     ) -> MetadataResult<Vec<SearchResult>>;
 
-    async fn search_tv(
-        &self,
-        query: &str,
-        year: Option<u32>,
-    ) -> MetadataResult<Vec<SearchResult>>;
+    async fn search_tv(&self, query: &str, year: Option<u32>) -> MetadataResult<Vec<SearchResult>>;
 
     async fn get_movie_details(&self, id: u64) -> MetadataResult<MovieDetails>;
     async fn get_tv_details(&self, id: u64) -> MetadataResult<TvDetails>;
@@ -515,13 +512,8 @@ impl ProviderRegistry {
     pub fn from_config(config: &MetadataConfig) -> Self {
         let mut registry = Self::new();
 
-        if config.providers.tmdb.enabled
-            && !config.providers.tmdb.access_token.is_empty()
-        {
-            let client = TmdbClient::new(
-                &config.providers.tmdb,
-                config.metadata_language.clone(),
-            );
+        if config.providers.tmdb.enabled && !config.providers.tmdb.access_token.is_empty() {
+            let client = TmdbClient::new(&config.providers.tmdb, config.metadata_language.clone());
             registry.primary = Some(Box::new(client));
         }
 
@@ -627,16 +619,15 @@ impl EnrichmentOrchestrator {
             .build()
             .unwrap_or_default();
 
-        let tmdb_client = if config.providers.tmdb.enabled
-            && !config.providers.tmdb.access_token.is_empty()
-        {
-            Some(TmdbClient::new(
-                &config.providers.tmdb,
-                config.metadata_language.clone(),
-            ))
-        } else {
-            None
-        };
+        let tmdb_client =
+            if config.providers.tmdb.enabled && !config.providers.tmdb.access_token.is_empty() {
+                Some(TmdbClient::new(
+                    &config.providers.tmdb,
+                    config.metadata_language.clone(),
+                ))
+            } else {
+                None
+            };
 
         Self {
             registry: Arc::new(registry),
@@ -701,7 +692,10 @@ impl EnrichmentOrchestrator {
         year: Option<u32>,
         media_item_id: Option<uuid::Uuid>,
     ) -> MetadataResult<EnrichmentResult> {
-        let primary = self.registry.primary().ok_or(MetadataError::TmdbNotConfigured)?;
+        let primary = self
+            .registry
+            .primary()
+            .ok_or(MetadataError::TmdbNotConfigured)?;
 
         let details = if let Some(id) = tmdb_id {
             self.rate_limiters.tmdb.until_ready().await;
@@ -709,13 +703,10 @@ impl EnrichmentOrchestrator {
         } else {
             self.rate_limiters.tmdb.until_ready().await;
             let results = primary.search_movie(title, year).await?;
-            let best = results
-                .into_iter()
-                .next()
-                .ok_or(MetadataError::NotFound {
-                    provider: primary.name().to_string(),
-                    id: title.to_string(),
-                })?;
+            let best = results.into_iter().next().ok_or(MetadataError::NotFound {
+                provider: primary.name().to_string(),
+                id: title.to_string(),
+            })?;
 
             self.rate_limiters.tmdb.until_ready().await;
             primary.get_movie_details(best.provider_id).await?
@@ -757,9 +748,7 @@ impl EnrichmentOrchestrator {
             }
         }
 
-        let effective_imdb = imdb_id
-            .map(|s| s.to_string())
-            .or(result.imdb_id.clone());
+        let effective_imdb = imdb_id.map(|s| s.to_string()).or(result.imdb_id.clone());
 
         if let Some(ref imdb) = effective_imdb {
             for provider in self.registry.ratings_providers() {
@@ -809,7 +798,10 @@ impl EnrichmentOrchestrator {
         year: Option<u32>,
         media_item_id: Option<uuid::Uuid>,
     ) -> MetadataResult<EnrichmentResult> {
-        let primary = self.registry.primary().ok_or(MetadataError::TmdbNotConfigured)?;
+        let primary = self
+            .registry
+            .primary()
+            .ok_or(MetadataError::TmdbNotConfigured)?;
 
         let details = if let Some(id) = tmdb_id {
             self.rate_limiters.tmdb.until_ready().await;
@@ -817,13 +809,10 @@ impl EnrichmentOrchestrator {
         } else {
             self.rate_limiters.tmdb.until_ready().await;
             let results = primary.search_tv(title, year).await?;
-            let best = results
-                .into_iter()
-                .next()
-                .ok_or(MetadataError::NotFound {
-                    provider: primary.name().to_string(),
-                    id: title.to_string(),
-                })?;
+            let best = results.into_iter().next().ok_or(MetadataError::NotFound {
+                provider: primary.name().to_string(),
+                id: title.to_string(),
+            })?;
 
             self.rate_limiters.tmdb.until_ready().await;
             primary.get_tv_details(best.provider_id).await?
@@ -864,9 +853,7 @@ impl EnrichmentOrchestrator {
             }
         }
 
-        let effective_imdb = imdb_id
-            .map(|s| s.to_string())
-            .or(result.imdb_id.clone());
+        let effective_imdb = imdb_id.map(|s| s.to_string()).or(result.imdb_id.clone());
 
         if let Some(ref imdb) = effective_imdb {
             for provider in self.registry.ratings_providers() {
@@ -914,7 +901,10 @@ impl EnrichmentOrchestrator {
         media_type: &str,
         year: Option<u32>,
     ) -> MetadataResult<Vec<SearchResult>> {
-        let primary = self.registry.primary().ok_or(MetadataError::TmdbNotConfigured)?;
+        let primary = self
+            .registry
+            .primary()
+            .ok_or(MetadataError::TmdbNotConfigured)?;
 
         self.rate_limiters.tmdb.until_ready().await;
 
@@ -928,15 +918,13 @@ impl EnrichmentOrchestrator {
         }
     }
 
-    pub async fn find_by_imdb(
-        &self,
-        imdb_id: &str,
-    ) -> MetadataResult<Option<SearchResult>> {
-        let primary = self.registry.primary().ok_or(MetadataError::TmdbNotConfigured)?;
+    pub async fn find_by_imdb(&self, imdb_id: &str) -> MetadataResult<Option<SearchResult>> {
+        let primary = self
+            .registry
+            .primary()
+            .ok_or(MetadataError::TmdbNotConfigured)?;
 
         self.rate_limiters.tmdb.until_ready().await;
         primary.find_by_imdb_id(imdb_id).await
     }
 }
-
-

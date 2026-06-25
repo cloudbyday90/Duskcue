@@ -105,12 +105,11 @@ pub async fn resolve_capabilities(
         return Ok(ALL_CAPABILITIES.iter().map(|s| s.to_string()).collect());
     }
 
-    let rows = sqlx::query(
-        "SELECT capability, is_granted FROM user_capabilities WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
+    let rows =
+        sqlx::query("SELECT capability, is_granted FROM user_capabilities WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_all(pool)
+            .await?;
 
     if rows.is_empty() {
         return Ok(role_default_capabilities(role));
@@ -216,11 +215,9 @@ pub async fn setup_owner(
 
     let user_id: Uuid = row.get("id");
 
-    sqlx::query(
-        r#"UPDATE server_config SET auth = jsonb_set(auth, '{setup_complete}', 'true')"#,
-    )
-    .execute(pool)
-    .await?;
+    sqlx::query(r#"UPDATE server_config SET auth = jsonb_set(auth, '{setup_complete}', 'true')"#)
+        .execute(pool)
+        .await?;
 
     let token = generate_session_token();
     let token_hash = sha256_hex(&token);
@@ -253,13 +250,11 @@ pub async fn revoke_session(
     session_id: Uuid,
     user_id: Uuid,
 ) -> Result<(), AuthError> {
-    let result = sqlx::query(
-        "DELETE FROM user_sessions WHERE id = $1 AND user_id = $2",
-    )
-    .bind(session_id)
-    .bind(user_id)
-    .execute(pool)
-    .await?;
+    let result = sqlx::query("DELETE FROM user_sessions WHERE id = $1 AND user_id = $2")
+        .bind(session_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
 
     if result.rows_affected() == 0 {
         return Err(AuthError::SessionExpired);
@@ -268,16 +263,11 @@ pub async fn revoke_session(
     Ok(())
 }
 
-pub async fn revoke_all_sessions(
-    pool: &sqlx::PgPool,
-    user_id: Uuid,
-) -> Result<u64, AuthError> {
-    let result = sqlx::query(
-        "DELETE FROM user_sessions WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .execute(pool)
-    .await?;
+pub async fn revoke_all_sessions(pool: &sqlx::PgPool, user_id: Uuid) -> Result<u64, AuthError> {
+    let result = sqlx::query("DELETE FROM user_sessions WHERE user_id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await?;
 
     Ok(result.rows_affected())
 }
@@ -386,24 +376,20 @@ pub async fn authenticate_invite_code(
                 .await?;
             }
 
-            sqlx::query(
-                "UPDATE invitations SET user_id = $1 WHERE id = $2",
-            )
-            .bind(new_user_id)
-            .bind(invitation_id)
-            .execute(pool)
-            .await?;
+            sqlx::query("UPDATE invitations SET user_id = $1 WHERE id = $2")
+                .bind(new_user_id)
+                .bind(invitation_id)
+                .execute(pool)
+                .await?;
 
             new_user_id
         }
     };
 
-    sqlx::query(
-        "UPDATE invitations SET use_count = use_count + 1 WHERE id = $1",
-    )
-    .bind(invitation_id)
-    .execute(pool)
-    .await?;
+    sqlx::query("UPDATE invitations SET use_count = use_count + 1 WHERE id = $1")
+        .bind(invitation_id)
+        .execute(pool)
+        .await?;
 
     let (token, _session) = create_session(pool, state, user_id, device_info).await?;
 
@@ -510,7 +496,7 @@ pub fn generate_session_token() -> String {
 }
 
 fn sha256_hex(input: &str) -> String {
-    use ring::digest::{digest, SHA256};
+    use ring::digest::{SHA256, digest};
     let result = digest(&SHA256, input.as_bytes());
     hex_encode(result.as_ref())
 }
@@ -575,9 +561,16 @@ fn hex_decode(hex: &str) -> Result<Vec<u8>, ()> {
 fn role_default_capabilities(role: &str) -> Vec<String> {
     match role {
         "admin" => vec![
-            "play_media", "can_transcode", "can_download", "can_delete_media",
-            "can_manage_libraries", "can_manage_users", "can_view_analytics",
-            "can_manage_server", "can_manage_scheduled_tasks", "can_share_content",
+            "play_media",
+            "can_transcode",
+            "can_download",
+            "can_delete_media",
+            "can_manage_libraries",
+            "can_manage_users",
+            "can_view_analytics",
+            "can_manage_server",
+            "can_manage_scheduled_tasks",
+            "can_share_content",
             "can_remote_control",
         ]
         .into_iter()
@@ -634,11 +627,10 @@ pub async fn start_passkey_registration(
         })?;
 
     let challenge_id = generate_challenge_id();
-    let creation_options = serde_json::to_value(&ccr).map_err(|e| {
-        AuthError::WebauthnRegistrationFailed {
+    let creation_options =
+        serde_json::to_value(&ccr).map_err(|e| AuthError::WebauthnRegistrationFailed {
             reason: format!("Failed to serialize creation options: {}", e),
-        }
-    })?;
+        })?;
 
     state.webauthn_challenges.insert(
         challenge_id.clone(),
@@ -672,12 +664,16 @@ pub async fn finish_passkey_registration(
         return Err(AuthError::WebauthnChallengeExpired);
     }
 
-    let user_id = challenge.user_id.ok_or(AuthError::WebauthnChallengeExpired)?;
+    let user_id = challenge
+        .user_id
+        .ok_or(AuthError::WebauthnChallengeExpired)?;
 
-    let registration = serde_json::from_value::<RegisterPublicKeyCredential>(credential_json.clone())
-        .map_err(|e| AuthError::WebauthnRegistrationFailed {
-            reason: format!("Invalid credential data: {}", e),
-        })?;
+    let registration = serde_json::from_value::<RegisterPublicKeyCredential>(
+        credential_json.clone(),
+    )
+    .map_err(|e| AuthError::WebauthnRegistrationFailed {
+        reason: format!("Invalid credential data: {}", e),
+    })?;
 
     let passkey = state
         .webauthn
@@ -687,8 +683,8 @@ pub async fn finish_passkey_registration(
         })?;
 
     let credential_id_bytes = passkey.cred_id().clone();
-    let public_key_bytes = serde_json::to_vec(&passkey)
-        .map_err(|e| AuthError::WebauthnRegistrationFailed {
+    let public_key_bytes =
+        serde_json::to_vec(&passkey).map_err(|e| AuthError::WebauthnRegistrationFailed {
             reason: format!("Failed to serialize passkey: {}", e),
         })?;
 
@@ -701,8 +697,8 @@ pub async fn finish_passkey_registration(
         .iter()
         .map(|t| format!("{:?}", t).to_lowercase())
         .collect();
-    let transports_json = serde_json::to_value(&transports_list)
-        .unwrap_or(serde_json::Value::Array(vec![]));
+    let transports_json =
+        serde_json::to_value(&transports_list).unwrap_or(serde_json::Value::Array(vec![]));
 
     let row = sqlx::query(
         r#"
@@ -742,12 +738,13 @@ pub async fn finish_passkey_registration(
 pub async fn start_passkey_authentication(
     state: &AppState,
 ) -> Result<(String, serde_json::Value), AuthError> {
-    let (request_options, auth_state) = state
-        .webauthn
-        .start_passkey_authentication(&[])
-        .map_err(|e| AuthError::WebauthnAuthenticationFailed {
-            reason: e.to_string(),
-        })?;
+    let (request_options, auth_state) =
+        state
+            .webauthn
+            .start_passkey_authentication(&[])
+            .map_err(|e| AuthError::WebauthnAuthenticationFailed {
+                reason: e.to_string(),
+            })?;
 
     let challenge_id = generate_challenge_id();
     let options_value = serde_json::to_value(&request_options).map_err(|e| {
@@ -883,13 +880,11 @@ pub async fn delete_passkey(
     passkey_id: Uuid,
     user_id: Uuid,
 ) -> Result<(), AuthError> {
-    let result = sqlx::query(
-        "DELETE FROM user_passkeys WHERE id = $1 AND user_id = $2",
-    )
-    .bind(passkey_id)
-    .bind(user_id)
-    .execute(pool)
-    .await?;
+    let result = sqlx::query("DELETE FROM user_passkeys WHERE id = $1 AND user_id = $2")
+        .bind(passkey_id)
+        .bind(user_id)
+        .execute(pool)
+        .await?;
 
     if result.rows_affected() == 0 {
         return Err(AuthError::PasskeyNotFound);
@@ -906,12 +901,10 @@ async fn load_user_passkey_credentials(
     pool: &sqlx::PgPool,
     user_id: Uuid,
 ) -> Result<Vec<PasskeyCredentialRow>, AuthError> {
-    let rows = sqlx::query(
-        "SELECT credential_id FROM user_passkeys WHERE user_id = $1",
-    )
-    .bind(user_id)
-    .fetch_all(pool)
-    .await?;
+    let rows = sqlx::query("SELECT credential_id FROM user_passkeys WHERE user_id = $1")
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?;
 
     Ok(rows
         .iter()
@@ -962,21 +955,40 @@ pub static CAPABILITY_DESCRIPTIONS: &[(&str, &str)] = &[
     ("can_transcode", "Request transcoded streams"),
     ("can_download", "Download media files"),
     ("can_delete_media", "Delete media from disk"),
-    ("can_manage_libraries", "Create, edit, scan, and delete libraries"),
+    (
+        "can_manage_libraries",
+        "Create, edit, scan, and delete libraries",
+    ),
     ("can_manage_users", "Create, edit, and delete users"),
-    ("can_view_analytics", "Access analytics dashboard and play history"),
-    ("can_manage_server", "Access server settings, configuration, and logs"),
-    ("can_manage_scheduled_tasks", "Create, edit, and trigger scheduled tasks"),
+    (
+        "can_view_analytics",
+        "Access analytics dashboard and play history",
+    ),
+    (
+        "can_manage_server",
+        "Access server settings, configuration, and logs",
+    ),
+    (
+        "can_manage_scheduled_tasks",
+        "Create, edit, and trigger scheduled tasks",
+    ),
     ("can_use_live_tv", "Access live TV features"),
     ("can_share_content", "Share content links externally"),
-    ("can_remote_control", "Remote control other users playback sessions"),
+    (
+        "can_remote_control",
+        "Remote control other users playback sessions",
+    ),
 ];
 
 pub fn validate_capability_name(name: &str) -> bool {
     ALL_CAPABILITIES.contains(&name)
 }
 
-pub fn check_capability(role: &str, capabilities: &[String], required: &str) -> Result<(), AuthError> {
+pub fn check_capability(
+    role: &str,
+    capabilities: &[String],
+    required: &str,
+) -> Result<(), AuthError> {
     if role == "owner" {
         return Ok(());
     }
@@ -1198,7 +1210,8 @@ pub async fn poll_device_linking_token(
         return Err(AuthError::DeviceLinkingPending);
     }
 
-    let approved_by_user_id: Uuid = row.try_get("approved_by_user_id")
+    let approved_by_user_id: Uuid = row
+        .try_get("approved_by_user_id")
         .map_err(|_| AuthError::DeviceLinkingDenied)?;
 
     let device_info = DeviceInfo {

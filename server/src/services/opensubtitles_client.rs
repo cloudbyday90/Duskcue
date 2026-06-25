@@ -130,9 +130,8 @@ impl OpensubtitlesClient {
         };
 
         let lang_code = normalize_language_os(language);
-        let url = format!(
-            "{BASE_URL}/subtitles?imdb_id={imdb}&type={imdb_type}&languages={lang_code}"
-        );
+        let url =
+            format!("{BASE_URL}/subtitles?imdb_id={imdb}&type={imdb_type}&languages={lang_code}");
 
         self.search(&url).await
     }
@@ -180,9 +179,7 @@ impl OpensubtitlesClient {
 
         let status = response.status();
 
-        if status == reqwest::StatusCode::UNAUTHORIZED
-            || status == reqwest::StatusCode::FORBIDDEN
-        {
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             return Err(SubtitleError::ProviderUnavailable {
                 provider: "opensubtitles".to_string(),
             });
@@ -208,11 +205,10 @@ impl OpensubtitlesClient {
                 reason: format!("OpenSubtitles read error: {e}"),
             })?;
 
-        let parsed: OsSearchResponse = serde_json::from_str(&body).map_err(|e| {
-            SubtitleError::FetchFailed {
+        let parsed: OsSearchResponse =
+            serde_json::from_str(&body).map_err(|e| SubtitleError::FetchFailed {
                 reason: format!("OpenSubtitles JSON parse error: {e}"),
-            }
-        })?;
+            })?;
 
         let subtitles = parsed.data.unwrap_or_default();
         let results: Vec<SubtitleSearchResult> = subtitles
@@ -225,10 +221,7 @@ impl OpensubtitlesClient {
 
     /// Download a subtitle file. Uses the two-step download flow.
     /// Returns the raw subtitle bytes and the server-side filename.
-    pub async fn download(
-        &self,
-        file_id: u64,
-    ) -> Result<(Vec<u8>, String), SubtitleError> {
+    pub async fn download(&self, file_id: u64) -> Result<(Vec<u8>, String), SubtitleError> {
         let response = self
             .http
             .post(format!("{BASE_URL}/download"))
@@ -263,15 +256,14 @@ impl OpensubtitlesClient {
                 reason: format!("OpenSubtitles download read error: {e}"),
             })?;
 
-        let parsed: OsDownloadResponse = serde_json::from_str(&body).map_err(|e| {
-            SubtitleError::FetchFailed {
+        let parsed: OsDownloadResponse =
+            serde_json::from_str(&body).map_err(|e| SubtitleError::FetchFailed {
                 reason: format!("OpenSubtitles download JSON parse error: {e}"),
-            }
-        })?;
+            })?;
 
-        let file_name = parsed.file_name.unwrap_or_else(|| {
-            format!("subtitle_{file_id}.srt")
-        });
+        let file_name = parsed
+            .file_name
+            .unwrap_or_else(|| format!("subtitle_{file_id}.srt"));
 
         let download_response = self
             .http
@@ -304,11 +296,11 @@ impl OpensubtitlesClient {
     pub async fn test_connection(&self) -> Result<(), SubtitleError> {
         match self.search_by_tmdb(27205, "en", Some("movie")).await {
             Ok(_) => Ok(()),
-            Err(SubtitleError::ProviderUnavailable { .. }) => Err(
-                SubtitleError::ProviderUnavailable {
+            Err(SubtitleError::ProviderUnavailable { .. }) => {
+                Err(SubtitleError::ProviderUnavailable {
                     provider: "opensubtitles".to_string(),
-                },
-            ),
+                })
+            }
             Err(_) => Ok(()),
         }
     }

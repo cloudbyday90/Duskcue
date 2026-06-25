@@ -14,14 +14,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use serde::Deserialize;
 use validator::Validate;
 
-use crate::error::AppError;
 use crate::domains::quality::service;
 use crate::domains::quality::types::*;
+use crate::error::AppError;
 use crate::extractors::AuthenticatedUser;
 use crate::state::AppState;
 
@@ -43,18 +43,19 @@ pub async fn report_capabilities(
                 errors.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect(),
         instance: Some("/api/v1/device/capabilities".to_string()),
     })?;
-    let profile = service::report_capabilities(
-        &state.pool,
-        user.user_id,
-        &req.device_identifier,
-        &req,
-    ).await?;
+    let profile =
+        service::report_capabilities(&state.pool, user.user_id, &req.device_identifier, &req)
+            .await?;
     Ok(Json(profile))
 }
 
@@ -101,17 +102,17 @@ pub async fn start_wizard(
                 errors.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect(),
         instance: Some("/api/v1/device/capability-tests/start".to_string()),
     })?;
-    let result = service::start_wizard(
-        &state.pool,
-        user.user_id,
-        &req.device_identifier,
-    ).await?;
+    let result = service::start_wizard(&state.pool, user.user_id, &req.device_identifier).await?;
     Ok(Json(result))
 }
 
@@ -129,17 +130,20 @@ pub async fn submit_wizard_result(
                 errors.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect(),
-        instance: Some(format!("/api/v1/device/capability-tests/{}/result", test_id)),
+        instance: Some(format!(
+            "/api/v1/device/capability-tests/{}/result",
+            test_id
+        )),
     })?;
-    let result = service::submit_wizard_test_result(
-        &state.pool,
-        test_id,
-        &req,
-    ).await?;
+    let result = service::submit_wizard_test_result(&state.pool, test_id, &req).await?;
     Ok(Json(result))
 }
 
@@ -164,17 +168,17 @@ pub async fn submit_bandwidth_probe_result(
                 errors.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect(),
         instance: Some("/api/v1/probe/bandwidth/result".to_string()),
     })?;
-    let result = service::submit_bandwidth_probe_result(
-        &state.pool,
-        user.user_id,
-        &req,
-    ).await?;
+    let result = service::submit_bandwidth_probe_result(&state.pool, user.user_id, &req).await?;
     Ok(Json(result))
 }
 
@@ -191,7 +195,11 @@ pub async fn submit_telemetry(
                 errors.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect(),
@@ -199,12 +207,7 @@ pub async fn submit_telemetry(
     })?;
     let config = state.runtime_config.load();
     let window = config.quality.throughput_estimate_window;
-    let result = service::submit_segment_telemetry(
-        &state.pool,
-        user.user_id,
-        &req,
-        window,
-    ).await?;
+    let result = service::submit_segment_telemetry(&state.pool, user.user_id, &req, window).await?;
     Ok(Json(result))
 }
 
@@ -221,7 +224,11 @@ pub async fn submit_qoe(
                 errors.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect(),
@@ -229,12 +236,7 @@ pub async fn submit_qoe(
     })?;
     let config = state.runtime_config.load();
     let interval = config.quality.qoe_report_interval_seconds;
-    let result = service::submit_qoe_report(
-        &state.pool,
-        user.user_id,
-        &req,
-        interval,
-    ).await?;
+    let result = service::submit_qoe_report(&state.pool, user.user_id, &req, interval).await?;
     Ok(Json(result))
 }
 

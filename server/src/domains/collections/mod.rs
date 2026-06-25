@@ -14,3 +14,50 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod error;
+pub mod handlers;
+pub mod service;
+pub mod types;
+
+pub use error::CollectionsError;
+
+use axum::Router;
+use axum::routing::{get, post, put};
+
+use crate::state::AppState;
+
+pub fn router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/v1/collections",
+            get(handlers::list_collections).post(handlers::create_collection),
+        )
+        .route("/api/v1/collections/sync", post(handlers::sync_collections))
+        .route(
+            "/api/v1/collections/templates",
+            get(handlers::list_templates).post(handlers::import_template),
+        )
+        .route(
+            "/api/v1/collections/{id}",
+            get(handlers::get_collection)
+                .patch(handlers::update_collection)
+                .delete(handlers::delete_collection),
+        )
+        .route(
+            "/api/v1/collections/{id}/items",
+            get(handlers::list_collection_items).post(handlers::add_collection_items),
+        )
+        .route(
+            "/api/v1/collections/{id}/items/reorder",
+            put(handlers::reorder_collection_items),
+        )
+        .route(
+            "/api/v1/collections/{id}/items/{media_item_id}",
+            axum::routing::delete(handlers::remove_collection_item),
+        )
+        .route(
+            "/api/v1/collections/{id}/sync",
+            post(handlers::sync_collection),
+        )
+        .with_state(state)
+}

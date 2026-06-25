@@ -29,16 +29,96 @@ static CONSERVATIVE_BASELINE_HDR_SUPPORT: &str = "[]";
 static CONSERVATIVE_BASELINE_MAX_RESOLUTION: &str = "1080p";
 
 pub static WIZARD_TEST_MATRIX: &[(&str, &str, &str, &str, &str, i32, &str)] = &[
-    ("h264_8bit_1080p_mp4", "H.264 8-bit 1080p MP4", "h264", "1080p", "mp4", 8, "sdr"),
-    ("h264_10bit_1080p_mp4", "H.264 10-bit 1080p MP4", "h264", "1080p", "mp4", 10, "sdr"),
-    ("hevc_8bit_1080p_mp4", "HEVC 8-bit 1080p MP4", "hevc", "1080p", "mp4", 8, "sdr"),
-    ("hevc_10bit_1080p_mp4", "HEVC 10-bit 1080p MP4", "hevc", "1080p", "mp4", 10, "sdr"),
-    ("hevc_10bit_4k_hdr10_mkv", "HEVC 10-bit 4K HDR10 MKV", "hevc", "4k", "mkv", 10, "hdr10"),
-    ("av1_8bit_1080p_mp4", "AV1 8-bit 1080p MP4", "av1", "1080p", "mp4", 8, "sdr"),
-    ("av1_10bit_4k_mp4", "AV1 10-bit 4K MP4", "av1", "4k", "mp4", 10, "sdr"),
-    ("dolby_vision_p8_mp4", "Dolby Vision Profile 8 MP4", "hevc", "4k", "mp4", 10, "dolby_vision"),
-    ("aac_51_ac3_dts", "AAC 5.1 + AC3 + DTS audio", "aac", "", "", 0, ""),
-    ("pgs_subtitle_overlay", "PGS subtitle overlay", "", "", "", 0, ""),
+    (
+        "h264_8bit_1080p_mp4",
+        "H.264 8-bit 1080p MP4",
+        "h264",
+        "1080p",
+        "mp4",
+        8,
+        "sdr",
+    ),
+    (
+        "h264_10bit_1080p_mp4",
+        "H.264 10-bit 1080p MP4",
+        "h264",
+        "1080p",
+        "mp4",
+        10,
+        "sdr",
+    ),
+    (
+        "hevc_8bit_1080p_mp4",
+        "HEVC 8-bit 1080p MP4",
+        "hevc",
+        "1080p",
+        "mp4",
+        8,
+        "sdr",
+    ),
+    (
+        "hevc_10bit_1080p_mp4",
+        "HEVC 10-bit 1080p MP4",
+        "hevc",
+        "1080p",
+        "mp4",
+        10,
+        "sdr",
+    ),
+    (
+        "hevc_10bit_4k_hdr10_mkv",
+        "HEVC 10-bit 4K HDR10 MKV",
+        "hevc",
+        "4k",
+        "mkv",
+        10,
+        "hdr10",
+    ),
+    (
+        "av1_8bit_1080p_mp4",
+        "AV1 8-bit 1080p MP4",
+        "av1",
+        "1080p",
+        "mp4",
+        8,
+        "sdr",
+    ),
+    (
+        "av1_10bit_4k_mp4",
+        "AV1 10-bit 4K MP4",
+        "av1",
+        "4k",
+        "mp4",
+        10,
+        "sdr",
+    ),
+    (
+        "dolby_vision_p8_mp4",
+        "Dolby Vision Profile 8 MP4",
+        "hevc",
+        "4k",
+        "mp4",
+        10,
+        "dolby_vision",
+    ),
+    (
+        "aac_51_ac3_dts",
+        "AAC 5.1 + AC3 + DTS audio",
+        "aac",
+        "",
+        "",
+        0,
+        "",
+    ),
+    (
+        "pgs_subtitle_overlay",
+        "PGS subtitle overlay",
+        "",
+        "",
+        "",
+        0,
+        "",
+    ),
 ];
 
 pub async fn report_capabilities(
@@ -47,28 +127,49 @@ pub async fn report_capabilities(
     device_identifier: &str,
     req: &ReportCapabilitiesRequest,
 ) -> Result<DeviceProfileResponse, QualityError> {
-    let video_codecs = req.video_codecs
+    let video_codecs = req
+        .video_codecs
         .as_ref()
-        .map(|v| serde_json::to_string(v).unwrap_or_else(|_| CONSERVATIVE_BASELINE_VIDEO_CODECS.to_string()))
+        .map(|v| {
+            serde_json::to_string(v)
+                .unwrap_or_else(|_| CONSERVATIVE_BASELINE_VIDEO_CODECS.to_string())
+        })
         .unwrap_or_else(|| CONSERVATIVE_BASELINE_VIDEO_CODECS.to_string());
-    let audio_codecs = req.audio_codecs
+    let audio_codecs = req
+        .audio_codecs
         .as_ref()
-        .map(|v| serde_json::to_string(v).unwrap_or_else(|_| CONSERVATIVE_BASELINE_AUDIO_CODECS.to_string()))
+        .map(|v| {
+            serde_json::to_string(v)
+                .unwrap_or_else(|_| CONSERVATIVE_BASELINE_AUDIO_CODECS.to_string())
+        })
         .unwrap_or_else(|| CONSERVATIVE_BASELINE_AUDIO_CODECS.to_string());
-    let subtitle_formats = req.subtitle_formats
+    let subtitle_formats = req
+        .subtitle_formats
         .as_ref()
-        .map(|v| serde_json::to_string(v).unwrap_or_else(|_| CONSERVATIVE_BASELINE_SUBTITLE_FORMATS.to_string()))
+        .map(|v| {
+            serde_json::to_string(v)
+                .unwrap_or_else(|_| CONSERVATIVE_BASELINE_SUBTITLE_FORMATS.to_string())
+        })
         .unwrap_or_else(|| CONSERVATIVE_BASELINE_SUBTITLE_FORMATS.to_string());
-    let containers = req.containers
+    let containers = req
+        .containers
         .as_ref()
-        .map(|v| serde_json::to_string(v).unwrap_or_else(|_| CONSERVATIVE_BASELINE_CONTAINERS.to_string()))
+        .map(|v| {
+            serde_json::to_string(v)
+                .unwrap_or_else(|_| CONSERVATIVE_BASELINE_CONTAINERS.to_string())
+        })
         .unwrap_or_else(|| CONSERVATIVE_BASELINE_CONTAINERS.to_string());
-    let hdr_support = req.hdr_support
+    let hdr_support = req
+        .hdr_support
         .as_ref()
-        .map(|v| serde_json::to_string(v).unwrap_or_else(|_| CONSERVATIVE_BASELINE_HDR_SUPPORT.to_string()))
+        .map(|v| {
+            serde_json::to_string(v)
+                .unwrap_or_else(|_| CONSERVATIVE_BASELINE_HDR_SUPPORT.to_string())
+        })
         .unwrap_or_else(|| CONSERVATIVE_BASELINE_HDR_SUPPORT.to_string());
 
-    let max_resolution = req.max_resolution
+    let max_resolution = req
+        .max_resolution
         .as_deref()
         .unwrap_or(CONSERVATIVE_BASELINE_MAX_RESOLUTION);
     let max_audio_channels = req.max_audio_channels.unwrap_or(2);
@@ -148,12 +249,12 @@ pub async fn get_device_profile(
             max_audio_channels, spatial_audio, max_bitrate_bps,
             allow_client_side_dv_fallback, profile_source, wizard_completed_at
         FROM device_profiles
-        WHERE device_identifier = $1"#
+        WHERE device_identifier = $1"#,
     )
-        .bind(device_identifier)
-        .fetch_optional(pool)
-        .await
-        .map_err(QualityError::Database)?;
+    .bind(device_identifier)
+    .fetch_optional(pool)
+    .await
+    .map_err(QualityError::Database)?;
 
     match row {
         Some(r) => Ok(row_to_device_profile_response(&r)),
@@ -171,23 +272,26 @@ pub async fn list_capability_tests(
         FROM device_capability_tests t
         JOIN device_profiles p ON t.device_profile_id = p.id
         WHERE p.device_identifier = $1
-        ORDER BY t.created_at ASC"#
+        ORDER BY t.created_at ASC"#,
     )
-        .bind(device_identifier)
-        .fetch_all(pool)
-        .await
-        .map_err(QualityError::Database)?;
+    .bind(device_identifier)
+    .fetch_all(pool)
+    .await
+    .map_err(QualityError::Database)?;
 
-    let items = rows.iter().map(|r| CapabilityTestResponse {
-        id: r.get("id"),
-        test_format: r.get("test_format"),
-        test_description: r.get("test_description"),
-        result: r.get("result"),
-        actual_codec: r.get("actual_codec"),
-        actual_resolution: r.get("actual_resolution"),
-        actual_bit_depth: r.get("actual_bit_depth"),
-        actual_dynamic_range: r.get("actual_dynamic_range"),
-    }).collect();
+    let items = rows
+        .iter()
+        .map(|r| CapabilityTestResponse {
+            id: r.get("id"),
+            test_format: r.get("test_format"),
+            test_description: r.get("test_description"),
+            result: r.get("result"),
+            actual_codec: r.get("actual_codec"),
+            actual_resolution: r.get("actual_resolution"),
+            actual_bit_depth: r.get("actual_bit_depth"),
+            actual_dynamic_range: r.get("actual_dynamic_range"),
+        })
+        .collect();
 
     Ok(CapabilityTestListResponse { items })
 }
@@ -198,16 +302,19 @@ pub async fn start_wizard(
     device_identifier: &str,
 ) -> Result<WizardStartResponse, QualityError> {
     let profile_row = sqlx::query(
-        r#"SELECT id, wizard_completed_at FROM device_profiles WHERE device_identifier = $1"#
+        r#"SELECT id, wizard_completed_at FROM device_profiles WHERE device_identifier = $1"#,
     )
-        .bind(device_identifier)
-        .fetch_optional(pool)
-        .await
-        .map_err(QualityError::Database)?;
+    .bind(device_identifier)
+    .fetch_optional(pool)
+    .await
+    .map_err(QualityError::Database)?;
 
     let profile_id = match profile_row {
         Some(row) => {
-            if row.get::<Option<chrono::DateTime<Utc>>, _>("wizard_completed_at").is_some() {
+            if row
+                .get::<Option<chrono::DateTime<Utc>>, _>("wizard_completed_at")
+                .is_some()
+            {
                 return Err(QualityError::WizardAlreadyCompleted);
             }
             row.get::<Uuid, _>("id")
@@ -229,25 +336,43 @@ pub async fn start_wizard(
     };
 
     let mut tests = Vec::with_capacity(WIZARD_TEST_MATRIX.len());
-    for (format, desc, codec, resolution, _container, bit_depth, dynamic_range) in WIZARD_TEST_MATRIX {
+    for (format, desc, codec, resolution, _container, bit_depth, dynamic_range) in
+        WIZARD_TEST_MATRIX
+    {
         let row = sqlx::query(
             r#"INSERT INTO device_capability_tests (
                 device_profile_id, test_format, test_description, result,
                 actual_codec, actual_resolution, actual_bit_depth, actual_dynamic_range
             ) VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7)
             RETURNING id, test_format, test_description, result,
-                actual_codec, actual_resolution, actual_bit_depth, actual_dynamic_range"#
+                actual_codec, actual_resolution, actual_bit_depth, actual_dynamic_range"#,
         )
-            .bind(profile_id)
-            .bind(*format)
-            .bind(*desc)
-            .bind(if codec.is_empty() { None::<String> } else { Some(codec.to_string()) })
-            .bind(if resolution.is_empty() { None::<String> } else { Some(resolution.to_string()) })
-            .bind(if *bit_depth == 0 { None::<i32> } else { Some(*bit_depth) })
-            .bind(if dynamic_range.is_empty() { None::<String> } else { Some(dynamic_range.to_string()) })
-            .fetch_one(pool)
-            .await
-            .map_err(QualityError::Database)?;
+        .bind(profile_id)
+        .bind(*format)
+        .bind(*desc)
+        .bind(if codec.is_empty() {
+            None::<String>
+        } else {
+            Some(codec.to_string())
+        })
+        .bind(if resolution.is_empty() {
+            None::<String>
+        } else {
+            Some(resolution.to_string())
+        })
+        .bind(if *bit_depth == 0 {
+            None::<i32>
+        } else {
+            Some(*bit_depth)
+        })
+        .bind(if dynamic_range.is_empty() {
+            None::<String>
+        } else {
+            Some(dynamic_range.to_string())
+        })
+        .fetch_one(pool)
+        .await
+        .map_err(QualityError::Database)?;
 
         tests.push(CapabilityTestResponse {
             id: row.get("id"),
@@ -281,18 +406,18 @@ pub async fn submit_wizard_test_result(
             details = COALESCE($6, details)
         WHERE id = $7
         RETURNING id, test_format, test_description, result,
-            actual_codec, actual_resolution, actual_bit_depth, actual_dynamic_range"#
+            actual_codec, actual_resolution, actual_bit_depth, actual_dynamic_range"#,
     )
-        .bind(&req.result)
-        .bind(&req.actual_codec)
-        .bind(&req.actual_resolution)
-        .bind(req.actual_bit_depth)
-        .bind(&req.actual_dynamic_range)
-        .bind(&req.details)
-        .bind(test_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(QualityError::Database)?;
+    .bind(&req.result)
+    .bind(&req.actual_codec)
+    .bind(&req.actual_resolution)
+    .bind(req.actual_bit_depth)
+    .bind(&req.actual_dynamic_range)
+    .bind(&req.details)
+    .bind(test_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(QualityError::Database)?;
 
     let test_row = row.ok_or(QualityError::WizardTestNotFound)?;
 
@@ -327,12 +452,12 @@ pub async fn get_or_create_device_profile(
             max_audio_channels, spatial_audio, max_bitrate_bps,
             allow_client_side_dv_fallback, profile_source, wizard_completed_at
         FROM device_profiles
-        WHERE device_identifier = $1"#
+        WHERE device_identifier = $1"#,
     )
-        .bind(device_identifier)
-        .fetch_optional(pool)
-        .await
-        .map_err(QualityError::Database)?;
+    .bind(device_identifier)
+    .fetch_optional(pool)
+    .await
+    .map_err(QualityError::Database)?;
 
     match row {
         Some(r) => Ok(row_to_device_profile_response(&r)),
@@ -346,13 +471,13 @@ pub async fn get_or_create_device_profile(
                     video_codecs, audio_codecs, subtitle_formats, containers,
                     max_resolution, max_framerate, hdr_support,
                     max_audio_channels, spatial_audio, max_bitrate_bps,
-                    allow_client_side_dv_fallback, profile_source, wizard_completed_at"#
+                    allow_client_side_dv_fallback, profile_source, wizard_completed_at"#,
             )
-                .bind(device_identifier)
-                .bind(platform)
-                .fetch_one(pool)
-                .await
-                .map_err(QualityError::Database)?;
+            .bind(device_identifier)
+            .bind(platform)
+            .fetch_one(pool)
+            .await
+            .map_err(QualityError::Database)?;
             Ok(row_to_device_profile_response(&row))
         }
     }
@@ -370,13 +495,8 @@ fn validate_wizard_result(result: &str) -> Result<(), QualityError> {
     }
 }
 
-async fn get_profile_id_for_test(
-    pool: &sqlx::PgPool,
-    test_id: Uuid,
-) -> Result<Uuid, QualityError> {
-    let row = sqlx::query(
-        "SELECT device_profile_id FROM device_capability_tests WHERE id = $1"
-    )
+async fn get_profile_id_for_test(pool: &sqlx::PgPool, test_id: Uuid) -> Result<Uuid, QualityError> {
+    let row = sqlx::query("SELECT device_profile_id FROM device_capability_tests WHERE id = $1")
         .bind(test_id)
         .fetch_optional(pool)
         .await
@@ -386,17 +506,14 @@ async fn get_profile_id_for_test(
         .ok_or(QualityError::WizardTestNotFound)
 }
 
-async fn try_complete_wizard(
-    pool: &sqlx::PgPool,
-    profile_id: Uuid,
-) -> Result<bool, QualityError> {
+async fn try_complete_wizard(pool: &sqlx::PgPool, profile_id: Uuid) -> Result<bool, QualityError> {
     let total = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM device_capability_tests WHERE device_profile_id = $1"
+        "SELECT COUNT(*) FROM device_capability_tests WHERE device_profile_id = $1",
     )
-        .bind(profile_id)
-        .fetch_one(pool)
-        .await
-        .map_err(QualityError::Database)?;
+    .bind(profile_id)
+    .fetch_one(pool)
+    .await
+    .map_err(QualityError::Database)?;
 
     let completed = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM device_capability_tests WHERE device_profile_id = $1 AND result != 'pending'"
@@ -417,12 +534,12 @@ async fn try_complete_wizard(
             wizard_completed_at = now(),
             profile_source = 'capability_wizard',
             updated_at = now()
-        WHERE id = $1 AND wizard_completed_at IS NULL"#
+        WHERE id = $1 AND wizard_completed_at IS NULL"#,
     )
-        .bind(profile_id)
-        .execute(pool)
-        .await
-        .map_err(QualityError::Database)?;
+    .bind(profile_id)
+    .execute(pool)
+    .await
+    .map_err(QualityError::Database)?;
 
     Ok(all_passed)
 }
@@ -432,12 +549,12 @@ async fn derive_capabilities_from_wizard(
     profile_id: Uuid,
 ) -> Result<bool, QualityError> {
     let tests = sqlx::query(
-        "SELECT test_format, result FROM device_capability_tests WHERE device_profile_id = $1"
+        "SELECT test_format, result FROM device_capability_tests WHERE device_profile_id = $1",
     )
-        .bind(profile_id)
-        .fetch_all(pool)
-        .await
-        .map_err(QualityError::Database)?;
+    .bind(profile_id)
+    .fetch_all(pool)
+    .await
+    .map_err(QualityError::Database)?;
 
     let mut video_codecs = vec!["h264".to_string()];
     let mut audio_codecs = vec!["aac".to_string()];
@@ -512,11 +629,16 @@ async fn derive_capabilities_from_wizard(
         video_codecs = vec!["h264".to_string()];
     }
 
-    let video_codecs_json = serde_json::to_string(&video_codecs).unwrap_or_else(|_| CONSERVATIVE_BASELINE_VIDEO_CODECS.to_string());
-    let audio_codecs_json = serde_json::to_string(&audio_codecs).unwrap_or_else(|_| CONSERVATIVE_BASELINE_AUDIO_CODECS.to_string());
-    let subtitle_formats_json = serde_json::to_string(&subtitle_formats).unwrap_or_else(|_| CONSERVATIVE_BASELINE_SUBTITLE_FORMATS.to_string());
-    let containers_json = serde_json::to_string(&containers).unwrap_or_else(|_| CONSERVATIVE_BASELINE_CONTAINERS.to_string());
-    let hdr_json = serde_json::to_string(&hdr_formats).unwrap_or_else(|_| CONSERVATIVE_BASELINE_HDR_SUPPORT.to_string());
+    let video_codecs_json = serde_json::to_string(&video_codecs)
+        .unwrap_or_else(|_| CONSERVATIVE_BASELINE_VIDEO_CODECS.to_string());
+    let audio_codecs_json = serde_json::to_string(&audio_codecs)
+        .unwrap_or_else(|_| CONSERVATIVE_BASELINE_AUDIO_CODECS.to_string());
+    let subtitle_formats_json = serde_json::to_string(&subtitle_formats)
+        .unwrap_or_else(|_| CONSERVATIVE_BASELINE_SUBTITLE_FORMATS.to_string());
+    let containers_json = serde_json::to_string(&containers)
+        .unwrap_or_else(|_| CONSERVATIVE_BASELINE_CONTAINERS.to_string());
+    let hdr_json = serde_json::to_string(&hdr_formats)
+        .unwrap_or_else(|_| CONSERVATIVE_BASELINE_HDR_SUPPORT.to_string());
 
     sqlx::query(
         r#"UPDATE device_profiles SET
@@ -528,19 +650,19 @@ async fn derive_capabilities_from_wizard(
             hdr_support = $6::jsonb,
             max_audio_channels = $7,
             updated_at = now()
-        WHERE id = $8"#
+        WHERE id = $8"#,
     )
-        .bind(&video_codecs_json)
-        .bind(&audio_codecs_json)
-        .bind(&subtitle_formats_json)
-        .bind(&containers_json)
-        .bind(&max_resolution)
-        .bind(&hdr_json)
-        .bind(max_audio_channels)
-        .bind(profile_id)
-        .execute(pool)
-        .await
-        .map_err(QualityError::Database)?;
+    .bind(&video_codecs_json)
+    .bind(&audio_codecs_json)
+    .bind(&subtitle_formats_json)
+    .bind(&containers_json)
+    .bind(&max_resolution)
+    .bind(&hdr_json)
+    .bind(max_audio_channels)
+    .bind(profile_id)
+    .execute(pool)
+    .await
+    .map_err(QualityError::Database)?;
 
     Ok(h264_baseline)
 }
@@ -554,7 +676,8 @@ fn test_passed(tests: &[sqlx::postgres::PgRow], format: &str) -> bool {
 }
 
 fn row_to_device_profile_response(row: &sqlx::postgres::PgRow) -> DeviceProfileResponse {
-    let wizard_completed_at: Option<chrono::DateTime<Utc>> = row.try_get("wizard_completed_at").ok();
+    let wizard_completed_at: Option<chrono::DateTime<Utc>> =
+        row.try_get("wizard_completed_at").ok();
     DeviceProfileResponse {
         id: row.get("id"),
         device_identifier: row.get("device_identifier"),
@@ -590,7 +713,8 @@ fn create_conservative_baseline_response(device_identifier: &str) -> DeviceProfi
         client_version: None,
         video_codecs: serde_json::from_str(CONSERVATIVE_BASELINE_VIDEO_CODECS).unwrap_or_default(),
         audio_codecs: serde_json::from_str(CONSERVATIVE_BASELINE_AUDIO_CODECS).unwrap_or_default(),
-        subtitle_formats: serde_json::from_str(CONSERVATIVE_BASELINE_SUBTITLE_FORMATS).unwrap_or_default(),
+        subtitle_formats: serde_json::from_str(CONSERVATIVE_BASELINE_SUBTITLE_FORMATS)
+            .unwrap_or_default(),
         containers: serde_json::from_str(CONSERVATIVE_BASELINE_CONTAINERS).unwrap_or_default(),
         max_resolution: Some(CONSERVATIVE_BASELINE_MAX_RESOLUTION.to_string()),
         max_framerate: None,
@@ -620,7 +744,11 @@ pub fn classify_network_tier(throughput_bps: i64) -> &'static str {
     }
 }
 
-pub fn compute_segment_throughput(segment_bytes: i64, download_start_ms: i64, download_end_ms: i64) -> Option<i64> {
+pub fn compute_segment_throughput(
+    segment_bytes: i64,
+    download_start_ms: i64,
+    download_end_ms: i64,
+) -> Option<i64> {
     let duration_ms = download_end_ms.saturating_sub(download_start_ms);
     if duration_ms <= 0 || segment_bytes <= 0 {
         return None;
@@ -637,22 +765,27 @@ pub async fn compute_harmonic_mean_throughput(
     let rows = sqlx::query(
         r#"SELECT throughput_bps FROM client_network_reports
         WHERE user_id = $1 AND throughput_bps IS NOT NULL
-        ORDER BY created_at DESC LIMIT $2"#
+        ORDER BY created_at DESC LIMIT $2"#,
     )
-        .bind(user_id)
-        .bind(window)
-        .fetch_all(pool)
-        .await
-        .ok()?;
+    .bind(user_id)
+    .bind(window)
+    .fetch_all(pool)
+    .await
+    .ok()?;
 
     if rows.is_empty() {
         return None;
     }
 
-    let reciprocals: f64 = rows.iter()
+    let reciprocals: f64 = rows
+        .iter()
         .filter_map(|r| {
             let bps: i64 = r.get("throughput_bps");
-            if bps > 0 { Some(1.0 / bps as f64) } else { None }
+            if bps > 0 {
+                Some(1.0 / bps as f64)
+            } else {
+                None
+            }
         })
         .sum();
 
@@ -669,10 +802,15 @@ pub async fn submit_segment_telemetry(
     req: &SegmentTelemetryRequest,
     throughput_window: i32,
 ) -> Result<TelemetryAckResponse, QualityError> {
-    let session_id = req.session_id
+    let session_id = req
+        .session_id
         .ok_or_else(|| QualityError::InvalidTelemetry("session_id is required".to_string()))?;
 
-    let throughput_bps = match (req.segment_bytes, req.download_start_ms, req.download_end_ms) {
+    let throughput_bps = match (
+        req.segment_bytes,
+        req.download_start_ms,
+        req.download_end_ms,
+    ) {
         (Some(bytes), Some(start), Some(end)) => compute_segment_throughput(bytes, start, end),
         _ => None,
     };
@@ -695,24 +833,24 @@ pub async fn submit_segment_telemetry(
             buffer_seconds, rebuffer_count, rebuffer_total_ms,
             estimated_throughput_bps, network_tier
         ) VALUES ($1, $2, 'segment', $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-        RETURNING id"#
+        RETURNING id"#,
     )
-        .bind(user_id)
-        .bind(session_id)
-        .bind(req.segment_index)
-        .bind(&req.rung)
-        .bind(req.segment_bytes)
-        .bind(req.download_start_ms)
-        .bind(req.download_end_ms)
-        .bind(throughput_bps)
-        .bind(req.buffer_seconds)
-        .bind(req.rebuffer_count)
-        .bind(req.rebuffer_total_ms)
-        .bind(effective_throughput)
-        .bind(&network_tier)
-        .fetch_one(pool)
-        .await
-        .map_err(QualityError::Database)?;
+    .bind(user_id)
+    .bind(session_id)
+    .bind(req.segment_index)
+    .bind(&req.rung)
+    .bind(req.segment_bytes)
+    .bind(req.download_start_ms)
+    .bind(req.download_end_ms)
+    .bind(throughput_bps)
+    .bind(req.buffer_seconds)
+    .bind(req.rebuffer_count)
+    .bind(req.rebuffer_total_ms)
+    .bind(effective_throughput)
+    .bind(&network_tier)
+    .fetch_one(pool)
+    .await
+    .map_err(QualityError::Database)?;
 
     Ok(TelemetryAckResponse {
         report_id: row.get("id"),
@@ -726,15 +864,16 @@ pub async fn submit_bandwidth_probe_result(
     user_id: Uuid,
     req: &BandwidthProbeResultRequest,
 ) -> Result<ProbeAckResponse, QualityError> {
-    let session_id = req.session_id
+    let session_id = req
+        .session_id
         .ok_or_else(|| QualityError::InvalidProbeResult("session_id is required".to_string()))?;
 
-    let probe_bytes = req.probe_bytes
-        .filter(|&b| b > 0)
-        .ok_or_else(|| QualityError::InvalidProbeResult("probe_bytes must be positive".to_string()))?;
-    let download_ms = req.download_ms
-        .filter(|&d| d > 0)
-        .ok_or_else(|| QualityError::InvalidProbeResult("download_ms must be positive".to_string()))?;
+    let probe_bytes = req.probe_bytes.filter(|&b| b > 0).ok_or_else(|| {
+        QualityError::InvalidProbeResult("probe_bytes must be positive".to_string())
+    })?;
+    let download_ms = req.download_ms.filter(|&d| d > 0).ok_or_else(|| {
+        QualityError::InvalidProbeResult("download_ms must be positive".to_string())
+    })?;
 
     let computed_throughput = (probe_bytes * 8 * 1000) / download_ms;
     let throughput_bps = req.estimated_throughput_bps.unwrap_or(computed_throughput);
@@ -746,18 +885,18 @@ pub async fn submit_bandwidth_probe_result(
             payload_bytes, download_start_ms, download_end_ms,
             throughput_bps, estimated_throughput_bps, network_tier
         ) VALUES ($1, $2, 'probe', $3, 0, $4, $5, $6, $7)
-        RETURNING id"#
+        RETURNING id"#,
     )
-        .bind(user_id)
-        .bind(session_id)
-        .bind(probe_bytes)
-        .bind(download_ms)
-        .bind(computed_throughput)
-        .bind(throughput_bps)
-        .bind(&network_tier)
-        .fetch_one(pool)
-        .await
-        .map_err(QualityError::Database)?;
+    .bind(user_id)
+    .bind(session_id)
+    .bind(probe_bytes)
+    .bind(download_ms)
+    .bind(computed_throughput)
+    .bind(throughput_bps)
+    .bind(&network_tier)
+    .fetch_one(pool)
+    .await
+    .map_err(QualityError::Database)?;
 
     Ok(ProbeAckResponse {
         report_id: row.get("id"),
@@ -772,7 +911,8 @@ pub async fn submit_qoe_report(
     req: &QoeReportRequest,
     report_interval_seconds: i32,
 ) -> Result<QoeAckResponse, QualityError> {
-    let session_id = req.session_id
+    let session_id = req
+        .session_id
         .ok_or_else(|| QualityError::InvalidTelemetry("session_id is required".to_string()))?;
 
     let row = sqlx::query(
@@ -782,21 +922,21 @@ pub async fn submit_qoe_report(
             switches_per_minute, quality_drops,
             current_rung, current_buffer_seconds
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-        RETURNING id"#
+        RETURNING id"#,
     )
-        .bind(user_id)
-        .bind(session_id)
-        .bind(report_interval_seconds)
-        .bind(req.startup_time_ms)
-        .bind(req.rebuffer_ratio)
-        .bind(req.average_bitrate_bps)
-        .bind(req.switches_per_minute)
-        .bind(req.quality_drops)
-        .bind(&req.current_rung)
-        .bind(req.current_buffer_seconds)
-        .fetch_one(pool)
-        .await
-        .map_err(QualityError::Database)?;
+    .bind(user_id)
+    .bind(session_id)
+    .bind(report_interval_seconds)
+    .bind(req.startup_time_ms)
+    .bind(req.rebuffer_ratio)
+    .bind(req.average_bitrate_bps)
+    .bind(req.switches_per_minute)
+    .bind(req.quality_drops)
+    .bind(&req.current_rung)
+    .bind(req.current_buffer_seconds)
+    .fetch_one(pool)
+    .await
+    .map_err(QualityError::Database)?;
 
     Ok(QoeAckResponse {
         report_id: row.get("id"),
@@ -824,18 +964,21 @@ pub async fn get_network_quality_summary(
             FROM client_network_reports c2
             WHERE c2.user_id = cnr.user_id
         )
-        ORDER BY cnr.created_at DESC"#
+        ORDER BY cnr.created_at DESC"#,
     )
-        .fetch_all(pool)
-        .await
-        .map_err(QualityError::Database)?;
+    .fetch_all(pool)
+    .await
+    .map_err(QualityError::Database)?;
 
-    Ok(rows.iter().map(|r| NetworkQualitySummary {
-        user_id: r.get("user_id"),
-        latest_tier: r.get("latest_tier"),
-        latest_throughput_bps: r.get("latest_throughput_bps"),
-        sample_count: r.get("sample_count"),
-    }).collect())
+    Ok(rows
+        .iter()
+        .map(|r| NetworkQualitySummary {
+            user_id: r.get("user_id"),
+            latest_tier: r.get("latest_tier"),
+            latest_throughput_bps: r.get("latest_throughput_bps"),
+            sample_count: r.get("sample_count"),
+        })
+        .collect())
 }
 
 pub async fn get_device_capability_summary(
@@ -858,29 +1001,30 @@ pub async fn get_device_capability_summary(
             )::text AS top_video_codecs
         FROM device_profiles dp
         GROUP BY platform
-        ORDER BY device_count DESC"#
+        ORDER BY device_count DESC"#,
     )
-        .fetch_all(pool)
-        .await
-        .map_err(QualityError::Database)?;
+    .fetch_all(pool)
+    .await
+    .map_err(QualityError::Database)?;
 
-    Ok(rows.iter().map(|r| {
-        let codecs_text: String = r.try_get("top_video_codecs")
-            .unwrap_or_else(|_| "[]".to_string());
-        let top_codecs: Vec<String> = serde_json::from_str(&codecs_text)
-            .unwrap_or_default();
-        DeviceCapabilitySummary {
-            platform: r.get("platform"),
-            device_count: r.get("device_count"),
-            wizard_completion_rate: r.get::<f64, _>("wizard_completion_rate") * 100.0,
-            top_video_codecs: top_codecs,
-        }
-    }).collect())
+    Ok(rows
+        .iter()
+        .map(|r| {
+            let codecs_text: String = r
+                .try_get("top_video_codecs")
+                .unwrap_or_else(|_| "[]".to_string());
+            let top_codecs: Vec<String> = serde_json::from_str(&codecs_text).unwrap_or_default();
+            DeviceCapabilitySummary {
+                platform: r.get("platform"),
+                device_count: r.get("device_count"),
+                wizard_completion_rate: r.get::<f64, _>("wizard_completion_rate") * 100.0,
+                top_video_codecs: top_codecs,
+            }
+        })
+        .collect())
 }
 
-pub async fn get_qoe_summary(
-    pool: &sqlx::PgPool,
-) -> Result<Vec<QoeSummary>, QualityError> {
+pub async fn get_qoe_summary(pool: &sqlx::PgPool) -> Result<Vec<QoeSummary>, QualityError> {
     let rows = sqlx::query(
         r#"SELECT DISTINCT ON (session_id)
             session_id, user_id,
@@ -888,21 +1032,24 @@ pub async fn get_qoe_summary(
             switches_per_minute, quality_drops
         FROM qoe_reports
         ORDER BY session_id, created_at DESC
-        LIMIT 100"#
+        LIMIT 100"#,
     )
-        .fetch_all(pool)
-        .await
-        .map_err(QualityError::Database)?;
+    .fetch_all(pool)
+    .await
+    .map_err(QualityError::Database)?;
 
-    Ok(rows.iter().map(|r| QoeSummary {
-        session_id: r.get("session_id"),
-        user_id: r.get("user_id"),
-        startup_time_ms: r.get("startup_time_ms"),
-        rebuffer_ratio: r.get("rebuffer_ratio"),
-        average_bitrate_bps: r.get("average_bitrate_bps"),
-        switches_per_minute: r.get("switches_per_minute"),
-        quality_drops: r.get("quality_drops"),
-    }).collect())
+    Ok(rows
+        .iter()
+        .map(|r| QoeSummary {
+            session_id: r.get("session_id"),
+            user_id: r.get("user_id"),
+            startup_time_ms: r.get("startup_time_ms"),
+            rebuffer_ratio: r.get("rebuffer_ratio"),
+            average_bitrate_bps: r.get("average_bitrate_bps"),
+            switches_per_minute: r.get("switches_per_minute"),
+            quality_drops: r.get("quality_drops"),
+        })
+        .collect())
 }
 
 pub async fn get_transcode_breakdown(
@@ -915,11 +1062,11 @@ pub async fn get_transcode_breakdown(
             COUNT(*) FILTER (WHERE metadata->>'playback_type' = 'direct_stream') AS direct_stream,
             COUNT(*) FILTER (WHERE metadata->>'playback_type' = 'transcode') AS transcode
         FROM play_sessions
-        WHERE ended_at IS NOT NULL"#
+        WHERE ended_at IS NOT NULL"#,
     )
-        .fetch_one(pool)
-        .await
-        .map_err(QualityError::Database)?;
+    .fetch_one(pool)
+    .await
+    .map_err(QualityError::Database)?;
 
     let total: i64 = row.try_get("total").unwrap_or(0);
     let direct_play: i64 = row.try_get("direct_play").unwrap_or(0);

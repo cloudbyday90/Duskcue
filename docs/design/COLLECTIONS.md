@@ -459,6 +459,22 @@ Collection settings are stored in `server_config.metadata` JSONB (shared with ov
 }
 ```
 
+## Implementation Notes
+
+### Phase 12 Task 5
+
+The collections domain scaffold is implemented at `server/src/domains/collections/` using the standard five-file domain pattern:
+
+| File | Implementation |
+|---|---|
+| `mod.rs` | Router assembly for collection CRUD, item management, sync dispatch, and template operations |
+| `error.rs` | `CollectionsError` with registered `COLL_001`–`COLL_008` variants plus database catch-all |
+| `types.rs` | Internal row DTOs for `collections`, `collection_items`, and `collection_templates`; request/response DTOs; validation statics |
+| `service.rs` | Validation helpers and concrete service signatures; DB CRUD and builders deferred to Tasks 6–7 |
+| `handlers.rs` | Axum handlers with validation and `Require<CanManageLibraries>` authorization |
+
+All collection endpoints are wired into the top-level router under `/api/v1/collections`, and `AppError::Collections` maps `COLL_001`–`COLL_008` to RFC 9457 responses. Smart-filter structural validation calls the shared `services::conditions::validate_structure()` engine from Phase 12 Task 3 so overlays, smart collections, and future smart playlists use the same JSONB rule grammar.
+
 ## Cross-References
 
 - [METADATA_OVERLAYS.md](METADATA_OVERLAYS.md) — overlays can be applied to collection posters; shared condition/filter system

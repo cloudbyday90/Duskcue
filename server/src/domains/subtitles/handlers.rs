@@ -14,20 +14,20 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use axum::Json;
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
-use axum::http::header;
 use axum::http::StatusCode;
+use axum::http::header;
 use axum::response::Response;
-use axum::Json;
 use uuid::Uuid;
 
-use crate::error::AppError;
 use crate::domains::subtitles::service;
 use crate::domains::subtitles::types::*;
+use crate::error::AppError;
 use crate::extractors::AuthenticatedUser;
-use crate::extractors::Require;
 use crate::extractors::CanManageServer;
+use crate::extractors::Require;
 use crate::state::AppState;
 use validator::Validate;
 
@@ -151,7 +151,11 @@ pub async fn update_subtitle_settings(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
@@ -178,7 +182,11 @@ pub async fn update_subtitle_provider_settings(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.as_ref().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();

@@ -21,21 +21,21 @@ use mimalloc::MiMalloc;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use clap::Parser;
-use duskcue::config::{build_bootstrap_config, CliArgs};
+use duskcue::config::{CliArgs, build_bootstrap_config};
 use duskcue::lockfile::Lockfile;
 use duskcue::logging::init_logging;
 use duskcue::logging::init_metrics;
 use duskcue::router::build_router;
 use duskcue::services::encryption;
-use duskcue::services::scheduler::{seed_default_tasks, Scheduler};
-use duskcue::state::{load_runtime_config, AppState};
-use sqlx::postgres::PgPoolOptions;
+use duskcue::services::scheduler::{Scheduler, seed_default_tasks};
+use duskcue::state::{AppState, load_runtime_config};
 use sqlx::Row;
+use sqlx::postgres::PgPoolOptions;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
@@ -125,7 +125,10 @@ async fn validate_pg_settings(pool: &sqlx::PgPool) {
     {
         Ok(version) => {
             tracing::info!(version = %version, "PostgreSQL server version");
-            if let Some(major) = version.split('.').next().and_then(|v| v.parse::<u32>().ok())
+            if let Some(major) = version
+                .split('.')
+                .next()
+                .and_then(|v| v.parse::<u32>().ok())
                 && major < 18
             {
                 tracing::warn!(
@@ -154,23 +157,33 @@ async fn validate_pg_settings(pool: &sqlx::PgPool) {
                 let setting: &str = row.get("setting");
                 match name {
                     "fsync" if setting != "on" => {
-                        tracing::warn!("PostgreSQL fsync is disabled — committed transactions may be lost on crash. Set fsync=on in postgresql.conf.");
+                        tracing::warn!(
+                            "PostgreSQL fsync is disabled — committed transactions may be lost on crash. Set fsync=on in postgresql.conf."
+                        );
                         warnings += 1;
                     }
                     "full_page_writes" if setting != "on" => {
-                        tracing::warn!("PostgreSQL full_page_writes is disabled — torn pages may cause corruption after crash. Set full_page_writes=on.");
+                        tracing::warn!(
+                            "PostgreSQL full_page_writes is disabled — torn pages may cause corruption after crash. Set full_page_writes=on."
+                        );
                         warnings += 1;
                     }
                     "synchronous_commit" if setting != "on" => {
-                        tracing::warn!("PostgreSQL synchronous_commit is off — acknowledged commits may be lost on crash. Set synchronous_commit=on.");
+                        tracing::warn!(
+                            "PostgreSQL synchronous_commit is off — acknowledged commits may be lost on crash. Set synchronous_commit=on."
+                        );
                         warnings += 1;
                     }
                     "data_checksums" if setting != "on" => {
-                        tracing::warn!("PostgreSQL data_checksums is disabled — silent corruption will not be detected. Reinitialize with initdb --data-checksums.");
+                        tracing::warn!(
+                            "PostgreSQL data_checksums is disabled — silent corruption will not be detected. Reinitialize with initdb --data-checksums."
+                        );
                         warnings += 1;
                     }
                     "wal_level" if setting != "replica" && setting != "logical" => {
-                        tracing::warn!("PostgreSQL wal_level is '{setting}' — PITR and WAL-G backups will not work. Set wal_level=replica.");
+                        tracing::warn!(
+                            "PostgreSQL wal_level is '{setting}' — PITR and WAL-G backups will not work. Set wal_level=replica."
+                        );
                         warnings += 1;
                     }
                     _ => {}
@@ -179,7 +192,9 @@ async fn validate_pg_settings(pool: &sqlx::PgPool) {
             if warnings == 0 {
                 tracing::info!("PostgreSQL settings validated — all checks passed");
             } else {
-                tracing::warn!("PostgreSQL settings validated with {warnings} warning(s) — review recommendations above");
+                tracing::warn!(
+                    "PostgreSQL settings validated with {warnings} warning(s) — review recommendations above"
+                );
             }
         }
         Err(e) => {
@@ -208,11 +223,12 @@ async fn main() {
     tracing::info!("Prometheus metrics recorder initialized");
 
     tracing::info!("Initializing encryption key");
-    let (encryption_key, _new_key_hex) = encryption::ensure_encryption_key(&bootstrap).unwrap_or_else(|e| {
-        tracing::error!(error = %e, "Failed to initialize encryption key");
-        eprintln!("Failed to initialize encryption key: {e}");
-        std::process::exit(1);
-    });
+    let (encryption_key, _new_key_hex) = encryption::ensure_encryption_key(&bootstrap)
+        .unwrap_or_else(|e| {
+            tracing::error!(error = %e, "Failed to initialize encryption key");
+            eprintln!("Failed to initialize encryption key: {e}");
+            std::process::exit(1);
+        });
 
     let database_url = match bootstrap.database_url.as_deref() {
         Some(url) => url.to_string(),
@@ -220,7 +236,9 @@ async fn main() {
             tracing::error!("DUSKCUE_DATABASE_URL is required");
             eprintln!("DUSKCUE_DATABASE_URL is required");
             eprintln!("Set it via --database-url, DUSKCUE_DATABASE_URL env var, or config.toml");
-            eprintln!("Example: DUSKCUE_DATABASE_URL=\"postgresql://duskcue:password@localhost:5432/duskcue\"");
+            eprintln!(
+                "Example: DUSKCUE_DATABASE_URL=\"postgresql://duskcue:password@localhost:5432/duskcue\""
+            );
             std::process::exit(1);
         }
     };
@@ -243,14 +261,11 @@ async fn main() {
     validate_pg_settings(&pool).await;
 
     tracing::info!("Running database migrations");
-    sqlx::migrate!()
-        .run(&pool)
-        .await
-        .unwrap_or_else(|e| {
-            tracing::error!(error = %e, "Failed to run database migrations");
-            eprintln!("Migration failed: {e}");
-            std::process::exit(1);
-        });
+    sqlx::migrate!().run(&pool).await.unwrap_or_else(|e| {
+        tracing::error!(error = %e, "Failed to run database migrations");
+        eprintln!("Migration failed: {e}");
+        std::process::exit(1);
+    });
     tracing::info!("Database migrations complete");
 
     let runtime_config = load_runtime_config(&pool, Some(&encryption_key))
@@ -261,14 +276,22 @@ async fn main() {
             std::process::exit(1);
         });
 
-    let state = AppState::new_with_config(pool, bootstrap, runtime_config, metrics_handle, encryption_key);
+    let state = AppState::new_with_config(
+        pool,
+        bootstrap,
+        runtime_config,
+        metrics_handle,
+        encryption_key,
+    );
     tracing::info!("Runtime configuration loaded");
 
     {
         let config = state.runtime_config.load();
         if config.is_setup_mode() {
             tracing::warn!("Auth setup not complete — server is in setup mode");
-            tracing::warn!("Only setup endpoints will be accessible until initial setup is complete");
+            tracing::warn!(
+                "Only setup endpoints will be accessible until initial setup is complete"
+            );
         }
     }
 
@@ -303,14 +326,16 @@ async fn main() {
             .register_executor("library_scan", |pool, task_id, config| {
                 let pool = pool.clone();
                 async move {
-                    let mode = config.get("mode").and_then(|v| v.as_str()).unwrap_or("full");
+                    let mode = config
+                        .get("mode")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("full");
                     tracing::info!(task_id = %task_id, mode = %mode, "Starting library scan task");
 
-                    let libraries: Result<Vec<uuid::Uuid>, sqlx::Error> = sqlx::query_scalar(
-                        "SELECT id FROM libraries WHERE deleted_at IS NULL"
-                    )
-                    .fetch_all(&pool)
-                    .await;
+                    let libraries: Result<Vec<uuid::Uuid>, sqlx::Error> =
+                        sqlx::query_scalar("SELECT id FROM libraries WHERE deleted_at IS NULL")
+                            .fetch_all(&pool)
+                            .await;
 
                     match libraries {
                         Ok(ids) => {
@@ -321,7 +346,10 @@ async fn main() {
 
                             for library_id in ids {
                                 match duskcue::workers::library_scanner::scan_library(
-                                    &pool, library_id, mode == "quick", None,
+                                    &pool,
+                                    library_id,
+                                    mode == "quick",
+                                    None,
                                 )
                                 .await
                                 {
@@ -374,9 +402,7 @@ async fn main() {
                 let state = worker_state.clone();
                 async move {
                     duskcue::workers::subtitle_processor::run_subtitle_auto_fetch(
-                        &state,
-                        task_id,
-                        config,
+                        &state, task_id, config,
                     )
                     .await;
                 }
@@ -385,9 +411,7 @@ async fn main() {
                 let state = segment_state.clone();
                 async move {
                     duskcue::workers::segment_detector::run_segment_analysis(
-                        &state,
-                        task_id,
-                        config,
+                        &state, task_id, config,
                     )
                     .await;
                 }
@@ -396,9 +420,7 @@ async fn main() {
                 let state = storyboard_state.clone();
                 async move {
                     duskcue::workers::storyboard_generator::run_storyboard_generation(
-                        &state,
-                        task_id,
-                        config,
+                        &state, task_id, config,
                     )
                     .await;
                 }

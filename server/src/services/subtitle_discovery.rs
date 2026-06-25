@@ -89,8 +89,9 @@ async fn load_video_files(
             .unwrap_or("")
             .to_string();
         let parent_dir = path.parent().unwrap_or(Path::new("")).to_path_buf();
-        let additional_streams: serde_json::Value =
-            row.try_get("additional_streams").unwrap_or(serde_json::json!({}));
+        let additional_streams: serde_json::Value = row
+            .try_get("additional_streams")
+            .unwrap_or(serde_json::json!({}));
 
         entries.push(VideoFileEntry {
             media_item_id: row.get("media_item_id"),
@@ -117,8 +118,7 @@ async fn discover_external_subtitles(
             continue;
         }
 
-        let Some((vf, parsed)) = match_external_subtitle(&file.path, video_files, &dir_map)
-        else {
+        let Some((vf, parsed)) = match_external_subtitle(&file.path, video_files, &dir_map) else {
             tracing::debug!(
                 path = %file.path.display(),
                 "External subtitle could not be matched to a video file"
@@ -159,10 +159,7 @@ fn match_external_subtitle<'a>(
     dir_map: &HashMap<PathBuf, Vec<usize>>,
 ) -> Option<(&'a VideoFileEntry, ParsedSubtitleName)> {
     let parent = subtitle_path.parent()?;
-    let sub_parent_name = parent
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    let sub_parent_name = parent.file_name().and_then(|n| n.to_str()).unwrap_or("");
     let sub_parent_lower = sub_parent_name.to_lowercase();
 
     let search_dir = if SUBTITLE_DIR_NAMES.contains(&sub_parent_lower.as_str()) {
@@ -195,7 +192,8 @@ fn match_external_subtitle<'a>(
     }
 
     for vf in &candidates {
-        if vf.file_stem
+        if vf
+            .file_stem
             .to_lowercase()
             .starts_with(&parsed.base_name.to_lowercase())
         {
@@ -229,10 +227,7 @@ async fn discover_embedded_subtitles(
             .and_then(|s| s.as_array())
         {
             for sub in subs_array {
-                let stream_index = sub
-                    .get("index")
-                    .and_then(|i| i.as_i64())
-                    .unwrap_or(0);
+                let stream_index = sub.get("index").and_then(|i| i.as_i64()).unwrap_or(0);
                 let language = sub
                     .get("language")
                     .and_then(|l| l.as_str())
@@ -247,8 +242,7 @@ async fn discover_embedded_subtitles(
                     .and_then(|h| h.as_bool())
                     .unwrap_or(false);
 
-                let synthetic_path =
-                    format!("{}::embedded::{}", vf.file_path, stream_index);
+                let synthetic_path = format!("{}::embedded::{}", vf.file_path, stream_index);
 
                 let rows = insert_subtitle_file(
                     pool,

@@ -286,10 +286,7 @@ fn probe_ffmpeg_hwaccels() -> HashSet<String> {
     let mut methods = HashSet::new();
     for line in stdout.lines() {
         let trimmed = line.trim();
-        if !trimmed.is_empty()
-            && !trimmed.starts_with("Hardware")
-            && !trimmed.starts_with('-')
-        {
+        if !trimmed.is_empty() && !trimmed.starts_with("Hardware") && !trimmed.starts_with('-') {
             methods.insert(trimmed.to_string());
         }
     }
@@ -358,8 +355,7 @@ fn find_render_node() -> Option<std::path::PathBuf> {
             let name = entry.file_name();
             let name_str = name.to_string_lossy();
             if name_str.starts_with("renderD") {
-                let sys_path = std::path::PathBuf::from("/sys/class/drm")
-                    .join(&*name_str);
+                let sys_path = std::path::PathBuf::from("/sys/class/drm").join(&*name_str);
                 if sys_path.join("device/driver").exists() {
                     return Some(sys_path);
                 }

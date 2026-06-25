@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use base64::engine::general_purpose::STANDARD as BASE64;
 use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use ring::rand::SecureRandom as _;
 
 pub const ENCRYPTED_PREFIX: &str = "encrypted:";
@@ -108,11 +108,7 @@ impl EncryptionKey {
         combined.extend_from_slice(&nonce_bytes);
         combined.extend_from_slice(&in_out);
 
-        Ok(format!(
-            "{}{}",
-            ENCRYPTED_PREFIX,
-            BASE64.encode(&combined)
-        ))
+        Ok(format!("{}{}", ENCRYPTED_PREFIX, BASE64.encode(&combined)))
     }
 
     pub fn decrypt(&self, ciphertext: &str) -> Result<String, EncryptionError> {
@@ -167,17 +163,10 @@ pub fn mask_secret(value: &str) -> String {
     if value.len() <= 6 {
         return "***".to_string();
     }
-    format!(
-        "{}...{}",
-        &value[..3],
-        &value[value.len() - 3..]
-    )
+    format!("{}...{}", &value[..3], &value[value.len() - 3..])
 }
 
-pub fn decrypt_provider_config(
-    config: &mut crate::state::ProviderConfig,
-    key: &EncryptionKey,
-) {
+pub fn decrypt_provider_config(config: &mut crate::state::ProviderConfig, key: &EncryptionKey) {
     config.tmdb.api_key = key.decrypt_if_encrypted(&config.tmdb.api_key);
     config.tmdb.access_token = key.decrypt_if_encrypted(&config.tmdb.access_token);
     config.tvdb.api_key = key.decrypt_optional(&config.tvdb.api_key);
@@ -185,10 +174,7 @@ pub fn decrypt_provider_config(
     config.omdb.api_key = key.decrypt_optional(&config.omdb.api_key);
 }
 
-pub fn encrypt_provider_config(
-    config: &mut crate::state::ProviderConfig,
-    key: &EncryptionKey,
-) {
+pub fn encrypt_provider_config(config: &mut crate::state::ProviderConfig, key: &EncryptionKey) {
     if !config.tmdb.api_key.is_empty() && !config.tmdb.api_key.starts_with(ENCRYPTED_PREFIX) {
         match key.encrypt(&config.tmdb.api_key) {
             Ok(encrypted) => config.tmdb.api_key = encrypted,
@@ -204,7 +190,8 @@ pub fn encrypt_provider_config(
         }
     }
     if let Some(ref api_key) = config.tvdb.api_key
-        && !api_key.is_empty() && !api_key.starts_with(ENCRYPTED_PREFIX)
+        && !api_key.is_empty()
+        && !api_key.starts_with(ENCRYPTED_PREFIX)
     {
         match key.encrypt(api_key) {
             Ok(encrypted) => config.tvdb.api_key = Some(encrypted),
@@ -212,7 +199,8 @@ pub fn encrypt_provider_config(
         }
     }
     if let Some(ref api_key) = config.fanart.api_key
-        && !api_key.is_empty() && !api_key.starts_with(ENCRYPTED_PREFIX)
+        && !api_key.is_empty()
+        && !api_key.starts_with(ENCRYPTED_PREFIX)
     {
         match key.encrypt(api_key) {
             Ok(encrypted) => config.fanart.api_key = Some(encrypted),
@@ -220,7 +208,8 @@ pub fn encrypt_provider_config(
         }
     }
     if let Some(ref api_key) = config.omdb.api_key
-        && !api_key.is_empty() && !api_key.starts_with(ENCRYPTED_PREFIX)
+        && !api_key.is_empty()
+        && !api_key.starts_with(ENCRYPTED_PREFIX)
     {
         match key.encrypt(api_key) {
             Ok(encrypted) => config.omdb.api_key = Some(encrypted),
@@ -242,7 +231,9 @@ pub fn encrypt_trakt_config(config: &mut crate::state::TraktConfig, key: &Encryp
     }
 }
 
-pub fn ensure_encryption_key(bootstrap: &crate::config::BootstrapConfig) -> Result<(EncryptionKey, Option<String>), EncryptionError> {
+pub fn ensure_encryption_key(
+    bootstrap: &crate::config::BootstrapConfig,
+) -> Result<(EncryptionKey, Option<String>), EncryptionError> {
     if let Some(ref hex) = bootstrap.encryption_key {
         let key = EncryptionKey::from_hex(hex)?;
         Ok((key, None))
@@ -268,14 +259,12 @@ fn write_encryption_key_to_config(
         let existing = std::fs::read_to_string(&config_path)
             .map_err(|e| EncryptionError::ConfigWriteFailed(e.to_string()))?;
         if existing.contains("encryption_key") {
-            tracing::warn!("encryption_key already exists in config file but was not loaded — possible config mismatch");
+            tracing::warn!(
+                "encryption_key already exists in config file but was not loaded — possible config mismatch"
+            );
             return Ok(());
         }
-        let updated = format!(
-            "{}\nencryption_key = \"{}\"\n",
-            existing.trim_end(),
-            hex
-        );
+        let updated = format!("{}\nencryption_key = \"{}\"\n", existing.trim_end(), hex);
         std::fs::write(&config_path, updated)
             .map_err(|e| EncryptionError::ConfigWriteFailed(e.to_string()))?;
     } else {
@@ -355,8 +344,14 @@ mod tests {
     fn test_decrypt_optional() {
         let (key, _) = EncryptionKey::generate();
         let encrypted = key.encrypt("secret").unwrap();
-        assert_eq!(key.decrypt_optional(&Some(encrypted)), Some("secret".to_string()));
-        assert_eq!(key.decrypt_optional(&Some("plaintext".to_string())), Some("plaintext".to_string()));
+        assert_eq!(
+            key.decrypt_optional(&Some(encrypted)),
+            Some("secret".to_string())
+        );
+        assert_eq!(
+            key.decrypt_optional(&Some("plaintext".to_string())),
+            Some("plaintext".to_string())
+        );
         assert_eq!(key.decrypt_optional(&None), None);
     }
 
@@ -410,7 +405,11 @@ mod tests {
         if let Some(last_byte) = bytes.last_mut() {
             *last_byte = last_byte.wrapping_add(1);
         }
-        let tampered = format!("{}{}", ENCRYPTED_PREFIX, String::from_utf8(bytes).unwrap_or_default());
+        let tampered = format!(
+            "{}{}",
+            ENCRYPTED_PREFIX,
+            String::from_utf8(bytes).unwrap_or_default()
+        );
         assert!(key.decrypt(&tampered).is_err());
     }
 
@@ -460,8 +459,22 @@ mod tests {
 
         assert!(config.tmdb.api_key.starts_with(ENCRYPTED_PREFIX));
         assert!(config.tmdb.access_token.starts_with(ENCRYPTED_PREFIX));
-        assert!(config.tvdb.api_key.as_ref().unwrap().starts_with(ENCRYPTED_PREFIX));
-        assert!(config.fanart.api_key.as_ref().unwrap().starts_with(ENCRYPTED_PREFIX));
+        assert!(
+            config
+                .tvdb
+                .api_key
+                .as_ref()
+                .unwrap()
+                .starts_with(ENCRYPTED_PREFIX)
+        );
+        assert!(
+            config
+                .fanart
+                .api_key
+                .as_ref()
+                .unwrap()
+                .starts_with(ENCRYPTED_PREFIX)
+        );
         assert!(config.omdb.api_key.is_none());
 
         decrypt_provider_config(&mut config, &key);

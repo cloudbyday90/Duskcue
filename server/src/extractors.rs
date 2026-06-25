@@ -53,7 +53,10 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
         let validated = auth::service::validate_session(&state.pool, &token).await?;
 
         let config = state.runtime_config.load();
-        if auth::service::is_idle_expired(&validated.session, config.auth.session_idle_timeout_hours) {
+        if auth::service::is_idle_expired(
+            &validated.session,
+            config.auth.session_idle_timeout_hours,
+        ) {
             drop(config);
             let _ = sqlx::query("DELETE FROM user_sessions WHERE id = $1")
                 .bind(validated.session.id)
@@ -68,12 +71,10 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
         let should_update = elapsed.num_seconds() > 60;
 
         if should_update {
-            let _ = sqlx::query(
-                "UPDATE user_sessions SET last_active_at = now() WHERE id = $1",
-            )
-            .bind(validated.session.id)
-            .execute(&state.pool)
-            .await;
+            let _ = sqlx::query("UPDATE user_sessions SET last_active_at = now() WHERE id = $1")
+                .bind(validated.session.id)
+                .execute(&state.pool)
+                .await;
         }
 
         Ok(AuthenticatedUser {
@@ -299,8 +300,7 @@ impl FromRequestParts<AppState> for PaginationParams {
 
 fn validate_pagination(query: PaginationQuery) -> Result<PaginationParams, AppError> {
     let has_cursor = query.cursor.as_ref().is_some_and(|c| !c.trim().is_empty());
-    let is_offset_request =
-        query.page.is_some() || query.page_size.is_some();
+    let is_offset_request = query.page.is_some() || query.page_size.is_some();
 
     if has_cursor && is_offset_request {
         return Err(field_error(
@@ -405,4 +405,3 @@ fn field_error(field: &str, code: &str, message: &str) -> AppError {
         instance: None,
     }
 }
-

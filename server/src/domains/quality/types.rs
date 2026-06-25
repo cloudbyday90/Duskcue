@@ -19,8 +19,20 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
-pub static VALID_PROFILE_SOURCES: &[&str] = &["client_report", "capability_wizard", "known_device", "manual"];
-pub static VALID_NETWORK_TIERS: &[&str] = &["excellent", "good", "moderate", "slow", "very_slow", "critical"];
+pub static VALID_PROFILE_SOURCES: &[&str] = &[
+    "client_report",
+    "capability_wizard",
+    "known_device",
+    "manual",
+];
+pub static VALID_NETWORK_TIERS: &[&str] = &[
+    "excellent",
+    "good",
+    "moderate",
+    "slow",
+    "very_slow",
+    "critical",
+];
 pub static VALID_REPORT_TYPES: &[&str] = &["segment", "probe"];
 pub static VALID_WIZARD_RESULTS: &[&str] = &["success", "failed", "stuttered"];
 pub static VALID_QUALITY_MODES: &[&str] = &["auto", "maximum", "manual"];

@@ -19,7 +19,11 @@ use serde::Deserialize;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
-#[command(name = "duskcue", version, about = "Self-hosted media streaming server")]
+#[command(
+    name = "duskcue",
+    version,
+    about = "Self-hosted media streaming server"
+)]
 pub struct CliArgs {
     #[arg(long, env = "DUSKCUE_DATABASE_URL")]
     pub database_url: Option<String>,

@@ -115,23 +115,20 @@ pub async fn create_library(
     pool: &sqlx::PgPool,
     params: CreateLibraryParams,
 ) -> Result<LibraryResponse, LibrariesError> {
-    let existing = sqlx::query(
-        "SELECT id FROM libraries WHERE slug = $1 AND deleted_at IS NULL",
-    )
-    .bind(&params.slug)
-    .fetch_optional(pool)
-    .await?;
+    let existing = sqlx::query("SELECT id FROM libraries WHERE slug = $1 AND deleted_at IS NULL")
+        .bind(&params.slug)
+        .fetch_optional(pool)
+        .await?;
 
     if existing.is_some() {
         return Err(LibrariesError::NameExists(params.name));
     }
 
-    let existing_name = sqlx::query(
-        "SELECT id FROM libraries WHERE name = $1 AND deleted_at IS NULL",
-    )
-    .bind(&params.name)
-    .fetch_optional(pool)
-    .await?;
+    let existing_name =
+        sqlx::query("SELECT id FROM libraries WHERE name = $1 AND deleted_at IS NULL")
+            .bind(&params.name)
+            .fetch_optional(pool)
+            .await?;
 
     if existing_name.is_some() {
         return Err(LibrariesError::NameExists(params.name));
@@ -187,13 +184,11 @@ pub async fn update_library(
     pool: &sqlx::PgPool,
     params: UpdateLibraryParams,
 ) -> Result<LibraryResponse, LibrariesError> {
-    sqlx::query(
-        "SELECT id FROM libraries WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(params.library_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(LibrariesError::NotFound)?;
+    sqlx::query("SELECT id FROM libraries WHERE id = $1 AND deleted_at IS NULL")
+        .bind(params.library_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(LibrariesError::NotFound)?;
 
     if let Some(ref name) = params.name {
         let existing = sqlx::query(
@@ -253,12 +248,11 @@ pub async fn update_library(
 
     let library_id: Uuid = row.get("id");
 
-    let item_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM media_items WHERE library_id = $1",
-    )
-    .bind(library_id)
-    .fetch_one(pool)
-    .await?;
+    let item_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM media_items WHERE library_id = $1")
+            .bind(library_id)
+            .fetch_one(pool)
+            .await?;
 
     let mut response = row_to_response(&row);
     response.item_count = item_count;
@@ -269,20 +263,17 @@ pub async fn soft_delete_library(
     pool: &sqlx::PgPool,
     library_id: Uuid,
 ) -> Result<(), LibrariesError> {
-    sqlx::query(
-        "SELECT id FROM libraries WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(library_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(LibrariesError::NotFound)?;
+    sqlx::query("SELECT id FROM libraries WHERE id = $1 AND deleted_at IS NULL")
+        .bind(library_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(LibrariesError::NotFound)?;
 
-    let item_count: i64 = sqlx::query_scalar(
-        "SELECT count(*) FROM media_items WHERE library_id = $1",
-    )
-    .bind(library_id)
-    .fetch_one(pool)
-    .await?;
+    let item_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM media_items WHERE library_id = $1")
+            .bind(library_id)
+            .fetch_one(pool)
+            .await?;
 
     if item_count > 0 {
         return Err(LibrariesError::CannotDeleteWithMedia);
@@ -301,7 +292,13 @@ pub async fn soft_delete_library(
 pub fn generate_slug(name: &str) -> String {
     name.to_lowercase()
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '_' { c } else { '-' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '-'
+            }
+        })
         .collect::<String>()
         .split('-')
         .filter(|s| !s.is_empty())
@@ -384,13 +381,11 @@ async fn verify_library_exists(
     pool: &sqlx::PgPool,
     library_id: Uuid,
 ) -> Result<(), LibrariesError> {
-    sqlx::query(
-        "SELECT id FROM libraries WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(library_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(LibrariesError::NotFound)?;
+    sqlx::query("SELECT id FROM libraries WHERE id = $1 AND deleted_at IS NULL")
+        .bind(library_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(LibrariesError::NotFound)?;
     Ok(())
 }
 
@@ -447,13 +442,11 @@ pub async fn create_library_path(
 ) -> Result<LibraryPathResponse, LibrariesError> {
     verify_library_exists(pool, params.library_id).await?;
 
-    let existing = sqlx::query(
-        "SELECT id FROM library_paths WHERE library_id = $1 AND path = $2",
-    )
-    .bind(params.library_id)
-    .bind(&params.path)
-    .fetch_optional(pool)
-    .await?;
+    let existing = sqlx::query("SELECT id FROM library_paths WHERE library_id = $1 AND path = $2")
+        .bind(params.library_id)
+        .bind(&params.path)
+        .fetch_optional(pool)
+        .await?;
 
     if existing.is_some() {
         return Err(LibrariesError::PathExists(params.path));
@@ -501,14 +494,12 @@ pub async fn update_library_path(
 ) -> Result<LibraryPathResponse, LibrariesError> {
     verify_library_exists(pool, params.library_id).await?;
 
-    sqlx::query(
-        "SELECT id FROM library_paths WHERE id = $1 AND library_id = $2",
-    )
-    .bind(params.path_id)
-    .bind(params.library_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(LibrariesError::PathNotFound)?;
+    sqlx::query("SELECT id FROM library_paths WHERE id = $1 AND library_id = $2")
+        .bind(params.path_id)
+        .bind(params.library_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(LibrariesError::PathNotFound)?;
 
     if let Some(ref new_path) = params.path {
         let existing = sqlx::query(
@@ -564,37 +555,33 @@ pub async fn delete_library_path(
 ) -> Result<(), LibrariesError> {
     verify_library_exists(pool, library_id).await?;
 
-    let row = sqlx::query(
-        "SELECT id, is_default FROM library_paths WHERE id = $1 AND library_id = $2",
-    )
-    .bind(path_id)
-    .bind(library_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(LibrariesError::PathNotFound)?;
+    let row =
+        sqlx::query("SELECT id, is_default FROM library_paths WHERE id = $1 AND library_id = $2")
+            .bind(path_id)
+            .bind(library_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or(LibrariesError::PathNotFound)?;
 
     let is_default: bool = row.get("is_default");
 
     if is_default {
-        let path_count: i64 = sqlx::query_scalar(
-            "SELECT count(*) FROM library_paths WHERE library_id = $1",
-        )
-        .bind(library_id)
-        .fetch_one(pool)
-        .await?;
+        let path_count: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM library_paths WHERE library_id = $1")
+                .bind(library_id)
+                .fetch_one(pool)
+                .await?;
 
         if path_count <= 1 {
             return Err(LibrariesError::CannotDeleteDefaultPath);
         }
     }
 
-    sqlx::query(
-        "DELETE FROM library_paths WHERE id = $1 AND library_id = $2",
-    )
-    .bind(path_id)
-    .bind(library_id)
-    .execute(pool)
-    .await?;
+    sqlx::query("DELETE FROM library_paths WHERE id = $1 AND library_id = $2")
+        .bind(path_id)
+        .bind(library_id)
+        .execute(pool)
+        .await?;
 
     Ok(())
 }
@@ -603,12 +590,11 @@ pub async fn list_library_path_strings(
     pool: &sqlx::PgPool,
     library_id: Uuid,
 ) -> Result<Vec<String>, LibrariesError> {
-    let rows = sqlx::query(
-        "SELECT path FROM library_paths WHERE library_id = $1 AND scan_enabled = true",
-    )
-    .bind(library_id)
-    .fetch_all(pool)
-    .await?;
+    let rows =
+        sqlx::query("SELECT path FROM library_paths WHERE library_id = $1 AND scan_enabled = true")
+            .bind(library_id)
+            .fetch_all(pool)
+            .await?;
 
     Ok(rows.iter().map(|r| r.get::<String, _>("path")).collect())
 }

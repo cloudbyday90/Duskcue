@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use axum::extract::{Query, State};
 use axum::Json;
+use axum::extract::{Query, State};
 use serde::Deserialize;
 use uuid::Uuid;
 use validator::Validate;
@@ -40,7 +40,6 @@ pub async fn list_users(
     _auth: Require<CanManageUsers>,
     Query(query): Query<ListUsersQuery>,
 ) -> Result<Json<UserListResponse>, AppError> {
-
     let page = query.page.unwrap_or(1).max(1);
     let page_size = query.page_size.unwrap_or(25).clamp(1, 100);
 
@@ -61,7 +60,6 @@ pub async fn get_user(
     _auth: Require<CanManageUsers>,
     axum::extract::Path(target_user_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<UserResponse>, AppError> {
-
     let response = service::get_user(&state.pool, target_user_id).await?;
 
     Ok(Json(response))
@@ -73,34 +71,29 @@ pub async fn update_user(
     axum::extract::Path(target_user_id): axum::extract::Path<Uuid>,
     Json(req): Json<UpdateUserRequest>,
 ) -> Result<Json<UserResponse>, AppError> {
-
-    req.validate().map_err(|e| {
-        AppError::Validation {
-            errors: e
-                .field_errors()
-                .into_iter()
-                .flat_map(|(field, errors)| {
-                    errors.iter().map(move |err| crate::error::FieldError {
-                        field: field.to_string(),
-                        code: err.code.to_string(),
-                        message: err
-                            .message
-                            .as_ref()
-                            .map(|m| m.to_string())
-                            .unwrap_or_default(),
-                    })
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
-                .collect(),
-            instance: Some(format!("/api/v1/users/{}", target_user_id)),
-        }
+            })
+            .collect(),
+        instance: Some(format!("/api/v1/users/{}", target_user_id)),
     })?;
 
     if let Some(policy_id) = req.streaming_policy_id {
         let exists = service::validate_streaming_policy_exists(&state.pool, policy_id).await?;
         if !exists {
-            return Err(AppError::BadRequest(
-                "Streaming policy not found".into(),
-            ));
+            return Err(AppError::BadRequest("Streaming policy not found".into()));
         }
     }
 

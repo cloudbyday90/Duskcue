@@ -92,8 +92,7 @@ fn try_parse_xml(content: &str, data: &mut NfoData) -> bool {
                     uniqueid_type = None;
                     for attr in e.attributes().flatten() {
                         if attr.key.local_name().as_ref() == b"type" {
-                            uniqueid_type =
-                                Some(String::from_utf8_lossy(&attr.value).to_string());
+                            uniqueid_type = Some(String::from_utf8_lossy(&attr.value).to_string());
                         }
                     }
                 }

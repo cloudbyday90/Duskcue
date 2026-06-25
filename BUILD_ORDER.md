@@ -2770,7 +2770,32 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **No new workspace dependencies** — Blake3 already in workspace (Phase 5 scanner); all image decode/encode uses existing `image` + `webp` crates; all DB access uses existing `sqlx`. All 507 server tests pass (493 prior + 14 new). 0 clippy warnings.
 
 4. ~~Implement clean art preservation — source artwork never modified~~ **DONE**
- 5. Create `server/src/domains/collections/` — five-file pattern
+ 5. ~~Create `server/src/domains/collections/` — five-file pattern~~ **DONE**
+
+**What was built for Task 5:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/collections/mod.rs` | Module declarations + router assembly with 8 route groups under `/api/v1/collections` |
+| `server/src/domains/collections/error.rs` | `CollectionsError` enum covering registered `COLL_001`–`COLL_008` codes + Database catch-all |
+| `server/src/domains/collections/types.rs` | Three-type DTOs: `CollectionRow`, `CollectionItemRow`, `CollectionTemplateRow` (internal, no Serialize), collection/item/template request DTOs (Deserialize + Validate), response DTOs (Serialize), validation statics for collection types, visibility, sync modes, template types, builder types |
+| `server/src/domains/collections/service.rs` | Validation helpers (`validate_collection_type`, `validate_visibility`, `validate_sync_mode`, `validate_template_type`, `validate_dynamic_config`, `validate_smart_filter`, `generate_slug`) plus concrete service signatures with `todo!()` bodies for CRUD, item management, sync dispatch, and template import/listing |
+| `server/src/domains/collections/handlers.rs` | Handler stubs with concrete `Result<Json<T>, AppError>` return types, request validation, smart-filter structural validation, dynamic-builder validation, and `Require<CanManageLibraries>` gates |
+| `server/src/domains/mod.rs` | Added `pub mod collections;` |
+| `server/src/error.rs` | Added `AppError::Collections(#[from] CollectionsError)` and `collections_error_to_http()` mapping all 8 registered `COLL` codes |
+| `server/src/router.rs` | Replaced Phase 12 collections comment with real `.merge(crate::domains::collections::router(state.clone()))` |
+
+**Key decisions from Task 5:**
+
+- **Scaffolding scope mirrors overlays Task 1** — The domain is fully wired with concrete DTOs, handlers, service signatures, validation, routes, and error mapping, while DB CRUD and builder behavior remain `todo!()` for Tasks 6–7. This keeps Task 5 to the five-file pattern boundary.
+- **`CanManageLibraries` capability gate** — Collection management is a library-management function; all endpoints are gated with `Require<CanManageLibraries>`, matching overlays and library administration.
+- **Route design reserves both user-facing collection CRUD and admin operations** — `/api/v1/collections` covers list/create; `/api/v1/collections/{id}` covers get/update/delete; `/items` handles static item management; `/sync` handles all/single dynamic sync dispatch; `/templates` handles template listing/import.
+- **Registered `COLL` error codes only** — The central error mapping uses exactly `COLL_001`–`COLL_008` from `COLLECTIONS.md`/`ERROR_HANDLING.md`; generic database errors map to `INTERNAL`.
+- **Smart filters reuse the shared condition service** — `validate_smart_filter()` calls `services::conditions::validate_structure()`, preserving the Phase 12 Task 3 decision that overlays, smart collections, and smart playlists share one JSONB rule grammar.
+- **No new migrations or dependencies** — `collections`, `collection_items`, and `collection_templates` already exist from Phase 2 migration 14; the scaffold uses existing `axum`, `sqlx`, `serde`, `validator`, `uuid`, and `chrono`.
+
+**Verification:** `cargo check -p duskcue` passes. `cargo test -p duskcue` passes (507 tests). `cargo clippy -p duskcue --all-targets --all-features -- -A clippy::unnecessary-sort-by -D warnings` passes; strict clippy without the allowance is currently blocked by two pre-existing `clippy::unnecessary-sort-by` warnings in `server/src/services/fanart_client.rs`.
+
 6. Implement collection builders:
    - Internal: genre, decade, actor, director, franchise, resolution, audio_codec
    - External: `tmdb_popular`, `tmdb_top_rated`, `tmdb_trending`, `tmdb_now_playing`, `tmdb_upcoming`

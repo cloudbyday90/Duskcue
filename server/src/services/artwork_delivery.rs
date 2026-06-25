@@ -83,15 +83,14 @@ pub async fn resolve_variant(
 
     if let Some(overlaid) = overlaid {
         let stem = format!("{}_overlay", overlaid.artwork_id);
-        let cache_path = image_pipeline::variant_path(
-            images_cache_root,
-            category,
-            variant_label,
-            &stem,
-        );
+        let cache_path =
+            image_pipeline::variant_path(images_cache_root, category, variant_label, &stem);
 
         if let Some(bytes) = try_read_cache(&cache_path).await {
-            return Ok(ResolvedArtwork { bytes, artwork_id: overlaid.artwork_id });
+            return Ok(ResolvedArtwork {
+                bytes,
+                artwork_id: overlaid.artwork_id,
+            });
         }
 
         let variant = image_pipeline::generate_variant(
@@ -109,12 +108,8 @@ pub async fn resolve_variant(
             MediaError::ArtworkNotFound
         })?;
 
-        if let Err(e) = image_pipeline::write_variant(
-            images_cache_root,
-            category,
-            &stem,
-            &variant,
-        ) {
+        if let Err(e) = image_pipeline::write_variant(images_cache_root, category, &stem, &variant)
+        {
             tracing::warn!(
                 error = %e,
                 path = %cache_path.display(),
@@ -148,51 +143,36 @@ pub async fn resolve_variant(
     };
 
     let stem = artwork_id.to_string();
-    let cache_path = image_pipeline::variant_path(
-        images_cache_root,
-        category,
-        variant_label,
-        &stem,
-    );
+    let cache_path =
+        image_pipeline::variant_path(images_cache_root, category, variant_label, &stem);
 
     if let Some(bytes) = try_read_cache(&cache_path).await {
         return Ok(ResolvedArtwork { bytes, artwork_id });
     }
 
-    let source_bytes = tokio::fs::read(&local_path)
-        .await
-        .map_err(|e| {
-            tracing::warn!(
-                error = %e,
-                %media_item_id,
-                path = %local_path.display(),
-                "artwork source file unreadable"
-            );
-            MediaError::ArtworkNotFound
-        })?;
-
-    let variant = image_pipeline::generate_variant(
-        &source_bytes,
-        category,
-        variant_label,
-        encode_config,
-    )
-    .map_err(|e| {
+    let source_bytes = tokio::fs::read(&local_path).await.map_err(|e| {
         tracing::warn!(
             error = %e,
             %media_item_id,
             path = %local_path.display(),
-            "artwork variant generation failed (corrupt source?)"
+            "artwork source file unreadable"
         );
         MediaError::ArtworkNotFound
     })?;
 
-    if let Err(e) = image_pipeline::write_variant(
-        images_cache_root,
-        category,
-        &stem,
-        &variant,
-    ) {
+    let variant =
+        image_pipeline::generate_variant(&source_bytes, category, variant_label, encode_config)
+            .map_err(|e| {
+                tracing::warn!(
+                    error = %e,
+                    %media_item_id,
+                    path = %local_path.display(),
+                    "artwork variant generation failed (corrupt source?)"
+                );
+                MediaError::ArtworkNotFound
+            })?;
+
+    if let Err(e) = image_pipeline::write_variant(images_cache_root, category, &stem, &variant) {
         tracing::warn!(
             error = %e,
             path = %cache_path.display(),
@@ -275,9 +255,6 @@ mod tests {
 
     #[test]
     fn default_season_poster_shares_poster_default() {
-        assert_eq!(
-            default_variant_label(ArtworkCategory::SeasonPoster),
-            "w342"
-        );
+        assert_eq!(default_variant_label(ArtworkCategory::SeasonPoster), "w342");
     }
 }

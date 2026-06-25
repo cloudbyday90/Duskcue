@@ -23,11 +23,7 @@ use crate::state::AppState;
 
 const DEFAULT_MAX_ITEMS_PER_LANGUAGE: i64 = 50;
 
-pub async fn run_subtitle_auto_fetch(
-    state: &AppState,
-    task_id: Uuid,
-    config: serde_json::Value,
-) {
+pub async fn run_subtitle_auto_fetch(state: &AppState, task_id: Uuid, config: serde_json::Value) {
     tracing::info!(task_id = %task_id, "Starting subtitle auto-fetch task");
 
     let (languages, max_items) = match resolve_targets(state, &config) {
@@ -35,7 +31,10 @@ pub async fn run_subtitle_auto_fetch(
             tracing::info!(task_id = %task_id, reason = %reason, "Subtitle auto-fetch skipped");
             return;
         }
-        ResolvedTargets::Run { languages, max_items_per_language } => (languages, max_items_per_language),
+        ResolvedTargets::Run {
+            languages,
+            max_items_per_language,
+        } => (languages, max_items_per_language),
     };
 
     if languages.is_empty() {
@@ -253,7 +252,10 @@ mod tests {
 
     #[test]
     fn test_resolved_targets_skip_logic() {
-        assert!(matches!(ResolvedTargets::Skip("test"), ResolvedTargets::Skip("test")));
+        assert!(matches!(
+            ResolvedTargets::Skip("test"),
+            ResolvedTargets::Skip("test")
+        ));
     }
 
     #[test]

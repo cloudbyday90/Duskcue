@@ -160,13 +160,12 @@ pub async fn get_storyboard_sprite(
 
     // Bounds-check the requested sheet against what was generated. The
     // `storyboards.sprite_count` column is authoritative.
-    let sprite_count: i32 = sqlx::query_scalar(
-        "SELECT sprite_count FROM storyboards WHERE media_file_id = $1",
-    )
-    .bind(media_file_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(StoryboardError::StoryboardNotFound { media_item_id })?;
+    let sprite_count: i32 =
+        sqlx::query_scalar("SELECT sprite_count FROM storyboards WHERE media_file_id = $1")
+            .bind(media_file_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or(StoryboardError::StoryboardNotFound { media_item_id })?;
 
     if sheet_number > sprite_count as u32 {
         return Err(StoryboardError::InvalidSpriteFilename(format!(
@@ -345,12 +344,11 @@ async fn resolve_media_file_for_storyboard(
     // row here — callers (index/sprite/delete) only need the path, which is
     // derived from media_file_id. The sprite handler does its own
     // sprite_count bounds check.
-    let exists: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM storyboards WHERE media_file_id = $1)",
-    )
-    .bind(media_file_id)
-    .fetch_one(pool)
-    .await?;
+    let exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM storyboards WHERE media_file_id = $1)")
+            .bind(media_file_id)
+            .fetch_one(pool)
+            .await?;
 
     if !exists {
         return Err(StoryboardError::StoryboardNotFound { media_item_id });
@@ -427,10 +425,7 @@ fn thumbnails_in_sheet(
 /// DB but its files are missing — rare but recoverable by regeneration);
 /// other IO errors surface as `Database` (Internal) since they indicate
 /// filesystem permissions or hardware problems.
-fn map_index_read_error(
-    e: std::io::Error,
-    media_item_id: Uuid,
-) -> StoryboardError {
+fn map_index_read_error(e: std::io::Error, media_item_id: Uuid) -> StoryboardError {
     if e.kind() == std::io::ErrorKind::NotFound {
         StoryboardError::StoryboardNotFound { media_item_id }
     } else {

@@ -178,15 +178,16 @@ fn resolve_bucket_interval(from: DateTime<Utc>, to: DateTime<Utc>) -> &'static s
 
 fn encode_cursor(id: Uuid) -> String {
     let json = serde_json::json!({ "id": id.to_string() });
-    base64::engine::general_purpose::STANDARD
-        .encode(serde_json::to_vec(&json).unwrap_or_default())
+    base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&json).unwrap_or_default())
 }
 
 fn parse_cursor(cursor: Option<&str>) -> Option<Uuid> {
     cursor.and_then(|c| {
         let bytes = base64::engine::general_purpose::STANDARD.decode(c).ok()?;
         let json: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
-        json.get("id")?.as_str().and_then(|s| s.parse::<Uuid>().ok())
+        json.get("id")?
+            .as_str()
+            .and_then(|s| s.parse::<Uuid>().ok())
     })
 }
 
@@ -243,7 +244,11 @@ pub async fn list_play_history(
         .await?;
 
     let has_more = rows.len() > limit as usize;
-    let rows = if has_more { &rows[..limit as usize] } else { &rows };
+    let rows = if has_more {
+        &rows[..limit as usize]
+    } else {
+        &rows
+    };
 
     let items: Vec<PlaySessionResponse> = rows.iter().map(row_to_play_session_response).collect();
 
@@ -553,8 +558,8 @@ pub fn haversine_distance(lat1: f64, lon1: f64, lat2: f64, lon2: f64) -> f64 {
     let lat2_rad = lat2.to_radians();
     let dlat = (lat2 - lat1).to_radians();
     let dlon = (lon2 - lon1).to_radians();
-    let a = (dlat / 2.0).sin().powi(2)
-        + lat1_rad.cos() * lat2_rad.cos() * (dlon / 2.0).sin().powi(2);
+    let a =
+        (dlat / 2.0).sin().powi(2) + lat1_rad.cos() * lat2_rad.cos() * (dlon / 2.0).sin().powi(2);
     EARTH_RADIUS_KM * 2.0 * a.sqrt().asin()
 }
 
@@ -609,7 +614,9 @@ pub async fn enrich_and_detect(
         None
     };
 
-    if let Err(e) = update_session_geo(&state.pool, session_id, ip, location_type, geo.as_ref()).await {
+    if let Err(e) =
+        update_session_geo(&state.pool, session_id, ip, location_type, geo.as_ref()).await
+    {
         tracing::warn!(session_id = %session_id, error = %e, "failed to update session geo data");
         return;
     }
@@ -1010,8 +1017,8 @@ mod tests {
     #[test]
     fn cursor_rejects_missing_id_field() {
         let json = serde_json::json!({ "other": "x" });
-        let encoded = base64::engine::general_purpose::STANDARD
-            .encode(serde_json::to_vec(&json).unwrap());
+        let encoded =
+            base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&json).unwrap());
         assert_eq!(parse_cursor(Some(&encoded)), None);
     }
 
@@ -1069,7 +1076,10 @@ mod tests {
     #[test]
     fn velocity_zero_elapsed_is_infinite() {
         let v = implied_velocity_kmh(500.0, 0.0);
-        assert!(v.is_infinite(), "zero elapsed time should be infinite velocity");
+        assert!(
+            v.is_infinite(),
+            "zero elapsed time should be infinite velocity"
+        );
     }
 
     #[test]

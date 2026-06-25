@@ -215,9 +215,11 @@ impl FanartClient {
     pub async fn test_connection(&self) -> MetadataResult<()> {
         match self.fetch_movie(550).await {
             Ok(_) => Ok(()),
-            Err(MetadataError::AuthenticationFailed { .. }) => Err(MetadataError::AuthenticationFailed {
-                provider: "fanart".to_string(),
-            }),
+            Err(MetadataError::AuthenticationFailed { .. }) => {
+                Err(MetadataError::AuthenticationFailed {
+                    provider: "fanart".to_string(),
+                })
+            }
             Err(_) => Ok(()),
         }
     }
@@ -225,21 +227,38 @@ impl FanartClient {
     fn movie_candidates(response: &FanartMovieResponse) -> Vec<ArtworkCandidate> {
         let mut candidates = Vec::new();
 
-        candidates.extend(Self::extract_images(response.movieposter.as_ref(), "poster"));
-        candidates.extend(Self::extract_images(response.moviebackground.as_ref(), "backdrop"));
-        candidates.extend(Self::extract_images(response.hdmovielogo.as_ref(), "clearlogo"));
-        candidates.extend(Self::extract_images(response.movielogo.as_ref(), "clearlogo"));
-        candidates.extend(Self::extract_images(response.hdmovieclearart.as_ref(), "clearart"));
+        candidates.extend(Self::extract_images(
+            response.movieposter.as_ref(),
+            "poster",
+        ));
+        candidates.extend(Self::extract_images(
+            response.moviebackground.as_ref(),
+            "backdrop",
+        ));
+        candidates.extend(Self::extract_images(
+            response.hdmovielogo.as_ref(),
+            "clearlogo",
+        ));
+        candidates.extend(Self::extract_images(
+            response.movielogo.as_ref(),
+            "clearlogo",
+        ));
+        candidates.extend(Self::extract_images(
+            response.hdmovieclearart.as_ref(),
+            "clearart",
+        ));
         candidates.extend(Self::extract_images(response.movieart.as_ref(), "clearart"));
-        candidates.extend(Self::extract_images(response.moviebanner.as_ref(), "banner"));
-        candidates.extend(Self::extract_images(response.moviethumb.as_ref(), "thumbnail"));
+        candidates.extend(Self::extract_images(
+            response.moviebanner.as_ref(),
+            "banner",
+        ));
+        candidates.extend(Self::extract_images(
+            response.moviethumb.as_ref(),
+            "thumbnail",
+        ));
         candidates.extend(Self::extract_images(response.moviedisc.as_ref(), "disc"));
 
-        candidates.sort_by(|a, b| {
-            b.vote_count
-                .unwrap_or(0)
-                .cmp(&a.vote_count.unwrap_or(0))
-        });
+        candidates.sort_by(|a, b| b.vote_count.unwrap_or(0).cmp(&a.vote_count.unwrap_or(0)));
 
         candidates
     }
@@ -248,22 +267,42 @@ impl FanartClient {
         let mut candidates = Vec::new();
 
         candidates.extend(Self::extract_images(response.tvposter.as_ref(), "poster"));
-        candidates.extend(Self::extract_images(response.showbackground.as_ref(), "backdrop"));
-        candidates.extend(Self::extract_images(response.hdtvlogo.as_ref(), "clearlogo"));
-        candidates.extend(Self::extract_images(response.clearlogo.as_ref(), "clearlogo"));
-        candidates.extend(Self::extract_images(response.hdclearart.as_ref(), "clearart"));
+        candidates.extend(Self::extract_images(
+            response.showbackground.as_ref(),
+            "backdrop",
+        ));
+        candidates.extend(Self::extract_images(
+            response.hdtvlogo.as_ref(),
+            "clearlogo",
+        ));
+        candidates.extend(Self::extract_images(
+            response.clearlogo.as_ref(),
+            "clearlogo",
+        ));
+        candidates.extend(Self::extract_images(
+            response.hdclearart.as_ref(),
+            "clearart",
+        ));
         candidates.extend(Self::extract_images(response.tvbanner.as_ref(), "banner"));
         candidates.extend(Self::extract_images(response.tvthumb.as_ref(), "thumbnail"));
-        candidates.extend(Self::extract_images(response.characterart.as_ref(), "character"));
-        candidates.extend(Self::extract_images(response.seasonposter.as_ref(), "seasonposter"));
-        candidates.extend(Self::extract_images(response.seasonthumb.as_ref(), "seasonthumb"));
-        candidates.extend(Self::extract_images(response.seasonbanner.as_ref(), "seasonbanner"));
+        candidates.extend(Self::extract_images(
+            response.characterart.as_ref(),
+            "character",
+        ));
+        candidates.extend(Self::extract_images(
+            response.seasonposter.as_ref(),
+            "seasonposter",
+        ));
+        candidates.extend(Self::extract_images(
+            response.seasonthumb.as_ref(),
+            "seasonthumb",
+        ));
+        candidates.extend(Self::extract_images(
+            response.seasonbanner.as_ref(),
+            "seasonbanner",
+        ));
 
-        candidates.sort_by(|a, b| {
-            b.vote_count
-                .unwrap_or(0)
-                .cmp(&a.vote_count.unwrap_or(0))
-        });
+        candidates.sort_by(|a, b| b.vote_count.unwrap_or(0).cmp(&a.vote_count.unwrap_or(0)));
 
         candidates
     }

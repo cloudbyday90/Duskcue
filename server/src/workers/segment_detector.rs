@@ -69,7 +69,11 @@ pub async fn run_segment_analysis(state: &AppState, task_id: Uuid, config: serde
 
     let pool = &state.pool;
 
-    let library_ids: Vec<Uuid> = if let Some(id) = config.get("library_id").and_then(|v| v.as_str()).and_then(|s| Uuid::parse_str(s).ok()) {
+    let library_ids: Vec<Uuid> = if let Some(id) = config
+        .get("library_id")
+        .and_then(|v| v.as_str())
+        .and_then(|s| Uuid::parse_str(s).ok())
+    {
         vec![id]
     } else {
         match fetch_enabled_libraries(pool).await {
@@ -176,14 +180,8 @@ async fn analyze_library(
 
     for candidate in &candidates {
         let chapters = seg::extract_chapters(&candidate.additional_streams);
-        let matched = apply_chapter_segments(
-            pool,
-            candidate,
-            &chapters,
-            safety,
-            candidate.is_movie,
-        )
-        .await;
+        let matched =
+            apply_chapter_segments(pool, candidate, &chapters, safety, candidate.is_movie).await;
 
         result.chapters_matched += matched as u64;
         if matched > 0 {
@@ -209,7 +207,14 @@ async fn analyze_library(
         }
     }
 
-    let intro_segments = match cross_compare_seasons(pool, library_id, &chromaprint_thresholds, safety).await {
+    let intro_segments = match cross_compare_seasons(
+        pool,
+        library_id,
+        &chromaprint_thresholds,
+        safety,
+    )
+    .await
+    {
         Ok(n) => n,
         Err(e) => {
             tracing::warn!(library_id = %library_id, error = %e, "Cross-episode chromaprint comparison failed");
@@ -338,10 +343,7 @@ async fn fetch_enabled_libraries(pool: &PgPool) -> Result<Vec<Uuid>, sqlx::Error
     Ok(rows.iter().map(|r| r.get::<Uuid, _>("id")).collect())
 }
 
-async fn fetch_candidates(
-    pool: &PgPool,
-    library_id: Uuid,
-) -> Result<Vec<Candidate>, sqlx::Error> {
+async fn fetch_candidates(pool: &PgPool, library_id: Uuid) -> Result<Vec<Candidate>, sqlx::Error> {
     let rows = sqlx::query(
         r#"
         SELECT
@@ -368,7 +370,11 @@ async fn fetch_candidates(
     for r in &rows {
         let file_hash: Option<String> = r.get("file_hash");
         let needs_fingerprint = match file_hash.as_deref() {
-            Some(h) if !h.is_empty() => !has_cached_fingerprint(pool, r.get::<Uuid, _>("media_file_id"), h).await.unwrap_or(false),
+            Some(h) if !h.is_empty() => {
+                !has_cached_fingerprint(pool, r.get::<Uuid, _>("media_file_id"), h)
+                    .await
+                    .unwrap_or(false)
+            }
             _ => true,
         };
         if !needs_fingerprint {
@@ -509,11 +515,7 @@ async fn fingerprint_and_store(
 
     let output = seg::fingerprint_file(&path, analysis_cfg.chromaprint_sample_rate).await?;
 
-    let raw_bytes: Vec<u8> = output
-        .raw
-        .iter()
-        .flat_map(|v| v.to_le_bytes())
-        .collect();
+    let raw_bytes: Vec<u8> = output.raw.iter().flat_map(|v| v.to_le_bytes()).collect();
 
     let file_hash = candidate
         .file_hash
@@ -740,7 +742,9 @@ async fn detect_credits(
         let runtime_ms = item.runtime_seconds.max(0) * 1_000;
         let search_window = seg::credits_search_window_ms(runtime_ms, item.is_movie);
 
-        let blackframes = match seg::detect_blackframes(&path, blackframe_params, search_window).await {
+        let blackframes = match seg::detect_blackframes(&path, blackframe_params, search_window)
+            .await
+        {
             Ok(b) => b,
             Err(e) => {
                 tracing::warn!(media_item_id = %item.media_item_id, error = %e, "Blackframe detection failed");
@@ -755,13 +759,8 @@ async fn detect_credits(
             }
         };
 
-        let segments = seg::combine_credits_signals(
-            &blackframes,
-            &silence,
-            search_window,
-            runtime_ms,
-            safety,
-        );
+        let segments =
+            seg::combine_credits_signals(&blackframes, &silence, search_window, runtime_ms, safety);
 
         for mut seg_ in segments {
             seg::mark_surfaced(&mut seg_, safety);

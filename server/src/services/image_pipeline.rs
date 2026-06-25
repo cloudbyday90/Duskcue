@@ -62,33 +62,76 @@ use thiserror::Error;
 const DEFAULT_LOSSY_QUALITY: f32 = 90.0;
 
 const POSTER_VARIANTS: &[SizeVariant] = &[
-    SizeVariant { label: "w185", target_width: Some(185) },
-    SizeVariant { label: "w342", target_width: Some(342) },
-    SizeVariant { label: "w500", target_width: Some(500) },
-    SizeVariant { label: "original", target_width: None },
+    SizeVariant {
+        label: "w185",
+        target_width: Some(185),
+    },
+    SizeVariant {
+        label: "w342",
+        target_width: Some(342),
+    },
+    SizeVariant {
+        label: "w500",
+        target_width: Some(500),
+    },
+    SizeVariant {
+        label: "original",
+        target_width: None,
+    },
 ];
 
 const BACKDROP_VARIANTS: &[SizeVariant] = &[
-    SizeVariant { label: "w300", target_width: Some(300) },
-    SizeVariant { label: "w780", target_width: Some(780) },
-    SizeVariant { label: "w1280", target_width: Some(1280) },
-    SizeVariant { label: "original", target_width: None },
+    SizeVariant {
+        label: "w300",
+        target_width: Some(300),
+    },
+    SizeVariant {
+        label: "w780",
+        target_width: Some(780),
+    },
+    SizeVariant {
+        label: "w1280",
+        target_width: Some(1280),
+    },
+    SizeVariant {
+        label: "original",
+        target_width: None,
+    },
 ];
 
 const THUMBNAIL_VARIANTS: &[SizeVariant] = &[
-    SizeVariant { label: "w185", target_width: Some(185) },
-    SizeVariant { label: "w300", target_width: Some(300) },
-    SizeVariant { label: "original", target_width: None },
+    SizeVariant {
+        label: "w185",
+        target_width: Some(185),
+    },
+    SizeVariant {
+        label: "w300",
+        target_width: Some(300),
+    },
+    SizeVariant {
+        label: "original",
+        target_width: None,
+    },
 ];
 
-const LOGO_VARIANTS: &[SizeVariant] = &[
-    SizeVariant { label: "original", target_width: None },
-];
+const LOGO_VARIANTS: &[SizeVariant] = &[SizeVariant {
+    label: "original",
+    target_width: None,
+}];
 
 const BANNER_VARIANTS: &[SizeVariant] = &[
-    SizeVariant { label: "w300", target_width: Some(300) },
-    SizeVariant { label: "w780", target_width: Some(780) },
-    SizeVariant { label: "original", target_width: None },
+    SizeVariant {
+        label: "w300",
+        target_width: Some(300),
+    },
+    SizeVariant {
+        label: "w780",
+        target_width: Some(780),
+    },
+    SizeVariant {
+        label: "original",
+        target_width: None,
+    },
 ];
 
 // ---------------------------------------------------------------------------
@@ -227,7 +270,8 @@ fn resize_to_width(img: &DynamicImage, target_width: u32) -> DynamicImage {
     if target_width >= src_w {
         return img.clone();
     }
-    let target_height = ((u64::from(target_width) * u64::from(src_h) / u64::from(src_w)) as u32).max(1);
+    let target_height =
+        ((u64::from(target_width) * u64::from(src_h) / u64::from(src_w)) as u32).max(1);
     img.resize_exact(target_width, target_height, FilterType::Lanczos3)
 }
 
@@ -343,12 +387,7 @@ pub fn write_variant(
     source_stem: &str,
     variant: &GeneratedVariant,
 ) -> Result<PathBuf, ImagePipelineError> {
-    let path = variant_path(
-        images_cache_root,
-        category,
-        variant.label,
-        source_stem,
-    );
+    let path = variant_path(images_cache_root, category, variant.label, source_stem);
 
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -369,18 +408,21 @@ mod tests {
     use std::io::Cursor;
 
     fn make_rgba(width: u32, height: u32) -> DynamicImage {
-        let buf: ImageBuffer<Rgba<u8>, Vec<u8>> =
-            ImageBuffer::from_fn(width, height, |x, y| {
-                Rgba([(x * 30) as u8, (y * 30) as u8, 128, if x % 2 == 0 { 255 } else { 128 }])
-            });
+        let buf: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::from_fn(width, height, |x, y| {
+            Rgba([
+                (x * 30) as u8,
+                (y * 30) as u8,
+                128,
+                if x % 2 == 0 { 255 } else { 128 },
+            ])
+        });
         DynamicImage::ImageRgba8(buf)
     }
 
     fn make_rgb(width: u32, height: u32) -> DynamicImage {
-        let buf: ImageBuffer<Rgb<u8>, Vec<u8>> =
-            ImageBuffer::from_fn(width, height, |x, y| {
-                Rgb([(x * 30) as u8, (y * 30) as u8, 128])
-            });
+        let buf: ImageBuffer<Rgb<u8>, Vec<u8>> = ImageBuffer::from_fn(width, height, |x, y| {
+            Rgb([(x * 30) as u8, (y * 30) as u8, 128])
+        });
         DynamicImage::ImageRgb8(buf)
     }
 
@@ -593,8 +635,12 @@ mod tests {
     #[test]
     fn encode_quality_does_not_affect_lossless() {
         let img = make_rgba(20, 20);
-        let low = EncodeConfig { lossy_quality: 10.0 };
-        let high = EncodeConfig { lossy_quality: 100.0 };
+        let low = EncodeConfig {
+            lossy_quality: 10.0,
+        };
+        let high = EncodeConfig {
+            lossy_quality: 100.0,
+        };
         let (bytes_low, _) = encode_webp(&img, &low).unwrap();
         let (bytes_high, _) = encode_webp(&img, &high).unwrap();
         assert!(is_webp(&bytes_low));
@@ -685,12 +731,8 @@ mod tests {
     fn generate_all_poster_variants() {
         let img = make_rgb(1000, 1500);
         let png = encode_png(&img);
-        let result = generate_variants(
-            &png,
-            ArtworkCategory::Poster,
-            &EncodeConfig::default(),
-        )
-        .unwrap();
+        let result =
+            generate_variants(&png, ArtworkCategory::Poster, &EncodeConfig::default()).unwrap();
         assert_eq!(result.variants.len(), 4);
         assert_eq!(result.source_width, 1000);
         assert_eq!(result.source_height, 1500);
@@ -701,12 +743,8 @@ mod tests {
     fn generate_all_variants_smallest_first() {
         let img = make_rgb(1000, 1500);
         let png = encode_png(&img);
-        let result = generate_variants(
-            &png,
-            ArtworkCategory::Poster,
-            &EncodeConfig::default(),
-        )
-        .unwrap();
+        let result =
+            generate_variants(&png, ArtworkCategory::Poster, &EncodeConfig::default()).unwrap();
         let labels: Vec<_> = result.variants.iter().map(|v| v.label).collect();
         assert_eq!(labels, vec!["w185", "w342", "w500", "original"]);
     }
@@ -715,12 +753,8 @@ mod tests {
     fn generate_all_backdrop_variants() {
         let img = make_rgb(3840, 2160);
         let png = encode_png(&img);
-        let result = generate_variants(
-            &png,
-            ArtworkCategory::Backdrop,
-            &EncodeConfig::default(),
-        )
-        .unwrap();
+        let result =
+            generate_variants(&png, ArtworkCategory::Backdrop, &EncodeConfig::default()).unwrap();
         assert_eq!(result.variants.len(), 4);
         let widths: Vec<_> = result.variants.iter().map(|v| v.width).collect();
         assert_eq!(widths, vec![300, 780, 1280, 3840]);
@@ -730,12 +764,8 @@ mod tests {
     fn generate_all_logo_variants_single() {
         let img = make_rgba(500, 200);
         let png = encode_png(&img);
-        let result = generate_variants(
-            &png,
-            ArtworkCategory::Logo,
-            &EncodeConfig::default(),
-        )
-        .unwrap();
+        let result =
+            generate_variants(&png, ArtworkCategory::Logo, &EncodeConfig::default()).unwrap();
         assert_eq!(result.variants.len(), 1);
         assert!(result.has_alpha);
         assert!(result.variants[0].lossless);
@@ -745,12 +775,8 @@ mod tests {
     fn generate_all_variants_all_webp() {
         let img = make_rgb(800, 600);
         let png = encode_png(&img);
-        let result = generate_variants(
-            &png,
-            ArtworkCategory::Thumbnail,
-            &EncodeConfig::default(),
-        )
-        .unwrap();
+        let result =
+            generate_variants(&png, ArtworkCategory::Thumbnail, &EncodeConfig::default()).unwrap();
         for v in &result.variants {
             assert!(is_webp(&v.bytes), "variant {} is not WebP", v.label);
         }
@@ -782,10 +808,7 @@ mod tests {
     fn variant_path_logo() {
         let root = Path::new("/cache/images");
         let path = variant_path(root, ArtworkCategory::Logo, "original", "x");
-        assert_eq!(
-            path,
-            Path::new("/cache/images/webp/logos/original/x.webp")
-        );
+        assert_eq!(path, Path::new("/cache/images/webp/logos/original/x.webp"));
     }
 
     // ---- write_variant ----
@@ -821,7 +844,10 @@ mod tests {
         assert!(path.exists());
         assert_eq!(
             path,
-            dir.join("webp").join("logos").join("original").join("stem2.webp")
+            dir.join("webp")
+                .join("logos")
+                .join("original")
+                .join("stem2.webp")
         );
         let _ = std::fs::remove_dir_all(&dir);
     }

@@ -146,9 +146,11 @@ impl OmdbClient {
     pub async fn test_connection(&self) -> MetadataResult<()> {
         match self.fetch_by_imdb_id("tt0000001").await {
             Ok(_) => Ok(()),
-            Err(MetadataError::AuthenticationFailed { .. }) => Err(MetadataError::AuthenticationFailed {
-                provider: "omdb".to_string(),
-            }),
+            Err(MetadataError::AuthenticationFailed { .. }) => {
+                Err(MetadataError::AuthenticationFailed {
+                    provider: "omdb".to_string(),
+                })
+            }
             Err(_) => Ok(()),
         }
     }

@@ -21,8 +21,8 @@ pub mod types;
 
 pub use error::QualityError;
 
-use axum::routing::{get, post};
 use axum::Router;
+use axum::routing::{get, post};
 
 use crate::state::AppState;
 
@@ -56,10 +56,7 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/api/v1/playback/telemetry",
             post(handlers::submit_telemetry),
         )
-        .route(
-            "/api/v1/playback/qoe",
-            post(handlers::submit_qoe),
-        )
+        .route("/api/v1/playback/qoe", post(handlers::submit_qoe))
         .route(
             "/api/v1/admin/quality/network",
             get(handlers::admin_network_summary),

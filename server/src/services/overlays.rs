@@ -61,7 +61,7 @@ use std::collections::HashMap;
 use std::path::Path;
 
 use ab_glyph::{Font, FontArc, GlyphId, Point, ScaleFont};
-use image::imageops::{overlay, resize, FilterType};
+use image::imageops::{FilterType, overlay, resize};
 use image::{GenericImage, ImageBuffer, Rgba, RgbaImage};
 use thiserror::Error;
 use uuid::Uuid;
@@ -382,7 +382,9 @@ fn composite_image(
             .map_err(|e| OverlayPipelineError::Decode(e.to_string()))?;
         let mut rgba = decoded.to_rgba8();
         if let (Some(sw), Some(sh)) = (overlay_def.scale_width, overlay_def.scale_height)
-            && sw > 0 && sh > 0 && (sw != rgba.width() || sh != rgba.height())
+            && sw > 0
+            && sh > 0
+            && (sw != rgba.width() || sh != rgba.height())
         {
             rgba = resize(&rgba, sw, sh, FilterType::Lanczos3);
         }
@@ -440,12 +442,8 @@ fn composite_text(
         let bh = overlay_def
             .back_height
             .unwrap_or_else(|| text_buf.height() + 2 * overlay_def.back_padding);
-        let mut backdrop = fill_rounded_rect_buffer(
-            bw.max(1),
-            bh.max(1),
-            overlay_def.back_radius,
-            back,
-        );
+        let mut backdrop =
+            fill_rounded_rect_buffer(bw.max(1), bh.max(1), overlay_def.back_radius, back);
         let tx = (bw.saturating_sub(text_buf.width())) / 2;
         let ty = (bh.saturating_sub(text_buf.height())) / 2;
         overlay(&mut backdrop, &text_buf, tx as i64, ty as i64);
@@ -507,7 +505,14 @@ fn render_text_to_buffer(
         && stroke_width > 0
     {
         for outline_glyph in &glyphs {
-            draw_glyph_stroke(&mut buf, outline_glyph, origin_x, origin_y, sc, stroke_width);
+            draw_glyph_stroke(
+                &mut buf,
+                outline_glyph,
+                origin_x,
+                origin_y,
+                sc,
+                stroke_width,
+            );
         }
     }
 
@@ -582,7 +587,12 @@ fn draw_glyph_fill(
             return;
         }
         let alpha = (coverage * color.0[3] as f32).round() as u32;
-        blend_pixel(buf, pu, pv, Rgba([color.0[0], color.0[1], color.0[2], alpha.min(255) as u8]));
+        blend_pixel(
+            buf,
+            pu,
+            pv,
+            Rgba([color.0[0], color.0[1], color.0[2], alpha.min(255) as u8]),
+        );
     });
 }
 
@@ -745,10 +755,7 @@ fn render_svg(
         let scale = target_h as f32 / svg_h;
         ((svg_w * scale).round().max(1.0) as u32, target_h)
     } else {
-        (
-            svg_w.round().max(1.0) as u32,
-            svg_h.round().max(1.0) as u32,
-        )
+        (svg_w.round().max(1.0) as u32, svg_h.round().max(1.0) as u32)
     };
 
     let mut pixmap = resvg::tiny_skia::Pixmap::new(render_w, render_h)
@@ -807,16 +814,12 @@ fn compute_position(
 ) -> (i32, i32) {
     let x = match h_align {
         HorizontalAlignment::Left => h_offset,
-        HorizontalAlignment::Center => {
-            canvas_w as i32 / 2 - overlay_w as i32 / 2 + h_offset
-        }
+        HorizontalAlignment::Center => canvas_w as i32 / 2 - overlay_w as i32 / 2 + h_offset,
         HorizontalAlignment::Right => canvas_w as i32 - overlay_w as i32 - h_offset,
     };
     let y = match v_align {
         VerticalAlignment::Top => v_offset,
-        VerticalAlignment::Center => {
-            canvas_h as i32 / 2 - overlay_h as i32 / 2 + v_offset
-        }
+        VerticalAlignment::Center => canvas_h as i32 / 2 - overlay_h as i32 / 2 + v_offset,
         VerticalAlignment::Bottom => canvas_h as i32 - overlay_h as i32 - v_offset,
     };
     (x, y)
@@ -849,7 +852,12 @@ fn blend_pixel(buf: &mut RgbaImage, x: u32, y: u32, src: Rgba<u8>) {
     buf.put_pixel(
         x,
         y,
-        Rgba([blend(src.0[0], dst.0[0]), blend(src.0[1], dst.0[1]), blend(src.0[2], dst.0[2]), out_a as u8]),
+        Rgba([
+            blend(src.0[0], dst.0[0]),
+            blend(src.0[1], dst.0[1]),
+            blend(src.0[2], dst.0[2]),
+            out_a as u8,
+        ]),
     );
 }
 
@@ -874,19 +882,31 @@ pub fn parse_hex_color(s: &str) -> Result<Rgba<u8>, OverlayPipelineError> {
                 let d = char::from(c).to_digit(16).unwrap_or(0) as u8;
                 d * 17
             };
-            (expand(bytes[0]), expand(bytes[1]), expand(bytes[2]), expand(bytes[3]))
+            (
+                expand(bytes[0]),
+                expand(bytes[1]),
+                expand(bytes[2]),
+                expand(bytes[3]),
+            )
         }
         6 => {
-            let r = u32::from_str_radix(&hex[0..2], 16).map_err(|_| OverlayPipelineError::InvalidColor(s.into()))?;
-            let g = u32::from_str_radix(&hex[2..4], 16).map_err(|_| OverlayPipelineError::InvalidColor(s.into()))?;
-            let b = u32::from_str_radix(&hex[4..6], 16).map_err(|_| OverlayPipelineError::InvalidColor(s.into()))?;
+            let r = u32::from_str_radix(&hex[0..2], 16)
+                .map_err(|_| OverlayPipelineError::InvalidColor(s.into()))?;
+            let g = u32::from_str_radix(&hex[2..4], 16)
+                .map_err(|_| OverlayPipelineError::InvalidColor(s.into()))?;
+            let b = u32::from_str_radix(&hex[4..6], 16)
+                .map_err(|_| OverlayPipelineError::InvalidColor(s.into()))?;
             (r as u8, g as u8, b as u8, 255)
         }
         8 => {
-            let r = u32::from_str_radix(&hex[0..2], 16).map_err(|_| OverlayPipelineError::InvalidColor(s.into()))?;
-            let g = u32::from_str_radix(&hex[2..4], 16).map_err(|_| OverlayPipelineError::InvalidColor(s.into()))?;
-            let b = u32::from_str_radix(&hex[4..6], 16).map_err(|_| OverlayPipelineError::InvalidColor(s.into()))?;
-            let a = u32::from_str_radix(&hex[6..8], 16).map_err(|_| OverlayPipelineError::InvalidColor(s.into()))?;
+            let r = u32::from_str_radix(&hex[0..2], 16)
+                .map_err(|_| OverlayPipelineError::InvalidColor(s.into()))?;
+            let g = u32::from_str_radix(&hex[2..4], 16)
+                .map_err(|_| OverlayPipelineError::InvalidColor(s.into()))?;
+            let b = u32::from_str_radix(&hex[4..6], 16)
+                .map_err(|_| OverlayPipelineError::InvalidColor(s.into()))?;
+            let a = u32::from_str_radix(&hex[6..8], 16)
+                .map_err(|_| OverlayPipelineError::InvalidColor(s.into()))?;
             (r as u8, g as u8, b as u8, a as u8)
         }
         _ => return Err(OverlayPipelineError::InvalidColor(s.into())),
@@ -922,7 +942,10 @@ pub fn resolve_groups(overlays: Vec<ResolvedOverlay>) -> Vec<ResolvedOverlay> {
 }
 
 pub fn apply_suppress_rules(overlays: Vec<ResolvedOverlay>) -> Vec<ResolvedOverlay> {
-    let suppressed: Vec<String> = overlays.iter().flat_map(|o| o.suppresses.iter().cloned()).collect();
+    let suppressed: Vec<String> = overlays
+        .iter()
+        .flat_map(|o| o.suppresses.iter().cloned())
+        .collect();
     if suppressed.is_empty() {
         return overlays;
     }
@@ -1018,10 +1041,22 @@ mod tests {
 
     #[test]
     fn canvas_from_artwork_type() {
-        assert_eq!(CanvasPreset::from_artwork_type("poster"), Some(CanvasPreset::Poster));
-        assert_eq!(CanvasPreset::from_artwork_type("season_poster"), Some(CanvasPreset::Poster));
-        assert_eq!(CanvasPreset::from_artwork_type("backdrop"), Some(CanvasPreset::Backdrop));
-        assert_eq!(CanvasPreset::from_artwork_type("episode_thumb"), Some(CanvasPreset::Backdrop));
+        assert_eq!(
+            CanvasPreset::from_artwork_type("poster"),
+            Some(CanvasPreset::Poster)
+        );
+        assert_eq!(
+            CanvasPreset::from_artwork_type("season_poster"),
+            Some(CanvasPreset::Poster)
+        );
+        assert_eq!(
+            CanvasPreset::from_artwork_type("backdrop"),
+            Some(CanvasPreset::Backdrop)
+        );
+        assert_eq!(
+            CanvasPreset::from_artwork_type("episode_thumb"),
+            Some(CanvasPreset::Backdrop)
+        );
         assert_eq!(CanvasPreset::from_artwork_type("unknown"), None);
     }
 
@@ -1031,7 +1066,10 @@ mod tests {
     fn overlay_type_from_db_str() {
         assert_eq!(OverlayType::from_db_str("image"), Some(OverlayType::Image));
         assert_eq!(OverlayType::from_db_str("text"), Some(OverlayType::Text));
-        assert_eq!(OverlayType::from_db_str("backdrop"), Some(OverlayType::Backdrop));
+        assert_eq!(
+            OverlayType::from_db_str("backdrop"),
+            Some(OverlayType::Backdrop)
+        );
         assert_eq!(OverlayType::from_db_str("foo"), None);
     }
 
@@ -1057,14 +1095,20 @@ mod tests {
 
     #[test]
     fn parse_hex_6_digit() {
-        assert_eq!(parse_hex_color("#FF8800").unwrap(), Rgba([255, 136, 0, 255]));
+        assert_eq!(
+            parse_hex_color("#FF8800").unwrap(),
+            Rgba([255, 136, 0, 255])
+        );
         assert_eq!(parse_hex_color("#000000").unwrap(), Rgba([0, 0, 0, 255]));
     }
 
     #[test]
     fn parse_hex_8_digit_with_alpha() {
         assert_eq!(parse_hex_color("#00000099").unwrap(), Rgba([0, 0, 0, 153]));
-        assert_eq!(parse_hex_color("#FFFFFF80").unwrap(), Rgba([255, 255, 255, 128]));
+        assert_eq!(
+            parse_hex_color("#FFFFFF80").unwrap(),
+            Rgba([255, 255, 255, 128])
+        );
     }
 
     #[test]
@@ -1084,9 +1128,14 @@ mod tests {
     #[test]
     fn position_top_left() {
         let (x, y) = compute_position(
-            HorizontalAlignment::Left, 0,
-            VerticalAlignment::Top, 0,
-            100, 50, 1000, 1500,
+            HorizontalAlignment::Left,
+            0,
+            VerticalAlignment::Top,
+            0,
+            100,
+            50,
+            1000,
+            1500,
         );
         assert_eq!((x, y), (0, 0));
     }
@@ -1094,9 +1143,14 @@ mod tests {
     #[test]
     fn position_top_right_with_offset() {
         let (x, y) = compute_position(
-            HorizontalAlignment::Right, 25,
-            VerticalAlignment::Top, 0,
-            100, 50, 1000, 1500,
+            HorizontalAlignment::Right,
+            25,
+            VerticalAlignment::Top,
+            0,
+            100,
+            50,
+            1000,
+            1500,
         );
         assert_eq!((x, y), (875, 0));
     }
@@ -1104,9 +1158,14 @@ mod tests {
     #[test]
     fn position_center() {
         let (x, y) = compute_position(
-            HorizontalAlignment::Center, 0,
-            VerticalAlignment::Center, 0,
-            100, 50, 1000, 1500,
+            HorizontalAlignment::Center,
+            0,
+            VerticalAlignment::Center,
+            0,
+            100,
+            50,
+            1000,
+            1500,
         );
         assert_eq!(x, 450);
         assert_eq!(y, 725);
@@ -1115,9 +1174,14 @@ mod tests {
     #[test]
     fn position_bottom_right() {
         let (x, y) = compute_position(
-            HorizontalAlignment::Right, 0,
-            VerticalAlignment::Bottom, 0,
-            100, 50, 1000, 1500,
+            HorizontalAlignment::Right,
+            0,
+            VerticalAlignment::Bottom,
+            0,
+            100,
+            50,
+            1000,
+            1500,
         );
         assert_eq!(x, 900);
         assert_eq!(y, 1450);
@@ -1168,8 +1232,18 @@ mod tests {
 
     #[test]
     fn rounded_rect_full_pixel_count_less_than_square() {
-        let square = count_opaque_pixels(&fill_rounded_rect_buffer(100, 100, 0, Rgba([255, 0, 0, 255])));
-        let rounded = count_opaque_pixels(&fill_rounded_rect_buffer(100, 100, 20, Rgba([255, 0, 0, 255])));
+        let square = count_opaque_pixels(&fill_rounded_rect_buffer(
+            100,
+            100,
+            0,
+            Rgba([255, 0, 0, 255]),
+        ));
+        let rounded = count_opaque_pixels(&fill_rounded_rect_buffer(
+            100,
+            100,
+            20,
+            Rgba([255, 0, 0, 255]),
+        ));
         assert!(rounded < square);
         assert!(rounded > 0);
     }
@@ -1237,10 +1311,7 @@ mod tests {
 
     #[test]
     fn resolve_groups_empty_group_name_is_standalone() {
-        let overlays = vec![
-            make_overlay("a", Some(""), 10),
-            make_overlay("b", None, 5),
-        ];
+        let overlays = vec![make_overlay("a", Some(""), 10), make_overlay("b", None, 5)];
         let result = resolve_groups(overlays);
         assert_eq!(result.len(), 2);
     }
@@ -1277,10 +1348,7 @@ mod tests {
 
     #[test]
     fn suppress_empty_list_returns_all() {
-        let overlays = vec![
-            make_overlay("a", None, 0),
-            make_overlay("b", None, 0),
-        ];
+        let overlays = vec![make_overlay("a", None, 0), make_overlay("b", None, 0)];
         let result = apply_suppress_rules(overlays);
         assert_eq!(result.len(), 2);
     }
@@ -1320,14 +1388,11 @@ mod tests {
 
     #[test]
     fn queue_does_not_affect_non_queued() {
-        let mut overlays = vec![
-            make_overlay("loner", None, 0),
-            {
-                let mut o = make_overlay("queued", None, 10);
-                o.queue_name = Some("q1".into());
-                o
-            },
-        ];
+        let mut overlays = vec![make_overlay("loner", None, 0), {
+            let mut o = make_overlay("queued", None, 10);
+            o.queue_name = Some("q1".into());
+            o
+        }];
         resolve_queue_positions(&mut overlays, 8);
         assert_eq!(overlays[0].vertical_offset, 0);
     }
@@ -1464,7 +1529,9 @@ mod tests {
         let mut png_bytes = Vec::new();
         let dyn_img = image::DynamicImage::ImageRgba8(overlay_img);
         let mut cursor = std::io::Cursor::new(&mut png_bytes);
-        dyn_img.write_to(&mut cursor, image::ImageFormat::Png).unwrap();
+        dyn_img
+            .write_to(&mut cursor, image::ImageFormat::Png)
+            .unwrap();
 
         let overlay_def = ResolvedOverlay {
             id: Uuid::nil(),
@@ -1612,9 +1679,10 @@ mod tests {
             back_padding: 6,
         };
         let result = composite(&src, CanvasPreset::Backdrop, &[overlay_def], &fonts).unwrap();
-        let black_count = result.pixels().filter(|p| {
-            p.0[0] < 50 && p.0[1] < 50 && p.0[2] < 50 && p.0[3] > 100
-        }).count();
+        let black_count = result
+            .pixels()
+            .filter(|p| p.0[0] < 50 && p.0[1] < 50 && p.0[2] < 50 && p.0[3] > 100)
+            .count();
         assert!(black_count > 0, "backdrop should produce dark pixels");
     }
 
@@ -1689,7 +1757,8 @@ mod tests {
             CanvasPreset::Backdrop,
             &[image_def, backdrop_def],
             &fonts,
-        ).unwrap();
+        )
+        .unwrap();
         assert_eq!(read_pixel(&result, 10, 10), Rgba([0, 0, 255, 255]));
     }
 
@@ -1784,7 +1853,8 @@ mod tests {
     fn render_text_empty_string_returns_tiny_buffer() {
         let font_bytes = include_test_font();
         let font = FontArc::try_from_vec(font_bytes).unwrap();
-        let buf = render_text_to_buffer("", &font, 30.0, Rgba([255, 255, 255, 255]), None, 0).unwrap();
+        let buf =
+            render_text_to_buffer("", &font, 30.0, Rgba([255, 255, 255, 255]), None, 0).unwrap();
         assert!(buf.width() <= 1);
     }
 
@@ -1792,7 +1862,8 @@ mod tests {
     fn render_text_produces_visible_pixels() {
         let font_bytes = include_test_font();
         let font = FontArc::try_from_vec(font_bytes).unwrap();
-        let buf = render_text_to_buffer("AB", &font, 40.0, Rgba([255, 255, 255, 255]), None, 0).unwrap();
+        let buf =
+            render_text_to_buffer("AB", &font, 40.0, Rgba([255, 255, 255, 255]), None, 0).unwrap();
         assert!(has_nontransparent_pixel(&buf));
     }
 
@@ -1800,16 +1871,23 @@ mod tests {
     fn render_text_with_stroke_produces_more_pixels() {
         let font_bytes = include_test_font();
         let font = FontArc::try_from_vec(font_bytes).unwrap();
-        let without_stroke = render_text_to_buffer("X", &font, 40.0, Rgba([255, 255, 255, 255]), None, 0).unwrap();
+        let without_stroke =
+            render_text_to_buffer("X", &font, 40.0, Rgba([255, 255, 255, 255]), None, 0).unwrap();
         let with_stroke = render_text_to_buffer(
-            "X", &font, 40.0,
+            "X",
+            &font,
+            40.0,
             Rgba([255, 255, 255, 255]),
             Some(Rgba([0, 0, 0, 255])),
             3,
-        ).unwrap();
+        )
+        .unwrap();
         let no_stroke_count = count_opaque_pixels(&without_stroke);
         let stroke_count = count_opaque_pixels(&with_stroke);
-        assert!(stroke_count > no_stroke_count, "stroke should add pixels around the glyph");
+        assert!(
+            stroke_count > no_stroke_count,
+            "stroke should add pixels around the glyph"
+        );
     }
 
     // ---- layout_glyphs ----

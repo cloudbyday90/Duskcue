@@ -154,9 +154,7 @@ impl TranscodeRendition {
                 r.width <= source_width
                     && r.height <= source_height
                     && max_bitrate.is_none_or(|mb| r.video_bitrate as u64 <= mb)
-                      && max_resolution.is_none_or(|(mw, mh)| {
-                        r.width <= mw && r.height <= mh
-                    })
+                    && max_resolution.is_none_or(|(mw, mh)| r.width <= mw && r.height <= mh)
             })
             .collect();
 
@@ -231,17 +229,11 @@ impl TranscodeSession {
     }
 
     pub fn manifest_url(&self) -> String {
-        format!(
-            "/api/v1/transcode/{}/manifest.m3u8",
-            self.id
-        )
+        format!("/api/v1/transcode/{}/manifest.m3u8", self.id)
     }
 
     pub fn segment_url_pattern(&self) -> String {
-        format!(
-            "/api/v1/transcode/{}/segments/seg_%04d.m4s",
-            self.id
-        )
+        format!("/api/v1/transcode/{}/segments/seg_%04d.m4s", self.id)
     }
 }
 
@@ -254,10 +246,7 @@ pub struct TranscodeManager {
 
 impl TranscodeManager {
     pub fn new(config: Arc<ArcSwap<RuntimeConfig>>) -> Self {
-        let max_concurrent = config
-            .load()
-            .resource_limits
-            .max_concurrent_transcodes as usize;
+        let max_concurrent = config.load().resource_limits.max_concurrent_transcodes as usize;
 
         let runtime = config.load();
         let detection = hw_accel::detect_hw_accel_runtime(&runtime.transcoding, &runtime.cpu);
@@ -330,9 +319,9 @@ impl TranscodeManager {
             .join(session_id.to_string());
         let manifest_path = segment_dir.join("manifest.m3u8");
 
-        tokio::fs::create_dir_all(&segment_dir)
-            .await
-            .map_err(|e| PlaybackError::FfmpegFailed(format!("failed to create segment dir: {e}")))?;
+        tokio::fs::create_dir_all(&segment_dir).await.map_err(|e| {
+            PlaybackError::FfmpegFailed(format!("failed to create segment dir: {e}"))
+        })?;
 
         let segment_filename = segment_dir.join("seg_%04d.m4s");
 
@@ -366,10 +355,7 @@ impl TranscodeManager {
 
         args.extend(build_threading_args(cpu));
 
-        args.extend([
-            "-progress".to_string(),
-            "pipe:1".to_string(),
-        ]);
+        args.extend(["-progress".to_string(), "pipe:1".to_string()]);
 
         args.extend(build_hls_output_args(
             transcoding.segment_duration_seconds,
@@ -411,30 +397,30 @@ impl TranscodeManager {
             let _permit = permit;
 
             let stdout = process_handle.stdout();
-            let consumer = match stdout.consume(
-                tokio_process_tools::ParseLines::inspect(
-                    LineParsingOptions::default(),
-                    move |line: Cow<'_, str>| {
-                            if let Some(update) = parse_progress_line(&line)
-                                && let Some(mut s) = sessions.get_mut(&session_clone.id)
-                            {
-                                    if update.is_complete {
-                                        s.is_complete = true;
-                                    }
-                                    s.progress = Some(update);
-                                }
-                            Next::Continue
-                        },
-                    ),
-                ) {
-                    Ok(c) => c,
-                    Err(_) => return,
-                };
-                let _ = consumer.wait().await;
+            let consumer = match stdout.consume(tokio_process_tools::ParseLines::inspect(
+                LineParsingOptions::default(),
+                move |line: Cow<'_, str>| {
+                    if let Some(update) = parse_progress_line(&line)
+                        && let Some(mut s) = sessions.get_mut(&session_clone.id)
+                    {
+                        if update.is_complete {
+                            s.is_complete = true;
+                        }
+                        s.progress = Some(update);
+                    }
+                    Next::Continue
+                },
+            )) {
+                Ok(c) => c,
+                Err(_) => return,
+            };
+            let _ = consumer.wait().await;
 
             let graceful_shutdown = build_graceful_shutdown(graceful_timeout);
             let mut terminated = process_handle.terminate_on_drop(graceful_shutdown);
-            let _ = terminated.wait_for_completion(Duration::from_secs(3600)).await;
+            let _ = terminated
+                .wait_for_completion(Duration::from_secs(3600))
+                .await;
         });
 
         self.sessions.insert(session_id, session.clone());
@@ -512,9 +498,9 @@ impl TranscodeManager {
             .join(session_id.to_string());
         let manifest_path = segment_dir.join("manifest.m3u8");
 
-        tokio::fs::create_dir_all(&segment_dir)
-            .await
-            .map_err(|e| PlaybackError::FfmpegFailed(format!("failed to create segment dir: {e}")))?;
+        tokio::fs::create_dir_all(&segment_dir).await.map_err(|e| {
+            PlaybackError::FfmpegFailed(format!("failed to create segment dir: {e}"))
+        })?;
 
         let segment_filename = segment_dir.join("seg_%04d.m4s");
 
@@ -531,10 +517,7 @@ impl TranscodeManager {
             "copy".to_string(),
         ]);
 
-        args.extend([
-            "-progress".to_string(),
-            "pipe:1".to_string(),
-        ]);
+        args.extend(["-progress".to_string(), "pipe:1".to_string()]);
 
         args.extend(build_hls_output_args(
             transcoding.segment_duration_seconds,
@@ -578,30 +561,30 @@ impl TranscodeManager {
             let _permit = permit;
 
             let stdout = process_handle.stdout();
-            let consumer = match stdout.consume(
-                tokio_process_tools::ParseLines::inspect(
-                    LineParsingOptions::default(),
-                    move |line: Cow<'_, str>| {
-                            if let Some(update) = parse_progress_line(&line)
-                                && let Some(mut s) = sessions.get_mut(&session_clone.id)
-                            {
-                                    if update.is_complete {
-                                        s.is_complete = true;
-                                    }
-                                    s.progress = Some(update);
-                                }
-                            Next::Continue
-                        },
-                    ),
-                ) {
-                    Ok(c) => c,
-                    Err(_) => return,
-                };
-                let _ = consumer.wait().await;
+            let consumer = match stdout.consume(tokio_process_tools::ParseLines::inspect(
+                LineParsingOptions::default(),
+                move |line: Cow<'_, str>| {
+                    if let Some(update) = parse_progress_line(&line)
+                        && let Some(mut s) = sessions.get_mut(&session_clone.id)
+                    {
+                        if update.is_complete {
+                            s.is_complete = true;
+                        }
+                        s.progress = Some(update);
+                    }
+                    Next::Continue
+                },
+            )) {
+                Ok(c) => c,
+                Err(_) => return,
+            };
+            let _ = consumer.wait().await;
 
             let graceful_shutdown = build_graceful_shutdown(graceful_timeout);
             let mut terminated = process_handle.terminate_on_drop(graceful_shutdown);
-            let _ = terminated.wait_for_completion(Duration::from_secs(3600)).await;
+            let _ = terminated
+                .wait_for_completion(Duration::from_secs(3600))
+                .await;
         });
 
         self.sessions.insert(session_id, session.clone());
@@ -654,8 +637,8 @@ impl TranscodeManager {
 
     pub async fn cleanup_orphaned_sessions(&self, data_dir: &Path) {
         let config = self.config.load();
-        let transcode_base = data_dir
-            .join(config.transcoding.transcode_path.trim_start_matches('/'));
+        let transcode_base =
+            data_dir.join(config.transcoding.transcode_path.trim_start_matches('/'));
 
         if !transcode_base.exists() {
             return;
@@ -672,8 +655,8 @@ impl TranscodeManager {
             if let Ok(dir_uuid) = Uuid::parse_str(&name_str)
                 && !self.sessions.contains_key(&dir_uuid)
             {
-                    let _ = tokio::fs::remove_dir_all(entry.path()).await;
-                }
+                let _ = tokio::fs::remove_dir_all(entry.path()).await;
+            }
         }
     }
 }
@@ -693,10 +676,7 @@ fn build_ffmpeg_input_args(seek_position_ms: Option<i64>, source_path: &Path) ->
         && ms > 0
     {
         let secs = ms as f64 / 1000.0;
-        args.extend([
-            "-ss".to_string(),
-            format!("{secs:.3}"),
-        ]);
+        args.extend(["-ss".to_string(), format!("{secs:.3}")]);
     }
 
     args.extend([
@@ -724,10 +704,7 @@ fn build_video_encode_args(
 ) -> Vec<String> {
     let is_hw = !encoder.contains("libx2");
 
-    let mut args = vec![
-        "-c:v:0".to_string(),
-        encoder.to_string(),
-    ];
+    let mut args = vec!["-c:v:0".to_string(), encoder.to_string()];
 
     if !is_hw {
         args.extend([
@@ -772,11 +749,7 @@ fn build_video_encode_args(
     args
 }
 
-fn build_audio_encode_args(
-    audio_codec: &str,
-    channels: u32,
-    bitrate: u32,
-) -> Vec<String> {
+fn build_audio_encode_args(audio_codec: &str, channels: u32, bitrate: u32) -> Vec<String> {
     let encoder = match audio_codec {
         "eac3" | "e-ac-3" => "eac3",
         "opus" => "libopus",
@@ -797,16 +770,10 @@ fn build_threading_args(cpu: &CpuConfig) -> Vec<String> {
     let mut args = Vec::new();
 
     if let Some(threads) = cpu.ffmpeg_threads {
-        args.extend([
-            "-threads".to_string(),
-            threads.to_string(),
-        ]);
+        args.extend(["-threads".to_string(), threads.to_string()]);
     }
 
-    args.extend([
-        "-thread_type".to_string(),
-        cpu.ffmpeg_thread_type.clone(),
-    ]);
+    args.extend(["-thread_type".to_string(), cpu.ffmpeg_thread_type.clone()]);
 
     args
 }

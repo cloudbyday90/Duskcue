@@ -20,7 +20,8 @@ use uuid::Uuid;
 use validator::Validate;
 
 pub static VALID_SUBTITLE_TYPES: &[&str] = &["embedded", "external", "fetched"];
-pub static VALID_SUBTITLE_FORMATS: &[&str] = &["srt", "ass", "ssa", "vtt", "sup", "sub", "idx", "ttml"];
+pub static VALID_SUBTITLE_FORMATS: &[&str] =
+    &["srt", "ass", "ssa", "vtt", "sup", "sub", "idx", "ttml"];
 pub static VALID_OCR_ENGINES: &[&str] = &["paddleocr", "tesseract"];
 pub static VALID_SYNC_METHODS: &[&str] = &["voice_activity", "fps_adjust", "manual"];
 pub static VALID_DELIVERY_FORMATS: &[&str] = &["srt", "vtt"];

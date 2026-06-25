@@ -46,7 +46,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use arc_swap::ArcSwap;
-use maxminddb::{geoip2, Reader};
+use maxminddb::{Reader, geoip2};
 use thiserror::Error;
 
 /// Subdirectory under `data_dir` holding the MMDB file.
@@ -538,8 +538,6 @@ mod tests {
     #[test]
     fn db_path_uses_canonical_layout() {
         let svc = GeoIpService::new(std::path::Path::new("/data"));
-        assert!(svc
-            .db_path()
-            .ends_with("geoip/GeoLite2-City.mmdb"));
+        assert!(svc.db_path().ends_with("geoip/GeoLite2-City.mmdb"));
     }
 }

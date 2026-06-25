@@ -161,9 +161,7 @@ impl SubdlClient {
 
         let status = response.status();
 
-        if status == reqwest::StatusCode::UNAUTHORIZED
-            || status == reqwest::StatusCode::FORBIDDEN
-        {
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             return Err(SubtitleError::ProviderUnavailable {
                 provider: "subdl".to_string(),
             });
@@ -182,15 +180,17 @@ impl SubdlClient {
             });
         }
 
-        let body = response.text().await.map_err(|e| SubtitleError::FetchFailed {
-            reason: format!("SubDL read error: {e}"),
-        })?;
+        let body = response
+            .text()
+            .await
+            .map_err(|e| SubtitleError::FetchFailed {
+                reason: format!("SubDL read error: {e}"),
+            })?;
 
-        let parsed: SubdlSearchResponse = serde_json::from_str(&body).map_err(|e| {
-            SubtitleError::FetchFailed {
+        let parsed: SubdlSearchResponse =
+            serde_json::from_str(&body).map_err(|e| SubtitleError::FetchFailed {
                 reason: format!("SubDL JSON parse error: {e}"),
-            }
-        })?;
+            })?;
 
         if !parsed.status {
             return Err(SubtitleError::FetchFailed {
@@ -225,14 +225,14 @@ impl SubdlClient {
             format!("{full_url}?api_key={}", self.api_key)
         };
 
-        let response = self
-            .http
-            .get(&url)
-            .send()
-            .await
-            .map_err(|e| SubtitleError::FetchFailed {
-                reason: format!("SubDL download error: {e}"),
-            })?;
+        let response =
+            self.http
+                .get(&url)
+                .send()
+                .await
+                .map_err(|e| SubtitleError::FetchFailed {
+                    reason: format!("SubDL download error: {e}"),
+                })?;
 
         let status = response.status();
         if !status.is_success() {
@@ -255,9 +255,11 @@ impl SubdlClient {
     pub async fn test_connection(&self) -> Result<(), SubtitleError> {
         match self.search_by_tmdb(27205, "en", Some("movie")).await {
             Ok(_) => Ok(()),
-            Err(SubtitleError::ProviderUnavailable { .. }) => Err(SubtitleError::ProviderUnavailable {
-                provider: "subdl".to_string(),
-            }),
+            Err(SubtitleError::ProviderUnavailable { .. }) => {
+                Err(SubtitleError::ProviderUnavailable {
+                    provider: "subdl".to_string(),
+                })
+            }
             Err(_) => Ok(()),
         }
     }

@@ -197,9 +197,11 @@ async fn download_single_artwork(
 fn sort_by_votes(images: &[ImageEntry]) -> Vec<&ImageEntry> {
     let mut sorted: Vec<&ImageEntry> = images.iter().collect();
     sorted.sort_by(|a, b| {
-        b.vote_count
-            .cmp(&a.vote_count)
-            .then_with(|| b.vote_average.partial_cmp(&a.vote_average).unwrap_or(std::cmp::Ordering::Equal))
+        b.vote_count.cmp(&a.vote_count).then_with(|| {
+            b.vote_average
+                .partial_cmp(&a.vote_average)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
     });
     sorted
 }

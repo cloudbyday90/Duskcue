@@ -6,9 +6,8 @@ use regex::Regex;
 
 use crate::services::nfo_parser;
 
-static CURLY_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"\{(?:(tmdb)-(\d+)|(imdb)-(tt\d+)|(tvdb)-(\d+))\}").unwrap()
-});
+static CURLY_TAG_RE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\{(?:(tmdb)-(\d+)|(imdb)-(tt\d+)|(tvdb)-(\d+))\}").unwrap());
 
 static BRACKET_TAG_RE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"\[(?:(?:tmdbid)=(\d+)|(?:imdbid)-(tt\d+)|(?:tvdbid)=(\d+))\]").unwrap()
@@ -67,7 +66,10 @@ pub fn resolve_identification(
 
     let cascaded = cascade_media_match(series_match, season_match);
 
-    if cascaded.as_ref().is_some_and(|d| d.tmdb_id.is_some() || d.imdb_id.is_some() || d.tvdb_id.is_some()) {
+    if cascaded
+        .as_ref()
+        .is_some_and(|d| d.tmdb_id.is_some() || d.imdb_id.is_some() || d.tvdb_id.is_some())
+    {
         let data = cascaded.unwrap();
         return IdentificationResult {
             ids: ResolvedIds {
@@ -175,13 +177,18 @@ pub fn resolve_episode_override(
     None
 }
 
-fn match_pattern(pattern: &str, filename: &str, default_season: u32) -> Option<(u32, u32, Option<u32>)> {
+fn match_pattern(
+    pattern: &str,
+    filename: &str,
+    default_season: u32,
+) -> Option<(u32, u32, Option<u32>)> {
     let regex_str = pattern_to_regex(pattern)?;
     let re = Regex::new(&regex_str).ok()?;
 
     let caps = re.captures(filename)?;
 
-    let season = caps.name("season")
+    let season = caps
+        .name("season")
         .and_then(|m| m.as_str().parse().ok())
         .unwrap_or(default_season);
 
@@ -327,11 +334,14 @@ fn parse_episode_override(value: &str) -> Option<(String, EpisodeOverride)> {
 
     let (season, episode, episode_end) = parse_episode_ref(ep_ref)?;
 
-    Some((filename, EpisodeOverride {
-        season,
-        episode,
-        episode_end,
-    }))
+    Some((
+        filename,
+        EpisodeOverride {
+            season,
+            episode,
+            episode_end,
+        },
+    ))
 }
 
 fn parse_episode_ref(ep_ref: &str) -> Option<(Option<u32>, u32, Option<u32>)> {
@@ -437,31 +447,19 @@ mod tests {
 
     #[test]
     fn test_match_pattern_default_season() {
-        let result = match_pattern(
-            "Ep{e}.*",
-            "Ep03.Some.Title.mkv",
-            4,
-        );
+        let result = match_pattern("Ep{e}.*", "Ep03.Some.Title.mkv", 4);
         assert_eq!(result, Some((4, 3, None)));
     }
 
     #[test]
     fn test_match_pattern_special() {
-        let result = match_pattern(
-            "Bonus.{sp}.mp4",
-            "Bonus.02.mp4",
-            1,
-        );
+        let result = match_pattern("Bonus.{sp}.mp4", "Bonus.02.mp4", 1);
         assert_eq!(result, Some((0, 2, None)));
     }
 
     #[test]
     fn test_match_pattern_no_match() {
-        let result = match_pattern(
-            "Show.{s}.{e}.*",
-            "Completely.Different.File.mkv",
-            1,
-        );
+        let result = match_pattern("Show.{s}.{e}.*", "Completely.Different.File.mkv", 1);
         assert_eq!(result, None);
     }
 
@@ -516,9 +514,14 @@ mod tests {
             season: None,
             edition: None,
             pattern: None,
-            episode_overrides: HashMap::from([
-                ("file1.mkv".to_string(), EpisodeOverride { season: Some(1), episode: 1, episode_end: None }),
-            ]),
+            episode_overrides: HashMap::from([(
+                "file1.mkv".to_string(),
+                EpisodeOverride {
+                    season: Some(1),
+                    episode: 1,
+                    episode_end: None,
+                },
+            )]),
         };
 
         let season = MediaMatchData {
@@ -530,9 +533,14 @@ mod tests {
             season: Some(2),
             edition: None,
             pattern: Some("Ep{e}.*".to_string()),
-            episode_overrides: HashMap::from([
-                ("file2.mkv".to_string(), EpisodeOverride { season: None, episode: 5, episode_end: None }),
-            ]),
+            episode_overrides: HashMap::from([(
+                "file2.mkv".to_string(),
+                EpisodeOverride {
+                    season: None,
+                    episode: 5,
+                    episode_end: None,
+                },
+            )]),
         };
 
         let result = cascade_media_match(Some(series), Some(season)).unwrap();
@@ -547,36 +555,33 @@ mod tests {
     #[test]
     fn test_resolve_episode_override_pattern_priority() {
         let mut overrides = HashMap::new();
-        overrides.insert("test.mkv".to_string(), EpisodeOverride {
-            season: Some(1),
-            episode: 99,
-            episode_end: None,
-        });
-
-        let result = resolve_episode_override(
-            "Ep03.Some.Title.mkv",
-            &overrides,
-            Some("Ep{e}.*"),
-            1,
+        overrides.insert(
+            "test.mkv".to_string(),
+            EpisodeOverride {
+                season: Some(1),
+                episode: 99,
+                episode_end: None,
+            },
         );
+
+        let result =
+            resolve_episode_override("Ep03.Some.Title.mkv", &overrides, Some("Ep{e}.*"), 1);
         assert_eq!(result, Some((1, 3, None)));
     }
 
     #[test]
     fn test_resolve_episode_override_ep_line_fallback() {
         let mut overrides = HashMap::new();
-        overrides.insert("weird_filename.mkv".to_string(), EpisodeOverride {
-            season: Some(2),
-            episode: 5,
-            episode_end: None,
-        });
-
-        let result = resolve_episode_override(
-            "weird_filename.mkv",
-            &overrides,
-            None,
-            1,
+        overrides.insert(
+            "weird_filename.mkv".to_string(),
+            EpisodeOverride {
+                season: Some(2),
+                episode: 5,
+                episode_end: None,
+            },
         );
+
+        let result = resolve_episode_override("weird_filename.mkv", &overrides, None, 1);
         assert_eq!(result, Some((2, 5, None)));
     }
 
@@ -672,10 +677,8 @@ mod tests {
 
     #[test]
     fn test_parse_provider_id_tags_multiple_curly() {
-        let ids = parse_provider_id_tags(
-            "Batman Begins (2005) {tmdb-272}{imdb-tt0381061}",
-        )
-        .unwrap();
+        let ids =
+            parse_provider_id_tags("Batman Begins (2005) {tmdb-272}{imdb-tt0381061}").unwrap();
         assert_eq!(ids.tmdb_id, Some(272));
         assert_eq!(ids.imdb_id, Some("tt0381061".to_string()));
         assert!(ids.tvdb_id.is_none());
@@ -683,10 +686,7 @@ mod tests {
 
     #[test]
     fn test_parse_provider_id_tags_mixed_curly_bracket() {
-        let ids = parse_provider_id_tags(
-            "Breaking Bad (2008) {tvdb-81189}[tmdbid=1396]",
-        )
-        .unwrap();
+        let ids = parse_provider_id_tags("Breaking Bad (2008) {tvdb-81189}[tmdbid=1396]").unwrap();
         assert_eq!(ids.tmdb_id, Some(1396));
         assert!(ids.imdb_id.is_none());
         assert_eq!(ids.tvdb_id, Some(81189));
@@ -694,19 +694,13 @@ mod tests {
 
     #[test]
     fn test_parse_provider_id_tags_curly_priority() {
-        let ids = parse_provider_id_tags(
-            "Movie {tmdb-272}[tmdbid=999]",
-        )
-        .unwrap();
+        let ids = parse_provider_id_tags("Movie {tmdb-272}[tmdbid=999]").unwrap();
         assert_eq!(ids.tmdb_id, Some(272));
     }
 
     #[test]
     fn test_parse_provider_id_tags_bracket_fills_missing() {
-        let ids = parse_provider_id_tags(
-            "Movie {tmdb-272}[imdbid-tt0381061]",
-        )
-        .unwrap();
+        let ids = parse_provider_id_tags("Movie {tmdb-272}[imdbid-tt0381061]").unwrap();
         assert_eq!(ids.tmdb_id, Some(272));
         assert_eq!(ids.imdb_id, Some("tt0381061".to_string()));
     }
@@ -728,7 +722,10 @@ mod tests {
 
         let result = resolve_identification(&dir, None, Some("Batman Begins (2005) {tmdb-272}"));
         assert_eq!(result.ids.tmdb_id, Some(272));
-        assert_eq!(result.identification_source, Some("provider_id_tag".to_string()));
+        assert_eq!(
+            result.identification_source,
+            Some("provider_id_tag".to_string())
+        );
         assert_eq!(result.match_state, "confirmed");
 
         std::fs::remove_dir_all(&dir).ok();
@@ -742,7 +739,10 @@ mod tests {
 
         let result = resolve_identification(&sub, None, Some("Movie {tmdb-999}"));
         assert_eq!(result.ids.tmdb_id, Some(272));
-        assert_eq!(result.identification_source, Some("provider_id_tag".to_string()));
+        assert_eq!(
+            result.identification_source,
+            Some("provider_id_tag".to_string())
+        );
 
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -766,7 +766,10 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
 
         let result = resolve_identification(&dir, None, Some("Plain Movie Name"));
-        assert_eq!(result.identification_source, Some("filename_parse".to_string()));
+        assert_eq!(
+            result.identification_source,
+            Some("filename_parse".to_string())
+        );
         assert_eq!(result.match_state, "auto_matched");
 
         std::fs::remove_dir_all(&dir).ok();

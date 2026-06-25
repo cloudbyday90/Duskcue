@@ -23,8 +23,8 @@ use serde::Deserialize;
 use tokio::sync::RwLock;
 
 use super::metadata::{
-    ArtworkCandidate, MetadataError, MetadataProvider, MetadataResult, MovieDetails,
-    SearchResult, SeasonDetails, TvDetails,
+    ArtworkCandidate, MetadataError, MetadataProvider, MetadataResult, MovieDetails, SearchResult,
+    SeasonDetails, TvDetails,
 };
 
 const BASE_URL: &str = "https://api4.thetvdb.com/v4";
@@ -295,13 +295,14 @@ impl TvdbClient {
             });
         }
 
-        let wrapped: TvdbResponse<TvdbLoginResponse> = response
-            .json()
-            .await
-            .map_err(|e| MetadataError::InvalidResponse {
-                provider: "tvdb".to_string(),
-                message: format!("Login response parse error: {e}"),
-            })?;
+        let wrapped: TvdbResponse<TvdbLoginResponse> =
+            response
+                .json()
+                .await
+                .map_err(|e| MetadataError::InvalidResponse {
+                    provider: "tvdb".to_string(),
+                    message: format!("Login response parse error: {e}"),
+                })?;
 
         wrapped
             .data
@@ -381,12 +382,11 @@ impl TvdbClient {
                 message: e.to_string(),
             })?;
 
-        let wrapped: TvdbResponse<T> = serde_json::from_str(&body).map_err(|e| {
-            MetadataError::InvalidResponse {
+        let wrapped: TvdbResponse<T> =
+            serde_json::from_str(&body).map_err(|e| MetadataError::InvalidResponse {
                 provider: "tvdb".to_string(),
                 message: format!("JSON parse error: {e}"),
-            }
-        })?;
+            })?;
 
         wrapped.data.ok_or_else(|| MetadataError::InvalidResponse {
             provider: "tvdb".to_string(),
@@ -459,14 +459,8 @@ impl TvdbClient {
             tagline: None,
             first_air_date: series.first_aired,
             last_air_date: series.last_aired,
-            number_of_seasons: series
-                .seasons
-                .as_ref()
-                .map(|s| s.len() as u32),
-            number_of_episodes: series
-                .episodes
-                .as_ref()
-                .map(|e| e.len() as u32),
+            number_of_seasons: series.seasons.as_ref().map(|s| s.len() as u32),
+            number_of_episodes: series.episodes.as_ref().map(|e| e.len() as u32),
             vote_average: None,
             vote_count: None,
             popularity: series.score,
@@ -504,12 +498,12 @@ impl MetadataProvider for TvdbClient {
         query: &str,
         _year: Option<u32>,
     ) -> MetadataResult<Vec<SearchResult>> {
-        let path = format!(
-            "/search?query={}&type=movie",
-            urlencoding::encode(query),
-        );
+        let path = format!("/search?query={}&type=movie", urlencoding::encode(query),);
         let results: Vec<TvdbSearchResult> = self.authenticated_get(&path).await?;
-        Ok(results.into_iter().filter_map(Self::search_to_result).collect())
+        Ok(results
+            .into_iter()
+            .filter_map(Self::search_to_result)
+            .collect())
     }
 
     async fn search_tv(
@@ -517,12 +511,12 @@ impl MetadataProvider for TvdbClient {
         query: &str,
         _year: Option<u32>,
     ) -> MetadataResult<Vec<SearchResult>> {
-        let path = format!(
-            "/search?query={}&type=series",
-            urlencoding::encode(query),
-        );
+        let path = format!("/search?query={}&type=series", urlencoding::encode(query),);
         let results: Vec<TvdbSearchResult> = self.authenticated_get(&path).await?;
-        Ok(results.into_iter().filter_map(Self::search_to_result).collect())
+        Ok(results
+            .into_iter()
+            .filter_map(Self::search_to_result)
+            .collect())
     }
 
     async fn get_movie_details(&self, id: u64) -> MetadataResult<MovieDetails> {
@@ -560,19 +554,12 @@ impl MetadataProvider for TvdbClient {
         Ok(Self::series_to_tv_details(series))
     }
 
-    async fn get_season_details(
-        &self,
-        _tv_id: u64,
-        _season: u32,
-    ) -> MetadataResult<SeasonDetails> {
+    async fn get_season_details(&self, _tv_id: u64, _season: u32) -> MetadataResult<SeasonDetails> {
         Err(MetadataError::NoProviderConfigured)
     }
 
     async fn find_by_imdb_id(&self, imdb_id: &str) -> MetadataResult<Option<SearchResult>> {
-        let path = format!(
-            "/search/remoteid/{}",
-            urlencoding::encode(imdb_id),
-        );
+        let path = format!("/search/remoteid/{}", urlencoding::encode(imdb_id),);
         let result: TvdbRemoteIdSearchResult = self.authenticated_get(&path).await?;
 
         if let Some(series) = result.series.and_then(|s| s.into_iter().next()) {

@@ -23,11 +23,7 @@ use axum::extract::Request;
 use axum::http::{HeaderName, HeaderValue, header};
 use axum::middleware::Next;
 use axum::response::Response;
-use governor::{
-    Quota, RateLimiter,
-    clock::DefaultClock,
-    state::keyed::DefaultKeyedStateStore,
-};
+use governor::{Quota, RateLimiter, clock::DefaultClock, state::keyed::DefaultKeyedStateStore};
 use metrics::{counter, histogram};
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::{Any, CorsLayer};
@@ -122,7 +118,8 @@ pub async fn rate_limit_global(
     let ci = request
         .extensions()
         .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>();
-    let ip = extract_client_ip(request.headers(), ci.map(|c| &c.0)).unwrap_or(IpAddr::from([0, 0, 0, 1]));
+    let ip = extract_client_ip(request.headers(), ci.map(|c| &c.0))
+        .unwrap_or(IpAddr::from([0, 0, 0, 1]));
     match state.rate_limits.ip_global.check_key(&ip) {
         Ok(()) => Ok(next.run(request).await),
         Err(_) => Err(AppError::RateLimited {
@@ -132,10 +129,7 @@ pub async fn rate_limit_global(
 }
 
 pub fn build_set_request_id_layer() -> SetRequestIdLayer<UuidV7RequestId> {
-    SetRequestIdLayer::new(
-        HeaderName::from_static(REQUEST_ID_HEADER),
-        UuidV7RequestId,
-    )
+    SetRequestIdLayer::new(HeaderName::from_static(REQUEST_ID_HEADER), UuidV7RequestId)
 }
 
 pub fn build_cors_layer(network_mode: &NetworkMode, allowed_origins: &[String]) -> CorsLayer {
@@ -165,16 +159,16 @@ pub fn build_cors_layer(network_mode: &NetworkMode, allowed_origins: &[String]) 
     }
 }
 
-pub fn build_security_headers(network_mode: &NetworkMode) -> Vec<SetResponseHeaderLayer<HeaderValue>> {
+pub fn build_security_headers(
+    network_mode: &NetworkMode,
+) -> Vec<SetResponseHeaderLayer<HeaderValue>> {
     let mut layers = vec![SetResponseHeaderLayer::if_not_present(
         header::X_CONTENT_TYPE_OPTIONS,
         HeaderValue::from_static("nosniff"),
     )];
 
     let csp_value = match network_mode {
-        NetworkMode::Local => {
-            "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: media:"
-        }
+        NetworkMode::Local => "default-src 'self' 'unsafe-inline' 'unsafe-eval' blob: data: media:",
         NetworkMode::Exposed => {
             "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; \
              img-src 'self' data: blob:; media-src 'self' blob:; object-src 'none'; \
@@ -189,9 +183,7 @@ pub fn build_security_headers(network_mode: &NetworkMode) -> Vec<SetResponseHead
     if matches!(network_mode, NetworkMode::Exposed) {
         layers.push(SetResponseHeaderLayer::if_not_present(
             header::STRICT_TRANSPORT_SECURITY,
-            HeaderValue::from_static(
-                "max-age=63072000; includeSubDomains; preload",
-            ),
+            HeaderValue::from_static("max-age=63072000; includeSubDomains; preload"),
         ));
         layers.push(SetResponseHeaderLayer::if_not_present(
             header::X_FRAME_OPTIONS,
@@ -229,7 +221,8 @@ pub async fn track_http_metrics(request: Request, next: Next) -> Response {
     let latency = start.elapsed().as_secs_f64();
     let status = response.status().as_u16().to_string();
 
-    counter!("http_requests_total", "method" => method.to_string(), "status" => status).increment(1);
+    counter!("http_requests_total", "method" => method.to_string(), "status" => status)
+        .increment(1);
     histogram!("http_request_duration", "method" => method.to_string()).record(latency);
 
     response
@@ -243,7 +236,8 @@ pub async fn metrics_subnet_guard(
     let ci = request
         .extensions()
         .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>();
-    let ip = extract_client_ip(request.headers(), ci.map(|c| &c.0)).unwrap_or(IpAddr::from([0, 0, 0, 1]));
+    let ip = extract_client_ip(request.headers(), ci.map(|c| &c.0))
+        .unwrap_or(IpAddr::from([0, 0, 0, 1]));
 
     let is_allowed = state
         .metrics_allowed_subnets

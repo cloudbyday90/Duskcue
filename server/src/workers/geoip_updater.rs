@@ -175,11 +175,9 @@ async fn download_and_replace(license_key: &str, db_path: &Path) -> Result<(), U
 
     let mmdb_bytes = extract_mmdb(&bytes)?;
 
-    let geoip_dir = db_path.parent().ok_or_else(|| {
-        UpdateError::WriteTemp {
-            path: db_path.display().to_string(),
-            source: std::io::Error::new(std::io::ErrorKind::InvalidInput, "no parent dir"),
-        }
+    let geoip_dir = db_path.parent().ok_or_else(|| UpdateError::WriteTemp {
+        path: db_path.display().to_string(),
+        source: std::io::Error::new(std::io::ErrorKind::InvalidInput, "no parent dir"),
     })?;
 
     tokio::fs::create_dir_all(geoip_dir)
@@ -242,10 +240,12 @@ fn extract_mmdb(tar_gz_bytes: &[u8]) -> Result<Vec<u8>, UpdateError> {
 }
 
 fn validate_mmdb(path: &Path) -> Result<(), UpdateError> {
-    Reader::<Vec<u8>>::open_readfile(path).map(|_| ()).map_err(|source| UpdateError::Validation {
-        path: path.display().to_string(),
-        source,
-    })
+    Reader::<Vec<u8>>::open_readfile(path)
+        .map(|_| ())
+        .map_err(|source| UpdateError::Validation {
+            path: path.display().to_string(),
+            source,
+        })
 }
 
 fn atomic_replace(tmp: &Path, dest: &Path) -> Result<(), UpdateError> {
@@ -292,8 +292,12 @@ mod tests {
             builder.append(&file_header, &mmdb_content[..]).unwrap();
 
             let mut readme_header = tar::Header::new_gnu();
-            file_header.set_path("GeoLite2-City_20260617/README.txt").unwrap();
-            readme_header.set_path("GeoLite2-City_20260617/README.txt").unwrap();
+            file_header
+                .set_path("GeoLite2-City_20260617/README.txt")
+                .unwrap();
+            readme_header
+                .set_path("GeoLite2-City_20260617/README.txt")
+                .unwrap();
             readme_header.set_size(5);
             readme_header.set_mode(0o644);
             readme_header.set_cksum();
@@ -353,7 +357,10 @@ mod tests {
 
         let result = validate_mmdb(&tmp);
         assert!(result.is_err());
-        assert!(matches!(result.unwrap_err(), UpdateError::Validation { .. }));
+        assert!(matches!(
+            result.unwrap_err(),
+            UpdateError::Validation { .. }
+        ));
 
         let _ = std::fs::remove_file(&tmp);
     }

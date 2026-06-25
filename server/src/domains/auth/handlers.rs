@@ -14,11 +14,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use axum::extract::State;
-use axum::http::header::SET_COOKIE;
-use axum::http::HeaderMap;
-use axum::response::{IntoResponse, Response};
 use axum::Json;
+use axum::extract::State;
+use axum::http::HeaderMap;
+use axum::http::header::SET_COOKIE;
+use axum::response::{IntoResponse, Response};
 use sqlx::Row;
 use validator::Validate;
 
@@ -26,16 +26,12 @@ use crate::error::AppError;
 use crate::extractors::{AuthenticatedUser, CanManageUsers, Require};
 use crate::state::{AppState, NetworkMode};
 
-use super::types::*;
 use super::error::AuthError;
 use super::service;
 use super::service::DeviceInfo;
+use super::types::*;
 
-fn build_session_cookie_value(
-    state: &AppState,
-    token: &str,
-    max_age_days: i32,
-) -> String {
+fn build_session_cookie_value(state: &AppState, token: &str, max_age_days: i32) -> String {
     let config = state.runtime_config.load();
     let is_exposed = matches!(config.auth.network_mode, NetworkMode::Exposed);
     drop(config);
@@ -54,11 +50,7 @@ fn build_session_cookie_value(
     cookie
 }
 
-fn set_session_cookie(
-    state: &AppState,
-    headers: &mut HeaderMap,
-    token: &str,
-) {
+fn set_session_cookie(state: &AppState, headers: &mut HeaderMap, token: &str) {
     let config = state.runtime_config.load();
     let max_age_days = config.auth.session_absolute_timeout_days;
     drop(config);
@@ -118,25 +110,23 @@ pub async fn setup(
         return Err(AuthError::SetupAlreadyComplete.into());
     }
 
-    req.validate().map_err(|e| {
-        AppError::Validation {
-            errors: e
-                .field_errors()
-                .into_iter()
-                .flat_map(|(field, errors)| {
-                    errors.iter().map(move |err| crate::error::FieldError {
-                        field: field.to_string(),
-                        code: err.code.to_string(),
-                        message: err
-                            .message
-                            .as_ref()
-                            .map(|m| m.to_string())
-                            .unwrap_or_default(),
-                    })
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
-                .collect(),
-            instance: Some("/api/v1/setup".to_string()),
-        }
+            })
+            .collect(),
+        instance: Some("/api/v1/setup".to_string()),
     })?;
 
     let (user_id, token) =
@@ -149,7 +139,10 @@ pub async fn setup(
             username: "".to_string(),
             display_name: "".to_string(),
             role: "owner".to_string(),
-            capabilities: service::ALL_CAPABILITIES.iter().map(|s| s.to_string()).collect(),
+            capabilities: service::ALL_CAPABILITIES
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
             has_all_library_access: true,
         },
     };
@@ -245,7 +238,8 @@ pub async fn auth_logout(
     let mut response = CookieResponse {
         body: serde_json::json!({ "status": "logged_out" }),
         status: axum::http::StatusCode::OK,
-    }.into_response();
+    }
+    .into_response();
     clear_session_cookie(&state, response.headers_mut());
     Ok(response)
 }
@@ -261,7 +255,8 @@ pub async fn auth_logout_all(
             "sessions_revoked": count,
         }),
         status: axum::http::StatusCode::OK,
-    }.into_response();
+    }
+    .into_response();
     clear_session_cookie(&state, response.headers_mut());
     Ok(response)
 }
@@ -272,8 +267,7 @@ pub async fn webauthn_start(
 ) -> Result<Json<WebauthnAuthStartResponse>, AppError> {
     service::expire_challenges(&state.webauthn_challenges);
 
-    let (challenge_id, request_options) =
-        service::start_passkey_authentication(&state).await?;
+    let (challenge_id, request_options) = service::start_passkey_authentication(&state).await?;
 
     let _username_hint = req.username.as_deref();
 
@@ -394,12 +388,8 @@ pub async fn device_token(
     State(state): State<AppState>,
     Json(req): Json<DeviceTokenRequest>,
 ) -> Result<Json<DeviceTokenResponse>, AppError> {
-    let response = service::poll_device_linking_token(
-        &state.pool,
-        &state,
-        &req.device_code,
-    )
-    .await?;
+    let response =
+        service::poll_device_linking_token(&state.pool, &state, &req.device_code).await?;
 
     Ok(Json(response))
 }
@@ -409,12 +399,8 @@ pub async fn device_verify(
     user: AuthenticatedUser,
     Json(req): Json<DeviceVerifyRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    let result = service::verify_device_linking_code(
-        &state.pool,
-        user.user_id,
-        &req.user_code,
-    )
-    .await?;
+    let result =
+        service::verify_device_linking_code(&state.pool, user.user_id, &req.user_code).await?;
 
     Ok(Json(result))
 }
@@ -424,25 +410,23 @@ pub async fn reauth(
     headers: HeaderMap,
     Json(req): Json<ReauthRequest>,
 ) -> Result<impl IntoResponse, AppError> {
-    req.validate().map_err(|e| {
-        AppError::Validation {
-            errors: e
-                .field_errors()
-                .into_iter()
-                .flat_map(|(field, errors)| {
-                    errors.iter().map(move |err| crate::error::FieldError {
-                        field: field.to_string(),
-                        code: err.code.to_string(),
-                        message: err
-                            .message
-                            .as_ref()
-                            .map(|m| m.to_string())
-                            .unwrap_or_default(),
-                    })
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
-                .collect(),
-            instance: Some("/api/v1/auth/reauth".to_string()),
-        }
+            })
+            .collect(),
+        instance: Some("/api/v1/auth/reauth".to_string()),
     })?;
 
     let device_info = extract_device_info(
@@ -478,14 +462,9 @@ pub async fn reauth_request(
         .and_then(|v| v.split(',').next())
         .map(|v| v.trim().to_string());
 
-    let response = service::create_reauth_code(
-        &state.pool,
-        &state,
-        user.user_id,
-        user.user_id,
-        ip_address,
-    )
-    .await?;
+    let response =
+        service::create_reauth_code(&state.pool, &state, user.user_id, user.user_id, ip_address)
+            .await?;
 
     Ok(Json(response))
 }
@@ -509,10 +488,13 @@ pub async fn list_user_sessions(
                 is_secure: s.is_secure,
                 last_active_at: s.last_active_at,
                 created_at: {
-                    let millis: i64 = s.id.get_timestamp().map(|ts| {
-                        let (secs, nanos) = ts.to_unix();
-                        secs as i64 * 1000 + (nanos / 1_000_000) as i64
-                    }).unwrap_or(0);
+                    let millis: i64 =
+                        s.id.get_timestamp()
+                            .map(|ts| {
+                                let (secs, nanos) = ts.to_unix();
+                                secs as i64 * 1000 + (nanos / 1_000_000) as i64
+                            })
+                            .unwrap_or(0);
                     chrono::DateTime::from_timestamp_millis(millis).unwrap_or(s.last_active_at)
                 },
             })
@@ -534,14 +516,9 @@ pub async fn sign_out_everywhere(
         .and_then(|v| v.split(',').next())
         .map(|v| v.trim().to_string());
 
-    let reauth_response = service::create_reauth_code(
-        &state.pool,
-        &state,
-        user.user_id,
-        user.user_id,
-        ip_address,
-    )
-    .await?;
+    let reauth_response =
+        service::create_reauth_code(&state.pool, &state, user.user_id, user.user_id, ip_address)
+            .await?;
 
     let mut response = CookieResponse {
         body: serde_json::json!({
@@ -571,14 +548,9 @@ pub async fn request_reauth(
         .and_then(|v| v.split(',').next())
         .map(|v| v.trim().to_string());
 
-    let response = service::create_reauth_code(
-        &state.pool,
-        &state,
-        user.user_id,
-        user.user_id,
-        ip_address,
-    )
-    .await?;
+    let response =
+        service::create_reauth_code(&state.pool, &state, user.user_id, user.user_id, ip_address)
+            .await?;
 
     Ok(Json(response))
 }
@@ -605,36 +577,32 @@ pub async fn passkey_register_start(
     user: AuthenticatedUser,
     Json(req): Json<PasskeyRegisterStartRequest>,
 ) -> Result<Json<WebauthnRegisterStartResponse>, AppError> {
-    req.validate().map_err(|e| {
-        AppError::Validation {
-            errors: e
-                .field_errors()
-                .into_iter()
-                .flat_map(|(field, errors)| {
-                    errors.iter().map(move |err| crate::error::FieldError {
-                        field: field.to_string(),
-                        code: err.code.to_string(),
-                        message: err
-                            .message
-                            .as_ref()
-                            .map(|m| m.to_string())
-                            .unwrap_or_default(),
-                    })
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
-                .collect(),
-            instance: Some("/api/v1/user/passkeys/register/start".to_string()),
-        }
+            })
+            .collect(),
+        instance: Some("/api/v1/user/passkeys/register/start".to_string()),
     })?;
 
     service::expire_challenges(&state.webauthn_challenges);
 
-    let user_row = sqlx::query(
-        "SELECT username, display_name FROM users WHERE id = $1",
-    )
-    .bind(user.user_id)
-    .fetch_one(&state.pool)
-    .await
-    .map_err(|_| AuthError::InvalidCredentials)?;
+    let user_row = sqlx::query("SELECT username, display_name FROM users WHERE id = $1")
+        .bind(user.user_id)
+        .fetch_one(&state.pool)
+        .await
+        .map_err(|_| AuthError::InvalidCredentials)?;
 
     let username: String = user_row.try_get("username").unwrap_or_default();
     let display_name: String = user_row.try_get("display_name").unwrap_or_default();
@@ -677,13 +645,9 @@ pub async fn passkey_register_finish(
         drop(entry);
     }
 
-    let passkey = service::finish_passkey_registration(
-        &state,
-        &challenge_id,
-        &req.credential,
-        "New Passkey",
-    )
-    .await?;
+    let passkey =
+        service::finish_passkey_registration(&state, &challenge_id, &req.credential, "New Passkey")
+            .await?;
 
     Ok(Json(passkey))
 }
@@ -712,30 +676,26 @@ pub async fn create_invitation(
     auth: Require<CanManageUsers>,
     Json(req): Json<CreateInvitationRequest>,
 ) -> Result<(axum::http::StatusCode, Json<InvitationResponse>), AppError> {
-    req.validate().map_err(|e| {
-        AppError::Validation {
-            errors: e
-                .field_errors()
-                .into_iter()
-                .flat_map(|(field, errors)| {
-                    errors.iter().map(move |err| crate::error::FieldError {
-                        field: field.to_string(),
-                        code: err.code.to_string(),
-                        message: err
-                            .message
-                            .as_ref()
-                            .map(|m| m.to_string())
-                            .unwrap_or_default(),
-                    })
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
-                .collect(),
-            instance: Some("/api/v1/invitations".to_string()),
-        }
+            })
+            .collect(),
+        instance: Some("/api/v1/invitations".to_string()),
     })?;
 
-    let role = req
-        .role
-        .unwrap_or_else(|| "member".to_string());
+    let role = req.role.unwrap_or_else(|| "member".to_string());
 
     let capabilities = req.capabilities.unwrap_or_default();
     let library_ids = req.library_ids.unwrap_or_default();
@@ -796,15 +756,13 @@ pub async fn get_user_capabilities(
     _auth: Require<CanManageUsers>,
     axum::extract::Path(target_user_id): axum::extract::Path<uuid::Uuid>,
 ) -> Result<Json<CapabilityOverridesResponse>, AppError> {
-
-    let target_user = sqlx::query(
-        "SELECT id, role FROM users WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(target_user_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| AppError::Auth(AuthError::Database(e)))?
-    .ok_or(AppError::NotFound("User not found".into()))?;
+    let target_user =
+        sqlx::query("SELECT id, role FROM users WHERE id = $1 AND deleted_at IS NULL")
+            .bind(target_user_id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| AppError::Auth(AuthError::Database(e)))?
+            .ok_or(AppError::NotFound("User not found".into()))?;
 
     let role: String = target_user.get("role");
     let overrides = service::get_capability_overrides(&state.pool, target_user_id).await?;
@@ -824,15 +782,13 @@ pub async fn update_user_capabilities(
     axum::extract::Path(target_user_id): axum::extract::Path<uuid::Uuid>,
     Json(req): Json<UpdateCapabilitiesRequest>,
 ) -> Result<Json<CapabilityOverridesResponse>, AppError> {
-
-    let target_user = sqlx::query(
-        "SELECT id, role FROM users WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(target_user_id)
-    .fetch_optional(&state.pool)
-    .await
-    .map_err(|e| AppError::Auth(AuthError::Database(e)))?
-    .ok_or(AppError::NotFound("User not found".into()))?;
+    let target_user =
+        sqlx::query("SELECT id, role FROM users WHERE id = $1 AND deleted_at IS NULL")
+            .bind(target_user_id)
+            .fetch_optional(&state.pool)
+            .await
+            .map_err(|e| AppError::Auth(AuthError::Database(e)))?
+            .ok_or(AppError::NotFound("User not found".into()))?;
 
     let role: String = target_user.get("role");
 

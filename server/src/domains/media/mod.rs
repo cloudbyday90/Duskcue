@@ -21,17 +21,14 @@ pub mod types;
 
 pub use error::MediaError;
 
-use axum::routing::get;
 use axum::Router;
+use axum::routing::get;
 
 use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
-        .route(
-            "/api/v1/media-items",
-            get(handlers::list_media_items),
-        )
+        .route("/api/v1/media-items", get(handlers::list_media_items))
         .route(
             "/api/v1/media-items/{id}",
             get(handlers::get_media_item)

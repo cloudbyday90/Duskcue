@@ -225,7 +225,11 @@ pub async fn generate_for_item_one(
 
     let cfg = resolve_generation_config(state, None, None).await;
     let runtime_seconds = file.runtime_seconds.max(0) as u32;
-    let interval = resolve_interval(&cfg, &state.runtime_config.load().transcoding, runtime_seconds);
+    let interval = resolve_interval(
+        &cfg,
+        &state.runtime_config.load().transcoding,
+        runtime_seconds,
+    );
 
     let mut cfg_with_interval = cfg.clone();
     cfg_with_interval.interval_seconds = interval;
@@ -260,8 +264,13 @@ pub async fn generate_for_item_one(
         return Ok(result);
     }
 
-    match sb_svc::generate_storyboard(source_path, &output_dir, runtime_seconds, &cfg_with_interval)
-        .await
+    match sb_svc::generate_storyboard(
+        source_path,
+        &output_dir,
+        runtime_seconds,
+        &cfg_with_interval,
+    )
+    .await
     {
         Ok(gen_result) => {
             persist_storyboard_row(
@@ -428,13 +437,8 @@ async fn generate_for_library(
             continue;
         }
 
-        match sb_svc::generate_storyboard(
-            source_path,
-            &output_dir,
-            runtime_seconds,
-            &cfg_for_file,
-        )
-        .await
+        match sb_svc::generate_storyboard(source_path, &output_dir, runtime_seconds, &cfg_for_file)
+            .await
         {
             Ok(gen_result) => {
                 match persist_storyboard_row(

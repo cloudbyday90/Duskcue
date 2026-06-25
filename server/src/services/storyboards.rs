@@ -377,19 +377,13 @@ pub fn validate_sprite_filename(name: &str) -> Result<u32, String> {
         .strip_suffix(".webp")
         .ok_or_else(|| format!("sprite filename must end in .webp: {name}"))?;
     let Some(number_str) = stem.strip_prefix("sprite_") else {
-        return Err(format!(
-            "sprite filename must start with 'sprite_': {name}"
-        ));
+        return Err(format!("sprite filename must start with 'sprite_': {name}"));
     };
     if number_str.is_empty() || number_str.len() > 4 {
-        return Err(format!(
-            "sprite number must be 1-4 digits: {name}"
-        ));
+        return Err(format!("sprite number must be 1-4 digits: {name}"));
     }
     if !number_str.bytes().all(|b| b.is_ascii_digit()) {
-        return Err(format!(
-            "sprite number must be ASCII digits: {name}"
-        ));
+        return Err(format!("sprite number must be ASCII digits: {name}"));
     }
     let n: u32 = number_str
         .parse()
@@ -459,8 +453,7 @@ pub async fn generate_storyboard(
     let mut realised_height: u32 = 0;
 
     for sheet_index in 0..layout.total_sheets {
-        let sheet_start_secs =
-            sheet_index * layout.thumbnails_per_sheet * config.interval_seconds;
+        let sheet_start_secs = sheet_index * layout.thumbnails_per_sheet * config.interval_seconds;
         let thumbnails_in_sheet = layout.thumbnails_in_sheet(sheet_index);
         let window_secs = thumbnails_in_sheet * config.interval_seconds;
 
@@ -552,9 +545,7 @@ async fn invoke_ffmpeg_for_sheet(
     );
 
     let mut cmd = Command::new("ffmpeg");
-    cmd.arg("-hide_banner")
-        .arg("-nostdin")
-        .arg("-nostats");
+    cmd.arg("-hide_banner").arg("-nostdin").arg("-nostats");
 
     if config.keyframe_only {
         // Placed before `-i` so the demuxer skips non-keyframe packets.
@@ -570,12 +561,17 @@ async fn invoke_ffmpeg_for_sheet(
         .arg("-i")
         .arg(source);
 
-    cmd.arg("-vf").arg(&scale_filter)
-        .arg("-frames:v").arg("1")
+    cmd.arg("-vf")
+        .arg(&scale_filter)
+        .arg("-frames:v")
+        .arg("1")
         .arg("-an")
-        .arg("-c:v").arg("webp")
-        .arg("-lossless").arg("0")
-        .arg("-q:v").arg(config.quality.to_string())
+        .arg("-c:v")
+        .arg("webp")
+        .arg("-lossless")
+        .arg("0")
+        .arg("-q:v")
+        .arg(config.quality.to_string())
         .arg("-y")
         .arg(output);
 
@@ -632,9 +628,7 @@ async fn invoke_ffmpeg_for_sheet(
     let metadata = match tokio::fs::metadata(output).await {
         Ok(m) => m,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            return Err(StoryboardPipelineError::EmptyOutput {
-                sheet: 0,
-            });
+            return Err(StoryboardPipelineError::EmptyOutput { sheet: 0 });
         }
         Err(e) => return Err(StoryboardPipelineError::Io(e)),
     };
@@ -893,30 +887,14 @@ mod tests {
     #[test]
     fn webvtt_header_present() {
         let layout = compute_sprite_layout(30, 10, 10, 20);
-        let vtt =         build_webvtt_index(
-            layout,
-            10,
-            30,
-            320,
-            180,
-            10,
-            &|idx| sprite_filename(idx),
-        );
+        let vtt = build_webvtt_index(layout, 10, 30, 320, 180, 10, &|idx| sprite_filename(idx));
         assert!(vtt.starts_with("WEBVTT\n\n"));
     }
 
     #[test]
     fn webvtt_first_cue_starts_at_zero() {
         let layout = compute_sprite_layout(30, 10, 10, 20);
-        let vtt =         build_webvtt_index(
-            layout,
-            10,
-            30,
-            320,
-            180,
-            10,
-            &|idx| sprite_filename(idx),
-        );
+        let vtt = build_webvtt_index(layout, 10, 30, 320, 180, 10, &|idx| sprite_filename(idx));
         assert!(
             vtt.contains("00:00:00.000 --> 00:00:10.000"),
             "first cue should cover [0, 10s): got:\n{vtt}"
@@ -926,15 +904,7 @@ mod tests {
     #[test]
     fn webvtt_cue_count_matches_thumbnails() {
         let layout = compute_sprite_layout(60, 10, 10, 20);
-        let vtt =         build_webvtt_index(
-            layout,
-            10,
-            60,
-            320,
-            180,
-            10,
-            &|idx| sprite_filename(idx),
-        );
+        let vtt = build_webvtt_index(layout, 10, 60, 320, 180, 10, &|idx| sprite_filename(idx));
         // 6 cues for 60s at 10s interval.
         let cue_count = vtt.matches("-->").count();
         assert_eq!(cue_count, 6);
@@ -945,15 +915,7 @@ mod tests {
         // 3 thumbnails in a single sheet of 10 cols → coordinates
         // (0,0), (320,0), (640,0).
         let layout = compute_sprite_layout(30, 10, 10, 20);
-        let vtt =         build_webvtt_index(
-            layout,
-            10,
-            30,
-            320,
-            180,
-            10,
-            &|idx| sprite_filename(idx),
-        );
+        let vtt = build_webvtt_index(layout, 10, 30, 320, 180, 10, &|idx| sprite_filename(idx));
         assert!(
             vtt.contains("sprite_001.webp#xywh=0,0,320,180"),
             "missing first-region cue:\n{vtt}"
@@ -972,15 +934,7 @@ mod tests {
     fn webvtt_second_row_y_offset() {
         // 11 thumbnails in a 10-col sheet: the 11th wraps to row 1, y=180.
         let layout = compute_sprite_layout(110, 10, 10, 20);
-        let vtt =         build_webvtt_index(
-            layout,
-            10,
-            110,
-            320,
-            180,
-            10,
-            &|idx| sprite_filename(idx),
-        );
+        let vtt = build_webvtt_index(layout, 10, 110, 320, 180, 10, &|idx| sprite_filename(idx));
         // 11th cue (index 10) should be at x=0, y=180.
         assert!(
             vtt.contains("sprite_001.webp#xywh=0,180,320,180"),
@@ -993,15 +947,7 @@ mod tests {
         // 25 thumbnails, 10-col × 2-row sheets = 20 per sheet.
         // Thumbnail 20 (0-based) is the first of sheet 1.
         let layout = compute_sprite_layout(250, 10, 10, 2);
-        let vtt =         build_webvtt_index(
-            layout,
-            10,
-            250,
-            320,
-            180,
-            10,
-            &|idx| sprite_filename(idx),
-        );
+        let vtt = build_webvtt_index(layout, 10, 250, 320, 180, 10, &|idx| sprite_filename(idx));
         assert!(
             vtt.contains("sprite_002.webp#xywh=0,0,320,180"),
             "expected a cue pointing at sprite_002:\n{vtt}"
@@ -1012,15 +958,7 @@ mod tests {
     fn webvtt_final_cue_extends_to_duration() {
         // 60s duration, 10s interval: final cue ends at 60s, not 70s.
         let layout = compute_sprite_layout(60, 10, 10, 20);
-        let vtt =         build_webvtt_index(
-            layout,
-            10,
-            60,
-            320,
-            180,
-            10,
-            &|idx| sprite_filename(idx),
-        );
+        let vtt = build_webvtt_index(layout, 10, 60, 320, 180, 10, &|idx| sprite_filename(idx));
         // The 6th (final) cue starts at 50s and should end at 60s.
         assert!(
             vtt.contains("00:00:50.000 --> 00:01:00.000"),
@@ -1035,15 +973,7 @@ mod tests {
         // and there's no timestamp gap at the sheet boundary.
         let layout = compute_sprite_layout(50, 10, 2, 2);
         assert_eq!(layout.total_sheets, 2);
-        let vtt = build_webvtt_index(
-            layout,
-            10,
-            50,
-            320,
-            180,
-            2,
-            &|idx| sprite_filename(idx),
-        );
+        let vtt = build_webvtt_index(layout, 10, 50, 320, 180, 2, &|idx| sprite_filename(idx));
         // Cues 0-3 → sprite_001; cue 4 → sprite_002.
         assert!(vtt.contains("sprite_001.webp"));
         assert!(vtt.contains("sprite_002.webp"));
@@ -1068,19 +998,39 @@ mod tests {
 
     #[test]
     fn config_rejects_bad_width() {
-        let c = GenerationConfig { width: 200, ..Default::default() };
+        let c = GenerationConfig {
+            width: 200,
+            ..Default::default()
+        };
         assert!(c.validate().is_err());
     }
 
     #[test]
     fn config_rejects_bad_interval() {
-        assert!(GenerationConfig { interval_seconds: 1, ..Default::default() }.validate().is_err());
-        assert!(GenerationConfig { interval_seconds: 121, ..Default::default() }.validate().is_err());
+        assert!(
+            GenerationConfig {
+                interval_seconds: 1,
+                ..Default::default()
+            }
+            .validate()
+            .is_err()
+        );
+        assert!(
+            GenerationConfig {
+                interval_seconds: 121,
+                ..Default::default()
+            }
+            .validate()
+            .is_err()
+        );
     }
 
     #[test]
     fn config_rejects_zero_grid() {
-        let c = GenerationConfig { sprite_columns: 0, ..Default::default() };
+        let c = GenerationConfig {
+            sprite_columns: 0,
+            ..Default::default()
+        };
         assert!(c.validate().is_err());
     }
 

@@ -21,8 +21,8 @@ pub mod types;
 
 pub use error::OverlayError;
 
-use axum::routing::{get, post};
 use axum::Router;
+use axum::routing::{get, post};
 
 use crate::state::AppState;
 
@@ -32,14 +32,8 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/api/v1/overlays",
             get(handlers::list_overlays).post(handlers::create_overlay),
         )
-        .route(
-            "/api/v1/overlays/apply",
-            post(handlers::apply_overlays),
-        )
-        .route(
-            "/api/v1/overlays/preview",
-            post(handlers::preview_overlay),
-        )
+        .route("/api/v1/overlays/apply", post(handlers::apply_overlays))
+        .route("/api/v1/overlays/preview", post(handlers::preview_overlay))
         .route(
             "/api/v1/overlays/templates",
             get(handlers::list_templates).post(handlers::import_template),

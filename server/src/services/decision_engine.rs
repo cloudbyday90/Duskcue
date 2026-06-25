@@ -154,15 +154,16 @@ static CODEC_ALIASES: &[(&str, &[&str])] = &[
     ("flac", &["flac"]),
     ("opus", &["opus"]),
     ("vorbis", &["vorbis"]),
-    ("pcm", &["pcm", "lpcm", "pcm_s16le", "pcm_s24le", "pcm_s32le"]),
+    (
+        "pcm",
+        &["pcm", "lpcm", "pcm_s16le", "pcm_s24le", "pcm_s32le"],
+    ),
     ("alac", &["alac"]),
     ("mp3", &["mp3"]),
 ];
 
 #[allow(dead_code)]
-static FMP4_COMPATIBLE_AUDIO: &[&str] = &[
-    "aac", "ac3", "eac3", "flac", "opus", "pcm",
-];
+static FMP4_COMPATIBLE_AUDIO: &[&str] = &["aac", "ac3", "eac3", "flac", "opus", "pcm"];
 
 static TEXT_SUBTITLE_FORMATS: &[&str] = &["srt", "webvtt", "ass", "ssa"];
 static IMAGE_SUBTITLE_FORMATS: &[&str] = &["pgs", "vobsub", "dvd_subtitle"];
@@ -181,9 +182,12 @@ pub fn decide(
 
     let target_video_codec = match video_decision {
         VideoDecision::DirectPlay | VideoDecision::Remux => None,
-        VideoDecision::Transcode | VideoDecision::ToneMap => {
-            Some(select_target_video_codec(media, device, config, video_decision))
-        }
+        VideoDecision::Transcode | VideoDecision::ToneMap => Some(select_target_video_codec(
+            media,
+            device,
+            config,
+            video_decision,
+        )),
     };
 
     let target_audio_codec = match audio_decision {
@@ -191,13 +195,10 @@ pub fn decide(
         AudioDecision::Transcode => Some(select_target_audio_codec(media, device, config)),
     };
 
-    let target_resolution = compute_target_resolution(
-        media, device, network, config, video_decision,
-    );
+    let target_resolution =
+        compute_target_resolution(media, device, network, config, video_decision);
 
-    let target_bitrate_bps = compute_target_bitrate(
-        media, network, config, target_resolution,
-    );
+    let target_bitrate_bps = compute_target_bitrate(media, network, config, target_resolution);
 
     let target_audio_channels = match audio_decision {
         AudioDecision::Passthrough => None,
@@ -207,15 +208,11 @@ pub fn decide(
     };
 
     let requires_tone_mapping = video_decision == VideoDecision::ToneMap;
-    let requires_dv_strip = video_decision == VideoDecision::Remux
-        && needs_dv_strip(media, device);
+    let requires_dv_strip = video_decision == VideoDecision::Remux && needs_dv_strip(media, device);
     let subtitle_burn_in_required = subtitle_decision == SubtitleDecision::BurnIn;
 
-    let overall = compute_overall_decision(
-        video_decision,
-        audio_decision,
-        subtitle_burn_in_required,
-    );
+    let overall =
+        compute_overall_decision(video_decision, audio_decision, subtitle_burn_in_required);
 
     PlaybackDecision {
         overall,
@@ -256,17 +253,12 @@ fn evaluate_video(
         reasons.push(DecisionReason {
             factor: "video_codec",
             result: "transcode",
-            detail: format!(
-                "codec '{}' not in device supported list",
-                media.video_codec
-            ),
+            detail: format!("codec '{}' not in device supported list", media.video_codec),
         });
         return VideoDecision::Transcode;
     }
 
-    if media.video_bit_depth > device.max_video_bit_depth
-        && device.max_video_bit_depth > 0
-    {
+    if media.video_bit_depth > device.max_video_bit_depth && device.max_video_bit_depth > 0 {
         reasons.push(DecisionReason {
             factor: "bit_depth",
             result: "transcode",
@@ -325,10 +317,7 @@ fn evaluate_video(
                 reasons.push(DecisionReason {
                     factor: "dolby_vision",
                     result: "remux",
-                    detail: format!(
-                        "DV Profile {} stripping to HDR10 base layer",
-                        dv_profile
-                    ),
+                    detail: format!("DV Profile {} stripping to HDR10 base layer", dv_profile),
                 });
                 return VideoDecision::Remux;
             } else {
@@ -366,8 +355,7 @@ fn evaluate_video(
         return VideoDecision::Remux;
     }
 
-    let effective_bitrate = media.video_bitrate_bps
-        + media.audio_bitrate_bps;
+    let effective_bitrate = media.video_bitrate_bps + media.audio_bitrate_bps;
     if let Some(limit) = bitrate_limit(network, config)
         && effective_bitrate > limit
     {
@@ -675,13 +663,8 @@ pub fn codec_supported(codec: &str, supported: &HashSet<String>) -> bool {
     false
 }
 
-fn codec_supported_container(
-    _codec: &str,
-    container: &str,
-    device: &DeviceCapabilities,
-) -> bool {
-    device.containers.contains(&container.to_lowercase())
-        || device.containers.contains("mkv")
+fn codec_supported_container(_codec: &str, container: &str, device: &DeviceCapabilities) -> bool {
+    device.containers.contains(&container.to_lowercase()) || device.containers.contains("mkv")
 }
 
 fn needs_dv_strip(media: &MediaFileInfo, device: &DeviceCapabilities) -> bool {
@@ -843,7 +826,12 @@ mod tests {
 
     #[test]
     fn test_direct_play_h264_aac_mkv() {
-        let decision = decide(&sdr_media(), &basic_device(), &good_network(), &default_config());
+        let decision = decide(
+            &sdr_media(),
+            &basic_device(),
+            &good_network(),
+            &default_config(),
+        );
         assert_eq!(decision.overall, StreamDecision::DirectPlay);
         assert_eq!(decision.video, VideoDecision::DirectPlay);
         assert_eq!(decision.audio, AudioDecision::Passthrough);

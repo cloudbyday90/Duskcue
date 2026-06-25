@@ -21,9 +21,9 @@ use serde::Deserialize;
 use crate::state::TmdbProviderConfig;
 
 use super::metadata::{
-    CastEntry, CreditsData, CrewEntry, ExternalIds, ImageEntry, ImagesData,
-    MetadataError, MetadataProvider, MetadataResult, MovieDetails, SearchResult,
-    SeasonDetails, TvDetails, VideoEntry,
+    CastEntry, CreditsData, CrewEntry, ExternalIds, ImageEntry, ImagesData, MetadataError,
+    MetadataProvider, MetadataResult, MovieDetails, SearchResult, SeasonDetails, TvDetails,
+    VideoEntry,
 };
 
 const BASE_URL: &str = "https://api.themoviedb.org/3";
@@ -376,9 +376,7 @@ impl TmdbClient {
         })
     }
 
-    pub async fn fetch_configuration(
-        &self,
-    ) -> MetadataResult<super::metadata::TmdbConfig> {
+    pub async fn fetch_configuration(&self) -> MetadataResult<super::metadata::TmdbConfig> {
         let resp: TmdbConfigResponse = self.get("/configuration").await?;
 
         let images = resp.images;
@@ -580,9 +578,8 @@ impl TmdbClient {
         let mut page = 1u32;
 
         loop {
-            let path = format!(
-                "/movie/changes?start_date={start_date}&end_date={end_date}&page={page}"
-            );
+            let path =
+                format!("/movie/changes?start_date={start_date}&end_date={end_date}&page={page}");
             let resp: TmdbChangesListResponse = self.get(&path).await?;
             let total_pages = resp.total_pages.unwrap_or(1);
 
@@ -608,9 +605,8 @@ impl TmdbClient {
         let mut page = 1u32;
 
         loop {
-            let path = format!(
-                "/tv/changes?start_date={start_date}&end_date={end_date}&page={page}"
-            );
+            let path =
+                format!("/tv/changes?start_date={start_date}&end_date={end_date}&page={page}");
             let resp: TmdbChangesListResponse = self.get(&path).await?;
             let total_pages = resp.total_pages.unwrap_or(1);
 
@@ -670,11 +666,7 @@ impl MetadataProvider for TmdbClient {
         Ok(results)
     }
 
-    async fn search_tv(
-        &self,
-        query: &str,
-        year: Option<u32>,
-    ) -> MetadataResult<Vec<SearchResult>> {
+    async fn search_tv(&self, query: &str, year: Option<u32>) -> MetadataResult<Vec<SearchResult>> {
         let mut path = format!(
             "/search/tv?query={}&language={}&page=1&include_adult={}",
             urlencoding::encode(query),
@@ -814,11 +806,7 @@ impl MetadataProvider for TmdbClient {
         })
     }
 
-    async fn get_season_details(
-        &self,
-        tv_id: u64,
-        season: u32,
-    ) -> MetadataResult<SeasonDetails> {
+    async fn get_season_details(&self, tv_id: u64, season: u32) -> MetadataResult<SeasonDetails> {
         let path = format!("/tv/{tv_id}/season/{season}?language={}", self.language);
         let resp: TmdbSeasonDetailsResponse = self.get(&path).await?;
 

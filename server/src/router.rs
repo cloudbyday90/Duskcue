@@ -17,20 +17,19 @@
 use std::sync::OnceLock;
 use std::time::Instant;
 
+use axum::Json;
+use axum::Router;
 use axum::extract::State;
 use axum::http::HeaderName;
 use axum::routing::get;
-use axum::Router;
-use axum::Json;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower_http::request_id::PropagateRequestIdLayer;
 use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
 use tracing::Level;
 
 use crate::middleware::{
-    build_compression_layer, build_cors_layer, build_security_headers,
+    REQUEST_ID_HEADER, build_compression_layer, build_cors_layer, build_security_headers,
     build_set_request_id_layer, metrics_subnet_guard, rate_limit_global, track_http_metrics,
-    REQUEST_ID_HEADER,
 };
 use crate::state::AppState;
 
@@ -48,10 +47,7 @@ async fn health_check(State(state): State<AppState>) -> Json<Value> {
         "degraded"
     };
 
-    let uptime = START_TIME
-        .get()
-        .map(|t| t.elapsed().as_secs())
-        .unwrap_or(0);
+    let uptime = START_TIME.get().map(|t| t.elapsed().as_secs()).unwrap_or(0);
 
     let hw = state.transcode_manager.get_hw_detection();
 
@@ -83,9 +79,8 @@ pub fn build_router(state: AppState) -> Router<AppState> {
     let config = state.runtime_config.load();
 
     let set_request_id = build_set_request_id_layer();
-    let propagate_request_id = PropagateRequestIdLayer::new(HeaderName::from_static(
-        REQUEST_ID_HEADER,
-    ));
+    let propagate_request_id =
+        PropagateRequestIdLayer::new(HeaderName::from_static(REQUEST_ID_HEADER));
 
     let trace_layer = TraceLayer::new_for_http()
         .make_span_with(
@@ -99,10 +94,7 @@ pub fn build_router(state: AppState) -> Router<AppState> {
                 .latency_unit(tower_http::LatencyUnit::Millis),
         );
 
-    let cors_layer = build_cors_layer(
-        &config.auth.network_mode,
-        &config.security.allowed_origins,
-    );
+    let cors_layer = build_cors_layer(&config.auth.network_mode, &config.security.allowed_origins);
 
     let compression_layer = build_compression_layer();
     let security_headers = build_security_headers(&config.auth.network_mode);
@@ -134,8 +126,8 @@ pub fn build_router(state: AppState) -> Router<AppState> {
         .merge(crate::domains::storyboards::router(state.clone()))
         .merge(crate::domains::analytics::router(state.clone()))
         .merge(crate::domains::trakt::router(state.clone()))
-        .merge(crate::domains::overlays::router(state.clone()));
-    // Phase 12: .merge(crate::domains::collections::router())
+        .merge(crate::domains::overlays::router(state.clone()))
+        .merge(crate::domains::collections::router(state.clone()));
     // Phase 13: .merge(crate::domains::system::router())
     // Phase 14: .merge(crate::domains::migration::router())
 

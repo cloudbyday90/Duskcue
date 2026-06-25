@@ -21,8 +21,8 @@ pub mod types;
 
 pub use error::SystemError;
 
-use axum::routing::post;
 use axum::Router;
+use axum::routing::post;
 
 use crate::state::AppState;
 

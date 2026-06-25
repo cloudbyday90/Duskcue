@@ -14,11 +14,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use axum::Json;
 use axum::body::Body;
 use axum::extract::{Path, Query, State};
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::Response;
-use axum::Json;
 use serde::Deserialize;
 use uuid::Uuid;
 use validator::Validate;
@@ -81,25 +81,23 @@ pub async fn update_media_item(
     axum::extract::Path(item_id): axum::extract::Path<Uuid>,
     Json(req): Json<UpdateMediaItemRequest>,
 ) -> Result<Json<MediaItemResponse>, AppError> {
-    req.validate().map_err(|e| {
-        AppError::Validation {
-            errors: e
-                .field_errors()
-                .into_iter()
-                .flat_map(|(field, errors)| {
-                    errors.iter().map(move |err| crate::error::FieldError {
-                        field: field.to_string(),
-                        code: err.code.to_string(),
-                        message: err
-                            .message
-                            .as_ref()
-                            .map(|m| m.to_string())
-                            .unwrap_or_default(),
-                    })
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
-                .collect(),
-            instance: Some(format!("/api/v1/media-items/{}", item_id)),
-        }
+            })
+            .collect(),
+        instance: Some(format!("/api/v1/media-items/{}", item_id)),
     })?;
 
     let response = service::update_media_item(

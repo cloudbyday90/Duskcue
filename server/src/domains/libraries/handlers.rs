@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use axum::extract::{Query, State};
 use axum::Json;
+use axum::extract::{Query, State};
 use serde::Deserialize;
 use uuid::Uuid;
 use validator::Validate;
@@ -50,13 +50,8 @@ pub async fn list_libraries(
     let page = query.page.unwrap_or(1).max(1);
     let page_size = query.page_size.unwrap_or(25).clamp(1, 100);
 
-    let response = service::list_libraries(
-        &state.pool,
-        page,
-        page_size,
-        query.media_type.as_deref(),
-    )
-    .await?;
+    let response =
+        service::list_libraries(&state.pool, page, page_size, query.media_type.as_deref()).await?;
 
     Ok(Json(response))
 }
@@ -75,25 +70,23 @@ pub async fn create_library(
     _auth: Require<CanManageLibraries>,
     Json(req): Json<CreateLibraryRequest>,
 ) -> Result<Json<LibraryResponse>, AppError> {
-    req.validate().map_err(|e| {
-        AppError::Validation {
-            errors: e
-                .field_errors()
-                .into_iter()
-                .flat_map(|(field, errors)| {
-                    errors.iter().map(move |err| crate::error::FieldError {
-                        field: field.to_string(),
-                        code: err.code.to_string(),
-                        message: err
-                            .message
-                            .as_ref()
-                            .map(|m| m.to_string())
-                            .unwrap_or_default(),
-                    })
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
-                .collect(),
-            instance: Some("/api/v1/libraries".into()),
-        }
+            })
+            .collect(),
+        instance: Some("/api/v1/libraries".into()),
     })?;
 
     service::validate_media_type(&req.media_type)?;
@@ -113,9 +106,12 @@ pub async fn create_library(
     )
     .await?;
 
-    let watcher_paths = service::list_library_path_strings(&state.pool, response.id).await.ok();
+    let watcher_paths = service::list_library_path_strings(&state.pool, response.id)
+        .await
+        .ok();
     if let Some(paths) = watcher_paths {
-        let path_bufs: Vec<std::path::PathBuf> = paths.into_iter().map(std::path::PathBuf::from).collect();
+        let path_bufs: Vec<std::path::PathBuf> =
+            paths.into_iter().map(std::path::PathBuf::from).collect();
         if let Err(e) = state.fs_watcher.watch_library(response.id, path_bufs) {
             tracing::warn!(library_id = %response.id, error = %e, "Failed to start FS watcher for new library");
         }
@@ -130,25 +126,23 @@ pub async fn update_library(
     axum::extract::Path(library_id): axum::extract::Path<Uuid>,
     Json(req): Json<UpdateLibraryRequest>,
 ) -> Result<Json<LibraryResponse>, AppError> {
-    req.validate().map_err(|e| {
-        AppError::Validation {
-            errors: e
-                .field_errors()
-                .into_iter()
-                .flat_map(|(field, errors)| {
-                    errors.iter().map(move |err| crate::error::FieldError {
-                        field: field.to_string(),
-                        code: err.code.to_string(),
-                        message: err
-                            .message
-                            .as_ref()
-                            .map(|m| m.to_string())
-                            .unwrap_or_default(),
-                    })
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
-                .collect(),
-            instance: Some(format!("/api/v1/libraries/{}", library_id)),
-        }
+            })
+            .collect(),
+        instance: Some(format!("/api/v1/libraries/{}", library_id)),
     })?;
 
     let slug = req.name.as_ref().map(|n| service::generate_slug(n));
@@ -188,12 +182,13 @@ pub async fn scan_library(
 ) -> Result<Json<serde_json::Value>, AppError> {
     let pool = state.pool.clone();
     let enrichment = Some(state.enrichment.clone());
-    let result = crate::workers::library_scanner::scan_library(&pool, library_id, false, enrichment)
-        .await
-        .map_err(|e| crate::error::AppError::Internal(anyhow::anyhow!("{}", e)))?;
-    Ok(Json(serde_json::to_value(result).unwrap_or_else(|_| {
-        serde_json::json!({ "status": "scan_completed" })
-    })))
+    let result =
+        crate::workers::library_scanner::scan_library(&pool, library_id, false, enrichment)
+            .await
+            .map_err(|e| crate::error::AppError::Internal(anyhow::anyhow!("{}", e)))?;
+    Ok(Json(serde_json::to_value(result).unwrap_or_else(
+        |_| serde_json::json!({ "status": "scan_completed" }),
+    )))
 }
 
 pub async fn list_library_items(
@@ -246,25 +241,23 @@ pub async fn create_library_path(
     axum::extract::Path(library_id): axum::extract::Path<Uuid>,
     Json(req): Json<CreateLibraryPathRequest>,
 ) -> Result<Json<LibraryPathResponse>, AppError> {
-    req.validate().map_err(|e| {
-        AppError::Validation {
-            errors: e
-                .field_errors()
-                .into_iter()
-                .flat_map(|(field, errors)| {
-                    errors.iter().map(move |err| crate::error::FieldError {
-                        field: field.to_string(),
-                        code: err.code.to_string(),
-                        message: err
-                            .message
-                            .as_ref()
-                            .map(|m| m.to_string())
-                            .unwrap_or_default(),
-                    })
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
-                .collect(),
-            instance: Some(format!("/api/v1/libraries/{}/paths", library_id)),
-        }
+            })
+            .collect(),
+        instance: Some(format!("/api/v1/libraries/{}/paths", library_id)),
     })?;
 
     let response = service::create_library_path(
@@ -279,8 +272,10 @@ pub async fn create_library_path(
     .await?;
 
     if response.scan_enabled
-        && let Ok(paths) = service::list_library_path_strings(&state.pool, library_id).await {
-        let path_bufs: Vec<std::path::PathBuf> = paths.into_iter().map(std::path::PathBuf::from).collect();
+        && let Ok(paths) = service::list_library_path_strings(&state.pool, library_id).await
+    {
+        let path_bufs: Vec<std::path::PathBuf> =
+            paths.into_iter().map(std::path::PathBuf::from).collect();
         if let Err(e) = state.fs_watcher.watch_library(library_id, path_bufs) {
             tracing::warn!(library_id = %library_id, error = %e, "Failed to update FS watcher after path creation");
         }
@@ -295,25 +290,26 @@ pub async fn update_library_path(
     axum::extract::Path((library_id, path_id)): axum::extract::Path<(Uuid, Uuid)>,
     Json(req): Json<UpdateLibraryPathRequest>,
 ) -> Result<Json<LibraryPathResponse>, AppError> {
-    req.validate().map_err(|e| {
-        AppError::Validation {
-            errors: e
-                .field_errors()
-                .into_iter()
-                .flat_map(|(field, errors)| {
-                    errors.iter().map(move |err| crate::error::FieldError {
-                        field: field.to_string(),
-                        code: err.code.to_string(),
-                        message: err
-                            .message
-                            .as_ref()
-                            .map(|m| m.to_string())
-                            .unwrap_or_default(),
-                    })
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
-                .collect(),
-            instance: Some(format!("/api/v1/libraries/{}/paths/{}", library_id, path_id)),
-        }
+            })
+            .collect(),
+        instance: Some(format!(
+            "/api/v1/libraries/{}/paths/{}",
+            library_id, path_id
+        )),
     })?;
 
     let response = service::update_library_path(
@@ -338,7 +334,8 @@ pub async fn delete_library_path(
 ) -> Result<Json<serde_json::Value>, AppError> {
     service::delete_library_path(&state.pool, library_id, path_id).await?;
     if let Ok(paths) = service::list_library_path_strings(&state.pool, library_id).await {
-        let path_bufs: Vec<std::path::PathBuf> = paths.into_iter().map(std::path::PathBuf::from).collect();
+        let path_bufs: Vec<std::path::PathBuf> =
+            paths.into_iter().map(std::path::PathBuf::from).collect();
         if path_bufs.is_empty() {
             state.fs_watcher.unwatch_library(library_id);
         } else if let Err(e) = state.fs_watcher.watch_library(library_id, path_bufs) {

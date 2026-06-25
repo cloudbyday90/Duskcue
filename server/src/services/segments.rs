@@ -724,7 +724,8 @@ pub fn find_recurring_segments(
                 ..match_a
             };
 
-            for (media_item_id, match_) in [(a.media_item_id, match_a), (b.media_item_id, match_b)] {
+            for (media_item_id, match_) in [(a.media_item_id, match_a), (b.media_item_id, match_b)]
+            {
                 matches_by_item
                     .entry(media_item_id)
                     .and_modify(|existing| {

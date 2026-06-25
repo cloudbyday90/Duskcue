@@ -21,8 +21,8 @@ pub mod types;
 
 pub use error::SubtitleError;
 
-use axum::routing::{get, post};
 use axum::Router;
+use axum::routing::{get, post};
 
 use crate::state::AppState;
 

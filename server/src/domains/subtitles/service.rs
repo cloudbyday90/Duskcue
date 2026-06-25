@@ -24,9 +24,9 @@ use uuid::Uuid;
 
 use crate::domains::subtitles::error::SubtitleError;
 use crate::domains::subtitles::types::*;
+use crate::services::opensubtitles_client::OpensubtitlesClient;
 use crate::services::subdl_client::{SubdlClient, SubtitleSearchResult};
 use crate::services::subtitles as sub_svc;
-use crate::services::opensubtitles_client::OpensubtitlesClient;
 use crate::state::AppState;
 
 const LIST_SUBTITLES_SQL: &str = r#"SELECT id, media_item_id, file_path, language, subtitle_type,
@@ -117,7 +117,10 @@ pub async fn get_subtitle_content(
         .map_err(|e| SubtitleError::FileNotFound { subtitle_id })?;
 
     let target_format = delivery_format.unwrap_or(source_format);
-    if !VALID_DELIVERY_FORMATS.contains(&target_format) && target_format != "ass" && target_format != "ssa" {
+    if !VALID_DELIVERY_FORMATS.contains(&target_format)
+        && target_format != "ass"
+        && target_format != "ssa"
+    {
         return Err(SubtitleError::InvalidSubtitleFormat(format!(
             "unsupported delivery format: {target_format}"
         )));
@@ -178,17 +181,9 @@ pub async fn fetch_subtitles(
                     Some("movie")
                 };
                 let results = match item.tmdb_id {
-                    Some(tmdb_id) => {
-                        client
-                            .search_by_tmdb(tmdb_id, language, item_type)
-                            .await
-                    }
+                    Some(tmdb_id) => client.search_by_tmdb(tmdb_id, language, item_type).await,
                     None => match &item.imdb_id {
-                        Some(imdb) => {
-                            client
-                                .search_by_imdb(imdb, language, item_type)
-                                .await
-                        }
+                        Some(imdb) => client.search_by_imdb(imdb, language, item_type).await,
                         None => {
                             client
                                 .search_by_name(&item.title, language, item_type)
@@ -228,7 +223,11 @@ pub async fn fetch_subtitles(
                 }
             }
             "opensubtitles" if subtitle_providers.opensubtitles.enabled => {
-                let api_key = subtitle_providers.opensubtitles.api_key.as_deref().unwrap_or("");
+                let api_key = subtitle_providers
+                    .opensubtitles
+                    .api_key
+                    .as_deref()
+                    .unwrap_or("");
                 if api_key.is_empty() {
                     continue;
                 }
@@ -254,27 +253,13 @@ pub async fn fetch_subtitles(
                 };
 
                 let results = if let Some((ref hash, file_size)) = hash_result {
-                    client
-                        .search_by_hash(hash, file_size, language)
-                        .await
+                    client.search_by_hash(hash, file_size, language).await
                 } else {
                     match item.tmdb_id {
-                        Some(tmdb_id) => {
-                            client
-                                .search_by_tmdb(tmdb_id, language, item_type)
-                                .await
-                        }
+                        Some(tmdb_id) => client.search_by_tmdb(tmdb_id, language, item_type).await,
                         None => match &item.imdb_id {
-                            Some(imdb) => {
-                                client
-                                    .search_by_imdb(imdb, language, item_type)
-                                    .await
-                            }
-                            None => {
-                                client
-                                    .search_by_query(&item.title, language)
-                                    .await
-                            }
+                            Some(imdb) => client.search_by_imdb(imdb, language, item_type).await,
+                            None => client.search_by_query(&item.title, language).await,
                         },
                     }
                 };
@@ -422,7 +407,11 @@ async fn try_download_and_save_os(
     } else {
         raw_bytes
     };
-    let file_ext = if best.format.is_empty() { "srt" } else { best.format.as_str() };
+    let file_ext = if best.format.is_empty() {
+        "srt"
+    } else {
+        best.format.as_str()
+    };
     let saved_path = save_subtitle_file(media_file, language, file_ext, &subtitle_bytes).await?;
     let saved_path_str = saved_path.to_string_lossy().to_string();
 
@@ -500,10 +489,8 @@ fn score_result(r: &SubtitleSearchResult, prefer_hi: bool) -> u32 {
 
 fn extract_subtitle_from_zip(data: &[u8]) -> Result<Vec<u8>, SubtitleError> {
     let reader = Cursor::new(data);
-    let mut archive = zip::ZipArchive::new(reader).map_err(|e| {
-        SubtitleError::FetchFailed {
-            reason: format!("ZIP parse error: {e}"),
-        }
+    let mut archive = zip::ZipArchive::new(reader).map_err(|e| SubtitleError::FetchFailed {
+        reason: format!("ZIP parse error: {e}"),
     })?;
 
     for i in 0..archive.len() {
@@ -549,7 +536,9 @@ async fn save_subtitle_file(
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "subtitle".to_string());
-    let parent = media_file.parent().unwrap_or_else(|| std::path::Path::new("."));
+    let parent = media_file
+        .parent()
+        .unwrap_or_else(|| std::path::Path::new("."));
 
     let filename = format!("{stem}.{language}.{ext}");
     let target = parent.join(&filename);
@@ -649,14 +638,16 @@ pub async fn trigger_ocr(
 
     let file_path: String = row.try_get("file_path").unwrap_or_default();
 
-    let (source_path, stream_index) = parse_embedded_path(&file_path)
-        .ok_or_else(|| SubtitleError::InvalidSubtitleFormat(
+    let (source_path, stream_index) = parse_embedded_path(&file_path).ok_or_else(|| {
+        SubtitleError::InvalidSubtitleFormat(
             "OCR is only applicable to embedded bitmap subtitles (PGS/VobSub)".into(),
-        ))?;
+        )
+    })?;
 
     if !is_image_subtitle(&file_path) {
         return Err(SubtitleError::InvalidSubtitleFormat(
-            "OCR is only applicable to image subtitles (.sup/.sub); text subtitles do not need OCR".into(),
+            "OCR is only applicable to image subtitles (.sup/.sub); text subtitles do not need OCR"
+                .into(),
         ));
     }
 
@@ -664,19 +655,12 @@ pub async fn trigger_ocr(
 
     let media_file_path = resolve_media_file_path(pool, media_item_id).await?;
 
-    let result = sub_svc::run_ocr(
-        &media_file_path,
-        stream_index,
-        engine,
-        media_item_id,
-    )
-    .await
-    .map_err(|_| SubtitleError::OcrUnavailable)?;
+    let result = sub_svc::run_ocr(&media_file_path, stream_index, engine, media_item_id)
+        .await
+        .map_err(|_| SubtitleError::OcrUnavailable)?;
 
     let threshold = 0.80f64;
-    let below_threshold = result
-        .confidence_score
-        .is_some_and(|c| c < threshold);
+    let below_threshold = result.confidence_score.is_some_and(|c| c < threshold);
 
     Ok(SubtitleOcrResult {
         subtitle_file_id: subtitle_id,
@@ -697,7 +681,11 @@ fn parse_embedded_path(file_path: &str) -> Option<(PathBuf, i32)> {
 }
 
 fn is_image_subtitle(file_path: &str) -> bool {
-    let ext = file_path.rsplit('.').next().unwrap_or("").to_ascii_lowercase();
+    let ext = file_path
+        .rsplit('.')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
     matches!(ext.as_str(), "sup" | "sub" | "idx" | "pgs")
         || file_path.contains("hdmv_pgs")
         || file_path.contains("dvd_subtitle")
@@ -840,7 +828,9 @@ pub async fn update_subtitle_settings(
     req: &UpdateSubtitleSettingsRequest,
 ) -> Result<SubtitleSettingsResponse, SubtitleError> {
     if !VALID_SUBTITLE_MODES.contains(&req.default_subtitle_mode.as_str()) {
-        return Err(SubtitleError::InvalidSubtitleMode(req.default_subtitle_mode.clone()));
+        return Err(SubtitleError::InvalidSubtitleMode(
+            req.default_subtitle_mode.clone(),
+        ));
     }
     if !VALID_OCR_ENGINES.contains(&req.ocr_engine.as_str()) {
         return Err(SubtitleError::InvalidOcrEngine(req.ocr_engine.clone()));
@@ -939,9 +929,7 @@ pub async fn update_subtitle_provider_settings(
 async fn reload_runtime_config(state: &AppState) -> Result<(), SubtitleError> {
     let reloaded =
         crate::state::load_runtime_config(&state.pool, Some(&state.encryption_key)).await?;
-    state
-        .runtime_config
-        .store(std::sync::Arc::new(reloaded));
+    state.runtime_config.store(std::sync::Arc::new(reloaded));
     Ok(())
 }
 
@@ -977,7 +965,6 @@ fn encrypt_subtitle_provider_keys(
         }
     }
 }
-
 
 fn row_to_response(row: &sqlx::postgres::PgRow) -> SubtitleFileResponse {
     SubtitleFileResponse {
@@ -1036,10 +1023,7 @@ mod tests {
             subtitle_content_type("srt"),
             "application/x-subrip; charset=utf-8"
         );
-        assert_eq!(
-            subtitle_content_type("ass"),
-            "text/plain; charset=utf-8"
-        );
+        assert_eq!(subtitle_content_type("ass"), "text/plain; charset=utf-8");
     }
 
     #[test]

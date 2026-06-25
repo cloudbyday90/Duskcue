@@ -27,8 +27,8 @@ use tokio_util::task::TaskTracker;
 use uuid::Uuid;
 
 const MEDIA_VIDEO_EXTENSIONS: &[&str] = &[
-    "mkv", "mp4", "avi", "ts", "m2ts", "wmv", "flv", "webm", "mov", "mpg",
-    "mpeg", "m4v", "3gp", "ogv", "iso", "img",
+    "mkv", "mp4", "avi", "ts", "m2ts", "wmv", "flv", "webm", "mov", "mpg", "mpeg", "m4v", "3gp",
+    "ogv", "iso", "img",
 ];
 
 const MEDIA_SUBTITLE_EXTENSIONS: &[&str] = &["srt", "ass", "ssa", "vtt", "sub", "idx", "sup"];
@@ -53,7 +53,16 @@ pub struct LibraryWatcherManager {
     pool: sqlx::PgPool,
     enrichment: Arc<crate::services::metadata::EnrichmentOrchestrator>,
     watched: Arc<std::sync::Mutex<HashMap<Uuid, WatchedLibrary>>>,
-    debouncer: Arc<std::sync::Mutex<Option<notify_debouncer_full::Debouncer<notify::RecommendedWatcher, notify_debouncer_full::RecommendedCache>>>>,
+    debouncer: Arc<
+        std::sync::Mutex<
+            Option<
+                notify_debouncer_full::Debouncer<
+                    notify::RecommendedWatcher,
+                    notify_debouncer_full::RecommendedCache,
+                >,
+            >,
+        >,
+    >,
     pending: Arc<std::sync::Mutex<HashMap<PathBuf, PendingDirectory>>>,
     cooldowns: Arc<std::sync::Mutex<HashMap<Uuid, std::time::Instant>>>,
 }
@@ -166,12 +175,10 @@ impl LibraryWatcherManager {
 
         drop(debouncer_guard);
 
-        self.watched.lock().unwrap().insert(
-            library_id,
-            WatchedLibrary {
-                paths,
-            },
-        );
+        self.watched
+            .lock()
+            .unwrap()
+            .insert(library_id, WatchedLibrary { paths });
 
         Ok(())
     }
@@ -196,51 +203,53 @@ impl LibraryWatcherManager {
     fn build_debouncer(
         &self,
         tx: mpsc::Sender<WatchEvent>,
-    ) -> Result<notify_debouncer_full::Debouncer<notify::RecommendedWatcher, notify_debouncer_full::RecommendedCache>, String> {
+    ) -> Result<
+        notify_debouncer_full::Debouncer<
+            notify::RecommendedWatcher,
+            notify_debouncer_full::RecommendedCache,
+        >,
+        String,
+    > {
         let pending = Arc::clone(&self.pending);
 
         notify_debouncer_full::new_debouncer(
             Duration::from_secs(DEBOUNCE_TIMEOUT_SECS),
             None,
-            move |result: notify_debouncer_full::DebounceEventResult| {
-                match result {
-                    Ok(events) => {
-                        let mut media_paths: Vec<PathBuf> = Vec::new();
-                        for event in events {
-                            use notify::EventKind;
-                            match event.kind {
-                                EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {}
-                                _ => continue,
-                            }
-
-                            for path in &event.paths {
-                                if is_media_file(path) {
-                                    media_paths.push(path.clone());
-                                }
-                            }
+            move |result: notify_debouncer_full::DebounceEventResult| match result {
+                Ok(events) => {
+                    let mut media_paths: Vec<PathBuf> = Vec::new();
+                    for event in events {
+                        use notify::EventKind;
+                        match event.kind {
+                            EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_) => {}
+                            _ => continue,
                         }
 
-                        if media_paths.is_empty() {
-                            return;
-                        }
-
-                        {
-                            let mut guard = pending.lock().unwrap();
-                            for path in &media_paths {
-                                let dir = path.parent().unwrap_or(path).to_path_buf();
-                                let entry = guard.entry(dir).or_insert(PendingDirectory {
-                                    count: 0,
-                                });
-                                entry.count += 1;
+                        for path in &event.paths {
+                            if is_media_file(path) {
+                                media_paths.push(path.clone());
                             }
                         }
-
-                        let _ = tx.try_send(WatchEvent {});
                     }
-                    Err(errors) => {
-                        for error in errors {
-                            tracing::debug!(error = %error, "Filesystem watch error");
+
+                    if media_paths.is_empty() {
+                        return;
+                    }
+
+                    {
+                        let mut guard = pending.lock().unwrap();
+                        for path in &media_paths {
+                            let dir = path.parent().unwrap_or(path).to_path_buf();
+                            let entry = guard.entry(dir).or_insert(PendingDirectory { count: 0 });
+                            entry.count += 1;
                         }
+                    }
+
+                    let _ = tx.try_send(WatchEvent {});
+                }
+                Err(errors) => {
+                    for error in errors {
+                        tracing::debug!(error = %error, "Filesystem watch error");
                     }
                 }
             },
@@ -318,10 +327,7 @@ fn drain_pending(
     pending: &Arc<std::sync::Mutex<HashMap<PathBuf, PendingDirectory>>>,
 ) -> Vec<(PathBuf, usize)> {
     let mut guard = pending.lock().unwrap();
-    guard
-        .drain()
-        .map(|(dir, info)| (dir, info.count))
-        .collect()
+    guard.drain().map(|(dir, info)| (dir, info.count)).collect()
 }
 
 async fn process_batch(
@@ -344,7 +350,8 @@ async fn process_batch(
         {
             let guard = cooldowns.lock().unwrap();
             if let Some(last) = guard.get(&library_id)
-                && last.elapsed() < Duration::from_secs(LIBRARY_COOLDOWN_SECS) {
+                && last.elapsed() < Duration::from_secs(LIBRARY_COOLDOWN_SECS)
+            {
                 tracing::debug!(
                     library_id = %library_id,
                     "Skipping FS-triggered scan — library in cooldown"
@@ -379,7 +386,14 @@ async fn process_batch(
         let pool = pool.clone();
         let enrichment = enrichment.clone();
         tokio::spawn(async move {
-            match crate::workers::library_scanner::scan_library(&pool, library_id, quick, Some(enrichment)).await {
+            match crate::workers::library_scanner::scan_library(
+                &pool,
+                library_id,
+                quick,
+                Some(enrichment),
+            )
+            .await
+            {
                 Ok(result) => {
                     tracing::info!(
                         library_id = %library_id,
@@ -402,10 +416,7 @@ async fn process_batch(
     }
 }
 
-fn resolve_library_for_path(
-    watched: &HashMap<Uuid, WatchedLibrary>,
-    path: &Path,
-) -> Option<Uuid> {
+fn resolve_library_for_path(watched: &HashMap<Uuid, WatchedLibrary>, path: &Path) -> Option<Uuid> {
     for (library_id, lib) in watched {
         for lib_path in &lib.paths {
             if path.starts_with(lib_path) {
@@ -422,5 +433,6 @@ fn is_media_file(path: &Path) -> bool {
         None => return false,
     };
 
-    MEDIA_VIDEO_EXTENSIONS.contains(&ext.as_str()) || MEDIA_SUBTITLE_EXTENSIONS.contains(&ext.as_str())
+    MEDIA_VIDEO_EXTENSIONS.contains(&ext.as_str())
+        || MEDIA_SUBTITLE_EXTENSIONS.contains(&ext.as_str())
 }

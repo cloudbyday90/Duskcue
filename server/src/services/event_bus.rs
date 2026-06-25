@@ -301,9 +301,7 @@ impl EventBus {
         }
         let new_channel = Arc::new(UserChannel::new());
         match self.channels.entry(user_id) {
-            dashmap::mapref::entry::Entry::Occupied(entry) => {
-                Arc::clone(entry.get())
-            }
+            dashmap::mapref::entry::Entry::Occupied(entry) => Arc::clone(entry.get()),
             dashmap::mapref::entry::Entry::Vacant(entry) => {
                 entry.insert(Arc::clone(&new_channel));
                 new_channel
@@ -331,11 +329,7 @@ pub fn parse_type_filter(types_param: Option<&str>) -> Option<std::collections::
         .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
         .collect();
-    if set.is_empty() {
-        None
-    } else {
-        Some(set)
-    }
+    if set.is_empty() { None } else { Some(set) }
 }
 
 /// Check whether an event passes the type filter. `None` = passthrough.

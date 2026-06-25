@@ -14,11 +14,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use axum::Json;
 use axum::body::Body;
 use axum::extract::{Path, State};
-use axum::http::{header, StatusCode};
+use axum::http::{StatusCode, header};
 use axum::response::Response;
-use axum::Json;
 use uuid::Uuid;
 
 use crate::domains::storyboards::service;
@@ -42,8 +42,7 @@ pub async fn get_storyboard_index(
     Path(item_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
     let cache_dir = state.bootstrap.data_dir.join("cache");
-    let content =
-        service::get_storyboard_index(&state.pool, item_id, &cache_dir).await?;
+    let content = service::get_storyboard_index(&state.pool, item_id, &cache_dir).await?;
 
     Ok(Response::builder()
         .status(StatusCode::OK)
@@ -59,8 +58,7 @@ pub async fn get_storyboard_sprite(
     Path((item_id, sprite)): Path<(Uuid, String)>,
 ) -> Result<Response, AppError> {
     let cache_dir = state.bootstrap.data_dir.join("cache");
-    let data =
-        service::get_storyboard_sprite(&state.pool, item_id, &sprite, &cache_dir).await?;
+    let data = service::get_storyboard_sprite(&state.pool, item_id, &sprite, &cache_dir).await?;
 
     Ok(Response::builder()
         .status(StatusCode::OK)
@@ -85,8 +83,7 @@ pub async fn generate_item_storyboards(
     auth: Require<CanManageLibraries>,
     Path(item_id): Path<Uuid>,
 ) -> Result<Json<GenerateStoryboardsResponse>, AppError> {
-    let result =
-        service::trigger_item_generation(&state, item_id, Some(auth.user.user_id)).await?;
+    let result = service::trigger_item_generation(&state, item_id, Some(auth.user.user_id)).await?;
     Ok(Json(result))
 }
 

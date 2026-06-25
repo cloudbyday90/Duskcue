@@ -231,10 +231,13 @@ pub fn srt_to_ass(srt: &str) -> String {
     output.push_str("[V4+ Styles]\n");
     output.push_str("Format: Name, Fontname, Fontsize, PrimaryColour, BackColour, OutlineColour, ");
     output.push_str("Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, ");
-    output.push_str("BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n");
+    output
+        .push_str("BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding\n");
     output.push_str("Style: Default,Arial,20,&H00FFFFFF,&H000000FF,&H00000000,0,0,0,0,100,100,0,0,1,2,2,2,10,10,10,1\n\n");
     output.push_str("[Events]\n");
-    output.push_str("Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n");
+    output.push_str(
+        "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n",
+    );
 
     for block in srt.split("\n\n") {
         let block = block.trim();
@@ -262,7 +265,9 @@ pub fn srt_to_ass(srt: &str) -> String {
         let text_lines = &lines[timecode_idx + 1..];
         let text = text_lines.join(r"\N");
 
-        output.push_str(&format!("Dialogue: 0,{start_ass},{end_ass},Default,,0,0,0,,{text}\n"));
+        output.push_str(&format!(
+            "Dialogue: 0,{start_ass},{end_ass},Default,,0,0,0,,{text}\n"
+        ));
     }
 
     output
@@ -454,11 +459,12 @@ pub async fn run_ocr(
 
     extract_subtitle_to_sup(source_path, stream_index, &extracted_path).await?;
 
-    let bytes = tokio::fs::read(&extracted_path)
-        .await
-        .map_err(|e| SubtitleError::ConversionFailed {
-            reason: format!("failed to read extracted subtitle: {e}"),
-        })?;
+    let bytes =
+        tokio::fs::read(&extracted_path)
+            .await
+            .map_err(|e| SubtitleError::ConversionFailed {
+                reason: format!("failed to read extracted subtitle: {e}"),
+            })?;
 
     let _source_hash = blake3::hash(&bytes).to_hex().to_string();
 
@@ -773,9 +779,7 @@ fn cross_correlate(speech_starts: &[u64], cue_starts: &[u64]) -> CrossCorrelatio
             }
         }
         counts.push(count);
-        if count > best_count
-            || (count == best_count && offset.abs() < best_offset.abs())
-        {
+        if count > best_count || (count == best_count && offset.abs() < best_offset.abs()) {
             best_count = count;
             best_offset = offset;
         }
@@ -831,7 +835,8 @@ pub async fn compute_oshash(path: &Path) -> Result<String, std::io::Error> {
     }
 
     let mut last_chunk = vec![0u8; CHUNK_SIZE as usize];
-    file.seek(std::io::SeekFrom::Start(file_size - CHUNK_SIZE)).await?;
+    file.seek(std::io::SeekFrom::Start(file_size - CHUNK_SIZE))
+        .await?;
     file.read_exact(&mut last_chunk).await?;
 
     for chunk in last_chunk.chunks_exact(8) {
@@ -1021,7 +1026,8 @@ Dialogue: 0,0:00:05.50,0:00:09.00,Default,,0,0,0,,{\\b1}Bold{\\b0} text\n";
 
     #[test]
     fn test_parse_srt_cue_starts() {
-        let srt = "1\n00:00:01,000 --> 00:00:04,000\nHello\n\n2\n00:00:05,000 --> 00:00:09,000\nWorld\n";
+        let srt =
+            "1\n00:00:01,000 --> 00:00:04,000\nHello\n\n2\n00:00:05,000 --> 00:00:09,000\nWorld\n";
         let starts = parse_srt_cue_starts(srt);
         assert_eq!(starts, vec![1000, 5000]);
     }

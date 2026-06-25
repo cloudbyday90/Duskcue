@@ -39,7 +39,11 @@ impl ValidateProviderRequest {
     pub fn validate_credentials(&self) -> Result<(), SystemError> {
         match self.provider.as_str() {
             "tmdb" => {
-                if self.access_token.as_ref().is_none_or(|t| t.trim().is_empty()) {
+                if self
+                    .access_token
+                    .as_ref()
+                    .is_none_or(|t| t.trim().is_empty())
+                {
                     return Err(SystemError::MissingCredential(
                         "access_token is required for TMDB".to_string(),
                     ));

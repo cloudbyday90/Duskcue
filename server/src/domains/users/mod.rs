@@ -21,14 +21,19 @@ pub mod types;
 
 pub use error::UsersError;
 
-use axum::routing::get;
 use axum::Router;
+use axum::routing::get;
 
 use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
         .route("/api/v1/users", get(handlers::list_users))
-        .route("/api/v1/users/{id}", get(handlers::get_user).put(handlers::update_user).delete(handlers::delete_user))
+        .route(
+            "/api/v1/users/{id}",
+            get(handlers::get_user)
+                .put(handlers::update_user)
+                .delete(handlers::delete_user),
+        )
         .with_state(state)
 }

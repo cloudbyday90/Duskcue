@@ -48,7 +48,9 @@ pub async fn run_metadata_refresh(
     tracing::info!(task_id = %task_id, "Metadata refresh task completed");
 }
 
-async fn download_daily_exports(cache_dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn download_daily_exports(
+    cache_dir: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let exports_dir = cache_dir.join(EXPORTS_SUBDIR);
     fs::create_dir_all(&exports_dir).await?;
 
@@ -102,7 +104,9 @@ async fn download_daily_exports(cache_dir: &std::path::Path) -> Result<(), Box<d
     Ok(())
 }
 
-async fn cleanup_old_exports(exports_dir: &std::path::Path) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn cleanup_old_exports(
+    exports_dir: &std::path::Path,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut entries = fs::read_dir(exports_dir).await?;
     let cutoff = Utc::now() - chrono::Duration::days(MAX_EXPORT_AGE_DAYS as i64);
 
@@ -123,7 +127,9 @@ async fn cleanup_old_exports(exports_dir: &std::path::Path) -> Result<(), Box<dy
     Ok(())
 }
 
-fn count_export_entries(path: &std::path::Path) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+fn count_export_entries(
+    path: &std::path::Path,
+) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
     let bytes = std::fs::read(path)?;
     let mut decoder = GzDecoder::new(&bytes[..]);
     let mut content = String::new();
@@ -198,7 +204,11 @@ async fn refresh_changed_items(
 
         for (media_item_id, tmdb_id) in &matching_ids {
             match crate::services::enrichment_persistence::re_enrich_item(
-                pool, orchestrator, *media_item_id, "movie", *tmdb_id,
+                pool,
+                orchestrator,
+                *media_item_id,
+                "movie",
+                *tmdb_id,
             )
             .await
             {
@@ -226,7 +236,11 @@ async fn refresh_changed_items(
 
         for (media_item_id, tmdb_id) in &matching_ids {
             match crate::services::enrichment_persistence::re_enrich_item(
-                pool, orchestrator, *media_item_id, "series", *tmdb_id,
+                pool,
+                orchestrator,
+                *media_item_id,
+                "series",
+                *tmdb_id,
             )
             .await
             {
@@ -258,7 +272,11 @@ async fn find_matching_items(
         return Ok(Vec::new());
     }
 
-    let ext_table = if item_type == "movie" { "movies" } else { "series" };
+    let ext_table = if item_type == "movie" {
+        "movies"
+    } else {
+        "series"
+    };
 
     let mut builder = sqlx::QueryBuilder::new(
         "SELECT mi.id, (e.metadata->>'tmdb_id')::bigint AS tmdb_id FROM media_items mi JOIN ",

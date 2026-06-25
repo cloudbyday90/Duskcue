@@ -177,7 +177,10 @@ fn evaluate_group(group: &Value, ctx: &MediaFilterContext) -> bool {
         "and" => rules.iter().all(|r| evaluate_node(r, ctx)),
         "or" => rules.iter().any(|r| evaluate_node(r, ctx)),
         other => {
-            tracing::warn!(operator = other, "unknown logical operator, defaulting to 'and'");
+            tracing::warn!(
+                operator = other,
+                "unknown logical operator, defaulting to 'and'"
+            );
             rules.iter().all(|r| evaluate_node(r, ctx))
         }
     }
@@ -259,24 +262,32 @@ fn compare_eq(field: &str, value: Option<&Value>, ctx: &MediaFilterContext) -> b
                 .unwrap_or(false)
         }
 
-        "has_dolby_vision" => value.as_bool().map(|v| v == ctx.has_dolby_vision).unwrap_or(false),
+        "has_dolby_vision" => value
+            .as_bool()
+            .map(|v| v == ctx.has_dolby_vision)
+            .unwrap_or(false),
 
-        "has_multiple_versions" => {
-            value.as_bool().map(|v| v == ctx.has_multiple_versions).unwrap_or(false)
-        }
+        "has_multiple_versions" => value
+            .as_bool()
+            .map(|v| v == ctx.has_multiple_versions)
+            .unwrap_or(false),
 
         "audio_channels" => {
             let Some(target) = json_to_i64(value) else {
                 return false;
             };
-            ctx.audio_channels.map(|c| c as i64 == target).unwrap_or(false)
+            ctx.audio_channels
+                .map(|c| c as i64 == target)
+                .unwrap_or(false)
         }
 
         "critic_rating" | "critic_rating_above" => {
             let Some(target) = json_to_f64(value) else {
                 return false;
             };
-            ctx.critic_rating.map(|r| (r - target).abs() < f64::EPSILON).unwrap_or(false)
+            ctx.critic_rating
+                .map(|r| (r - target).abs() < f64::EPSILON)
+                .unwrap_or(false)
         }
 
         _ => {
@@ -439,7 +450,9 @@ fn validate_leaf_structure(obj: &serde_json::Map<String, Value>) -> Result<(), C
         .and_then(|v| v.as_str())
         .ok_or_else(|| ConditionError::MissingKey("op".into()))?;
 
-    const VALID_OPS: &[&str] = &["eq", "neq", "in", "gt", "gte", "lt", "lte", "exists", "matches"];
+    const VALID_OPS: &[&str] = &[
+        "eq", "neq", "in", "gt", "gte", "lt", "lte", "exists", "matches",
+    ];
     if !VALID_OPS.contains(&op) {
         return Err(ConditionError::InvalidOperator(op.into()));
     }
@@ -745,7 +758,8 @@ mod tests {
 
     #[test]
     fn exists_defaults_to_true_without_value() {
-        let cond = json!({"operator": "and", "rules": [{"field": "has_dolby_vision", "op": "exists"}]});
+        let cond =
+            json!({"operator": "and", "rules": [{"field": "has_dolby_vision", "op": "exists"}]});
         assert!(evaluate_json(cond, &sample_ctx()));
     }
 
@@ -870,7 +884,8 @@ mod tests {
 
     #[test]
     fn missing_op_key_returns_false() {
-        let cond = json!({"operator": "and", "rules": [{"field": "video_resolution", "value": "4K"}]});
+        let cond =
+            json!({"operator": "and", "rules": [{"field": "video_resolution", "value": "4K"}]});
         assert!(!evaluate_json(cond, &sample_ctx()));
     }
 
@@ -931,7 +946,8 @@ mod tests {
 
     #[test]
     fn validate_invalid_op() {
-        let cond = json!({"operator": "and", "rules": [{"field": "x", "op": "invalidop", "value": "y"}]});
+        let cond =
+            json!({"operator": "and", "rules": [{"field": "x", "op": "invalidop", "value": "y"}]});
         assert!(validate_structure(&cond).is_err());
     }
 
@@ -943,7 +959,8 @@ mod tests {
 
     #[test]
     fn validate_in_with_values_ok() {
-        let cond = json!({"operator": "and", "rules": [{"field": "x", "op": "in", "values": ["y"]}]});
+        let cond =
+            json!({"operator": "and", "rules": [{"field": "x", "op": "in", "values": ["y"]}]});
         assert!(validate_structure(&cond).is_ok());
     }
 

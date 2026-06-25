@@ -70,8 +70,8 @@
 use sqlx::Row;
 use uuid::Uuid;
 
-use crate::domains::trakt::service::run_sync;
 use crate::domains::trakt::TraktError;
+use crate::domains::trakt::service::run_sync;
 use crate::state::AppState;
 
 pub async fn run_trakt_sync(state: &AppState, task_id: Uuid, config: serde_json::Value) {
@@ -139,11 +139,12 @@ pub async fn run_trakt_sync(state: &AppState, task_id: Uuid, config: serde_json:
                     total.global_abort = true;
                     break;
                 }
-                let level = if matches!(e, TraktError::SyncInProgress | TraktError::AccountNotLinked) {
-                    "skipped"
-                } else {
-                    "failed"
-                };
+                let level =
+                    if matches!(e, TraktError::SyncInProgress | TraktError::AccountNotLinked) {
+                        "skipped"
+                    } else {
+                        "failed"
+                    };
                 tracing::warn!(
                     task_id = %task_id,
                     user_id = %user_id,
@@ -238,7 +239,9 @@ mod tests {
         assert!(!is_global_failure(&TraktError::AccountNotLinked));
         assert!(!is_global_failure(&TraktError::TokenExpired));
         assert!(!is_global_failure(&TraktError::SyncInProgress));
-        assert!(!is_global_failure(&TraktError::Database(sqlx::Error::PoolClosed)));
+        assert!(!is_global_failure(&TraktError::Database(
+            sqlx::Error::PoolClosed
+        )));
     }
 
     #[test]

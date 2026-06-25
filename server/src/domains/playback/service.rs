@@ -22,7 +22,10 @@ use uuid::Uuid;
 
 use crate::domains::playback::error::PlaybackError;
 use crate::domains::playback::types::*;
-use crate::services::decision_engine::{self, DeviceCapabilities, MediaFileInfo, NetworkConditions, DecisionEngineConfig, StreamDecision};
+use crate::services::decision_engine::{
+    self, DecisionEngineConfig, DeviceCapabilities, MediaFileInfo, NetworkConditions,
+    StreamDecision,
+};
 use crate::services::transcoding::{StartSessionParams, TranscodeManager, TranscodeRendition};
 use crate::state::RuntimeConfig;
 
@@ -37,13 +40,12 @@ pub async fn start_playback(
 ) -> Result<PlaybackStartResponse, PlaybackError> {
     let media_item_id = req.media_item_id.ok_or(PlaybackError::MediaNotFound)?;
 
-    let item_row = sqlx::query(
-        "SELECT id, library_id FROM media_items WHERE id = $1 AND deleted_at IS NULL"
-    )
-    .bind(media_item_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(PlaybackError::MediaNotFound)?;
+    let item_row =
+        sqlx::query("SELECT id, library_id FROM media_items WHERE id = $1 AND deleted_at IS NULL")
+            .bind(media_item_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or(PlaybackError::MediaNotFound)?;
 
     let library_id: Uuid = item_row.try_get("library_id").unwrap_or_default();
 
@@ -177,7 +179,7 @@ async fn fetch_media_file_details(
          video_resolution, video_bitrate, video_dynamic_range, \
          audio_codec, audio_channels, audio_language, audio_bitrate, \
          runtime_seconds, additional_streams \
-         FROM media_files WHERE id = $1 AND is_healthy = true"
+         FROM media_files WHERE id = $1 AND is_healthy = true",
     )
     .bind(file_id)
     .fetch_optional(pool)
@@ -197,7 +199,7 @@ async fn select_best_media_file(
          audio_codec, audio_channels, audio_language, audio_bitrate, \
          runtime_seconds, additional_streams \
          FROM media_files WHERE media_item_id = $1 AND is_healthy = true \
-         ORDER BY file_size DESC LIMIT 1"
+         ORDER BY file_size DESC LIMIT 1",
     )
     .bind(media_item_id)
     .fetch_optional(pool)
@@ -324,16 +326,22 @@ fn build_device_capabilities(
 fn parse_device_profile(profile: &serde_json::Value, config: &RuntimeConfig) -> DeviceCapabilities {
     DeviceCapabilities {
         video_codecs: decision_engine::parse_json_string_set(
-            profile.get("video_codecs").unwrap_or(&serde_json::json!([])),
+            profile
+                .get("video_codecs")
+                .unwrap_or(&serde_json::json!([])),
         ),
         audio_codecs: decision_engine::parse_json_string_set(
-            profile.get("audio_codecs").unwrap_or(&serde_json::json!([])),
+            profile
+                .get("audio_codecs")
+                .unwrap_or(&serde_json::json!([])),
         ),
         containers: decision_engine::parse_json_string_set(
             profile.get("containers").unwrap_or(&serde_json::json!([])),
         ),
         subtitle_formats: decision_engine::parse_json_string_set(
-            profile.get("subtitle_formats").unwrap_or(&serde_json::json!([])),
+            profile
+                .get("subtitle_formats")
+                .unwrap_or(&serde_json::json!([])),
         ),
         max_resolution: profile
             .get("max_resolution")
@@ -480,7 +488,7 @@ async fn create_play_session(
     sqlx::query(
         "INSERT INTO play_sessions (id, user_id, media_item_id, library_id, \
          started_at, client_name, stream_decision, metadata) \
-         VALUES ($1, $2, $3, $4, now(), 'duskcue-web', $5, $6)"
+         VALUES ($1, $2, $3, $4, now(), 'duskcue-web', $5, $6)",
     )
     .bind(session_id)
     .bind(user_id)
@@ -506,22 +514,22 @@ pub async fn heartbeat(
     let row = sqlx::query(
         "SELECT id, user_id, media_item_id, metadata \
          FROM play_sessions \
-         WHERE id = $1 AND stopped_at IS NULL"
+         WHERE id = $1 AND stopped_at IS NULL",
     )
     .bind(session_id)
     .fetch_optional(pool)
     .await?
     .ok_or(PlaybackError::SessionNotFound)?;
 
-    let session_user_id: Uuid = row.try_get("user_id").map_err(|_| PlaybackError::SessionNotFound)?;
+    let session_user_id: Uuid = row
+        .try_get("user_id")
+        .map_err(|_| PlaybackError::SessionNotFound)?;
     if session_user_id != user_id {
         return Err(PlaybackError::SessionNotFound);
     }
 
     let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
-    let metadata: serde_json::Value = row
-        .try_get("metadata")
-        .unwrap_or(serde_json::json!({}));
+    let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
 
     let prev_state = metadata
         .get("current_state")
@@ -554,30 +562,12 @@ pub async fn heartbeat(
 
     if effective_state != prev_state {
         let (event_type, details) = match (prev_state.as_str(), effective_state.as_str()) {
-            ("playing", "paused") => (
-                "pause",
-                serde_json::json!({"reason": "user_paused"}),
-            ),
-            ("paused", "playing") => (
-                "resume",
-                serde_json::json!({}),
-            ),
-            ("playing", "buffering") => (
-                "buffer_start",
-                serde_json::json!({}),
-            ),
-            ("buffering", "playing") => (
-                "buffer_end",
-                serde_json::json!({}),
-            ),
-            ("paused", "buffering") => (
-                "buffer_start",
-                serde_json::json!({"from": "paused"}),
-            ),
-            ("buffering", "paused") => (
-                "pause",
-                serde_json::json!({"from": "buffering"}),
-            ),
+            ("playing", "paused") => ("pause", serde_json::json!({"reason": "user_paused"})),
+            ("paused", "playing") => ("resume", serde_json::json!({})),
+            ("playing", "buffering") => ("buffer_start", serde_json::json!({})),
+            ("buffering", "playing") => ("buffer_end", serde_json::json!({})),
+            ("paused", "buffering") => ("buffer_start", serde_json::json!({"from": "paused"})),
+            ("buffering", "paused") => ("pause", serde_json::json!({"from": "buffering"})),
             _ => ("heartbeat", serde_json::json!({})),
         };
         emit_play_event(
@@ -635,23 +625,23 @@ pub async fn stop_playback(
 ) -> Result<StopPlaybackResponse, PlaybackError> {
     let row = sqlx::query(
         "SELECT id, user_id, media_item_id, started_at, metadata \
-         FROM play_sessions WHERE id = $1"
+         FROM play_sessions WHERE id = $1",
     )
     .bind(session_id)
     .fetch_optional(pool)
     .await?
     .ok_or(PlaybackError::SessionNotFound)?;
 
-    let session_user_id: Uuid = row.try_get("user_id").map_err(|_| PlaybackError::SessionNotFound)?;
+    let session_user_id: Uuid = row
+        .try_get("user_id")
+        .map_err(|_| PlaybackError::SessionNotFound)?;
     if session_user_id != user_id {
         return Err(PlaybackError::SessionNotFound);
     }
 
     let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
     let started_at: chrono::DateTime<chrono::Utc> = row.try_get("started_at").unwrap_or_default();
-    let metadata: serde_json::Value = row
-        .try_get("metadata")
-        .unwrap_or(serde_json::json!({}));
+    let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
 
     let transcode_session_id = metadata
         .get("transcode_session_id")
@@ -677,7 +667,7 @@ pub async fn stop_playback(
 
     let runtime_seconds: Option<i32> = if let Some(mf_id) = media_file_id {
         sqlx::query_scalar::<_, Option<i32>>(
-            "SELECT runtime_seconds FROM media_files WHERE id = $1"
+            "SELECT runtime_seconds FROM media_files WHERE id = $1",
         )
         .bind(mf_id)
         .fetch_optional(pool)
@@ -709,7 +699,7 @@ pub async fn stop_playback(
              percent_complete = $3, \
              metadata = metadata || $4, \
              updated_at = now() \
-         WHERE id = $1"
+         WHERE id = $1",
     )
     .bind(session_id)
     .bind(duration_seconds)
@@ -765,22 +755,22 @@ pub async fn seek(
     let row = sqlx::query(
         "SELECT id, user_id, media_item_id, metadata \
          FROM play_sessions \
-         WHERE id = $1 AND stopped_at IS NULL"
+         WHERE id = $1 AND stopped_at IS NULL",
     )
     .bind(session_id)
     .fetch_optional(pool)
     .await?
     .ok_or(PlaybackError::SessionNotFound)?;
 
-    let session_user_id: Uuid = row.try_get("user_id").map_err(|_| PlaybackError::SessionNotFound)?;
+    let session_user_id: Uuid = row
+        .try_get("user_id")
+        .map_err(|_| PlaybackError::SessionNotFound)?;
     if session_user_id != user_id {
         return Err(PlaybackError::SessionNotFound);
     }
 
     let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
-    let metadata: serde_json::Value = row
-        .try_get("metadata")
-        .unwrap_or(serde_json::json!({}));
+    let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
 
     let transcode_session_id = metadata
         .get("transcode_session_id")
@@ -850,14 +840,16 @@ pub async fn get_playback_info(
 ) -> Result<PlaybackInfoResponse, PlaybackError> {
     let row = sqlx::query(
         "SELECT id, user_id, media_item_id, stream_decision, started_at, metadata \
-         FROM play_sessions WHERE id = $1"
+         FROM play_sessions WHERE id = $1",
     )
     .bind(session_id)
     .fetch_optional(pool)
     .await?
     .ok_or(PlaybackError::SessionNotFound)?;
 
-    let session_user_id: Uuid = row.try_get("user_id").map_err(|_| PlaybackError::SessionNotFound)?;
+    let session_user_id: Uuid = row
+        .try_get("user_id")
+        .map_err(|_| PlaybackError::SessionNotFound)?;
     if session_user_id != user_id {
         return Err(PlaybackError::SessionNotFound);
     }
@@ -865,9 +857,7 @@ pub async fn get_playback_info(
     let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
     let stream_decision: String = row.try_get("stream_decision").unwrap_or_default();
     let started_at: chrono::DateTime<chrono::Utc> = row.try_get("started_at").unwrap_or_default();
-    let metadata: serde_json::Value = row
-        .try_get("metadata")
-        .unwrap_or(serde_json::json!({}));
+    let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
 
     let position_ms = metadata
         .get("current_position_ms")
@@ -891,16 +881,15 @@ pub async fn get_playback_info(
         .and_then(|f| f.as_str())
         .and_then(|s| Uuid::parse_str(s).ok());
 
-    let transcode_progress = transcode_session_id
-        .and_then(|ts_id| {
-            transcode_manager
-                .get_session(&ts_id)
-                .and_then(|s| s.progress_percent())
-        });
+    let transcode_progress = transcode_session_id.and_then(|ts_id| {
+        transcode_manager
+            .get_session(&ts_id)
+            .and_then(|s| s.progress_percent())
+    });
 
     let duration_ms: Option<i32> = if let Some(mf_id) = media_file_id {
         sqlx::query_scalar::<_, Option<i32>>(
-            "SELECT runtime_seconds FROM media_files WHERE id = $1"
+            "SELECT runtime_seconds FROM media_files WHERE id = $1",
         )
         .bind(mf_id)
         .fetch_optional(pool)
@@ -931,7 +920,7 @@ pub async fn get_user_item_data(
     let row = sqlx::query(
         "SELECT id, is_watched, play_count, last_played_at, resume_position_ms, \
          is_favorite, user_rating \
-         FROM user_item_data WHERE user_id = $1 AND media_item_id = $2"
+         FROM user_item_data WHERE user_id = $1 AND media_item_id = $2",
     )
     .bind(user_id)
     .bind(media_item_id)
@@ -981,7 +970,7 @@ pub async fn update_user_item_data(
             subtitle_stream_index = COALESCE($6, user_item_data.subtitle_stream_index), \
             updated_at = now() \
          RETURNING id, is_watched, play_count, last_played_at, resume_position_ms, \
-                   is_favorite, user_rating"
+                   is_favorite, user_rating",
     )
     .bind(user_id)
     .bind(media_item_id)
@@ -1014,7 +1003,7 @@ async fn emit_play_event(
 ) -> Result<(), PlaybackError> {
     sqlx::query(
         "INSERT INTO play_events (play_session_id, user_id, event_type, position_seconds, details) \
-         VALUES ($1, $2, $3, $4, $5)"
+         VALUES ($1, $2, $3, $4, $5)",
     )
     .bind(session_id)
     .bind(user_id)
@@ -1105,7 +1094,7 @@ pub async fn list_bookmarks(
     let rows = sqlx::query(
         "SELECT id, media_item_id, position_ms, label, description, created_at \
          FROM bookmarks WHERE user_id = $1 AND media_item_id = $2 \
-         ORDER BY position_ms ASC"
+         ORDER BY position_ms ASC",
     )
     .bind(user_id)
     .bind(media_item_id)
@@ -1136,7 +1125,7 @@ pub async fn create_bookmark(
     let row = sqlx::query(
         "INSERT INTO bookmarks (id, user_id, media_item_id, position_ms, label, description) \
          VALUES (uuidv7(), $1, $2, $3, $4, $5) \
-         RETURNING id, media_item_id, position_ms, label, description, created_at"
+         RETURNING id, media_item_id, position_ms, label, description, created_at",
     )
     .bind(user_id)
     .bind(media_item_id)
@@ -1164,7 +1153,7 @@ pub async fn delete_bookmark(
 ) -> Result<(), PlaybackError> {
     let result = sqlx::query(
         "DELETE FROM bookmarks \
-         WHERE id = $1 AND user_id = $2 AND media_item_id = $3"
+         WHERE id = $1 AND user_id = $2 AND media_item_id = $3",
     )
     .bind(bookmark_id)
     .bind(user_id)
@@ -1184,7 +1173,7 @@ pub async fn list_playlists(
     user_id: Uuid,
 ) -> Result<PlaylistListResponse, PlaybackError> {
     let total = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM playlists WHERE user_id = $1 AND deleted_at IS NULL"
+        "SELECT COUNT(*) FROM playlists WHERE user_id = $1 AND deleted_at IS NULL",
     )
     .bind(user_id)
     .fetch_one(pool)
@@ -1194,7 +1183,7 @@ pub async fn list_playlists(
         "SELECT id, created_at, updated_at, name, description, visibility, \
          is_smart, item_count, total_duration_seconds \
          FROM playlists WHERE user_id = $1 AND deleted_at IS NULL \
-         ORDER BY updated_at DESC"
+         ORDER BY updated_at DESC",
     )
     .bind(user_id)
     .fetch_all(pool)
@@ -1213,7 +1202,7 @@ pub async fn get_playlist(
     let row = sqlx::query(
         "SELECT id, created_at, updated_at, name, description, visibility, \
          is_smart, item_count, total_duration_seconds \
-         FROM playlists WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL"
+         FROM playlists WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL",
     )
     .bind(playlist_id)
     .bind(user_id)
@@ -1229,10 +1218,7 @@ pub async fn create_playlist(
     user_id: Uuid,
     req: &CreatePlaylistRequest,
 ) -> Result<PlaylistResponse, PlaybackError> {
-    let visibility = req
-        .visibility
-        .as_deref()
-        .unwrap_or("private");
+    let visibility = req.visibility.as_deref().unwrap_or("private");
 
     if !VALID_PLAYLIST_VISIBILITIES.contains(&visibility) {
         return Err(PlaybackError::InvalidVisibility(visibility.to_string()));
@@ -1242,7 +1228,7 @@ pub async fn create_playlist(
         "INSERT INTO playlists (id, user_id, name, description, visibility) \
          VALUES (uuidv7(), $1, $2, $3, $4) \
          RETURNING id, created_at, updated_at, name, description, visibility, \
-                   is_smart, item_count, total_duration_seconds"
+                   is_smart, item_count, total_duration_seconds",
     )
     .bind(user_id)
     .bind(&req.name)
@@ -1274,7 +1260,7 @@ pub async fn update_playlist(
          updated_at = now() \
          WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL \
          RETURNING id, created_at, updated_at, name, description, visibility, \
-                   is_smart, item_count, total_duration_seconds"
+                   is_smart, item_count, total_duration_seconds",
     )
     .bind(playlist_id)
     .bind(user_id)
@@ -1295,7 +1281,7 @@ pub async fn delete_playlist(
 ) -> Result<(), PlaybackError> {
     let result = sqlx::query(
         "UPDATE playlists SET deleted_at = now() \
-         WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL"
+         WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL",
     )
     .bind(playlist_id)
     .bind(user_id)
@@ -1316,12 +1302,11 @@ pub async fn list_playlist_items(
 ) -> Result<PlaylistItemListResponse, PlaybackError> {
     verify_playlist_ownership(pool, user_id, playlist_id).await?;
 
-    let total = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM playlist_items WHERE playlist_id = $1"
-    )
-    .bind(playlist_id)
-    .fetch_one(pool)
-    .await?;
+    let total =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM playlist_items WHERE playlist_id = $1")
+            .bind(playlist_id)
+            .fetch_one(pool)
+            .await?;
 
     let rows = sqlx::query(
         "SELECT pi.id, pi.playlist_id, pi.media_item_id, pi.position, pi.created_at, \
@@ -1329,7 +1314,7 @@ pub async fn list_playlist_items(
          FROM playlist_items pi \
          JOIN media_items mi ON mi.id = pi.media_item_id \
          WHERE pi.playlist_id = $1 \
-         ORDER BY pi.position ASC"
+         ORDER BY pi.position ASC",
     )
     .bind(playlist_id)
     .fetch_all(pool)
@@ -1342,7 +1327,9 @@ pub async fn list_playlist_items(
             playlist_id: r.try_get("playlist_id").unwrap_or(playlist_id),
             media_item_id: r.try_get("media_item_id").unwrap_or_default(),
             position: r.try_get("position").unwrap_or(0),
-            title: r.try_get("title").unwrap_or_else(|_| "Untitled".to_string()),
+            title: r
+                .try_get("title")
+                .unwrap_or_else(|_| "Untitled".to_string()),
             created_at: r.try_get("created_at").unwrap_or_default(),
         })
         .collect();
@@ -1358,17 +1345,18 @@ pub async fn add_playlist_item(
 ) -> Result<PlaylistItemResponse, PlaybackError> {
     verify_playlist_ownership(pool, user_id, playlist_id).await?;
 
-    let media_item_id = req.media_item_id.ok_or(PlaybackError::PlaylistItemNotFound)?;
+    let media_item_id = req
+        .media_item_id
+        .ok_or(PlaybackError::PlaylistItemNotFound)?;
 
     let position = if let Some(pos) = req.position {
         pos
     } else {
-        let max_pos: Option<i32> = sqlx::query_scalar(
-            "SELECT MAX(position) FROM playlist_items WHERE playlist_id = $1"
-        )
-        .bind(playlist_id)
-        .fetch_one(pool)
-        .await?;
+        let max_pos: Option<i32> =
+            sqlx::query_scalar("SELECT MAX(position) FROM playlist_items WHERE playlist_id = $1")
+                .bind(playlist_id)
+                .fetch_one(pool)
+                .await?;
 
         max_pos.map(|p| p + 1000).unwrap_or(1000)
     };
@@ -1376,7 +1364,7 @@ pub async fn add_playlist_item(
     let row = sqlx::query(
         "INSERT INTO playlist_items (id, playlist_id, media_item_id, position) \
          VALUES (uuidv7(), $1, $2, $3) \
-         RETURNING id, playlist_id, media_item_id, position, created_at"
+         RETURNING id, playlist_id, media_item_id, position, created_at",
     )
     .bind(playlist_id)
     .bind(media_item_id)
@@ -1420,7 +1408,7 @@ pub async fn remove_playlist_item(
 
     let result = sqlx::query(
         "DELETE FROM playlist_items \
-         WHERE playlist_id = $1 AND media_item_id = $2"
+         WHERE playlist_id = $1 AND media_item_id = $2",
     )
     .bind(playlist_id)
     .bind(media_item_id)
@@ -1457,7 +1445,7 @@ async fn verify_playlist_ownership(
 ) -> Result<(), PlaybackError> {
     let exists = sqlx::query_scalar::<_, i64>(
         "SELECT COUNT(*) FROM playlists \
-         WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL"
+         WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL",
     )
     .bind(playlist_id)
     .bind(user_id)
@@ -1471,15 +1459,12 @@ async fn verify_playlist_ownership(
     Ok(())
 }
 
-async fn update_playlist_counters(
-    pool: &PgPool,
-    playlist_id: Uuid,
-) -> Result<(), PlaybackError> {
+async fn update_playlist_counters(pool: &PgPool, playlist_id: Uuid) -> Result<(), PlaybackError> {
     sqlx::query(
         "UPDATE playlists SET \
          item_count = (SELECT COUNT(*) FROM playlist_items WHERE playlist_id = $1), \
          updated_at = now() \
-         WHERE id = $1"
+         WHERE id = $1",
     )
     .bind(playlist_id)
     .execute(pool)
@@ -1494,7 +1479,7 @@ pub async fn get_media_file_path(
     let row = sqlx::query(
         "SELECT mf.file_path, mf.is_healthy \
          FROM media_files mf \
-         WHERE mf.id = $1"
+         WHERE mf.id = $1",
     )
     .bind(media_file_id)
     .fetch_optional(pool)
@@ -1507,7 +1492,9 @@ pub async fn get_media_file_path(
         return Err(PlaybackError::FileUnhealthy(path));
     }
 
-    let file_path: String = row.try_get("file_path").map_err(|_| PlaybackError::FileNotFound)?;
+    let file_path: String = row
+        .try_get("file_path")
+        .map_err(|_| PlaybackError::FileNotFound)?;
     Ok(PathBuf::from(file_path))
 }
 
@@ -1532,9 +1519,9 @@ impl RangeSpec {
             None => return Ok(None),
         };
 
-        let bytes_spec = header.strip_prefix("bytes=").ok_or_else(|| {
-            PlaybackError::InvalidByteRange("expected bytes= prefix".into())
-        })?;
+        let bytes_spec = header
+            .strip_prefix("bytes=")
+            .ok_or_else(|| PlaybackError::InvalidByteRange("expected bytes= prefix".into()))?;
 
         let (start, end) = if let Some(rest) = bytes_spec.strip_suffix('-') {
             let start: u64 = rest.parse().map_err(|_| {
@@ -1664,12 +1651,12 @@ pub async fn get_transcode_playlist(
         if let Some(dir_rendition) = extract_rendition_from_path(trimmed)
             && dir_rendition == rendition
         {
-                let playlist_path = session.segment_dir.join(trimmed);
-                let content = tokio::fs::read_to_string(&playlist_path)
-                    .await
-                    .map_err(|_| PlaybackError::SessionNotFound)?;
-                return Ok(content);
-            }
+            let playlist_path = session.segment_dir.join(trimmed);
+            let content = tokio::fs::read_to_string(&playlist_path)
+                .await
+                .map_err(|_| PlaybackError::SessionNotFound)?;
+            return Ok(content);
+        }
     }
 
     Err(PlaybackError::SessionNotFound)
@@ -1758,7 +1745,10 @@ pub fn generate_master_manifest(_session_id: Uuid, renditions: &[TranscodeRendit
             width = rendition.width,
             height = rendition.height,
         ));
-        lines.push(format!("/{rendition}/index.m3u8", rendition = rendition.name));
+        lines.push(format!(
+            "/{rendition}/index.m3u8",
+            rendition = rendition.name
+        ));
     }
 
     lines.join("\n")
@@ -1767,11 +1757,9 @@ pub fn generate_master_manifest(_session_id: Uuid, renditions: &[TranscodeRendit
 pub async fn list_streaming_policies(
     pool: &PgPool,
 ) -> Result<StreamingPolicyListResponse, PlaybackError> {
-    let count_row = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM streaming_policies"
-    )
-    .fetch_one(pool)
-    .await?;
+    let count_row = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM streaming_policies")
+        .fetch_one(pool)
+        .await?;
 
     let rows = sqlx::query(
         "SELECT id, created_at, updated_at, name, description, \
@@ -1781,15 +1769,12 @@ pub async fn list_streaming_policies(
          allowed_ip_ranges, blocked_ip_ranges, \
          auto_terminate_paused_minutes, is_default, is_system, metadata \
          FROM streaming_policies \
-         ORDER BY is_system DESC, name ASC"
+         ORDER BY is_system DESC, name ASC",
     )
     .fetch_all(pool)
     .await?;
 
-    let items: Vec<StreamingPolicyResponse> = rows
-        .iter()
-        .map(row_to_policy_response)
-        .collect();
+    let items: Vec<StreamingPolicyResponse> = rows.iter().map(row_to_policy_response).collect();
 
     Ok(StreamingPolicyListResponse {
         total: count_row,
@@ -1808,7 +1793,7 @@ pub async fn get_streaming_policy(
          max_transcode_resolution, allow_transcode_4k, require_direct_play_4k, \
          allowed_ip_ranges, blocked_ip_ranges, \
          auto_terminate_paused_minutes, is_default, is_system, metadata \
-         FROM streaming_policies WHERE id = $1"
+         FROM streaming_policies WHERE id = $1",
     )
     .bind(policy_id)
     .fetch_optional(pool)
@@ -1826,12 +1811,11 @@ pub async fn create_streaming_policy(
     validate_ip_ranges(req.allowed_ip_ranges.as_deref())?;
     validate_ip_ranges(req.blocked_ip_ranges.as_deref())?;
 
-    let existing = sqlx::query_scalar::<_, i64>(
-        "SELECT COUNT(*) FROM streaming_policies WHERE name = $1"
-    )
-    .bind(&req.name)
-    .fetch_one(pool)
-    .await?;
+    let existing =
+        sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM streaming_policies WHERE name = $1")
+            .bind(&req.name)
+            .fetch_one(pool)
+            .await?;
 
     if existing > 0 {
         return Err(PlaybackError::PolicyNameExists(req.name.clone()));
@@ -1861,7 +1845,7 @@ pub async fn create_streaming_policy(
          allow_direct_play, allow_direct_stream, allow_transcode, \
          max_transcode_resolution, allow_transcode_4k, require_direct_play_4k, \
          allowed_ip_ranges, blocked_ip_ranges, \
-         auto_terminate_paused_minutes, is_default, is_system, metadata"
+         auto_terminate_paused_minutes, is_default, is_system, metadata",
     )
     .bind(&req.name)
     .bind(&req.description)
@@ -1895,17 +1879,16 @@ pub async fn update_streaming_policy(
     validate_ip_ranges(req.allowed_ip_ranges.as_deref())?;
     validate_ip_ranges(req.blocked_ip_ranges.as_deref())?;
 
-    let _existing = sqlx::query(
-        "SELECT id, is_system, is_default FROM streaming_policies WHERE id = $1"
-    )
-    .bind(policy_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(PlaybackError::PolicyNotFound)?;
+    let _existing =
+        sqlx::query("SELECT id, is_system, is_default FROM streaming_policies WHERE id = $1")
+            .bind(policy_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or(PlaybackError::PolicyNotFound)?;
 
     if let Some(ref name) = req.name {
         let name_conflict = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM streaming_policies WHERE name = $1 AND id != $2"
+            "SELECT COUNT(*) FROM streaming_policies WHERE name = $1 AND id != $2",
         )
         .bind(name)
         .bind(policy_id)
@@ -1917,16 +1900,24 @@ pub async fn update_streaming_policy(
         }
     }
 
-    let allowed_ip_json = req.allowed_ip_ranges.as_ref().map(|r| ip_ranges_to_jsonb(Some(r)));
-    let blocked_ip_json = req.blocked_ip_ranges.as_ref().map(|r| ip_ranges_to_jsonb(Some(r)));
+    let allowed_ip_json = req
+        .allowed_ip_ranges
+        .as_ref()
+        .map(|r| ip_ranges_to_jsonb(Some(r)));
+    let blocked_ip_json = req
+        .blocked_ip_ranges
+        .as_ref()
+        .map(|r| ip_ranges_to_jsonb(Some(r)));
 
     let mut tx = pool.begin().await?;
 
     if req.is_default.unwrap_or(false) {
-        sqlx::query("UPDATE streaming_policies SET is_default = false WHERE is_default = true AND id != $1")
-            .bind(policy_id)
-            .execute(&mut *tx)
-            .await?;
+        sqlx::query(
+            "UPDATE streaming_policies SET is_default = false WHERE is_default = true AND id != $1",
+        )
+        .bind(policy_id)
+        .execute(&mut *tx)
+        .await?;
     }
 
     let row = sqlx::query(
@@ -1953,7 +1944,7 @@ pub async fn update_streaming_policy(
          allow_direct_play, allow_direct_stream, allow_transcode, \
          max_transcode_resolution, allow_transcode_4k, require_direct_play_4k, \
          allowed_ip_ranges, blocked_ip_ranges, \
-         auto_terminate_paused_minutes, is_default, is_system, metadata"
+         auto_terminate_paused_minutes, is_default, is_system, metadata",
     )
     .bind(policy_id)
     .bind(&req.name)
@@ -1979,17 +1970,12 @@ pub async fn update_streaming_policy(
     Ok(row_to_policy_response(&row))
 }
 
-pub async fn delete_streaming_policy(
-    pool: &PgPool,
-    policy_id: Uuid,
-) -> Result<(), PlaybackError> {
-    let row = sqlx::query(
-        "SELECT is_system, is_default FROM streaming_policies WHERE id = $1"
-    )
-    .bind(policy_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(PlaybackError::PolicyNotFound)?;
+pub async fn delete_streaming_policy(pool: &PgPool, policy_id: Uuid) -> Result<(), PlaybackError> {
+    let row = sqlx::query("SELECT is_system, is_default FROM streaming_policies WHERE id = $1")
+        .bind(policy_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(PlaybackError::PolicyNotFound)?;
 
     let is_system: bool = row.try_get("is_system").unwrap_or(false);
     let is_default: bool = row.try_get("is_default").unwrap_or(false);
@@ -2000,7 +1986,7 @@ pub async fn delete_streaming_policy(
 
     if is_default {
         let other_default = sqlx::query_scalar::<_, i64>(
-            "SELECT COUNT(*) FROM streaming_policies WHERE is_default = true AND id != $1"
+            "SELECT COUNT(*) FROM streaming_policies WHERE is_default = true AND id != $1",
         )
         .bind(policy_id)
         .fetch_one(pool)
@@ -2043,7 +2029,7 @@ pub async fn resolve_streaming_limits(
              max_transcode_resolution, allow_transcode_4k, require_direct_play_4k, \
              allowed_ip_ranges, blocked_ip_ranges, \
              auto_terminate_paused_minutes \
-             FROM streaming_policies WHERE id = $1"
+             FROM streaming_policies WHERE id = $1",
         )
         .bind(policy_id)
         .fetch_optional(pool)
@@ -2055,34 +2041,76 @@ pub async fn resolve_streaming_limits(
              max_transcode_resolution, allow_transcode_4k, require_direct_play_4k, \
              allowed_ip_ranges, blocked_ip_ranges, \
              auto_terminate_paused_minutes \
-             FROM streaming_policies WHERE is_default = true LIMIT 1"
+             FROM streaming_policies WHERE is_default = true LIMIT 1",
         )
         .fetch_optional(pool)
         .await?
     };
 
-    let (policy_id, policy_name, p_max_streams, p_max_transcode, p_bandwidth,
-         p_allow_dp, p_allow_ds, p_allow_transcode,
-         p_max_res, p_allow_4k, p_require_dp_4k,
-         p_allowed_ips, p_blocked_ips, p_auto_terminate) = if let Some(ref r) = policy_row {
+    let (
+        policy_id,
+        policy_name,
+        p_max_streams,
+        p_max_transcode,
+        p_bandwidth,
+        p_allow_dp,
+        p_allow_ds,
+        p_allow_transcode,
+        p_max_res,
+        p_allow_4k,
+        p_require_dp_4k,
+        p_allowed_ips,
+        p_blocked_ips,
+        p_auto_terminate,
+    ) = if let Some(ref r) = policy_row {
         (
             Some(r.try_get::<Uuid, _>("id").unwrap_or_default()),
             Some(r.try_get::<String, _>("name").unwrap_or_default()),
             r.try_get::<Option<i32>, _>("max_streams").ok().flatten(),
-            r.try_get::<Option<i32>, _>("max_transcode_streams").ok().flatten(),
-            r.try_get::<Option<i64>, _>("bandwidth_limit_bps").ok().flatten(),
+            r.try_get::<Option<i32>, _>("max_transcode_streams")
+                .ok()
+                .flatten(),
+            r.try_get::<Option<i64>, _>("bandwidth_limit_bps")
+                .ok()
+                .flatten(),
             r.try_get::<bool, _>("allow_direct_play").unwrap_or(true),
             r.try_get::<bool, _>("allow_direct_stream").unwrap_or(true),
             r.try_get::<bool, _>("allow_transcode").unwrap_or(true),
-            r.try_get::<Option<String>, _>("max_transcode_resolution").ok().flatten(),
+            r.try_get::<Option<String>, _>("max_transcode_resolution")
+                .ok()
+                .flatten(),
             r.try_get::<bool, _>("allow_transcode_4k").unwrap_or(true),
-            r.try_get::<bool, _>("require_direct_play_4k").unwrap_or(false),
-            jsonb_to_string_vec(r.try_get::<serde_json::Value, _>("allowed_ip_ranges").unwrap_or(serde_json::json!([]))),
-            jsonb_to_string_vec(r.try_get::<serde_json::Value, _>("blocked_ip_ranges").unwrap_or(serde_json::json!([]))),
-            r.try_get::<Option<i32>, _>("auto_terminate_paused_minutes").ok().flatten(),
+            r.try_get::<bool, _>("require_direct_play_4k")
+                .unwrap_or(false),
+            jsonb_to_string_vec(
+                r.try_get::<serde_json::Value, _>("allowed_ip_ranges")
+                    .unwrap_or(serde_json::json!([])),
+            ),
+            jsonb_to_string_vec(
+                r.try_get::<serde_json::Value, _>("blocked_ip_ranges")
+                    .unwrap_or(serde_json::json!([])),
+            ),
+            r.try_get::<Option<i32>, _>("auto_terminate_paused_minutes")
+                .ok()
+                .flatten(),
         )
     } else {
-        (None, None, None, None, None, true, true, true, None, true, false, vec![], vec![], None)
+        (
+            None,
+            None,
+            None,
+            None,
+            None,
+            true,
+            true,
+            true,
+            None,
+            true,
+            false,
+            vec![],
+            vec![],
+            None,
+        )
     };
 
     Ok(ResolvedStreamingLimitsResponse {
@@ -2141,7 +2169,9 @@ fn jsonb_to_string_vec(val: serde_json::Value) -> Vec<String> {
 fn ip_ranges_to_jsonb(ranges: Option<&[String]>) -> serde_json::Value {
     match ranges {
         Some(r) => serde_json::Value::Array(
-            r.iter().map(|s| serde_json::Value::String(s.clone())).collect()
+            r.iter()
+                .map(|s| serde_json::Value::String(s.clone()))
+                .collect(),
         ),
         None => serde_json::Value::Array(vec![]),
     }

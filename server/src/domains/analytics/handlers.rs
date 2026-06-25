@@ -14,8 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use axum::extract::{Path, Query, State};
 use axum::Json;
+use axum::extract::{Path, Query, State};
 use uuid::Uuid;
 
 use crate::error::AppError;
@@ -91,8 +91,7 @@ pub async fn acknowledge_event(
     auth: Require<CanViewAnalytics>,
     Path(event_id): Path<Uuid>,
 ) -> Result<Json<AcknowledgeEventResponse>, AppError> {
-    let result =
-        service::acknowledge_trust_event(&state.pool, event_id, auth.user.user_id).await?;
+    let result = service::acknowledge_trust_event(&state.pool, event_id, auth.user.user_id).await?;
     Ok(Json(result))
 }
 

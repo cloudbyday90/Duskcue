@@ -78,10 +78,7 @@ pub async fn list_users(
     })
 }
 
-pub async fn get_user(
-    pool: &sqlx::PgPool,
-    user_id: Uuid,
-) -> Result<UserResponse, UsersError> {
+pub async fn get_user(pool: &sqlx::PgPool, user_id: Uuid) -> Result<UserResponse, UsersError> {
     let row = sqlx::query(
         r#"
         SELECT id, username, display_name, email, avatar_url, role, status,
@@ -119,13 +116,12 @@ pub async fn update_user(
     pool: &sqlx::PgPool,
     params: UpdateUserParams,
 ) -> Result<UserResponse, UsersError> {
-    let existing = sqlx::query(
-        "SELECT id, role, username FROM users WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(params.user_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(UsersError::NotFound)?;
+    let existing =
+        sqlx::query("SELECT id, role, username FROM users WHERE id = $1 AND deleted_at IS NULL")
+            .bind(params.user_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or(UsersError::NotFound)?;
 
     let existing_role: String = existing.get("role");
 
@@ -133,8 +129,7 @@ pub async fn update_user(
         return Err(UsersError::OwnerImmutable);
     }
 
-    if params.user_id == params.admin_user_id
-        && (params.role.is_some() || params.status.is_some())
+    if params.user_id == params.admin_user_id && (params.role.is_some() || params.status.is_some())
     {
         return Err(UsersError::CannotModifySelf);
     }
@@ -225,13 +220,11 @@ pub async fn soft_delete_user(
     user_id: Uuid,
     admin_user_id: Uuid,
 ) -> Result<(), UsersError> {
-    let existing = sqlx::query(
-        "SELECT id, role FROM users WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(UsersError::NotFound)?;
+    let existing = sqlx::query("SELECT id, role FROM users WHERE id = $1 AND deleted_at IS NULL")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(UsersError::NotFound)?;
 
     let role: String = existing.get("role");
 

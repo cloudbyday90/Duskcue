@@ -314,10 +314,7 @@ pub struct NetworkConfig {
 impl Default for NetworkConfig {
     fn default() -> Self {
         Self {
-            allowed_metrics_subnets: vec![
-                "127.0.0.1/32".to_string(),
-                "::1/128".to_string(),
-            ],
+            allowed_metrics_subnets: vec!["127.0.0.1/32".to_string(), "::1/128".to_string()],
         }
     }
 }
@@ -787,7 +784,12 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(pool: PgPool, bootstrap: BootstrapConfig, metrics_handle: PrometheusHandle, encryption_key: EncryptionKey) -> Self {
+    pub fn new(
+        pool: PgPool,
+        bootstrap: BootstrapConfig,
+        metrics_handle: PrometheusHandle,
+        encryption_key: EncryptionKey,
+    ) -> Self {
         set_environment(bootstrap.environment.clone());
         let subnets = parse_metrics_subnets(&NetworkConfig::default().allowed_metrics_subnets);
         let webauthn = build_webauthn("localhost", "http://localhost:48027");
@@ -798,11 +800,9 @@ impl AppState {
             bootstrap.data_dir.clone(),
         ));
         let fs_watcher = Arc::new(LibraryWatcherManager::new(pool.clone(), enrichment.clone()));
-        let transcode_manager = Arc::new(
-            crate::services::transcoding::TranscodeManager::new(
-                Arc::new(ArcSwap::from_pointee(RuntimeConfig::default())),
-            ),
-        );
+        let transcode_manager = Arc::new(crate::services::transcoding::TranscodeManager::new(
+            Arc::new(ArcSwap::from_pointee(RuntimeConfig::default())),
+        ));
         Self {
             pool,
             runtime_config: Arc::new(ArcSwap::from_pointee(RuntimeConfig::default())),
@@ -834,7 +834,11 @@ impl AppState {
         let subnets = parse_metrics_subnets(&runtime_config.network.allowed_metrics_subnets);
 
         let rp_id = runtime_config.auth.rp_id.as_deref().unwrap_or("localhost");
-        let rp_origin = runtime_config.auth.rp_origin.as_deref().unwrap_or("http://localhost:48027");
+        let rp_origin = runtime_config
+            .auth
+            .rp_origin
+            .as_deref()
+            .unwrap_or("http://localhost:48027");
         let webauthn = build_webauthn(rp_id, rp_origin);
 
         let metadata_config = runtime_config.metadata.clone();
@@ -849,9 +853,9 @@ impl AppState {
         let fs_watcher = Arc::new(LibraryWatcherManager::new(pool.clone(), enrichment.clone()));
 
         let config_arc = Arc::new(ArcSwap::from_pointee(runtime_config));
-        let transcode_manager = Arc::new(
-            crate::services::transcoding::TranscodeManager::new(config_arc.clone()),
-        );
+        let transcode_manager = Arc::new(crate::services::transcoding::TranscodeManager::new(
+            config_arc.clone(),
+        ));
 
         let geoip = Arc::new(GeoIpService::new(&bootstrap.data_dir));
 
@@ -882,7 +886,10 @@ impl AppState {
 
 fn build_webauthn(rp_id: &str, rp_origin: &str) -> Webauthn {
     let origin = url::Url::parse(rp_origin).unwrap_or_else(|_| {
-        tracing::warn!("Invalid WebAuthn RP origin '{}', falling back to http://localhost:48027", rp_origin);
+        tracing::warn!(
+            "Invalid WebAuthn RP origin '{}', falling back to http://localhost:48027",
+            rp_origin
+        );
         url::Url::parse("http://localhost:48027").unwrap()
     });
 
@@ -913,7 +920,10 @@ fn parse_metrics_subnets(subnets: &[String]) -> Vec<IpNet> {
         .collect()
 }
 
-pub async fn load_runtime_config(pool: &PgPool, encryption_key: Option<&EncryptionKey>) -> Result<RuntimeConfig, sqlx::Error> {
+pub async fn load_runtime_config(
+    pool: &PgPool,
+    encryption_key: Option<&EncryptionKey>,
+) -> Result<RuntimeConfig, sqlx::Error> {
     let row = sqlx::query(
         r#"
         SELECT
@@ -949,29 +959,63 @@ pub async fn load_runtime_config(pool: &PgPool, encryption_key: Option<&Encrypti
         return Ok(RuntimeConfig::default());
     };
 
-    let server_name: String = row.try_get("server_name").unwrap_or_else(|_| "My Duskcue".to_string());
+    let server_name: String = row
+        .try_get("server_name")
+        .unwrap_or_else(|_| "My Duskcue".to_string());
     let base_url: Option<String> = row.try_get("base_url").unwrap_or(None);
     let http_port: i32 = row.try_get("http_port").unwrap_or(48027);
     let https_port: Option<i32> = row.try_get("https_port").unwrap_or(None);
     let ssl_certificate_path: Option<String> = row.try_get("ssl_certificate_path").unwrap_or(None);
     let ssl_private_key_path: Option<String> = row.try_get("ssl_private_key_path").unwrap_or(None);
 
-    let network: serde_json::Value = row.try_get("network").unwrap_or(serde_json::Value::Object(Default::default()));
-    let transcoding: serde_json::Value = row.try_get("transcoding").unwrap_or(serde_json::Value::Object(Default::default()));
-    let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::Value::Object(Default::default()));
-    let auth: serde_json::Value = row.try_get("auth").unwrap_or(serde_json::Value::Object(Default::default()));
-    let security: serde_json::Value = row.try_get("security").unwrap_or(serde_json::Value::Object(Default::default()));
-    let notifications: serde_json::Value = row.try_get("notifications").unwrap_or(serde_json::Value::Object(Default::default()));
-    let backup: serde_json::Value = row.try_get("backup").unwrap_or(serde_json::Value::Object(Default::default()));
-    let integrations: serde_json::Value = row.try_get("integrations").unwrap_or(serde_json::Value::Object(Default::default()));
-    let logging: serde_json::Value = row.try_get("logging").unwrap_or(serde_json::Value::Object(Default::default()));
-    let storage: serde_json::Value = row.try_get("storage").unwrap_or(serde_json::Value::Object(Default::default()));
-    let maintenance: serde_json::Value = row.try_get("maintenance").unwrap_or(serde_json::Value::Object(Default::default()));
-    let resource_limits: serde_json::Value = row.try_get("resource_limits").unwrap_or(serde_json::Value::Object(Default::default()));
-    let cpu: serde_json::Value = row.try_get("cpu").unwrap_or(serde_json::Value::Object(Default::default()));
-    let quality: serde_json::Value = row.try_get("quality").unwrap_or(serde_json::Value::Object(Default::default()));
-    let subtitles: serde_json::Value = row.try_get("subtitles").unwrap_or(serde_json::Value::Object(Default::default()));
-    let analytics: serde_json::Value = row.try_get("analytics").unwrap_or(serde_json::Value::Object(Default::default()));
+    let network: serde_json::Value = row
+        .try_get("network")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let transcoding: serde_json::Value = row
+        .try_get("transcoding")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let metadata: serde_json::Value = row
+        .try_get("metadata")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let auth: serde_json::Value = row
+        .try_get("auth")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let security: serde_json::Value = row
+        .try_get("security")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let notifications: serde_json::Value = row
+        .try_get("notifications")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let backup: serde_json::Value = row
+        .try_get("backup")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let integrations: serde_json::Value = row
+        .try_get("integrations")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let logging: serde_json::Value = row
+        .try_get("logging")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let storage: serde_json::Value = row
+        .try_get("storage")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let maintenance: serde_json::Value = row
+        .try_get("maintenance")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let resource_limits: serde_json::Value = row
+        .try_get("resource_limits")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let cpu: serde_json::Value = row
+        .try_get("cpu")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let quality: serde_json::Value = row
+        .try_get("quality")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let subtitles: serde_json::Value = row
+        .try_get("subtitles")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let analytics: serde_json::Value = row
+        .try_get("analytics")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
 
     Ok(RuntimeConfig {
         server_name,
@@ -994,7 +1038,8 @@ pub async fn load_runtime_config(pool: &PgPool, encryption_key: Option<&Encrypti
         notifications: serde_json::from_value(notifications).unwrap_or_default(),
         backup: serde_json::from_value(backup).unwrap_or_default(),
         integrations: {
-            let mut ic: IntegrationsConfig = serde_json::from_value(integrations).unwrap_or_default();
+            let mut ic: IntegrationsConfig =
+                serde_json::from_value(integrations).unwrap_or_default();
             if let Some(key) = encryption_key {
                 crate::services::encryption::decrypt_trakt_config(&mut ic.trakt, key);
             }

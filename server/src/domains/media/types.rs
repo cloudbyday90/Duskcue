@@ -21,8 +21,13 @@ use validator::Validate;
 
 pub static VALID_MEDIA_ITEM_TYPES: &[&str] = &["movie", "series", "season", "episode"];
 pub static VALID_MATCH_STATES: &[&str] = &["unmatched", "auto_matched", "confirmed", "manual"];
-pub static VALID_IDENTIFICATION_SOURCES: &[&str] =
-    &["media_match", "nfo", "provider_id_tag", "filename_parse", "manual"];
+pub static VALID_IDENTIFICATION_SOURCES: &[&str] = &[
+    "media_match",
+    "nfo",
+    "provider_id_tag",
+    "filename_parse",
+    "manual",
+];
 
 pub struct MediaItemRow {
     pub id: Uuid,

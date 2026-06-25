@@ -14,3 +14,34 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum CollectionsError {
+    #[error("collection not found")]
+    NotFound,
+
+    #[error("collection name already exists in this library")]
+    NameAlreadyExists,
+
+    #[error("collection sync already in progress")]
+    SyncInProgress,
+
+    #[error("invalid dynamic collection configuration: {0}")]
+    InvalidDynamicConfig(String),
+
+    #[error("invalid smart filter syntax: {0}")]
+    InvalidSmartFilter(String),
+
+    #[error("external builder source unavailable: {0}")]
+    ExternalSourceUnavailable(String),
+
+    #[error("external API rate limit exceeded during collection sync")]
+    ExternalRateLimited,
+
+    #[error("collection template not found")]
+    TemplateNotFound,
+
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+}

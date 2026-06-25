@@ -279,25 +279,24 @@ async fn update_movie_extension(
     media_item_id: Uuid,
     result: &EnrichmentResult,
 ) -> Result<(), sqlx::Error> {
-    let mut query_builder =
-        sqlx::QueryBuilder::new("UPDATE movies SET updated_at = now()");
+    let mut query_builder = sqlx::QueryBuilder::new("UPDATE movies SET updated_at = now()");
 
     if let Some(ref tagline) = result.tagline {
         query_builder.push(", metadata = COALESCE(metadata, '{}') || ");
         query_builder.push_bind(serde_json::json!({ "tagline": tagline }));
     }
 
-    if let Some(rated) = result
-        .ratings
-        .as_ref()
-        .and_then(|r| r.rated.clone())
-    {
+    if let Some(rated) = result.ratings.as_ref().and_then(|r| r.rated.clone()) {
         query_builder.push(", metadata = COALESCE(metadata, '{}') || ");
         query_builder.push_bind(serde_json::json!({ "certification": rated }));
     }
 
     if !result.production_companies.is_empty() {
-        let studios: Vec<String> = result.production_companies.iter().map(|c| c.name.clone()).collect();
+        let studios: Vec<String> = result
+            .production_companies
+            .iter()
+            .map(|c| c.name.clone())
+            .collect();
         query_builder.push(", metadata = COALESCE(metadata, '{}') || ");
         query_builder.push_bind(serde_json::json!({ "studios": studios }));
     }
@@ -315,8 +314,7 @@ async fn update_series_extension(
     media_item_id: Uuid,
     result: &EnrichmentResult,
 ) -> Result<(), sqlx::Error> {
-    let mut query_builder =
-        sqlx::QueryBuilder::new("UPDATE series SET updated_at = now()");
+    let mut query_builder = sqlx::QueryBuilder::new("UPDATE series SET updated_at = now()");
 
     if !result.networks.is_empty() {
         let network_names: Vec<String> = result.networks.iter().map(|n| n.name.clone()).collect();
@@ -476,7 +474,10 @@ fn build_metadata_json(result: &EnrichmentResult) -> serde_json::Value {
     let mut obj = serde_json::Map::new();
 
     if let Some(ref tagline) = result.tagline {
-        obj.insert("tagline".to_string(), serde_json::Value::String(tagline.clone()));
+        obj.insert(
+            "tagline".to_string(),
+            serde_json::Value::String(tagline.clone()),
+        );
     }
 
     if !result.videos.is_empty() {

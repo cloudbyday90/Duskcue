@@ -36,8 +36,7 @@ pub fn apply_sandbox(_config: &SandboxConfig<'_>) -> Result<(), std::io::Error> 
 #[cfg(target_os = "linux")]
 fn apply_landlock(config: &SandboxConfig<'_>) -> Result<(), std::io::Error> {
     use landlock::{
-        ABI, AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr,
-        RulesetStatus,
+        ABI, AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr, RulesetStatus,
     };
 
     let abi = ABI::V3;
@@ -50,27 +49,48 @@ fn apply_landlock(config: &SandboxConfig<'_>) -> Result<(), std::io::Error> {
         .create()
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e.to_string()))?;
 
-    let add_ro_rule = |rs: landlock::RulesetCreated, path: &Path| -> Result<landlock::RulesetCreated, std::io::Error> {
+    let add_ro_rule = |rs: landlock::RulesetCreated,
+                       path: &Path|
+     -> Result<landlock::RulesetCreated, std::io::Error> {
         let fd = PathFd::new(path).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, format!("landlock open {}: {e}", path.display()))
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("landlock open {}: {e}", path.display()),
+            )
         })?;
         rs.add_rule(PathBeneath::new(fd, access_ro)).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, format!("landlock rule {}: {e}", path.display()))
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("landlock rule {}: {e}", path.display()),
+            )
         })
     };
 
-    let add_rw_rule = |rs: landlock::RulesetCreated, path: &Path| -> Result<landlock::RulesetCreated, std::io::Error> {
+    let add_rw_rule = |rs: landlock::RulesetCreated,
+                       path: &Path|
+     -> Result<landlock::RulesetCreated, std::io::Error> {
         let fd = PathFd::new(path).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, format!("landlock open {}: {e}", path.display()))
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("landlock open {}: {e}", path.display()),
+            )
         })?;
         rs.add_rule(PathBeneath::new(fd, access_rw)).map_err(|e| {
-            std::io::Error::new(std::io::ErrorKind::Other, format!("landlock rule {}: {e}", path.display()))
+            std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!("landlock rule {}: {e}", path.display()),
+            )
         })
     };
 
     let mut rs = ruleset;
 
-    for path in [Path::new("/usr"), Path::new("/lib"), Path::new("/etc"), Path::new("/dev/dri")] {
+    for path in [
+        Path::new("/usr"),
+        Path::new("/lib"),
+        Path::new("/etc"),
+        Path::new("/dev/dri"),
+    ] {
         if path.exists() {
             rs = add_ro_rule(rs, path)?;
         }
@@ -89,7 +109,10 @@ fn apply_landlock(config: &SandboxConfig<'_>) -> Result<(), std::io::Error> {
     }
 
     let status = rs.restrict_self().map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, format!("landlock restrict_self: {e}"))
+        std::io::Error::new(
+            std::io::ErrorKind::Other,
+            format!("landlock restrict_self: {e}"),
+        )
     })?;
 
     match status.ruleset {
@@ -104,9 +127,8 @@ fn apply_seccomp() -> Result<(), std::io::Error> {
         std::io::Error::new(std::io::ErrorKind::Other, format!("seccomp build: {e}"))
     })?;
 
-    seccompiler::apply_filter(&filter).map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, format!("seccomp apply: {e}"))
-    })
+    seccompiler::apply_filter(&filter)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("seccomp apply: {e}")))
 }
 
 #[cfg(target_os = "linux")]
@@ -187,8 +209,13 @@ fn build_ffmpeg_filter() -> Result<seccompiler::BpfProgram, seccompiler::Error> 
 
     let arch = target_arch();
 
-    SeccompFilter::new(rules, SeccompAction::KillProcess, SeccompAction::Allow, arch)?
-        .try_into()
+    SeccompFilter::new(
+        rules,
+        SeccompAction::KillProcess,
+        SeccompAction::Allow,
+        arch,
+    )?
+    .try_into()
 }
 
 #[cfg(target_os = "linux")]

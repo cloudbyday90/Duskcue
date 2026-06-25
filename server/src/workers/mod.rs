@@ -14,10 +14,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod geoip_updater;
 pub mod library_scanner;
 pub mod metadata_refresh;
 pub mod segment_detector;
 pub mod storyboard_generator;
 pub mod subtitle_processor;
 pub mod trakt_sync;
-pub mod geoip_updater;

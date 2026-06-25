@@ -33,8 +33,8 @@ use crate::services::media_matching;
 use crate::services::metadata::EnrichmentOrchestrator;
 
 const MEDIA_VIDEO_EXTENSIONS: &[&str] = &[
-    "mkv", "mp4", "avi", "ts", "m2ts", "wmv", "flv", "webm", "mov", "mpg",
-    "mpeg", "m4v", "3gp", "ogv", "iso", "img",
+    "mkv", "mp4", "avi", "ts", "m2ts", "wmv", "flv", "webm", "mov", "mpg", "mpeg", "m4v", "3gp",
+    "ogv", "iso", "img",
 ];
 
 const MEDIA_SUBTITLE_EXTENSIONS: &[&str] = &["srt", "ass", "ssa", "vtt", "sub", "idx", "sup"];
@@ -239,7 +239,16 @@ pub async fn scan_library(
             continue;
         }
 
-        match scan_path_pipeline(pool, library_id, &library.media_type, scan_path, full, enrichment.as_deref()).await {
+        match scan_path_pipeline(
+            pool,
+            library_id,
+            &library.media_type,
+            scan_path,
+            full,
+            enrichment.as_deref(),
+        )
+        .await
+        {
             Ok(result) => {
                 total_result.files_discovered += result.files_discovered;
                 total_result.files_new += result.files_new;
@@ -293,17 +302,13 @@ struct LibraryInfo {
     media_type: String,
 }
 
-async fn load_library(
-    pool: &sqlx::PgPool,
-    library_id: Uuid,
-) -> Result<LibraryInfo, ScannerError> {
-    let row = sqlx::query(
-        "SELECT name, media_type FROM libraries WHERE id = $1 AND deleted_at IS NULL",
-    )
-    .bind(library_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(ScannerError::LibraryNotFound(library_id))?;
+async fn load_library(pool: &sqlx::PgPool, library_id: Uuid) -> Result<LibraryInfo, ScannerError> {
+    let row =
+        sqlx::query("SELECT name, media_type FROM libraries WHERE id = $1 AND deleted_at IS NULL")
+            .bind(library_id)
+            .fetch_optional(pool)
+            .await?
+            .ok_or(ScannerError::LibraryNotFound(library_id))?;
 
     Ok(LibraryInfo {
         name: row.get("name"),
@@ -315,14 +320,16 @@ async fn load_scan_paths(
     pool: &sqlx::PgPool,
     library_id: Uuid,
 ) -> Result<Vec<PathBuf>, ScannerError> {
-    let rows = sqlx::query(
-        "SELECT path FROM library_paths WHERE library_id = $1 AND scan_enabled = true",
-    )
-    .bind(library_id)
-    .fetch_all(pool)
-    .await?;
+    let rows =
+        sqlx::query("SELECT path FROM library_paths WHERE library_id = $1 AND scan_enabled = true")
+            .bind(library_id)
+            .fetch_all(pool)
+            .await?;
 
-    Ok(rows.iter().map(|r| PathBuf::from(r.get::<String, _>("path"))).collect())
+    Ok(rows
+        .iter()
+        .map(|r| PathBuf::from(r.get::<String, _>("path")))
+        .collect())
 }
 
 async fn scan_path_pipeline(
@@ -387,25 +394,24 @@ async fn scan_path_pipeline(
         "Phase 4 (Identify) complete"
     );
 
-    let subtitles_discovered =
-        match crate::services::subtitle_discovery::discover_subtitles(
-            pool,
-            library_id,
-            &discovered,
-        )
-        .await
-        {
-            Ok(n) => n as u64,
-            Err(e) => {
-                tracing::warn!(error = %e, "Subtitle discovery failed");
-                errors.push(ScanError {
-                    path: scan_path.to_string_lossy().to_string(),
-                    phase: "subtitle_discovery".to_string(),
-                    message: e.to_string(),
-                });
-                0
-            }
-        };
+    let subtitles_discovered = match crate::services::subtitle_discovery::discover_subtitles(
+        pool,
+        library_id,
+        &discovered,
+    )
+    .await
+    {
+        Ok(n) => n as u64,
+        Err(e) => {
+            tracing::warn!(error = %e, "Subtitle discovery failed");
+            errors.push(ScanError {
+                path: scan_path.to_string_lossy().to_string(),
+                phase: "subtitle_discovery".to_string(),
+                message: e.to_string(),
+            });
+            0
+        }
+    };
     tracing::info!(
         path = %scan_path.display(),
         subtitles_discovered,
@@ -414,8 +420,7 @@ async fn scan_path_pipeline(
 
     phase5_enrich(pool, library_id, enrichment, &mut errors).await;
 
-    let deleted_count =
-        phase6_cleanup(pool, library_id, &diff.deleted_paths, &mut errors).await?;
+    let deleted_count = phase6_cleanup(pool, library_id, &diff.deleted_paths, &mut errors).await?;
     tracing::info!(
         path = %scan_path.display(),
         deleted = deleted_count,
@@ -453,10 +458,7 @@ fn phase1_discover(root_path: &Path) -> Vec<DiscoveredFile> {
         .git_exclude(false)
         .git_global(false);
 
-    let extensions_owned = extensions
-        .iter()
-        .map(|e| e.to_string())
-        .collect::<Vec<_>>();
+    let extensions_owned = extensions.iter().map(|e| e.to_string()).collect::<Vec<_>>();
     let glob_patterns: Vec<String> = extensions_owned
         .iter()
         .map(|e| format!("*.{}", e))
@@ -535,10 +537,8 @@ async fn phase2_diff(
         })
         .collect();
 
-    let known_map: HashMap<String, &KnownFile> = known
-        .iter()
-        .map(|k| (k.file_path.clone(), k))
-        .collect();
+    let known_map: HashMap<String, &KnownFile> =
+        known.iter().map(|k| (k.file_path.clone(), k)).collect();
 
     let discovered_map: HashMap<String, &DiscoveredFile> = discovered
         .iter()
@@ -570,8 +570,7 @@ async fn phase2_diff(
 
                 let mtime_changed = match (disc.mtime, known_file.file_modified_at) {
                     (Some(mtime), Some(db_mtime)) => {
-                        let mtime_chrono =
-                            DateTime::<Utc>::from(mtime);
+                        let mtime_chrono = DateTime::<Utc>::from(mtime);
                         let diff = (mtime_chrono - db_mtime).num_seconds().abs();
                         diff > MTIME_TOLERANCE_SECS as i64
                     }
@@ -672,12 +671,11 @@ async fn probe_file(path: &Path) -> Result<ProbeResult, ScannerError> {
         });
     }
 
-    let probe: FfprobeOutput = serde_json::from_slice(&output.stdout).map_err(|e| {
-        ScannerError::ProbeFailed {
+    let probe: FfprobeOutput =
+        serde_json::from_slice(&output.stdout).map_err(|e| ScannerError::ProbeFailed {
             path: path.to_string_lossy().to_string(),
             error: format!("JSON parse error: {}", e),
-        }
-    })?;
+        })?;
 
     let streams = probe.streams.unwrap_or_default();
     let format = probe.format;
@@ -701,18 +699,12 @@ async fn probe_file(path: &Path) -> Result<ProbeResult, ScannerError> {
                 if let (Some(w), Some(h)) = (stream.width, stream.height) {
                     video_resolution = Some(format!("{}x{}", w, h));
                 }
-                video_bitrate = stream
-                    .bit_rate
-                    .as_ref()
-                    .and_then(|b| b.parse::<i32>().ok());
-                video_dynamic_range = stream
-                    .color_transfer
-                    .as_ref()
-                    .map(|ct| match ct.as_str() {
-                        "smpte2084" => "hdr10".to_string(),
-                        "arib-std-b67" => "hlg".to_string(),
-                        _ => "sdr".to_string(),
-                    });
+                video_bitrate = stream.bit_rate.as_ref().and_then(|b| b.parse::<i32>().ok());
+                video_dynamic_range = stream.color_transfer.as_ref().map(|ct| match ct.as_str() {
+                    "smpte2084" => "hdr10".to_string(),
+                    "arib-std-b67" => "hlg".to_string(),
+                    _ => "sdr".to_string(),
+                });
                 video_frame_rate = parse_frame_rate(stream.r_frame_rate.as_deref());
             }
             Some("audio") if audio_codec.is_none() => {
@@ -722,10 +714,7 @@ async fn probe_file(path: &Path) -> Result<ProbeResult, ScannerError> {
                     .tags
                     .as_ref()
                     .and_then(|t| t.get("language").cloned());
-                audio_bitrate = stream
-                    .bit_rate
-                    .as_ref()
-                    .and_then(|b| b.parse::<i32>().ok());
+                audio_bitrate = stream.bit_rate.as_ref().and_then(|b| b.parse::<i32>().ok());
             }
             Some("subtitle") => {
                 let lang = stream
@@ -733,14 +722,8 @@ async fn probe_file(path: &Path) -> Result<ProbeResult, ScannerError> {
                     .as_ref()
                     .and_then(|t| t.get("language").cloned())
                     .unwrap_or_else(|| "und".to_string());
-                let title = stream
-                    .tags
-                    .as_ref()
-                    .and_then(|t| t.get("title").cloned());
-                let title_lower = title
-                    .as_ref()
-                    .map(|t| t.to_lowercase())
-                    .unwrap_or_default();
+                let title = stream.tags.as_ref().and_then(|t| t.get("title").cloned());
+                let title_lower = title.as_ref().map(|t| t.to_lowercase()).unwrap_or_default();
                 let disp_forced = stream
                     .disposition
                     .as_ref()
@@ -836,11 +819,7 @@ fn parse_frame_rate(rate: Option<&str>) -> Option<f64> {
         2 => {
             let num: f64 = parts[0].parse().ok()?;
             let den: f64 = parts[1].parse().ok()?;
-            if den == 0.0 {
-                None
-            } else {
-                Some(num / den)
-            }
+            if den == 0.0 { None } else { Some(num / den) }
         }
         _ => None,
     }
@@ -881,12 +860,7 @@ async fn phase4_identify(
 
             for (series_key, episodes) in grouped.values() {
                 match identify_and_create_series(
-                    pool,
-                    library_id,
-                    scan_path,
-                    series_key,
-                    episodes,
-                    errors,
+                    pool, library_id, scan_path, series_key, episodes, errors,
                 )
                 .await
                 {
@@ -919,12 +893,10 @@ async fn identify_and_create_movie(
     file: &DiscoveredFile,
     probe: &ProbeResult,
 ) -> Result<(), ScannerError> {
-    let existing = sqlx::query(
-        "SELECT id FROM media_files WHERE file_path = $1",
-    )
-    .bind(file.path.to_string_lossy().to_string())
-    .fetch_optional(pool)
-    .await?;
+    let existing = sqlx::query("SELECT id FROM media_files WHERE file_path = $1")
+        .bind(file.path.to_string_lossy().to_string())
+        .fetch_optional(pool)
+        .await?;
 
     if existing.is_some() {
         return update_media_file(pool, file, probe).await;
@@ -1010,7 +982,8 @@ fn group_episodes_by_series(
     probed: &[(DiscoveredFile, ProbeResult)],
 ) -> HashMap<String, (SeriesKey, Vec<EpisodeInfo>)> {
     let mut groups: HashMap<String, (SeriesKey, Vec<EpisodeInfo>)> = HashMap::new();
-    let mut media_match_cache: HashMap<PathBuf, Option<media_matching::MediaMatchData>> = HashMap::new();
+    let mut media_match_cache: HashMap<PathBuf, Option<media_matching::MediaMatchData>> =
+        HashMap::new();
 
     for (file, probe) in probed {
         let parent = file.path.parent().unwrap_or(scan_path);
@@ -1019,7 +992,9 @@ fn group_episodes_by_series(
 
         let cached = media_match_cache
             .entry(series_folder.clone())
-            .or_insert_with(|| media_matching::parse_media_match_file(&series_folder.join(".media-match")));
+            .or_insert_with(|| {
+                media_matching::parse_media_match_file(&series_folder.join(".media-match"))
+            });
 
         let series_name = series_folder
             .file_name()
@@ -1080,9 +1055,10 @@ fn group_episodes_by_series(
 
         let year = {
             let parsed = parse_media_name(&file.path, &series_folder, "tvshows");
-            parsed.as_ref().and_then(|p| p.year).or_else(|| {
-                parse_year_from_name(series_name)
-            })
+            parsed
+                .as_ref()
+                .and_then(|p| p.year)
+                .or_else(|| parse_year_from_name(series_name))
         };
 
         groups
@@ -1120,11 +1096,7 @@ async fn identify_and_create_series(
 ) -> Result<usize, ScannerError> {
     let mut items_created = 0;
 
-    let ident = media_matching::resolve_identification(
-        &series_key.folder,
-        None,
-        None,
-    );
+    let ident = media_matching::resolve_identification(&series_key.folder, None, None);
 
     let title = series_key.title.clone();
     let sort_title = generate_sort_title(&title);
@@ -1158,12 +1130,10 @@ async fn identify_and_create_series(
 
             let series_id: Uuid = row.get("id");
 
-            sqlx::query(
-                "INSERT INTO series (id, status) VALUES ($1, 'continuing')",
-            )
-            .bind(series_id)
-            .execute(&mut *tx)
-            .await?;
+            sqlx::query("INSERT INTO series (id, status) VALUES ($1, 'continuing')")
+                .bind(series_id)
+                .execute(&mut *tx)
+                .await?;
 
             tx.commit().await?;
             items_created += 1;
@@ -1186,12 +1156,10 @@ async fn identify_and_create_series(
             }
         };
 
-        let existing = sqlx::query(
-            "SELECT id FROM media_files WHERE file_path = $1",
-        )
-        .bind(ep_info.file.path.to_string_lossy().to_string())
-        .fetch_optional(pool)
-        .await?;
+        let existing = sqlx::query("SELECT id FROM media_files WHERE file_path = $1")
+            .bind(ep_info.file.path.to_string_lossy().to_string())
+            .fetch_optional(pool)
+            .await?;
 
         if existing.is_some() {
             update_media_file(pool, &ep_info.file, &ep_info.probe).await?;
@@ -1211,14 +1179,16 @@ async fn identify_and_create_series(
                RETURNING id"#,
         )
         .bind(library_id)
-        .bind(episode_title.as_deref().unwrap_or(&format!(
-            "S{:02}E{:02}",
-            ep_info.season, ep_info.episode
-        )))
-        .bind(episode_title.as_deref().unwrap_or(&format!(
-            "S{:02}E{:02}",
-            ep_info.season, ep_info.episode
-        )))
+        .bind(
+            episode_title
+                .as_deref()
+                .unwrap_or(&format!("S{:02}E{:02}", ep_info.season, ep_info.episode)),
+        )
+        .bind(
+            episode_title
+                .as_deref()
+                .unwrap_or(&format!("S{:02}E{:02}", ep_info.season, ep_info.episode)),
+        )
         .bind(ep_info.probe.runtime_seconds)
         .fetch_one(&mut *tx)
         .await?;
@@ -1276,13 +1246,12 @@ async fn ensure_season(
     season_number: u32,
     library_id: Uuid,
 ) -> Result<Uuid, ScannerError> {
-    let existing = sqlx::query(
-        "SELECT id FROM seasons WHERE series_id = $1 AND season_number = $2",
-    )
-    .bind(series_id)
-    .bind(season_number as i32)
-    .fetch_optional(pool)
-    .await?;
+    let existing =
+        sqlx::query("SELECT id FROM seasons WHERE series_id = $1 AND season_number = $2")
+            .bind(series_id)
+            .bind(season_number as i32)
+            .fetch_optional(pool)
+            .await?;
 
     if let Some(row) = existing {
         return Ok(row.get("id"));
@@ -1305,14 +1274,12 @@ async fn ensure_season(
 
     let season_id: Uuid = row.get("id");
 
-    sqlx::query(
-        "INSERT INTO seasons (id, series_id, season_number) VALUES ($1, $2, $3)",
-    )
-    .bind(season_id)
-    .bind(series_id)
-    .bind(season_number as i32)
-    .execute(&mut *tx)
-    .await?;
+    sqlx::query("INSERT INTO seasons (id, series_id, season_number) VALUES ($1, $2, $3)")
+        .bind(season_id)
+        .bind(series_id)
+        .bind(season_number as i32)
+        .execute(&mut *tx)
+        .await?;
 
     tx.commit().await?;
 
@@ -1332,9 +1299,7 @@ async fn insert_media_file(
     probe: &ProbeResult,
     file_hash: Option<&str>,
 ) -> Result<(), ScannerError> {
-    let mtime = file
-        .mtime
-        .map(DateTime::<Utc>::from);
+    let mtime = file.mtime.map(DateTime::<Utc>::from);
 
     sqlx::query(
         r#"INSERT INTO media_files (media_item_id, file_path, file_size, file_hash,
@@ -1412,10 +1377,7 @@ async fn update_media_file(
 fn parse_media_name(file_path: &Path, parent: &Path, media_type: &str) -> Option<ParsedMediaName> {
     let filename = file_path.file_stem()?.to_str()?;
 
-    let folder_name = parent
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    let folder_name = parent.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
     let name_source = folder_name;
 
@@ -1459,13 +1421,9 @@ fn parse_media_name(file_path: &Path, parent: &Path, media_type: &str) -> Option
 }
 
 fn parse_sxxexx_filename(path: &Path) -> Option<(u32, u32, Option<u32>)> {
-    let filename = path
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    let filename = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
-    let re = Regex::new(r"(?i)[_.\s\-]s?(\d{1,2})[ex](\d{1,3})(?:\s*[-e]\s*(\d{1,3}))?")
-        .unwrap();
+    let re = Regex::new(r"(?i)[_.\s\-]s?(\d{1,2})[ex](\d{1,3})(?:\s*[-e]\s*(\d{1,3}))?").unwrap();
 
     if let Some(caps) = re.captures(filename) {
         let season: u32 = caps.get(1)?.as_str().parse().ok()?;
@@ -1617,10 +1575,7 @@ fn find_series_folder(current: &Path, scan_root: &Path) -> PathBuf {
     let season_re = Regex::new(r"(?i)^season\s*\d+$").unwrap();
     let specials_re = Regex::new(r"(?i)^specials$").unwrap();
 
-    let folder_name = current
-        .file_name()
-        .and_then(|n| n.to_str())
-        .unwrap_or("");
+    let folder_name = current.file_name().and_then(|n| n.to_str()).unwrap_or("");
 
     if (season_re.is_match(folder_name) || specials_re.is_match(folder_name))
         && let Some(parent) = current.parent()
@@ -1703,10 +1658,12 @@ async fn phase6_cleanup(
     let mut deleted_count = 0u64;
 
     for path in deleted_paths {
-        sqlx::query("UPDATE media_files SET is_healthy = false, updated_at = now() WHERE file_path = $1")
-            .bind(path)
-            .execute(pool)
-            .await?;
+        sqlx::query(
+            "UPDATE media_files SET is_healthy = false, updated_at = now() WHERE file_path = $1",
+        )
+        .bind(path)
+        .execute(pool)
+        .await?;
 
         deleted_count += 1;
     }
@@ -1736,10 +1693,7 @@ async fn phase6_cleanup(
     Ok(deleted_count)
 }
 
-async fn count_unmatched(
-    pool: &sqlx::PgPool,
-    library_id: Uuid,
-) -> Result<usize, ScannerError> {
+async fn count_unmatched(pool: &sqlx::PgPool, library_id: Uuid) -> Result<usize, ScannerError> {
     let count: i64 = sqlx::query_scalar(
         "SELECT count(*) FROM media_items WHERE library_id = $1 AND match_state = 'unmatched'",
     )

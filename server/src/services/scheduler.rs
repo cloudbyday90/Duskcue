@@ -27,7 +27,8 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use uuid::Uuid;
 
-type TaskExecutor = Arc<dyn Fn(sqlx::PgPool, Uuid, serde_json::Value) -> tokio::task::JoinHandle<()> + Send + Sync>;
+type TaskExecutor =
+    Arc<dyn Fn(sqlx::PgPool, Uuid, serde_json::Value) -> tokio::task::JoinHandle<()> + Send + Sync>;
 
 pub struct Scheduler {
     pool: sqlx::PgPool,
@@ -197,7 +198,11 @@ impl Scheduler {
         Ok(tasks)
     }
 
-    async fn execute_task(&self, task: &ScheduledTaskRow, trigger_type: &str) -> Result<(), SchedulerError> {
+    async fn execute_task(
+        &self,
+        task: &ScheduledTaskRow,
+        trigger_type: &str,
+    ) -> Result<(), SchedulerError> {
         let executor = self
             .executors
             .iter()
@@ -440,12 +445,7 @@ async fn complete_run(
     Ok(())
 }
 
-async fn on_task_success(
-    pool: &sqlx::PgPool,
-    task_id: Uuid,
-    task_name: &str,
-    _max_retries: i32,
-) {
+async fn on_task_success(pool: &sqlx::PgPool, task_id: Uuid, task_name: &str, _max_retries: i32) {
     let now = Utc::now();
 
     let task_row = sqlx::query(
@@ -504,12 +504,7 @@ struct TaskFailureInfo {
     consecutive_failures: i32,
 }
 
-async fn on_task_failure(
-    pool: &sqlx::PgPool,
-    task_id: Uuid,
-    run_id: Uuid,
-    info: &TaskFailureInfo,
-) {
+async fn on_task_failure(pool: &sqlx::PgPool, task_id: Uuid, run_id: Uuid, info: &TaskFailureInfo) {
     let new_failures = info.consecutive_failures + 1;
     let should_disable = new_failures >= info.max_retries;
 
@@ -629,19 +624,69 @@ pub async fn seed_default_tasks(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> 
     tracing::info!("Seeding default scheduled tasks");
 
     let defaults = [
-        ("Library Scan", "library_scan", Some("0 3 * * *"), None::<i32>),
-        ("Metadata Refresh", "metadata_refresh", Some("0 4 * * *"), None::<i32>),
-        ("Database Maintenance", "database_maintenance", Some("0 5 * * 0"), None::<i32>),
+        (
+            "Library Scan",
+            "library_scan",
+            Some("0 3 * * *"),
+            None::<i32>,
+        ),
+        (
+            "Metadata Refresh",
+            "metadata_refresh",
+            Some("0 4 * * *"),
+            None::<i32>,
+        ),
+        (
+            "Database Maintenance",
+            "database_maintenance",
+            Some("0 5 * * 0"),
+            None::<i32>,
+        ),
         ("Session Cleanup", "session_cleanup", None, Some(3600)),
-        ("Notification Cleanup", "notification_cleanup", Some("0 2 * * *"), None::<i32>),
+        (
+            "Notification Cleanup",
+            "notification_cleanup",
+            Some("0 2 * * *"),
+            None::<i32>,
+        ),
         ("Disk Space Check", "disk_space_check", None, Some(1800)),
-        ("Media Health Check", "media_health_check", Some("0 6 * * 0"), None::<i32>),
-        ("Soft Delete Purge", "soft_delete_purge", Some("0 1 * * *"), None::<i32>),
-        ("Subtitle Auto-Fetch", "subtitle_auto_fetch", None, Some(1800)),
-        ("Segment Analysis", "segment_analysis", Some("0 3 * * *"), None::<i32>),
-        ("Storyboard Generation", "storyboard_generation", Some("0 4 * * *"), None::<i32>),
+        (
+            "Media Health Check",
+            "media_health_check",
+            Some("0 6 * * 0"),
+            None::<i32>,
+        ),
+        (
+            "Soft Delete Purge",
+            "soft_delete_purge",
+            Some("0 1 * * *"),
+            None::<i32>,
+        ),
+        (
+            "Subtitle Auto-Fetch",
+            "subtitle_auto_fetch",
+            None,
+            Some(1800),
+        ),
+        (
+            "Segment Analysis",
+            "segment_analysis",
+            Some("0 3 * * *"),
+            None::<i32>,
+        ),
+        (
+            "Storyboard Generation",
+            "storyboard_generation",
+            Some("0 4 * * *"),
+            None::<i32>,
+        ),
         ("Trakt Sync", "trakt_sync", None, Some(1800)),
-        ("GeoIP Database Update", "geoip_database_update", Some("0 3 * * 1"), None::<i32>),
+        (
+            "GeoIP Database Update",
+            "geoip_database_update",
+            Some("0 3 * * 1"),
+            None::<i32>,
+        ),
     ];
 
     for (name, task_type, cron_expr, interval_secs) in &defaults {

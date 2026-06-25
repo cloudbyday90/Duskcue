@@ -21,29 +21,17 @@ pub mod types;
 
 pub use error::PlaybackError;
 
-use axum::routing::{delete, get, post};
 use axum::Router;
+use axum::routing::{delete, get, post};
 
 use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
-        .route(
-            "/api/v1/playback/start",
-            post(handlers::start_playback),
-        )
-        .route(
-            "/api/v1/playback/heartbeat",
-            post(handlers::heartbeat),
-        )
-        .route(
-            "/api/v1/playback/stop",
-            post(handlers::stop_playback),
-        )
-        .route(
-            "/api/v1/playback/seek",
-            post(handlers::seek),
-        )
+        .route("/api/v1/playback/start", post(handlers::start_playback))
+        .route("/api/v1/playback/heartbeat", post(handlers::heartbeat))
+        .route("/api/v1/playback/stop", post(handlers::stop_playback))
+        .route("/api/v1/playback/seek", post(handlers::seek))
         .route(
             "/api/v1/playback/info/{session_id}",
             get(handlers::get_playback_info),
@@ -60,10 +48,7 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/api/v1/items/{item_id}/bookmarks/{bookmark_id}",
             delete(handlers::delete_bookmark),
         )
-        .route(
-            "/api/v1/stream/{media_file_id}",
-            get(handlers::stream_file),
-        )
+        .route("/api/v1/stream/{media_file_id}", get(handlers::stream_file))
         .route(
             "/api/v1/transcode/{session_id}/manifest.m3u8",
             get(handlers::get_transcode_manifest),

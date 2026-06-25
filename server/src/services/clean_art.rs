@@ -180,8 +180,11 @@ pub async fn ensure_clean_backup(
     let canvas = canvas_for_type(artwork_type)?;
     let scaled = overlay_svc::resize_to_canvas(&source_img, canvas);
 
-    let (webp_bytes, _) = image_pipeline::encode_webp(&DynamicImage::ImageRgba8(scaled.clone()), encode_config)
-        .map_err(|e| OverlayError::CompositingFailed(format!("failed to encode clean backup WebP: {e}")))?;
+    let (webp_bytes, _) =
+        image_pipeline::encode_webp(&DynamicImage::ImageRgba8(scaled.clone()), encode_config)
+            .map_err(|e| {
+                OverlayError::CompositingFailed(format!("failed to encode clean backup WebP: {e}"))
+            })?;
 
     if let Some(parent) = clean_path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| {
@@ -203,14 +206,18 @@ pub async fn ensure_clean_backup(
 fn decode_source(bytes: &[u8]) -> Result<image::RgbaImage, OverlayError> {
     image::load_from_memory(bytes)
         .map(|img| img.to_rgba8())
-        .map_err(|e| OverlayError::CompositingFailed(format!("failed to decode source artwork: {e}")))
+        .map_err(|e| {
+            OverlayError::CompositingFailed(format!("failed to decode source artwork: {e}"))
+        })
 }
 
 /// Decode WebP bytes into an `RgbaImage`.
 fn decode_webp(bytes: &[u8]) -> Result<image::RgbaImage, OverlayError> {
     image::load_from_memory(bytes)
         .map(|img| img.to_rgba8())
-        .map_err(|e| OverlayError::CompositingFailed(format!("failed to decode clean backup WebP: {e}")))
+        .map_err(|e| {
+            OverlayError::CompositingFailed(format!("failed to decode clean backup WebP: {e}"))
+        })
 }
 
 // ---------------------------------------------------------------------------
@@ -622,7 +629,10 @@ mod tests {
         let artwork_id = Uuid::nil();
         let path = clean_art_path(data_dir, "poster", artwork_id);
         assert!(path.starts_with("/data/cache/images/clean/posters"));
-        assert_eq!(path.file_name().unwrap(), "00000000-0000-0000-0000-000000000000.webp");
+        assert_eq!(
+            path.file_name().unwrap(),
+            "00000000-0000-0000-0000-000000000000.webp"
+        );
     }
 
     #[test]
@@ -631,7 +641,10 @@ mod tests {
         let media_item_id = Uuid::nil();
         let path = overlaid_art_path(data_dir, "backdrop", media_item_id);
         assert!(path.starts_with("/data/cache/images/overlays/backdrops"));
-        assert_eq!(path.file_name().unwrap(), "00000000-0000-0000-0000-000000000000.webp");
+        assert_eq!(
+            path.file_name().unwrap(),
+            "00000000-0000-0000-0000-000000000000.webp"
+        );
     }
 
     // ---- decode helpers ----

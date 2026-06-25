@@ -14,20 +14,20 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use axum::Json;
 use axum::body::Body;
 use axum::extract::{ConnectInfo, Path, State};
-use axum::http::{header, HeaderMap, StatusCode};
+use axum::http::{HeaderMap, StatusCode, header};
 use axum::response::Response;
-use axum::Json;
 use sqlx::Row;
 use std::net::SocketAddr;
 use validator::Validate;
 
-use crate::error::AppError;
 use crate::domains::playback::error::PlaybackError;
 use crate::domains::playback::service::{self, RangeSpec};
 use crate::domains::playback::types::*;
-use crate::extractors::{AuthenticatedUser, Require, CanManageServer};
+use crate::error::AppError;
+use crate::extractors::{AuthenticatedUser, CanManageServer, Require};
 use crate::state::AppState;
 
 pub async fn start_playback(
@@ -45,11 +45,18 @@ pub async fn start_playback(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .clone()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
-        AppError::Validation { errors, instance: None }
+        AppError::Validation {
+            errors,
+            instance: None,
+        }
     })?;
 
     let config = state.runtime_config.load();
@@ -95,11 +102,18 @@ pub async fn heartbeat(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .clone()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
-        AppError::Validation { errors, instance: None }
+        AppError::Validation {
+            errors,
+            instance: None,
+        }
     })?;
 
     let session_id = req.session_id.ok_or_else(|| {
@@ -108,7 +122,10 @@ pub async fn heartbeat(
             code: "required".to_string(),
             message: "session_id is required".to_string(),
         }];
-        AppError::Validation { errors, instance: None }
+        AppError::Validation {
+            errors,
+            instance: None,
+        }
     })?;
 
     let result = service::heartbeat(
@@ -138,11 +155,18 @@ pub async fn stop_playback(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .clone()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
-        AppError::Validation { errors, instance: None }
+        AppError::Validation {
+            errors,
+            instance: None,
+        }
     })?;
 
     let session_id = req.session_id.ok_or_else(|| {
@@ -151,7 +175,10 @@ pub async fn stop_playback(
             code: "required".to_string(),
             message: "session_id is required".to_string(),
         }];
-        AppError::Validation { errors, instance: None }
+        AppError::Validation {
+            errors,
+            instance: None,
+        }
     })?;
 
     let result = service::stop_playback(
@@ -179,11 +206,18 @@ pub async fn seek(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .clone()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
-        AppError::Validation { errors, instance: None }
+        AppError::Validation {
+            errors,
+            instance: None,
+        }
     })?;
 
     let session_id = req.session_id.ok_or_else(|| {
@@ -192,7 +226,10 @@ pub async fn seek(
             code: "required".to_string(),
             message: "session_id is required".to_string(),
         }];
-        AppError::Validation { errors, instance: None }
+        AppError::Validation {
+            errors,
+            instance: None,
+        }
     })?;
 
     let position_ms = req.position_ms.ok_or_else(|| {
@@ -201,7 +238,10 @@ pub async fn seek(
             code: "required".to_string(),
             message: "position_ms is required".to_string(),
         }];
-        AppError::Validation { errors, instance: None }
+        AppError::Validation {
+            errors,
+            instance: None,
+        }
     })?;
 
     let result = service::seek(
@@ -222,9 +262,13 @@ pub async fn get_playback_info(
     user: AuthenticatedUser,
     Path(session_id): Path<uuid::Uuid>,
 ) -> Result<Json<PlaybackInfoResponse>, AppError> {
-    let result =
-        service::get_playback_info(&state.pool, &state.transcode_manager, user.user_id, session_id)
-            .await?;
+    let result = service::get_playback_info(
+        &state.pool,
+        &state.transcode_manager,
+        user.user_id,
+        session_id,
+    )
+    .await?;
 
     Ok(Json(result))
 }
@@ -252,15 +296,21 @@ pub async fn update_watch_data(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .clone()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
-        AppError::Validation { errors, instance: None }
+        AppError::Validation {
+            errors,
+            instance: None,
+        }
     })?;
 
-    let result =
-        service::update_user_item_data(&state.pool, user.user_id, item_id, &req).await?;
+    let result = service::update_user_item_data(&state.pool, user.user_id, item_id, &req).await?;
     Ok(Json(result))
 }
 
@@ -287,11 +337,18 @@ pub async fn create_bookmark(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .clone()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
-        AppError::Validation { errors, instance: None }
+        AppError::Validation {
+            errors,
+            instance: None,
+        }
     })?;
 
     let result = service::create_bookmark(&state.pool, user.user_id, item_id, &req).await?;
@@ -337,11 +394,18 @@ pub async fn create_playlist(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .clone()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
-        AppError::Validation { errors, instance: None }
+        AppError::Validation {
+            errors,
+            instance: None,
+        }
     })?;
 
     let result = service::create_playlist(&state.pool, user.user_id, &req).await?;
@@ -362,15 +426,21 @@ pub async fn update_playlist(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .clone()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
-        AppError::Validation { errors, instance: None }
+        AppError::Validation {
+            errors,
+            instance: None,
+        }
     })?;
 
-    let result =
-        service::update_playlist(&state.pool, user.user_id, playlist_id, &req).await?;
+    let result = service::update_playlist(&state.pool, user.user_id, playlist_id, &req).await?;
     Ok(Json(result))
 }
 
@@ -388,8 +458,7 @@ pub async fn list_playlist_items(
     user: AuthenticatedUser,
     Path(playlist_id): Path<uuid::Uuid>,
 ) -> Result<Json<PlaylistItemListResponse>, AppError> {
-    let result =
-        service::list_playlist_items(&state.pool, user.user_id, playlist_id).await?;
+    let result = service::list_playlist_items(&state.pool, user.user_id, playlist_id).await?;
     Ok(Json(result))
 }
 
@@ -407,15 +476,21 @@ pub async fn add_playlist_item(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .clone()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
-        AppError::Validation { errors, instance: None }
+        AppError::Validation {
+            errors,
+            instance: None,
+        }
     })?;
 
-    let result =
-        service::add_playlist_item(&state.pool, user.user_id, playlist_id, &req).await?;
+    let result = service::add_playlist_item(&state.pool, user.user_id, playlist_id, &req).await?;
     Ok(Json(result))
 }
 
@@ -571,11 +646,18 @@ pub async fn create_streaming_policy(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .clone()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
-        AppError::Validation { errors, instance: None }
+        AppError::Validation {
+            errors,
+            instance: None,
+        }
     })?;
     let result = service::create_streaming_policy(&state.pool, &req).await?;
     Ok(Json(result))
@@ -595,11 +677,18 @@ pub async fn update_streaming_policy(
                 errs.iter().map(move |err| crate::error::FieldError {
                     field: field.to_string(),
                     code: err.code.to_string(),
-                    message: err.message.clone().map(|m| m.to_string()).unwrap_or_default(),
+                    message: err
+                        .message
+                        .clone()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
                 })
             })
             .collect();
-        AppError::Validation { errors, instance: None }
+        AppError::Validation {
+            errors,
+            instance: None,
+        }
     })?;
     let result = service::update_streaming_policy(&state.pool, policy_id, &req).await?;
     Ok(Json(result))
@@ -621,7 +710,7 @@ pub async fn get_effective_streaming_limits(
 ) -> Result<Json<ResolvedStreamingLimitsResponse>, AppError> {
     let row = sqlx::query(
         "SELECT streaming_policy_id, max_streams, max_transcode_streams, bandwidth_limit_bps \
-         FROM users WHERE id = $1 AND deleted_at IS NULL"
+         FROM users WHERE id = $1 AND deleted_at IS NULL",
     )
     .bind(user_id)
     .fetch_optional(&state.pool)

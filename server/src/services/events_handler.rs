@@ -51,14 +51,14 @@ use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use tokio::sync::mpsc;
-use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt as _;
+use tokio_stream::wrappers::ReceiverStream;
 use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::extractors::AuthenticatedUser;
 use crate::services::event_bus::{
-    matches_filter, parse_type_filter, ConnectionLimitReached, ServerEvent,
+    ConnectionLimitReached, ServerEvent, matches_filter, parse_type_filter,
 };
 use crate::state::AppState;
 
@@ -112,7 +112,11 @@ pub async fn events_handler(
     // (which happens when the client disconnects).
     let conn_guard = match bus.register_connection(user_id) {
         Ok(guard) => guard,
-        Err(ConnectionLimitReached { user_id, current, limit }) => {
+        Err(ConnectionLimitReached {
+            user_id,
+            current,
+            limit,
+        }) => {
             tracing::info!(
                 user_id = %user_id,
                 current,
@@ -137,7 +141,9 @@ pub async fn events_handler(
         let _conn_guard = conn_guard;
 
         if tx
-            .send(Ok(Event::default().retry(Duration::from_millis(RECONNECT_DELAY_MS))))
+            .send(Ok(
+                Event::default().retry(Duration::from_millis(RECONNECT_DELAY_MS))
+            ))
             .await
             .is_err()
         {
@@ -163,9 +169,7 @@ pub async fn events_handler(
                     }
                 }
                 Err(_lagged) => {
-                    tracing::debug!(
-                        "SSE subscriber lagged the broadcast channel; skipping"
-                    );
+                    tracing::debug!("SSE subscriber lagged the broadcast channel; skipping");
                 }
             }
         }

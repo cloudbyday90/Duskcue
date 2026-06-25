@@ -226,10 +226,7 @@ pub struct TraktClient {
 impl TraktClient {
     pub fn new(client_id: String, client_secret: String, redirect_uri: String) -> Self {
         let mut default_headers = HeaderMap::new();
-        default_headers.insert(
-            "Content-Type",
-            HeaderValue::from_static("application/json"),
-        );
+        default_headers.insert("Content-Type", HeaderValue::from_static("application/json"));
         default_headers.insert("trakt-api-version", HeaderValue::from_static("2"));
         if let Ok(val) = HeaderValue::from_str(&client_id) {
             default_headers.insert("trakt-api-key", val);
@@ -415,7 +412,8 @@ impl TraktClient {
         access_token: &str,
         body: &serde_json::Value,
     ) -> Result<TraktSyncPostResponse, TraktError> {
-        self.authed_post(access_token, "/sync/collection", body).await
+        self.authed_post(access_token, "/sync/collection", body)
+            .await
     }
 
     async fn paginate<T: serde::de::DeserializeOwned>(
@@ -536,7 +534,9 @@ async fn extract_rate_limited(response: reqwest::Response) -> TraktError {
         .get("Retry-After")
         .and_then(|v| v.to_str().ok())
         .and_then(|s| s.parse::<u32>().ok());
-    TraktError::RateLimited { retry_after_secs: retry_after }
+    TraktError::RateLimited {
+        retry_after_secs: retry_after,
+    }
 }
 
 async fn map_oauth_error(response: reqwest::Response) -> TraktError {
@@ -547,12 +547,17 @@ async fn map_oauth_error(response: reqwest::Response) -> TraktError {
             .get("Retry-After")
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.parse::<u32>().ok());
-        return TraktError::RateLimited { retry_after_secs: retry_after };
+        return TraktError::RateLimited {
+            retry_after_secs: retry_after,
+        };
     }
 
     let body = response.text().await.unwrap_or_default();
     let parsed: Option<TraktTokenErrorResponse> = serde_json::from_str(&body).ok();
-    let code = parsed.as_ref().and_then(|p| p.error.as_deref()).unwrap_or("");
+    let code = parsed
+        .as_ref()
+        .and_then(|p| p.error.as_deref())
+        .unwrap_or("");
     let message = parsed
         .as_ref()
         .and_then(|p| p.error_description.as_deref())
@@ -561,20 +566,27 @@ async fn map_oauth_error(response: reqwest::Response) -> TraktError {
     map_oauth_error_code(status, code, message)
 }
 
-async fn map_token_endpoint_error(response: reqwest::Response) -> Result<TraktTokenResponse, TraktError> {
+async fn map_token_endpoint_error(
+    response: reqwest::Response,
+) -> Result<TraktTokenResponse, TraktError> {
     if response.status() == StatusCode::TOO_MANY_REQUESTS {
         let retry_after = response
             .headers()
             .get("Retry-After")
             .and_then(|v| v.to_str().ok())
             .and_then(|s| s.parse::<u32>().ok());
-        return Err(TraktError::RateLimited { retry_after_secs: retry_after });
+        return Err(TraktError::RateLimited {
+            retry_after_secs: retry_after,
+        });
     }
 
     let status = response.status();
     let body = response.text().await.unwrap_or_default();
     let parsed: Option<TraktTokenErrorResponse> = serde_json::from_str(&body).ok();
-    let code = parsed.as_ref().and_then(|p| p.error.as_deref()).unwrap_or("");
+    let code = parsed
+        .as_ref()
+        .and_then(|p| p.error.as_deref())
+        .unwrap_or("");
     let message = parsed
         .as_ref()
         .and_then(|p| p.error_description.as_deref())
@@ -667,7 +679,10 @@ mod tests {
         let json = r#"{ "error": "slow_down", "error_description": "polling too fast" }"#;
         let parsed: TraktTokenErrorResponse = serde_json::from_str(json).unwrap();
         assert_eq!(parsed.error.as_deref(), Some("slow_down"));
-        assert_eq!(parsed.error_description.as_deref(), Some("polling too fast"));
+        assert_eq!(
+            parsed.error_description.as_deref(),
+            Some("polling too fast")
+        );
     }
 
     #[test]
@@ -884,8 +899,16 @@ mod tests {
 
     #[test]
     fn sync_counts_add_assign() {
-        let mut a = TraktSyncCounts { movies: 2, episodes: 5, ..Default::default() };
-        let b = TraktSyncCounts { movies: 3, shows: 1, ..Default::default() };
+        let mut a = TraktSyncCounts {
+            movies: 2,
+            episodes: 5,
+            ..Default::default()
+        };
+        let b = TraktSyncCounts {
+            movies: 3,
+            shows: 1,
+            ..Default::default()
+        };
         a += b;
         assert_eq!(a.movies, 5);
         assert_eq!(a.episodes, 5);

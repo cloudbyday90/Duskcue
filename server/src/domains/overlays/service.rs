@@ -91,11 +91,17 @@ pub async fn list_overlays(
     todo!("Phase 12 — overlay definition listing (CRUD)")
 }
 
-pub async fn get_overlay(_pool: &PgPool, _overlay_id: Uuid) -> Result<OverlayDefinitionResponse, OverlayError> {
+pub async fn get_overlay(
+    _pool: &PgPool,
+    _overlay_id: Uuid,
+) -> Result<OverlayDefinitionResponse, OverlayError> {
     todo!("Phase 12 — overlay definition fetch (CRUD)")
 }
 
-pub async fn create_overlay(_pool: &PgPool, _req: CreateOverlayRequest) -> Result<OverlayDefinitionResponse, OverlayError> {
+pub async fn create_overlay(
+    _pool: &PgPool,
+    _req: CreateOverlayRequest,
+) -> Result<OverlayDefinitionResponse, OverlayError> {
     todo!("Phase 12 — overlay definition creation (CRUD)")
 }
 
@@ -152,8 +158,9 @@ pub async fn composite_and_persist(
     let pool = &state.pool;
     let data_dir = &state.bootstrap.data_dir;
 
-    let canvas = CanvasPreset::from_artwork_type(artwork_type)
-        .ok_or_else(|| OverlayError::InvalidConditions(format!("unsupported artwork_type: {artwork_type}")))?;
+    let canvas = CanvasPreset::from_artwork_type(artwork_type).ok_or_else(|| {
+        OverlayError::InvalidConditions(format!("unsupported artwork_type: {artwork_type}"))
+    })?;
 
     let config = state.runtime_config.load();
     let encode_config = EncodeConfig {
@@ -184,7 +191,9 @@ pub async fn composite_and_persist(
         });
     }
 
-    let clean = clean_art::ensure_clean_backup(pool, data_dir, media_item_id, artwork_type, &encode_config).await?;
+    let clean =
+        clean_art::ensure_clean_backup(pool, data_dir, media_item_id, artwork_type, &encode_config)
+            .await?;
 
     let hash_inputs: Vec<OverlayHashInput> = matching
         .iter()
@@ -196,7 +205,8 @@ pub async fn composite_and_persist(
     let config_hash = clean_art::compute_config_hash(&hash_inputs, clean.source_artwork_id);
 
     if !reapply_all
-        && let Some(ref existing) = clean_art::get_overlay_state(pool, media_item_id, artwork_type).await?
+        && let Some(ref existing) =
+            clean_art::get_overlay_state(pool, media_item_id, artwork_type).await?
         && existing.overlay_config_hash == config_hash
         && existing.overlaid_art_path.is_some()
     {
@@ -223,10 +233,14 @@ pub async fn composite_and_persist(
     let composited = overlay_svc::composite(&clean.image, canvas, &resolved, &font_registry)
         .map_err(|e| OverlayError::CompositingFailed(e.to_string()))?;
 
-    let (webp_bytes, _) = image_pipeline::encode_webp(&image::DynamicImage::ImageRgba8(composited), &encode_config)
-        .map_err(|e| OverlayError::CompositingFailed(format!("failed to encode composited WebP: {e}")))?;
+    let (webp_bytes, _) =
+        image_pipeline::encode_webp(&image::DynamicImage::ImageRgba8(composited), &encode_config)
+            .map_err(|e| {
+            OverlayError::CompositingFailed(format!("failed to encode composited WebP: {e}"))
+        })?;
 
-    let overlaid_path = clean_art::save_overlaid_result(data_dir, media_item_id, artwork_type, &webp_bytes)?;
+    let overlaid_path =
+        clean_art::save_overlaid_result(data_dir, media_item_id, artwork_type, &webp_bytes)?;
 
     let applied_ids: Vec<Uuid> = resolved.iter().map(|o| o.id).collect();
     clean_art::upsert_overlay_state(
@@ -262,8 +276,9 @@ pub async fn preview_overlay(
     let media_item_id = req.media_item_id.unwrap();
     let artwork_type = req.artwork_type.as_deref().unwrap_or("poster");
 
-    let canvas = CanvasPreset::from_artwork_type(artwork_type)
-        .ok_or_else(|| OverlayError::InvalidConditions(format!("unsupported artwork_type: {artwork_type}")))?;
+    let canvas = CanvasPreset::from_artwork_type(artwork_type).ok_or_else(|| {
+        OverlayError::InvalidConditions(format!("unsupported artwork_type: {artwork_type}"))
+    })?;
 
     let config = state.runtime_config.load();
     let encode_config = EncodeConfig {
@@ -271,9 +286,18 @@ pub async fn preview_overlay(
     };
     drop(config);
 
-    let clean = clean_art::ensure_clean_backup(pool, &state.bootstrap.data_dir, media_item_id, artwork_type, &encode_config).await?;
+    let clean = clean_art::ensure_clean_backup(
+        pool,
+        &state.bootstrap.data_dir,
+        media_item_id,
+        artwork_type,
+        &encode_config,
+    )
+    .await?;
 
-    let definitions = load_overlay_definitions_for_preview(pool, req.overlay_ids.as_deref(), artwork_type).await?;
+    let definitions =
+        load_overlay_definitions_for_preview(pool, req.overlay_ids.as_deref(), artwork_type)
+            .await?;
 
     let media_ctx = load_media_context(pool, media_item_id).await?;
     let filter_ctx = media_ctx.to_filter_context();
@@ -298,12 +322,22 @@ pub async fn preview_overlay(
     let composite_result = overlay_svc::composite(&clean.image, canvas, &resolved, &font_registry)
         .map_err(|e| OverlayError::CompositingFailed(e.to_string()))?;
 
-    let (webp_bytes, _) = image_pipeline::encode_webp(&image::DynamicImage::ImageRgba8(composite_result), &encode_config)
-        .map_err(|e| OverlayError::CompositingFailed(format!("failed to encode WebP: {e}")))?;
+    let (webp_bytes, _) = image_pipeline::encode_webp(
+        &image::DynamicImage::ImageRgba8(composite_result),
+        &encode_config,
+    )
+    .map_err(|e| OverlayError::CompositingFailed(format!("failed to encode WebP: {e}")))?;
 
-    let preview_dir = state.bootstrap.data_dir.join("cache").join("images").join("overlays").join("previews");
-    std::fs::create_dir_all(&preview_dir)
-        .map_err(|e| OverlayError::CompositingFailed(format!("failed to create preview dir: {e}")))?;
+    let preview_dir = state
+        .bootstrap
+        .data_dir
+        .join("cache")
+        .join("images")
+        .join("overlays")
+        .join("previews");
+    std::fs::create_dir_all(&preview_dir).map_err(|e| {
+        OverlayError::CompositingFailed(format!("failed to create preview dir: {e}"))
+    })?;
 
     let preview_filename = format!("preview_{}.webp", media_item_id);
     let preview_path = preview_dir.join(&preview_filename);
@@ -379,7 +413,10 @@ impl OverlayMediaContext {
     }
 }
 
-async fn load_media_context(pool: &PgPool, media_item_id: Uuid) -> Result<OverlayMediaContext, OverlayError> {
+async fn load_media_context(
+    pool: &PgPool,
+    media_item_id: Uuid,
+) -> Result<OverlayMediaContext, OverlayError> {
     let row = sqlx::query(
         r#"SELECT mi.title,
                   mi.year,
@@ -436,9 +473,7 @@ async fn load_media_context(pool: &PgPool, media_item_id: Uuid) -> Result<Overla
     let file_count: i32 = row.try_get("file_count").unwrap_or(1);
     let has_multiple_versions = file_count > 1;
 
-    let genres: Vec<String> = row
-        .try_get::<Vec<String>, _>("genres")
-        .unwrap_or_default();
+    let genres: Vec<String> = row.try_get::<Vec<String>, _>("genres").unwrap_or_default();
 
     let original_language = metadata
         .get("original_language")
@@ -458,9 +493,7 @@ async fn load_media_context(pool: &PgPool, media_item_id: Uuid) -> Result<Overla
         runtime_seconds: row.try_get("runtime_seconds").ok().flatten(),
         content_rating: row.try_get("content_rating").ok().flatten(),
         critic_rating: row.try_get("rating_average").ok().flatten(),
-        audience_rating: metadata
-            .get("audience_rating")
-            .and_then(|v| v.as_f64()),
+        audience_rating: metadata.get("audience_rating").and_then(|v| v.as_f64()),
         rating_vote_count: row.try_get("rating_vote_count").ok().flatten(),
         media_type: row.try_get("type").unwrap_or_default(),
         library_id: row.try_get("library_id").ok().flatten(),
@@ -599,7 +632,9 @@ async fn load_overlay_definitions_for_preview(
 }
 
 #[allow(clippy::too_many_lines)]
-fn row_to_definition_row(row: &sqlx::postgres::PgRow) -> Result<OverlayDefinitionRow, OverlayError> {
+fn row_to_definition_row(
+    row: &sqlx::postgres::PgRow,
+) -> Result<OverlayDefinitionRow, OverlayError> {
     Ok(OverlayDefinitionRow {
         id: row.try_get("id")?,
         created_at: row.try_get("created_at")?,
@@ -640,20 +675,34 @@ fn row_to_definition_row(row: &sqlx::postgres::PgRow) -> Result<OverlayDefinitio
     })
 }
 
-fn row_to_resolved(row: &OverlayDefinitionRow, ctx: &OverlayMediaContext) -> Result<ResolvedOverlay, OverlayError> {
-    let overlay_type = OverlayType::from_db_str(&row.overlay_type)
-        .ok_or_else(|| OverlayError::InvalidConditions(format!("invalid overlay_type: {}", row.overlay_type)))?;
+fn row_to_resolved(
+    row: &OverlayDefinitionRow,
+    ctx: &OverlayMediaContext,
+) -> Result<ResolvedOverlay, OverlayError> {
+    let overlay_type = OverlayType::from_db_str(&row.overlay_type).ok_or_else(|| {
+        OverlayError::InvalidConditions(format!("invalid overlay_type: {}", row.overlay_type))
+    })?;
 
     let h_align = HorizontalAlignment::from_db_str(&row.horizontal_align)
         .unwrap_or(HorizontalAlignment::Left);
-    let v_align = VerticalAlignment::from_db_str(&row.vertical_align)
-        .unwrap_or(VerticalAlignment::Top);
+    let v_align =
+        VerticalAlignment::from_db_str(&row.vertical_align).unwrap_or(VerticalAlignment::Top);
 
-    let font_color = overlay_svc::parse_hex_color(&row.font_color).unwrap_or(Rgba([255, 255, 255, 255]));
-    let stroke_color = row.stroke_color.as_deref().and_then(|s| overlay_svc::parse_hex_color(s).ok());
-    let back_color = row.back_color.as_deref().and_then(|s| overlay_svc::parse_hex_color(s).ok());
+    let font_color =
+        overlay_svc::parse_hex_color(&row.font_color).unwrap_or(Rgba([255, 255, 255, 255]));
+    let stroke_color = row
+        .stroke_color
+        .as_deref()
+        .and_then(|s| overlay_svc::parse_hex_color(s).ok());
+    let back_color = row
+        .back_color
+        .as_deref()
+        .and_then(|s| overlay_svc::parse_hex_color(s).ok());
 
-    let text = row.text_template.as_ref().map(|t| resolve_text_variables(t, ctx));
+    let text = row
+        .text_template
+        .as_ref()
+        .map(|t| resolve_text_variables(t, ctx));
 
     let (image_bytes, image_is_svg) = if overlay_type == OverlayType::Image {
         if let Some(ref path) = row.image_path {
@@ -693,11 +742,20 @@ fn row_to_resolved(row: &OverlayDefinitionRow, ctx: &OverlayMediaContext) -> Res
         font_size: row.font_size as f32,
         font_color,
         stroke_color,
-        stroke_width: row.stroke_width.and_then(|v| u32::try_from(v).ok()).unwrap_or(0),
+        stroke_width: row
+            .stroke_width
+            .and_then(|v| u32::try_from(v).ok())
+            .unwrap_or(0),
         back_color,
         back_width: row.back_width.and_then(|v| u32::try_from(v).ok()),
         back_height: row.back_height.and_then(|v| u32::try_from(v).ok()),
-        back_radius: row.back_radius.and_then(|v| u32::try_from(v).ok()).unwrap_or(0),
-        back_padding: row.back_padding.and_then(|v| u32::try_from(v).ok()).unwrap_or(0),
+        back_radius: row
+            .back_radius
+            .and_then(|v| u32::try_from(v).ok())
+            .unwrap_or(0),
+        back_padding: row
+            .back_padding
+            .and_then(|v| u32::try_from(v).ok())
+            .unwrap_or(0),
     })
 }

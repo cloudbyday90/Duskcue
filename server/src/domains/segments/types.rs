@@ -20,8 +20,14 @@ use uuid::Uuid;
 use validator::Validate;
 
 pub static VALID_SEGMENT_TYPES: &[&str] = &["intro", "credits", "recap", "preview", "outro"];
-pub static VALID_SEGMENT_SOURCES: &[&str] =
-    &["chapter", "chromaprint", "blackframe", "silence", "manual", "combined"];
+pub static VALID_SEGMENT_SOURCES: &[&str] = &[
+    "chapter",
+    "chromaprint",
+    "blackframe",
+    "silence",
+    "manual",
+    "combined",
+];
 
 pub struct SegmentRow {
     pub id: Uuid,

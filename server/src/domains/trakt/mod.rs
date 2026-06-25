@@ -21,17 +21,23 @@ pub mod types;
 
 pub use error::TraktError;
 
-use axum::routing::{get, post};
 use axum::Router;
+use axum::routing::{get, post};
 
 use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
-        .route("/api/v1/trakt/account", get(handlers::get_account).delete(handlers::unlink_account))
+        .route(
+            "/api/v1/trakt/account",
+            get(handlers::get_account).delete(handlers::unlink_account),
+        )
         .route("/api/v1/trakt/account/link", post(handlers::start_link))
         .route("/api/v1/trakt/account/poll", post(handlers::poll_link))
-        .route("/api/v1/trakt/settings", get(handlers::get_settings).put(handlers::update_settings))
+        .route(
+            "/api/v1/trakt/settings",
+            get(handlers::get_settings).put(handlers::update_settings),
+        )
         .route(
             "/api/v1/settings/trakt",
             get(handlers::get_integration_settings).put(handlers::update_integration_settings),
