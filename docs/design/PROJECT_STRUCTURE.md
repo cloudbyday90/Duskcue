@@ -218,7 +218,7 @@ project/
 │       │   ├── subtitles.rs      # Subtitle text processing (format conversion SRT/ASS/WebVTT, FPS adjustment, offset correction, OCR scaffold, voice activity alignment) — **implemented**
 │       │   ├── quality.rs        # Device capability probing, network assessment
 │       │   ├── overlays.rs       # Compositing pipeline (image + ab_glyph + resvg) — **implemented**
-│       │   ├── collections.rs    # Builder engine, external API polling, template import
+│       │   ├── collections.rs    # Dynamic collection builder engine and manual sync persistence — **implemented**
 │       │   ├── segments.rs       # Chromaprint, black frame, silence detection
 │       │   ├── storyboards.rs    # FFmpeg thumbnail extraction, WebP sprite generation
 │       │   ├── geoip.rs          # MaxMind GeoLite2 MMDB lookups (maxminddb + ArcSwap) — **implemented**

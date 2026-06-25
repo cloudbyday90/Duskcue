@@ -475,6 +475,49 @@ The collections domain scaffold is implemented at `server/src/domains/collection
 
 All collection endpoints are wired into the top-level router under `/api/v1/collections`, and `AppError::Collections` maps `COLL_001`–`COLL_008` to RFC 9457 responses. Smart-filter structural validation calls the shared `services::conditions::validate_structure()` engine from Phase 12 Task 3 so overlays, smart collections, and future smart playlists use the same JSONB rule grammar.
 
+### Phase 12 Task 6
+
+Dynamic collection builders are implemented in `server/src/services/collections.rs` as a shared service module consumed by the collections domain and intended for reuse by the Task 7 scheduled worker.
+
+Implemented internal builders:
+
+| Builder | Implementation |
+|---|---|
+| `genre` | Groups confirmed movie/series items through `media_genres` + `genres`, sorted by rating then title |
+| `decade` | Groups by decade derived from `media_items.premiere_date` |
+| `actor` | Selects top cast members from `media_credits` + `people`, configurable via `builder_data.top_n` and `builder_data.minimum_appearances` |
+| `director` | Selects top crew members where `department = 'Directing'` or role contains director |
+| `franchise` | Reads franchise names from metadata JSONB keys: `belongs_to_collection.name`, `tmdb_collection.name`, `collection_name`, or `franchise` |
+| `resolution` | Uses the primary healthy/largest `media_files.video_resolution` row per item |
+| `audio_codec` | Uses the primary healthy/largest `media_files.audio_codec` row per item |
+
+Implemented external TMDB builders:
+
+| Builder | TMDB endpoints |
+|---|---|
+| `tmdb_popular` | `/movie/popular`, `/tv/popular` |
+| `tmdb_top_rated` | `/movie/top_rated`, `/tv/top_rated` |
+| `tmdb_trending` | `/trending/movie/{day|week}`, `/trending/tv/{day|week}` |
+| `tmdb_now_playing` | `/movie/now_playing` |
+| `tmdb_upcoming` | `/movie/upcoming` |
+
+The TMDB implementation lives on the existing `TmdbClient` as `fetch_chart_items()`, reusing existing bearer-token auth, timeout behavior, language setting, and `MetadataError` mapping. `builder_data.media_type` can restrict popular/top-rated/trending to movies or TV; now-playing and upcoming are movie-only because TMDB exposes those as movie-list endpoints.
+
+Builder configuration supports `limit`, `minimum_items`, `builder_data`, `include`, `exclude`, `key`, `key_name_override`, `remove_prefix`, `remove_suffix`, and `title_format`. Internal multi-key builders return one candidate per key. When syncing an existing dynamic collection, selection prefers configured `key`, then collection name/key match, then combines all candidates as a fallback so existing manually-created dynamic rows still produce useful output.
+
+Manual sync endpoints now execute the builder immediately:
+
+| Endpoint | Behavior |
+|---|---|
+| `POST /api/v1/collections/{id}/sync` | Builds and persists one dynamic collection |
+| `POST /api/v1/collections/sync` | Builds and persists all enabled dynamic collections, optionally scoped by `library_id` |
+
+Persistence updates `collection_items`, `item_count`, `total_duration_seconds`, `last_synced_at`, and `last_sync_result`. Sync statistics compare item ID sets, so replacements are counted accurately even when the total item count is unchanged.
+
+Deferred to Task 7: scheduled `collection_sync` worker registration, background execution, and any queue semantics. Deferred to later CRUD/template tasks: automatic creation of one collection row per multi-key builder result and template import/export.
+
+**Missing external items:** `collection_items.media_item_id` is `NOT NULL`, so unmatched TMDB chart entries cannot be stored in `collection_items` as missing rows without a schema change. Task 6 records missing counts and external IDs in `last_sync_result`; the admin UI can surface that JSON directly, or a later migration can introduce a dedicated missing external items table.
+
 ## Cross-References
 
 - [METADATA_OVERLAYS.md](METADATA_OVERLAYS.md) — overlays can be applied to collection posters; shared condition/filter system

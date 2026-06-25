@@ -2796,9 +2796,33 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Verification:** `cargo check -p duskcue` passes. `cargo test -p duskcue` passes (507 tests). `cargo clippy -p duskcue --all-targets --all-features -- -A clippy::unnecessary-sort-by -D warnings` passes; strict clippy without the allowance is currently blocked by two pre-existing `clippy::unnecessary-sort-by` warnings in `server/src/services/fanart_client.rs`.
 
-6. Implement collection builders:
-   - Internal: genre, decade, actor, director, franchise, resolution, audio_codec
-   - External: `tmdb_popular`, `tmdb_top_rated`, `tmdb_trending`, `tmdb_now_playing`, `tmdb_upcoming`
+6. ~~Implement collection builders:~~ **DONE**
+   - ~~Internal: genre, decade, actor, director, franchise, resolution, audio_codec~~
+   - ~~External: `tmdb_popular`, `tmdb_top_rated`, `tmdb_trending`, `tmdb_now_playing`, `tmdb_upcoming`~~
+
+**What was built for Task 6:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/collections.rs` | Shared dynamic collection builder engine: parses `dynamic_config`, builds candidate groups, supports include/exclude/key overrides/title formatting, syncs `collection_items`, updates `item_count`, `total_duration_seconds`, `last_synced_at`, and `last_sync_result`; 11 unit tests |
+| `server/src/services/tmdb_client.rs` | Added `TmdbChart`, `TmdbChartItem`, and `fetch_chart_items()` for TMDB popular/top-rated/trending/now-playing/upcoming chart endpoints |
+| `server/src/services/mod.rs` | Added `pub mod collections;` |
+| `server/src/domains/collections/service.rs` | Manual all/single collection sync endpoints now invoke the builder engine and instantiate `TmdbClient` from runtime metadata config |
+| `server/src/domains/collections/handlers.rs` | Sync handlers pass `AppState` to service layer so runtime provider config is available |
+| `docs/design/COLLECTIONS.md` | Added Task 6 implementation notes and deferred items |
+
+**Key decisions from Task 6:**
+
+- **Shared service module, not domain-only logic** — `services/collections.rs` is the reusable engine for manual API sync now and the scheduled `collection_sync` worker in Task 7. Domain handlers stay thin and only translate HTTP/auth/validation into service calls.
+- **Builder candidates separate from persistence** — The engine first returns one or more `CollectionBuilderResult` groups. Internal builders such as genre/decade/actor/director can produce multiple candidate collections; syncing a specific existing collection selects by configured `key`, then name/key match, then combines candidates as a fallback. Task 7 can reuse the candidate output for scheduled execution.
+- **Actual schema over stale examples** — Queries use the Phase 2 schema that exists today: `media_items.premiere_date` for decades, `media_items.tmdb_id` for TMDB matching, normalized `genres`/`media_genres`, `media_credits`/`people`, and a lateral healthiest/largest `media_files` row for resolution/audio-codec builders.
+- **TMDB chart endpoints through existing client** — Official TMDB v3 endpoints are used: `/movie/popular`, `/tv/popular`, `/movie/top_rated`, `/tv/top_rated`, `/trending/{movie|tv}/{day|week}`, `/movie/now_playing`, and `/movie/upcoming`. Existing bearer-token auth, timeout, and error mapping are reused.
+- **Missing external items are reported, not stored** — `collection_items.media_item_id` is `NOT NULL`, so unmatched TMDB chart entries cannot be persisted as rows without a schema change. Task 6 records missing counts and external IDs in `last_sync_result`; UI display of missing items can read that JSON or a later migration can add a dedicated missing-items table.
+- **Manual sync is synchronous** — `POST /api/v1/collections/sync` and `/collections/{id}/sync` now execute immediately and return `"synced"`. The scheduled worker/queue semantics remain Task 7.
+- **No new dependencies or migrations** — Uses existing `sqlx`, `serde`, `thiserror`, `uuid`, `chrono`, and the existing TMDB client infrastructure.
+
+**Verification:** `cargo check -p duskcue` passes. `cargo test -p duskcue services::collections` passes (11 tests). `cargo clippy -p duskcue --all-targets --all-features -- -A clippy::unnecessary-sort-by -D warnings` passes.
+
 7. Implement `server/src/workers/collection_sync.rs` — periodic builder execution
 8. Implement `server/src/workers/overlay_compositor.rs` — apply overlays to artwork
 9. Implement poster management — asset directory scanning, poster locking, community pack import

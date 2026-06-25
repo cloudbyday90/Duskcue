@@ -284,6 +284,36 @@ struct TmdbChangedId {
     adult: Option<bool>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TmdbChart {
+    Popular,
+    TopRated,
+    Trending,
+    NowPlaying,
+    Upcoming,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TmdbChartItem {
+    pub tmdb_id: u64,
+    pub media_type: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TmdbChartResponse {
+    results: Option<Vec<TmdbChartResult>>,
+    #[allow(dead_code)]
+    page: Option<u32>,
+    total_pages: Option<u32>,
+    #[allow(dead_code)]
+    total_results: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct TmdbChartResult {
+    id: u64,
+}
+
 #[derive(Clone)]
 pub struct TmdbClient {
     config: TmdbProviderConfig,
@@ -621,6 +651,94 @@ impl TmdbClient {
         }
 
         Ok(all_ids)
+    }
+
+    pub async fn fetch_chart_items(
+        &self,
+        chart: TmdbChart,
+        media_types: &[&str],
+        limit: usize,
+        time_window: &str,
+        region: Option<&str>,
+    ) -> MetadataResult<Vec<TmdbChartItem>> {
+        let mut items: Vec<TmdbChartItem> = Vec::new();
+        let effective_limit = limit.clamp(1, 500);
+
+        for media_type in media_types {
+            if !Self::chart_supports_media_type(chart, media_type) {
+                continue;
+            }
+
+            let mut page = 1u32;
+            while items.iter().filter(|i| i.media_type == *media_type).count() < effective_limit {
+                let path = self.chart_path(chart, media_type, time_window, region, page);
+                let resp: TmdbChartResponse = self.get(&path).await?;
+
+                let results = resp.results.unwrap_or_default();
+                if results.is_empty() {
+                    break;
+                }
+
+                for item in results {
+                    items.push(TmdbChartItem {
+                        tmdb_id: item.id,
+                        media_type: (*media_type).to_string(),
+                    });
+
+                    if items.iter().filter(|i| i.media_type == *media_type).count()
+                        >= effective_limit
+                    {
+                        break;
+                    }
+                }
+
+                if page >= resp.total_pages.unwrap_or(page) {
+                    break;
+                }
+                page += 1;
+            }
+        }
+
+        Ok(items)
+    }
+
+    fn chart_path(
+        &self,
+        chart: TmdbChart,
+        media_type: &str,
+        time_window: &str,
+        region: Option<&str>,
+        page: u32,
+    ) -> String {
+        let path = match chart {
+            TmdbChart::Popular => format!("/{media_type}/popular"),
+            TmdbChart::TopRated => format!("/{media_type}/top_rated"),
+            TmdbChart::Trending => {
+                let window = if time_window == "week" { "week" } else { "day" };
+                format!("/trending/{media_type}/{window}")
+            }
+            TmdbChart::NowPlaying => "/movie/now_playing".to_string(),
+            TmdbChart::Upcoming => "/movie/upcoming".to_string(),
+        };
+
+        let mut query = format!("{path}?language={}&page={page}", self.language);
+        if let Some(region) = region
+            && media_type == "movie"
+            && !region.trim().is_empty()
+        {
+            query.push_str("&region=");
+            query.push_str(&urlencoding::encode(region.trim()));
+        }
+
+        query
+    }
+
+    fn chart_supports_media_type(chart: TmdbChart, media_type: &str) -> bool {
+        matches!(media_type, "movie" | "tv")
+            && match chart {
+                TmdbChart::NowPlaying | TmdbChart::Upcoming => media_type == "movie",
+                _ => true,
+            }
     }
 }
 

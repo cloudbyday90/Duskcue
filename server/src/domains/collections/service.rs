@@ -17,7 +17,10 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+use crate::services::collections as collection_builders;
 use crate::services::conditions;
+use crate::services::tmdb_client::TmdbClient;
+use crate::state::AppState;
 
 use super::error::CollectionsError;
 use super::types::*;
@@ -168,18 +171,70 @@ pub async fn remove_collection_item(
 }
 
 pub async fn sync_collections(
-    _pool: &PgPool,
-    _req: SyncCollectionsRequest,
+    state: &AppState,
+    req: SyncCollectionsRequest,
 ) -> Result<SyncCollectionResponse, CollectionsError> {
-    todo!("Phase 12 — dynamic collection sync dispatch")
+    let metadata = state.runtime_config.load().metadata.clone();
+    let tmdb_client =
+        if metadata.providers.tmdb.enabled && !metadata.providers.tmdb.access_token.is_empty() {
+            Some(TmdbClient::new(
+                &metadata.providers.tmdb,
+                metadata.metadata_language.clone(),
+            ))
+        } else {
+            None
+        };
+
+    let include_external = req.include_external.unwrap_or(true);
+    let reprocess_all = req.reprocess_all.unwrap_or(false);
+    let results = collection_builders::sync_dynamic_collections(
+        &state.pool,
+        tmdb_client.as_ref(),
+        req.library_id,
+        include_external,
+        reprocess_all,
+    )
+    .await
+    .map_err(map_builder_error)?;
+
+    Ok(SyncCollectionResponse {
+        status: "synced".to_string(),
+        queued_collections: results.len() as i64,
+    })
 }
 
 pub async fn sync_collection(
-    _pool: &PgPool,
-    _collection_id: Uuid,
-    _req: SyncCollectionRequest,
+    state: &AppState,
+    collection_id: Uuid,
+    req: SyncCollectionRequest,
 ) -> Result<SyncCollectionResponse, CollectionsError> {
-    todo!("Phase 12 — single dynamic collection sync dispatch")
+    let metadata = state.runtime_config.load().metadata.clone();
+    let tmdb_client =
+        if metadata.providers.tmdb.enabled && !metadata.providers.tmdb.access_token.is_empty() {
+            Some(TmdbClient::new(
+                &metadata.providers.tmdb,
+                metadata.metadata_language.clone(),
+            ))
+        } else {
+            None
+        };
+
+    let include_external = req.include_external.unwrap_or(true);
+    let reprocess_all = req.reprocess_all.unwrap_or(false);
+    collection_builders::sync_dynamic_collection(
+        &state.pool,
+        tmdb_client.as_ref(),
+        collection_id,
+        include_external,
+        reprocess_all,
+    )
+    .await
+    .map_err(map_builder_error)?;
+
+    Ok(SyncCollectionResponse {
+        status: "synced".to_string(),
+        queued_collections: 1,
+    })
 }
 
 pub async fn list_templates(
@@ -193,4 +248,19 @@ pub async fn import_template(
     _req: ImportCollectionTemplateRequest,
 ) -> Result<CollectionTemplateResponse, CollectionsError> {
     todo!("Phase 12 — collection template import")
+}
+
+fn map_builder_error(err: collection_builders::CollectionBuilderError) -> CollectionsError {
+    match err {
+        collection_builders::CollectionBuilderError::InvalidConfig(msg) => {
+            CollectionsError::InvalidDynamicConfig(msg)
+        }
+        collection_builders::CollectionBuilderError::ExternalUnavailable(source) => {
+            CollectionsError::ExternalSourceUnavailable(source)
+        }
+        collection_builders::CollectionBuilderError::ExternalRateLimited => {
+            CollectionsError::ExternalRateLimited
+        }
+        collection_builders::CollectionBuilderError::Database(e) => CollectionsError::Database(e),
+    }
 }

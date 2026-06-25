@@ -170,7 +170,7 @@ pub async fn sync_collections(
     req.validate()
         .map_err(|e| validation_error(e, "/api/v1/collections/sync"))?;
 
-    let response = service::sync_collections(&state.pool, req).await?;
+    let response = service::sync_collections(&state, req).await?;
     Ok(Json(response))
 }
 
@@ -183,7 +183,7 @@ pub async fn sync_collection(
     req.validate()
         .map_err(|e| validation_error(e, format!("/api/v1/collections/{collection_id}/sync")))?;
 
-    let response = service::sync_collection(&state.pool, collection_id, req).await?;
+    let response = service::sync_collection(&state, collection_id, req).await?;
     Ok(Json(response))
 }
 
