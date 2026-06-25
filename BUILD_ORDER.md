@@ -2410,7 +2410,34 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
    - ~~Haversine distance + 1,000 km/h threshold~~
    - ~~5-layer false positive suppression~~
    - ~~Notification-first response (admin dashboard alert, no auto-blocking)~~
-9. Implement `server/src/workers/geoip_updater.rs` — weekly MMDB download
+ 9. ~~Implement `server/src/workers/geoip_updater.rs` — weekly MMDB download~~ **DONE**
+
+**What was built for Task 9:**
+
+| File | Purpose |
+|---|---|
+| `server/src/workers/geoip_updater.rs` | Background GeoLite2-City MMDB updater: `run_geoip_update()` entry point — reads license key from bootstrap config, downloads tar.gz from MaxMind, extracts MMDB via `flate2`+`tar`, validates via `maxminddb::Reader::open_readfile`, atomically replaces target file, calls `GeoIpService::reload()` for hot-swap; 7 unit tests |
+| `server/src/workers/mod.rs` | Added `pub mod geoip_updater;` |
+| `server/src/config.rs` | Added `geoip_license_key: Option<String>` to `CliArgs` (with `DUSKCUE_GEOIP_LICENSE_KEY` env var) and `BootstrapConfig`; wired through config builder with `set_override_option` |
+| `server/src/main.rs` | Registered `geoip_database_update` executor on scheduler (7th executor) with `geoip_state` capture clone |
+| `server/src/services/scheduler.rs` | Added "GeoIP Database Update" to runtime `seed_default_tasks` (cron `0 3 * * 1`, enabled by default) |
+| `server/migrations/20260624_030000_seed_geoip_update_task.sql` | Seeds `geoip_database_update` scheduled task for existing deployments (cron weekly Monday 03:00, 600s timeout, enabled) |
+| `Cargo.toml` | Added `tar = "0.4"` to workspace deps |
+| `server/Cargo.toml` | Added `tar.workspace = true` |
+| `docs/security/ANALYTICS_SECURITY.md` | Added Task 9 Implementation Notes section documenting: license key storage (bootstrap config), download URL format, archive extraction, atomic replace with validation, hot-reload failure handling, scheduled task configuration, `geoip_update_schedule` omission rationale, new `tar` dependency |
+
+**Key decisions from Task 9:**
+
+- **License key in bootstrap config, not DB** — Per ANALYTICS_SECURITY.md §First-Run Setup: "it's a secret needed before the database is available." Matches the `encryption_key` precedent. Worker reads `state.bootstrap.geoip_license_key` (configurable via `DUSKCUE_GEOIP_LICENSE_KEY` env var or `geoip_license_key` in `config.toml`).
+- **Legacy download URL (query-param format)** — Uses `https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key={key}&suffix=tar.gz` which requires only the license key (no account ID), matching the single `geoip_license_key` config field. MaxMind's newer permalink API requires Basic Auth with both `account_id` and `license_key`. The legacy format still works (redirects to the same Cloudflare R2 presigned URL; `reqwest` follows redirects by default).
+- **Validate before atomic replace** — The new MMDB is validated by `maxminddb::Reader::open_readfile` BEFORE the atomic rename. A corrupt download deletes the temp file and aborts without touching the existing database. This prevents a bad download from breaking geolocation until the next weekly run.
+- **`tar` crate for extraction** — MaxMind distributes the MMDB inside a gzip-compressed tar archive with a dated directory prefix (`GeoLite2-City_YYYYMMDD/GeoLite2-City.mmdb`). `flate2` (already in workspace) handles gzip; `tar = "0.4"` (new workspace dep) handles tar entry iteration. The worker scans for any `.mmdb` suffix — robust against date-prefix changes.
+- **Crash-safe hot-reload** — If the file replacement succeeds but `GeoIpService::reload()` fails (rare), the error is logged at ERROR but does not block. The new database loads on the next server restart. The existing reader stays active until a successful reload. Matches the graceful-degradation design.
+- **Cross-platform atomic replace** — Unix `rename` atomically overwrites; Windows requires remove-then-rename (tiny race window acceptable for a weekly background task).
+- **No `geoip_update_schedule` in `AnalyticsConfig`** — The design doc lists it in the config table, but scheduling is controlled by the DB `scheduled_tasks.cron_expression` column (seeded by this task). Adding the field without an admin API to sync it to the DB would be misleading. Phase 13's scheduled-task management API will update the DB cron directly.
+- **Task enabled by default, no-op without key** — The worker logs an info message and returns early when no license key is configured, so enabling the task is harmless. The opt-in is at the license-key level, not the task level. This matches the `segment_analysis`/`storyboard_generation` precedent (enabled by default, no-op when preconditions aren't met).
+- **600s timeout** — MMDB download + extraction is typically <30s on broadband. The 10-minute timeout provides a generous margin for slow connections and mirrors MaxMind's recommendation for automated download clients.
+- **No new workspace dependencies beyond `tar`** — HTTP download uses existing `reqwest` (follows R2 redirects automatically); gzip decompression uses existing `flate2`; MMDB validation uses existing `maxminddb`; URL encoding uses existing `urlencoding`.
 
 **What was built for Task 1:**
 
@@ -2635,11 +2662,21 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Verification:** Play sessions generate analytics data visible in dashboard. Trakt-linked users sync watch state. Impossible travel alerts appear in admin dashboard for suspicious logins.
 
+**Phase 11 status:** All 9 tasks complete.
+
 ---
 
 ## Phase 12 — Kometa-Like System (Overlays, Collections, Posters)
 
 **Goal:** Overlay compositing engine, dynamic collections, and multi-source poster management.
+
+**Prerequisites:** Phase 10 complete (image pipeline `services/image_pipeline.rs` with WebP encode/resize, artwork delivery endpoint `GET /api/v1/items/{id}/artwork/{type}`, and `image` + `webp` crates already in workspace). Phase 11 complete (GeoIP + analytics infrastructure available for geo-conditional overlays if needed). The `MetadataConfig` struct already has overlay fields (`overlay_image_quality`, `overlay_format`, etc.) from Phase 6.
+
+**Context from Phase 11:**
+- The `image` crate (`0.25`, features: `jpeg`, `png`, `webp`) and `webp` crate (`0.3`) are already in the workspace from Phase 10 Task 9 — overlay compositing reuses these directly
+- `services/image_pipeline.rs` provides `generate_variant()`, `resize()`, `encode()` primitives — overlay compositing builds on this foundation
+- `artwork_delivery.rs` resolves primary artwork (order=0) — Phase 12 extends this with multi-source selection (order=N) and poster locking (`artwork.is_locked`)
+- The `geoip_database_update` scheduled task pattern (scheduler executor + seed migration + `seed_default_tasks` entry) is the reference for Phase 12's `overlay_application`/`overlay_cleanup` scheduled tasks
 
 **Authoritative docs:**
 

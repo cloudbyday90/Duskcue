@@ -641,6 +641,7 @@ pub async fn seed_default_tasks(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> 
         ("Segment Analysis", "segment_analysis", Some("0 3 * * *"), None::<i32>),
         ("Storyboard Generation", "storyboard_generation", Some("0 4 * * *"), None::<i32>),
         ("Trakt Sync", "trakt_sync", None, Some(1800)),
+        ("GeoIP Database Update", "geoip_database_update", Some("0 3 * * 1"), None::<i32>),
     ];
 
     for (name, task_type, cron_expr, interval_secs) in &defaults {

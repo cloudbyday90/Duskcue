@@ -20,3 +20,4 @@ pub mod segment_detector;
 pub mod storyboard_generator;
 pub mod subtitle_processor;
 pub mod trakt_sync;
+pub mod geoip_updater;

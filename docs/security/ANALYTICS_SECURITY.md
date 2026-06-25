@@ -636,6 +636,70 @@ Task 8 added `into_make_service_with_connect_info::<SocketAddr>()` to the `axum:
 
 ---
 
+## Task 9 Implementation Notes (GeoIP Database Updater)
+
+### Worker Module: `server/src/workers/geoip_updater.rs`
+
+The updater is a scheduled worker (not a domain module) following the established pattern (`trakt_sync.rs`, `subtitle_processor.rs`, `metadata_refresh.rs`). It is the 7th executor registered on the scheduler.
+
+### License Key Storage: Bootstrap Config
+
+The license key is stored in `BootstrapConfig.geoip_license_key` (`DUSKCUE_GEOIP_LICENSE_KEY` env var or `geoip_license_key` in `config.toml`), not in `server_config.analytics` JSONB. Rationale (per design doc §First-Run Setup): "it's a secret needed before the database is available." This matches the `encryption_key` precedent — secrets that the startup sequence needs before DB access go in bootstrap config. The worker reads it from `state.bootstrap.geoip_license_key`.
+
+### Download URL: Query-Parameter Format
+
+Uses MaxMind's legacy download endpoint with license key as a query parameter:
+```
+https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key={key}&suffix=tar.gz
+```
+This format requires only the license key (no account ID), matching the design's single `geoip_license_key` config field. MaxMind's newer permalink API (`/geoip/databases/{edition}/download`) requires Basic Auth with `account_id:license_key` — both values. The legacy format still works (redirects to the same Cloudflare R2 presigned URL). The `reqwest` client follows redirects by default, so the R2 redirect is transparent.
+
+### Archive Extraction: `tar` + `flate2`
+
+MaxMind distributes the MMDB inside a gzip-compressed tar archive with a dated directory prefix (e.g., `GeoLite2-City_20260617/GeoLite2-City.mmdb`). Extraction uses `flate2::read::GzDecoder` (already a workspace dep) for decompression and `tar::Archive` (new workspace dep, `tar = "0.4"`) for tar entry iteration. The worker scans entries for any `.mmdb` suffix and returns the first match — this is robust against date-prefix changes in the archive layout.
+
+### Atomic Replace with Validation
+
+The replace sequence is crash-safe:
+1. Download `.tar.gz` bytes to memory
+2. Extract `.mmdb` bytes from the archive
+3. Write to `{db_path}.tmp` in the geoip directory
+4. **Validate** by opening with `maxminddb::Reader::open_readfile` — if invalid, delete temp and abort (the existing database is untouched)
+5. **Atomic rename** `.tmp` → target (Unix: `rename` is atomic overwrite; Windows: remove-then-rename with a tiny race window acceptable for a weekly task)
+6. Call `GeoIpService::reload()` to hot-swap the in-memory `ArcSwap<Option<Reader>>`
+
+Validation before rename is critical — without it, a corrupt download would replace the working database, breaking geolocation until the next weekly run succeeds.
+
+### Hot-Reload Failure Is Non-Fatal
+
+If the file replacement succeeds but `GeoIpService::reload()` fails (e.g., the file was replaced between validation and reload, or an OS-level file locking issue), the error is logged but does not block. The new database will be loaded on the next server restart when `GeoIpService::new()` opens the file at startup. This matches the graceful-degradation design: "a failed update does not take the service offline."
+
+### Scheduled Task Configuration
+
+| Property | Value |
+|---|---|
+| Task type | `geoip_database_update` (already in DB CHECK constraint from Phase 2) |
+| Schedule | Cron `0 3 * * 1` (weekly Monday 03:00) per design default |
+| Timeout | 600s (MMDB download + extraction is typically <30s on broadband; generous margin for slow connections) |
+| Enabled by default | Yes — but the worker no-ops when no license key is configured, so enabling the task without a key is harmless |
+| Retry | 3 retries with 3600s delay (weekly cadence means failures retry within the same week rather than waiting for the next scheduled run) |
+
+The task is seeded both in `seed_default_tasks()` (for fresh installs) and via migration `20260624_030000_seed_geoip_update_task.sql` (for existing deployments), matching the `segment_analysis` and `storyboard_generation` precedent.
+
+### `geoip_update_schedule` in `AnalyticsConfig`
+
+The design doc lists `geoip_update_schedule` in the `server_config.analytics` config table. This field was intentionally **not** added to `AnalyticsConfig` in Task 9. The scheduling is controlled by the DB `scheduled_tasks.cron_expression` column (seeded by this task), not by runtime config. Adding the field without an admin API to sync it to the DB would create a misleading config value that doesn't affect behavior. When Phase 13 adds the scheduled-task management API, updating the cron directly in the DB is the correct mechanism — `AnalyticsConfig` need not duplicate it.
+
+### New Workspace Dependency: `tar = "0.4"`
+
+The `tar` crate is the standard Rust tar archive reader (used by `cargo` itself). Added to workspace `Cargo.toml` and `server/Cargo.toml`. The `flate2` crate (already present for `metadata_refresh` gzip decompression) handles the gzip layer; `tar` handles the archive structure. No `async-compression` or `tokio-tar` needed — the extraction is synchronous on the in-memory byte buffer (~70MB decompressed, trivial CPU cost).
+
+### 7 Unit Tests
+
+Cover: tar.gz extraction (nested directory + MMDB + extraneous files), no-MMDB-in-archive error, garbage input rejection, MMDB validation rejection of non-MMDB files, atomic replace (overwrite existing + create new), constant stability.
+
+---
+
 ## Research Sources
 
 ### Impossible Travel Detection

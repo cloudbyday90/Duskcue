@@ -507,7 +507,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 8: Web Client Core | **Complete** (Tasks 1–6) | `9f0c88d` |
 | Phase 9: Subtitles | **Complete** (Tasks 1–8) | — |
 | Phase 10: Segments & Storyboards | **Complete** (Tasks 1–12: 8 core + SSE + image pipeline + artwork endpoint + events store) | — |
-| Phase 11: Analytics & Trakt | **In Progress** (Tasks 1–8: analytics + dashboard + trakt scaffolding + trakt OAuth + trakt sync engine + trakt sync worker + GeoIP service + impossible travel detection; Task 9 pending: geoip updater worker) | — |
+| Phase 11: Analytics & Trakt | **Complete** (Tasks 1–9: analytics + dashboard + trakt scaffolding + trakt OAuth + trakt sync engine + trakt sync worker + GeoIP service + impossible travel detection + GeoIP database updater) | — |
 | Phase 12–16 | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.

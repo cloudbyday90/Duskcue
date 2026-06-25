@@ -297,6 +297,7 @@ async fn main() {
     let segment_state = state.clone();
     let storyboard_state = state.clone();
     let trakt_state = state.clone();
+    let geoip_state = state.clone();
     let scheduler = Arc::new(
         Scheduler::new(state.pool.clone())
             .register_executor("library_scan", |pool, task_id, config| {
@@ -406,6 +407,13 @@ async fn main() {
                 let state = trakt_state.clone();
                 async move {
                     duskcue::workers::trakt_sync::run_trakt_sync(&state, task_id, config).await;
+                }
+            })
+            .register_executor("geoip_database_update", move |_pool, task_id, config| {
+                let state = geoip_state.clone();
+                async move {
+                    duskcue::workers::geoip_updater::run_geoip_update(&state, task_id, config)
+                        .await;
                 }
             }),
     );

@@ -39,6 +39,9 @@ pub struct CliArgs {
     #[arg(long, env = "DUSKCUE_ENCRYPTION_KEY")]
     pub encryption_key: Option<String>,
 
+    #[arg(long, env = "DUSKCUE_GEOIP_LICENSE_KEY")]
+    pub geoip_license_key: Option<String>,
+
     #[arg(long, env = "DUSKCUE_CONFIG")]
     pub config: Option<PathBuf>,
 }
@@ -51,6 +54,7 @@ pub struct BootstrapConfig {
     pub log_level: String,
     pub environment: String,
     pub encryption_key: Option<String>,
+    pub geoip_license_key: Option<String>,
 }
 
 fn default_data_dir() -> PathBuf {
@@ -90,6 +94,7 @@ pub fn build_bootstrap_config(cli: CliArgs) -> Result<BootstrapConfig, Box<dyn s
 
     builder = builder.set_override_option("database_url", cli.database_url)?;
     builder = builder.set_override_option("encryption_key", cli.encryption_key)?;
+    builder = builder.set_override_option("geoip_license_key", cli.geoip_license_key)?;
 
     let settings = builder.build()?;
 

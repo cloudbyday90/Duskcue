@@ -68,9 +68,10 @@ cache_dir = "/var/cache/duskcue"
 log_level = "info"
 environment = "production"
 encryption_key = "auto-generated-hex-encoded-256-bit-key"
+geoip_license_key = ""
 ```
 
-Six fields. Everything else is in `server_config` after the database is reachable.
+Seven fields. Everything else is in `server_config` after the database is reachable.
 
 ### Field Reference
 
@@ -90,6 +91,7 @@ See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for the full embedded/external 
 | `log_level` | String | `info` | `DUSKCUE_LOG_LEVEL` | `--log-level` | No |
 | `environment` | String | `production` | `DUSKCUE_ENVIRONMENT` | `--environment` | No |
 | `encryption_key` | String | Auto-generated | `DUSKCUE_ENCRYPTION_KEY` | `--encryption-key` | No |
+| `geoip_license_key` | String | — | `DUSKCUE_GEOIP_LICENSE_KEY` | `--geoip-license-key` | No |
 
 `environment` must be one of: `development`, `staging`, `production`. This controls error response verbosity as documented in ERROR_HANDLING.md.
 
@@ -217,6 +219,9 @@ pub struct CliArgs {
     #[arg(long, env = "DUSKCUE_ENCRYPTION_KEY")]
     pub encryption_key: Option<String>,
 
+    #[arg(long, env = "DUSKCUE_GEOIP_LICENSE_KEY")]
+    pub geoip_license_key: Option<String>,
+
     #[arg(long, env = "DUSKCUE_CONFIG")]
     pub config: Option<PathBuf>,
 }
@@ -229,10 +234,13 @@ pub struct BootstrapConfig {
     pub log_level: String,
     pub environment: String,
     pub encryption_key: Option<String>,
+    pub geoip_license_key: Option<String>,
 }
 ```
 
 `database_url` is `Option<String>` in both `CliArgs` and `BootstrapConfig`. When `None` after layering, the server attempts to start embedded PostgreSQL (Docker entrypoint provides it, or `postgresql_embedded` crate handles it for native deployments).
+
+`geoip_license_key` is `Option<String>` — when `None` or empty, GeoIP enrichment runs in degraded mode (no geolocation lookups) and the weekly `geoip_database_update` scheduled task is a no-op. To enable, obtain a free MaxMind license key and set it via `DUSKCUE_GEOIP_LICENSE_KEY` env var or `geoip_license_key` in `config.toml`. See [ANALYTICS_SECURITY.md](../security/ANALYTICS_SECURITY.md) for the full GeoIP pipeline design.
 
 ## Runtime Config
 

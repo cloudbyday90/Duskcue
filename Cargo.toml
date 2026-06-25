@@ -74,6 +74,7 @@ async-trait = "0.1"
 urlencoding = "2"
 flate2 = "1"
 zip = "2"
+tar = "0.4"
 libc = "0.2"
 chromaprint-next = "0.1"
 image = { version = "0.25", default-features = false, features = ["jpeg", "png", "webp"] }
