@@ -21,6 +21,7 @@ pub mod libraries;
 pub mod media;
 pub mod overlays;
 pub mod playback;
+pub mod posters;
 pub mod quality;
 pub mod segments;
 pub mod storyboards;

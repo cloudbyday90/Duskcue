@@ -323,6 +323,7 @@ async fn main() {
     let geoip_state = state.clone();
     let collection_state = state.clone();
     let overlay_state = state.clone();
+    let asset_state = state.clone();
     let scheduler = Arc::new(
         Scheduler::new(state.pool.clone())
             .register_executor("library_scan", |pool, task_id, config| {
@@ -451,6 +452,15 @@ async fn main() {
                 let state = overlay_state.clone();
                 async move {
                     duskcue::workers::overlay_compositor::run_overlay_application(
+                        &state, task_id, config,
+                    )
+                    .await;
+                }
+            })
+            .register_executor("asset_directory_scan", move |_pool, task_id, config| {
+                let state = asset_state.clone();
+                async move {
+                    duskcue::workers::asset_directory_scanner::run_asset_directory_scan(
                         &state, task_id, config,
                     )
                     .await;

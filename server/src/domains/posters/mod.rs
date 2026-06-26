@@ -14,36 +14,35 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-pub mod artwork_delivery;
-pub mod artwork_downloader;
-pub mod clean_art;
-pub mod collections;
-pub mod conditions;
-pub mod decision_engine;
-pub mod encryption;
-pub mod enrichment_persistence;
-pub mod event_bus;
-pub mod events_handler;
-pub mod fanart_client;
-pub mod fs_watcher;
-pub mod geoip;
-pub mod hw_accel;
-pub mod image_pipeline;
-pub mod media_matching;
-pub mod metadata;
-pub mod nfo_parser;
-pub mod omdb_client;
-pub mod opensubtitles_client;
-pub mod overlays;
-pub mod poster_management;
-pub mod sandbox;
-pub mod scheduler;
-pub mod segments;
-pub mod storyboards;
-pub mod subdl_client;
-pub mod subtitle_discovery;
-pub mod subtitles;
-pub mod tmdb_client;
-pub mod trakt_client;
-pub mod transcoding;
-pub mod tvdb_client;
+pub mod error;
+pub mod handlers;
+pub mod service;
+pub mod types;
+
+pub use error::PosterError;
+
+use axum::Router;
+use axum::routing::{patch, post};
+
+use crate::state::AppState;
+
+pub fn router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/v1/posters/assets/scan",
+            post(handlers::scan_asset_directory),
+        )
+        .route(
+            "/api/v1/posters/community/import",
+            post(handlers::import_community_pack),
+        )
+        .route(
+            "/api/v1/posters/{id}/lock",
+            patch(handlers::set_artwork_lock),
+        )
+        .route(
+            "/api/v1/posters/{id}/select",
+            post(handlers::select_artwork),
+        )
+        .with_state(state)
+}

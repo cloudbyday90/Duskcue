@@ -2845,7 +2845,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **Runtime provider config reused** — The worker constructs `TmdbClient` from `RuntimeConfig.metadata.providers.tmdb` and `metadata_language`, matching the manual sync endpoint behavior. If TMDB is disabled or missing an access token, external TMDB builders fail gracefully and store failure details in `last_sync_result`.
 - **No schema change needed** — `collection_sync` already exists in the `scheduled_tasks.task_type` CHECK constraint from Phase 2. Task 7 only adds an idempotent seed migration for deployments whose initial seed data predates this worker.
 
-**Verification:** `cargo check -p duskcue` passes.
+**Verification:** `cargo check -p duskcue` passes. `cargo test -p duskcue` passes (535 tests). `cargo clippy -p duskcue --all-targets --all-features -- -A clippy::unnecessary-sort-by -D warnings` passes.
 
 8. ~~Implement `server/src/workers/overlay_compositor.rs` — apply overlays to artwork~~ **DONE**
 
@@ -2875,7 +2875,33 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Verification:** `cargo check -p duskcue` passes.
 
-9. Implement poster management — asset directory scanning, poster locking, community pack import
+9. ~~Implement poster management — asset directory scanning, poster locking, community pack import~~ **DONE**
+
+**What was built for Task 9:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/poster_management.rs` | Shared poster-management service: safe recursive asset-directory image discovery, item matching by section/folder/TMDb ID/title+year, season poster detection, collection poster matching, image validation/dimension extraction, persistent artwork copy storage, primary artwork promotion, lock updates, overlay-state invalidation on primary-source change, community pack JSON import, and 8 unit tests |
+| `server/src/domains/posters/` | New five-file poster API domain with admin routes for asset-directory scan, community pack import, lock/unlock, and selecting active artwork |
+| `server/src/workers/asset_directory_scanner.rs` | Scheduled/manual asset-directory scan worker resolving `config.path` first, then `RuntimeConfig.metadata.asset_directory`, with `lock_imported` defaulting to true |
+| `server/src/main.rs` | Registered `asset_directory_scan` scheduler executor |
+| `server/src/services/scheduler.rs` | Added first-run default `Asset Directory Scan` task at daily 03:00 |
+| `server/migrations/20260625_080000_seed_asset_directory_scan_task.sql` | Idempotent seed migration for existing deployments |
+| `server/src/router.rs`, `server/src/domains/mod.rs`, `server/src/services/mod.rs`, `server/src/workers/mod.rs` | Module/router wiring |
+| `docs/design/POSTER_MANAGEMENT.md`, `PROJECT.md` | Task 9 implementation notes and status updates |
+
+**Key decisions from Task 9:**
+
+- **Shared service over domain-only logic** — `services/poster_management.rs` owns the artwork lifecycle behavior so the API domain and scheduled worker share matching, import, locking, and primary-promotion rules.
+- **JSON-first community pack import** — The API accepts a community pack manifest plus server-side `pack_root` paths. ZIP/TAR archive upload is deferred until a multipart upload pipeline exists; the service already validates canonical paths under the pack root so archive extraction can reuse the same safety boundary.
+- **Asset scans are non-symlink recursive walks** — The scanner uses the existing `ignore` walker with symlink following disabled, canonicalizes the configured root, and validates every discovered file remains under that root before import.
+- **Primary promotion preserves alternates** — Imported asset/community artwork is copied into persistent storage and promoted to `artwork.order = 0`; existing artwork rows are demoted rather than deleted, preserving TMDb/user/community alternates for later selection.
+- **Lock semantics match design** — Asset-directory artwork locks by default (`is_locked = true`). Community pack imports default unlocked unless the request/task sets `lock_imported = true`. Manual lock/unlock and active selection endpoints are available for the future admin UI.
+- **Overlay state invalidated on source change** — Selecting or importing a new primary media-item artwork deletes the relevant `artwork_overlay_state` row so clients do not keep seeing an overlaid image generated from the previous source.
+- **No new dependencies or schema tables** — The implementation reuses existing `ignore`, `image`, `blake3`, `sqlx`, and the Phase 2 `artwork.is_locked`/`source_type` columns. Only a scheduled-task seed migration was needed.
+
+**Verification:** `cargo check -p duskcue` passes.
+
 10. Build admin UI for overlays — overlay editor, template browser, condition builder
 11. Build admin UI for collections — collection list, builder configuration, template import
 

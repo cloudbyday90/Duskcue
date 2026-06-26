@@ -374,18 +374,18 @@ impl Default for MetadataConfig {
 
 ## Scheduled Tasks
 
-Two new scheduled tasks are registered in the existing `scheduled_tasks` table:
+Artwork customization tasks are registered in the existing `scheduled_tasks` table:
 
 | Task | Schedule | Timeout | Config |
 |---|---|---|---|
 | Overlay Application | `0 5 * * *` (daily 05:00) | 2h | `{ "reapply_all": false, "max_concurrent": 2 }` |
 | Collection Sync | `0 6 * * *` (daily 06:00) | 2h | `{ "sync_dynamic": true, "sync_external": true }` |
 | Artwork Refresh | Every 21600s (6 hours) | 2h | `{ "refresh_missing": true, "refresh_max_age_hours": 168 }` |
-| Asset Directory Scan | `0 3 * * *` (daily 03:00, before overlays) | 30m | `{ "path": null }` |
+| Asset Directory Scan | `0 3 * * *` (daily 03:00, before overlays) | 30m | `{ "path": null, "lock_imported": true }` |
 
 **Artwork Refresh** — checks for items with missing artwork and re-downloads from TMDb. Also refreshes artwork older than `refresh_max_age_hours` (default: 168 = 7 days).
 
-**Asset Directory Scan** — scans the configured asset directory for new/changed custom artwork and applies it to matching items.
+**Asset Directory Scan** — scans the configured asset directory for new/changed custom artwork and applies it to matching items. `config.path` overrides `metadata.asset_directory`; `lock_imported` controls whether discovered artwork is locked after import and defaults to true.
 
 ## Admin UI
 
@@ -419,7 +419,7 @@ The artwork management section provides:
 - **Vote-sorted selection** — images sorted by `vote_count` desc, then `vote_average` desc; top 5 posters, 3 backdrops, 2 logos downloaded per item.
 - **Deduplication** — `source_url` column checked before download; existing artwork rows are skipped.
 - **`artwork` table rows** — inserted with `source_type = 'tmdb'`, `provider = 'tmdb'`, `order` by vote ranking (0 = primary), `width`/`height` from TMDB API, `language` from TMDB `iso_639_1`. Uses `ON CONFLICT DO NOTHING` on `(media_item_id, artwork_type, "order")`.
-- **Not yet implemented:** User upload, asset directory scanning, community packs, resized cache generation — deferred to Phases 12–13.
+- **Not yet implemented:** User upload and bulk artwork refresh — deferred to later artwork-management work.
 
 ### Clean Art Preservation (Phase 12, Task 4)
 
@@ -429,4 +429,21 @@ The artwork management section provides:
 - **Config hash change detection** — Blake3 hash over `(source_artwork_id, sorted (overlay_id, updated_at))` stored in `artwork_overlay_state.overlay_config_hash`. When the hash matches, re-compositing is skipped.
 - **Display integration** — `artwork_delivery::resolve_variant()` checks `artwork_overlay_state` first; serves the overlaid result (downscaled to variant size) when overlays are active, falls back to source artwork otherwise. Overlaid variants cached separately (`{artwork_id}_overlay` stem).
 - **Single-item compositing** — `composite_and_persist()` in `domains/overlays/service.rs` is the entry point the Task 8 worker will call per-item.
-- **Not yet implemented:** Overlay compositor worker (`workers/overlay_compositor.rs` — Task 8), poster locking UI, asset directory scanning, community pack import.
+- **Not yet implemented:** Poster locking UI and archive upload extraction for community packs.
+
+### Poster Management Core (Phase 12, Task 9)
+
+- **Module:** `server/src/services/poster_management.rs` — shared service used by the API domain and scheduled worker.
+- **API domain:** `server/src/domains/posters/` exposes admin-only routes:
+  - `POST /api/v1/posters/assets/scan` — manually scan an asset directory path or the configured `metadata.asset_directory`
+  - `POST /api/v1/posters/community/import` — import a JSON community pack manifest from a server-side `pack_root`
+  - `PATCH /api/v1/posters/{id}/lock` — lock or unlock an artwork row
+  - `POST /api/v1/posters/{id}/select` — make an existing artwork row the active primary artwork
+- **Scheduled worker:** `server/src/workers/asset_directory_scanner.rs` registers `asset_directory_scan`, scheduled daily at 03:00 so custom art lands before the 05:00 overlay application task.
+- **Asset matching:** Supported images are JPEG, PNG, and WebP. The scanner recognizes `movies/`, `tv/`/`series`/`shows`, and `collections/` sections. Movies/series match by TMDb ID in folder or filename first, then exact title or sort title with optional `(YYYY)` suffix. Season posters match `Season XX`, `SeasonXX`, and `Season_XX`.
+- **Community packs:** Task 9 implements JSON manifest import with server-side `pack_root` resolution. Archive upload/extraction is deferred until a multipart upload pipeline exists; the service already canonicalizes every referenced image under the pack root, so ZIP/TAR extraction can reuse the same safety boundary.
+- **Storage:** Imported assets are copied to `{data_dir}/metadata/artwork/{asset_directory|community}/{posters|backdrops|season_posters|thumbnails}/`. Filenames include the target UUID and a Blake3 content hash prefix, preserving source originals while avoiding collisions.
+- **Selection and locking:** Imported media-item artwork is promoted to `order = 0`; existing rows are demoted rather than deleted. Asset-directory imports lock by default. Community imports default unlocked unless `lock_imported = true`. Manual lock/unlock and select endpoints are available for the future admin UI.
+- **Overlay invalidation:** Whenever a primary media-item artwork changes, the service deletes the corresponding `artwork_overlay_state` row. This prevents clients from seeing an overlaid result generated from the previous source artwork before the next overlay application run.
+- **Safety:** Recursive scans use the existing `ignore` walker with symlink following disabled. Both asset scans and community pack imports canonicalize the configured root and each image path, rejecting paths outside the allowed root.
+- **No schema change:** Phase 2 already added `artwork.is_locked` and `artwork.source_type`; Task 9 only adds `20260625_080000_seed_asset_directory_scan_task.sql` for existing deployments.
