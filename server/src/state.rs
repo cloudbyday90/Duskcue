@@ -35,6 +35,7 @@ use crate::services::event_bus::EventBus;
 use crate::services::fs_watcher::LibraryWatcherManager;
 use crate::services::geoip::GeoIpService;
 use crate::services::metadata::EnrichmentOrchestrator;
+use crate::services::scheduler::Scheduler;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthConfig {
@@ -781,6 +782,7 @@ pub struct AppState {
     pub transcode_manager: Arc<crate::services::transcoding::TranscodeManager>,
     pub event_bus: Arc<EventBus>,
     pub geoip: Arc<GeoIpService>,
+    pub scheduler: Arc<std::sync::OnceLock<Arc<Scheduler>>>,
 }
 
 impl AppState {
@@ -819,6 +821,7 @@ impl AppState {
             transcode_manager,
             event_bus: Arc::new(EventBus::with_default_limit()),
             geoip: Arc::new(GeoIpService::disabled()),
+            scheduler: Arc::new(std::sync::OnceLock::new()),
         }
     }
 
@@ -875,12 +878,23 @@ impl AppState {
             transcode_manager,
             event_bus: Arc::new(EventBus::with_default_limit()),
             geoip,
+            scheduler: Arc::new(std::sync::OnceLock::new()),
         }
     }
 
     pub fn reload_runtime_config(&self, new_config: RuntimeConfig) {
         self.runtime_config.store(Arc::new(new_config));
         tracing::info!("Runtime configuration reloaded");
+    }
+
+    pub fn set_scheduler(&self, scheduler: Arc<Scheduler>) {
+        if self.scheduler.set(scheduler).is_err() {
+            tracing::warn!("Scheduled task runner already registered in AppState");
+        }
+    }
+
+    pub fn scheduler(&self) -> Option<Arc<Scheduler>> {
+        self.scheduler.get().cloned()
     }
 }
 

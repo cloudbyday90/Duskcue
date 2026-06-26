@@ -908,3 +908,11 @@ Common alternatives considered:
 - Sensitive values are masked in responses, preserved on masked round-trip, and encrypted before storage when changed
 - Successful writes hot-reload `RuntimeConfig` through `AppState::reload_runtime_config()`
 - Runtime config reload now selects the `analytics` column and decrypts subtitle provider credentials alongside metadata and Trakt credentials
+
+**Phase 13a Task 3 (complete):**
+
+- Scheduled-task management API lives in `server/src/domains/system/` and is gated by `can_manage_scheduled_tasks`: `GET /api/v1/scheduled-tasks`, `GET /api/v1/scheduled-tasks/{task_id}`, `POST /api/v1/scheduled-tasks/{task_id}/trigger`, `POST /api/v1/scheduled-tasks/{task_id}/cancel`, and `GET /api/v1/scheduled-tasks/{task_id}/runs`
+- `AppState` stores the initialized `Arc<Scheduler>` in a shared `OnceLock`, so manual trigger/cancel requests use the same executor registry as the background scheduler
+- Manual triggers create one `scheduled_task_runs` row and use a state-claim update before execution, preventing duplicate runs when a task is already `running`
+- Run lifecycle now completes history rows for success, failure, timeout, and cancellation; cancellation uses per-task `CancellationToken`s and leaves the current task state `idle` with `last_run_result = 'cancelled'`
+- `notification_cleanup` is registered as a Phase 13a maintenance executor only; it deletes expired notifications or rows older than `config.max_age_days` and does not depend on Phase 13b dispatch

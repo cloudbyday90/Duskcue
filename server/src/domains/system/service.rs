@@ -19,11 +19,14 @@ use sqlx::Row;
 
 use crate::services::encryption::{ENCRYPTED_PREFIX, mask_secret};
 use crate::services::metadata::{ProviderValidationRequest, validate_provider_key};
+use crate::services::scheduler::{ScheduledTaskRow, ScheduledTaskRunRow};
 use crate::state::AppState;
 
 use super::error::SystemError;
 use super::types::{
-    ConfigGroupResponse, ServerConfigResponse, ServerConfigRow, ValidateProviderResponse,
+    ConfigGroupResponse, ScheduledTaskCancelResponse, ScheduledTaskListResponse,
+    ScheduledTaskResponse, ScheduledTaskRunListResponse, ScheduledTaskRunResponse,
+    ScheduledTaskTriggerResponse, ServerConfigResponse, ServerConfigRow, ValidateProviderResponse,
 };
 
 const SCALAR_CONFIG_KEYS: &[&str] = &[
@@ -83,6 +86,78 @@ pub fn config_groups() -> Vec<String> {
 pub async fn get_server_config(state: &AppState) -> Result<ServerConfigResponse, SystemError> {
     let row = load_config_row(state).await?;
     Ok(row.into_response())
+}
+
+pub async fn list_scheduled_tasks(
+    state: &AppState,
+) -> Result<ScheduledTaskListResponse, SystemError> {
+    let scheduler = state.scheduler().ok_or(SystemError::SchedulerUnavailable)?;
+    let items = scheduler
+        .list_tasks()
+        .await?
+        .into_iter()
+        .map(ScheduledTaskResponse::from)
+        .collect();
+    Ok(ScheduledTaskListResponse { items })
+}
+
+pub async fn get_scheduled_task(
+    state: &AppState,
+    task_id: uuid::Uuid,
+) -> Result<ScheduledTaskResponse, SystemError> {
+    let scheduler = state.scheduler().ok_or(SystemError::SchedulerUnavailable)?;
+    Ok(ScheduledTaskResponse::from(
+        scheduler.get_task(task_id).await?,
+    ))
+}
+
+pub async fn trigger_scheduled_task(
+    state: &AppState,
+    task_id: uuid::Uuid,
+) -> Result<ScheduledTaskTriggerResponse, SystemError> {
+    let scheduler = state.scheduler().ok_or(SystemError::SchedulerUnavailable)?;
+    let run_id = scheduler.trigger_task(task_id).await?;
+    Ok(ScheduledTaskTriggerResponse {
+        task_id,
+        run_id,
+        state: "running".to_string(),
+    })
+}
+
+pub async fn cancel_scheduled_task(
+    state: &AppState,
+    task_id: uuid::Uuid,
+) -> Result<ScheduledTaskCancelResponse, SystemError> {
+    let scheduler = state.scheduler().ok_or(SystemError::SchedulerUnavailable)?;
+    scheduler.cancel_task(task_id).await?;
+    Ok(ScheduledTaskCancelResponse {
+        task_id,
+        state: "idle".to_string(),
+    })
+}
+
+pub async fn list_scheduled_task_runs(
+    state: &AppState,
+    task_id: uuid::Uuid,
+    page: u32,
+    page_size: u32,
+) -> Result<ScheduledTaskRunListResponse, SystemError> {
+    let scheduler = state.scheduler().ok_or(SystemError::SchedulerUnavailable)?;
+    let page = page.max(1);
+    let page_size = page_size.clamp(1, 100);
+    let offset = ((page - 1) * page_size) as i64;
+    let rows = scheduler
+        .list_task_runs(task_id, page_size as i64, offset)
+        .await?;
+    let items = rows
+        .into_iter()
+        .map(ScheduledTaskRunResponse::from)
+        .collect();
+    Ok(ScheduledTaskRunListResponse {
+        items,
+        page,
+        page_size,
+    })
 }
 
 pub async fn get_config_group(
@@ -575,6 +650,49 @@ impl ServerConfigRow {
             schema_version: self.schema_version,
             config: Value::Object(self.config),
             groups: config_groups(),
+        }
+    }
+}
+
+impl From<ScheduledTaskRow> for ScheduledTaskResponse {
+    fn from(row: ScheduledTaskRow) -> Self {
+        Self {
+            id: row.id,
+            name: row.name,
+            task_type: row.task_type,
+            cron_expression: row.cron_expression,
+            interval_seconds: row.interval_seconds,
+            is_enabled: row.is_enabled,
+            timeout_seconds: row.timeout_seconds,
+            max_retries: row.max_retries,
+            retry_delay_seconds: row.retry_delay_seconds,
+            state: row.state,
+            consecutive_failures: row.consecutive_failures,
+            last_run_at: row.last_run_at,
+            last_run_duration_ms: row.last_run_duration_ms,
+            last_run_result: row.last_run_result,
+            last_error: row.last_error,
+            next_run_at: row.next_run_at,
+            config: row.config,
+            metadata: row.metadata,
+        }
+    }
+}
+
+impl From<ScheduledTaskRunRow> for ScheduledTaskRunResponse {
+    fn from(row: ScheduledTaskRunRow) -> Self {
+        Self {
+            id: row.id,
+            scheduled_task_id: row.scheduled_task_id,
+            trigger_type: row.trigger_type,
+            state: row.state,
+            started_at: row.started_at,
+            completed_at: row.completed_at,
+            duration_ms: row.duration_ms,
+            result: row.result,
+            error_message: row.error_message,
+            error_details: row.error_details,
+            stats: row.stats,
         }
     }
 }

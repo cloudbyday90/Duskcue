@@ -37,6 +37,26 @@ pub fn router(state: AppState) -> Router<AppState> {
             get(handlers::get_config_group).put(handlers::update_config_group),
         )
         .route(
+            "/api/v1/scheduled-tasks",
+            get(handlers::list_scheduled_tasks),
+        )
+        .route(
+            "/api/v1/scheduled-tasks/{task_id}",
+            get(handlers::get_scheduled_task),
+        )
+        .route(
+            "/api/v1/scheduled-tasks/{task_id}/trigger",
+            post(handlers::trigger_scheduled_task),
+        )
+        .route(
+            "/api/v1/scheduled-tasks/{task_id}/cancel",
+            post(handlers::cancel_scheduled_task),
+        )
+        .route(
+            "/api/v1/scheduled-tasks/{task_id}/runs",
+            get(handlers::list_scheduled_task_runs),
+        )
+        .route(
             "/api/v1/settings/providers/validate",
             post(handlers::validate_provider_key),
         )

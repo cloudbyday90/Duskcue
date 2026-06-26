@@ -2984,6 +2984,36 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **Runtime reload bug fixed** — `load_runtime_config()` now selects `analytics`, matching the Phase 2 schema and Phase 11 `RuntimeConfig.analytics` field. Subtitle provider credentials are also decrypted on load so encrypted SubDL/OpenSubtitles keys work outside their domain-specific settings endpoint.
 - **Validation-first multi-field updates** — Full config updates prepare and validate all fields before applying any write, avoiding partial changes from malformed later fields in the same request.
 
+**What was built for Task 3:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/scheduler.rs` | Fixed manual trigger lifecycle (single run row), added claim-based running-state guard, completed run history on success/failure/timeout/cancel, added per-task cancellation tokens, added bounded run-history reads |
+| `server/src/state.rs` | Added shared `Arc<Scheduler>` registration through `OnceLock` so HTTP handlers use the same scheduler instance as the background runner |
+| `server/src/domains/system/mod.rs` | Added scheduled-task routes under `/api/v1/scheduled-tasks` |
+| `server/src/domains/system/handlers.rs` | Added admin handlers for list, get, trigger, cancel, and per-task run history; gated by `Require<CanManageScheduledTasks>` |
+| `server/src/domains/system/service.rs` | Added scheduled-task service wrappers, scheduler availability checks, and DTO mapping |
+| `server/src/domains/system/types.rs` | Added scheduled-task response DTOs and run-history query/response DTOs |
+| `server/src/domains/system/error.rs` | Added scheduled-task error variants and scheduler-error conversion |
+| `server/src/error.rs` | Mapped scheduled-task errors to `SYS_001`, `SYS_002`, `SYS_003`, and service-unavailable responses |
+| `server/src/workers/notification_cleanup.rs` | Added DB-only notification cleanup executor that deletes expired rows and rows older than `config.max_age_days` |
+| `server/src/workers/mod.rs` | Exported `notification_cleanup` worker |
+| `server/src/main.rs` | Registered `notification_cleanup` executor and stored the scheduler in `AppState` before startup |
+| `docs/design/API_CONVENTIONS.md` | Updated endpoint inventory, async-operation examples, admin rate-limit scope, and ETag table to use `/api/v1/scheduled-tasks` and `/api/v1/server/config` |
+| `docs/operations/CONFIGURATION.md` | Documented Task 3 API, shared scheduler registration, cancellation semantics, and notification cleanup boundary |
+| `docs/design/PHASE_13_SPLIT.md` | Updated notification cleanup edge-case notes with implemented behavior |
+| `PROJECT.md` | Updated Phase 13a status |
+
+**Key decisions from Task 3:**
+
+- **Shared scheduler instance in `AppState`** — Manual trigger/cancel uses the same executor registry as the background scheduler. `OnceLock<Arc<Scheduler>>` avoids rebuilding executor registration in handlers and keeps startup ordering explicit.
+- **Dedicated scheduled-task capability** — The new endpoints use `CanManageScheduledTasks`, not broad `CanManageServer`, matching the capability model from Phase 4.
+- **Single run row per manual trigger** — `trigger_task()` no longer creates a run before delegating to `execute_task()`. The execution path owns run creation for both scheduled and manual triggers.
+- **Claim before run creation** — `execute_task()` updates `scheduled_tasks.state` from non-running to `running` before inserting `scheduled_task_runs`, preventing duplicate concurrent runs for the same task.
+- **Run history is authoritative** — Success, failure, timeout, and cancellation all update the current `scheduled_task_runs` row. `complete_run()` only updates rows still in `running` state so an admin cancellation is not overwritten by a late worker completion.
+- **Cooperative cancellation** — Each active task gets a `CancellationToken`; cancellation marks running history rows as cancelled immediately and signals the worker future wrapper. Long-running workers that are inside awaited futures are dropped when the cancellation branch wins.
+- **Notification cleanup stays Phase 13a-only** — The executor only deletes old/expired rows from `notifications`. It does not create, render, dispatch, or localize notifications, preserving the Phase 13b boundary.
+
 **Verification:** `cargo check -p duskcue`, `cargo test -p duskcue` (535 tests), and `cargo clippy -p duskcue --all-targets --all-features -- -A clippy::unnecessary-sort-by -D warnings` pass.
 
 **Verification:** Admin can configure all settings via UI. Backups run on schedule. Disk space alerts trigger when thresholds are exceeded. Scheduled tasks are visible and triggerable.

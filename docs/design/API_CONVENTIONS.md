@@ -65,7 +65,8 @@ pub fn router(state: AppState) -> Router<AppState> {
 | Streaming | `/api/v1/stream/*` | Manifest, segments, direct play |
 | Analytics | `/api/v1/analytics/*` | Dashboard, play history, bandwitch, transcode stats |
 | Trakt | `/api/v1/trakt/*` | Link account, sync, history, ratings |
-| System | `/api/v1/system/*` | Config, tasks, notifications, backups, health |
+| System config | `/api/v1/server/config` | Full config and per-group config reads/writes |
+| Scheduled tasks | `/api/v1/scheduled-tasks` | List, get, trigger, cancel, run history |
 | Search | `/api/v1/search` | Full-text search across media |
 | Quality | `/api/v1/quality/*` | Device profiles, capability wizard, telemetry |
 | Subtitles | `/api/v1/subtitles/*` | List, upload, download, sync settings |
@@ -224,7 +225,7 @@ Action response (202 Accepted):
 {
     "status": "accepted",
     "job_id": "01950abc-def0-7000-8000-000000000002",
-    "location": "/api/v1/system/tasks/01950abc-def0-7000-8000-000000000002"
+    "location": "/api/v1/scheduled-tasks/01950abc-def0-7000-8000-000000000002"
 }
 ```
 
@@ -416,7 +417,7 @@ Uses PostgreSQL `websearch_to_tsquery()` with field-weighted GIN index. Document
 | **Auth** | Per IP | 10 req/min | 5 | `/api/v1/auth/*` (login, register, passkey, TOTP) |
 | **Authenticated** | Per user | 300 req/min | 100 | All authenticated API endpoints |
 | **Streaming** | Per session | 600 req/min | 50 | `/api/v1/stream/*` (segment requests ~1/6s) |
-| **Admin** | Per user | 1,000 req/min | 200 | `/api/v1/system/*` (settings, tasks, backups) |
+| **Admin** | Per user | 1,000 req/min | 200 | `/api/v1/server/config`, `/api/v1/scheduled-tasks`, backups |
 | **Device linking** | Per IP | 5 req/15min | 3 | `/api/v1/auth/device-link` |
 
 ### Response Headers
@@ -667,19 +668,19 @@ POST /api/v1/libraries/01950abc.../scan
 
 ```
 HTTP/1.1 202 Accepted
-Location: /api/v1/system/tasks/01950abc-def0-7000-8000-000000000002
+Location: /api/v1/scheduled-tasks/01950abc-def0-7000-8000-000000000002
 
 {
     "status": "accepted",
     "job_id": "01950abc-def0-7000-8000-000000000002",
-    "location": "/api/v1/system/tasks/01950abc-def0-7000-8000-000000000002"
+    "location": "/api/v1/scheduled-tasks/01950abc-def0-7000-8000-000000000002"
 }
 ```
 
 ### Job Status Polling
 
 ```
-GET /api/v1/system/tasks/01950abc-def0-7000-8000-000000000002
+GET /api/v1/scheduled-tasks/01950abc-def0-7000-8000-000000000002
 ```
 
 ```json
@@ -732,7 +733,7 @@ If-None-Match: "abc123def456"        → 304 Not Modified (no body)
 |---|---|
 | `GET /api/v1/media-items/{id}` | Per-item metadata |
 | `GET /api/v1/libraries/{id}` | Library config |
-| `GET /api/v1/system/config` | Full server config |
+| `GET /api/v1/server/config` | Full server config |
 
 ### Cache-Control Headers
 

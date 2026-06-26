@@ -15,18 +15,21 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use axum::Json;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
+use uuid::Uuid;
 use validator::Validate;
 
 use crate::error::{AppError, FieldError};
-use crate::extractors::CanManageServer;
 use crate::extractors::Require;
+use crate::extractors::{CanManageScheduledTasks, CanManageServer};
 use crate::state::AppState;
 
 use super::service;
 use super::types::{
-    ConfigGroupResponse, ServerConfigResponse, UpdateConfigGroupRequest, UpdateServerConfigRequest,
-    ValidateProviderRequest, ValidateProviderResponse,
+    ConfigGroupResponse, ScheduledTaskCancelResponse, ScheduledTaskListResponse,
+    ScheduledTaskResponse, ScheduledTaskRunListResponse, ScheduledTaskRunsQuery,
+    ScheduledTaskTriggerResponse, ServerConfigResponse, UpdateConfigGroupRequest,
+    UpdateServerConfigRequest, ValidateProviderRequest, ValidateProviderResponse,
 };
 
 fn validation_error(e: validator::ValidationErrors, instance: impl Into<String>) -> AppError {
@@ -77,6 +80,57 @@ pub async fn get_config_group(
     Path(group): Path<String>,
 ) -> Result<Json<ConfigGroupResponse>, AppError> {
     let result = service::get_config_group(&state, &group).await?;
+    Ok(Json(result))
+}
+
+pub async fn list_scheduled_tasks(
+    _auth: Require<CanManageScheduledTasks>,
+    State(state): State<AppState>,
+) -> Result<Json<ScheduledTaskListResponse>, AppError> {
+    let result = service::list_scheduled_tasks(&state).await?;
+    Ok(Json(result))
+}
+
+pub async fn get_scheduled_task(
+    _auth: Require<CanManageScheduledTasks>,
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+) -> Result<Json<ScheduledTaskResponse>, AppError> {
+    let result = service::get_scheduled_task(&state, task_id).await?;
+    Ok(Json(result))
+}
+
+pub async fn trigger_scheduled_task(
+    _auth: Require<CanManageScheduledTasks>,
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+) -> Result<Json<ScheduledTaskTriggerResponse>, AppError> {
+    let result = service::trigger_scheduled_task(&state, task_id).await?;
+    Ok(Json(result))
+}
+
+pub async fn cancel_scheduled_task(
+    _auth: Require<CanManageScheduledTasks>,
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+) -> Result<Json<ScheduledTaskCancelResponse>, AppError> {
+    let result = service::cancel_scheduled_task(&state, task_id).await?;
+    Ok(Json(result))
+}
+
+pub async fn list_scheduled_task_runs(
+    _auth: Require<CanManageScheduledTasks>,
+    State(state): State<AppState>,
+    Path(task_id): Path<Uuid>,
+    Query(query): Query<ScheduledTaskRunsQuery>,
+) -> Result<Json<ScheduledTaskRunListResponse>, AppError> {
+    let result = service::list_scheduled_task_runs(
+        &state,
+        task_id,
+        query.page.unwrap_or(1),
+        query.page_size.unwrap_or(25),
+    )
+    .await?;
     Ok(Json(result))
 }
 

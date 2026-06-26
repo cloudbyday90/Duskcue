@@ -465,8 +465,18 @@ async fn main() {
                     )
                     .await;
                 }
+            })
+            .register_executor("notification_cleanup", move |pool, task_id, config| {
+                let pool = pool.clone();
+                async move {
+                    duskcue::workers::notification_cleanup::run_notification_cleanup(
+                        &pool, task_id, config,
+                    )
+                    .await;
+                }
             }),
     );
+    state.set_scheduler(scheduler.clone());
 
     tracing::info!("Starting scheduled task runner");
     scheduler.start(&tracker, scheduler_shutdown).await;

@@ -899,6 +899,31 @@ fn system_error_to_http(
     use axum::http::StatusCode;
 
     match err {
+        SystemError::ScheduledTaskNotFound(_) => (
+            StatusCode::NOT_FOUND,
+            "SYS_001",
+            "Scheduled task not found".into(),
+        ),
+        SystemError::ScheduledTaskAlreadyRunning(_) => (
+            StatusCode::CONFLICT,
+            "SYS_002",
+            "Scheduled task already running".into(),
+        ),
+        SystemError::InvalidCronExpression(expr) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "SYS_003",
+            format!("Invalid cron expression: {}", expr),
+        ),
+        SystemError::SchedulerUnavailable => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "SERVICE_UNAVAILABLE",
+            "Scheduled task runner is not available".into(),
+        ),
+        SystemError::TaskExecutorUnavailable(task_type) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "SERVICE_UNAVAILABLE",
+            format!("Scheduled task executor is not registered: {}", task_type),
+        ),
         SystemError::InvalidProvider(p) => (
             StatusCode::BAD_REQUEST,
             "SYS_013",

@@ -20,6 +20,7 @@ use std::time::Duration;
 
 use chrono::{DateTime, Utc};
 use croner::Cron;
+use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::Row;
@@ -27,13 +28,30 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use uuid::Uuid;
 
-type TaskExecutor =
-    Arc<dyn Fn(sqlx::PgPool, Uuid, serde_json::Value) -> tokio::task::JoinHandle<()> + Send + Sync>;
+type TaskExecutor = Arc<
+    dyn Fn(
+            sqlx::PgPool,
+            Uuid,
+            serde_json::Value,
+            Duration,
+            CancellationToken,
+        ) -> tokio::task::JoinHandle<TaskRunOutcome>
+        + Send
+        + Sync,
+>;
 
 pub struct Scheduler {
     pool: sqlx::PgPool,
     executors: Vec<(String, TaskExecutor)>,
+    active_tasks: Arc<DashMap<Uuid, CancellationToken>>,
     tick_interval: Duration,
+}
+
+#[derive(Debug)]
+enum TaskRunOutcome {
+    Success,
+    Cancelled,
+    Timeout,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -58,6 +76,21 @@ pub struct ScheduledTaskRow {
     pub metadata: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ScheduledTaskRunRow {
+    pub id: Uuid,
+    pub scheduled_task_id: Uuid,
+    pub trigger_type: String,
+    pub state: String,
+    pub started_at: DateTime<Utc>,
+    pub completed_at: Option<DateTime<Utc>>,
+    pub duration_ms: Option<i32>,
+    pub result: Option<String>,
+    pub error_message: Option<String>,
+    pub error_details: Option<serde_json::Value>,
+    pub stats: serde_json::Value,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SchedulerError {
     #[error("Invalid cron expression: {0}")]
@@ -66,6 +99,8 @@ pub enum SchedulerError {
     TaskNotFound(Uuid),
     #[error("Task already running: {0}")]
     AlreadyRunning(Uuid),
+    #[error("Task executor not registered: {0}")]
+    ExecutorNotRegistered(String),
     #[error("Database error: {0}")]
     Database(#[from] sqlx::Error),
 }
@@ -75,6 +110,7 @@ impl Scheduler {
         Self {
             pool,
             executors: Vec::new(),
+            active_tasks: Arc::new(DashMap::new()),
             tick_interval: Duration::from_secs(30),
         }
     }
@@ -90,23 +126,26 @@ impl Scheduler {
         Fut: std::future::Future<Output = ()> + Send + 'static,
     {
         let handler = Arc::new(handler);
-        let wrapped: TaskExecutor = Arc::new(move |pool, run_id, config| {
-            let handler = Arc::clone(&handler);
-            let pool_clone = pool.clone();
-            tokio::spawn(async move {
-                match tokio::time::timeout(
-                    Duration::from_secs(3600),
-                    handler(pool_clone, run_id, config),
-                )
-                .await
-                {
-                    Ok(()) => {}
-                    Err(_) => {
-                        tracing::warn!(run_id = %run_id, "Task timed out");
+        let wrapped: TaskExecutor = Arc::new(
+            move |pool, task_id, config, timeout, cancellation| {
+                let handler = Arc::clone(&handler);
+                let pool_clone = pool.clone();
+                tokio::spawn(async move {
+                    tokio::select! {
+                        _ = cancellation.cancelled() => TaskRunOutcome::Cancelled,
+                        result = tokio::time::timeout(timeout, handler(pool_clone, task_id, config)) => {
+                            match result {
+                                Ok(()) => TaskRunOutcome::Success,
+                                Err(_) => {
+                                    tracing::warn!(task_id = %task_id, "Task timed out");
+                                    TaskRunOutcome::Timeout
+                                }
+                            }
+                        }
                     }
-                }
-            })
-        });
+                })
+            },
+        );
         self.executors.push((task_type.to_string(), wrapped));
         self
     }
@@ -202,7 +241,7 @@ impl Scheduler {
         &self,
         task: &ScheduledTaskRow,
         trigger_type: &str,
-    ) -> Result<(), SchedulerError> {
+    ) -> Result<Uuid, SchedulerError> {
         let executor = self
             .executors
             .iter()
@@ -216,22 +255,33 @@ impl Scheduler {
                     task_type = %task.task_type,
                     "No executor registered for task type, skipping"
                 );
-                return Ok(());
+                return Err(SchedulerError::ExecutorNotRegistered(
+                    task.task_type.clone(),
+                ));
             }
         };
 
-        let run_id = self.create_run(task.id, trigger_type).await?;
-
-        self.set_task_state(task.id, "running").await?;
+        self.claim_task(task.id).await?;
+        let run_id = match self.create_run(task.id, trigger_type).await {
+            Ok(run_id) => run_id,
+            Err(err) => {
+                let _ = self.reset_claim_after_start_failure(task.id).await;
+                return Err(err);
+            }
+        };
 
         let pool = self.pool.clone();
         let task_id = task.id;
         let task_name = task.name.clone();
         let task_type = task.task_type.clone();
         let config = task.config.clone();
+        let timeout = Duration::from_secs(task.timeout_seconds.max(1) as u64);
         let max_retries = task.max_retries;
         let retry_delay = task.retry_delay_seconds as u64;
         let consecutive_failures = task.consecutive_failures;
+        let active_tasks = self.active_tasks.clone();
+        let cancellation = CancellationToken::new();
+        active_tasks.insert(task_id, cancellation.clone());
 
         let executor2 = Arc::clone(&executor);
         tokio::spawn(async move {
@@ -243,11 +293,33 @@ impl Scheduler {
             );
 
             let pool_clone = pool.clone();
-            let handle = (executor2)(pool_clone, task_id, config);
+            let handle = (executor2)(pool_clone, task_id, config, timeout, cancellation);
 
             match handle.await {
-                Ok(()) => {
-                    on_task_success(&pool, task_id, &task_name, max_retries).await;
+                Ok(TaskRunOutcome::Success) => {
+                    on_task_success(&pool, task_id, run_id, &task_name).await;
+                }
+                Ok(TaskRunOutcome::Cancelled) => {
+                    on_task_cancelled(&pool, task_id, run_id, &task_name).await;
+                }
+                Ok(TaskRunOutcome::Timeout) => {
+                    on_task_failure(
+                        &pool,
+                        task_id,
+                        run_id,
+                        "timeout",
+                        &TaskFailureInfo {
+                            task_name,
+                            error_message: format!(
+                                "Task timed out after {} seconds",
+                                timeout.as_secs()
+                            ),
+                            max_retries,
+                            retry_delay_secs: retry_delay,
+                            consecutive_failures,
+                        },
+                    )
+                    .await;
                 }
                 Err(e) => {
                     let err_msg = format!("Task panicked: {e}");
@@ -255,6 +327,7 @@ impl Scheduler {
                         &pool,
                         task_id,
                         run_id,
+                        "failure",
                         &TaskFailureInfo {
                             task_name,
                             error_message: err_msg,
@@ -266,9 +339,10 @@ impl Scheduler {
                     .await;
                 }
             }
+            active_tasks.remove(&task_id);
         });
 
-        Ok(())
+        Ok(run_id)
     }
 
     pub async fn trigger_task(&self, task_id: Uuid) -> Result<Uuid, SchedulerError> {
@@ -278,17 +352,49 @@ impl Scheduler {
             return Err(SchedulerError::AlreadyRunning(task_id));
         }
 
-        let run_id = self.create_run(task_id, "manual").await?;
-        self.execute_task(&task, "manual").await?;
-        Ok(run_id)
+        self.execute_task(&task, "manual").await
     }
 
     pub async fn cancel_task(&self, task_id: Uuid) -> Result<(), SchedulerError> {
+        let task = self.get_task(task_id).await?;
+
+        if task.state != "running" {
+            return Ok(());
+        }
+
+        if let Some((_, cancellation)) = self.active_tasks.remove(&task_id) {
+            cancellation.cancel();
+        }
+
+        sqlx::query(
+            r#"
+            UPDATE scheduled_task_runs
+            SET state = 'cancelled',
+                completed_at = now(),
+                duration_ms = EXTRACT(EPOCH FROM (now() - started_at))::INT * 1000,
+                result = 'cancelled',
+                error_message = 'Cancelled by administrator'
+            WHERE scheduled_task_id = $1 AND state = 'running'
+            "#,
+        )
+        .bind(task_id)
+        .execute(&self.pool)
+        .await?;
+
         sqlx::query(
             r#"
             UPDATE scheduled_tasks
-            SET state = 'idle', updated_at = now()
-            WHERE id = $1 AND state = 'running'
+            SET state = 'idle',
+                last_run_at = now(),
+                last_run_duration_ms = (
+                    SELECT duration_ms FROM scheduled_task_runs
+                    WHERE scheduled_task_id = $1
+                    ORDER BY started_at DESC LIMIT 1
+                ),
+                last_run_result = 'cancelled',
+                last_error = 'Cancelled by administrator',
+                updated_at = now()
+            WHERE id = $1
             "#,
         )
         .bind(task_id)
@@ -381,6 +487,43 @@ impl Scheduler {
         })
     }
 
+    pub async fn list_task_runs(
+        &self,
+        task_id: Uuid,
+        limit: i64,
+        offset: i64,
+    ) -> Result<Vec<ScheduledTaskRunRow>, SchedulerError> {
+        self.get_task(task_id).await?;
+
+        let rows = sqlx::query(
+            r#"
+            SELECT
+                id,
+                scheduled_task_id,
+                trigger_type,
+                state,
+                started_at,
+                completed_at,
+                duration_ms,
+                result,
+                error_message,
+                error_details,
+                stats
+            FROM scheduled_task_runs
+            WHERE scheduled_task_id = $1
+            ORDER BY started_at DESC
+            LIMIT $2 OFFSET $3
+            "#,
+        )
+        .bind(task_id)
+        .bind(limit)
+        .bind(offset)
+        .fetch_all(&self.pool)
+        .await?;
+
+        Ok(rows.iter().map(scheduled_task_run_from_row).collect())
+    }
+
     async fn create_run(&self, task_id: Uuid, trigger_type: &str) -> Result<Uuid, SchedulerError> {
         let row = sqlx::query(
             r#"
@@ -397,20 +540,57 @@ impl Scheduler {
         Ok(row.get("id"))
     }
 
-    async fn set_task_state(&self, task_id: Uuid, state: &str) -> Result<(), SchedulerError> {
-        sqlx::query(
+    async fn claim_task(&self, task_id: Uuid) -> Result<(), SchedulerError> {
+        let affected = sqlx::query(
             r#"
             UPDATE scheduled_tasks
-            SET state = $2, updated_at = now()
-            WHERE id = $1
+            SET state = 'running', updated_at = now()
+            WHERE id = $1 AND state != 'running'
             "#,
         )
         .bind(task_id)
-        .bind(state)
+        .execute(&self.pool)
+        .await?
+        .rows_affected();
+
+        if affected == 0 {
+            Err(SchedulerError::AlreadyRunning(task_id))
+        } else {
+            Ok(())
+        }
+    }
+
+    async fn reset_claim_after_start_failure(&self, task_id: Uuid) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"
+            UPDATE scheduled_tasks
+            SET state = 'idle',
+                last_error = 'Failed to create scheduled task run record',
+                updated_at = now()
+            WHERE id = $1 AND state = 'running'
+            "#,
+        )
+        .bind(task_id)
         .execute(&self.pool)
         .await?;
 
         Ok(())
+    }
+}
+
+fn scheduled_task_run_from_row(row: &sqlx::postgres::PgRow) -> ScheduledTaskRunRow {
+    ScheduledTaskRunRow {
+        id: row.get("id"),
+        scheduled_task_id: row.get("scheduled_task_id"),
+        trigger_type: row.get("trigger_type"),
+        state: row.get("state"),
+        started_at: row.get("started_at"),
+        completed_at: row.get("completed_at"),
+        duration_ms: row.get("duration_ms"),
+        result: row.get("result"),
+        error_message: row.get("error_message"),
+        error_details: row.get("error_details"),
+        stats: row.get("stats"),
     }
 }
 
@@ -426,13 +606,18 @@ async fn complete_run(
     sqlx::query(
         r#"
         UPDATE scheduled_task_runs
-        SET state = CASE WHEN $2 = 'success' THEN 'completed' ELSE 'failed' END,
+        SET state = CASE
+                WHEN $2 = 'success' THEN 'completed'
+                WHEN $2 = 'cancelled' THEN 'cancelled'
+                ELSE 'failed'
+            END,
             completed_at = now(),
             duration_ms = EXTRACT(EPOCH FROM (now() - started_at))::INT * 1000,
             result = $2,
             error_message = $3,
             stats = $4
         WHERE id = $1
+          AND state = 'running'
         "#,
     )
     .bind(run_id)
@@ -445,7 +630,7 @@ async fn complete_run(
     Ok(())
 }
 
-async fn on_task_success(pool: &sqlx::PgPool, task_id: Uuid, task_name: &str, _max_retries: i32) {
+async fn on_task_success(pool: &sqlx::PgPool, task_id: Uuid, run_id: Uuid, task_name: &str) {
     let now = Utc::now();
 
     let task_row = sqlx::query(
@@ -473,19 +658,19 @@ async fn on_task_success(pool: &sqlx::PgPool, task_id: Uuid, task_name: &str, _m
             consecutive_failures = 0,
             last_run_at = now(),
             last_run_duration_ms = EXTRACT(EPOCH FROM (now() - (
-                SELECT started_at FROM scheduled_task_runs
-                WHERE scheduled_task_id = $1
-                ORDER BY started_at DESC LIMIT 1
+                SELECT started_at FROM scheduled_task_runs WHERE id = $3
             )))::INT * 1000,
             last_run_result = 'success',
             last_error = NULL,
             next_run_at = $2,
             updated_at = now()
         WHERE id = $1
+          AND state = 'running'
         "#,
     )
     .bind(task_id)
     .bind(next_run)
+    .bind(run_id)
     .execute(pool)
     .await;
 
@@ -494,6 +679,8 @@ async fn on_task_success(pool: &sqlx::PgPool, task_id: Uuid, task_name: &str, _m
     } else {
         tracing::info!(task_id = %task_id, task_name = %task_name, "Scheduled task completed successfully");
     }
+
+    let _ = complete_run(pool, run_id, "success", None, None).await;
 }
 
 struct TaskFailureInfo {
@@ -504,7 +691,13 @@ struct TaskFailureInfo {
     consecutive_failures: i32,
 }
 
-async fn on_task_failure(pool: &sqlx::PgPool, task_id: Uuid, run_id: Uuid, info: &TaskFailureInfo) {
+async fn on_task_failure(
+    pool: &sqlx::PgPool,
+    task_id: Uuid,
+    run_id: Uuid,
+    result_kind: &str,
+    info: &TaskFailureInfo,
+) {
     let new_failures = info.consecutive_failures + 1;
     let should_disable = new_failures >= info.max_retries;
 
@@ -524,20 +717,21 @@ async fn on_task_failure(pool: &sqlx::PgPool, task_id: Uuid, run_id: Uuid, info:
                 consecutive_failures = $2,
                 last_run_at = now(),
                 last_run_duration_ms = EXTRACT(EPOCH FROM (now() - (
-                    SELECT started_at FROM scheduled_task_runs
-                    WHERE scheduled_task_id = $1
-                    ORDER BY started_at DESC LIMIT 1
+                    SELECT started_at FROM scheduled_task_runs WHERE id = $4
                 )))::INT * 1000,
-                last_run_result = 'failure',
+                last_run_result = $5,
                 last_error = $3,
                 next_run_at = NULL,
                 updated_at = now()
             WHERE id = $1
+              AND state = 'running'
             "#,
         )
         .bind(task_id)
         .bind(new_failures)
         .bind(&info.error_message)
+        .bind(run_id)
+        .bind(result_kind)
         .execute(pool)
         .await
     } else {
@@ -548,21 +742,22 @@ async fn on_task_failure(pool: &sqlx::PgPool, task_id: Uuid, run_id: Uuid, info:
                 consecutive_failures = $2,
                 last_run_at = now(),
                 last_run_duration_ms = EXTRACT(EPOCH FROM (now() - (
-                    SELECT started_at FROM scheduled_task_runs
-                    WHERE scheduled_task_id = $1
-                    ORDER BY started_at DESC LIMIT 1
+                    SELECT started_at FROM scheduled_task_runs WHERE id = $4
                 )))::INT * 1000,
-                last_run_result = 'failure',
+                last_run_result = $6,
                 last_error = $3,
-                next_run_at = $4,
+                next_run_at = $5,
                 updated_at = now()
             WHERE id = $1
+              AND state = 'running'
             "#,
         )
         .bind(task_id)
         .bind(new_failures)
         .bind(&info.error_message)
+        .bind(run_id)
         .bind(next_run)
+        .bind(result_kind)
         .execute(pool)
         .await
     };
@@ -585,7 +780,44 @@ async fn on_task_failure(pool: &sqlx::PgPool, task_id: Uuid, run_id: Uuid, info:
         );
     }
 
-    let _ = complete_run(pool, run_id, "failure", Some(&info.error_message), None).await;
+    let _ = complete_run(pool, run_id, result_kind, Some(&info.error_message), None).await;
+}
+
+async fn on_task_cancelled(pool: &sqlx::PgPool, task_id: Uuid, run_id: Uuid, task_name: &str) {
+    let result = sqlx::query(
+        r#"
+        UPDATE scheduled_tasks
+        SET state = 'idle',
+            last_run_at = now(),
+            last_run_duration_ms = EXTRACT(EPOCH FROM (now() - (
+                SELECT started_at FROM scheduled_task_runs WHERE id = $2
+            )))::INT * 1000,
+            last_run_result = 'cancelled',
+            last_error = 'Cancelled by administrator',
+            updated_at = now()
+        WHERE id = $1
+          AND state = 'running'
+        "#,
+    )
+    .bind(task_id)
+    .bind(run_id)
+    .execute(pool)
+    .await;
+
+    if let Err(e) = result {
+        tracing::error!(task_id = %task_id, error = %e, "Failed to update task after cancellation");
+    } else {
+        tracing::info!(task_id = %task_id, task_name = %task_name, "Scheduled task cancelled");
+    }
+
+    let _ = complete_run(
+        pool,
+        run_id,
+        "cancelled",
+        Some("Cancelled by administrator"),
+        None,
+    )
+    .await;
 }
 
 fn compute_next_run(

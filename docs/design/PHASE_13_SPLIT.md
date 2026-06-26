@@ -151,7 +151,7 @@ Task 10 (admin settings UI, in Phase 13a) renders ALL `server_config` fields, in
 
 The Phase 2 seed migration includes a `notification_cleanup` scheduled task. This task deletes old notifications past their retention period. It should be registered as an executor in Phase 13a (it's a maintenance task) even though the notification dispatch system doesn't exist yet.
 
-**Resolution:** Phase 13a Task 3 (scheduled task management) registers the `notification_cleanup` executor. It queries and deletes from the `notifications` table (which exists from Phase 2). No dependency on Phase 13b's dispatch pipeline — cleanup is a DB operation, not a dispatch operation.
+**Resolution:** Phase 13a Task 3 (scheduled task management) registers the `notification_cleanup` executor. It queries and deletes from the `notifications` table (which exists from Phase 2), removing expired rows and rows older than `config.max_age_days` (default 90). No dependency on Phase 13b's dispatch pipeline — cleanup is a DB operation, not a dispatch operation.
 
 ### Fluent Template Migration Timing
 
@@ -204,7 +204,7 @@ Phase 13a (System Operations Core)     ← 9 tasks
 4. **Phase 14 proceeds after 13a without waiting for 13b** — Migration imports watch history; needs core media + auth + playback, not notifications or backup. This is the key unblocking benefit of the split.
 5. **Admin settings UI (Task 10) in Phase 13a** — Renders ALL config fields generically (JSONB editor). Push/webhook fields visible but annotated "activation requires Phase 13b." No UI rework when 13b ships.
 6. **MVP notification system fallback** — If Phase 13b takes longer than estimated, ship in-app + SSE + webhook (no mobile push client implementations). Defer FCM/APNs/UnifiedPush to Phase 16. The `user_push_devices` table and API still ship to avoid Phase 16 schema migration.
-7. **`notification_cleanup` executor in Phase 13a** — The scheduled task cleanup is a DB operation, not a dispatch operation. Register in Phase 13a's scheduled task management.
+7. **`notification_cleanup` executor in Phase 13a** — The scheduled task cleanup is a DB operation, not a dispatch operation. Registered in Phase 13a's scheduled task management alongside list/get/trigger/cancel/history endpoints.
 8. **Phase 15 Docker image must include both 13a + 13b for v1.0** — Pre-release images can ship without 13b; v1.0 release image includes the complete feature set.
 
 ## Relationship to Other Documents
