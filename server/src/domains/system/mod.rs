@@ -22,12 +22,20 @@ pub mod types;
 pub use error::SystemError;
 
 use axum::Router;
-use axum::routing::post;
+use axum::routing::{get, post};
 
 use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
+        .route(
+            "/api/v1/server/config",
+            get(handlers::get_server_config).put(handlers::update_server_config),
+        )
+        .route(
+            "/api/v1/server/config/{group}",
+            get(handlers::get_config_group).put(handlers::update_config_group),
+        )
         .route(
             "/api/v1/settings/providers/validate",
             post(handlers::validate_provider_key),

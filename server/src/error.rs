@@ -909,6 +909,26 @@ fn system_error_to_http(
             "SYS_014",
             format!("Missing credential: {}", msg),
         ),
+        SystemError::ConfigNotInitialized => (
+            StatusCode::NOT_FOUND,
+            "SYS_005",
+            "Server config is not initialized".into(),
+        ),
+        SystemError::InvalidConfigKey(key) => (
+            StatusCode::BAD_REQUEST,
+            "BAD_REQUEST",
+            format!("Invalid config key or group: {}", key),
+        ),
+        SystemError::InvalidConfigValue { field, message } => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALID_001",
+            format!("Invalid config value for {}: {}", field, message),
+        ),
+        SystemError::ConfigSerialization(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL",
+            "Internal server error".into(),
+        ),
         SystemError::Database(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "INTERNAL",

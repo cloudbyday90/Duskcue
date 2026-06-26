@@ -914,7 +914,10 @@ pub async fn update_subtitle_provider_settings(
         }
     }
 
-    encrypt_subtitle_provider_keys(&mut providers, &state.encryption_key);
+    crate::services::encryption::encrypt_subtitle_provider_config(
+        &mut providers,
+        &state.encryption_key,
+    );
 
     let payload = serde_json::json!({ "subtitle_providers": providers });
     sqlx::query("UPDATE server_config SET integrations = jsonb_set(COALESCE(integrations, '{}'), '{subtitle_providers}', $1::jsonb)")
@@ -931,39 +934,6 @@ async fn reload_runtime_config(state: &AppState) -> Result<(), SubtitleError> {
         crate::state::load_runtime_config(&state.pool, Some(&state.encryption_key)).await?;
     state.runtime_config.store(std::sync::Arc::new(reloaded));
     Ok(())
-}
-
-fn encrypt_subtitle_provider_keys(
-    providers: &mut crate::state::SubtitleProviderConfig,
-    key: &crate::services::encryption::EncryptionKey,
-) {
-    if let Some(ref api_key) = providers.subdl.api_key
-        && !api_key.is_empty()
-        && !api_key.starts_with(crate::services::encryption::ENCRYPTED_PREFIX)
-    {
-        match key.encrypt(api_key) {
-            Ok(enc) => providers.subdl.api_key = Some(enc),
-            Err(e) => tracing::error!(error = %e, "Failed to encrypt SubDL api_key"),
-        }
-    }
-    if let Some(ref api_key) = providers.opensubtitles.api_key
-        && !api_key.is_empty()
-        && !api_key.starts_with(crate::services::encryption::ENCRYPTED_PREFIX)
-    {
-        match key.encrypt(api_key) {
-            Ok(enc) => providers.opensubtitles.api_key = Some(enc),
-            Err(e) => tracing::error!(error = %e, "Failed to encrypt OpenSubtitles api_key"),
-        }
-    }
-    if let Some(ref token) = providers.opensubtitles.api_token
-        && !token.is_empty()
-        && !token.starts_with(crate::services::encryption::ENCRYPTED_PREFIX)
-    {
-        match key.encrypt(token) {
-            Ok(enc) => providers.opensubtitles.api_token = Some(enc),
-            Err(e) => tracing::error!(error = %e, "Failed to encrypt OpenSubtitles api_token"),
-        }
-    }
 }
 
 fn row_to_response(row: &sqlx::postgres::PgRow) -> SubtitleFileResponse {

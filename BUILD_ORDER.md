@@ -2960,6 +2960,32 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 8. Implement `server/src/workers/disk_space_check.rs` — 30-minute disk monitoring
 9. Build admin settings UI — all `server_config` JSONB fields as toggles, sliders, dropdowns; push/webhook config fields visible but annotated "Activation requires Phase 13b — notification dispatch"
 
+**What was built for Task 2:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/system/mod.rs` | Added admin-only config routes: `GET/PUT /api/v1/server/config` and `GET/PUT /api/v1/server/config/{group}` |
+| `server/src/domains/system/handlers.rs` | Thin handlers for full config and per-group read/update; all gated by `Require<CanManageServer>` |
+| `server/src/domains/system/service.rs` | Generic `server_config` read/update service with allowlisted scalar fields and JSONB groups, masked responses, sensitive-value preservation/encryption, and runtime hot-reload |
+| `server/src/domains/system/types.rs` | Added config response/request DTOs and validation wrappers |
+| `server/src/domains/system/error.rs` | Added config-not-initialized, invalid-key, invalid-value, and serialization error variants |
+| `server/src/error.rs` | Mapped config-not-initialized to `SYS_005`; invalid config values to `VALID_001`; invalid keys to generic bad request |
+| `server/src/state.rs` | Fixed runtime config reload query to select `analytics`; decrypts subtitle provider credentials on load |
+| `server/src/services/encryption.rs` | Added shared subtitle provider encrypt/decrypt helpers |
+| `server/src/domains/subtitles/service.rs` | Reused shared subtitle provider encryption helper |
+
+**Key decisions from Task 2:**
+
+- **Generic JSONB editor, not notification-specific code** — The API stores arbitrary JSONB object payloads for all `server_config` groups, including future push/webhook settings under existing groups. Current `RuntimeConfig` only deserializes fields it knows about; unknown future JSONB keys remain preserved in the database.
+- **Closed top-level allowlist** — Dynamic SQL is limited to the known scalar columns and JSONB group columns from the `server_config` schema. Values remain bound parameters; sqlx 0.9 dynamic SQL calls are wrapped with `AssertSqlSafe` only after this allowlist check.
+- **Masked read responses** — Sensitive keys such as `api_key`, `access_token`, `api_token`, `client_secret`, `*_secret`, `*_token`, and `*_password` are masked in generic config responses. Admin clients can round-trip masked placeholders without overwriting existing encrypted values.
+- **Secret preservation on partial group writes** — Omitted sensitive keys in a JSONB group update preserve the existing stored value. Sending `null` or an empty string intentionally clears the value; sending a new non-empty plaintext value encrypts it before storage.
+- **Hot reload through existing ArcSwap path** — Successful writes call `load_runtime_config()` and `AppState::reload_runtime_config()`, matching the subtitle and Trakt settings precedent.
+- **Runtime reload bug fixed** — `load_runtime_config()` now selects `analytics`, matching the Phase 2 schema and Phase 11 `RuntimeConfig.analytics` field. Subtitle provider credentials are also decrypted on load so encrypted SubDL/OpenSubtitles keys work outside their domain-specific settings endpoint.
+- **Validation-first multi-field updates** — Full config updates prepare and validate all fields before applying any write, avoiding partial changes from malformed later fields in the same request.
+
+**Verification:** `cargo check -p duskcue`, `cargo test -p duskcue` (535 tests), and `cargo clippy -p duskcue --all-targets --all-features -- -A clippy::unnecessary-sort-by -D warnings` pass.
+
 **Verification:** Admin can configure all settings via UI. Backups run on schedule. Disk space alerts trigger when thresholds are exceeded. Scheduled tasks are visible and triggerable.
 
 ---

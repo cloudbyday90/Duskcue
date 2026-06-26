@@ -595,7 +595,7 @@ pub fn mask_secret(value: &str) -> String {
 }
 ```
 
-The first concrete admin settings endpoints implementing this masking pattern are Phase 9 Task 8's subtitle settings (`GET /api/v1/settings/subtitles` returns `api_key_masked` + `has_api_key`, never raw keys; `PUT /api/v1/settings/subtitles/providers` encrypts SubDL/OpenSubtitles keys at rest via `EncryptionKey` AES-256-GCM and only overwrites when a new value is provided). See [SUBTITLES.md](../design/SUBTITLES.md) Task 8.
+The first concrete admin settings endpoints implementing this masking pattern were Phase 9 Task 8's subtitle settings (`GET /api/v1/settings/subtitles` returns `api_key_masked` + `has_api_key`, never raw keys; `PUT /api/v1/settings/subtitles/providers` encrypts SubDL/OpenSubtitles keys at rest via `EncryptionKey` AES-256-GCM and only overwrites when a new value is provided). Phase 13a Task 2 extends the same rule to the generic `GET/PUT /api/v1/server/config` and `GET/PUT /api/v1/server/config/{group}` endpoints: sensitive JSON keys are masked in responses, preserved when masked placeholders are round-tripped, and encrypted before storage when changed. See [CONFIGURATION.md](../operations/CONFIGURATION.md).
 
 ---
 

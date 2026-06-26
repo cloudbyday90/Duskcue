@@ -231,6 +231,48 @@ pub fn encrypt_trakt_config(config: &mut crate::state::TraktConfig, key: &Encryp
     }
 }
 
+pub fn decrypt_subtitle_provider_config(
+    config: &mut crate::state::SubtitleProviderConfig,
+    key: &EncryptionKey,
+) {
+    config.subdl.api_key = key.decrypt_optional(&config.subdl.api_key);
+    config.opensubtitles.api_key = key.decrypt_optional(&config.opensubtitles.api_key);
+    config.opensubtitles.api_token = key.decrypt_optional(&config.opensubtitles.api_token);
+}
+
+pub fn encrypt_subtitle_provider_config(
+    config: &mut crate::state::SubtitleProviderConfig,
+    key: &EncryptionKey,
+) {
+    if let Some(ref api_key) = config.subdl.api_key
+        && !api_key.is_empty()
+        && !api_key.starts_with(ENCRYPTED_PREFIX)
+    {
+        match key.encrypt(api_key) {
+            Ok(encrypted) => config.subdl.api_key = Some(encrypted),
+            Err(e) => tracing::error!(error = %e, "Failed to encrypt SubDL api_key"),
+        }
+    }
+    if let Some(ref api_key) = config.opensubtitles.api_key
+        && !api_key.is_empty()
+        && !api_key.starts_with(ENCRYPTED_PREFIX)
+    {
+        match key.encrypt(api_key) {
+            Ok(encrypted) => config.opensubtitles.api_key = Some(encrypted),
+            Err(e) => tracing::error!(error = %e, "Failed to encrypt OpenSubtitles api_key"),
+        }
+    }
+    if let Some(ref token) = config.opensubtitles.api_token
+        && !token.is_empty()
+        && !token.starts_with(ENCRYPTED_PREFIX)
+    {
+        match key.encrypt(token) {
+            Ok(encrypted) => config.opensubtitles.api_token = Some(encrypted),
+            Err(e) => tracing::error!(error = %e, "Failed to encrypt OpenSubtitles api_token"),
+        }
+    }
+}
+
 pub fn ensure_encryption_key(
     bootstrap: &crate::config::BootstrapConfig,
 ) -> Result<(EncryptionKey, Option<String>), EncryptionError> {

@@ -508,8 +508,9 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 9: Subtitles | **Complete** (Tasks 1–8) | — |
 | Phase 10: Segments & Storyboards | **Complete** (Tasks 1–12: 8 core + SSE + image pipeline + artwork endpoint + events store) | — |
 | Phase 11: Analytics & Trakt | **Complete** (Tasks 1–9: analytics + dashboard + trakt scaffolding + trakt OAuth + trakt sync engine + trakt sync worker + GeoIP service + impossible travel detection + GeoIP database updater) | — |
-| Phase 12: Kometa-Like System | **In progress** (Tasks 1–9 complete: overlays domain, compositing, conditions, clean art, collections domain/builders/sync, overlay application worker, poster management with asset-directory scan, locking, community JSON import, and scheduled `asset_directory_scan`) | — |
-| Phase 13–16 | Not started | — |
+| Phase 12: Kometa-Like System | **Complete** (Tasks 1–9: overlays, compositing, conditions, clean art, collections, overlay worker, poster management, asset-directory scan, community imports) | — |
+| Phase 13a: System Operations Core | **In progress** (Task 2 complete: generic `server_config` runtime API with masked JSONB reads/writes and hot reload) | — |
+| Phase 13b–16 | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
 

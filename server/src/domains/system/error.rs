@@ -24,6 +24,18 @@ pub enum SystemError {
     #[error("missing required credential: {0}")]
     MissingCredential(String),
 
+    #[error("server config is not initialized")]
+    ConfigNotInitialized,
+
+    #[error("invalid config key or group: {0}")]
+    InvalidConfigKey(String),
+
+    #[error("invalid config value for {field}: {message}")]
+    InvalidConfigValue { field: String, message: String },
+
+    #[error("failed to serialize config: {0}")]
+    ConfigSerialization(String),
+
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 }

@@ -947,7 +947,8 @@ pub async fn load_runtime_config(
             resource_limits,
             cpu,
             quality,
-            subtitles
+            subtitles,
+            analytics
         FROM server_config
         LIMIT 1
         "#,
@@ -1042,6 +1043,10 @@ pub async fn load_runtime_config(
                 serde_json::from_value(integrations).unwrap_or_default();
             if let Some(key) = encryption_key {
                 crate::services::encryption::decrypt_trakt_config(&mut ic.trakt, key);
+                crate::services::encryption::decrypt_subtitle_provider_config(
+                    &mut ic.subtitle_providers,
+                    key,
+                );
             }
             ic
         },

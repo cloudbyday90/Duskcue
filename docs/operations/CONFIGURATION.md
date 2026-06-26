@@ -812,7 +812,18 @@ database_url = "postgresql://duskcue:changeme@localhost:5432/duskcue"
 
 Hot-reload is only supported for runtime config via the admin API. This maintains the audit trail — every config change is recorded in `audit_log`. File-based hot-reload would bypass the audit system.
 
-The first admin-write-triggered hot-reload endpoints are Phase 9 Task 8's subtitle settings (`GET/PUT /api/v1/settings/subtitles`, `PUT /api/v1/settings/subtitles/providers`). Each write endpoint updates the relevant `server_config` JSONB column, then swaps the reloaded `RuntimeConfig` into the `ArcSwap`. Phase 13a will introduce the general `PUT /api/v1/server/config` endpoint.
+The first admin-write-triggered hot-reload endpoints were Phase 9 Task 8's subtitle settings (`GET/PUT /api/v1/settings/subtitles`, `PUT /api/v1/settings/subtitles/providers`). Each write endpoint updates the relevant `server_config` JSONB column, then swaps the reloaded `RuntimeConfig` into the `ArcSwap`.
+
+Phase 13a Task 2 introduced the general admin config API:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v1/server/config` | Return the full `server_config` row as masked JSON for admin settings UI |
+| `PUT /api/v1/server/config` | Apply one or more top-level scalar or JSONB group updates, then hot-reload `RuntimeConfig` |
+| `GET /api/v1/server/config/{group}` | Return one scalar field or JSONB group by name |
+| `PUT /api/v1/server/config/{group}` | Replace a JSONB config group with a validated object, then hot-reload `RuntimeConfig` |
+
+All endpoints require `can_manage_server`. Top-level keys are allowlisted against the `server_config` schema. JSONB group payloads must be objects and are stored raw so future push/webhook settings can be saved before Phase 13b activates dispatch. Sensitive keys (`api_key`, `access_token`, `api_token`, `client_secret`, `*_secret`, `*_token`, `*_password`) are masked in read responses, preserved when masked placeholders are round-tripped, and encrypted before storage when new plaintext values are submitted.
 
 ## Integration with Existing Systems
 
@@ -868,7 +879,7 @@ Common alternatives considered:
 - 1 expanded sub-config (Phase 11 Task 7): `AnalyticsConfig` — 8 analytics-security fields (geoip_enabled, impossible_travel_enabled, velocity_threshold_kmh, min_distance_km, lookback_hours, same_country_suppress, trusted_ips, trusted_cidrs); defined in ANALYTICS_SECURITY.md. Stored in `server_config.analytics` JSONB (column created in Phase 2 migration). The `geoip_license_key` and `geoip_update_schedule` are intentionally NOT in this struct — the license key is a secret stored in bootstrap config (`config.toml`), and the update schedule is a scheduled-task cron expression (not a runtime config value). Read by `load_runtime_config()` alongside other JSONB columns.
 - 6 placeholder sub-configs with `Default`: `NetworkConfig`, `NotificationConfig`, `BackupConfig`, `LoggingConfig`, `StorageConfig`, `MaintenanceConfig` — expanded in their respective domain phases
 - `load_runtime_config(pool)` — queries `server_config` table, deserializes JSONB columns with `unwrap_or_default()` fallback, returns `RuntimeConfig::default()` for empty table (first-run)
-- Config hot-reload — atomic swap via `ArcSwap<RuntimeConfig>` after admin writes. First realized in Phase 9 Task 8 as a `reload_runtime_config(state)` free function in the subtitles domain service: each settings `PUT` endpoint writes to `server_config` JSONB, then calls `load_runtime_config()` and `runtime_config.store(Arc::new(reloaded))`. Phase 13a's general `PUT /api/v1/server/config` endpoint will likely extract this into a shared `AppState` method.
+- Config hot-reload — atomic swap via `ArcSwap<RuntimeConfig>` after admin writes. First realized in Phase 9 Task 8 as a `reload_runtime_config(state)` free function in the subtitles domain service: each settings `PUT` endpoint writes to `server_config` JSONB, then calls `load_runtime_config()` and `runtime_config.store(Arc::new(reloaded))`. Phase 13a Task 2 added the general `GET/PUT /api/v1/server/config` and `GET/PUT /api/v1/server/config/{group}` endpoints in the system domain; writes call `AppState::reload_runtime_config()` after persisting DB changes.
 - `arc-swap` v1.9.1 added as workspace dependency for lock-free config reads
 - Environment detection wired: `set_environment()` in `error.rs` uses `OnceLock<String>` set during `AppState` construction
 
@@ -890,6 +901,10 @@ Common alternatives considered:
 - Crates added to workspace: `ignore` 0.4, `blake3` 1, `regex` 1, `croner` 3
 - `services/mod.rs` wired with `pub mod scheduler;`
 
-**Not yet implemented:**
+**Phase 13a Task 2 (complete):**
 
-- General admin API endpoint (`PUT /api/v1/server/config`) that triggers config reload for arbitrary sections — Phase 13a. Phase 9 Task 8 implemented the first domain-specific settings endpoints (subtitle settings) with inline `reload_runtime_config()`; the general endpoint will consolidate this pattern.
+- General admin config API in `server/src/domains/system/`: `GET/PUT /api/v1/server/config` and `GET/PUT /api/v1/server/config/{group}`
+- Read responses are backed by the raw `server_config` row, not the typed `RuntimeConfig`, so unknown future JSONB keys such as push/webhook settings are preserved for the admin UI
+- Sensitive values are masked in responses, preserved on masked round-trip, and encrypted before storage when changed
+- Successful writes hot-reload `RuntimeConfig` through `AppState::reload_runtime_config()`
+- Runtime config reload now selects the `analytics` column and decrypts subtitle provider credentials alongside metadata and Trakt credentials

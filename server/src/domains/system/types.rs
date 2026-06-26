@@ -15,7 +15,10 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
+use uuid::Uuid;
 use validator::Validate;
+use validator::{ValidationError, ValidationErrors};
 
 use super::error::SystemError;
 
@@ -33,6 +36,62 @@ pub struct ValidateProviderResponse {
     pub valid: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+}
+
+#[derive(Debug)]
+pub struct ServerConfigRow {
+    pub id: Uuid,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub schema_version: i32,
+    pub config: Map<String, Value>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ServerConfigResponse {
+    pub id: Uuid,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+    pub schema_version: i32,
+    pub config: Value,
+    pub groups: Vec<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ConfigGroupResponse {
+    pub group: String,
+    pub value: Value,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateServerConfigRequest {
+    #[serde(flatten)]
+    pub values: Map<String, Value>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct UpdateConfigGroupRequest {
+    pub value: Value,
+}
+
+impl Validate for UpdateServerConfigRequest {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        let mut errors = ValidationErrors::new();
+        if self.values.is_empty() {
+            errors.add("config", ValidationError::new("required"));
+        }
+        if errors.is_empty() {
+            Ok(())
+        } else {
+            Err(errors)
+        }
+    }
+}
+
+impl Validate for UpdateConfigGroupRequest {
+    fn validate(&self) -> Result<(), ValidationErrors> {
+        Ok(())
+    }
 }
 
 impl ValidateProviderRequest {
