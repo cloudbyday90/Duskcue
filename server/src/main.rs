@@ -327,6 +327,7 @@ async fn main() {
     let backup_database_state = state.clone();
     let backup_verification_state = state.clone();
     let backup_retention_state = state.clone();
+    let reindex_maintenance_state = state.clone();
     let scheduler = Arc::new(
         Scheduler::new(state.pool.clone())
             .register_executor("library_scan", |pool, task_id, config| {
@@ -505,7 +506,16 @@ async fn main() {
                         .await
                     }
                 },
-            ),
+            )
+            .register_fallible_executor("reindex_maintenance", move |_pool, task_id, config| {
+                let state = reindex_maintenance_state.clone();
+                async move {
+                    duskcue::workers::reindex_maintenance::run_reindex_maintenance(
+                        &state, task_id, config,
+                    )
+                    .await
+                }
+            }),
     );
     state.set_scheduler(scheduler.clone());
 

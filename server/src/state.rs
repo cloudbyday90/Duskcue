@@ -681,8 +681,51 @@ impl Default for LoggingConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StorageConfig {}
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct MaintenanceConfig {}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct MaintenanceConfig {
+    pub autovacuum_tuning_enabled: bool,
+    pub reindex_enabled: bool,
+    pub reindex_schedule: String,
+    pub reindex_bloat_threshold_percent: u8,
+    pub reindex_min_index_size_mb: u32,
+    pub partition_retention_months: PartitionRetention,
+    pub analyze_parent_tables_enabled: bool,
+    pub analyze_parent_schedule: String,
+}
+
+impl Default for MaintenanceConfig {
+    fn default() -> Self {
+        Self {
+            autovacuum_tuning_enabled: true,
+            reindex_enabled: true,
+            reindex_schedule: "0 2 * * 0".to_string(),
+            reindex_bloat_threshold_percent: 30,
+            reindex_min_index_size_mb: 10,
+            partition_retention_months: PartitionRetention::default(),
+            analyze_parent_tables_enabled: true,
+            analyze_parent_schedule: "0 3 * * *".to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PartitionRetention {
+    pub play_sessions: u32,
+    pub play_events: u32,
+    pub audit_log: u32,
+}
+
+impl Default for PartitionRetention {
+    fn default() -> Self {
+        Self {
+            play_sessions: 24,
+            play_events: 12,
+            audit_log: 12,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AnalyticsConfig {

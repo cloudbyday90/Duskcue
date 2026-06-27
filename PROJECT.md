@@ -509,7 +509,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 10: Segments & Storyboards | **Complete** (Tasks 1–12: 8 core + SSE + image pipeline + artwork endpoint + events store) | — |
 | Phase 11: Analytics & Trakt | **Complete** (Tasks 1–9: analytics + dashboard + trakt scaffolding + trakt OAuth + trakt sync engine + trakt sync worker + GeoIP service + impossible travel detection + GeoIP database updater) | — |
 | Phase 12: Kometa-Like System | **Complete** (Tasks 1–9: overlays, compositing, conditions, clean art, collections, overlay worker, poster management, asset-directory scan, community imports) | — |
-| Phase 13a: System Operations Core | **In progress** (Tasks 2-6 complete: generic `server_config` runtime API; scheduled-task list/get/trigger/cancel/history API; notification cleanup executor; backup domain status/tasks/runs API; WAL-G check, manual pg_dump, backup verification coordination, and scheduled backup/verification/retention executors) | — |
+| Phase 13a: System Operations Core | **In progress** (Tasks 2-7 complete: generic `server_config` runtime API; scheduled-task list/get/trigger/cancel/history API; notification cleanup executor; backup domain status/tasks/runs API; WAL-G check, manual pg_dump, backup verification coordination, scheduled backup/verification/retention executors, and `reindex_maintenance` worker) | — |
 | Phase 13b–16 | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.

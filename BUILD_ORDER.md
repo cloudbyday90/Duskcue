@@ -2956,7 +2956,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 4. Implement `server/src/domains/backup/` — five-file pattern
 5. ~~Implement backup coordination — WAL-G status check, pg_dump trigger, verification~~ **DONE**
 6. ~~Implement `server/src/workers/backup_runner.rs` — scheduled backup execution~~ **DONE**
-7. Implement `server/src/workers/reindex_maintenance.rs` — weekly REINDEX CONCURRENTLY
+7. ~~Implement `server/src/workers/reindex_maintenance.rs` — weekly REINDEX CONCURRENTLY~~ **DONE**
 8. Implement `server/src/workers/disk_space_check.rs` — 30-minute disk monitoring
 9. Implement `server/src/workers/recovery_drill_runner.rs` — manual/scheduled restore drills in disposable PostgreSQL, using the Docker migration-verification pattern to restore the latest `pg_dump` or WAL-G backup, run structural checks, and write evidence into `scheduled_task_runs.stats`
 10. Build admin settings UI — all `server_config` JSONB fields as toggles, sliders, dropdowns; push/webhook config fields visible but annotated "Activation requires Phase 13b — notification dispatch"; backup panel shows last backup, verification, retention, and recovery-drill evidence
@@ -3095,6 +3095,29 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **Run stats survive completion** — Backup workers write structured command/results into `scheduled_task_runs.stats`; scheduler completion now preserves existing stats when no explicit completion stats are provided.
 
 **Verification:** `cargo check -p duskcue` and `cargo test -p duskcue services::backup` pass.
+
+**What was built for Task 7:**
+
+| File | Purpose |
+|---|---|
+| `server/src/workers/reindex_maintenance.rs` | Added scheduled index-bloat detection using `pgstatindex`, safe candidate filtering, `REINDEX INDEX CONCURRENTLY` execution, Prometheus maintenance metrics, structured run stats, and focused unit tests |
+| `server/src/state.rs` | Expanded `MaintenanceConfig` and `PartitionRetention` from `DATABASE_MAINTENANCE.md`; existing `{}` JSONB rows deserialize into operational defaults |
+| `server/src/main.rs` | Registered the `reindex_maintenance` executor on the shared scheduler via the fallible executor path |
+| `server/src/workers/mod.rs` | Exported the reindex maintenance worker |
+| `server/src/services/scheduler.rs` | Added `Reindex Maintenance` to the in-code default scheduled-task seed list |
+| `docs/operations/DATABASE_MAINTENANCE.md` | Added Task 7 implementation notes |
+| `PROJECT.md` | Updated Phase 13a status |
+
+**Key decisions from Task 7:**
+
+- **`pgstatindex` drives candidate selection** — The worker uses `pgstatindex(idx.oid::regclass)` from `pgstattuple` to measure B-tree `avg_leaf_density`; bloat is treated as `100 - avg_leaf_density`, matching `DATABASE_MAINTENANCE.md`.
+- **Conservative candidate filter** — The query only considers public-schema B-tree indexes with `relkind = 'i'`, valid/ready `pg_index` metadata, size above the configured minimum, bloat above threshold, and no exclusion constraint backing. Partitioned parent indexes are skipped because they have `relkind = 'I'`.
+- **Concurrent reindex only** — The worker executes one `REINDEX INDEX CONCURRENTLY "schema"."index"` statement per candidate through a pool connection, without wrapping statements in an explicit transaction.
+- **Runtime config plus task overrides** — `server_config.maintenance` controls defaults (`reindex_enabled`, threshold, minimum size). Scheduled-task JSON can override `enabled`, `bloat_threshold_percent`, and `min_index_size_mb`; values are bounded before use.
+- **Fallible operational reporting** — Failed index reindexes are recorded per index and the task returns failure if any candidate fails, allowing the scheduler to mark `scheduled_task_runs.result = 'failure'`. Successful and failed candidate details persist in `scheduled_task_runs.stats`.
+- **Expected fillfactor space is not reindexed** — If a table has `fillfactor < 100`, candidate bloat within the reserved fillfactor margin is marked `skipped_expected_fillfactor`.
+
+**Verification:** `cargo check -p duskcue` and `cargo test -p duskcue reindex_maintenance` pass.
 
 **Phase-level verification target:** Admin can configure all settings via UI. Backups run on schedule. Disk space alerts trigger when thresholds are exceeded. Scheduled tasks are visible and triggerable. Recovery drills can restore into a disposable PostgreSQL instance and record a pass/fail evidence bundle.
 

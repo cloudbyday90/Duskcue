@@ -255,6 +255,23 @@ The task skips:
 - Cannot run inside a transaction
 - Takes longer than regular REINDEX but zero downtime
 
+### Task 7 Implementation Notes
+
+Phase 13a Task 7 implements the scheduled worker at `server/src/workers/reindex_maintenance.rs`.
+
+Implementation details:
+
+- `MaintenanceConfig` and `PartitionRetention` are now typed runtime config structs in `server/src/state.rs`; empty `server_config.maintenance = {}` rows deserialize to the documented defaults.
+- The worker reads defaults from `server_config.maintenance` and lets the scheduled-task `config` JSON override `enabled`, `bloat_threshold_percent`, and `min_index_size_mb`.
+- Candidate discovery uses `pgstatindex(idx.oid::regclass)` and filters to public-schema B-tree indexes that are valid, ready, above the configured size threshold, and above the configured bloat threshold.
+- Partitioned parent indexes are skipped by filtering for normal index relkind (`idx.relkind = 'i'`), and exclusion-constraint backing indexes are skipped.
+- Reindexing is executed as individual `REINDEX INDEX CONCURRENTLY "schema"."index"` statements. Identifiers are double-quoted after escaping embedded quotes, and no explicit transaction is opened.
+- Each run writes structured candidate results to `scheduled_task_runs.stats`, including action (`reindexed`, `failed`, or `skipped_expected_fillfactor`), bloat percentage, size, table fillfactor, and per-index error text.
+- Failed candidates do not stop the remaining candidates from running. If any candidate fails, the worker returns an error after persisting stats so the scheduler records the task run as failed.
+- The worker emits `maintenance_reindex_total` and `maintenance_reindex_bloat_before` metrics for successfully reindexed candidates.
+
+Verification performed: `cargo check -p duskcue` and `cargo test -p duskcue reindex_maintenance`.
+
 ---
 
 ## Strategy 4: ANALYZE Partitioned Parent Tables
