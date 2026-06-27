@@ -3014,6 +3014,33 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **Cooperative cancellation** — Each active task gets a `CancellationToken`; cancellation marks running history rows as cancelled immediately and signals the worker future wrapper. Long-running workers that are inside awaited futures are dropped when the cancellation branch wins.
 - **Notification cleanup stays Phase 13a-only** — The executor only deletes old/expired rows from `notifications`. It does not create, render, dispatch, or localize notifications, preserving the Phase 13b boundary.
 
+**What was built for Task 4:**
+
+| File | Purpose |
+|---|---|
+| `server/src/domains/backup/mod.rs` | Added backup domain module declarations and admin routes: `GET /api/v1/backups/status`, `GET /api/v1/backups/tasks`, and `GET /api/v1/backups/runs` |
+| `server/src/domains/backup/handlers.rs` | Added thin admin-only handlers gated by `Require<CanManageServer>`; validates `runs?limit=` range |
+| `server/src/domains/backup/service.rs` | Added read-only backup status service: typed backup config projection, PostgreSQL recovery-safety setting checks, `pg_stat_archiver` read, backup scheduled-task listing, recent backup run listing, and readiness diagnostics |
+| `server/src/domains/backup/types.rs` | Added row DTOs and response DTOs for backup config, readiness, PostgreSQL settings, WAL archive status, scheduled tasks, and recent runs |
+| `server/src/domains/backup/error.rs` | Added `BackupError` domain error enum |
+| `server/src/state.rs` | Expanded `BackupConfig` and added `WalGStorageType` from `BACKUP_RECOVERY.md`; missing JSONB fields default safely when `server_config.backup` is `{}` |
+| `server/src/domains/mod.rs` | Exported the `backup` domain |
+| `server/src/router.rs` | Merged the backup router into the API |
+| `server/src/error.rs` | Added `AppError::Backup` and backup error-to-HTTP mapping |
+| `docs/design/API_CONVENTIONS.md` | Added `/api/v1/backups/*` to the endpoint inventory |
+| `docs/operations/BACKUP_RECOVERY.md` | Documented the Task 4 read-only status API boundary |
+| `PROJECT.md` | Updated Phase 13a status |
+
+**Key decisions from Task 4:**
+
+- **Read-only domain boundary** — Task 4 creates the backup domain and observability surface only. WAL-G, `pg_dump`, verification command execution, retention cleanup, and scheduled backup execution remain in Tasks 5 and 6.
+- **Admin visibility before execution** — `GET /api/v1/backups/status` exposes the config and environment checks an admin needs before enabling execution: `server_config.backup`, PostgreSQL settings, `pg_stat_archiver`, backup scheduled tasks, and recent backup runs.
+- **Typed `BackupConfig` now lives in runtime config** — The previous placeholder struct was expanded to match `BACKUP_RECOVERY.md`, including WAL-G local/S3 storage, retention, pg_dump, data checksum, verification, and encryption flags. The struct uses serde defaults so existing `{}` JSONB rows deserialize into safe defaults.
+- **No secret exposure** — Backup status reports whether S3 bucket and encryption key identifiers are configured, but does not expose hidden key material. The actual encryption key remains bootstrap-config territory per `BACKUP_RECOVERY.md`.
+- **Literal SQL only** — Backup task filters use static SQL literals to satisfy the repository's `SqlSafeStr` guard; no dynamic SQL is needed.
+
+**Verification:** `cargo check -p duskcue` and `cargo test -p duskcue domains::backup` pass.
+
 **Verification:** `cargo check -p duskcue`, `cargo test -p duskcue` (535 tests), and `cargo clippy -p duskcue --all-targets --all-features -- -A clippy::unnecessary-sort-by -D warnings` pass.
 
 **Verification:** Admin can configure all settings via UI. Backups run on schedule. Disk space alerts trigger when thresholds are exceeded. Scheduled tasks are visible and triggerable.

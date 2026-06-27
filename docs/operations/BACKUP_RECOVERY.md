@@ -341,6 +341,18 @@ pub enum WalGStorageType {
 }
 ```
 
+### Phase 13a Task 4 Implementation Notes
+
+The backup domain is implemented as a read-only administrative status surface under `/api/v1/backups/*`:
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /api/v1/backups/status` | Returns typed `server_config.backup` settings, PostgreSQL recovery-safety settings, `pg_stat_archiver` status, backup scheduled tasks, recent backup runs, and a computed readiness state |
+| `GET /api/v1/backups/tasks` | Lists backup-related rows from `scheduled_tasks` for `backup_database`, `backup_verification`, `database_integrity_check`, and `backup_retention_cleanup` |
+| `GET /api/v1/backups/runs?limit=20` | Lists recent `scheduled_task_runs` for backup-related task types, capped at 100 |
+
+This phase intentionally does not execute WAL-G, `pg_dump`, verification commands, or retention cleanup. Those operations are Phase 13a Tasks 5 and 6. The Task 4 boundary is the domain five-file pattern, route wiring, typed runtime backup config, admin-only visibility, and readiness diagnostics.
+
 ## 3-2-1 Storage Strategy
 
 The recommended setup for production deployments:

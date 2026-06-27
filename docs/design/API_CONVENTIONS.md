@@ -67,6 +67,7 @@ pub fn router(state: AppState) -> Router<AppState> {
 | Trakt | `/api/v1/trakt/*` | Link account, sync, history, ratings |
 | System config | `/api/v1/server/config` | Full config and per-group config reads/writes |
 | Scheduled tasks | `/api/v1/scheduled-tasks` | List, get, trigger, cancel, run history |
+| Backups | `/api/v1/backups/*` | Backup readiness status, backup scheduled-task view, recent backup runs |
 | Search | `/api/v1/search` | Full-text search across media |
 | Quality | `/api/v1/quality/*` | Device profiles, capability wizard, telemetry |
 | Subtitles | `/api/v1/subtitles/*` | List, upload, download, sync settings |

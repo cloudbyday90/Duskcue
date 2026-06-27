@@ -16,6 +16,7 @@
 
 pub mod analytics;
 pub mod auth;
+pub mod backup;
 pub mod collections;
 pub mod libraries;
 pub mod media;

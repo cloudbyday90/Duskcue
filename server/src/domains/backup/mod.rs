@@ -14,3 +14,22 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod error;
+pub mod handlers;
+pub mod service;
+pub mod types;
+
+pub use error::BackupError;
+
+use axum::Router;
+use axum::routing::get;
+
+use crate::state::AppState;
+
+pub fn router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route("/api/v1/backups/status", get(handlers::get_backup_status))
+        .route("/api/v1/backups/tasks", get(handlers::list_backup_tasks))
+        .route("/api/v1/backups/runs", get(handlers::list_backup_runs))
+        .with_state(state)
+}

@@ -96,6 +96,9 @@ pub enum AppError {
     Auth(#[from] crate::domains::auth::AuthError),
 
     #[error(transparent)]
+    Backup(#[from] crate::domains::backup::BackupError),
+
+    #[error(transparent)]
     Users(#[from] crate::domains::users::UsersError),
 
     #[error(transparent)]
@@ -144,6 +147,10 @@ impl IntoResponse for AppError {
             }
             AppError::Auth(e) => {
                 let (s, c, d) = auth_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Backup(e) => {
+                let (s, c, d) = backup_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::Users(e) => {
@@ -561,6 +568,21 @@ fn auth_error_to_http(err: &crate::domains::auth::AuthError) -> (StatusCode, &'s
             StatusCode::INTERNAL_SERVER_ERROR,
             "INTERNAL",
             "Internal server error".into(),
+        ),
+    }
+}
+
+fn backup_error_to_http(
+    err: &crate::domains::backup::BackupError,
+) -> (StatusCode, &'static str, String) {
+    use crate::domains::backup::BackupError;
+
+    match err {
+        BackupError::InvalidConfig(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg.clone()),
+        BackupError::Database(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL",
+            "Database error".to_string(),
         ),
     }
 }

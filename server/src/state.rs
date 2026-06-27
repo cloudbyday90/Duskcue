@@ -545,8 +545,65 @@ impl Default for TmdbProviderConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct NotificationConfig {}
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct BackupConfig {}
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum WalGStorageType {
+    #[default]
+    Local,
+    S3,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct BackupConfig {
+    pub wal_g_enabled: bool,
+    pub wal_g_storage_type: WalGStorageType,
+    pub wal_g_storage_path: String,
+    pub wal_g_s3_endpoint: String,
+    pub wal_g_s3_bucket: String,
+    pub wal_g_s3_prefix: String,
+    pub wal_g_s3_region: String,
+    pub wal_g_encryption_enabled: bool,
+    pub wal_g_encryption_key_id: String,
+    pub wal_g_encryption_auto_s3: bool,
+    pub wal_g_retention_full: u32,
+    pub wal_g_retention_weekly: u32,
+    pub wal_g_retention_monthly: u32,
+    pub pg_dump_enabled: bool,
+    pub pg_dump_storage_path: String,
+    pub pg_dump_retention_daily: u32,
+    pub pg_dump_retention_monthly: u32,
+    pub archive_timeout_seconds: u32,
+    pub data_checksums: bool,
+    pub verification_enabled: bool,
+}
+
+impl Default for BackupConfig {
+    fn default() -> Self {
+        Self {
+            wal_g_enabled: true,
+            wal_g_storage_type: WalGStorageType::Local,
+            wal_g_storage_path: "/data/backups/wal-g".to_string(),
+            wal_g_s3_endpoint: String::new(),
+            wal_g_s3_bucket: String::new(),
+            wal_g_s3_prefix: "backups".to_string(),
+            wal_g_s3_region: String::new(),
+            wal_g_encryption_enabled: false,
+            wal_g_encryption_key_id: String::new(),
+            wal_g_encryption_auto_s3: true,
+            wal_g_retention_full: 7,
+            wal_g_retention_weekly: 4,
+            wal_g_retention_monthly: 12,
+            pg_dump_enabled: true,
+            pg_dump_storage_path: "/data/backups/dump".to_string(),
+            pg_dump_retention_daily: 30,
+            pg_dump_retention_monthly: 12,
+            archive_timeout_seconds: 60,
+            data_checksums: true,
+            verification_enabled: true,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct IntegrationsConfig {
