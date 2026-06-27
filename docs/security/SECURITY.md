@@ -22,13 +22,23 @@ Authentication and user management are documented in [AUTH.md](../design/AUTH.md
 
 ### Tier 1 — Local Network (Default)
 
-The server binds to `0.0.0.0:8080` (HTTP) by default. No TLS, no signed streaming URLs. Auth is controlled by `server_config.auth.auth_required` — in local mode, the admin can disable auth entirely for a single-user setup.
+The server binds to `0.0.0.0:48027` (HTTP) by default. Native IPv6 support is planned for Phase 15 through a configurable bind address (`DUSKCUE_BIND_ADDRESS`, with `::` for IPv6/dual-stack where supported by the host). No TLS, no signed streaming URLs. Auth is controlled by `server_config.auth.auth_required` — in local mode, the admin can disable auth entirely for a single-user setup.
 
-- HTTP on port 8080 (configurable)
+- HTTP on port 48027 (configurable)
 - No TLS termination
 - Passkey auth optional (can be disabled for single-user LAN)
 - Direct HLS URLs (no signing)
 - Intended for: LAN, localhost, Docker internal network
+
+### Native IPv6 Security Requirements
+
+IPv6 support must preserve the same security model as IPv4:
+
+- Public IPv6 addresses are treated as remote/exposed addresses, not as LAN by default.
+- Loopback `::1/128`, ULA `fc00::/7`, link-local `fe80::/10`, and IPv4-mapped IPv6 addresses are classified explicitly by the network and analytics layers.
+- Trusted proxy and metrics allowlists accept IPv6 CIDRs, but forwarded client IP headers are ignored unless the immediate peer is trusted.
+- Generated URLs containing IPv6 literals must use bracket notation, for example `https://[2001:db8::10]:48027`.
+- Exposed IPv6 deployments require the same controls as exposed IPv4 deployments: TLS, authentication, signed streaming URLs, strict security headers, and correctly configured trusted proxies.
 
 ### Tier 2 — Remote via VPN Tunnel (Opt-In)
 

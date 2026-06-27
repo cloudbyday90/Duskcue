@@ -2958,7 +2958,8 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 6. ~~Implement `server/src/workers/backup_runner.rs` — scheduled backup execution~~ **DONE**
 7. Implement `server/src/workers/reindex_maintenance.rs` — weekly REINDEX CONCURRENTLY
 8. Implement `server/src/workers/disk_space_check.rs` — 30-minute disk monitoring
-9. Build admin settings UI — all `server_config` JSONB fields as toggles, sliders, dropdowns; push/webhook config fields visible but annotated "Activation requires Phase 13b — notification dispatch"
+9. Implement `server/src/workers/recovery_drill_runner.rs` — manual/scheduled restore drills in disposable PostgreSQL, using the Docker migration-verification pattern to restore the latest `pg_dump` or WAL-G backup, run structural checks, and write evidence into `scheduled_task_runs.stats`
+10. Build admin settings UI — all `server_config` JSONB fields as toggles, sliders, dropdowns; push/webhook config fields visible but annotated "Activation requires Phase 13b — notification dispatch"; backup panel shows last backup, verification, retention, and recovery-drill evidence
 
 **What was built for Task 2:**
 
@@ -3095,7 +3096,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Verification:** `cargo check -p duskcue` and `cargo test -p duskcue services::backup` pass.
 
-**Phase-level verification target:** Admin can configure all settings via UI. Backups run on schedule. Disk space alerts trigger when thresholds are exceeded. Scheduled tasks are visible and triggerable.
+**Phase-level verification target:** Admin can configure all settings via UI. Backups run on schedule. Disk space alerts trigger when thresholds are exceeded. Scheduled tasks are visible and triggerable. Recovery drills can restore into a disposable PostgreSQL instance and record a pass/fail evidence bundle.
 
 ---
 
@@ -3190,6 +3191,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 | [SEARCH.md](docs/design/SEARCH.md) | **Post-v1.0 follow-up** — optional Meilisearch sidecar (loopback, same container) for libraries exceeding 50k items; default v1.0 ships PG FTS only, no sidecar |
 | [MULTI_INSTANCE.md](docs/design/MULTI_INSTANCE.md) | **Deployment topology constraint** — Duskcue is single-instance by design. Phase 15 must ship single-container as the canonical topology (`replicas: 1` for any Kubernetes examples). No load-balancer-multi-instance pattern; HA via container `restart: unless-stopped` + embedded PG crash recovery. |
 | [REVERSE_PROXY.md](docs/design/REVERSE_PROXY.md) | **Exposed-mode operator guidance** — built-in rustls TLS handles simple single-domain exposed mode (no proxy needed); Caddy is the recommended external proxy for multi-service routing. Canonical Caddyfile + docker-compose.yml + Nginx/Traefik alternatives documented. Critical `DUSKCUE_TRUSTED_PROXIES` config for client IP detection. |
+| [SECURITY.md](docs/security/SECURITY.md) | **Native IPv6 support** — dual-stack listener binding, IPv6 CIDR trust boundaries, IPv6 URL formatting, and exposed-mode security posture |
 
 **Tasks:**
 
@@ -3199,12 +3201,13 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
    - External PG mode: skip PG lifecycle, use `DUSKCUE_DATABASE_URL`
    - PUID/PGID user creation and privilege drop via `su-exec`
 3. Create `docker-compose.yml` — single-container with embedded PG, volumes, tmpfs
-4. Test multi-arch build: `docker buildx build --platform linux/amd64,linux/arm64`
-5. Test PUID/PGID mapping on Linux
-6. Test embedded PG lifecycle — startup, shutdown checkpoint, crash recovery
-7. Verify security: `read_only: true`, `no-new-privileges`, `cap_drop: ALL`
+4. Implement native IPv6 support — configurable `DUSKCUE_BIND_ADDRESS`/runtime bind address, dual-stack `::` listener support, bracketed IPv6 URL generation for `base_url`/WebAuthn/proxy redirects, IPv6 CIDR parsing for metrics/trusted proxies, and Docker/Compose IPv6 examples
+5. Test multi-arch build: `docker buildx build --platform linux/amd64,linux/arm64`
+6. Test PUID/PGID mapping on Linux
+7. Test embedded PG lifecycle — startup, shutdown checkpoint, crash recovery
+8. Verify security: `read_only: true`, `no-new-privileges`, `cap_drop: ALL`
 
-**Verification:** `docker compose up` starts a single container with embedded PG, server listens on 48027, health check passes, graceful shutdown preserves data.
+**Verification:** `docker compose up` starts a single container with embedded PG, server listens on 48027 over IPv4 by default and can be configured for IPv6/dual-stack binding, health check passes, graceful shutdown preserves data.
 
 ---
 

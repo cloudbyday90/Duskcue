@@ -8,15 +8,15 @@ This is a build-order structural decision, not a technology decision. It modifie
 
 ## Decision — Split Phase 13 into 13a + 13b
 
-**Phase 13 is formally split into two phases with a clean dependency boundary.** Phase 14 (Migration) proceeds after Phase 13a without waiting for Phase 13b. This reduces the convergence risk identified across [I18N.md](I18N.md), [MOBILE_PUSH.md](MOBILE_PUSH.md), and [IMPLEMENTATION_DEBT.md](IMPLEMENTATION_DEBT.md) where three strategic decisions converged on a single 15-task phase.
+**Phase 13 is formally split into two phases with a clean dependency boundary.** Phase 14 (Migration) proceeds after Phase 13a without waiting for Phase 13b. This reduces the convergence risk identified across [I18N.md](I18N.md), [MOBILE_PUSH.md](MOBILE_PUSH.md), and [IMPLEMENTATION_DEBT.md](IMPLEMENTATION_DEBT.md) where three strategic decisions converged on a single 16-task phase.
 
 ### Why Split (Not "Run It as One Phase")
 
-| Concern | One 15-task Phase 13 | Split 13a + 13b |
+| Concern | One 16-task Phase 13 | Split 13a + 13b |
 |---|---|---|
-| **Critical path to v1.0** | All of Phase 13 must complete before Phase 14 can start | Phase 14 starts after 13a (9 tasks); 13b (6 tasks) runs in parallel or after |
+| **Critical path to v1.0** | All of Phase 13 must complete before Phase 14 can start | Phase 14 starts after 13a (10 tasks); 13b (6 tasks) runs in parallel or after |
 | **Risk concentration** | Fluent + multi-channel dispatch + push + backup + maintenance all in one phase; one delay blocks everything | Notification/i18n/push risk isolated in 13b; backup/maintenance ships independently in 13a |
-| **Task density** | 15 tasks (most task-dense phase in build order) | 9 tasks (13a) + 6 tasks (13b); manageable per-phase scope |
+| **Task density** | 16 tasks (most task-dense phase in build order) | 10 tasks (13a) + 6 tasks (13b); manageable per-phase scope |
 | **Verifiability** | Phase 13 verification mixes backup/maintenance/notifications — hard to test incrementally | 13a verifies independently (system config + backup + workers); 13b verifies independently (notifications + push) |
 | **Parallelism** | Strictly sequential | 13b can overlap with Phase 14 if developer capacity allows |
 | **Fallback option** | If notification system proves harder than estimated, it blocks backup + maintenance too | 13b can ship minimal (in-app + SSE + webhook, no mobile push) without delaying 13a features |
@@ -37,14 +37,15 @@ The split boundary is determined by the inter-task dependency graph. Tasks group
 │     ↓                                                                │
 │  Task 10: Admin settings UI (renders ALL server_config fields)     │
 │                                                                      │
-│  Task 5: Backup domain (five-file pattern)                          │
+│  Task 4: Backup domain (five-file pattern)                          │
 │     ↓                                                                │
-│  Task 6: Backup coordination (WAL-G, pg_dump)                       │
+│  Task 5: Backup coordination (WAL-G, pg_dump)                       │
 │     ↓                                                                │
-│  Task 7: backup_runner worker                                       │
+│  Task 6: backup_runner worker                                       │
 │                                                                      │
-│  Task 8: reindex_maintenance worker (standalone)                    │
-│  Task 9: disk_space_check worker (standalone)                       │
+│  Task 7: reindex_maintenance worker (standalone)                    │
+│  Task 8: disk_space_check worker (standalone)                       │
+│  Task 9: recovery_drill_runner worker (backup restore proof)        │
 │                                                                      │
 │  Cluster dependencies: Phase 5 (scheduler), Phase 3 (AppState)     │
 │  Cross-cluster dependencies: NONE                                   │
@@ -87,7 +88,7 @@ The split boundary is determined by the inter-task dependency graph. Tasks group
 | **Phase 15** (Docker & Deployment) | ✅ Needs system domain + backup in the binary | ✅ Ideally — notification system should be in the Docker image for v1.0 | ✅ Can start packaging after 13a + Phase 14; finalizes after 13b |
 | **Phase 16** (Desktop & Mobile) | ❌ No | ✅ Mobile push + notification center are Phase 16 features | ✅ Can start Tauri wrapper after 13a + Phase 15; Flutter push needs 13b |
 
-### Phase 13a — System Operations Core (9 tasks)
+### Phase 13a — System Operations Core (10 tasks)
 
 **Goal:** Server config management, backup system, scheduled maintenance workers, admin settings UI. The operational backbone of Duskcue.
 
@@ -101,9 +102,10 @@ The split boundary is determined by the inter-task dependency graph. Tasks group
 6. Implement `server/src/workers/backup_runner.rs` — scheduled backup execution
 7. Implement `server/src/workers/reindex_maintenance.rs` — weekly REINDEX CONCURRENTLY
 8. Implement `server/src/workers/disk_space_check.rs` — 30-minute disk monitoring
-9. Build admin settings UI — all `server_config` JSONB fields as toggles, sliders, dropdowns; push/webhook config fields are visible but annotated "Activation requires Phase 13b — notification dispatch"
+9. Implement `server/src/workers/recovery_drill_runner.rs` — manual/scheduled restore drills in disposable PostgreSQL; restore latest `pg_dump` or WAL-G backup, run structural checks, and persist evidence in `scheduled_task_runs.stats`
+10. Build admin settings UI — all `server_config` JSONB fields as toggles, sliders, dropdowns; push/webhook config fields are visible but annotated "Activation requires Phase 13b — notification dispatch"; backup panel shows latest recovery-drill evidence
 
-**Verification:** Admin can configure all settings via UI. Backups run on schedule. Disk space alerts trigger when thresholds are exceeded. Scheduled tasks are visible and triggerable.
+**Verification:** Admin can configure all settings via UI. Backups run on schedule. Disk space alerts trigger when thresholds are exceeded. Scheduled tasks are visible and triggerable. Recovery drills prove that at least one recent backup can be restored into disposable infrastructure.
 
 ### Phase 13b — Notification System (6 tasks)
 
@@ -179,7 +181,7 @@ This is unlikely (notifications are a core media-server feature), but the split 
 ```
 Phase 12 (Overlays/Collections)
     ↓
-Phase 13a (System Operations Core)     ← 9 tasks
+Phase 13a (System Operations Core)     ← 10 tasks
     ↓                                   │
     ├── Phase 13b (Notification System) ← 6 tasks (can overlap with Phase 14)
     │       ↓
@@ -199,7 +201,7 @@ Phase 13a (System Operations Core)     ← 9 tasks
 ## Key Decisions
 
 1. **Split Phase 13 into 13a + 13b — committed, not contingent** — Dependency analysis confirms a clean boundary. The notification system has zero cross-dependencies on backup/maintenance workers. Phase 14 doesn't need notifications. Keeping them as one phase unnecessarily serializes independent work.
-2. **Phase 13a ships system operations (9 tasks)** — System config, scheduled tasks, backup, maintenance workers, admin settings UI. The operational backbone.
+2. **Phase 13a ships system operations (10 tasks)** — System config, scheduled tasks, backup, recovery drills, maintenance workers, admin settings UI. The operational backbone.
 3. **Phase 13b ships notification system (6 tasks)** — Fluent templates, multi-channel dispatch (in-app + SSE + webhook), push device registration, notifications UI. The user-facing notification experience.
 4. **Phase 14 proceeds after 13a without waiting for 13b** — Migration imports watch history; needs core media + auth + playback, not notifications or backup. This is the key unblocking benefit of the split.
 5. **Admin settings UI (Task 10) in Phase 13a** — Renders ALL config fields generically (JSONB editor). Push/webhook fields visible but annotated "activation requires Phase 13b." No UI rework when 13b ships.

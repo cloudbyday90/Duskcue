@@ -256,6 +256,7 @@ All monitoring uses our existing `scheduled_tasks` and `notifications` infrastru
 |---|---|---|
 | `backup_database` | Daily 03:00 | Runs WAL-G base backup + pg_dump |
 | `backup_verification` | Daily 04:30 | Runs `pg_verifybackup` on native verification backup and `wal-g wal-verify` on archive storage |
+| `backup_recovery_drill` | Weekly / manual | Restores the latest eligible backup into disposable PostgreSQL, runs structural checks, and records restore evidence |
 | `database_integrity_check` | Weekly | Checks pg_stat_database stats, WAL archival health, and runs `pg_amcheck` |
 | `backup_retention_cleanup` | Weekly | Prunes old backups per retention policy |
 
@@ -394,6 +395,26 @@ Implementation decisions:
 - WAL-G retention uses `wal-g delete retain <wal_g_retention_full> --full --confirm`. Local pg_dump retention keeps all generated dumps inside the daily window, keeps the newest generated dump per month inside the monthly window, and leaves unknown `.dump` filenames untouched.
 - The migration `20260627010000_seed_backup_scheduled_tasks.sql` seeds `backup_verification` and `backup_retention_cleanup`, normalizes `backup_database` to daily 03:00, and ensures backup tasks have `next_run_at` values.
 - Backup workers persist structured command results and cleanup counts into `scheduled_task_runs.stats`; the scheduler preserves those stats when marking the run complete.
+
+### Planned Recovery Drill Runner
+
+Phase 13a includes a planned `server/src/workers/recovery_drill_runner.rs` worker. This is separate from `backup_verification`: verification proves that backup files and WAL archives are internally readable, while a recovery drill proves that Duskcue can restore a recent backup into a fresh PostgreSQL instance and pass structural checks.
+
+Planned behavior:
+
+- Run manually through scheduled-task trigger and optionally on a weekly schedule as `backup_recovery_drill`.
+- Start disposable PostgreSQL using the same Docker Compose isolation pattern as `scripts/verify-migrations.ps1`.
+- Restore the latest eligible `pg_dump` custom-format backup first; WAL-G restore support follows once the physical backup layout is finalized for packaged deployments.
+- Run structural checks after restore: connect, query schema version, verify expected core tables, run selected read-only consistency assertions, and optionally boot the server against the restored database in CI/protected environments.
+- Store a compact evidence bundle in `scheduled_task_runs.stats`: backup source, backup timestamp, restore duration, schema version, check results, and disposal status.
+- Always clean up disposable containers, volumes, and temporary restore directories unless an admin explicitly requests keep-alive debugging.
+
+Security requirements:
+
+- Do not restore into the production database.
+- Bind any disposable PostgreSQL port to loopback only.
+- Generate per-run credentials and avoid logging database URLs or backup encryption material.
+- Reuse direct process execution; do not build shell command strings for `pg_restore`, WAL-G, or Docker invocation.
 
 ## 3-2-1 Storage Strategy
 

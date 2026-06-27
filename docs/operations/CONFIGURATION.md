@@ -65,13 +65,14 @@ Default location: `{data_dir}/config/config.toml`
 database_url = "postgresql://duskcue:password@localhost:5432/duskcue"
 data_dir = "/var/lib/duskcue"
 cache_dir = "/var/cache/duskcue"
+bind_address = "0.0.0.0"
 log_level = "info"
 environment = "production"
 encryption_key = "auto-generated-hex-encoded-256-bit-key"
 geoip_license_key = ""
 ```
 
-Seven fields. Everything else is in `server_config` after the database is reachable.
+Eight fields. Everything else is in `server_config` after the database is reachable.
 
 ### Field Reference
 
@@ -88,6 +89,7 @@ Seven fields. Everything else is in `server_config` after the database is reacha
 See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for the full embedded/external database strategy.
 | `data_dir` | Path | Platform default | `DUSKCUE_DATA_DIR` | `--data-dir` | No |
 | `cache_dir` | Path | `{data_dir}/cache` | `DUSKCUE_CACHE_DIR` | `--cache-dir` | No |
+| `bind_address` | String | `0.0.0.0` | `DUSKCUE_BIND_ADDRESS` | `--bind-address` | No |
 | `log_level` | String | `info` | `DUSKCUE_LOG_LEVEL` | `--log-level` | No |
 | `environment` | String | `production` | `DUSKCUE_ENVIRONMENT` | `--environment` | No |
 | `encryption_key` | String | Auto-generated | `DUSKCUE_ENCRYPTION_KEY` | `--encryption-key` | No |
@@ -141,6 +143,7 @@ All bootstrap fields are overridable via environment variables with the `DUSKCUE
 ```bash
 DUSKCUE_DATABASE_URL="postgresql://user:pass@db:5432/duskcue"
 DUSKCUE_DATA_DIR="/data"
+DUSKCUE_BIND_ADDRESS="::"
 DUSKCUE_LOG_LEVEL="debug"
 DUSKCUE_ENVIRONMENT="production"
 ```
@@ -210,6 +213,9 @@ pub struct CliArgs {
     #[arg(long, env = "DUSKCUE_CACHE_DIR")]
     pub cache_dir: Option<PathBuf>,
 
+    #[arg(long, env = "DUSKCUE_BIND_ADDRESS", default_value = "0.0.0.0")]
+    pub bind_address: String,
+
     #[arg(long, env = "DUSKCUE_LOG_LEVEL", default_value = "info")]
     pub log_level: String,
 
@@ -231,6 +237,7 @@ pub struct BootstrapConfig {
     pub database_url: Option<String>,
     pub data_dir: PathBuf,
     pub cache_dir: PathBuf,
+    pub bind_address: String,
     pub log_level: String,
     pub environment: String,
     pub encryption_key: Option<String>,
@@ -239,6 +246,8 @@ pub struct BootstrapConfig {
 ```
 
 `database_url` is `Option<String>` in both `CliArgs` and `BootstrapConfig`. When `None` after layering, the server attempts to start embedded PostgreSQL (Docker entrypoint provides it, or `postgresql_embedded` crate handles it for native deployments).
+
+`bind_address` is planned for Phase 15 native IPv6 support. It should accept IPv4 literals, IPv6 literals such as `::` and `::1`, and DNS names only when explicit resolution behavior is implemented. Generated URLs that use IPv6 literals must use bracket notation.
 
 `geoip_license_key` is `Option<String>` — when `None` or empty, GeoIP enrichment runs in degraded mode (no geolocation lookups) and the weekly `geoip_database_update` scheduled task is a no-op. To enable, obtain a free MaxMind license key and set it via `DUSKCUE_GEOIP_LICENSE_KEY` env var or `geoip_license_key` in `config.toml`. See [ANALYTICS_SECURITY.md](../security/ANALYTICS_SECURITY.md) for the full GeoIP pipeline design.
 

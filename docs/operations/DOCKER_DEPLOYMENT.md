@@ -247,6 +247,9 @@ MOVIES_PATH=/path/to/your/movies
 
 # ── Server ────────────────────────────────────────
 HTTP_PORT=48027
+# Bind address defaults to IPv4 all-interfaces. Use :: for native dual-stack
+# where the host OS and Docker networking support IPv6.
+DUSKCUE_BIND_ADDRESS=0.0.0.0
 LOG_LEVEL=info
 TZ=Etc/UTC
 
@@ -304,6 +307,34 @@ When `DUSKCUE_DATABASE_URL` is set, the entrypoint **skips** embedded PostgreSQL
 | `/tmp` tmpfs | Temporary files | Required for `read_only: true`; PG and other tools need writable /tmp. |
 | Named volumes with explicit names | `duskcue-data`, `duskcue-cache` | Easy to identify in `docker volume ls`; prevents collision with other projects. |
 | No `db` service by default | Embedded PostgreSQL | Single container = simplest user experience; external mode available for power users. |
+
+## Native IPv6 Support
+
+Duskcue should support IPv6 as a first-class deployment mode, not only as a reverse-proxy side effect.
+
+Planned Phase 15 behavior:
+
+- Default bind remains IPv4 `0.0.0.0:48027` for maximum compatibility with older Docker/NAS setups.
+- Operators can set `DUSKCUE_BIND_ADDRESS=::` to request an IPv6 listener. On platforms where dual-stack sockets are available, this serves IPv4 and IPv6 from one listener. Where the OS or Docker Engine uses IPv6-only sockets, documentation should show explicit IPv4 and IPv6 bindings.
+- URL generation must format IPv6 literals with brackets, for example `http://[fd00::10]:48027`, including WebAuthn origins, redirects, and generated server URLs.
+- Docker Compose examples should include an optional IPv6 binding:
+
+```yaml
+ports:
+  - "${HTTP_PORT:-48027}:48027"
+  # Optional explicit IPv6 host binding when Docker IPv6 is enabled:
+  # - "[::]:${HTTP_PORT:-48027}:48027"
+```
+
+- Reverse proxy examples must keep IPv6 client IPs intact through `X-Forwarded-For` / `Forwarded`, and Duskcue must only trust those headers from configured trusted proxy CIDRs.
+- Metrics allowlists and trusted proxy lists must accept IPv6 CIDR ranges such as `::1/128`, `fd00::/8`, and `2001:db8::/32`.
+- Health checks should continue to use loopback. IPv6-only deployments can use `http://[::1]:48027/health` when the container image includes tooling that supports bracketed IPv6 literals.
+
+Security requirements:
+
+- Enabling IPv6 must not silently bypass the local/remote/exposed network-mode rules.
+- Public IPv6 exposure should be treated the same as public IPv4 exposure: exposed mode requires authentication, TLS, signed streaming URLs, and correct trusted-proxy configuration.
+- Unique local addresses (`fc00::/7`), link-local addresses (`fe80::/10`), loopback (`::1/128`), and IPv4-mapped IPv6 addresses must be classified deliberately rather than by string prefix.
 
 ### Abrupt Shutdown Design Rule
 
