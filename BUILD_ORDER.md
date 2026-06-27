@@ -20,6 +20,7 @@ These documents apply to every phase. Consult them when making implementation de
 | [SECURITY.md](docs/security/SECURITY.md) | Three-tier network model, rustls, HMAC signing, FFmpeg sandboxing |
 | [CONFIGURATION.md](docs/operations/CONFIGURATION.md) | Two-tier config (bootstrap TOML + runtime DB), 14-step startup sequence |
 | [DATABASE.md](docs/design/DATABASE.md) | Full DDL, UUIDv7 key strategy, naming conventions, PG18 features |
+| [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md) | TV continue-watching/next-up/recommendation feed, Android TV Watch Next adapter, deep-link resume |
 
 ### Code Standards
 
@@ -63,8 +64,14 @@ These documents apply to every phase. Consult them when making implementation de
 **Not yet implemented (deferred):**
 
 - `clients/web/` (SvelteKit) — Phase 8
-- `clients/desktop/` (Tauri) — Phase 16
-- `clients/mobile/` (Flutter) — Phase 16
+- `clients/desktop/` (Tauri) — Phase 16a
+- `clients/mobile/` (Flutter) — Phase 16a
+- `clients/tv/android/` (Android TV / Google TV) — Phase 17
+- `clients/tv/roku/` (Roku) — Phase 19
+- `clients/tv/samsung/` (Samsung Tizen) — Phase 20
+- `clients/tv/lg/` (LG webOS) — Phase 21
+- `clients/tv/apple/` (Apple TV / tvOS) — Phase 22
+- `clients/tv/xbox/` (Xbox) — Phase 23
 - `docker/entrypoint.sh` — Phase 15
 - `Dockerfile` — Phase 15
 - `server/migrations/` — Phase 2
@@ -3140,7 +3147,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 **Tasks:**
 
 1. Set up Fluent server-side i18n — `fluent-i18n` crate, `server/locales/en/notifications.ftl`, migrate `notification_types.in_app_template` from English strings to Fluent message IDs (debt item #5 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))
-2. Implement multi-channel dispatch pipeline — notification record always in DB; fan-out to in-app + SSE + webhook simultaneously; mobile push channel included in fan-out but client implementation deferred to Phase 16 (debt item #6 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))
+2. Implement multi-channel dispatch pipeline — notification record always in DB; fan-out to in-app + SSE + webhook simultaneously; mobile push channel included in fan-out but client implementation deferred to Phase 16a (debt item #6 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))
 3. Implement notification CRUD — create, list, mark-as-read, delete; notification types and user preferences from Phase 2 tables
 4. Implement webhook dispatch — HTTP POST to operator-configured URL with ntfy/Gotify/Discord/Slack/generic formats; HMAC signing; retry with backoff (debt item #8 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))
 5. Create `user_push_devices` table + `POST /api/v1/user/push-devices` API — device registration for FCM/APNs/UnifiedPush tokens; token lifecycle (heartbeat, auto-invalidation, manual revoke) (debt item #7 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))
@@ -3148,7 +3155,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Verification:** Admin triggers a test notification. Notification appears in-app (notification center), via SSE (live update if web client is open), and via webhook (operator-configured endpoint). Notification templates render in the user's preferred locale via Fluent. Push devices register and display in user settings.
 
-**MVP fallback:** If Phase 13b takes longer than estimated, ship in-app + SSE + webhook only. Defer FCM/APNs/UnifiedPush client implementations to Phase 16. The `user_push_devices` table and API still ship (schema-only) to avoid Phase 16 schema migration. See [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md) for details.
+**MVP fallback:** If Phase 13b takes longer than estimated, ship in-app + SSE + webhook only. Defer FCM/APNs/UnifiedPush client implementations to Phase 16a. The `user_push_devices` table and API still ship (schema-only) to avoid Phase 16a schema migration. See [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md) for details.
 
 ---
 
@@ -3234,7 +3241,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 ---
 
-## Phase 16 — Desktop & Mobile Clients
+## Phase 16a — Desktop & Mobile Clients
 
 **Goal:** Tauri desktop app and Flutter mobile app connecting to the server.
 
@@ -3258,6 +3265,183 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 4. Implement mobile-specific quality management — cellular vs WiFi detection, adaptive streaming
 
 **Verification:** Tauri app launches with web client UI. Flutter app connects to server, authenticates, browses library, plays media.
+
+---
+
+## Phase 16b — TV Platform Foundation
+
+**Goal:** Shared server APIs, data contracts, and living-room UX rules that every TV and console client consumes. This phase does not build a platform client.
+
+**Prerequisites:** Phase 7 (playback sessions and progress), Phase 8 (API client conventions), Phase 10 (SSE EventBus for refresh hints), Phase 15 (stable deployment URL/base URL behavior), Phase 16a where shared auth/playback client lessons can be reused.
+
+**Authoritative docs:**
+
+| Doc | What to build from it |
+|---|---|
+| [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md) | Platform-neutral TV surface feed, platform adapters, shared living-room consistency contract |
+| [STREAMING.md](docs/design/STREAMING.md) | HLS playback requirements and transcoding decision model |
+| [QUALITY_MANAGEMENT.md](docs/design/QUALITY_MANAGEMENT.md) | Device capability reporting, network quality, adaptive streaming |
+| [REAL_TIME_PUSH.md](docs/design/REAL_TIME_PUSH.md) | SSE `tv_surface_changed` refresh hints |
+| [API_SECURITY.md](docs/security/API_SECURITY.md) | BOLA checks for all TV surface and deep-link playback endpoints |
+
+**Tasks:**
+
+0. Research, design, and phase enrichment — use official online sources current to 2026 for TV/console client best practices; update [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md), [BUILD_ORDER.md](BUILD_ORDER.md), and any affected platform-specific docs before implementation.
+1. Add `GET /api/v1/users/me/tv-surface` — platform-neutral feed with `continue`, `next_up`, `new_episodes`, and `recommended` sections; filters by user library access and current watch state; includes deterministic `platform_content_id` values for platform catalog and deep-link mappings.
+2. Add TV surface service logic — continue-watching movies/episodes from `user_item_data`, next episode from series/season/episode order, deterministic v1 recommendations from collections and related metadata.
+3. Emit `tv_surface_changed` SSE events after playback completion, resume-position changes, library scan completion, artwork refresh, and access-control changes.
+4. Add platform-surface settings — per-user opt-out for TV platform publication and admin-visible platform integration status.
+5. Define the shared living-room UX contract — consistent row order, labels, empty states, focus behavior, poster/backdrop usage, profile switching, server selection, device-linking, playback controls, subtitles/audio controls, and error language.
+6. Define the shared platform adapter contract — how each client maps `platform_content_id`, deep links, resume state, device capability reports, playback progress, artwork URLs, and app-local rows.
+
+**Verification:** The server returns a user-scoped TV surface feed, emits refresh events, rejects unauthorized/deauthorized items, and produces stable platform content IDs. A reference client harness can render consistent Continue Watching, Next Up, New Episodes, and Recommendations rows from the same feed.
+
+---
+
+## Phase 17 — Android TV / Google TV
+
+**Goal:** Native Android TV client with Google TV / Android TV Watch Next integration and Sony BRAVIA validation.
+
+**Prerequisites:** Phase 16b.
+
+**Tasks:**
+
+0. Research, design, and phase enrichment — verify 2026 Android TV, Google TV, Media3, Watch Next, Google Play, and Sony BRAVIA guidance from official sources; update docs and this phase before implementation.
+1. Create Android TV client shell — `clients/tv/android/` native Kotlin app with login/device-linking, server selection, library browsing minimum, and HLS playback.
+2. Implement Android playback stack — Media3 ExoPlayer, Media3 `MediaSession`, remote-control handling, progress heartbeat, completion reporting, and cross-device resume.
+3. Implement Android deep links — `duskcue://play/{type}/{id}` routes validate auth/access, fetch latest resume state, and enter playback directly.
+4. Implement Android TV Watch Next adapter — fetch TV surface feed, map eligible items to AndroidX `WatchNextProgram`, persist local `media_item_id` to platform `program_id` mappings, update/remove stale entries.
+5. Add Android TV artwork handling — choose poster/backdrop dimensions per platform guidance, use authenticated/signed artwork URLs, and refresh entries after artwork changes.
+6. Validate Sony as Android TV / Google TV hardware — test Sony BRAVIA Google TV and Android TV devices for Google Play install visibility, Watch Next behavior, HLS playback, HDR, audio passthrough/downmix, subtitles, remote focus, standby/resume, and voice/deep-link entry.
+
+**Verification:** Start a movie on web, stop midway, see it appear in Android TV Watch Next, select the tile, and resume in the Android TV app at the latest server position. Complete an episode and verify the next episode replaces it. Validate the same flow on representative Sony BRAVIA hardware.
+
+---
+
+## Phase 18 — Fire TV
+
+**Goal:** Fire TV client/adapter using Amazon-specific Watch Activity, Content Personalization, and catalog/deep-link integration where available.
+
+**Prerequisites:** Phase 16b and preferably Phase 17 where Android client code can be reused on Fire OS.
+
+**Tasks:**
+
+0. Research, design, and phase enrichment — verify 2026 Fire TV, Fire OS, Vega, Watch Activity, Content Personalization, EMBER/catalog, and appstore guidance from official Amazon sources; update docs and this phase before implementation.
+1. Add Fire TV app target — reuse Android architecture where Fire OS supports it; document any divergence from Android TV.
+2. Implement Fire TV Watch Activity event reporting for playback start/progress/pause/resume/exit/completion.
+3. Implement stable Amazon content IDs from Duskcue `platform_content_id`.
+4. Implement authenticated deep-link playback and catalog/EMBER integration if partner access is available.
+5. Track Fire TV Vega separately — implement only if Amazon's non-Android Vega path becomes required for target devices.
+
+**Verification:** Report playback activity and verify Continue Watching behavior where the active Fire TV account allows personalization. Deep links open authenticated Duskcue playback and use the latest server resume position.
+
+---
+
+## Phase 19 — Roku
+
+**Goal:** Roku SceneGraph/BrightScript client with certified deep links, Direct to Play, bookmarks, and optional Roku Search feed support.
+
+**Prerequisites:** Phase 16b.
+
+**Tasks:**
+
+0. Research, design, and phase enrichment — verify 2026 Roku SceneGraph, BrightScript, certification, deep-link, Direct to Play, bookmark, Roku Search feed, and public-channel guidance from official Roku sources; update docs and this phase before implementation.
+1. Add Roku client shell — `clients/tv/roku/` SceneGraph/BrightScript app with device-linking, server selection, library browsing minimum, HLS playback, and progress reporting.
+2. Implement Roku deep links and Direct to Play — handle `contentId`/`mediaType`, map to Duskcue media IDs, fetch the latest bookmark/resume state, and start movie/episode playback directly.
+3. Add Roku app-local Continue Watching, Next Up, New Episodes, and Recommendations rows from the TV surface feed.
+4. Add Roku Search feed support — generate stable feed IDs, metadata, artwork, and availability for public-store discovery if the channel targets Roku Search.
+
+**Verification:** Launch movie and episode deep links through ECP/Deep Linking Tester and verify Direct to Play starts at the latest server bookmark. Playback progress updates Duskcue and app-local rows refresh correctly.
+
+---
+
+## Phase 20 — Samsung Tizen
+
+**Goal:** Samsung packaged Tizen web app with AVPlay playback and Smart Hub Preview integration.
+
+**Prerequisites:** Phase 16b.
+
+**Tasks:**
+
+0. Research, design, and phase enrichment — verify 2026 Samsung TV SDK, Tizen packaging/signing, AVPlay, Smart Hub Preview, personal preview, subtitles, model-year support, and store/certification guidance from official Samsung sources; update docs and this phase before implementation.
+1. Add Samsung Tizen client shell — `clients/tv/samsung/` packaged/signed Tizen web app with device-linking, server selection, TV remote focus navigation, and real-device install workflow.
+2. Implement Samsung AVPlay playback — HLS playback, seek-to-resume, progress heartbeat, completion reporting, audio/subtitle selection, and model-year compatibility checks.
+3. Implement Samsung Smart Hub Preview — app-local continue/next-up rows first, public preview deep links where useful, then personalized preview via foreground app + background service after validation.
+
+**Verification:** Install the signed Tizen package on real hardware, resume HLS playback through AVPlay, verify app-local rows update after playback, and verify Smart Hub Preview deep links open the correct Duskcue item where supported.
+
+---
+
+## Phase 21 — LG webOS
+
+**Goal:** LG packaged webOS TV app with launch/relaunch parameter handling, HLS resume playback, and app-local TV surfaces.
+
+**Prerequisites:** Phase 16b.
+
+**Tasks:**
+
+0. Research, design, and phase enrichment — verify 2026 LG webOS Studio, packaging, app lifecycle, Application Manager, media playback, `mediaOption`, web engine, model support, and app approval guidance from official LG sources; update docs and this phase before implementation.
+1. Add LG webOS client shell — `clients/tv/lg/` packaged webOS TV app with device-linking, server selection, TV remote focus navigation, packaging, simulator testing, and real-device deploy workflow.
+2. Implement LG launch/relaunch handling — parse webOS launch parameters, map stable `platform_content_id` values to Duskcue media IDs, revalidate auth/access, fetch the latest resume state, and enter playback.
+3. Implement LG playback and app-local surfaces — HLS playback, `mediaOption` resume where supported, progress heartbeat, completion reporting, app-local Continue Watching/Next Up/New Episodes rows, and model/webOS-version compatibility checks.
+
+**Verification:** Install the packaged webOS app on real hardware, launch with playback parameters, resume HLS playback with the latest server position, and verify app-local Continue Watching/Next Up rows update after playback.
+
+---
+
+## Phase 22 — Apple TV / tvOS
+
+**Goal:** Native tvOS app with AVKit playback, Universal Links, and Top Shelf extension.
+
+**Prerequisites:** Phase 16b.
+
+**Tasks:**
+
+0. Research, design, and phase enrichment — verify 2026 tvOS, Swift/SwiftUI, AVKit, Universal Links, associated domains, Top Shelf, App Store, and Apple TV app/Universal Search guidance from official Apple sources; update docs and this phase before implementation.
+1. Add Apple TV / tvOS client shell — `clients/tv/apple/` native Swift/SwiftUI tvOS app with device-linking, server selection, TV focus navigation, App Store packaging, and real-device deploy workflow.
+2. Implement Apple AVKit playback — HLS playback through AVKit/AVPlayerViewController, seek-to-resume, progress heartbeat, completion reporting, audio/subtitle selection, and Apple TV hardware compatibility checks.
+3. Implement Apple Universal Links — associated-domain configuration, stable `platform_content_id` link mapping, auth/access revalidation, and direct playback entry from supported links.
+4. Implement Apple Top Shelf extension — use the Duskcue TV surface feed for curated continue-watching and next-up content; keep recommendations secondary; evaluate Apple TV app/Universal Search as optional partner/release work.
+
+**Verification:** Install the tvOS app on real hardware, resume HLS playback through AVKit, open a Universal Link into direct playback, and verify Top Shelf items reflect continue-watching and next-up state.
+
+---
+
+## Phase 23 — Xbox
+
+**Goal:** Native UWP Xbox console media app with app-local TV surfaces, URI activation, and explicit 4K/HDR capability decisions.
+
+**Prerequisites:** Phase 16b.
+
+**Tasks:**
+
+0. Research, design, and phase enrichment — verify 2026 Xbox/UWP, Store, MSIX, Xbox Device Portal, media playback, URI activation, SMTC, 4K/HDR, and certification guidance from official Microsoft sources; update docs and this phase before implementation.
+1. Add Xbox client shell — `clients/tv/xbox/` native UWP media app with device-linking, server selection, controller/media-remote focus navigation, Visual Studio/MSIX packaging, and Xbox Device Portal deploy workflow.
+2. Implement Xbox playback and app-local surfaces — native `MediaPlayerElement` / `MediaPlayer` HLS playback, seek-to-resume, progress heartbeat, completion reporting, System Media Transport Controls, app-local Continue Watching/Next Up/New Episodes rows, and Xbox hardware capability reporting.
+3. Implement Xbox deep-link activation — URI protocol or App URI handler mapping stable `platform_content_id` values to Duskcue media IDs with auth/access revalidation and direct playback entry.
+4. Decide Xbox 4K/HDR release posture — evaluate `hevcPlayback`, memory/background tradeoffs, HDR10 behavior, audio/subtitle support, Store certification, and whether self-hosted catalogs are acceptable.
+
+**Verification:** Install on Xbox hardware, resume HLS playback through native media APIs, control playback through controller/media remote/SMTC, open URI activation into direct playback, and verify app-local rows update after playback.
+
+---
+
+## Phase 24 — Partner-Gated Platforms
+
+**Goal:** Evaluate and implement partner-gated platform adapters only when platform access confirms self-hosted Duskcue viability.
+
+**Prerequisites:** Phase 16b.
+
+**Tasks:**
+
+0. Research, design, and phase enrichment — verify 2026 VIZIO, PlayStation, VIDAA, and set-top platform access using official sources/partner portals; update docs and split any viable platform into its own implementation phase before building.
+1. Add VIZIO partner-access track — request/evaluate VIZIO Developer Portal access, confirm partner requirements, app model, media playback APIs, certification, deep-link/launcher/discovery surfaces, and whether self-hosted Duskcue distribution is viable.
+2. Add VIZIO client only after access is confirmed — `clients/tv/vizio/` with device-linking, server selection, TV remote focus navigation, HLS/resume playback, progress reporting, app-local Continue Watching/Next Up rows, and VIZIO-specific deep links/discovery feeds if partner specs expose them.
+3. Add PlayStation partner-access track — request/evaluate PlayStation Partners access, confirm media app feasibility, SDK/playback APIs, certification, dev hardware requirements, Media space/deep-link/resume surfaces, and whether self-hosted Duskcue distribution is viable.
+4. Add PlayStation client only after access is confirmed — `clients/tv/playstation/` with device-linking, server selection, controller/media-remote focus navigation, HLS/resume playback, progress reporting, app-local Continue Watching/Next Up rows, and PlayStation-specific Media space/deep-link integrations if partner specs expose them.
+5. Research VIDAA next — evaluate developer access, app model, playback APIs, partner requirements, and whether it deserves its own implementation phase.
+6. Queue future platform research — operator set-top ecosystems and Apple Vision Pro / visionOS; prioritize only if user demand or distribution feasibility changes.
+
+**Verification:** Partner-gated platforms are either promoted into a dedicated implementation phase with confirmed access and requirements, or explicitly left as blocked/deferred with documented reasons.
 
 ---
 
@@ -3294,7 +3478,25 @@ Phase 8: Web Client Core (COMPLETE — 6 tasks) ←─── (consumes all above
     │       │
     └── Phase 15: Docker & Deployment  ←── needs 13a + 13b + 14 for complete v1.0 image
             ↓
-        Phase 16: Desktop & Mobile Clients  ←── mobile push needs 13b
+        Phase 16a: Desktop & Mobile Clients  ←── mobile push needs 13b
+            ↓
+        Phase 16b: TV Platform Foundation
+            ↓
+        Phase 17: Android TV / Google TV  ←── includes Sony BRAVIA validation
+            ↓
+        Phase 18: Fire TV
+            ↓
+        Phase 19: Roku
+            ↓
+        Phase 20: Samsung Tizen
+            ↓
+        Phase 21: LG webOS
+            ↓
+        Phase 22: Apple TV / tvOS
+            ↓
+        Phase 23: Xbox
+            ↓
+        Phase 24: Partner-Gated Platforms  ←── VIZIO, PlayStation, VIDAA, future set-top platforms
 ```
 
-Phases 9–13a can be built in any order after Phase 8, since they are independent domains. Phase 13b depends on Phase 10 (SSE EventBus) + Phase 13a (server_config API). Phase 14 depends on Phase 13a only (not 13b). Phase 15 needs all prior phases for a complete v1.0 image. See [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md) for the full dependency analysis.
+Phases 9–13a can be built in any order after Phase 8, since they are independent domains. Phase 13b depends on Phase 10 (SSE EventBus) + Phase 13a (server_config API). Phase 14 depends on Phase 13a only (not 13b). Phase 15 needs all prior phases for a complete v1.0 image. Phase 16b follows Phase 16a so TV clients can reuse client-auth, playback, and device-quality lessons from desktop/mobile. Phases 17–23 are platform-specific implementation phases with their own Task 0 research/design/enrichment step. Phase 24 handles partner-gated platforms only after platform access confirms viability. See [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md) for the Phase 13 dependency analysis.

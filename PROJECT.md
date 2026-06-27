@@ -105,8 +105,27 @@ A **shared API + hybrid client** approach — the server exposes a unified API t
 - **Apple TV (tvOS)** — Swift native app
 - **Samsung (Tizen)** — Tizen Web SDK
 - **LG (webOS)** — webOS Web SDK
+- Platform surfaces for continue-watching, next episode, and launcher deep links are documented in [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md)
 
 > TV apps require platform-specific development. This is unavoidable due to vendor SDKs.
+
+### TV Platform Surfaces
+
+TV launcher integration is documented in [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md). The server exposes a platform-neutral TV surface feed for continue-watching, next-up, new episodes, and recommendations; native TV clients translate that feed into platform APIs and deep-link back into Duskcue playback.
+
+**Key decisions:**
+- **Server owns resume and recommendation state** — TV clients publish platform launcher entries but do not become a source of truth.
+- **Android TV / Google TV first** — implement Watch Next using AndroidX `WatchNextProgram`, Media3 ExoPlayer, Media3 `MediaSession`, and Duskcue deep links.
+- **One adapter per TV platform** — Android TV, Fire TV, Roku, Samsung Tizen, LG webOS, and Apple TV / tvOS use the same server feed but separate launcher/search/deep-link implementations.
+- **Fire TV, Roku, Samsung, and LG are researched adapters** — Fire TV uses Watch Activity/Content Personalization with catalog/deep-link integration when available; Roku uses a SceneGraph client, deep links, Direct to Play, bookmarks, and optional Roku Search feed support; Samsung uses a packaged Tizen web app, AVPlay, and Smart Hub Preview; LG uses a packaged webOS TV app, launch/relaunch parameters, `mediaOption` resume, and app-local TV surfaces.
+- **Sony is Android TV / Google TV validation** — Sony BRAVIA devices should be priority test hardware for the Android TV adapter, not a separate OS adapter unless Sony-specific APIs become necessary.
+- **Apple TV / tvOS is a researched adapter** — Apple TV uses a native Swift/SwiftUI client, AVKit playback, Universal Links, and a Top Shelf extension; Apple TV app / Universal Search remains optional partner/release work.
+- **VIZIO is a partner-gated adapter** — VIZIO requires partner/developer-portal access before implementation can be scoped; Duskcue prepares stable IDs and app-local surfaces but does not assume self-service distribution.
+- **PlayStation is a partner-gated adapter** — PlayStation requires PlayStation Partners access before implementation can be scoped; Duskcue prepares stable IDs and app-local surfaces but does not assume self-service distribution.
+- **Xbox is a researched adapter** — Xbox uses a native UWP media app, `MediaPlayerElement` / `MediaPlayer`, URI activation, System Media Transport Controls, and explicit 4K/HDR capability decisions.
+- **VIDAA is next** — VIDAA is the next platform research target; operator set-top ecosystems and Apple Vision Pro / visionOS remain lower-priority research targets.
+- **No schema change for v1.0 feed** — existing playback, user item, episode, artwork, and access-control tables can produce the first TV surface API.
+- **Google TV launcher visibility is a release constraint** — Android Watch Next integration is buildable in-client; Google TV home-surface exposure may require store approval/certification.
 
 ## Product Identity & Client UI
 
@@ -203,10 +222,10 @@ Seek-preview thumbnail grids documented in [STORYBOARDS.md](docs/design/STORYBOA
 
 ## Build Order
 
-The implementation sequence is documented in [BUILD_ORDER.md](BUILD_ORDER.md). Covers: 16 phases from project scaffolding through desktop/mobile clients, dependency-ordered, each referencing authoritative design documents and specific tasks.
+The implementation sequence is documented in [BUILD_ORDER.md](BUILD_ORDER.md). Covers the dependency-ordered path from project scaffolding through desktop, mobile, and TV clients, each referencing authoritative design documents and specific tasks.
 
 **Phase summary:**
-1. Project Scaffolding → 2. Database Schema → 3. Core Server Infrastructure → 4. Auth & Users → 5. Libraries & Media → 6. Metadata Providers → 7. Streaming & Playback → 8. Web Client Core → 9-14. Independent domains (Subtitles, Segments, Analytics, Kometa, System Ops, Migration) → 15. Docker & Deployment → 16. Desktop & Mobile Clients
+1. Project Scaffolding → 2. Database Schema → 3. Core Server Infrastructure → 4. Auth & Users → 5. Libraries & Media → 6. Metadata Providers → 7. Streaming & Playback → 8. Web Client Core → 9-14. Independent domains (Subtitles, Segments, Analytics, Kometa, System Ops, Migration) → 15. Docker & Deployment → 16a. Desktop & Mobile Clients → 16b. TV Platform Foundation → 17-24. Platform-specific TV/console clients
 
 ## Tech Stack
 
@@ -218,7 +237,7 @@ The implementation sequence is documented in [BUILD_ORDER.md](BUILD_ORDER.md). C
 
 **Mobile:** **Flutter** (Android + iOS)
 
-**TVs:** Platform-specific native apps
+**TVs:** Platform-specific native apps; Android TV / Google TV first for Watch Next and deep-link resume
 
 ## Project Structure
 
@@ -628,6 +647,7 @@ esolve_streaming_limits implements 3-tier cascade (user overrides -> policy valu
 - [x] Web client framework — Svelte + SvelteKit
 - [x] Mobile framework — Flutter
 - [x] Desktop wrapper — Tauri 2
+- [x] TV platform surfaces — Platform-neutral Duskcue TV surface feed with native platform adapters; Android TV / Google TV Watch Next first, Fire TV Watch Activity/catalog integration second, Roku deep-link/Search feed integration third, Samsung Tizen Smart Hub Preview fourth, LG webOS launch/resume fifth, Sony BRAVIA Android/Google TV validation, Apple TV / tvOS Top Shelf sixth, VIZIO partner-gated adapter seventh, PlayStation partner-gated adapter eighth, Xbox UWP adapter ninth, VIDAA next research target (see [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md))
 - [x] UI foundations — baseline visual direction, navigation language, and core reusable surfaces (see [UI_FOUNDATIONS.md](docs/branding/UI_FOUNDATIONS.md))
 - [x] Error handling strategy — thiserror + anyhow + RFC 9457 (see below)
 - [x] Database backup & recovery — WAL-G + pg_dump + monitoring (see below)
@@ -682,7 +702,7 @@ esolve_streaming_limits implements 3-tier cascade (user overrides -> policy valu
 - [x] Reverse-proxy recommendation for exposed mode — **Built-in rustls TLS for simple exposed mode (no proxy needed); Caddy as recommended external reverse proxy for multi-service routing**, documented in [REVERSE_PROXY.md](docs/design/REVERSE_PROXY.md). Matches Jellyfin's official reverse-proxy recommendation. Caddyfile is 4 lines for basic reverse-proxy + automatic HTTPS. Caddy wins on simplicity, memory footprint (~14MB), no Docker socket exposure, HTTP/3 default-on. Nginx and Traefik documented as alternatives with full configs in appendix. NOT bundled in Duskcue container (keeps container lean; operators with existing proxies reuse them; matches single-container model). `DUSKCUE_TRUSTED_PROXIES` config is critical for `X-Forwarded-For`-based client IP detection (rate limiting, trust scoring); without it, header spoofing enables bypass. SSE proxying: Caddy default-on, Nginx requires `proxy_buffering off`, Traefik default-on. Cloudflare avoided (TOS prohibits video streaming; SSE buffering). Subdomain routing (`duskcue.example.com`) preferred over subpath.
 - [x] Mobile push gateway — **Opt-in, multi-channel dispatch with webhook as recommended default; FCM/APNs/UnifiedPush as mobile-native alternatives**, documented in [MOBILE_PUSH.md](docs/design/MOBILE_PUSH.md). Webhook covers ntfy (self-hosted), Gotify, Discord, Slack, Telegram — no Google/Apple intermediary, uses existing `reqwest`, no SDK dependency. Mobile-native push (FCM/APNs) is opt-in and admin-configured (Firebase service account JSON or APNs .p8 key), never default — preserves Duskcue's local-first values. iOS push requires APNs (Apple platform constraint; no self-hosted alternative). UnifiedPush documented for Android-only privacy-maximalist deployments. Multi-channel dispatch from Phase 13 day one: in-app + SSE + webhook always available; mobile push plugs into existing fan-out. Payload minimization (title + body + UUID data fields only). Per-user device registration with token lifecycle (heartbeat, auto-invalidation, manual revoke). Rate limited at 10 notifications/min/user outbound.
 - [x] Implementation debt scheduling — **Hybrid: fold critical debt into consuming phases; defer non-blocking to pre-v1.0 hardening**, documented in [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md). Phase 10 absorbs 4 items (SSE + EventBus, image pipeline, artwork endpoint, events store — storyboards are first consumer). Phase 13 absorbs 4 items (Fluent setup, multi-channel dispatch, push devices, webhook — notification system is forcing function). Pre-v1.0 hardening handles 4 quality items (Cache-Control/ETag headers, Paraglide adoption, faceted search UI, Prometheus metrics for new infrastructure). Database partition management executor is immediate (~1 day, before partitions age out). Phase 13 split contingency pre-documented (13a system/backup/maintenance + 13b notifications/i18n/push) if 16-task Phase 13 becomes a bottleneck. Total debt: ~25-40 days across all items. Per Fowler's quadrant, all 8 strategic decisions are Deliberate + Prudent debt — the most desirable category; this schedule prevents drift to Reckless.
-- [x] Phase 13 convergence risk — **Phase 13 formally split into 13a (System Operations Core, 10 tasks) + 13b (Notification System, 6 tasks)**, documented in [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md). Dependency analysis confirms clean boundary: notification system has zero cross-dependencies on backup/maintenance workers; Phase 14 (Migration) proceeds after 13a without waiting for 13b. Split reduces critical-path risk (16-task phase → two manageable phases), enables parallelism (13b can overlap Phase 14), and isolates the riskiest work (Fluent + multi-channel dispatch) in a focused phase. MVP fallback: if Phase 13b overruns, ship in-app + SSE + webhook only; defer FCM/APNs to Phase 16. Admin settings UI (13a) renders push/webhook config fields with "activation requires Phase 13b" annotation. `notification_cleanup` executor in 13a (DB operation, no dispatch dependency).
+- [x] Phase 13 convergence risk — **Phase 13 formally split into 13a (System Operations Core, 10 tasks) + 13b (Notification System, 6 tasks)**, documented in [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md). Dependency analysis confirms clean boundary: notification system has zero cross-dependencies on backup/maintenance workers; Phase 14 (Migration) proceeds after 13a without waiting for 13b. Split reduces critical-path risk (16-task phase → two manageable phases), enables parallelism (13b can overlap Phase 14), and isolates the riskiest work (Fluent + multi-channel dispatch) in a focused phase. MVP fallback: if Phase 13b overruns, ship in-app + SSE + webhook only; defer FCM/APNs to Phase 16a. Admin settings UI (13a) renders push/webhook config fields with "activation requires Phase 13b" annotation. `notification_cleanup` executor in 13a (DB operation, no dispatch dependency).
 - [ ] Live TV tuner hardware support
 
 ## Database Design Decisions

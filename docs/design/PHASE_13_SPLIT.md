@@ -86,7 +86,7 @@ The split boundary is determined by the inter-task dependency graph. Tasks group
 |---|---|---|---|
 | **Phase 14** (Platform Migration) | ❌ No | ❌ No | ✅ Yes — migration imports watch history; needs core media + auth + playback (Phases 2-7), not notifications or backup |
 | **Phase 15** (Docker & Deployment) | ✅ Needs system domain + backup in the binary | ✅ Ideally — notification system should be in the Docker image for v1.0 | ✅ Can start packaging after 13a + Phase 14; finalizes after 13b |
-| **Phase 16** (Desktop & Mobile) | ❌ No | ✅ Mobile push + notification center are Phase 16 features | ✅ Can start Tauri wrapper after 13a + Phase 15; Flutter push needs 13b |
+| **Phase 16a** (Desktop & Mobile) | ❌ No | ✅ Mobile push + notification center are Phase 16a features | ✅ Can start Tauri wrapper after 13a + Phase 15; Flutter push needs 13b |
 
 ### Phase 13a — System Operations Core (10 tasks)
 
@@ -116,7 +116,7 @@ The split boundary is determined by the inter-task dependency graph. Tasks group
 **Tasks:**
 
 1. Set up Fluent server-side i18n — `fluent-i18n` crate, `server/locales/en/notifications.ftl`, migrate `notification_types.in_app_template` from English strings to Fluent message IDs (debt item #5 from [IMPLEMENTATION_DEBT.md](IMPLEMENTATION_DEBT.md))
-2. Implement multi-channel dispatch pipeline — notification record always in DB; fan-out to in-app + SSE + webhook simultaneously; mobile push channel included in fan-out but client implementation deferred to Phase 16 (debt item #6)
+2. Implement multi-channel dispatch pipeline — notification record always in DB; fan-out to in-app + SSE + webhook simultaneously; mobile push channel included in fan-out but client implementation deferred to Phase 16a (debt item #6)
 3. Implement notification CRUD — create, list, mark-as-read, delete; notification types and user preferences from Phase 2 tables
 4. Implement webhook dispatch — HTTP POST to operator-configured URL with ntfy/Gotify/Discord/Slack/generic formats; HMAC signing; retry with backoff (debt item #8)
 5. Create `user_push_devices` table + `POST /api/v1/user/push-devices` API — device registration for FCM/APNs/UnifiedPush tokens; token lifecycle (heartbeat, auto-invalidation, manual revoke) (debt item #7)
@@ -135,11 +135,11 @@ If Phase 13b takes longer than estimated, the notification system can ship in a 
 | Webhook delivery | ✅ | ✅ |
 | Fluent localized templates | ✅ | ✅ |
 | `user_push_devices` table + API | ✅ (schema + API; no push client yet) | ✅ |
-| FCM client implementation | ❌ Defer to Phase 16 | ✅ |
-| APNs client implementation | ❌ Defer to Phase 16 | ✅ |
-| UnifiedPush integration | ❌ Defer to Phase 16 | ✅ |
+| FCM client implementation | ❌ Defer to Phase 16a | ✅ |
+| APNs client implementation | ❌ Defer to Phase 16a | ✅ |
+| UnifiedPush integration | ❌ Defer to Phase 16a | ✅ |
 
-The MVP delivers all in-app + SSE + webhook notifications. Mobile push (FCM/APNs/UnifiedPush client implementations) is deferred to Phase 16 where the Flutter mobile app provides the consumer. The `user_push_devices` table and registration API still ship in the MVP so Phase 16 doesn't need a schema migration.
+The MVP delivers all in-app + SSE + webhook notifications. Mobile push (FCM/APNs/UnifiedPush client implementations) is deferred to Phase 16a where the Flutter mobile app provides the consumer. The `user_push_devices` table and registration API still ship in the MVP so Phase 16a doesn't need a schema migration.
 
 ## Edge Cases
 
@@ -191,7 +191,7 @@ Phase 13a (System Operations Core)     ← 10 tasks
     │       ↓
     └── Phase 15 (Docker & Deployment)  ← needs 13a + 13b + 14 for complete v1.0 image
             ↓
-        Phase 16 (Desktop & Mobile)     ← mobile push needs 13b
+        Phase 16a (Desktop & Mobile)    ← mobile push needs 13b
 ```
 
 **Critical path to v1.0 Docker image:** Phase 12 → 13a → 14 → Pre-v1.0 Hardening → 15 (with 13b completing before or during Phase 15 finalization).
@@ -205,7 +205,7 @@ Phase 13a (System Operations Core)     ← 10 tasks
 3. **Phase 13b ships notification system (6 tasks)** — Fluent templates, multi-channel dispatch (in-app + SSE + webhook), push device registration, notifications UI. The user-facing notification experience.
 4. **Phase 14 proceeds after 13a without waiting for 13b** — Migration imports watch history; needs core media + auth + playback, not notifications or backup. This is the key unblocking benefit of the split.
 5. **Admin settings UI (Task 10) in Phase 13a** — Renders ALL config fields generically (JSONB editor). Push/webhook fields visible but annotated "activation requires Phase 13b." No UI rework when 13b ships.
-6. **MVP notification system fallback** — If Phase 13b takes longer than estimated, ship in-app + SSE + webhook (no mobile push client implementations). Defer FCM/APNs/UnifiedPush to Phase 16. The `user_push_devices` table and API still ship to avoid Phase 16 schema migration.
+6. **MVP notification system fallback** — If Phase 13b takes longer than estimated, ship in-app + SSE + webhook (no mobile push client implementations). Defer FCM/APNs/UnifiedPush to Phase 16a. The `user_push_devices` table and API still ship to avoid Phase 16a schema migration.
 7. **`notification_cleanup` executor in Phase 13a** — The scheduled task cleanup is a DB operation, not a dispatch operation. Registered in Phase 13a's scheduled task management alongside list/get/trigger/cancel/history endpoints.
 8. **Phase 15 Docker image must include both 13a + 13b for v1.0** — Pre-release images can ship without 13b; v1.0 release image includes the complete feature set.
 
