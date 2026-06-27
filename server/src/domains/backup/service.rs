@@ -16,13 +16,15 @@
 
 use sqlx::Row;
 
+use crate::services::backup as backup_coordinator;
 use crate::state::{AppState, BackupConfig, WalGStorageType};
 
 use super::error::BackupError;
 use super::types::{
     BackupConfigResponse, BackupReadinessResponse, BackupRunListResponse, BackupRunResponse,
     BackupRunRow, BackupStatusResponse, BackupTaskListResponse, BackupTaskResponse, BackupTaskRow,
-    PostgresSettingResponse, WalArchiveStatusResponse,
+    BackupVerificationResponse, PgDumpTriggerResponse, PostgresSettingResponse,
+    WalArchiveStatusResponse, WalGStatusCheckResponse,
 };
 
 pub async fn get_backup_status(state: &AppState) -> Result<BackupStatusResponse, BackupError> {
@@ -57,6 +59,33 @@ pub async fn list_backup_runs(
         items: get_recent_backup_runs(state, limit).await?,
         limit,
     })
+}
+
+pub async fn check_wal_g_status(state: &AppState) -> Result<WalGStatusCheckResponse, BackupError> {
+    Ok(backup_coordinator::check_wal_g_status(state).await?.into())
+}
+
+pub async fn trigger_pg_dump(
+    state: &AppState,
+    label: Option<&str>,
+    verify: bool,
+) -> Result<PgDumpTriggerResponse, BackupError> {
+    Ok(backup_coordinator::run_pg_dump(state, label, verify)
+        .await?
+        .into())
+}
+
+pub async fn verify_backups(
+    state: &AppState,
+    verify_wal_g: bool,
+    verify_pg_dump: bool,
+    pg_dump_path: Option<&str>,
+) -> Result<BackupVerificationResponse, BackupError> {
+    Ok(
+        backup_coordinator::verify_backups(state, verify_wal_g, verify_pg_dump, pg_dump_path)
+            .await?
+            .into(),
+    )
 }
 
 async fn get_postgres_settings(

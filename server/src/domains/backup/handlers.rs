@@ -24,6 +24,8 @@ use crate::state::AppState;
 use super::service;
 use super::types::{
     BackupRunListResponse, BackupRunsQuery, BackupStatusResponse, BackupTaskListResponse,
+    BackupVerificationResponse, PgDumpTriggerResponse, TriggerPgDumpRequest, VerifyBackupsRequest,
+    WalGStatusCheckResponse,
 };
 
 pub async fn get_backup_status(
@@ -58,4 +60,50 @@ pub async fn list_backup_runs(
     }
 
     Ok(Json(service::list_backup_runs(&state, limit).await?))
+}
+
+pub async fn check_wal_g_status(
+    _auth: Require<CanManageServer>,
+    State(state): State<AppState>,
+) -> Result<Json<WalGStatusCheckResponse>, AppError> {
+    Ok(Json(service::check_wal_g_status(&state).await?))
+}
+
+pub async fn trigger_pg_dump(
+    _auth: Require<CanManageServer>,
+    State(state): State<AppState>,
+    Json(req): Json<TriggerPgDumpRequest>,
+) -> Result<Json<PgDumpTriggerResponse>, AppError> {
+    if let Some(label) = req.label.as_deref()
+        && label.len() > 100
+    {
+        return Err(AppError::Validation {
+            errors: vec![FieldError {
+                field: "label".to_string(),
+                code: "length".to_string(),
+                message: "label must be at most 100 characters".to_string(),
+            }],
+            instance: Some("/api/v1/backups/pg-dump".to_string()),
+        });
+    }
+
+    Ok(Json(
+        service::trigger_pg_dump(&state, req.label.as_deref(), req.verify.unwrap_or(true)).await?,
+    ))
+}
+
+pub async fn verify_backups(
+    _auth: Require<CanManageServer>,
+    State(state): State<AppState>,
+    Json(req): Json<VerifyBackupsRequest>,
+) -> Result<Json<BackupVerificationResponse>, AppError> {
+    Ok(Json(
+        service::verify_backups(
+            &state,
+            req.verify_wal_g.unwrap_or(true),
+            req.verify_pg_dump.unwrap_or(true),
+            req.pg_dump_path.as_deref(),
+        )
+        .await?,
+    ))
 }

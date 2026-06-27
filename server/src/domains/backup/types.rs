@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use uuid::Uuid;
 
+use crate::services::backup::{CommandResult, PgDumpResult, VerificationResult, WalGStatusCheck};
 use crate::state::{BackupConfig, WalGStorageType};
 
 #[derive(Debug, Clone, Serialize)]
@@ -161,6 +162,44 @@ pub struct BackupRunsQuery {
     pub limit: Option<u32>,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct TriggerPgDumpRequest {
+    pub label: Option<String>,
+    pub verify: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct VerifyBackupsRequest {
+    pub verify_wal_g: Option<bool>,
+    pub verify_pg_dump: Option<bool>,
+    pub pg_dump_path: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct WalGStatusCheckResponse {
+    pub enabled: bool,
+    pub storage_type: WalGStorageType,
+    pub storage_prefix: String,
+    pub version: CommandResult,
+    pub backup_list: CommandResult,
+    pub backup_count: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PgDumpTriggerResponse {
+    pub path: String,
+    pub size_bytes: u64,
+    pub dump: CommandResult,
+    pub verification: Option<CommandResult>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BackupVerificationResponse {
+    pub status: String,
+    pub wal_g: Option<CommandResult>,
+    pub pg_dump: Option<CommandResult>,
+}
+
 impl From<&BackupConfig> for BackupConfigResponse {
     fn from(config: &BackupConfig) -> Self {
         let wal_g_encryption_enabled = config.wal_g_encryption_enabled
@@ -188,6 +227,40 @@ impl From<&BackupConfig> for BackupConfigResponse {
             archive_timeout_seconds: config.archive_timeout_seconds,
             data_checksums: config.data_checksums,
             verification_enabled: config.verification_enabled,
+        }
+    }
+}
+
+impl From<WalGStatusCheck> for WalGStatusCheckResponse {
+    fn from(value: WalGStatusCheck) -> Self {
+        Self {
+            enabled: value.enabled,
+            storage_type: value.storage_type,
+            storage_prefix: value.storage_prefix,
+            version: value.version,
+            backup_list: value.backup_list,
+            backup_count: value.backup_count,
+        }
+    }
+}
+
+impl From<PgDumpResult> for PgDumpTriggerResponse {
+    fn from(value: PgDumpResult) -> Self {
+        Self {
+            path: value.path,
+            size_bytes: value.size_bytes,
+            dump: value.dump,
+            verification: value.verification,
+        }
+    }
+}
+
+impl From<VerificationResult> for BackupVerificationResponse {
+    fn from(value: VerificationResult) -> Self {
+        Self {
+            status: value.status,
+            wal_g: value.wal_g,
+            pg_dump: value.pg_dump,
         }
     }
 }

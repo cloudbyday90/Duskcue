@@ -2954,7 +2954,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 2. Implement `server_config` runtime API — get/update JSONB config fields; generic CRUD for all config groups including push/webhook settings (which activate in Phase 13b)
 3. Implement scheduled task management — list, trigger, cancel, view history; register `notification_cleanup` executor (DB cleanup of old notifications; no dispatch dependency)
 4. Implement `server/src/domains/backup/` — five-file pattern
-5. Implement backup coordination — WAL-G status check, pg_dump trigger, verification
+5. ~~Implement backup coordination — WAL-G status check, pg_dump trigger, verification~~ **DONE**
 6. Implement `server/src/workers/backup_runner.rs` — scheduled backup execution
 7. Implement `server/src/workers/reindex_maintenance.rs` — weekly REINDEX CONCURRENTLY
 8. Implement `server/src/workers/disk_space_check.rs` — 30-minute disk monitoring
@@ -3041,9 +3041,36 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Verification:** `cargo check -p duskcue` and `cargo test -p duskcue domains::backup` pass.
 
-**Verification:** `cargo check -p duskcue`, `cargo test -p duskcue` (535 tests), and `cargo clippy -p duskcue --all-targets --all-features -- -A clippy::unnecessary-sort-by -D warnings` pass.
+**What was built for Task 5:**
 
-**Verification:** Admin can configure all settings via UI. Backups run on schedule. Disk space alerts trigger when thresholds are exceeded. Scheduled tasks are visible and triggerable.
+| File | Purpose |
+|---|---|
+| `server/src/services/backup.rs` | Shared backup coordinator for WAL-G status checks, manual `pg_dump`, and verification; shell-free command spawning, WAL-G env construction, bounded output capture, pg_dump filename/path safety, and process-local operation locking |
+| `server/src/services/mod.rs` | Exported the backup coordinator service |
+| `server/src/domains/backup/mod.rs` | Added admin routes: `POST /api/v1/backups/wal-g/check`, `POST /api/v1/backups/pg-dump`, and `POST /api/v1/backups/verify` |
+| `server/src/domains/backup/handlers.rs` | Added thin admin handlers for WAL-G checks, pg_dump trigger, and verification requests |
+| `server/src/domains/backup/service.rs` | Added domain wrappers over the shared backup coordinator |
+| `server/src/domains/backup/types.rs` | Added request/response DTOs for WAL-G checks, pg_dump trigger results, and backup verification results |
+| `server/src/domains/backup/error.rs` | Expanded backup errors for operation-in-progress, command unavailable/failed/timeout, verification failure, and storage I/O |
+| `server/src/error.rs` | Mapped backup coordination errors to HTTP responses, including `SYS_007` for concurrent backup operations and `SYS_009` for command/verification failures |
+| `docs/design/API_CONVENTIONS.md` | Updated backup endpoint inventory |
+| `docs/operations/BACKUP_RECOVERY.md` | Added Task 5 implementation notes and corrected the `BackupConfig` Rust mapping for encryption fields |
+| `PROJECT.md` | Updated Phase 13a status and backup summary |
+
+**Key decisions from Task 5:**
+
+- **Shared coordinator for manual and scheduled use** — `services::backup` owns command assembly and verification logic so Phase 13a Task 6 can call the same functions from `backup_runner.rs` without duplicating WAL-G/pg_dump behavior.
+- **Direct process execution only** — WAL-G, `pg_dump`, and `pg_restore` are launched via `tokio::process::Command`; no shell command strings are constructed. This keeps labels, paths, and database URLs out of shell interpolation.
+- **Manual pg_dump verifies by default** — `POST /api/v1/backups/pg-dump` writes PostgreSQL custom-format dumps (`-F c`) and runs `pg_restore --list` unless the request sets `"verify": false`.
+- **Verification supports both backup tiers** — `POST /api/v1/backups/verify` runs WAL-G archive integrity verification and/or logical dump verification. If no pg_dump path is supplied, it verifies the newest `.dump` file under the configured dump storage directory.
+- **Single-instance lock boundary** — A process-local async mutex rejects overlapping manual backup/verification operations with `SYS_007`. This matches Duskcue's single-instance architecture and can be reused by the scheduled runner.
+- **Path containment for dump verification** — User-supplied pg_dump verification paths must canonicalize under `server_config.backup.pg_dump_storage_path`; labels are reduced to safe ASCII filename characters.
+- **WAL-G environment derived from runtime config** — Local storage sets `WALG_FILE_PREFIX`; S3 storage sets `WALG_S3_PREFIX` plus optional endpoint/region; active encryption sets `WALG_LIBSODIUM_KEY` from the bootstrap encryption key.
+- **Task 6 remains scheduler scope** — Task 5 does not register `backup_database`, `backup_verification`, or retention executors. It supplies the reusable execution primitives for Task 6.
+
+**Verification:** `cargo check -p duskcue`, `cargo test -p duskcue` (542 tests), and `cargo clippy -p duskcue --all-targets --all-features -- -A clippy::unnecessary-sort-by -D warnings` pass.
+
+**Phase-level verification target:** Admin can configure all settings via UI. Backups run on schedule. Disk space alerts trigger when thresholds are exceeded. Scheduled tasks are visible and triggerable.
 
 ---
 

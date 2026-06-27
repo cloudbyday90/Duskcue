@@ -579,6 +579,37 @@ fn backup_error_to_http(
 
     match err {
         BackupError::InvalidConfig(msg) => (StatusCode::BAD_REQUEST, "BAD_REQUEST", msg.clone()),
+        BackupError::OperationInProgress => (
+            StatusCode::CONFLICT,
+            "SYS_007",
+            "Backup already in progress".to_string(),
+        ),
+        BackupError::CommandUnavailable { tool, .. } => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "SERVICE_UNAVAILABLE",
+            format!("Backup command is unavailable: {tool}"),
+        ),
+        BackupError::CommandTimeout {
+            tool,
+            timeout_seconds,
+        } => (
+            StatusCode::GATEWAY_TIMEOUT,
+            "GATEWAY_TIMEOUT",
+            format!("Backup command timed out: {tool} after {timeout_seconds}s"),
+        ),
+        BackupError::CommandFailed { tool, stderr, .. } => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "SYS_009",
+            format!("Backup command failed: {tool}: {stderr}"),
+        ),
+        BackupError::VerificationFailed(msg) => {
+            (StatusCode::SERVICE_UNAVAILABLE, "SYS_009", msg.clone())
+        }
+        BackupError::Io(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL",
+            "Backup storage I/O error".to_string(),
+        ),
         BackupError::Database(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "INTERNAL",

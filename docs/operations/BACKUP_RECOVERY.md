@@ -320,7 +320,9 @@ pub struct BackupConfig {
     pub wal_g_s3_bucket: String,
     pub wal_g_s3_prefix: String,
     pub wal_g_s3_region: String,
+    pub wal_g_encryption_enabled: bool,
     pub wal_g_encryption_key_id: String,
+    pub wal_g_encryption_auto_s3: bool,
     pub wal_g_retention_full: u32,
     pub wal_g_retention_weekly: u32,
     pub wal_g_retention_monthly: u32,
@@ -351,7 +353,26 @@ The backup domain is implemented as a read-only administrative status surface un
 | `GET /api/v1/backups/tasks` | Lists backup-related rows from `scheduled_tasks` for `backup_database`, `backup_verification`, `database_integrity_check`, and `backup_retention_cleanup` |
 | `GET /api/v1/backups/runs?limit=20` | Lists recent `scheduled_task_runs` for backup-related task types, capped at 100 |
 
-This phase intentionally does not execute WAL-G, `pg_dump`, verification commands, or retention cleanup. Those operations are Phase 13a Tasks 5 and 6. The Task 4 boundary is the domain five-file pattern, route wiring, typed runtime backup config, admin-only visibility, and readiness diagnostics.
+Task 4 intentionally did not execute WAL-G, `pg_dump`, verification commands, or retention cleanup. That boundary was the domain five-file pattern, route wiring, typed runtime backup config, admin-only visibility, and readiness diagnostics.
+
+### Phase 13a Task 5 Implementation Notes
+
+Backup coordination is implemented through a reusable shared service plus admin endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| `POST /api/v1/backups/wal-g/check` | Runs `wal-g --version` and `wal-g backup-list --json` using the configured WAL-G storage environment, returning command status and backup count |
+| `POST /api/v1/backups/pg-dump` | Runs a manual logical backup with `pg_dump --format=custom --file <path> <database_url>` into `server_config.backup.pg_dump_storage_path`; verifies by default with `pg_restore --list` |
+| `POST /api/v1/backups/verify` | Runs `wal-g wal-verify integrity` and/or `pg_restore --list` for the latest or specified pg_dump file |
+
+Implementation decisions:
+
+- The command coordinator lives in `server/src/services/backup.rs`, not only in the backup domain, so Phase 13a Task 6 can reuse the exact same WAL-G and pg_dump execution path from the scheduled worker.
+- Commands are spawned directly with `tokio::process::Command`; no shell string is constructed. User-provided pg_dump labels are reduced to ASCII alphanumeric, `-`, and `_`, and verification paths must canonicalize under the configured pg_dump storage directory.
+- A process-local async mutex prevents concurrent manual backup/verification operations in the single-instance runtime. Conflicts map to `SYS_007` (`Backup already in progress`).
+- WAL-G environment variables are derived from `server_config.backup`: `WALG_FILE_PREFIX` for local storage, `WALG_S3_PREFIX` plus optional `AWS_ENDPOINT`/`AWS_REGION` for S3-compatible storage, and `WALG_LIBSODIUM_KEY` from the bootstrap encryption key when WAL-G encryption is active.
+- API responses include bounded command stdout/stderr for operator diagnosis, capped at 4096 bytes, and never expose the database URL.
+- Task 5 does not register scheduled backup executors or retention cleanup. `backup_database`, `backup_verification`, and retention execution remain Phase 13a Task 6.
 
 ## 3-2-1 Storage Strategy
 

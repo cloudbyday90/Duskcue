@@ -509,7 +509,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 10: Segments & Storyboards | **Complete** (Tasks 1–12: 8 core + SSE + image pipeline + artwork endpoint + events store) | — |
 | Phase 11: Analytics & Trakt | **Complete** (Tasks 1–9: analytics + dashboard + trakt scaffolding + trakt OAuth + trakt sync engine + trakt sync worker + GeoIP service + impossible travel detection + GeoIP database updater) | — |
 | Phase 12: Kometa-Like System | **Complete** (Tasks 1–9: overlays, compositing, conditions, clean art, collections, overlay worker, poster management, asset-directory scan, community imports) | — |
-| Phase 13a: System Operations Core | **In progress** (Tasks 2-4 complete: generic `server_config` runtime API; scheduled-task list/get/trigger/cancel/history API; notification cleanup executor; backup domain status/tasks/runs API) | — |
+| Phase 13a: System Operations Core | **In progress** (Tasks 2-5 complete: generic `server_config` runtime API; scheduled-task list/get/trigger/cancel/history API; notification cleanup executor; backup domain status/tasks/runs API; WAL-G check, manual pg_dump, and backup verification coordination) | — |
 | Phase 13b–16 | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
@@ -741,6 +741,7 @@ Database defensibility strategy is documented in [BACKUP_RECOVERY.md](docs/opera
 **Key decisions:**
 - **WAL-G** for continuous WAL archiving + PITR — single Go binary, Apache 2.0, pgBackRest is dead (April 2026)
 - **pg_dump** for portable logical backups — cross-version, table-level selective restore
+- **Backup coordination API** — admin-only WAL-G status check, manual `pg_dump` trigger, and verification endpoints reuse `server/src/services/backup.rs`, with shell-free command execution and a process-local operation lock
 - **`data_checksums=on`** — page-level silent corruption detection
 - **Built-in monitoring** — scheduled integrity checks, backup verification, WAL archival health alerts via existing notification system
 - **3-2-1 storage** — production + local NAS + optional S3 off-site

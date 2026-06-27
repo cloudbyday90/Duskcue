@@ -21,6 +21,28 @@ pub enum BackupError {
     #[error("invalid backup configuration: {0}")]
     InvalidConfig(String),
 
+    #[error("backup operation already in progress")]
+    OperationInProgress,
+
+    #[error("backup command unavailable: {tool}: {reason}")]
+    CommandUnavailable { tool: String, reason: String },
+
+    #[error("backup command timed out: {tool} after {timeout_seconds}s")]
+    CommandTimeout { tool: String, timeout_seconds: u64 },
+
+    #[error("backup command failed: {tool} exit={exit_code:?}: {stderr}")]
+    CommandFailed {
+        tool: String,
+        exit_code: Option<i32>,
+        stderr: String,
+    },
+
+    #[error("backup verification failed: {0}")]
+    VerificationFailed(String),
+
+    #[error("backup I/O error: {0}")]
+    Io(#[from] std::io::Error),
+
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 }

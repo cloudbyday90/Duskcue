@@ -22,7 +22,7 @@ pub mod types;
 pub use error::BackupError;
 
 use axum::Router;
-use axum::routing::get;
+use axum::routing::{get, post};
 
 use crate::state::AppState;
 
@@ -31,5 +31,11 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/api/v1/backups/status", get(handlers::get_backup_status))
         .route("/api/v1/backups/tasks", get(handlers::list_backup_tasks))
         .route("/api/v1/backups/runs", get(handlers::list_backup_runs))
+        .route(
+            "/api/v1/backups/wal-g/check",
+            post(handlers::check_wal_g_status),
+        )
+        .route("/api/v1/backups/pg-dump", post(handlers::trigger_pg_dump))
+        .route("/api/v1/backups/verify", post(handlers::verify_backups))
         .with_state(state)
 }
