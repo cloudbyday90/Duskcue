@@ -507,7 +507,7 @@ Playback heartbeats UPDATE `user_item_data.resume_position_ms` every 10-30 secon
 
 ### Cache & Storage (CACHE_STORAGE.md)
 
-The `disk_space_check` task monitors `/data` volume usage. If autovacuum or REINDEX operations consume significant temporary space, the disk monitoring will alert admins.
+The `disk_space_check` task monitors `/data` volume usage. If autovacuum or REINDEX operations consume significant temporary space, the disk monitoring will alert admins. The worker is implemented in `server/src/workers/disk_space_check.rs` (Phase 13a Task 8); see [CACHE_STORAGE.md](CACHE_STORAGE.md) §Phase 13a Task 8 Implementation Notes for the monitoring design and Prometheus metrics.
 
 ### Backup & Recovery (BACKUP_RECOVERY.md)
 

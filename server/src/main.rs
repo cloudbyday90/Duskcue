@@ -328,6 +328,7 @@ async fn main() {
     let backup_verification_state = state.clone();
     let backup_retention_state = state.clone();
     let reindex_maintenance_state = state.clone();
+    let disk_space_check_state = state.clone();
     let scheduler = Arc::new(
         Scheduler::new(state.pool.clone())
             .register_executor("library_scan", |pool, task_id, config| {
@@ -514,6 +515,13 @@ async fn main() {
                         &state, task_id, config,
                     )
                     .await
+                }
+            })
+            .register_fallible_executor("disk_space_check", move |_pool, task_id, config| {
+                let state = disk_space_check_state.clone();
+                async move {
+                    duskcue::workers::disk_space_check::run_disk_space_check(&state, task_id, config)
+                        .await
                 }
             }),
     );

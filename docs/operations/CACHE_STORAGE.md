@@ -420,6 +420,62 @@ At this scale, metadata and artwork become the dominant storage consumer on the 
 
 ---
 
+## Phase 13a Task 8 Implementation Notes
+
+### Worker
+
+`server/src/workers/disk_space_check.rs` implements the `disk_space_check` scheduled task (Phase 13a Task 8). The task row was already seeded by `20260530070000_seed_default_data.sql` (interval 1800s, timeout 60s, config `{"check_paths":true}`) and is included in `seed_default_tasks`; Task 8 only registers the executor and implements the Rust worker — no seed migration is required.
+
+### Disk-stats backend
+
+The worker uses the **`sysinfo` 0.34** crate (already in the workspace, used by `lockfile.rs` for PID liveness) rather than `nix::sys::statvfs`, the `statvfs`/`fs2` crates, or raw `libc`/Win32 calls. `sysinfo` is cross-platform (Windows + Linux + macOS), has no `unsafe` surface, and exposes `Disks::new_with_refreshed_list()` → `Disk::mount_point() / total_space() / available_space()`. The disk enumeration call is wrapped in `tokio::task::spawn_blocking` to avoid blocking the scheduler thread on syscall-heavy enumeration.
+
+### Path → disk resolution
+
+`sysinfo` has no "free space for this path" helper (confirmed via docs.rs, June 2026, and Rust users forum). The worker resolves a path to its backing disk by selecting the disk whose `mount_point()` is the **longest prefix** of the (canonicalized) target path. This naturally handles:
+
+- **tmpfs shadowing** — a `tmpfs` mounted at `/data/transcode` is a longer prefix than `/data`, so the transcode tier reports its RAM allocation (2 GB default), not the host `/data` volume.
+- **Windows drive letters** — `C:\Users\...` matches the `C:\` disk.
+- **Custom overrides** — admin-configured cache paths on separate volumes resolve to that volume's disk.
+
+If the path does not exist (common in dev without Docker volumes) or no disk matches, the tier is recorded with `status: "unavailable"` rather than failing the run.
+
+### Tier resolution
+
+| Tier | Source | Default |
+|---|---|---|
+| `data` | `bootstrap.data_dir` | `/data` |
+| `cache` | `bootstrap.cache_dir` | `/cache` |
+| `transcode` | `RuntimeConfig.transcoding.transcode_path` | `/cache/transcodes` |
+
+The transcode tier reads from `transcoding.transcode_path` (not a separate `storage.transcode_path`) because `TranscodingConfig` already owns that path and the transcode manager writes segments there.
+
+### Config expansion
+
+`StorageConfig` was expanded from an empty placeholder to hold `DiskSpaceWarnings` (the `disk_space_warnings` JSONB group). `#[serde(default)]` on both structs ensures existing `{}` storage JSONB rows deserialize into the CACHE_STORAGE.md defaults (90/90/80 thresholds, 1800s interval, `notify_on_warning: true`). The remaining `StorageConfig` fields from the design (paths, cache limits, eviction policy) are deferred to the future cache-eviction task — Task 8 only needs the warning thresholds.
+
+### Notification boundary (Phase 13b)
+
+CACHE_STORAGE.md specifies "Create a `server_alert` notification for all admin users" on threshold breach. Notification **dispatch** (Fluent templates, SSE + webhook fan-out, push channel) is Phase 13b Task 2. Creating raw `notifications` rows now would produce unrenderable entries (no Fluent template, no dispatch). **Task 8 boundary: log WARN + record Prometheus metrics + persist run stats.** Notification creation is deferred to Phase 13b, which will add a `notify_on_warning` check around the existing worker findings. This mirrors the backup domain precedent (Task 4 read-only status preceded Task 5 execution).
+
+### Metrics
+
+Per §Storage Metrics, the worker emits three gauges with a `path` label (`data`/`cache`/`transcode`):
+
+| Metric | Type | Description |
+|---|---|---|
+| `storage_usage_bytes` | gauge | `total - available` |
+| `storage_capacity_bytes` | gauge | `total_space()` |
+| `storage_usage_percent` | gauge | `usage / total * 100` |
+
+The `cache_evictions_total` / `cache_size_bytes` / `cache_items` metrics belong to the future LRU eviction task and are out of scope.
+
+### Fallible executor semantics
+
+Threshold breach is a **finding, not a failure** — the worker returns `Ok(())` with `status: "threshold_exceeded"` (or `"healthy"`) in run stats. Only infrastructure errors (DB write failure, stats serialization) return `Err` so the scheduler marks the run failed. This matches `reindex_maintenance` and `backup_runner`.
+
+---
+
 ## Research Sources
 
 ### Media Server Storage Issues

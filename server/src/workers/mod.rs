@@ -17,6 +17,7 @@
 pub mod asset_directory_scanner;
 pub mod backup_runner;
 pub mod collection_sync;
+pub mod disk_space_check;
 pub mod geoip_updater;
 pub mod library_scanner;
 pub mod metadata_refresh;

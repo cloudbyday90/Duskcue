@@ -678,8 +678,33 @@ impl Default for LoggingConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct StorageConfig {}
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct StorageConfig {
+    pub disk_space_warnings: DiskSpaceWarnings,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DiskSpaceWarnings {
+    pub data_threshold_percent: u8,
+    pub cache_threshold_percent: u8,
+    pub transcode_threshold_percent: u8,
+    pub check_interval_seconds: u32,
+    pub notify_on_warning: bool,
+}
+
+impl Default for DiskSpaceWarnings {
+    fn default() -> Self {
+        Self {
+            data_threshold_percent: 90,
+            cache_threshold_percent: 90,
+            transcode_threshold_percent: 80,
+            check_interval_seconds: 1800,
+            notify_on_warning: true,
+        }
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
