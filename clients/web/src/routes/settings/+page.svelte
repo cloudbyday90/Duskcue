@@ -23,13 +23,14 @@
     });
 
     const settingsLinks = [
+        { href: '/settings/system', label: 'System', icon: 'M4 7h16M4 12h16M4 17h16', desc: 'Server configuration and operations' },
         { href: '/settings/users', label: 'Users', icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01', desc: 'Manage user accounts and invitations' },
         { href: '/settings/libraries', label: 'Libraries', icon: 'M2 3h20v18H2zM2 8h20', desc: 'Configure media libraries and scan paths' },
         { href: '/settings/quality', label: 'Quality', icon: 'M3 3v18h18', desc: 'Streaming quality and transcoding', soon: true },
         { href: '/settings/subtitles', label: 'Subtitles', icon: 'M4 4h16v16H4z', desc: 'Subtitle preferences and providers' },
         { href: '/settings/overlays', label: 'Overlays', icon: 'M3 3h18v18H3z', desc: 'Artwork overlays and posters', soon: true },
         { href: '/settings/collections', label: 'Collections', icon: 'M3 3h18v18H3z', desc: 'Collection management', soon: true },
-        { href: '/settings/backups', label: 'Backups', icon: 'M21 8v13H3V8M1 3h22v5H1z', desc: 'Backup and recovery', soon: true },
+        { href: '/settings/backups', label: 'Backups', icon: 'M21 8v13H3V8M1 3h22v5H1z', desc: 'Backup and recovery' },
         { href: '/settings/migration', label: 'Migration', icon: 'M3 12h18M3 6h18M3 18h18', desc: 'Import from other platforms', soon: true },
         { href: '/settings/security', label: 'Security', icon: 'M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z', desc: 'Security settings', soon: true },
         { href: '/settings/storage', label: 'Storage', icon: 'M3 3h18v18H3z', desc: 'Cache and storage management', soon: true },

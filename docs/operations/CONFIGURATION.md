@@ -926,3 +926,11 @@ Common alternatives considered:
 - Manual triggers create one `scheduled_task_runs` row and use a state-claim update before execution, preventing duplicate runs when a task is already `running`
 - Run lifecycle now completes history rows for success, failure, timeout, and cancellation; cancellation uses per-task `CancellationToken`s and leaves the current task state `idle` with `last_run_result = 'cancelled'`
 - `notification_cleanup` is registered as a Phase 13a maintenance executor only; it deletes expired notifications or rows older than `config.max_age_days` and does not depend on Phase 13b dispatch
+
+**Phase 13a Task 10 (admin settings UI slice):**
+
+- `clients/web/src/routes/settings/system/+page.svelte` provides a schema-driven admin editor over the generic `server_config` API. It renders each JSONB group as typed controls: toggles for booleans, sliders plus numeric inputs for bounded numbers, dropdowns for constrained strings, text/password inputs for free-form values, and comma-separated inputs for string arrays.
+- The UI saves one JSONB group at a time through `PUT /api/v1/server/config/{group}`. This matches the backend hot-reload boundary and avoids overwriting unrelated groups while preserving unknown keys already present in a group.
+- The page covers all current runtime JSONB groups: `auth`, `security`, `quality`, `transcoding`, `metadata`, `backup`, `storage`, `maintenance`, `resource_limits`, `cpu`, `network`, `subtitles`, `integrations`, `analytics`, `logging`, and `notifications`.
+- `server_config.notifications` includes visible push and webhook fields even though dispatch is Phase 13b work. Those controls are annotated with "Activation requires Phase 13b - notification dispatch"; the generic config API stores the values now, while `RuntimeConfig` ignores unknown keys until Phase 13b expands `NotificationConfig`.
+- `server_config.storage` exposes the cache/disk-warning fields from `CACHE_STORAGE.md` even though the current Rust `StorageConfig` is still empty. This uses the same forward-compatible JSONB behavior as notifications and gives admins one place to preconfigure paths and thresholds before the disk-space worker consumes them.

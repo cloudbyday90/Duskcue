@@ -16,16 +16,28 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export * from './core.js';
-export * from './auth.js';
-export * from './users.js';
-export * from './libraries.js';
-export * from './media.js';
-export * from './playback.js';
-export * from './settings.js';
-export * from './search.js';
-export * from './quality.js';
-export * from './segments.js';
-export * from './storyboards.js';
-export * from './subtitles.js';
-export * from './backups.js';
+import { get, post } from './core.js';
+
+export async function getBackupStatus() {
+    return get('/backups/status');
+}
+
+export async function listBackupTasks() {
+    return get('/backups/tasks');
+}
+
+export async function listBackupRuns(params = {}) {
+    return get('/backups/runs', params);
+}
+
+export async function checkWalGStatus() {
+    return post('/backups/wal-g/check');
+}
+
+export async function triggerPgDump(data = {}) {
+    return post('/backups/pg-dump', data);
+}
+
+export async function verifyBackups(data = {}) {
+    return post('/backups/verify', data);
+}

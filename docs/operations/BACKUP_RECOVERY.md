@@ -416,6 +416,20 @@ Security requirements:
 - Generate per-run credentials and avoid logging database URLs or backup encryption material.
 - Reuse direct process execution; do not build shell command strings for `pg_restore`, WAL-G, or Docker invocation.
 
+### Phase 13a Task 10 Admin UI Notes
+
+The web admin backup panel is implemented at `clients/web/src/routes/settings/backups/+page.svelte` and consumes the Phase 13a backup and scheduler APIs:
+
+| UI area | API source | Behavior |
+|---|---|---|
+| Readiness summary | `GET /api/v1/backups/status` | Shows computed backup readiness, issues, last backup run, last verification run, and retention cleanup evidence |
+| Configuration summary | `GET /api/v1/backups/status` | Shows active WAL-G/pg_dump/verification/retention values and links to the schema-driven `server_config.backup` editor |
+| Manual operations | `POST /api/v1/backups/wal-g/check`, `POST /api/v1/backups/pg-dump`, `POST /api/v1/backups/verify` | Runs explicit backup checks and refreshes the panel after completion |
+| Scheduled operations | `POST /api/v1/scheduled-tasks/{id}/trigger` | Triggers `backup_database`, `backup_verification`, and `backup_retention_cleanup` through the shared scheduler |
+| Recovery drill evidence | `GET /api/v1/scheduled-tasks/{id}/runs` | Displays the latest `backup_recovery_drill`/`recovery_drill` run once Phase 13a Task 9 registers the worker |
+
+The panel intentionally displays a "Worker pending" state for recovery drills when no drill task is registered. This keeps Task 10 UI work forward-compatible without inventing a fake recovery-drill API before Task 9 exists.
+
 ## 3-2-1 Storage Strategy
 
 The recommended setup for production deployments:

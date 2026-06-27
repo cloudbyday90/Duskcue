@@ -103,7 +103,7 @@ The split boundary is determined by the inter-task dependency graph. Tasks group
 7. Implement `server/src/workers/reindex_maintenance.rs` — weekly REINDEX CONCURRENTLY
 8. Implement `server/src/workers/disk_space_check.rs` — 30-minute disk monitoring
 9. Implement `server/src/workers/recovery_drill_runner.rs` — manual/scheduled restore drills in disposable PostgreSQL; restore latest `pg_dump` or WAL-G backup, run structural checks, and persist evidence in `scheduled_task_runs.stats`
-10. Build admin settings UI — all `server_config` JSONB fields as toggles, sliders, dropdowns; push/webhook config fields are visible but annotated "Activation requires Phase 13b — notification dispatch"; backup panel shows latest recovery-drill evidence
+10. ~~Build admin settings UI — all `server_config` JSONB fields as toggles, sliders, dropdowns; push/webhook config fields are visible but annotated "Activation requires Phase 13b — notification dispatch"; backup panel shows latest recovery-drill evidence~~ **DONE**
 
 **Verification:** Admin can configure all settings via UI. Backups run on schedule. Disk space alerts trigger when thresholds are exceeded. Scheduled tasks are visible and triggerable. Recovery drills prove that at least one recent backup can be restored into disposable infrastructure.
 
@@ -146,6 +146,8 @@ The MVP delivers all in-app + SSE + webhook notifications. Mobile push (FCM/APNs
 ### Admin Settings UI Spans Both Clusters
 
 Task 10 (admin settings UI, in Phase 13a) renders ALL `server_config` fields, including push/webhook configuration from `server_config.integrations`. These fields are visible in Phase 13a but have no effect until Phase 13b's notification dispatch ships.
+
+**Implemented Task 10 UI boundary:** `/settings/system` renders the JSONB groups through typed controls and saves one group at a time through the generic config API. `/settings/backups` consumes the backup and scheduler APIs for readiness, manual operations, scheduled task triggers, recent evidence, and recovery-drill evidence once Task 9 registers the drill worker. Push/webhook fields are visible with the Phase 13b activation annotation and remain inert until notification dispatch exists.
 
 **Resolution:** The admin UI renders config fields generically (it's a JSONB editor). Push/webhook fields display a subtle "Not yet active — activation requires the notification system" annotation until Phase 13b ships. When Phase 13b lands, the saved config takes effect immediately — no UI rework needed.
 

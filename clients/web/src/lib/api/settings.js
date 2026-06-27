@@ -16,7 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { get, post } from './core.js';
+import { get, post, put } from './core.js';
 
 export async function validateProviderKey(data) {
     return post('/settings/providers/validate', data);
@@ -26,3 +26,34 @@ export async function getHealth() {
     return get('/health');
 }
 
+export async function getServerConfig() {
+    return get('/server/config');
+}
+
+export async function getConfigGroup(group) {
+    return get(`/server/config/${group}`);
+}
+
+export async function updateConfigGroup(group, value) {
+    return put(`/server/config/${group}`, { value });
+}
+
+export async function listScheduledTasks() {
+    return get('/scheduled-tasks');
+}
+
+export async function getScheduledTask(taskId) {
+    return get(`/scheduled-tasks/${taskId}`);
+}
+
+export async function triggerScheduledTask(taskId) {
+    return post(`/scheduled-tasks/${taskId}/trigger`);
+}
+
+export async function cancelScheduledTask(taskId) {
+    return post(`/scheduled-tasks/${taskId}/cancel`);
+}
+
+export async function listScheduledTaskRuns(taskId, params = {}) {
+    return get(`/scheduled-tasks/${taskId}/runs`, params);
+}

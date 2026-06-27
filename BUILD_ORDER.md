@@ -2966,7 +2966,32 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 7. ~~Implement `server/src/workers/reindex_maintenance.rs` — weekly REINDEX CONCURRENTLY~~ **DONE**
 8. Implement `server/src/workers/disk_space_check.rs` — 30-minute disk monitoring
 9. Implement `server/src/workers/recovery_drill_runner.rs` — manual/scheduled restore drills in disposable PostgreSQL, using the Docker migration-verification pattern to restore the latest `pg_dump` or WAL-G backup, run structural checks, and write evidence into `scheduled_task_runs.stats`
-10. Build admin settings UI — all `server_config` JSONB fields as toggles, sliders, dropdowns; push/webhook config fields visible but annotated "Activation requires Phase 13b — notification dispatch"; backup panel shows last backup, verification, retention, and recovery-drill evidence
+10. ~~Build admin settings UI — all `server_config` JSONB fields as toggles, sliders, dropdowns; push/webhook config fields visible but annotated "Activation requires Phase 13b — notification dispatch"; backup panel shows last backup, verification, retention, and recovery-drill evidence~~ **DONE**
+
+**What was built for Task 10 (UI slice):**
+
+| File | Purpose |
+|---|---|
+| `clients/web/src/lib/api/settings.js` | Added generic `server_config` helpers (`GET/PUT /server/config`, per-group updates) and scheduled-task helpers (list/get/trigger/cancel/runs) |
+| `clients/web/src/lib/api/backups.js` | Added backup API helpers for status, task/run lists, WAL-G check, manual pg_dump, and verification |
+| `clients/web/src/lib/api/index.js` | Exported backup helpers from the API barrel |
+| `clients/web/src/routes/settings/system/+page.svelte` | New schema-driven admin config editor for all `server_config` JSONB groups with typed controls, per-group dirty state, one-group-at-a-time saves, and Phase 13b annotations for push/webhook settings |
+| `clients/web/src/routes/settings/backups/+page.svelte` | Replaced placeholder with backup readiness/config/operations panel, scheduled backup trigger controls, recent backup evidence table, and recovery-drill evidence area |
+| `clients/web/src/routes/settings/+page.svelte` | Added System link and enabled the Backups settings link |
+| `docs/operations/CONFIGURATION.md` | Documented Task 10 config UI behavior and forward-compatible JSONB handling for notifications/storage |
+| `docs/operations/BACKUP_RECOVERY.md` | Documented Task 10 backup panel API mapping and recovery-drill pending state |
+| `PROJECT.md` | Updated Phase 13a status |
+
+**Key decisions from Task 10:**
+
+- **Schema-driven UI over per-group bespoke pages** — A single `/settings/system` route renders the known runtime JSONB groups from a local field schema. This keeps the broad Phase 13a settings surface maintainable while still using native controls for booleans, bounded numbers, enums, secrets, and arrays.
+- **Per-group save boundary** — The UI calls `PUT /api/v1/server/config/{group}` instead of submitting the whole config row. This mirrors the backend hot-reload boundary, limits accidental cross-group writes, and preserves unknown keys inside the group object.
+- **Forward-compatible notification/storage fields** — `notifications` exposes push/webhook settings with the required Phase 13b activation annotation. `storage` exposes cache paths and disk warning thresholds from `CACHE_STORAGE.md` even though the Rust `StorageConfig` is not expanded yet; the generic JSONB API stores those values for later worker consumption.
+- **Backup panel uses operational APIs, not raw config only** — `/settings/backups` reads `GET /api/v1/backups/status` for readiness, PostgreSQL recovery-safety checks, backup scheduled tasks, and recent run evidence; manual actions use the backup coordinator endpoints, while scheduled actions trigger existing scheduled tasks.
+- **Recovery drill is shown as pending when absent** — Phase 13a Task 9 is not implemented yet. The UI looks for `backup_recovery_drill`/`recovery_drill` scheduled tasks and displays evidence once they exist; until then it shows a "Worker pending" state instead of fabricating status.
+- **Existing Svelte 5 pattern followed** — Local route state uses runes (`$state`, `$derived`) like the subtitle settings page; API calls go through the existing `core.js` request wrapper with same-origin credentials and RFC 9457 error handling.
+
+**Verification:** `npm run build` passes. `npx svelte-check --threshold warning` passes with 0 errors and 0 warnings.
 
 **What was built for Task 2:**
 
