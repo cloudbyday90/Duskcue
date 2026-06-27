@@ -20,7 +20,7 @@ The decision documented here: **PostgreSQL FTS as the default search engine for 
 
 **Does NOT cover:**
 
-- The existing PostgreSQL FTS implementation details — already built in Phase 2; see [DATABASE.md](DATABASE.md) and `server/migrations/20260530_060200_create_full_text_search.sql`
+- The existing PostgreSQL FTS implementation details — already built in Phase 2; see [DATABASE.md](DATABASE.md) and `server/migrations/20260530060200_create_full_text_search.sql`
 - Media browsing UI (poster grid, sort, filter) — see [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) and `clients/web/src/routes/`
 - Subtitle search (different domain; see [SUBTITLES.md](SUBTITLES.md))
 - Person/credit CRUD (see [DATABASE.md](DATABASE.md) `people`, `media_credits` tables)
@@ -28,7 +28,7 @@ The decision documented here: **PostgreSQL FTS as the default search engine for 
 
 ## Current State — PostgreSQL FTS (Phase 2)
 
-Duskcue v1.0 ships with PostgreSQL full-text search. The Phase 2 migration (`20260530_060200_create_full_text_search.sql`) created a sophisticated FTS setup that is already better-than-typical for PG:
+Duskcue v1.0 ships with PostgreSQL full-text search. The Phase 2 migration (`20260530060200_create_full_text_search.sql`) created a sophisticated FTS setup that is already better-than-typical for PG:
 
 ### Schema
 
@@ -373,7 +373,7 @@ If an admin triggers a manual Meilisearch full-rebuild while the indexer is also
 
 | Component | Status | Notes |
 |---|---|---|
-| `search_vector` column + triggers + GIN index | ✅ Implemented | Phase 2 migration `20260530_060200` |
+| `search_vector` column + triggers + GIN index | ✅ Implemented | Phase 2 migration `20260530060200` |
 | `idx_media_items_title_trgm` trigram index | ✅ Implemented | Phase 2 migration |
 | `GET /api/v1/search` endpoint | ✅ Implemented | Phase 8 web client |
 | `SearchBackend` abstraction layer | Not started | Post-v1.0, lands with Meilisearch integration |

@@ -21,7 +21,7 @@ This document defines the database migration strategy for the server. It covers 
 Classifarr uses a **custom ESM migration runner** (`server/src/config/migrations.mjs`) that:
 
 1. Tracks applied migrations in a `schema_migrations` table
-2. Supports two naming conventions: legacy numeric (`XXX_name.sql`) and timestamp (`YYYYMMDD_HHMMSS_name.sql`)
+2. Supports two naming conventions: legacy numeric (`XXX_name.sql`) and timestamp (`YYYYMMDDHHMMSS_name.sql`)
 3. Runs migrations in deterministic order on application startup
 4. Uses a fail-fast approach — stops on first error
 5. Requires all migrations to be idempotent (`IF NOT EXISTS`, `IF EXISTS`, `DO $$ ... $$`)
@@ -68,21 +68,21 @@ We're already using SQLx as our query layer. Using sqlx-cli gives us:
 ### Format
 
 ```
-YYYYMMDD_HHMMSS_descriptive_name.sql
+YYYYMMDDHHMMSS_descriptive_name.sql
 ```
 
 Examples:
 ```
-20260530_030000_create_core_media_tables.sql
-20260530_030100_create_trakt_integration.sql
-20260530_030200_create_activity_analytics.sql
-20260530_030300_create_playback_domain.sql
-20260530_040000_create_auth_domain.sql
-20260530_050000_create_system_domain.sql
-20260530_060000_create_cross_cutting_concerns.sql
-20260530_060100_create_audit_triggers.sql
-20260530_060200_create_full_text_search.sql
-20260530_070000_seed_default_data.sql
+20260530030000_create_core_media_tables.sql
+20260530030100_create_trakt_integration.sql
+20260530030200_create_activity_analytics.sql
+20260530030300_create_playback_domain.sql
+20260530040000_create_auth_domain.sql
+20260530050000_create_system_domain.sql
+20260530060000_create_cross_cutting_concerns.sql
+20260530060100_create_audit_triggers.sql
+20260530060200_create_full_text_search.sql
+20260530070000_seed_default_data.sql
 ```
 
 ### Why Timestamps Over Sequential Numbers
@@ -99,6 +99,8 @@ Examples:
 
 This matches the Classifarr convention and the broader industry trend. The sqlx-cli `migrate add` command generates timestamp-prefixed files by default.
 
+SQLx parses the migration version as the numeric prefix before the first underscore. Do not put an underscore between the date and time. `20260530_030000_name.sql` is invalid for Duskcue because SQLx treats its version as `20260530`, causing collisions with every other migration created on the same date.
+
 ## Migration Architecture
 
 ### Directory Structure
@@ -106,16 +108,16 @@ This matches the Classifarr convention and the broader industry trend. The sqlx-
 ```
 server/
 ├── migrations/
-│   ├── 20260530_030000_create_core_media_tables.sql
-│   ├── 20260530_030100_create_trakt_integration.sql
-│   ├── 20260530_030200_create_activity_analytics.sql
-│   ├── 20260530_030300_create_playback_domain.sql
-│   ├── 20260530_040000_create_auth_domain.sql
-│   ├── 20260530_050000_create_system_domain.sql
-│   ├── 20260530_060000_create_cross_cutting_concerns.sql
-│   ├── 20260530_060100_create_audit_triggers.sql
-│   ├── 20260530_060200_create_full_text_search.sql
-│   └── 20260530_070000_seed_default_data.sql
+│   ├── 20260530030000_create_core_media_tables.sql
+│   ├── 20260530030100_create_trakt_integration.sql
+│   ├── 20260530030200_create_activity_analytics.sql
+│   ├── 20260530030300_create_playback_domain.sql
+│   ├── 20260530040000_create_auth_domain.sql
+│   ├── 20260530050000_create_system_domain.sql
+│   ├── 20260530060000_create_cross_cutting_concerns.sql
+│   ├── 20260530060100_create_audit_triggers.sql
+│   ├── 20260530060200_create_full_text_search.sql
+│   └── 20260530070000_seed_default_data.sql
 ├── src/
 │   └── ...
 ├── sqlx.toml
@@ -201,9 +203,9 @@ This is critical because:
 
 Each migration should represent a single, atomic schema change:
 
-- Good: `20260615_120000_add_user_preferences_table.sql`
-- Good: `20260615_120100_add_theme_column_to_users.sql`
-- Bad: `20260615_120000_add_prefs_and_fix_indexes_and_seed_data.sql`
+- Good: `20260615120000_add_user_preferences_table.sql`
+- Good: `20260615120100_add_theme_column_to_users.sql`
+- Bad: `20260615120000_add_prefs_and_fix_indexes_and_seed_data.sql`
 
 ### 4. Data Migrations Are Separate From Schema Migrations
 
@@ -232,8 +234,8 @@ For emergencies, use PITR (see [BACKUP_RECOVERY.md](../operations/BACKUP_RECOVER
 sqlx migrate add -r create_user_preferences
 
 # Creates:
-#   migrations/20260615_120000_create_user_preferences.up.sql
-#   migrations/20260615_120000_create_user_preferences.down.sql
+#   migrations/20260615120000_create_user_preferences.up.sql
+#   migrations/20260615120000_create_user_preferences.down.sql
 ```
 
 The `-r` flag creates both up and down files for development convenience. The down file is used during development only (`sqlx migrate revert`). It is never run in production.
@@ -245,7 +247,7 @@ The `-r` flag creates both up and down files for development convenience. The do
 sqlx migrate add add_user_avatar_url
 
 # Write the SQL
-# edit migrations/20260615_120000_add_user_avatar_url.up.sql
+# edit migrations/20260615120000_add_user_avatar_url.up.sql
 
 # Apply to local database
 sqlx migrate run
@@ -275,6 +277,32 @@ sqlx migrate run
 On a fresh install, all migrations run from scratch in timestamp order. This is the expected behavior and why idempotency matters.
 
 For performance on fresh installs (e.g. Docker containers), the application could optionally detect a fresh database and apply a "schema snapshot" — a single SQL file representing the current complete schema. This is an optimization, not a requirement.
+
+## Disposable Docker Verification
+
+Every new migration should be validated against a fresh PostgreSQL 18 database, not only a developer's long-lived local database.
+
+The local verifier is:
+
+```powershell
+.\scripts\verify-migrations.ps1
+```
+
+The verifier uses `docker/compose.migrations.yml` to start PostgreSQL 18 Alpine with data checksums enabled, waits with `pg_isready`, runs the in-repo `verify_migrations` Rust binary that calls `sqlx::migrate!().run(&pool)`, and cleans up with `docker compose down -v --remove-orphans`.
+
+Use this before considering a migration implementation complete:
+
+```powershell
+.\scripts\verify-migrations.ps1
+```
+
+Use this when validating database-backed server tests against the same disposable database:
+
+```powershell
+.\scripts\verify-migrations.ps1 -RunTests
+```
+
+The full design, security posture, and CI lane mapping are documented in [MIGRATION_VERIFICATION.md](../ci/MIGRATION_VERIFICATION.md).
 
 ## Integration with Existing Systems
 
@@ -345,7 +373,7 @@ This matches Classifarr's fail-fast philosophy. It is better to have a server th
 | Aspect | Classifarr | Our Server |
 |---|---|---|
 | **Runner** | Custom (`migrations.mjs`) | sqlx (embedded) |
-| **Naming** | `YYYYMMDD_HHMMSS_name.sql` | Same (sqlx default) |
+| **Naming** | `YYYYMMDDHHMMSS_name.sql` | SQLx-compatible timestamp prefix |
 | **Tracking table** | `schema_migrations` | `_sqlx_migrations` (customizable) |
 | **Checksums** | Custom implementation | Built-in (SHA-256) |
 | **Ordering** | Legacy numeric first, then timestamp | Timestamp only |
@@ -369,15 +397,22 @@ Phase 2 produced 15 migration files in `server/migrations/` following the naming
 - `INSERT ... ON CONFLICT (key) DO NOTHING` for all seed data
 - `CREATE EXTENSION IF NOT EXISTS` for `pg_trgm` and `pgstattuple`
 
-**Circular dependency resolution:** The `users` table is created as a minimal stub (id + timestamps only) in `20260530_030100_create_trakt_integration.sql` because `trakt_accounts` references it. The full auth schema (13 additional columns) is added via idempotent ALTER in `20260530_040000_create_auth_domain.sql`. The `streaming_policies` table is created before the ALTER because `users.streaming_policy_id` references it.
+**Circular dependency resolution:** The `users` table is created as a minimal stub (id + timestamps only) in `20260530030100_create_trakt_integration.sql` because `trakt_accounts` references it. The full auth schema (13 additional columns) is added via idempotent ALTER in `20260530040000_create_auth_domain.sql`. The `streaming_policies` table is created before the ALTER because `users.streaming_policy_id` references it.
 
-**Partitioned tables:** `play_sessions`, `play_events`, and `audit_log` are range-partitioned by month. Initial partitions for June and July 2026 are pre-created. Future partition creation is handled by the `partition_management` scheduled task (seeded in `20260530_070000_seed_default_data.sql`).
+**Partitioned tables:** `play_sessions`, `play_events`, and `audit_log` are range-partitioned by month. Initial partitions for June and July 2026 are pre-created. Future partition creation is handled by the `partition_management` scheduled task (seeded in `20260530070000_seed_default_data.sql`).
 
-**sqlx.toml configuration:** `server/sqlx.toml` sets `database-url-var = "DUSKCUE_DATABASE_URL"` and `migrations-dir = "migrations"`, matching the conventions documented above.
+**sqlx.toml configuration:** `server/sqlx.toml` sets `database-url-var = "DUSKCUE_DATABASE_URL"`. SQLx CLI migration commands run from `server/`, so the default `migrations/` directory resolves to `server/migrations/`.
+
+**Disposable verification:** `scripts/verify-migrations.ps1`, `docker/compose.migrations.yml`, and `server/src/bin/verify_migrations.rs` provide the local Docker Desktop path for executing the full embedded migration set against PostgreSQL 18 from a clean database. This closes the Phase 2 gap where migrations were created but not verified against a live PostgreSQL instance.
 
 ## Research Sources
 
 - sqlx 0.9.0 CHANGELOG — Released May 6, 2026: https://docs.rs/crate/sqlx/latest/source/CHANGELOG.md
+- SQLx migration macro docs: https://docs.rs/sqlx/latest/sqlx/macro.migrate.html
+- Docker Compose `down` docs: https://docs.docker.com/reference/cli/docker/compose/down/
+- Docker Compose service healthcheck docs: https://docs.docker.com/reference/compose-file/services/#healthcheck
+- PostgreSQL Docker Official Image: https://hub.docker.com/_/postgres
+- PostgreSQL `pg_isready`: https://www.postgresql.org/docs/current/app-pg-isready.html
 - refinery 0.9.0 — Rust SQL Migration Toolkit: https://github.com/rust-db/refinery
 - Rust ORMs in 2026 (Diesel vs SQLx vs SeaORM vs Rusqlite): https://aarambhdevhub.medium.com/rust-orms-in-2026-diesel-vs-sqlx-vs-seaorm-vs-rusqlite-which-one-should-you-actually-use-706d0fe912f3
 - Flyway timestamp-based naming best practices: https://dev.to/deployhq/master-your-database-migrations-with-flyway-a-comprehensive-guide-for-all-projects-1een

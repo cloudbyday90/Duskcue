@@ -22,7 +22,6 @@ use chrono::{DateTime, Utc};
 use croner::Cron;
 use dashmap::DashMap;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 use sqlx::Row;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
@@ -50,6 +49,7 @@ pub struct Scheduler {
 #[derive(Debug)]
 enum TaskRunOutcome {
     Success,
+    Failure(String),
     Cancelled,
     Timeout,
 }
@@ -136,6 +136,38 @@ impl Scheduler {
                         result = tokio::time::timeout(timeout, handler(pool_clone, task_id, config)) => {
                             match result {
                                 Ok(()) => TaskRunOutcome::Success,
+                                Err(_) => {
+                                    tracing::warn!(task_id = %task_id, "Task timed out");
+                                    TaskRunOutcome::Timeout
+                                }
+                            }
+                        }
+                    }
+                })
+            },
+        );
+        self.executors.push((task_type.to_string(), wrapped));
+        self
+    }
+
+    pub fn register_fallible_executor<F, Fut, E>(mut self, task_type: &str, handler: F) -> Self
+    where
+        F: Fn(sqlx::PgPool, Uuid, serde_json::Value) -> Fut + Send + Sync + 'static,
+        Fut: std::future::Future<Output = Result<(), E>> + Send + 'static,
+        E: std::fmt::Display + Send + 'static,
+    {
+        let handler = Arc::new(handler);
+        let wrapped: TaskExecutor = Arc::new(
+            move |pool, task_id, config, timeout, cancellation| {
+                let handler = Arc::clone(&handler);
+                let pool_clone = pool.clone();
+                tokio::spawn(async move {
+                    tokio::select! {
+                        _ = cancellation.cancelled() => TaskRunOutcome::Cancelled,
+                        result = tokio::time::timeout(timeout, handler(pool_clone, task_id, config)) => {
+                            match result {
+                                Ok(Ok(())) => TaskRunOutcome::Success,
+                                Ok(Err(err)) => TaskRunOutcome::Failure(err.to_string()),
                                 Err(_) => {
                                     tracing::warn!(task_id = %task_id, "Task timed out");
                                     TaskRunOutcome::Timeout
@@ -298,6 +330,22 @@ impl Scheduler {
             match handle.await {
                 Ok(TaskRunOutcome::Success) => {
                     on_task_success(&pool, task_id, run_id, &task_name).await;
+                }
+                Ok(TaskRunOutcome::Failure(error_message)) => {
+                    on_task_failure(
+                        &pool,
+                        task_id,
+                        run_id,
+                        "failure",
+                        &TaskFailureInfo {
+                            task_name,
+                            error_message,
+                            max_retries,
+                            retry_delay_secs: retry_delay,
+                            consecutive_failures,
+                        },
+                    )
+                    .await;
                 }
                 Ok(TaskRunOutcome::Cancelled) => {
                     on_task_cancelled(&pool, task_id, run_id, &task_name).await;
@@ -601,8 +649,6 @@ async fn complete_run(
     error_message: Option<&str>,
     stats: Option<serde_json::Value>,
 ) -> Result<(), sqlx::Error> {
-    let stats_val = stats.unwrap_or(json!({}));
-
     sqlx::query(
         r#"
         UPDATE scheduled_task_runs
@@ -615,7 +661,7 @@ async fn complete_run(
             duration_ms = EXTRACT(EPOCH FROM (now() - started_at))::INT * 1000,
             result = $2,
             error_message = $3,
-            stats = $4
+            stats = COALESCE($4, stats)
         WHERE id = $1
           AND state = 'running'
         "#,
@@ -623,7 +669,7 @@ async fn complete_run(
     .bind(run_id)
     .bind(result)
     .bind(error_message)
-    .bind(stats_val)
+    .bind(stats)
     .execute(pool)
     .await?;
 
@@ -871,6 +917,24 @@ pub async fn seed_default_tasks(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> 
         (
             "Database Maintenance",
             "database_maintenance",
+            Some("0 5 * * 0"),
+            None::<i32>,
+        ),
+        (
+            "Database Backup",
+            "backup_database",
+            Some("0 3 * * *"),
+            None::<i32>,
+        ),
+        (
+            "Backup Verification",
+            "backup_verification",
+            Some("30 4 * * *"),
+            None::<i32>,
+        ),
+        (
+            "Backup Retention Cleanup",
+            "backup_retention_cleanup",
             Some("0 5 * * 0"),
             None::<i32>,
         ),

@@ -639,7 +639,7 @@ The domain error converts to `AppError` via `#[from]` and maps in `overlay_error
 - `ApplyOverlaysRequest`, `PreviewOverlayRequest`, `OverlayTemplateImport`, `OverlayTemplateResponse` — operation-specific DTOs
 - Validation statics: `VALID_OVERLAY_TYPES` (`image`/`text`/`backdrop`), `VALID_APPLIES_TO` (`poster`/`backdrop`/`season_poster`/`episode_thumb`), `VALID_HORIZONTAL_ALIGN`, `VALID_VERTICAL_ALIGN` — sourced from the `CHECK` constraints in the DDL
 
-**No new DB migration** — `overlay_definitions` and `artwork_overlay_state` tables (plus `artwork.is_locked`/`source_type` columns) were created in Phase 2 migration 14 (`20260530_070400_create_overlays_collections.sql`).
+**No new DB migration** — `overlay_definitions` and `artwork_overlay_state` tables (plus `artwork.is_locked`/`source_type` columns) were created in Phase 2 migration 14 (`20260530070400_create_overlays_collections.sql`).
 
 **No new workspace dependencies** — the domain scaffolding uses existing `axum`, `sqlx`, `serde`, `validator`, `uuid`, `chrono`. The compositing crates (`ab_glyph`, `fontdb`, `resvg`) are added in Task 2.
 
@@ -795,7 +795,7 @@ Built `server/src/workers/overlay_compositor.rs` as the scheduled/manual orchest
 
 **No queue table or `SKIP LOCKED`** — PostgreSQL `FOR UPDATE SKIP LOCKED` is useful for multi-consumer queue workflows, but Task 8 intentionally avoids a queue table. Duskcue is single-instance, and the scheduler already serializes a scheduled task through `scheduled_tasks.state`; adding per-target locks would add state without improving correctness.
 
-**Scheduler integration** — `overlay_application` is already allowed by the Phase 2 `scheduled_tasks.task_type` CHECK constraint. Task 8 registers the executor in `main.rs`, adds first-run seeding in `seed_default_tasks()`, and adds `20260625_070000_seed_overlay_application_task.sql` for existing deployments. Default schedule: daily 05:00, timeout 7200s, config `{ "reapply_all": false, "max_concurrent": 2 }`.
+**Scheduler integration** — `overlay_application` is already allowed by the Phase 2 `scheduled_tasks.task_type` CHECK constraint. Task 8 registers the executor in `main.rs`, adds first-run seeding in `seed_default_tasks()`, and adds `20260625070000_seed_overlay_application_task.sql` for existing deployments. Default schedule: daily 05:00, timeout 7200s, config `{ "reapply_all": false, "max_concurrent": 2 }`.
 
 **Manual apply semantics** — `POST /api/v1/overlays/apply` now runs inline and returns `"completed"` with the number of candidate artwork targets. A future Phase 13a scheduled-task API can expose non-blocking trigger/history semantics if the admin UI needs progress tracking.
 

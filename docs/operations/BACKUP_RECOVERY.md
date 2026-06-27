@@ -374,6 +374,27 @@ Implementation decisions:
 - API responses include bounded command stdout/stderr for operator diagnosis, capped at 4096 bytes, and never expose the database URL.
 - Task 5 does not register scheduled backup executors or retention cleanup. `backup_database`, `backup_verification`, and retention execution remain Phase 13a Task 6.
 
+### Phase 13a Task 6 Implementation Notes
+
+Scheduled backup execution is implemented through `server/src/workers/backup_runner.rs` and the shared scheduler:
+
+| Scheduled task | Executor | Behavior |
+|---|---|---|
+| `backup_database` | `run_backup_database` | Runs WAL-G `backup-push` for the configured PostgreSQL data directory when `wal_g_enabled` is true, adding `--verify` when `data_checksums` is true, then runs pg_dump custom-format backup when `pg_dump_enabled` is true |
+| `backup_verification` | `run_backup_verification` | Skips when `verification_enabled` is false; otherwise verifies enabled tiers with `wal-g wal-verify integrity` and `pg_restore --list` |
+| `backup_retention_cleanup` | `run_backup_retention_cleanup` | Runs WAL-G full-backup retention and prunes local generated `.dump` files by daily/monthly windows |
+
+Implementation decisions:
+
+- Backup workers use the scheduler's fallible executor path, so failed backup commands mark the scheduled run as `failure` and participate in the existing retry/auto-disable lifecycle.
+- The scheduled worker does not build shell commands. It reuses `services::backup`, which launches WAL-G, `pg_dump`, and `pg_restore` through `tokio::process::Command`.
+- WAL-G physical backup uses `PGDATA` when set; otherwise it uses `{data_dir}/postgres`, matching the embedded PostgreSQL layout from `DOCKER_DEPLOYMENT.md`. Missing PGDATA is treated as invalid backup configuration.
+- `backup_database` runs both enabled backup tiers. This preserves the design split: WAL-G for physical/PITR recovery and pg_dump custom format for selective/table-level restore.
+- `backup_verification` chooses verification targets from runtime config by default (`wal_g_enabled`, `pg_dump_enabled`) and can be narrowed by scheduled-task config keys `verify_wal_g` and `verify_pg_dump`.
+- WAL-G retention uses `wal-g delete retain <wal_g_retention_full> --full --confirm`. Local pg_dump retention keeps all generated dumps inside the daily window, keeps the newest generated dump per month inside the monthly window, and leaves unknown `.dump` filenames untouched.
+- The migration `20260627010000_seed_backup_scheduled_tasks.sql` seeds `backup_verification` and `backup_retention_cleanup`, normalizes `backup_database` to daily 03:00, and ensures backup tasks have `next_run_at` values.
+- Backup workers persist structured command results and cleanup counts into `scheduled_task_runs.stats`; the scheduler preserves those stats when marking the run complete.
+
 ## 3-2-1 Storage Strategy
 
 The recommended setup for production deployments:

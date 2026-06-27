@@ -1,5 +1,5 @@
 CREATE TABLE IF NOT EXISTS play_sessions (
-    id UUID DEFAULT uuidv7() PRIMARY KEY,
+    id UUID DEFAULT uuidv7(),
     created_at TIMESTAMPTZ GENERATED ALWAYS AS (uuid_extract_timestamp(id)) STORED,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -44,6 +44,7 @@ CREATE TABLE IF NOT EXISTS play_sessions_2026_07 PARTITION OF play_sessions
     FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
 
 CREATE INDEX IF NOT EXISTS idx_play_sessions_user_id ON play_sessions (user_id);
+CREATE INDEX IF NOT EXISTS idx_play_sessions_id ON play_sessions (id);
 CREATE INDEX IF NOT EXISTS idx_play_sessions_media_item_id ON play_sessions (media_item_id);
 CREATE INDEX IF NOT EXISTS idx_play_sessions_library_id ON play_sessions (library_id);
 CREATE INDEX IF NOT EXISTS idx_play_sessions_started_at ON play_sessions (started_at DESC);
@@ -56,7 +57,7 @@ CREATE TABLE IF NOT EXISTS play_session_streams (
     id UUID DEFAULT uuidv7() PRIMARY KEY,
     created_at TIMESTAMPTZ GENERATED ALWAYS AS (uuid_extract_timestamp(id)) STORED,
 
-    play_session_id UUID NOT NULL UNIQUE REFERENCES play_sessions(id) ON DELETE CASCADE,
+    play_session_id UUID NOT NULL UNIQUE,
 
     source_video_codec TEXT,
     source_video_resolution TEXT,
@@ -109,10 +110,10 @@ CREATE TABLE IF NOT EXISTS play_session_streams (
 CREATE INDEX IF NOT EXISTS idx_play_session_streams_play_session_id ON play_session_streams (play_session_id);
 
 CREATE TABLE IF NOT EXISTS play_events (
-    id UUID DEFAULT uuidv7() PRIMARY KEY,
+    id UUID DEFAULT uuidv7(),
     created_at TIMESTAMPTZ GENERATED ALWAYS AS (uuid_extract_timestamp(id)) STORED,
 
-    play_session_id UUID NOT NULL REFERENCES play_sessions(id) ON DELETE CASCADE,
+    play_session_id UUID NOT NULL,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
     event_type TEXT NOT NULL CHECK (event_type IN (
@@ -131,6 +132,7 @@ CREATE TABLE IF NOT EXISTS play_events_2026_07 PARTITION OF play_events
     FOR VALUES FROM ('2026-07-01') TO ('2026-08-01');
 
 CREATE INDEX IF NOT EXISTS idx_play_events_play_session_id ON play_events (play_session_id);
+CREATE INDEX IF NOT EXISTS idx_play_events_id ON play_events (id);
 CREATE INDEX IF NOT EXISTS idx_play_events_user_id ON play_events (user_id);
 CREATE INDEX IF NOT EXISTS idx_play_events_event_type ON play_events (event_type);
 CREATE INDEX IF NOT EXISTS idx_play_events_event_at ON play_events (event_at DESC);
@@ -140,7 +142,7 @@ CREATE TABLE IF NOT EXISTS user_trust_events (
     created_at TIMESTAMPTZ GENERATED ALWAYS AS (uuid_extract_timestamp(id)) STORED,
 
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    play_session_id UUID REFERENCES play_sessions(id) ON DELETE SET NULL,
+    play_session_id UUID,
 
     rule_type TEXT NOT NULL CHECK (rule_type IN (
         'impossible_travel', 'simultaneous_locations', 'device_velocity',

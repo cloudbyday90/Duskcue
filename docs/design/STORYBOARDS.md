@@ -472,7 +472,7 @@ Storyboard retrieval, serving, generation-trigger, and deletion API surface impl
 - ~~FFmpeg two-phase pipeline (frame extraction → sprite assembly)~~ — Task 4 (`services/storyboards.rs`) implements the generation library using a refined single-command-per-sheet filtergraph (see Task 4 notes below); Task 6 wires it into a scheduled task worker.
 - ~~Adaptive interval selection~~ — `adaptive_interval()` function per the Generation Pipeline spec; landed in `services/storyboards.rs` (Task 4).
 - Storyboard metadata in playback start response — When `start_playback` is updated to include the storyboard block per the "Integration with Playback" spec, the playback service will call `storyboards::service::get_storyboard` and embed the result in `PlaybackStartResponse`.
-- `storyboard_generation` scheduled task already seeded (migration `20260530_070000_seed_default_data.sql`, daily 04:00) — Task 6 registers the executor on the scheduler in `main.rs`.
+- `storyboard_generation` scheduled task already seeded (migration `20260530070000_seed_default_data.sql`, daily 04:00) — Task 6 registers the executor on the scheduler in `main.rs`.
 
 ### Phase 10 Task 4 — Generation Library + Domain Service Implementation (Complete)
 
@@ -518,7 +518,7 @@ at 04:00, and FFmpeg invocations are sandboxed on Linux.
 | `server/src/domains/storyboards/handlers.rs` | Updated `generate_library_storyboards` and `generate_item_storyboards` to pass `&state` instead of `&state.pool` |
 | `server/src/main.rs` | Registered `storyboard_generation` executor on scheduler (5th executor — `library_scan`, `metadata_refresh`, `subtitle_auto_fetch`, `segment_analysis`, `storyboard_generation`) |
 | `server/src/services/scheduler.rs` | Added "Storyboard Generation" to `seed_default_tasks` (daily 04:00, enabled) |
-| `server/migrations/20260621_040000_seed_storyboard_generation_task.sql` | Seeds `storyboard_generation` scheduled task for existing deployments (the original Phase 2 seed already creates this row for fresh installs; this migration is idempotent insurance for deployments that skipped the seed) |
+| `server/migrations/20260621040000_seed_storyboard_generation_task.sql` | Seeds `storyboard_generation` scheduled task for existing deployments (the original Phase 2 seed already creates this row for fresh installs; this migration is idempotent insurance for deployments that skipped the seed) |
 
 **Decisions reconciled with this design doc:**
 

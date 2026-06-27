@@ -324,6 +324,9 @@ async fn main() {
     let collection_state = state.clone();
     let overlay_state = state.clone();
     let asset_state = state.clone();
+    let backup_database_state = state.clone();
+    let backup_verification_state = state.clone();
+    let backup_retention_state = state.clone();
     let scheduler = Arc::new(
         Scheduler::new(state.pool.clone())
             .register_executor("library_scan", |pool, task_id, config| {
@@ -474,7 +477,35 @@ async fn main() {
                     )
                     .await;
                 }
-            }),
+            })
+            .register_fallible_executor("backup_database", move |_pool, task_id, config| {
+                let state = backup_database_state.clone();
+                async move {
+                    duskcue::workers::backup_runner::run_backup_database(&state, task_id, config)
+                        .await
+                }
+            })
+            .register_fallible_executor("backup_verification", move |_pool, task_id, config| {
+                let state = backup_verification_state.clone();
+                async move {
+                    duskcue::workers::backup_runner::run_backup_verification(
+                        &state, task_id, config,
+                    )
+                    .await
+                }
+            })
+            .register_fallible_executor(
+                "backup_retention_cleanup",
+                move |_pool, task_id, config| {
+                    let state = backup_retention_state.clone();
+                    async move {
+                        duskcue::workers::backup_runner::run_backup_retention_cleanup(
+                            &state, task_id, config,
+                        )
+                        .await
+                    }
+                },
+            ),
     );
     state.set_scheduler(scheduler.clone());
 

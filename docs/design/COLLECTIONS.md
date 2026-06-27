@@ -526,7 +526,7 @@ The scheduled collection sync worker is implemented at `server/src/workers/colle
 
 | Area | Implementation |
 |---|---|
-| Scheduler integration | `collection_sync` is registered in `main.rs` with `AppState` capture and seeded by `20260625_060000_seed_collection_sync_task.sql` |
+| Scheduler integration | `collection_sync` is registered in `main.rs` with `AppState` capture and seeded by `20260625060000_seed_collection_sync_task.sql` |
 | Runtime gates | Skips when `metadata.collections_enabled` is false or task config sets `"sync_dynamic": false` |
 | Scope controls | Supports optional `library_id` and `collection_id` task config fields for targeted runs |
 | External builders | Honors `sync_external` / `include_external`; paces external builder collections with `max_external_requests_per_minute`; aborts the remaining run on provider 429 |

@@ -30,16 +30,16 @@ project/
 │   ├── Cargo.toml
 │   ├── sqlx.toml                 # sqlx-cli configuration
 │   ├── migrations/               # Timestamp-based SQL migrations
-│   │   ├── 20260530_030000_create_core_media_tables.sql
-│   │   ├── 20260530_030100_create_trakt_integration.sql
-│   │   ├── 20260530_030200_create_activity_analytics.sql
-│   │   ├── 20260530_030300_create_playback_domain.sql
-│   │   ├── 20260530_040000_create_auth_domain.sql
-│   │   ├── 20260530_050000_create_system_domain.sql
-│   │   ├── 20260530_060000_create_cross_cutting_concerns.sql
-│   │   ├── 20260530_060100_create_audit_triggers.sql
-│   │   ├── 20260530_060200_create_full_text_search.sql
-│   │   └── 20260530_070000_seed_default_data.sql
+│   │   ├── 20260530030000_create_core_media_tables.sql
+│   │   ├── 20260530030100_create_trakt_integration.sql
+│   │   ├── 20260530030200_create_activity_analytics.sql
+│   │   ├── 20260530030300_create_playback_domain.sql
+│   │   ├── 20260530040000_create_auth_domain.sql
+│   │   ├── 20260530050000_create_system_domain.sql
+│   │   ├── 20260530060000_create_cross_cutting_concerns.sql
+│   │   ├── 20260530060100_create_audit_triggers.sql
+│   │   ├── 20260530060200_create_full_text_search.sql
+│   │   └── 20260530070000_seed_default_data.sql
 │   └── src/
 │       ├── main.rs               # Entry point: config → DB → migrate → serve
 │       ├── lib.rs                # App builder, Router assembly, AppState
@@ -50,6 +50,9 @@ project/
 │       ├── middleware.rs         # Tower middleware (logging, CORS, rate limiting, HTTP metrics, metrics subnet guard)
 │       ├── logging.rs            # Tracing subscriber init + Prometheus metrics recorder init
 │       ├── router.rs             # Top-level router assembly (/health, /metrics), merges domain routers
+│       │
+│       ├── bin/
+│       │   └── verify_migrations.rs  # Disposable PostgreSQL migration verifier
 │       │
 │       ├── db/                   # Database layer (sqlx queries)
 │       │   ├── mod.rs
@@ -389,7 +392,12 @@ project/
 ├── scripts/                      # Development and CI scripts
 │   ├── dev.sh                    # Start all services for development
 │   ├── migrate.sh                # Run database migrations
-│   └── seed.sh                   # Seed development data
+│   ├── seed.sh                   # Seed development data
+│   └── verify-migrations.ps1     # Disposable Docker PostgreSQL migration verification
+│
+├── docker/
+│   ├── entrypoint.sh             # Container startup entrypoint
+│   └── compose.migrations.yml    # Disposable PostgreSQL 18 migration verification stack
 │
 └── docs/                         # Additional documentation
     ├── api/                      # OpenAPI specs, endpoint docs

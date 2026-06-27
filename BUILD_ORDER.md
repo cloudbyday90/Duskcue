@@ -82,21 +82,21 @@ These documents apply to every phase. Consult them when making implementation de
 
 | File | Tables Created |
 |---|---|
-| `20260530_030000_create_core_media_tables.sql` | `libraries`, `library_paths`, `media_items`, `movies`, `series`, `seasons`, `episodes`, `media_files`, `subtitle_files`, `subtitle_ocr_cache`, `subtitle_sync_data`, `genres`, `media_genres`, `tags`, `media_tags`, `people`, `media_credits`, `artwork` |
-| `20260530_030100_create_trakt_integration.sql` | `users` (stub), `trakt_accounts`, `trakt_sync_state` |
-| `20260530_030200_create_activity_analytics.sql` | `play_sessions` (partitioned), `play_session_streams`, `play_events` (partitioned), `user_trust_events`, `user_trust_scores` |
-| `20260530_030300_create_playback_domain.sql` | `user_item_data` (fillfactor=85), `bookmarks`, `playlists`, `playlist_items` |
-| `20260530_040000_create_auth_domain.sql` | `streaming_policies`, `users` ALTER (13 columns added), `user_passkeys`, `user_totp`, `user_capabilities`, `user_library_access`, `user_sessions`, `api_keys`, `invitations`, `device_linking_codes`, `reauth_codes` |
-| `20260530_050000_create_system_domain.sql` | `server_config`, `scheduled_tasks`, `scheduled_task_runs`, `notification_types`, `notifications`, `user_notification_preferences` |
-| `20260530_060000_create_cross_cutting_concerns.sql` | `pg_trgm` + `pgstattuple` extensions, `audit_log` (partitioned) |
-| `20260530_060100_create_audit_triggers.sql` | `audit_trigger_fn()` + 10 audit triggers |
-| `20260530_060200_create_full_text_search.sql` | `rebuild_media_search_vector()` + 4 search triggers + trigram index (the PG FTS foundation for v1.0 search; see [SEARCH.md](docs/design/SEARCH.md) for the full search-engine decision and migration path to Meilisearch at scale) |
-| `20260530_070000_seed_default_data.sql` | Default `server_config` row, 5 streaming policies, 11 notification types, 18 scheduled tasks |
-| `20260530_070100_create_analytics_security.sql` | `user_location_history` + 6 per-table autovacuum overrides |
-| `20260530_070200_create_migration_domain.sql` | `migration_sources`, `migration_user_mapping`, `migration_import_log` |
-| `20260530_070300_create_quality_domain.sql` | `device_profiles`, `device_capability_tests`, `client_network_reports`, `qoe_reports` |
-| `20260530_070400_create_overlays_collections.sql` | `overlay_definitions`, `artwork_overlay_state`, `artwork` ALTER (`is_locked`, `source_type`), `collections`, `collection_items`, `collection_templates` |
-| `20260530_070500_create_segments_storyboards.sql` | `media_segments`, `media_fingerprints`, `storyboards` |
+| `20260530030000_create_core_media_tables.sql` | `libraries`, `library_paths`, `media_items`, `movies`, `series`, `seasons`, `episodes`, `media_files`, `subtitle_files`, `subtitle_ocr_cache`, `subtitle_sync_data`, `genres`, `media_genres`, `tags`, `media_tags`, `people`, `media_credits`, `artwork` |
+| `20260530030100_create_trakt_integration.sql` | `users` (stub), `trakt_accounts`, `trakt_sync_state` |
+| `20260530030200_create_activity_analytics.sql` | `play_sessions` (partitioned), `play_session_streams`, `play_events` (partitioned), `user_trust_events`, `user_trust_scores` |
+| `20260530030300_create_playback_domain.sql` | `user_item_data` (fillfactor=85), `bookmarks`, `playlists`, `playlist_items` |
+| `20260530040000_create_auth_domain.sql` | `streaming_policies`, `users` ALTER (13 columns added), `user_passkeys`, `user_totp`, `user_capabilities`, `user_library_access`, `user_sessions`, `api_keys`, `invitations`, `device_linking_codes`, `reauth_codes` |
+| `20260530050000_create_system_domain.sql` | `server_config`, `scheduled_tasks`, `scheduled_task_runs`, `notification_types`, `notifications`, `user_notification_preferences` |
+| `20260530060000_create_cross_cutting_concerns.sql` | `pg_trgm` + `pgstattuple` extensions, `audit_log` (partitioned) |
+| `20260530060100_create_audit_triggers.sql` | `audit_trigger_fn()` + 10 audit triggers |
+| `20260530060200_create_full_text_search.sql` | `rebuild_media_search_vector()` + 4 search triggers + trigram index (the PG FTS foundation for v1.0 search; see [SEARCH.md](docs/design/SEARCH.md) for the full search-engine decision and migration path to Meilisearch at scale) |
+| `20260530070000_seed_default_data.sql` | Default `server_config` row, 5 streaming policies, 11 notification types, 18 scheduled tasks |
+| `20260530070100_create_analytics_security.sql` | `user_location_history` + 6 per-table autovacuum overrides |
+| `20260530070200_create_migration_domain.sql` | `migration_sources`, `migration_user_mapping`, `migration_import_log` |
+| `20260530070300_create_quality_domain.sql` | `device_profiles`, `device_capability_tests`, `client_network_reports`, `qoe_reports` |
+| `20260530070400_create_overlays_collections.sql` | `overlay_definitions`, `artwork_overlay_state`, `artwork` ALTER (`is_locked`, `source_type`), `collections`, `collection_items`, `collection_templates` |
+| `20260530070500_create_segments_storyboards.sql` | `media_segments`, `media_fingerprints`, `storyboards` |
 
 **Key decisions made during implementation:**
 
@@ -1839,7 +1839,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 | File | Purpose |
 |---|---|
-| `server/migrations/20260617_080000_add_user_item_data_metadata.sql` | Adds `metadata JSONB NOT NULL DEFAULT '{}'` column to `user_item_data` for per-user per-item subtitle offset storage (`metadata->>'subtitle_offset_ms'`) |
+| `server/migrations/20260617080000_add_user_item_data_metadata.sql` | Adds `metadata JSONB NOT NULL DEFAULT '{}'` column to `user_item_data` for per-user per-item subtitle offset storage (`metadata->>'subtitle_offset_ms'`) |
 | `server/src/domains/subtitles/service.rs` | Full delivery implementation: `list_subtitles` (ordered by type priority: external→fetched→embedded, then forced, then language), `get_subtitle`, `get_subtitle_content` (read file, detect format, convert, apply offset, return content+content_type), `set_subtitle_offset` (upsert into `user_item_data.metadata` JSONB), `get_subtitle_sync_data` (query `subtitle_sync_data`), `delete_subtitle` (fetched-only deletion guard); format conversion: `srt_to_webvtt`, `vtt_to_srt`, `ass_to_srt` (parse `[Events]`, strip override tags, reformat timestamps), `apply_offset` (timestamp arithmetic with negative-clamp); 13 unit tests |
 | `server/src/domains/subtitles/handlers.rs` | Replaced `get_subtitle_content` `todo!()` with working handler: extracts user offset from `user_item_data.metadata`, delegates to service, returns `Response` with format-specific `Content-Type` (`text/vtt`, `application/x-subrip`, `text/plain`) and `Cache-Control: no-cache`; added `get_user_subtitle_offset()` DB helper |
 
@@ -1924,7 +1924,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
  | `server/src/workers/mod.rs` | Added `pub mod subtitle_processor;` |
  | `server/src/main.rs` | Registered `subtitle_auto_fetch` executor on scheduler with `AppState` capture |
  | `server/src/services/scheduler.rs` | Added "Subtitle Auto-Fetch" to runtime `seed_default_tasks()` (interval 1800s, disabled by default) |
- | `server/migrations/20260619_080000_seed_subtitle_auto_fetch_task.sql` | Seeds `subtitle_auto_fetch` scheduled task (1800s interval, `is_enabled = false`, 1800s timeout) for existing deployments |
+ | `server/migrations/20260619080000_seed_subtitle_auto_fetch_task.sql` | Seeds `subtitle_auto_fetch` scheduled task (1800s interval, `is_enabled = false`, 1800s timeout) for existing deployments |
 
  **Key decisions from Task 7:**
 
@@ -2013,7 +2013,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`skip_to_ms` optional in `CreateSegmentRequest`** — Defaults to `end_ms` (skip to the very end of the detected segment) when not provided. This matches SEGMENT_DETECTION.md's typical usage: "For credits, this is typically `end_ms`". Intro segments will have `skip_to_ms = end_ms - intro_end_padding_ms` set by the analysis pipeline (Task 5), not by manual creation
 - **`confidence` optional in `CreateSegmentRequest`** — Manual segments default to `1.0` (authoritative, same as chapter markers) when not provided. This matches the design's "Chapter markers are always 1.0" precedent for human-authored segments
 - **`AnalyzeSegmentsResponse` returns `queued: bool`** — For Task 5, `trigger_library_analysis` will likely enqueue work on the scheduler (`queued: true`) or run synchronously for small libraries (`queued: false`). The response shape is stable across both implementations; only the `message` text changes
-- **Validation statics match DB CHECK constraints exactly** — `VALID_SEGMENT_TYPES = ["intro", "credits", "recap", "preview", "outro"]` and `VALID_SEGMENT_SOURCES = ["chapter", "chromaprint", "blackframe", "silence", "manual", "combined"]` mirror the `media_segments.segment_type` and `media_segments.source` CHECK constraints from migration `20260530_070500_create_segments_storyboards.sql`. Service-layer validation (Task 2) will catch invalid values before they hit the DB constraint, returning VALID_001 instead of INTERNAL
+- **Validation statics match DB CHECK constraints exactly** — `VALID_SEGMENT_TYPES = ["intro", "credits", "recap", "preview", "outro"]` and `VALID_SEGMENT_SOURCES = ["chapter", "chromaprint", "blackframe", "silence", "manual", "combined"]` mirror the `media_segments.segment_type` and `media_segments.source` CHECK constraints from migration `20260530070500_create_segments_storyboards.sql`. Service-layer validation (Task 2) will catch invalid values before they hit the DB constraint, returning VALID_001 instead of INTERNAL
 - **`#![allow(unused_variables)]` on service.rs** — All 5 service functions are `todo!()` stubs; the module-level allow suppresses unused parameter warnings until actual implementations are added in Tasks 2 and 5
 - **Validator error mapping follows subtitles domain convention** — `e.field_errors().into_iter().flat_map(...)` with `field.to_string()`/`err.code.to_string()`/`err.message.as_ref().map(|m| m.to_string()).unwrap_or_default()` (Cow → String conversions); `instance` set to the route pattern for client-side field correlation
 - **No new workspace dependencies** — all functionality uses existing `sqlx`, `validator`, `serde`, `uuid`, `chrono`, `axum` crates
@@ -2120,7 +2120,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
    **Not yet implemented (deferred to Task 6 / worker):**
 
    - `trigger_library_generation` and `trigger_item_generation` — still `todo!()`; Task 6 will replace them with scheduler enqueue (mirroring `subtitle_auto_fetch` from Phase 9 Task 7 and `segment_analysis` from Phase 10 Task 5)
-   - `storyboard_generation` scheduled task already seeded (migration `20260530_070000_seed_default_data.sql`, daily 04:00) — Task 6 registers the executor on the scheduler in `main.rs`
+   - `storyboard_generation` scheduled task already seeded (migration `20260530070000_seed_default_data.sql`, daily 04:00) — Task 6 registers the executor on the scheduler in `main.rs`
    - `RuntimeConfig.transcoding.storyboard_*` config fields — Task 6 expands `TranscodingConfig` with the 8 storyboard fields from STORYBOARDS.md Configuration table and constructs `GenerationConfig` per-file
    - Per-library config overrides (`libraries.metadata.storyboards_*`) — Task 6 worker reads these and overrides the server-wide config when constructing `GenerationConfig`
    - Sandbox application — Task 6 worker calls `services::sandbox::apply_sandbox` before each FFmpeg invocation (Linux landlock + seccomp; no-op on Windows/macOS)
@@ -2139,7 +2139,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
     | `server/src/state.rs` | Expanded `TranscodingConfig` with 3 segment fields: `segment_detection_enabled: bool`, `segment_safety: SegmentSafetyConfig` (intro_end_padding_ms, credits_end_padding_ms, min_confidence), `segment_analysis: SegmentAnalysisConfig` (max_concurrent_analyses, chromaprint_sample_rate, blackframe_amount, blackframe_threshold, silence_noise_db, silence_min_duration_ms); added both nested structs with `Default` impls matching SEGMENT_DETECTION.md configuration table |
     | `server/src/main.rs` | Registered `segment_analysis` executor on scheduler; renamed `subtitle_state` capture to `worker_state` and added separate `segment_state` clone for the segment closure |
     | `server/src/services/scheduler.rs` | Added "Segment Analysis" to runtime `seed_default_tasks()` (cron `0 3 * * *`, enabled by default) |
-    | `server/migrations/20260621_030000_seed_segment_analysis_task.sql` | Seeds `segment_analysis` scheduled task (cron daily 03:00, 14400s timeout, enabled) for existing deployments |
+    | `server/migrations/20260621030000_seed_segment_analysis_task.sql` | Seeds `segment_analysis` scheduled task (cron daily 03:00, 14400s timeout, enabled) for existing deployments |
 
     **Key decisions for Task 5:**
 
@@ -2175,7 +2175,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
      | `server/src/domains/storyboards/handlers.rs` | Updated `generate_library_storyboards` and `generate_item_storyboards` to pass `&state` instead of `&state.pool` |
      | `server/src/main.rs` | Registered `storyboard_generation` executor on scheduler (5th executor) with `storyboard_state` capture clone |
      | `server/src/services/scheduler.rs` | Added "Storyboard Generation" to runtime `seed_default_tasks` (cron `0 4 * * *`, enabled by default) |
-     | `server/migrations/20260621_040000_seed_storyboard_generation_task.sql` | Seeds `storyboard_generation` scheduled task for existing deployments (idempotent — original Phase 2 seed already creates this row for fresh installs) |
+     | `server/migrations/20260621040000_seed_storyboard_generation_task.sql` | Seeds `storyboard_generation` scheduled task for existing deployments (idempotent — original Phase 2 seed already creates this row for fresh installs) |
 
      **Key decisions for Task 6:**
 
@@ -2421,7 +2421,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 | `server/src/config.rs` | Added `geoip_license_key: Option<String>` to `CliArgs` (with `DUSKCUE_GEOIP_LICENSE_KEY` env var) and `BootstrapConfig`; wired through config builder with `set_override_option` |
 | `server/src/main.rs` | Registered `geoip_database_update` executor on scheduler (7th executor) with `geoip_state` capture clone |
 | `server/src/services/scheduler.rs` | Added "GeoIP Database Update" to runtime `seed_default_tasks` (cron `0 3 * * 1`, enabled by default) |
-| `server/migrations/20260624_030000_seed_geoip_update_task.sql` | Seeds `geoip_database_update` scheduled task for existing deployments (cron weekly Monday 03:00, 600s timeout, enabled) |
+| `server/migrations/20260624030000_seed_geoip_update_task.sql` | Seeds `geoip_database_update` scheduled task for existing deployments (cron weekly Monday 03:00, 600s timeout, enabled) |
 | `Cargo.toml` | Added `tar = "0.4"` to workspace deps |
 | `server/Cargo.toml` | Added `tar.workspace = true` |
 | `docs/security/ANALYTICS_SECURITY.md` | Added Task 9 Implementation Notes section documenting: license key storage (bootstrap config), download URL format, archive extraction, atomic replace with validation, hot-reload failure handling, scheduled task configuration, `geoip_update_schedule` omission rationale, new `tar` dependency |
@@ -2558,7 +2558,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - `trakt_client(state)` helper builds a `TraktClient` from the live config; returns `NotConfigured` when credentials are missing
 - `TraktClient` has the OAuth methods ready but no sync methods yet — Task 5 will add `get_watched()`, `add_to_history()`, `get_ratings()`, etc. to the client
 - `trakt_accounts` rows now store valid tokens with correct `token_expires_at`; Task 6 worker iterates `WHERE sync_enabled = true` and calls `ensure_valid_token` per user
-- The `trakt_sync` scheduled task is already seeded (migration `20260530_070000_seed_default_data.sql`, 1800s interval, disabled by default per TRAKT.md) — Task 6 registers the executor on the scheduler
+- The `trakt_sync` scheduled task is already seeded (migration `20260530070000_seed_default_data.sql`, 1800s interval, disabled by default per TRAKT.md) — Task 6 registers the executor on the scheduler
 
 - All 10 routes are wired and return `Result<Json<T>, AppError>`; service functions are `todo!()` stubs accepting `&PgPool` and `user_id`
 - The `TraktAccountRow` and `TraktSyncStateRow` types match the DB schema exactly — Task 4 (OAuth) will use `TraktAccountRow` for INSERT/SELECT on `trakt_accounts`; Task 5 (sync) will use `TraktSyncStateRow` for upserts on `trakt_sync_state`
@@ -2604,7 +2604,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`token_expires_at > now()` guard intentionally omitted (deviation from TRAKT.md §Scheduled Task)** — The design doc specifies `WHERE sync_enabled = true AND token_expires_at > now()`. The `token_expires_at` filter is NOT applied. `token_expires_at` tracks the *access* token (90-day TTL), but `ensure_valid_token` (Task 4) refreshes expired access tokens via the long-lived *refresh* token. A user whose access token lapsed but whose refresh token is still valid would be incorrectly skipped forever — permanently halting sync after the first 90-day access token expired. The candidate query filters only on `sync_enabled = true`; unrecoverable tokens surface as `TokenExpired` and are skipped per-user. This deviation is documented in the worker's module docs
 - **`ORDER BY last_full_sync_at ASC NULLS FIRST`** — Users who have never synced (or synced longest ago) are processed first. After server downtime or a backlog, this clears the stalest accounts fairly rather than always favoring the most-recently-synced user
 - **Optional `config.user_id` for single-user sync** — Mirrors `segment_detector`'s `library_id` and `storyboard_generator`'s `library_id`. Enables targeted admin triggers and testing without iterating all users. The default scheduled task config is `{}` (empty), iterating all sync-enabled users
-- **`trakt_sync` task enabled by default (no-op when unlinked)** — Unlike `subtitle_auto_fetch` (disabled by default because it consumes external API quota unconditionally), `trakt_sync` is enabled by default because it is a pure no-op when zero `trakt_accounts` rows exist. The opt-in is at the account-linking level (`sync_enabled` per user), not the task level. Matches the original Phase 2 seed (`20260530_070000_seed_default_data.sql`: `is_enabled = true`, `interval_seconds = 1800`). The BUILD_ORDER Task 4 context note ("disabled by default per TRAKT.md") referred to the account-linking opt-in, not the task enablement — the task itself is safely enabled
+- **`trakt_sync` task enabled by default (no-op when unlinked)** — Unlike `subtitle_auto_fetch` (disabled by default because it consumes external API quota unconditionally), `trakt_sync` is enabled by default because it is a pure no-op when zero `trakt_accounts` rows exist. The opt-in is at the account-linking level (`sync_enabled` per user), not the task level. Matches the original Phase 2 seed (`20260530070000_seed_default_data.sql`: `is_enabled = true`, `interval_seconds = 1800`). The BUILD_ORDER Task 4 context note ("disabled by default per TRAKT.md") referred to the account-linking opt-in, not the task enablement — the task itself is safely enabled
 - **Registered in `seed_default_tasks`** — Added to `scheduler.rs::seed_default_tasks` alongside `subtitle_auto_fetch`, `segment_analysis`, and `storyboard_generation` for fresh-install consistency. The Phase 2 migration seed already creates the row for existing deployments, so no re-seed migration is needed (unlike segment_analysis/storyboard_generation which each shipped dedicated re-seed migrations for existing deployments)
 - **No new workspace dependencies** — the worker uses existing `sqlx`, `uuid`, and the Task 5 `run_sync` engine. All 327 server tests pass (323 prior + 4 new)
 
@@ -2833,7 +2833,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 | `server/src/workers/mod.rs` | Added `pub mod collection_sync;` |
 | `server/src/main.rs` | Registered `collection_sync` executor on the scheduler with `AppState` capture for runtime metadata provider config |
 | `server/src/services/scheduler.rs` | Added `Collection Sync` to first-run default scheduled task seeding |
-| `server/migrations/20260625_060000_seed_collection_sync_task.sql` | Idempotent migration to seed `collection_sync` for existing deployments |
+| `server/migrations/20260625060000_seed_collection_sync_task.sql` | Idempotent migration to seed `collection_sync` for existing deployments |
 | `docs/design/COLLECTIONS.md` | Added Task 7 implementation notes and updated deferred items |
 | `PROJECT.md` | Updated Phase 12 implementation status |
 
@@ -2857,7 +2857,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 | `server/src/workers/mod.rs` | Added `pub mod overlay_compositor;` |
 | `server/src/main.rs` | Registered `overlay_application` executor on the scheduler with `AppState` capture |
 | `server/src/services/scheduler.rs` | Added `Overlay Application` to first-run default scheduled task seeding |
-| `server/migrations/20260625_070000_seed_overlay_application_task.sql` | Idempotent migration to seed `overlay_application` for existing deployments |
+| `server/migrations/20260625070000_seed_overlay_application_task.sql` | Idempotent migration to seed `overlay_application` for existing deployments |
 | `server/src/domains/overlays/service.rs` | Manual `POST /api/v1/overlays/apply` now invokes the worker path synchronously; `composite_and_persist()` now respects `overlay_definitions.library_id` scoping and overlay definition loads include `created_at`/`updated_at` for config hashing |
 | `server/src/domains/overlays/handlers.rs` | Apply handler passes `AppState` to the service layer so runtime config and worker orchestration are available |
 | `docs/design/METADATA_OVERLAYS.md` | Added Task 8 implementation notes |
@@ -2886,7 +2886,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 | `server/src/workers/asset_directory_scanner.rs` | Scheduled/manual asset-directory scan worker resolving `config.path` first, then `RuntimeConfig.metadata.asset_directory`, with `lock_imported` defaulting to true |
 | `server/src/main.rs` | Registered `asset_directory_scan` scheduler executor |
 | `server/src/services/scheduler.rs` | Added first-run default `Asset Directory Scan` task at daily 03:00 |
-| `server/migrations/20260625_080000_seed_asset_directory_scan_task.sql` | Idempotent seed migration for existing deployments |
+| `server/migrations/20260625080000_seed_asset_directory_scan_task.sql` | Idempotent seed migration for existing deployments |
 | `server/src/router.rs`, `server/src/domains/mod.rs`, `server/src/services/mod.rs`, `server/src/workers/mod.rs` | Module/router wiring |
 | `docs/design/POSTER_MANAGEMENT.md`, `PROJECT.md` | Task 9 implementation notes and status updates |
 
@@ -2955,7 +2955,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 3. Implement scheduled task management — list, trigger, cancel, view history; register `notification_cleanup` executor (DB cleanup of old notifications; no dispatch dependency)
 4. Implement `server/src/domains/backup/` — five-file pattern
 5. ~~Implement backup coordination — WAL-G status check, pg_dump trigger, verification~~ **DONE**
-6. Implement `server/src/workers/backup_runner.rs` — scheduled backup execution
+6. ~~Implement `server/src/workers/backup_runner.rs` — scheduled backup execution~~ **DONE**
 7. Implement `server/src/workers/reindex_maintenance.rs` — weekly REINDEX CONCURRENTLY
 8. Implement `server/src/workers/disk_space_check.rs` — 30-minute disk monitoring
 9. Build admin settings UI — all `server_config` JSONB fields as toggles, sliders, dropdowns; push/webhook config fields visible but annotated "Activation requires Phase 13b — notification dispatch"
@@ -3069,6 +3069,31 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **Task 6 remains scheduler scope** — Task 5 does not register `backup_database`, `backup_verification`, or retention executors. It supplies the reusable execution primitives for Task 6.
 
 **Verification:** `cargo check -p duskcue`, `cargo test -p duskcue` (542 tests), and `cargo clippy -p duskcue --all-targets --all-features -- -A clippy::unnecessary-sort-by -D warnings` pass.
+
+**What was built for Task 6:**
+
+| File | Purpose |
+|---|---|
+| `server/src/workers/backup_runner.rs` | Added scheduled backup executors for `backup_database`, `backup_verification`, and `backup_retention_cleanup`; persists structured run stats into `scheduled_task_runs.stats` |
+| `server/src/services/backup.rs` | Extended the shared backup coordinator with scheduled WAL-G `backup-push`, scheduled pg_dump, verification reuse, WAL-G retention cleanup, pg_dump daily/monthly retention cleanup, and PGDATA detection |
+| `server/src/services/scheduler.rs` | Added `register_fallible_executor()` so operational workers can return errors that mark task runs as failed; preserved worker-written run stats on completion |
+| `server/src/main.rs` | Registered backup database, verification, and retention cleanup executors on the shared scheduler |
+| `server/src/workers/mod.rs` | Exported the backup runner worker |
+| `server/migrations/20260627010000_seed_backup_scheduled_tasks.sql` | Added idempotent scheduled-task seeding for backup verification and retention cleanup; normalized the database backup schedule and `next_run_at` |
+| `docs/operations/BACKUP_RECOVERY.md` | Added Task 6 implementation notes |
+| `PROJECT.md` | Updated Phase 13a status and backup summary |
+
+**Key decisions from Task 6:**
+
+- **Fallible scheduler path for operational correctness** — Backup workers use `register_fallible_executor()` so command failures, timeouts, invalid config, and I/O errors mark `scheduled_task_runs.result = 'failure'` instead of logging internally while the scheduler records success.
+- **Single shared backup coordinator** — Scheduled backups reuse `services::backup`; manual API and scheduled workers share command spawning, WAL-G environment construction, output bounding, pg_dump filename safety, verification behavior, and the process-local operation lock.
+- **Scheduled database backup runs both configured tiers** — `backup_database` runs WAL-G `backup-push` (with `--verify` when `data_checksums` is true) when `wal_g_enabled` is true and `pg_dump --format=custom` when `pg_dump_enabled` is true. If both tiers are disabled, the task fails with an invalid backup configuration.
+- **PGDATA boundary is explicit** — WAL-G physical base backups use `PGDATA` when set, otherwise `{data_dir}/postgres`, matching the embedded PostgreSQL deployment layout. Missing PGDATA produces a configuration failure rather than invoking WAL-G with an ambiguous path.
+- **Verification respects runtime config** — `backup_verification` skips successfully when `server_config.backup.verification_enabled` is false; otherwise it verifies the enabled backup tiers, using WAL-G `wal-verify integrity` and `pg_restore --list` for the newest dump.
+- **Retention is conservative for local dumps** — WAL-G retention uses `wal-g delete retain <wal_g_retention_full> --full --confirm`; pg_dump retention keeps all dumps inside the daily window, keeps the newest dump per month inside the monthly window, deletes older generated dumps, and retains unknown `.dump` filenames.
+- **Run stats survive completion** — Backup workers write structured command/results into `scheduled_task_runs.stats`; scheduler completion now preserves existing stats when no explicit completion stats are provided.
+
+**Verification:** `cargo check -p duskcue` and `cargo test -p duskcue services::backup` pass.
 
 **Phase-level verification target:** Admin can configure all settings via UI. Backups run on schedule. Disk space alerts trigger when thresholds are exceeded. Scheduled tasks are visible and triggerable.
 

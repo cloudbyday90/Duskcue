@@ -645,7 +645,7 @@ Subtitle delivery is implemented in `server/src/domains/subtitles/service.rs` wi
 | ASS/SSA | SRT | Parse `[Events]` section, strip `{\.*?}` override tags via state machine, reformat `H:MM:SS.CC` → `HH:MM:SS,mmm`, replace `\N`/`\n` with newlines |
 | ASS/SSA | WebVTT | ASS → SRT → WebVTT (two-step) |
 
-**Per-user offset storage** — Offset stored in `user_item_data.metadata` JSONB as `{"subtitle_offset_ms": -2500}`. Requires `metadata` column added via migration `20260617_080000`. The delivery handler transparently queries this before serving content — clients never need to pass offset explicitly. Uses `INSERT ... ON CONFLICT DO UPDATE SET metadata = COALESCE(metadata, '{}') || $3::jsonb` for atomic upsert.
+**Per-user offset storage** — Offset stored in `user_item_data.metadata` JSONB as `{"subtitle_offset_ms": -2500}`. Requires `metadata` column added via migration `20260617080000`. The delivery handler transparently queries this before serving content — clients never need to pass offset explicitly. Uses `INSERT ... ON CONFLICT DO UPDATE SET metadata = COALESCE(metadata, '{}') || $3::jsonb` for atomic upsert.
 
 **Content types** — WebVTT: `text/vtt; charset=utf-8`; SRT: `application/x-subrip; charset=utf-8`; ASS/SSA: `text/plain; charset=utf-8`. All include charset.
 
@@ -802,7 +802,7 @@ Auto-fetch is implemented in `server/src/workers/subtitle_processor.rs` as a sch
 
 **Scheduled task wiring:**
 
-- New migration `20260619_080000_seed_subtitle_auto_fetch_task.sql` inserts the `subtitle_auto_fetch` task into `scheduled_tasks` with `interval_seconds = 1800` (30 min), `is_enabled = false` (opt-in per SUBTITLES.md), `timeout_seconds = 1800`. The 30-minute interval approximates the "event-triggered after scan" semantics: the Library Scan runs daily at 03:00, and the auto-fetch task picks up new items within ~30 minutes of any scan (scheduled or handler-triggered).
+- New migration `20260619080000_seed_subtitle_auto_fetch_task.sql` inserts the `subtitle_auto_fetch` task into `scheduled_tasks` with `interval_seconds = 1800` (30 min), `is_enabled = false` (opt-in per SUBTITLES.md), `timeout_seconds = 1800`. The 30-minute interval approximates the "event-triggered after scan" semantics: the Library Scan runs daily at 03:00, and the auto-fetch task picks up new items within ~30 minutes of any scan (scheduled or handler-triggered).
 - Executor registered in `main.rs` via `.register_executor("subtitle_auto_fetch", ...)` capturing `AppState` (for runtime config + `fetch_subtitles` access).
 - Added to runtime `seed_default_tasks()` so fresh installs that skip the migration seed (e.g., test databases) still register the task.
 
@@ -846,4 +846,3 @@ The subtitle settings UI is implemented as a full admin settings page in the web
 - **Provider key encryption reuses Phase 6 pattern** — `encrypt_subtitle_provider_keys()` encrypts SubDL/OpenSubtitles API keys + OpenSubtitles API token via the existing `EncryptionKey` (AES-256-GCM), the same pattern as metadata provider config encryption from Phase 6 Task 13. Skips already-encrypted values (idempotent).
 - **Comma-separated language input** — `auto_fetch_languages` edited as a comma-separated text field, split/trimmed on save. Simpler than a multi-select for the small number of language codes.
 - **No new workspace dependencies** — backend uses existing `sqlx`, `serde_json`, `validator`, `ring` (encryption); frontend uses the existing `core.js` HTTP client and Svelte stores.
-

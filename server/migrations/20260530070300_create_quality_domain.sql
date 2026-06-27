@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS client_network_reports (
     created_at TIMESTAMPTZ GENERATED ALWAYS AS (uuid_extract_timestamp(id)) STORED,
 
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    session_id UUID NOT NULL REFERENCES play_sessions(id) ON DELETE CASCADE,
+    session_id UUID NOT NULL,
 
     report_type TEXT NOT NULL CHECK (report_type IN ('segment', 'probe')),
 
@@ -98,7 +98,7 @@ CREATE TABLE IF NOT EXISTS qoe_reports (
     created_at TIMESTAMPTZ GENERATED ALWAYS AS (uuid_extract_timestamp(id)) STORED,
 
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    session_id UUID NOT NULL REFERENCES play_sessions(id) ON DELETE CASCADE,
+    session_id UUID NOT NULL,
 
     report_interval_seconds INT NOT NULL DEFAULT 30,
 

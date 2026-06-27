@@ -8,6 +8,7 @@ This document complements:
 
 - [BACKUP_RECOVERY.md](../operations/BACKUP_RECOVERY.md) - backup verification, WAL archival, PITR, and integrity checks
 - [MIGRATION_STRATEGY.md](../design/MIGRATION_STRATEGY.md) - migration lifecycle and sqlx rules
+- [MIGRATION_VERIFICATION.md](MIGRATION_VERIFICATION.md) - disposable Docker PostgreSQL migration verification
 - [RELEASE_ENGINEERING.md](RELEASE_ENGINEERING.md) - release classes, rollback boundaries, and upgrade preflight gates
 - [ADVANCED_DOC_DEFER_POLICY.md](../governance/ADVANCED_DOC_DEFER_POLICY.md) - which advanced governance docs are active now versus retained as deferred guidance
 - [TRUSTED_AUTOMATION_INDEX.md](TRUSTED_AUTOMATION_INDEX.md) - maintainer-facing index for the advanced trusted-automation review set
@@ -57,6 +58,7 @@ This document complements:
 - PostgreSQL's official docs for `pg_basebackup` and `pg_verifybackup` treat manifest validation as a useful integrity layer, but not as a substitute for real restore testing.
 - PostgreSQL's official docs for `pg_upgrade` recommend testing deployment procedures with a schema-only copy of the old cluster plus dummy data.
 - PostgreSQL's official docs for continuous archiving and PITR make WAL replay verification a first-class operational concern, not just a backup-storage concern.
+- Docker Compose and PostgreSQL official image docs support disposable PostgreSQL verification with explicit volume cleanup, loopback-only port binding, `POSTGRES_INITDB_ARGS=--data-checksums`, and readiness gating via `pg_isready`. The local implementation is `scripts/verify-migrations.ps1`; see [MIGRATION_VERIFICATION.md](MIGRATION_VERIFICATION.md).
 
 ### Browser, web, and mobile test guidance
 
@@ -203,7 +205,7 @@ Required jobs:
 1. Rust fmt/lint/type/test job.
 2. `cargo test --workspace --locked`.
 3. `cargo sqlx prepare --check --workspace -- --all-targets --all-features`.
-4. Fresh database migration smoke against disposable PostgreSQL.
+4. Fresh database migration smoke against disposable PostgreSQL via `scripts/verify-migrations.ps1`.
 5. Web unit tests with coverage.
 6. Browser-mode component tests for the high-value web UI surface.
 7. Playwright smoke E2E.

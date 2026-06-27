@@ -14,12 +14,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
-use chrono::Utc;
+use chrono::{DateTime, Datelike, Utc};
 use serde::Serialize;
 use tokio::process::Command;
 use tokio::sync::{Mutex, OwnedMutexGuard};
@@ -65,6 +66,22 @@ pub struct VerificationResult {
     pub pg_dump: Option<CommandResult>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct ScheduledBackupResult {
+    pub status: String,
+    pub wal_g: Option<CommandResult>,
+    pub pg_dump: Option<PgDumpResult>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RetentionCleanupResult {
+    pub status: String,
+    pub wal_g: Option<CommandResult>,
+    pub pg_dump_deleted: usize,
+    pub pg_dump_retained: usize,
+    pub pg_dump_unknown_retained: usize,
+}
+
 pub async fn check_wal_g_status(state: &AppState) -> Result<WalGStatusCheck, BackupError> {
     let config = state.runtime_config.load().backup.clone();
     ensure_wal_g_enabled(&config)?;
@@ -108,7 +125,72 @@ pub async fn run_pg_dump(
 ) -> Result<PgDumpResult, BackupError> {
     let _guard = acquire_operation_lock()?;
     let config = state.runtime_config.load().backup.clone();
-    ensure_pg_dump_enabled(&config)?;
+    run_pg_dump_locked(state, &config, label, verify).await
+}
+
+pub async fn run_scheduled_backup(state: &AppState) -> Result<ScheduledBackupResult, BackupError> {
+    let _guard = acquire_operation_lock()?;
+    let config = state.runtime_config.load().backup.clone();
+
+    if !config.wal_g_enabled && !config.pg_dump_enabled {
+        return Err(BackupError::InvalidConfig(
+            "WAL-G and pg_dump backups are both disabled".to_string(),
+        ));
+    }
+
+    let wal_g = if config.wal_g_enabled {
+        Some(run_wal_g_base_backup_locked(state, &config).await?)
+    } else {
+        None
+    };
+
+    let pg_dump = if config.pg_dump_enabled {
+        Some(run_pg_dump_locked(state, &config, Some("scheduled"), true).await?)
+    } else {
+        None
+    };
+
+    Ok(ScheduledBackupResult {
+        status: "completed".to_string(),
+        wal_g,
+        pg_dump,
+    })
+}
+
+pub async fn run_retention_cleanup(
+    state: &AppState,
+) -> Result<RetentionCleanupResult, BackupError> {
+    let _guard = acquire_operation_lock()?;
+    let config = state.runtime_config.load().backup.clone();
+
+    let wal_g = if config.wal_g_enabled {
+        Some(run_wal_g_retention_locked(&config, &state.bootstrap).await?)
+    } else {
+        None
+    };
+
+    let (pg_dump_deleted, pg_dump_retained, pg_dump_unknown_retained) = if config.pg_dump_enabled {
+        cleanup_pg_dumps(&config).await?
+    } else {
+        (0, 0, 0)
+    };
+
+    Ok(RetentionCleanupResult {
+        status: "completed".to_string(),
+        wal_g,
+        pg_dump_deleted,
+        pg_dump_retained,
+        pg_dump_unknown_retained,
+    })
+}
+
+async fn run_pg_dump_locked(
+    state: &AppState,
+    config: &BackupConfig,
+    label: Option<&str>,
+    verify: bool,
+) -> Result<PgDumpResult, BackupError> {
+    ensure_pg_dump_enabled(config)?;
 
     let database_url =
         state.bootstrap.database_url.as_deref().ok_or_else(|| {
@@ -130,7 +212,7 @@ pub async fn run_pg_dump(
     let metadata = tokio::fs::metadata(&path).await?;
 
     let verification = if verify {
-        Some(verify_pg_dump_file(&config, &path).await?)
+        Some(verify_pg_dump_file(config, &path).await?)
     } else {
         None
     };
@@ -151,7 +233,16 @@ pub async fn verify_backups(
 ) -> Result<VerificationResult, BackupError> {
     let _guard = acquire_operation_lock()?;
     let config = state.runtime_config.load().backup.clone();
+    verify_backups_locked(state, &config, verify_wal_g, verify_pg_dump, pg_dump_path).await
+}
 
+async fn verify_backups_locked(
+    state: &AppState,
+    config: &BackupConfig,
+    verify_wal_g: bool,
+    verify_pg_dump: bool,
+    pg_dump_path: Option<&str>,
+) -> Result<VerificationResult, BackupError> {
     if !verify_wal_g && !verify_pg_dump {
         return Err(BackupError::InvalidConfig(
             "at least one verification target must be enabled".to_string(),
@@ -159,10 +250,10 @@ pub async fn verify_backups(
     }
 
     let wal_g = if verify_wal_g {
-        ensure_wal_g_enabled(&config)?;
+        ensure_wal_g_enabled(config)?;
         Some(
             run_wal_g_command(
-                &config,
+                config,
                 &state.bootstrap,
                 ["wal-verify", "integrity"],
                 Duration::from_secs(60 * 15),
@@ -176,10 +267,10 @@ pub async fn verify_backups(
 
     let pg_dump = if verify_pg_dump {
         let path = match pg_dump_path {
-            Some(path) => validate_existing_dump_path(&config, path).await?,
-            None => find_latest_pg_dump(&config).await?,
+            Some(path) => validate_existing_dump_path(config, path).await?,
+            None => find_latest_pg_dump(config).await?,
         };
-        Some(verify_pg_dump_file(&config, &path).await?)
+        Some(verify_pg_dump_file(config, &path).await?)
     } else {
         None
     };
@@ -189,6 +280,154 @@ pub async fn verify_backups(
         wal_g,
         pg_dump,
     })
+}
+
+async fn run_wal_g_base_backup_locked(
+    state: &AppState,
+    config: &BackupConfig,
+) -> Result<CommandResult, BackupError> {
+    ensure_wal_g_enabled(config)?;
+    let pgdata = postgres_data_dir(state).await?;
+
+    let mut args = vec!["backup-push".to_string(), pgdata.display().to_string()];
+    if config.data_checksums {
+        args.push("--verify".to_string());
+    }
+    run_wal_g_command(
+        config,
+        &state.bootstrap,
+        args,
+        Duration::from_secs(60 * 60 * 2),
+        true,
+    )
+    .await
+}
+
+async fn run_wal_g_retention_locked(
+    config: &BackupConfig,
+    bootstrap: &BootstrapConfig,
+) -> Result<CommandResult, BackupError> {
+    ensure_wal_g_enabled(config)?;
+    let retain = config.wal_g_retention_full.max(1).to_string();
+
+    run_wal_g_command(
+        config,
+        bootstrap,
+        ["delete", "retain", retain.as_str(), "--full", "--confirm"],
+        Duration::from_secs(60 * 30),
+        true,
+    )
+    .await
+}
+
+async fn postgres_data_dir(state: &AppState) -> Result<PathBuf, BackupError> {
+    let path = std::env::var_os("PGDATA")
+        .filter(|value| !value.is_empty())
+        .map(PathBuf::from)
+        .unwrap_or_else(|| state.bootstrap.data_dir.join("postgres"));
+
+    if tokio::fs::metadata(&path).await.is_err() {
+        return Err(BackupError::InvalidConfig(format!(
+            "PostgreSQL data directory does not exist: {}",
+            path.display()
+        )));
+    }
+
+    Ok(path)
+}
+
+async fn cleanup_pg_dumps(config: &BackupConfig) -> Result<(usize, usize, usize), BackupError> {
+    ensure_pg_dump_enabled(config)?;
+
+    let mut entries = tokio::fs::read_dir(&config.pg_dump_storage_path).await?;
+    let mut files = Vec::new();
+    let now = Utc::now();
+
+    while let Some(entry) = entries.next_entry().await? {
+        let path = entry.path();
+        if path.extension().and_then(|ext| ext.to_str()) != Some("dump") {
+            continue;
+        }
+
+        let modified = entry
+            .metadata()
+            .await
+            .and_then(|metadata| metadata.modified())
+            .map(DateTime::<Utc>::from)
+            .unwrap_or(now);
+        let timestamp = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .and_then(parse_dump_timestamp)
+            .unwrap_or(modified);
+        files.push((path, timestamp));
+    }
+
+    let daily_cutoff = now - chrono::Duration::days(config.pg_dump_retention_daily as i64);
+    let monthly_cutoff = now - chrono::Duration::days(config.pg_dump_retention_monthly as i64 * 31);
+    let mut retained = 0usize;
+    let mut unknown_retained = 0usize;
+    let mut deleted = 0usize;
+    let mut monthly_keep: HashMap<(i32, u32), usize> = HashMap::new();
+    let mut delete_flags = vec![false; files.len()];
+
+    for (idx, (path, timestamp)) in files.iter().enumerate() {
+        let Some(filename) = path.file_name().and_then(|name| name.to_str()) else {
+            unknown_retained += 1;
+            continue;
+        };
+
+        if parse_dump_timestamp(filename).is_none() {
+            unknown_retained += 1;
+            continue;
+        }
+
+        if *timestamp >= daily_cutoff {
+            retained += 1;
+            continue;
+        }
+
+        if *timestamp < monthly_cutoff {
+            delete_flags[idx] = true;
+            continue;
+        }
+
+        let key = (timestamp.year(), timestamp.month());
+        match monthly_keep.get(&key).copied() {
+            Some(existing_idx) if files[existing_idx].1 < *timestamp => {
+                delete_flags[existing_idx] = true;
+                monthly_keep.insert(key, idx);
+            }
+            Some(_) => {
+                delete_flags[idx] = true;
+            }
+            None => {
+                monthly_keep.insert(key, idx);
+                retained += 1;
+            }
+        }
+    }
+
+    for (idx, (path, _)) in files.iter().enumerate() {
+        if delete_flags[idx] {
+            tokio::fs::remove_file(path).await?;
+            deleted += 1;
+        }
+    }
+
+    Ok((deleted, retained, unknown_retained))
+}
+
+fn parse_dump_timestamp(filename: &str) -> Option<DateTime<Utc>> {
+    let stamp = filename
+        .strip_suffix(".dump")?
+        .rsplit('_')
+        .next()
+        .filter(|value| value.len() == 16)?;
+
+    chrono::NaiveDateTime::parse_from_str(stamp, "%Y%m%dT%H%M%SZ")
+        .ok()
+        .map(|value| value.and_utc())
 }
 
 async fn verify_pg_dump_file(
@@ -456,6 +695,20 @@ mod tests {
         assert!(name.ends_with(".dump"));
         assert!(!name.contains('/'));
         assert!(!name.contains('\\'));
+    }
+
+    #[test]
+    fn parse_dump_timestamp_reads_generated_filename() {
+        let timestamp = parse_dump_timestamp("duskcue_scheduled_20260627T030405Z.dump")
+            .expect("timestamp should parse");
+
+        assert_eq!(timestamp.to_rfc3339(), "2026-06-27T03:04:05+00:00");
+    }
+
+    #[test]
+    fn parse_dump_timestamp_rejects_unknown_filename() {
+        assert!(parse_dump_timestamp("manual-backup.dump").is_none());
+        assert!(parse_dump_timestamp("duskcue_scheduled_20260627.dump").is_none());
     }
 
     #[test]

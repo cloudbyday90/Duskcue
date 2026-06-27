@@ -645,7 +645,7 @@ The orchestration worker that ties the detection library (`services/segments.rs`
 | `server/src/state.rs` | `TranscodingConfig` expanded with 3 segment fields (`segment_detection_enabled`, `segment_safety`, `segment_analysis`); added `SegmentSafetyConfig` and `SegmentAnalysisConfig` structs with `Default` impls matching the configuration table |
 | `server/src/main.rs` | Registered `segment_analysis` executor on the scheduler |
 | `server/src/services/scheduler.rs` | Added "Segment Analysis" to `seed_default_tasks()` (daily 03:00) |
-| `server/migrations/20260621_030000_seed_segment_analysis_task.sql` | Seeds `segment_analysis` task for existing deployments |
+| `server/migrations/20260621030000_seed_segment_analysis_task.sql` | Seeds `segment_analysis` task for existing deployments |
 
 **Key decisions reconciled with this design doc:**
 

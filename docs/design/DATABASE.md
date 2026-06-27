@@ -786,7 +786,7 @@ The core analytics table. Every completed or in-progress playback session gets a
 
 ```sql
 CREATE TABLE play_sessions (
-    id UUID DEFAULT uuidv7() PRIMARY KEY,
+    id UUID DEFAULT uuidv7(),
     created_at TIMESTAMPTZ GENERATED ALWAYS AS (uuid_extract_timestamp(id)) STORED,
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
 
@@ -825,6 +825,7 @@ CREATE TABLE play_sessions (
 ) PARTITION BY RANGE (started_at);
 
 CREATE INDEX idx_play_sessions_user_id ON play_sessions (user_id);
+CREATE INDEX idx_play_sessions_id ON play_sessions (id);
 CREATE INDEX idx_play_sessions_media_item_id ON play_sessions (media_item_id);
 CREATE INDEX idx_play_sessions_library_id ON play_sessions (library_id);
 CREATE INDEX idx_play_sessions_started_at ON play_sessions (started_at DESC);
@@ -846,12 +847,14 @@ CREATE TABLE play_sessions_2026_06 PARTITION OF play_sessions
 
 Stores the full original media vs transcode vs output stream comparison for each session. Kept as a separate table to keep the core `play_sessions` row narrow for common queries.
 
+`play_session_id` is an application-level UUID join to the partitioned `play_sessions` table. PostgreSQL cannot enforce a simple foreign key to `play_sessions(id)` unless the parent has a unique constraint that also includes the range partition key.
+
 ```sql
 CREATE TABLE play_session_streams (
     id UUID DEFAULT uuidv7() PRIMARY KEY,
     created_at TIMESTAMPTZ GENERATED ALWAYS AS (uuid_extract_timestamp(id)) STORED,
 
-    play_session_id UUID NOT NULL UNIQUE REFERENCES play_sessions(id) ON DELETE CASCADE,
+    play_session_id UUID NOT NULL UNIQUE,
 
     source_video_codec TEXT,
     source_video_resolution TEXT,
@@ -912,10 +915,10 @@ Granular playback events within a session — play, pause, stop, resume, buffer,
 
 ```sql
 CREATE TABLE play_events (
-    id UUID DEFAULT uuidv7() PRIMARY KEY,
+    id UUID DEFAULT uuidv7(),
     created_at TIMESTAMPTZ GENERATED ALWAYS AS (uuid_extract_timestamp(id)) STORED,
 
-    play_session_id UUID NOT NULL REFERENCES play_sessions(id) ON DELETE CASCADE,
+    play_session_id UUID NOT NULL,
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
 
     event_type TEXT NOT NULL CHECK (event_type IN (
@@ -928,6 +931,7 @@ CREATE TABLE play_events (
 ) PARTITION BY RANGE (event_at);
 
 CREATE INDEX idx_play_events_play_session_id ON play_events (play_session_id);
+CREATE INDEX idx_play_events_id ON play_events (id);
 CREATE INDEX idx_play_events_user_id ON play_events (user_id);
 CREATE INDEX idx_play_events_event_type ON play_events (event_type);
 CREATE INDEX idx_play_events_event_at ON play_events (event_at DESC);
@@ -951,7 +955,7 @@ CREATE TABLE user_trust_events (
     created_at TIMESTAMPTZ GENERATED ALWAYS AS (uuid_extract_timestamp(id)) STORED,
 
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    play_session_id UUID REFERENCES play_sessions(id) ON DELETE SET NULL,
+    play_session_id UUID,
 
     rule_type TEXT NOT NULL CHECK (rule_type IN (
         'impossible_travel', 'simultaneous_locations', 'device_velocity',
@@ -2638,7 +2642,7 @@ CREATE TABLE client_network_reports (
     created_at TIMESTAMPTZ GENERATED ALWAYS AS (uuid_extract_timestamp(id)) STORED,
 
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    session_id UUID NOT NULL REFERENCES play_sessions(id) ON DELETE CASCADE,
+    session_id UUID NOT NULL,
 
     report_type TEXT NOT NULL CHECK (report_type IN ('segment', 'probe')),
 
@@ -2684,7 +2688,7 @@ CREATE TABLE qoe_reports (
     created_at TIMESTAMPTZ GENERATED ALWAYS AS (uuid_extract_timestamp(id)) STORED,
 
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    session_id UUID NOT NULL REFERENCES play_sessions(id) ON DELETE CASCADE,
+    session_id UUID NOT NULL,
 
     report_interval_seconds INT NOT NULL DEFAULT 30,
 
@@ -3266,7 +3270,7 @@ This index also accelerates `ILIKE '%pattern%'` queries on titles.
 
 ```sql
 CREATE TABLE audit_log (
-    id UUID DEFAULT uuidv7() PRIMARY KEY,
+    id UUID DEFAULT uuidv7(),
     created_at TIMESTAMPTZ GENERATED ALWAYS AS (uuid_extract_timestamp(id)) STORED,
 
     table_name TEXT NOT NULL,
@@ -3287,6 +3291,7 @@ CREATE TABLE audit_log (
 ) PARTITION BY RANGE (changed_at);
 
 CREATE INDEX idx_audit_log_table_row ON audit_log (table_name, row_id, changed_at DESC);
+CREATE INDEX idx_audit_log_id ON audit_log (id);
 CREATE INDEX idx_audit_log_user ON audit_log (user_id, changed_at DESC) WHERE user_id IS NOT NULL;
 CREATE INDEX idx_audit_log_time ON audit_log (changed_at DESC);
 CREATE INDEX idx_audit_log_transaction ON audit_log (transaction_id);

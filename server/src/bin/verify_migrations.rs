@@ -14,15 +14,33 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-pub mod asset_directory_scanner;
-pub mod backup_runner;
-pub mod collection_sync;
-pub mod geoip_updater;
-pub mod library_scanner;
-pub mod metadata_refresh;
-pub mod notification_cleanup;
-pub mod overlay_compositor;
-pub mod segment_detector;
-pub mod storyboard_generator;
-pub mod subtitle_processor;
-pub mod trakt_sync;
+use std::time::Duration;
+
+use clap::Parser;
+use sqlx::postgres::PgPoolOptions;
+
+#[derive(Parser, Debug)]
+#[command(
+    name = "verify_migrations",
+    about = "Run Duskcue embedded SQLx migrations against a disposable database"
+)]
+struct Args {
+    #[arg(long, env = "DUSKCUE_DATABASE_URL")]
+    database_url: String,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+    let pool = PgPoolOptions::new()
+        .max_connections(5)
+        .acquire_timeout(Duration::from_secs(10))
+        .connect(&args.database_url)
+        .await?;
+
+    sqlx::migrate!().run(&pool).await?;
+    pool.close().await;
+
+    println!("Duskcue migrations verified successfully");
+    Ok(())
+}

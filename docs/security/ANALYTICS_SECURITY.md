@@ -684,7 +684,7 @@ If the file replacement succeeds but `GeoIpService::reload()` fails (e.g., the f
 | Enabled by default | Yes — but the worker no-ops when no license key is configured, so enabling the task without a key is harmless |
 | Retry | 3 retries with 3600s delay (weekly cadence means failures retry within the same week rather than waiting for the next scheduled run) |
 
-The task is seeded both in `seed_default_tasks()` (for fresh installs) and via migration `20260624_030000_seed_geoip_update_task.sql` (for existing deployments), matching the `segment_analysis` and `storyboard_generation` precedent.
+The task is seeded both in `seed_default_tasks()` (for fresh installs) and via migration `20260624030000_seed_geoip_update_task.sql` (for existing deployments), matching the `segment_analysis` and `storyboard_generation` precedent.
 
 ### `geoip_update_schedule` in `AnalyticsConfig`
 
