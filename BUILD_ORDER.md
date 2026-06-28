@@ -2909,8 +2909,35 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Verification:** `cargo check -p duskcue` passes.
 
-10. Build admin UI for overlays — overlay editor, template browser, condition builder
+10. ~~Build admin UI for overlays — overlay editor, template browser, condition builder~~ **DONE**
 11. Build admin UI for collections — collection list, builder configuration, template import
+
+   **Context from Task 10:** The overlay CRUD/template service functions were still `todo!()` stubs (Tasks 1–9 implemented compositing/conditions/clean-art/workers but never the definition CRUD). Task 10 filled these in (`list_overlays`/`get_overlay`/`create_overlay`/`update_overlay`/`delete_overlay`/`list_templates`/`import_template` in `domains/overlays/service.rs`) because the UI cannot function without working endpoints. A new `ConditionBuilder.svelte` recursive component was added to `clients/web/src/lib/components/` — Task 11's collection smart-filter UI can reuse this same component and the shared `services::conditions::validate_structure()` engine, since overlays and collections share one JSONB rule grammar. The `clients/web/src/lib/api/overlays.js` client pattern (thin wrappers over `core.js`) is the template for the collections API client.
+
+   **What was built for Task 10:**
+
+   | File | Purpose |
+   |---|---|
+   | `server/src/domains/overlays/service.rs` | Filled the 7 CRUD/template stubs: `list_overlays` (paginated `QueryBuilder` with library/enabled filters + matching count), `get_overlay`, `create_overlay` (INSERT with DDL defaults via `generate_slug`), `update_overlay` (dynamic PATCH via `QueryBuilder` — COALESCE-free, only sets `Some` fields so NULL-set is unambiguous), `delete_overlay` (system-overlay protection via `AppError::Conflict`), `list_templates` (groups installed definitions by `metadata.template_name`), `import_template` (inserts each `TemplateOverlayEntry`); shared `SELECT_CLAUSE`/`RETURNING_COLUMNS` consts + `row_to_response()` helper reusing the existing `row_to_definition_row()` mapper |
+   | `clients/web/src/lib/api/overlays.js` | Full API client: `listOverlays`, `getOverlay`, `createOverlay`, `updateOverlay`, `deleteOverlay`, `applyOverlays`, `previewOverlay`, `listTemplates`, `importTemplate` |
+   | `clients/web/src/lib/components/ConditionBuilder.svelte` | Recursive condition editor (Svelte 5 runes): "Match all/any" toggle, per-rule smart mini-forms adapting by field type (text/number/boolean), nested groups with depth cap of 3, add/remove rule + group, explicit `onchange`/`onremove` callbacks over fragile `$bindable` recursion |
+   | `clients/web/src/routes/settings/overlays/+page.svelte` | Full admin UI replacing the "Coming in Phase 12" stub: definition list grouped by `applies_to` with enable toggle/edit/delete, type-aware overlay editor (image/text/backdrop field sets), positioning controls, group/queue/suppress fields, condition builder, 16-variable text-template inserter, live preview against a media item, template browser + JSON import, and Apply Now / Re-apply All bulk operations |
+   | `clients/web/src/routes/settings/+page.svelte` | Removed `soon: true` flag from the Overlays settings link |
+
+   **Key decisions from Task 10:**
+
+   - **CRUD was a prerequisite, not part of an earlier task** — Tasks 1–9 left definition CRUD as `todo!()` stubs (the scaffolding task's explicit deferral). Task 10 implements them as the UI's hard dependency. The `row_to_definition_row()` mapper and `OverlayDefinitionRow` struct from Task 2's preview path are reused, so the CRUD response shape matches what the compositing pipeline expects.
+   - **`QueryBuilder` over `format!` for dynamic SQL** — sqlx 0.9's `SqlSafeStr` guard rejects `String`/`format!()` output in `sqlx::query()` (compile-time SQL-injection defense). `list_overlays` and `update_overlay` use `sqlx::query_builder::QueryBuilder`. The conditional-SET structure (only push a SET clause for present fields) is required for 3-state PATCH support — `COALESCE($n, column)` (the `users`/`libraries` convention) cannot clear a nullable field since `COALESCE(NULL, col) = col`.
+   - **3-state PATCH via `serde_with::rust::double_option`** — `Option<T>` collapses JSON "absent" and "null" into one `None`, so the standard PATCH type can't express "clear to NULL." `library_id` NULL = "global", and global↔specific is a documented admin workflow (capability #4), so `UpdateOverlayRequest.library_id` is `Option<Option<Uuid>>` with `#[serde(default, with = "::serde_with::rust::double_option")]` (`None`=unchanged, `Some(None)`=clear, `Some(Some(v))`=set). The UI sends literal `null` (not an omitted key) when clearing. Applied to `library_id` only (documented clear-workflow, no validator constraint); pattern recommended for later `users`/`libraries` adoption (their PATCH endpoints share the limitation). Added `serde_with = "3"` to the workspace.
+   - **System-overlay delete → `AppError::Conflict`** — no dedicated OVERLAY code exists for the "system overlays cannot be deleted" business rule (Task 1 decision); the service returns `AppError::Conflict`, the UI disables the delete button and shows a `system` badge. Disabling is the supported customization path.
+   - **`delete_overlay` returns `Result<(), AppError>`** — the only service function not returning `OverlayError`, because the system-overlay check needs a non-OVERLAY error code. DB errors map `OverlayError::Database` → `AppError` explicitly.
+   - **Templates are imported, not remotely browsed** — Duskcue is local-first with no bundled remote catalog. `GET /api/v1/overlays/templates` lists templates *already installed* (grouped by `metadata.template_name`); import is via JSON paste. A future remote registry can extend this without API changes.
+   - **"Match all/any" over raw AND/OR** — per June 2026 UX research (UX StackExchange nested-predicate thread; ui-patterns Rule Builder). Boolean terminology "causes users to ask more questions than it answers."
+   - **`e.currentTarget.value` over `e.target.value`** — Svelte 5 types `currentTarget` to the specific element (`HTMLSelectElement`, etc.) but `target` as generic `EventTarget`. Using `currentTarget` keeps svelte-check clean (0 errors) without `/** @type */` casts.
+   - **Recursive `ConditionBuilder` via callbacks over `$bindable`** — deep `$bindable` on a recursive tree is fragile; explicit `onchange(next)` / `onremove()` props passed down at each recursion level are unambiguous and testable. Reusable by Task 11's collection smart-filter UI.
+   - **No new web dependencies** — uses Svelte 5 runes, existing `core.js`, native `<input type="color">` + alpha text fallback, and the existing design tokens only.
+
+   **Verification:** `cargo check -p duskcue`, `cargo clippy -p duskcue --all-targets --all-features -- -A clippy::unnecessary-sort-by -D warnings`, and `cargo test -p duskcue --lib` (583 tests pass) all green. `npx svelte-check` (0 errors) and `npm run build` pass in `clients/web`.
 
 **What was built for Task 1:**
 

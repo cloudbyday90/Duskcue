@@ -120,7 +120,8 @@ pub struct CreateOverlayRequest {
 pub struct UpdateOverlayRequest {
     #[validate(length(min = 1, max = 200))]
     pub name: Option<String>,
-    pub library_id: Option<Uuid>,
+    #[serde(default, with = "::serde_with::rust::double_option")]
+    pub library_id: Option<Option<Uuid>>,
     pub image_path: Option<String>,
     pub text_template: Option<String>,
     #[validate(length(max = 100))]

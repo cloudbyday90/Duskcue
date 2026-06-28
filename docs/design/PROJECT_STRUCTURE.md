@@ -445,6 +445,7 @@ landlock = "0.4"
 seccompiler = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+serde_with = "3"
 sqlx = { version = "0.9", features = ["postgres", "runtime-tokio", "uuid", "chrono", "json", "migrate", "sqlx-toml"] }
 uuid = { version = "1", features = ["v7", "serde"] }
 chrono = { version = "0.4", features = ["serde"] }
@@ -583,6 +584,8 @@ Every domain uses three distinct types per entity (see [API_SECURITY.md](../secu
 | `XxxRow` | `db/models/*.rs` | `FromRow`, no `Serialize` | Database model — never sent to clients |
 | `XxxRequest` | `domains/*/types.rs` | `Deserialize`, `Validate` | Inbound request — only user-writable fields |
 | `XxxResponse` | `domains/*/types.rs` | `Serialize` | Outbound response — only safe fields |
+
+**PATCH 3-state nullability:** `UpdateXxxRequest` types use all-`Option` fields for partial-update semantics. Plain `Option<T>` collapses JSON "absent" and "null" into one `None`, so it cannot express "clear to NULL." For PATCH fields where clearing to NULL is a meaningful workflow (e.g. overlay `library_id` NULL = "global"), use `Option<Option<T>>` annotated `#[serde(default, with = "::serde_with::rust::double_option")]` (`None`=unchanged, `Some(None)`=clear, `Some(Some(v))`=set), paired with a conditional-SET `QueryBuilder` rather than `COALESCE` (which can't clear, since `COALESCE(NULL, col) = col`). Adopted first in overlays (Phase 12 Task 10); see [PROJECT.md](../../PROJECT.md) Open Questions for the project-wide adoption recommendation.
 
 ## Web Client Conventions (SvelteKit + ESM)
 
@@ -797,7 +800,7 @@ export const libraries = createLibrariesStore();
 
 All stores consume API client functions from `../api/*.js` — never calling `fetch` directly. The single exception is `stores/events.js`, which uses the browser's native `EventSource` API (not `fetch`) for the SSE connection to `GET /api/v1/events`. All localStorage access is SSR-safe (`typeof localStorage !== 'undefined'` checks) for `adapter-node`. WebAuthn credential API calls (`navigator.credentials.get()`/`create()`) are delegated to the caller via injected callbacks, keeping stores framework-agnostic and testable.
 
-**Implemented components (Phase 8 Task 4 + Phase 10 Tasks 7–8):** 6 components built using Svelte 5 runes (`$props`, `$state`, `$derived`, `$effect`) alongside `svelte/store` auto-subscription. All components consume stores and API client functions — never calling `fetch` directly (exception: `SeekPreview.svelte` fetches the WebVTT index via raw `fetch()` since it's a text file, not JSON).
+**Implemented components (Phase 8 Task 4 + Phase 10 Tasks 7–8 + Phase 12 Task 10):** 7 components built using Svelte 5 runes (`$props`, `$state`, `$derived`, `$effect`) alongside `svelte/store` auto-subscription. All components consume stores and API client functions — never calling `fetch` directly (exception: `SeekPreview.svelte` fetches the WebVTT index via raw `fetch()` since it's a text file, not JSON).
 
 | Component | Props | Responsibility |
 |---|---|---|
@@ -807,6 +810,7 @@ All stores consume API client functions from `../api/*.js` — never calling `fe
 | `Player.svelte` | `mediaItem`, `mediaFileId`, `startPositionMs`, `sessionId`, `title`, `onstop` | Full HLS player with hls.js 1.6.16; transport controls (play/pause, seek, volume, speed, fullscreen); keyboard shortcuts; QoE telemetry; auto-hide controls; wires `SkipButton` — fetches segments on mount, filters by `confidence ≥ 0.7 OR is_manual`, dispatches direct-play vs transcode seeks via `handleSkip` (Phase 10 Task 7); wires `SeekPreview` — fetches storyboard metadata, tracks hover/touch on seek bar, renders thumbnail tooltip during hover and scrub (Phase 10 Task 8) |
 | `SkipButton.svelte` | `segments`, `positionMs`, `autoSkipTypes`, `onskip` | Skip-button overlay rendered during detected intro/credits/recap/preview/outro windows; bottom-right placement per industry standard; two-tier prominence by confidence (high=brass accent/10s, medium=subdued blur/5s); per-segment auto-skip + dismiss deduplication via Sets; purely presentational (Phase 10 Task 7) |
 | `SeekPreview.svelte` | `storyboard`, `visible`, `positionMs`, `hoverRatio`, `displayWidth` | Seek-preview thumbnail tooltip; lazily fetches + parses WebVTT index; resolves sprite references to absolute URLs; renders correct sprite-sheet region via CSS `background-image` + `background-position`; edge-clamped positioning via CSS `clamp()`; time label bar; binary-search cue lookup; works during hover and active seek drag (Phase 10 Task 8) |
+| `ConditionBuilder.svelte` | `node`, `depth`, `onchange`, `onremove` | Recursive JSONB condition-tree editor (overlays + smart collections); "Match all/any" toggle; per-rule smart mini-forms adapting by field type (text/number/boolean); nested groups depth-capped at 3; explicit `onchange`/`onremove` callbacks over fragile `$bindable` recursion (Phase 12 Task 10) |
 
 Design tokens are established in `app.css` as CSS custom properties implementing UI_FOUNDATIONS.md's low-light editorial palette (deep charcoal surfaces, warm off-white text, brass/amber accent, muted semantic colors). `utils/format.js` provides `formatDuration`, `formatTimestamp`, `formatYear`, `formatRating`, `formatPercent`. `utils/constants.js` provides `MEDIA_TYPE_LABELS`, `NOTIFICATION_ICONS`, and player/search timing constants. `utils/storyboards.js` provides `parseStoryboardVtt` (WebVTT cue extraction), `findCueForTime` (binary search), and `parseTimecodeToMs` (Phase 10 Task 8).
 

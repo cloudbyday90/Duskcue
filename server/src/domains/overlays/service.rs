@@ -27,6 +27,8 @@ use crate::services::overlays::{
 };
 use crate::state::AppState;
 
+use crate::error::AppError;
+
 use super::error::OverlayError;
 use super::types::*;
 
@@ -81,40 +83,299 @@ pub fn generate_slug(name: &str) -> String {
         .join("-")
 }
 
+const SELECT_CLAUSE: &str = "SELECT id, created_at, updated_at, name, slug, library_id, overlay_type, image_path, text_template, font_family, font_size, font_color, stroke_color, stroke_width, back_color, back_width, back_height, back_radius, back_padding, horizontal_offset, horizontal_align, vertical_offset, vertical_align, scale_width, scale_height, group_name, weight, queue_name, conditions, suppresses, applies_to, is_enabled, is_system, metadata FROM overlay_definitions";
+
+const RETURNING_COLUMNS: &str = "id, created_at, updated_at, name, slug, library_id, overlay_type, image_path, text_template, font_family, font_size, font_color, stroke_color, stroke_width, back_color, back_width, back_height, back_radius, back_padding, horizontal_offset, horizontal_align, vertical_offset, vertical_align, scale_width, scale_height, group_name, weight, queue_name, conditions, suppresses, applies_to, is_enabled, is_system, metadata";
+
+fn row_to_response(row: OverlayDefinitionRow) -> OverlayDefinitionResponse {
+    OverlayDefinitionResponse {
+        id: row.id,
+        name: row.name,
+        slug: row.slug,
+        library_id: row.library_id,
+        overlay_type: row.overlay_type,
+        image_path: row.image_path,
+        text_template: row.text_template,
+        font_family: row.font_family,
+        font_size: row.font_size,
+        font_color: row.font_color,
+        stroke_color: row.stroke_color,
+        stroke_width: row.stroke_width,
+        back_color: row.back_color,
+        back_width: row.back_width,
+        back_height: row.back_height,
+        back_radius: row.back_radius,
+        back_padding: row.back_padding,
+        horizontal_offset: row.horizontal_offset,
+        horizontal_align: row.horizontal_align,
+        vertical_offset: row.vertical_offset,
+        vertical_align: row.vertical_align,
+        scale_width: row.scale_width,
+        scale_height: row.scale_height,
+        group_name: row.group_name,
+        weight: row.weight,
+        queue_name: row.queue_name,
+        conditions: row.conditions,
+        suppresses: row.suppresses,
+        applies_to: row.applies_to,
+        is_enabled: row.is_enabled,
+        is_system: row.is_system,
+        metadata: row.metadata,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+    }
+}
+
 pub async fn list_overlays(
-    _pool: &PgPool,
-    _library_id: Option<Uuid>,
-    _enabled_only: bool,
-    _page: u32,
-    _page_size: u32,
+    pool: &PgPool,
+    library_id: Option<Uuid>,
+    enabled_only: bool,
+    page: u32,
+    page_size: u32,
 ) -> Result<OverlayListResponse, OverlayError> {
-    todo!("Phase 12 — overlay definition listing (CRUD)")
+    let mut builder = sqlx::QueryBuilder::new(SELECT_CLAUSE);
+    let mut where_started = false;
+    if let Some(lib) = library_id {
+        builder.push(" WHERE library_id = ").push_bind(lib);
+        where_started = true;
+    }
+    if enabled_only {
+        builder.push(if where_started { " AND" } else { " WHERE" });
+        builder.push(" is_enabled = true");
+    }
+
+    let mut count_builder = sqlx::QueryBuilder::new("SELECT COUNT(*) FROM overlay_definitions");
+    if let Some(lib) = library_id {
+        count_builder.push(" WHERE library_id = ").push_bind(lib);
+        where_started = true;
+    } else {
+        where_started = false;
+    }
+    if enabled_only {
+        count_builder.push(if where_started { " AND" } else { " WHERE" });
+        count_builder.push(" is_enabled = true");
+    }
+
+    builder.push(" ORDER BY applies_to, weight DESC, name");
+    let limit: i64 = page_size.max(1) as i64;
+    let offset: i64 = (page.saturating_sub(1) as i64) * limit;
+    builder.push(" LIMIT ").push_bind(limit);
+    builder.push(" OFFSET ").push_bind(offset);
+
+    let rows = builder.build().fetch_all(pool).await?;
+    let items: Vec<OverlayDefinitionResponse> = rows
+        .iter()
+        .map(row_to_definition_row)
+        .filter_map(|r| r.ok())
+        .map(row_to_response)
+        .collect();
+
+    let total: i64 = count_builder.build().fetch_one(pool).await?.try_get("count").unwrap_or(0);
+
+    Ok(OverlayListResponse { items, total })
 }
 
 pub async fn get_overlay(
-    _pool: &PgPool,
-    _overlay_id: Uuid,
+    pool: &PgPool,
+    overlay_id: Uuid,
 ) -> Result<OverlayDefinitionResponse, OverlayError> {
-    todo!("Phase 12 — overlay definition fetch (CRUD)")
+    let mut builder = sqlx::QueryBuilder::new(SELECT_CLAUSE);
+    builder.push(" WHERE id = ").push_bind(overlay_id);
+    let row = builder.build().fetch_optional(pool).await?;
+    match row {
+        Some(row) => Ok(row_to_response(row_to_definition_row(&row)?)),
+        None => Err(OverlayError::NotFound),
+    }
 }
 
 pub async fn create_overlay(
-    _pool: &PgPool,
-    _req: CreateOverlayRequest,
+    pool: &PgPool,
+    req: CreateOverlayRequest,
 ) -> Result<OverlayDefinitionResponse, OverlayError> {
-    todo!("Phase 12 — overlay definition creation (CRUD)")
+    let slug = generate_slug(&req.name);
+    let applies_to = req.applies_to.unwrap_or_else(|| "poster".to_string());
+    let conditions = req.conditions.unwrap_or(serde_json::json!({}));
+    let suppresses = req.suppresses.unwrap_or_default();
+    let metadata = req.metadata.unwrap_or(serde_json::json!({}));
+
+    let row = sqlx::query(
+        r#"INSERT INTO overlay_definitions
+           (name, slug, library_id, overlay_type, image_path, text_template,
+            font_family, font_size, font_color, stroke_color, stroke_width,
+            back_color, back_width, back_height, back_radius, back_padding,
+            horizontal_offset, horizontal_align, vertical_offset, vertical_align,
+            scale_width, scale_height, group_name, weight, queue_name,
+            conditions, suppresses, applies_to, is_enabled, metadata)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
+                   $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30)
+           RETURNING id, created_at, updated_at, name, slug, library_id, overlay_type, image_path, text_template,
+                     font_family, font_size, font_color, stroke_color, stroke_width,
+                     back_color, back_width, back_height, back_radius, back_padding,
+                     horizontal_offset, horizontal_align, vertical_offset, vertical_align,
+                     scale_width, scale_height, group_name, weight, queue_name,
+                     conditions, suppresses, applies_to, is_enabled, is_system, metadata"#,
+    )
+    .bind(req.name)
+    .bind(slug)
+    .bind(req.library_id)
+    .bind(req.overlay_type)
+    .bind(req.image_path)
+    .bind(req.text_template)
+    .bind(req.font_family.unwrap_or_else(|| "Inter".to_string()))
+    .bind(req.font_size.unwrap_or(63))
+    .bind(req.font_color.unwrap_or_else(|| "#FFFFFF".to_string()))
+    .bind(req.stroke_color)
+    .bind(req.stroke_width)
+    .bind(req.back_color)
+    .bind(req.back_width)
+    .bind(req.back_height)
+    .bind(req.back_radius)
+    .bind(req.back_padding)
+    .bind(req.horizontal_offset.unwrap_or(0))
+    .bind(req.horizontal_align.unwrap_or_else(|| "left".to_string()))
+    .bind(req.vertical_offset.unwrap_or(0))
+    .bind(req.vertical_align.unwrap_or_else(|| "top".to_string()))
+    .bind(req.scale_width)
+    .bind(req.scale_height)
+    .bind(req.group_name)
+    .bind(req.weight.unwrap_or(0))
+    .bind(req.queue_name)
+    .bind(conditions)
+    .bind(&suppresses)
+    .bind(applies_to)
+    .bind(req.is_enabled.unwrap_or(true))
+    .bind(metadata)
+    .fetch_one(pool)
+    .await?;
+
+    Ok(row_to_response(row_to_definition_row(&row)?))
 }
 
 pub async fn update_overlay(
-    _pool: &PgPool,
-    _overlay_id: Uuid,
-    _req: UpdateOverlayRequest,
+    pool: &PgPool,
+    overlay_id: Uuid,
+    req: UpdateOverlayRequest,
 ) -> Result<OverlayDefinitionResponse, OverlayError> {
-    todo!("Phase 12 — overlay definition update (CRUD)")
+    let mut builder = sqlx::QueryBuilder::new("UPDATE overlay_definitions SET updated_at = now()");
+    if let Some(name) = &req.name {
+        builder.push(", name = ").push_bind(name.clone());
+        builder.push(", slug = ").push_bind(generate_slug(name));
+    }
+    if let Some(library_id) = req.library_id {
+        builder.push(", library_id = ").push_bind(library_id);
+    }
+    if let Some(image_path) = &req.image_path {
+        builder.push(", image_path = ").push_bind(image_path.clone());
+    }
+    if let Some(text_template) = &req.text_template {
+        builder.push(", text_template = ").push_bind(text_template.clone());
+    }
+    if let Some(font_family) = &req.font_family {
+        builder.push(", font_family = ").push_bind(font_family.clone());
+    }
+    if let Some(font_size) = req.font_size {
+        builder.push(", font_size = ").push_bind(font_size);
+    }
+    if let Some(font_color) = &req.font_color {
+        builder.push(", font_color = ").push_bind(font_color.clone());
+    }
+    if let Some(stroke_color) = &req.stroke_color {
+        builder.push(", stroke_color = ").push_bind(stroke_color.clone());
+    }
+    if let Some(stroke_width) = req.stroke_width {
+        builder.push(", stroke_width = ").push_bind(stroke_width);
+    }
+    if let Some(back_color) = &req.back_color {
+        builder.push(", back_color = ").push_bind(back_color.clone());
+    }
+    if let Some(back_width) = req.back_width {
+        builder.push(", back_width = ").push_bind(back_width);
+    }
+    if let Some(back_height) = req.back_height {
+        builder.push(", back_height = ").push_bind(back_height);
+    }
+    if let Some(back_radius) = req.back_radius {
+        builder.push(", back_radius = ").push_bind(back_radius);
+    }
+    if let Some(back_padding) = req.back_padding {
+        builder.push(", back_padding = ").push_bind(back_padding);
+    }
+    if let Some(horizontal_offset) = req.horizontal_offset {
+        builder.push(", horizontal_offset = ").push_bind(horizontal_offset);
+    }
+    if let Some(horizontal_align) = &req.horizontal_align {
+        builder.push(", horizontal_align = ").push_bind(horizontal_align.clone());
+    }
+    if let Some(vertical_offset) = req.vertical_offset {
+        builder.push(", vertical_offset = ").push_bind(vertical_offset);
+    }
+    if let Some(vertical_align) = &req.vertical_align {
+        builder.push(", vertical_align = ").push_bind(vertical_align.clone());
+    }
+    if let Some(scale_width) = req.scale_width {
+        builder.push(", scale_width = ").push_bind(scale_width);
+    }
+    if let Some(scale_height) = req.scale_height {
+        builder.push(", scale_height = ").push_bind(scale_height);
+    }
+    if let Some(group_name) = &req.group_name {
+        builder.push(", group_name = ").push_bind(group_name.clone());
+    }
+    if let Some(weight) = req.weight {
+        builder.push(", weight = ").push_bind(weight);
+    }
+    if let Some(queue_name) = &req.queue_name {
+        builder.push(", queue_name = ").push_bind(queue_name.clone());
+    }
+    if let Some(conditions) = req.conditions {
+        builder.push(", conditions = ").push_bind(conditions);
+    }
+    if let Some(suppresses) = &req.suppresses {
+        builder.push(", suppresses = ").push_bind(suppresses.clone());
+    }
+    if let Some(applies_to) = &req.applies_to {
+        builder.push(", applies_to = ").push_bind(applies_to.clone());
+    }
+    if let Some(is_enabled) = req.is_enabled {
+        builder.push(", is_enabled = ").push_bind(is_enabled);
+    }
+    if let Some(metadata) = req.metadata {
+        builder.push(", metadata = ").push_bind(metadata);
+    }
+
+    builder.push(" WHERE id = ").push_bind(overlay_id);
+    builder.push(" RETURNING ");
+    builder.push(RETURNING_COLUMNS);
+
+    let row = builder.build().fetch_optional(pool).await?.ok_or(OverlayError::NotFound)?;
+    Ok(row_to_response(row_to_definition_row(&row)?))
 }
 
-pub async fn delete_overlay(_pool: &PgPool, _overlay_id: Uuid) -> Result<(), OverlayError> {
-    todo!("Phase 12 — overlay definition deletion (CRUD)")
+pub async fn delete_overlay(pool: &PgPool, overlay_id: Uuid) -> Result<(), AppError> {
+    let row = sqlx::query("SELECT is_system FROM overlay_definitions WHERE id = $1")
+        .bind(overlay_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(OverlayError::from)?;
+    match row {
+        None => Err(AppError::from(OverlayError::NotFound)),
+        Some(row) => {
+            let is_system: bool = row
+                .try_get("is_system")
+                .map_err(|e| AppError::from(OverlayError::Database(e)))?;
+            if is_system {
+                return Err(AppError::Conflict(
+                    "system overlay definitions cannot be deleted; disable them instead".into(),
+                ));
+            }
+            sqlx::query("DELETE FROM overlay_definitions WHERE id = $1")
+                .bind(overlay_id)
+                .execute(pool)
+                .await
+                .map_err(|e| AppError::from(OverlayError::Database(e)))?;
+            Ok(())
+        }
+    }
 }
 
 pub async fn apply_overlays(
@@ -372,15 +633,98 @@ pub async fn preview_overlay(
     })
 }
 
-pub async fn list_templates(_pool: &PgPool) -> Result<Vec<OverlayTemplateSummary>, OverlayError> {
-    todo!("Phase 12 — community template listing")
+pub async fn list_templates(pool: &PgPool) -> Result<Vec<OverlayTemplateSummary>, OverlayError> {
+    let rows = sqlx::query(
+        r#"SELECT metadata->>'template_name' AS name,
+                  COALESCE((metadata->>'template_version')::int, 1) AS version,
+                  COUNT(*)::bigint AS overlay_count
+           FROM overlay_definitions
+           WHERE metadata ? 'template_name'
+           GROUP BY metadata->>'template_name',
+                    COALESCE((metadata->>'template_version')::int, 1)
+           ORDER BY metadata->>'template_name'"#,
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let summaries: Vec<OverlayTemplateSummary> = rows
+        .iter()
+        .map(|row| OverlayTemplateSummary {
+            name: row.try_get("name").unwrap_or_default(),
+            version: row.try_get("version").unwrap_or(1),
+            overlay_count: row
+                .try_get::<i64, _>("overlay_count")
+                .unwrap_or(0) as usize,
+        })
+        .collect();
+
+    Ok(summaries)
 }
 
 pub async fn import_template(
-    _pool: &PgPool,
-    _import: OverlayTemplateImport,
+    pool: &PgPool,
+    import: OverlayTemplateImport,
 ) -> Result<OverlayTemplateResponse, OverlayError> {
-    todo!("Phase 12 — community template import")
+    let mut overlay_ids = Vec::with_capacity(import.overlays.len());
+    let template_name = import.name.clone();
+    let template_version = import.version.unwrap_or(1);
+
+    for entry in import.overlays {
+        let slug = generate_slug(&entry.name);
+        let applies_to = entry.applies_to.as_deref().unwrap_or("poster");
+        let conditions = entry.conditions.unwrap_or(serde_json::json!({}));
+        let suppresses = entry.suppresses.unwrap_or_default();
+        let metadata = serde_json::json!({
+            "template_name": template_name,
+            "template_version": template_version,
+            "library_id": import.library_id,
+        });
+
+        let row = sqlx::query(
+            r#"INSERT INTO overlay_definitions
+               (name, slug, library_id, overlay_type, image_path, text_template,
+                font_family, font_size, font_color,
+                back_color, back_radius,
+                horizontal_offset, horizontal_align, vertical_offset, vertical_align,
+                group_name, weight, queue_name, conditions, suppresses, applies_to, metadata)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+                       $16, $17, $18, $19, $20, $21, $22)
+               RETURNING id"#,
+        )
+        .bind(entry.name)
+        .bind(slug)
+        .bind(import.library_id)
+        .bind(entry.overlay_type)
+        .bind(entry.image_path)
+        .bind(entry.text_template)
+        .bind(entry.font_family.unwrap_or_else(|| "Inter".to_string()))
+        .bind(entry.font_size.unwrap_or(63))
+        .bind(entry.font_color.unwrap_or_else(|| "#FFFFFF".to_string()))
+        .bind(entry.back_color)
+        .bind(entry.back_radius.unwrap_or(0))
+        .bind(entry.horizontal_offset.unwrap_or(0))
+        .bind(entry.horizontal_align.unwrap_or_else(|| "left".to_string()))
+        .bind(entry.vertical_offset.unwrap_or(0))
+        .bind(entry.vertical_align.unwrap_or_else(|| "top".to_string()))
+        .bind(entry.group_name)
+        .bind(entry.weight.unwrap_or(0))
+        .bind(entry.queue_name)
+        .bind(conditions)
+        .bind(&suppresses)
+        .bind(applies_to)
+        .bind(metadata)
+        .fetch_one(pool)
+        .await?;
+
+        let id: Uuid = row.try_get("id")?;
+        overlay_ids.push(id);
+    }
+
+    let imported_count = overlay_ids.len();
+    Ok(OverlayTemplateResponse {
+        imported_count,
+        overlay_ids,
+    })
 }
 
 struct OverlayMediaContext {

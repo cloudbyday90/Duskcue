@@ -16,3 +16,40 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { get, post, patch, del } from './core.js';
+
+export async function listOverlays(params = {}) {
+    return get('/overlays', params);
+}
+
+export async function getOverlay(overlayId) {
+    return get(`/overlays/${overlayId}`);
+}
+
+export async function createOverlay(data) {
+    return post('/overlays', data);
+}
+
+export async function updateOverlay(overlayId, data) {
+    return patch(`/overlays/${overlayId}`, data);
+}
+
+export async function deleteOverlay(overlayId) {
+    return del(`/overlays/${overlayId}`);
+}
+
+export async function applyOverlays(data = {}) {
+    return post('/overlays/apply', data);
+}
+
+export async function previewOverlay(data) {
+    return post('/overlays/preview', data);
+}
+
+export async function listTemplates() {
+    return get('/overlays/templates');
+}
+
+export async function importTemplate(data) {
+    return post('/overlays/templates', data);
+}

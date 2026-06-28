@@ -193,6 +193,8 @@ All IDs are UUIDv7 in standard hyphenated lowercase:
 - Response fields that have no value are omitted entirely (reduces payload)
 - PATCH requests treat `null` as "remove this field" (JSON Merge Patch semantics per RFC 7396)
 
+**Implementation status:** honoring RFC 7396 "null = remove" requires `Option<Option<T>>` + `serde_with::rust::double_option` on the PATCH DTO, paired with a conditional-SET `QueryBuilder` (not `COALESCE`, which treats null as "unchanged"). Older domains (`users`, `libraries`) use `COALESCE`-based PATCH and therefore treat null as "unchanged" — a known deviation from the documented intent, to be migrated per-domain as clear-to-null workflows are needed. Overlays (Phase 12 Task 10) is the first domain to honor RFC 7396, on `library_id` only. See [PROJECT_STRUCTURE.md](PROJECT_STRUCTURE.md) PATCH 3-state nullability note and [PROJECT.md](../../PROJECT.md) Open Questions.
+
 ### Standard Response Envelope
 
 Single resource:
