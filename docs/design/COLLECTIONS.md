@@ -542,6 +542,41 @@ Research findings for Task 7:
 | Async concurrency control | Tokio's semaphore pattern is appropriate when many outbound requests are spawned concurrently. | It adds complexity when the worker already processes a small number of collection definitions sequentially. | Defer semaphore-based fan-out until collection sync has enough volume to justify parallelism. |
 | Queue-style locking | PostgreSQL `SKIP LOCKED` is useful for multi-consumer queue tables but intentionally returns an inconsistent queue view. | Duskcue's scheduler already serializes each scheduled task by `scheduled_tasks.state`, and Duskcue is single-instance. | Do not introduce per-collection queue locks in Task 7; use scheduler-level exclusivity plus sequential processing. |
 
+### Phase 12 Task 11
+
+Collection CRUD, item management, template import, and the admin UI are implemented. The eleven service functions left as `todo!()` stubs after Tasks 1–9 are filled in, mirroring the Task 10 overlays precedent (CRUD is the UI's hard dependency).
+
+| Area | Implementation |
+|---|---|
+| `list_collections` | Paginated `QueryBuilder` with optional `library_id`/`collection_type`/`visibility`/`enabled` filters + `COUNT(*)` mirror query |
+| `get_collection` | `SELECT` by id via `QueryBuilder` |
+| `create_collection` | `INSERT` with slug generation, name/slug uniqueness check (`check_name_unique`), `is_dynamic`/`is_smart` derived from `collection_type`, DDL defaults for nullable fields |
+| `update_collection` | Dynamic `QueryBuilder` PATCH; `collection_type` change auto-syncs `is_dynamic`/`is_smart` boolean flags |
+| `delete_collection` | System-collection protection via `AppError::Conflict`; returns `Result<(), AppError>` (the only non-`CollectionsError` service function) |
+| `list_collection_items` | Paginated, optional `include_missing` filter; ordered by `position, created_at` |
+| `add_collection_items` | 1000-spaced positioning (`MAX(position)+1000`); `ON CONFLICT (collection_id, media_item_id) DO NOTHING`; counter update |
+| `reorder_collection_items` | Per-item position `UPDATE` |
+| `remove_collection_item` | `DELETE` scoped by `collection_id + media_item_id`; returns `NotFound` on 0 rows affected; counter update |
+| `list_templates` | `SELECT` from `collection_templates` ordered by name |
+| `import_template` | Upsert on name (`ON CONFLICT (name) DO UPDATE`) with COALESCE preserving nullable fields |
+
+The web client mirrors the overlays admin UI structure (list/editor/templates views):
+
+| File | Surface |
+|---|---|
+| `clients/web/src/lib/api/collections.js` | Full API client (CRUD, items, reorder, sync, templates) |
+| `clients/web/src/routes/settings/collections/+page.svelte` | List grouped by type (Static/Dynamic/Smart) with enable toggle/edit/delete/sync; type-aware editor (dynamic-config builder dropdown grouped Internal/External per the Builder Sources tables, limit, schedule, sync_mode, title_format, include/exclude; `ConditionBuilder` for smart filters); display controls; template browser + JSON import; Sync All / per-collection sync |
+| `clients/web/src/routes/settings/+page.svelte` | Removed `soon: true` flag from the Collections link |
+
+The editor reuses `clients/web/src/lib/components/ConditionBuilder.svelte` from Phase 12 Task 10 for smart-collection filters, since overlays and collections share the `services::conditions` JSONB rule grammar (Task 3's cross-cutting design decision). No new web dependencies were added.
+
+Deferred items:
+
+- **`library_id` clear-to-global on PATCH** — `UpdateCollectionRequest.library_id` is `Option<Uuid>` (not `Option<Option<Uuid>>` with `serde_with::rust::double_option`), so the standard PATCH type cannot express "clear to NULL" (global). Global↔specific is a documented admin workflow but scoped collection → global is not yet supported via PATCH; it can be adopted via DoubleOption when needed as a deliberate, tested change (see [PROJECT.md](../../PROJECT.md) Open Questions — PATCH 3-state nullability).
+- **`total_duration_seconds` recomputation** — counter stays at 0 on item add/remove; deferred to when the web client needs it.
+- **Missing external items display** — `last_sync_result` JSONB contains missing counts/IDs (from Task 6) but the UI shows a compact summary (`+3, -1, 5 missing`); a dedicated missing-items table/list view is a future enhancement.
+- **Static collection item picker** — the UI supports add/remove/reorder via the API but no media-item search picker is integrated yet; items are added by UUID through the API.
+
 ## Cross-References
 
 - [METADATA_OVERLAYS.md](METADATA_OVERLAYS.md) — overlays can be applied to collection posters; shared condition/filter system

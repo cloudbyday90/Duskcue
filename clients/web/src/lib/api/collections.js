@@ -16,3 +16,56 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { get, post, patch, put, del } from './core.js';
+
+export async function listCollections(params = {}) {
+    return get('/collections', params);
+}
+
+export async function getCollection(collectionId) {
+    return get(`/collections/${collectionId}`);
+}
+
+export async function createCollection(data) {
+    return post('/collections', data);
+}
+
+export async function updateCollection(collectionId, data) {
+    return patch(`/collections/${collectionId}`, data);
+}
+
+export async function deleteCollection(collectionId) {
+    return del(`/collections/${collectionId}`);
+}
+
+export async function listCollectionItems(collectionId, params = {}) {
+    return get(`/collections/${collectionId}/items`, params);
+}
+
+export async function addCollectionItems(collectionId, data) {
+    return post(`/collections/${collectionId}/items`, data);
+}
+
+export async function reorderCollectionItems(collectionId, data) {
+    return put(`/collections/${collectionId}/items/reorder`, data);
+}
+
+export async function removeCollectionItem(collectionId, mediaItemId) {
+    return del(`/collections/${collectionId}/items/${mediaItemId}`);
+}
+
+export async function syncAllCollections(data = {}) {
+    return post('/collections/sync', data);
+}
+
+export async function syncCollection(collectionId, data = {}) {
+    return post(`/collections/${collectionId}/sync`, data);
+}
+
+export async function listTemplates() {
+    return get('/collections/templates');
+}
+
+export async function importTemplate(data) {
+    return post('/collections/templates', data);
+}

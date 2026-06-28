@@ -2909,10 +2909,36 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Verification:** `cargo check -p duskcue` passes.
 
-10. ~~Build admin UI for overlays — overlay editor, template browser, condition builder~~ **DONE**
-11. Build admin UI for collections — collection list, builder configuration, template import
+ 10. ~~Build admin UI for overlays — overlay editor, template browser, condition builder~~ **DONE**
+ 11. ~~Build admin UI for collections — collection list, builder configuration, template import~~ **DONE**
 
-   **Context from Task 10:** The overlay CRUD/template service functions were still `todo!()` stubs (Tasks 1–9 implemented compositing/conditions/clean-art/workers but never the definition CRUD). Task 10 filled these in (`list_overlays`/`get_overlay`/`create_overlay`/`update_overlay`/`delete_overlay`/`list_templates`/`import_template` in `domains/overlays/service.rs`) because the UI cannot function without working endpoints. A new `ConditionBuilder.svelte` recursive component was added to `clients/web/src/lib/components/` — Task 11's collection smart-filter UI can reuse this same component and the shared `services::conditions::validate_structure()` engine, since overlays and collections share one JSONB rule grammar. The `clients/web/src/lib/api/overlays.js` client pattern (thin wrappers over `core.js`) is the template for the collections API client.
+    **Context from Task 10:** The overlay CRUD/template service functions were still `todo!()` stubs (Tasks 1–9 implemented compositing/conditions/clean-art/workers but never the definition CRUD). Task 10 filled these in (`list_overlays`/`get_overlay`/`create_overlay`/`update_overlay`/`delete_overlay`/`list_templates`/`import_template` in `domains/overlays/service.rs`) because the UI cannot function without working endpoints. A new `ConditionBuilder.svelte` recursive component was added to `clients/web/src/lib/components/` — Task 11's collection smart-filter UI can reuse this same component and the shared `services::conditions::validate_structure()` engine, since overlays and collections share one JSONB rule grammar. The `clients/web/src/lib/api/overlays.js` client pattern (thin wrappers over `core.js`) is the template for the collections API client.
+
+    **What was built for Task 11:**
+
+    | File | Purpose |
+    |---|---|
+    | `server/src/domains/collections/service.rs` | Filled the 11 CRUD/item/template stubs: `list_collections` (paginated `QueryBuilder` with library_id/type/visibility/enabled filters + count), `get_collection`, `create_collection` (slug generation + name/slug uniqueness + `is_dynamic`/`is_smart` derivation from `collection_type`), `update_collection` (dynamic `QueryBuilder` PATCH with collection_type → is_dynamic/is_smart auto-sync), `delete_collection` (system-collection protection via `AppError::Conflict`), `list_collection_items` (paginated, optional `include_missing` filter), `add_collection_items` (1000-spaced positioning + counter update), `reorder_collection_items`, `remove_collection_item` (counter update), `list_templates`, `import_template` (upsert on name with `ON CONFLICT`); shared `SELECT_CLAUSE`/`RETURNING_COLUMNS` consts + `row_to_collection_row()`/`row_to_response()`/`row_to_template_row()`/`template_row_to_response()` mappers + `check_name_unique()`/`update_collection_counters()` helpers |
+    | `clients/web/src/lib/api/collections.js` | Full API client: `listCollections`, `getCollection`, `createCollection`, `updateCollection`, `deleteCollection`, `listCollectionItems`, `addCollectionItems`, `reorderCollectionItems`, `removeCollectionItem`, `syncAllCollections`, `syncCollection`, `listTemplates`, `importTemplate` |
+    | `clients/web/src/routes/settings/collections/+page.svelte` | Full admin UI replacing the "Coming in Phase 12" stub: collection list grouped by type (Static/Dynamic/Smart) with enable toggle/edit/delete/sync, type-aware editor (builder config for dynamic: builder dropdown grouped Internal/External, limit, schedule, sync_mode, title_format, include/exclude; `ConditionBuilder` for smart filters), display controls (sort_order, sort_by), template browser + JSON import, and Sync All / per-collection sync operations |
+    | `clients/web/src/routes/settings/+page.svelte` | Removed `soon: true` flag from the Collections settings link |
+
+    **Key decisions from Task 11:**
+
+    - **CRUD was a prerequisite, not part of an earlier task** — Tasks 1–9 left collection CRUD/item/template service functions as `todo!()` stubs (the scaffolding task's explicit deferral). Task 11 implements them as the UI's hard dependency, mirroring the exact precedent set by Task 10 (overlays). The `row_to_collection_row()` mapper and `CollectionRow` struct from the scaffolding are reused.
+    - **`QueryBuilder` over `format!` for dynamic SQL** — sqlx 0.9's `SqlSafeStr` guard rejects `String`/`format!()` output in `sqlx::query()`. `list_collections` and `update_collection` use `sqlx::query_builder::QueryBuilder`. The `($N::uuid IS NULL OR column = $N)` pattern is not used; instead `QueryBuilder` conditionally pushes `WHERE`/`AND` clauses per present filter, matching the overlays `list_overlays` pattern.
+    - **`collection_type` change auto-syncs `is_dynamic`/`is_smart`** — When `update_collection` receives a new `collection_type`, it derives and sets `is_dynamic`/`is_smart` in the same PATCH so the boolean flags never desync from the string discriminator. The DDL CHECK constraints on `collection_type`/`visibility`/`sync_mode` enforce validity at the DB layer; the service layer's `validate_*` helpers run in the handler before the service is reached.
+    - **System-collection delete → `AppError::Conflict`** — no dedicated COLL code exists for the "system collections cannot be deleted" business rule (Task 5 decision); the service returns `AppError::Conflict`, the UI disables the delete button and shows a `system` badge. Disabling is the supported customization path — consistent with the overlays domain.
+    - **`delete_collection` returns `Result<(), AppError>`** — the only collection service function not returning `CollectionsError`, because the system-collection check needs a non-COLL error code. DB errors map `CollectionsError::Database` → `AppError` explicitly via `From`. Matches `overlays::service::delete_overlay` exactly.
+    - **Item positioning uses 1000-spaced integers** — `add_collection_items` assigns `MAX(position) + 1000` (or 1000 for the first item) per new item, matching DATABASE.md integer-spacing convention (1000, 2000, 3000) used by playlists; allows future insertions without renumbering. `ON CONFLICT (collection_id, media_item_id) DO NOTHING` prevents duplicate items.
+    - **Template import is upsert on name** — `import_template` uses `ON CONFLICT (name) DO UPDATE` so re-importing an updated template updates rather than failing on the UNIQUE(name) constraint; COALESCE preserves nullable fields when the new value is NULL.
+    - **`last_sync_result` rendered as summary string** — `formatSyncResult()` extracts `added`/`removed`/`missing` counts from the JSONB into a compact `+3, -1, 5 missing` badge; falls back to `"never"` for unsynced dynamic collections.
+    - **Builder dropdown grouped Internal/External** — the dynamic-config builder select uses `<optgroup>` to separate the 14 internal builders (library metadata) from the 12 external builders (API sources) per COLLECTIONS.md Builder Sources tables; makes the admin's mental model match the design doc.
+    - **Title-format field uses HTML entities** — `&lt;&lt;key_name&gt;&gt;` in the Svelte template renders `<<key_name>>` as a placeholder hint without Svelte interpreting the angle brackets; matches the template-variable syntax documented in COLLECTIONS.md.
+    - **Reuses `ConditionBuilder.svelte` from Task 10** — smart collections use the identical recursive condition editor as overlays, since both domains share the `services::conditions` JSONB rule grammar (Task 3's cross-cutting design decision). No new component needed; the `denormalizeConditions`/`normalizeConditions` helpers are duplicated from the overlays page since each page manages its own form state.
+    - **No new web dependencies** — uses Svelte 5 runes, existing `core.js`, and the existing design tokens only.
+
+    **Verification:** `cargo check -p duskcue`, `cargo clippy -p duskcue --all-targets --all-features -- -A clippy::unnecessary-sort-by -D warnings`, and `cargo test -p duskcue --lib` (583 tests pass) all green. `npx svelte-check` (0 errors) and `npm run build` pass in `clients/web`.
 
    **What was built for Task 10:**
 
@@ -2964,6 +2990,8 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **No new workspace dependencies** — scaffolding uses existing `axum`, `sqlx`, `serde`, `validator`, `uuid`, `chrono`. Compositing crates (`ab_glyph`, `fontdb`, `resvg`) added in Task 2.
 
 **Verification:** Default overlays (resolution badge, audio codec) are applied to poster artwork. Dynamic collections auto-populate from TMDB popular/trending. Admin can create custom overlays and collections. Source artwork is preserved.
+
+**Phase 12 status:** All 11 tasks complete.
 
 ---
 
@@ -3580,9 +3608,9 @@ Phase 8: Web Client Core (COMPLETE — 6 tasks) ←─── (consumes all above
     ↓
     ├── Phase 9:  Subtitles (COMPLETE — 8 tasks)
     ├── Phase 10: Segments & Storyboards (COMPLETE — 12 tasks: 8 core + SSE + image pipeline + artwork endpoint + events store)
-    ├── Phase 11: Analytics & Trakt
-    ├── Phase 12: Kometa-Like System
-    ├── Phase 13a: System Operations Core (config + backup + maintenance)
+    ├── Phase 11: Analytics & Trakt (COMPLETE — 9 tasks)
+    ├── Phase 12: Kometa-Like System (COMPLETE — 11 tasks)
+    ├── Phase 13a: System Operations Core (COMPLETE — config + backup + maintenance)
     │       ↓
     │   Phase 13b: Notification System (Fluent + dispatch + push)  ←── can overlap with Phase 14
     │       │
