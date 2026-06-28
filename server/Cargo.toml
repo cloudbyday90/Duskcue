@@ -72,6 +72,10 @@ image.workspace = true
 webp.workspace = true
 ab_glyph.workspace = true
 resvg.workspace = true
+fluent-templates.workspace = true
+fluent-bundle.workspace = true
+fluent-langneg.workspace = true
+unic-langid.workspace = true
 duskcue-types = { path = "../crates/types" }
 duskcue-db = { path = "../crates/db" }
 

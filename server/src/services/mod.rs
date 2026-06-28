@@ -29,6 +29,7 @@ pub mod fanart_client;
 pub mod fs_watcher;
 pub mod geoip;
 pub mod hw_accel;
+pub mod i18n;
 pub mod image_pipeline;
 pub mod media_matching;
 pub mod metadata;

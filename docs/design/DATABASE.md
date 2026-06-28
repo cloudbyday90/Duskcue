@@ -2436,9 +2436,9 @@ CREATE TABLE notification_types (
 );
 ```
 
-Defines notification event types, seeded on first run. Templates use `{{variable}}` syntax for substitution at creation time.
+Defines notification event types, seeded on first run. Templates store Fluent message IDs (kebab-case) resolved at render time via `services/i18n.rs` per the recipient's locale — see [I18N.md](I18N.md) "Phase 13 Notification Template Pattern".
 
-`in_app_template` — required, rendered into the notification's `title` and `body`. Example: `{{username}} started watching {{title}}`.
+`in_app_template` — required, stores a Fluent message ID (e.g., `new-media-added`). The renderer looks up the message in `server/locales/<lang>/notifications.ftl` and interpolates variables from the notification's `metadata` JSONB. Phase 13b Task 1 migration `20260628020000` converted the original English `{{variable}}` strings to Fluent IDs.
 
 `email_template` — optional HTML email body. If null, this type is email-ineligible.
 

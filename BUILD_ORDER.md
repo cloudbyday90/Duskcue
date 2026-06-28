@@ -3288,7 +3288,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Tasks:**
 
-1. Set up Fluent server-side i18n — `fluent-i18n` crate, `server/locales/en/notifications.ftl`, migrate `notification_types.in_app_template` from English strings to Fluent message IDs (debt item #5 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))
+1. ~~Set up Fluent server-side i18n — `fluent-i18n` crate, `server/locales/en/notifications.ftl`, migrate `notification_types.in_app_template` from English strings to Fluent message IDs (debt item #5 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))~~ **DONE** — see Task 1 notes below. Crate switched from `fluent-i18n` to `fluent-templates` (thread-local → explicit per-call locale model; async-safe for concurrent per-user rendering).
 2. Implement multi-channel dispatch pipeline — notification record always in DB; fan-out to in-app + SSE + webhook simultaneously; mobile push channel included in fan-out but client implementation deferred to Phase 16a (debt item #6 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))
 3. Implement notification CRUD — create, list, mark-as-read, delete; notification types and user preferences from Phase 2 tables
 4. Implement webhook dispatch — HTTP POST to operator-configured URL with ntfy/Gotify/Discord/Slack/generic formats; HMAC signing; retry with backoff (debt item #8 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))
@@ -3298,6 +3298,29 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 **Verification:** Admin triggers a test notification. Notification appears in-app (notification center), via SSE (live update if web client is open), and via webhook (operator-configured endpoint). Notification templates render in the user's preferred locale via Fluent. Push devices register and display in user settings.
 
 **MVP fallback:** If Phase 13b takes longer than estimated, ship in-app + SSE + webhook only. Defer FCM/APNs/UnifiedPush client implementations to Phase 16a. The `user_push_devices` table and API still ship (schema-only) to avoid Phase 16a schema migration. See [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md) for details.
+
+**What was built for Task 1:**
+
+| File | Purpose |
+|---|---|
+| `server/src/services/i18n.rs` | Fluent infrastructure: `static_loader!` macro embedding `server/locales/` into the binary at compile time; `negotiate_locale()` implementing the I18N.md locale chain (user preference → Accept-Language → base English); `render()` / `args_from_metadata()` helpers for the Task 2 dispatch pipeline; `set_use_isolating(false)` customisation for clean plain-text output; 17 unit tests |
+| `server/locales/en/notifications.ftl` | All 11 seeded notification templates migrated from English `{{key}}` interpolation strings to Fluent message IDs with `{ $arg }` syntax (kebab-case message IDs, kebab-case variable names) |
+| `server/migrations/20260628020000_migrate_notification_templates_to_fluent.sql` | Idempotent `UPDATE` migration converting all 11 `notification_types.in_app_template` values from English template strings to Fluent message IDs (e.g., `'{{title}} was added to {{library}}'` → `'new-media-added'`) |
+| `Cargo.toml` / `server/Cargo.toml` | Added `fluent-templates` 0.14, `fluent-bundle` 0.16, `fluent-langneg` 0.13, `unic-langid` 0.9 to workspace deps |
+| `server/src/services/mod.rs` | Exported `pub mod i18n;` |
+| `docs/design/I18N.md` | Corrected primary crate recommendation from `fluent-i18n` to `fluent-templates`; added "Crate Selection Rationale" section documenting the thread-local vs explicit-locale concurrency analysis; updated renderer example, rejection table, Implementation Status table, Key Decisions, and Research Sources |
+| `docs/design/IMPLEMENTATION_DEBT.md` | Updated debt item #5 status from "Spec only" to "✅ Phase 13b Task 1" |
+
+**Key decisions from Task 1:**
+
+- **`fluent-templates` over `fluent-i18n`** — `fluent-i18n` uses thread-local locale state (`set_locale()`/`get_locale()`) which races in async Axum (tokio tasks migrate between worker threads; concurrent notification rendering for users with different locales corrupts the global thread-local). `fluent-templates` takes locale as an explicit per-call argument (`LOCALES.lookup_with_args(&langid, key, &args)`) — no shared mutable state. I18N.md:109 anticipated this ("Falls back to `fluent-templates` if its API proves insufficient"); Task 1 research confirmed the fallback as the correct primary. The decision is fully documented in I18N.md "Crate Selection Rationale" section.
+- **`static_loader!` compile-time embedding** — `.ftl` files compiled into the binary at build time. No runtime file I/O, no `CARGO_MANIFEST_DIR` lookup. Matches Duskcue's single-binary deployment goal (Phase 15 Docker image contains no external locale files).
+- **Kebab-case message IDs in DB, snake_case `name` column unchanged** — `notification_types.in_app_template` stores `'new-media-added'` (Fluent convention); `notification_types.name` stays `'new_media_added'` (Rust/JSON convention). Different namespaces; no redundancy issue.
+- **Kebab-case Fluent variable names with `args_from_metadata` normalization** — `.ftl` uses `{ $task-name }` (Fluent convention); `args_from_metadata()` converts notification metadata JSONB keys from snake_case (`task_name`) to kebab-case automatically. Callers pass raw metadata; the i18n layer handles convention conversion.
+- **`set_use_isolating(false)`** — Disables Unicode bidi isolating marks (U+2068/U+2069) around arguments for clean plain-text output to DB body / webhook payload / SSE fields. Arguments come from trusted internal sources (media titles, usernames). Matches `fluent-i18n`'s default behavior.
+- **Not-found detection via prefix check** — When a Fluent message ID isn't in the loaded resources, `fluent-templates` returns `"Unknown localization key: \"<id>\""`. `render()` checks this prefix, logs a warning, and returns the clean message ID (better for debugging than the raw error string). A message that exists but has a missing required variable also surfaces this way (formatting error treated as lookup failure by fluent-templates) — documented in the `returns_raw_id_when_required_arg_is_missing` test.
+- **No AppState wiring needed** — `LOCALES` is a process-wide `&'static StaticLoader` created by `static_loader!`; accessed directly from any async context. No `Arc<FluentBundle>` in `AppState`. The dispatcher (Task 2) will call `services::i18n::render()` directly.
+- **17 new tests, 600 total passing** — 6 negotiation tests (user pref priority, Accept-Language fallback, empty/blank/garbage inputs), 11 rendering tests (all 11 seeded IDs, args/metadata conversion, isolating marks disabled, unknown message, missing required arg), `AVAILABLE_LOCALES` invariant. 0 clippy warnings.
 
 ---
 
@@ -3334,7 +3357,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 | Doc | What to build from it |
 |---|---|
 | [HTTP_CACHING.md](docs/design/HTTP_CACHING.md) | Cache-Control + ETag response headers on metadata/artwork endpoints |
-| [I18N.md](docs/design/I18N.md) | Paraglide JS adoption — extract web client strings to `en.json` |
+| [I18N.md](docs/design/I18N.md) | **Target Locales section** — 8-locale plan (`en`, `fr`, `de`, `es`, `it`, `ar`, `zh-Hans`, `zh-Hant`); Paraglide JS adoption; translation strategy (AI-initial + native review); RTL for Arabic |
 | [SEARCH.md](docs/design/SEARCH.md) | Faceted search UI (genre/year/rating filter pills) |
 | [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md) | Full debt catalog and scheduling rationale |
 
@@ -3344,8 +3367,11 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 2. Adopt Paraglide JS — `@inlang/paraglide-js` Vite plugin; extract existing web client UI strings to `clients/web/messages/en.json`; configure URL prefix + cookie locale strategy per [I18N.md](docs/design/I18N.md)
 3. Build faceted search UI — genre/year/rating/type filter pills on search results page; uses existing PG FTS with parallel GROUP BY queries per [SEARCH.md](docs/design/SEARCH.md)
 4. Add Prometheus metrics for new infrastructure — SSE connection count, event publish rate, image variant generation throughput + cache hit rate, search query latency p50/p95/p99, push delivery success rate per channel; extends existing `init_metrics()` from Phase 3
+5. **Multi-locale translations (7 non-English locales)** — Create initial `.ftl` files for `server/locales/{fr,de,es,it,ar,zh-Hans,zh-Hant}/notifications.ftl` and parallel `clients/web/messages/{locale}.json` files. AI-assisted initial pass with translator comments marking each file `### AI-GENERATED INITIAL TRANSLATION — needs native-speaker review before activation.` Expand `AVAILABLE_LOCALES` in `services/i18n.rs` from `[en]` to all 8 locales. Informal register across all locales (`tu`/`du`/`tú`/`tu`). Per [I18N.md](docs/design/I18N.md) "Target Locales" section. Locales are NOT UI-selectable until Task 7 activates them post-review.
+6. **RTL layout review for Arabic** — Set `<html dir="rtl">` based on locale via Paraglide's `getTextDirection()`; audit all CSS for physical properties (`margin-left` → `margin-inline-start`, `padding-right` → `padding-inline-end`); mirror directional icons (back/next arrows) via `[dir="rtl"]` selectors; bidirectional testing of every layout (library grid, player, settings panels, notification center). Must pass before `ar` locale is UI-activated. Per [I18N.md](docs/design/I18N.md) "Right-to-Left Support".
+7. **Locale activation infrastructure** — User settings API to read/write `users.metadata.locale`; language switcher UI in web client (shows only reviewed locales); Weblate project setup (self-hosted or cloud) with Fluent + Inlang JSON components connected to Duskcue repo; import AI-initial translations as suggestions for community refinement; 90% completeness + maintainer sign-off threshold for UI activation per [I18N.md](docs/design/I18N.md).
 
-**Verification:** Metadata endpoints return ETag headers; conditional requests return 304. Web client strings are in `en.json` and wrapped in Paraglide `m.*` calls. Search results page has genre/year/rating filters. Grafana dashboard shows SSE connections and search latency.
+**Verification:** Metadata endpoints return ETag headers; conditional requests return 304. Web client strings are in `en.json` and wrapped in Paraglide `m.*` calls. Search results page has genre/year/rating filters. Grafana dashboard shows SSE connections and search latency. All 8 locales exist in `AVAILABLE_LOCALES` and can render notifications via `services::i18n::render()`. Arabic layout passes bidirectional review. Language switcher shows reviewed locales only.
 
 ---
 
@@ -3612,11 +3638,11 @@ Phase 8: Web Client Core (COMPLETE — 6 tasks) ←─── (consumes all above
     ├── Phase 12: Kometa-Like System (COMPLETE — 11 tasks)
     ├── Phase 13a: System Operations Core (COMPLETE — config + backup + maintenance)
     │       ↓
-    │   Phase 13b: Notification System (Fluent + dispatch + push)  ←── can overlap with Phase 14
+    │   Phase 13b: Notification System (Fluent + dispatch + push)  ←── can overlap with Phase 14 — Task 1 (Fluent setup) COMPLETE
     │       │
     ├── Phase 14: Platform Migration  ←── proceeds after 13a, independent of 13b
     │       │
-    ├── Pre-v1.0 Hardening (Cache-Control/ETag + Paraglide + faceted search + metrics)
+    ├── Pre-v1.0 Hardening (Cache-Control/ETag + Paraglide + faceted search + metrics + 7-locale translations + RTL review + locale activation)
     │       │
     └── Phase 15: Docker & Deployment  ←── needs 13a + 13b + 14 for complete v1.0 image
             ↓

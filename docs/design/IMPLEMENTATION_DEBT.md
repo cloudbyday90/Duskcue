@@ -28,7 +28,7 @@ No artificial "Phase 8.5" or dedicated "refactoring sprint" is created. The rese
 | 2 | **Image pipeline service** (`services/image_pipeline.rs` — WebP encode, resize, variant generation) | [IMAGE_FORMATS.md](IMAGE_FORMATS.md) | 3-5 days | **Phase 10** (storyboard WebP sprites use same service) | Artwork WebP variants; storyboard sprites; overlay composites (Phase 12) | ✅ Phase 10 Task 9 |
 | 3 | **Artwork delivery endpoint** (`GET /api/v1/items/{id}/artwork/{type}?size={size}`) | [IMAGE_FORMATS.md](IMAGE_FORMATS.md) | 2-3 days | **Phase 10** (shares `image_pipeline.rs`) | Web client poster rendering (currently gradient placeholders) | ✅ Phase 10 Task 10 |
 | 4 | **Web client `events.js` store** (Svelte store managing `EventSource` lifecycle) | [REAL_TIME_PUSH.md](REAL_TIME_PUSH.md) | 1-2 days | **Phase 10** (storyboard progress feed in player) | Player transcode progress; notification center; scan progress | ✅ Phase 10 Task 12 |
-| 5 | **Fluent server-side setup** (`fluent-i18n` crate, `server/locales/en/` directory, notification template migration) | [I18N.md](I18N.md) | 2-3 days | **Phase 13** (notification dispatch is forcing function) | Phase 13 notification templates; error message localization (future) | Spec only |
+| 5 | **Fluent server-side setup** (`fluent-templates` crate, `server/locales/en/` directory, notification template migration) | [I18N.md](I18N.md) | 2-3 days | **Phase 13b** (notification dispatch is forcing function) | Phase 13 notification templates; error message localization (future) | ✅ Phase 13b Task 1 |
 | 6 | **Multi-channel dispatch pipeline** (fan-out to in-app + SSE + webhook + mobile push) | [MOBILE_PUSH.md](MOBILE_PUSH.md) | 3-5 days | **Phase 13** (notification system is forcing function) | Phase 13 notification delivery; Phase 16 mobile push | Spec only |
 | 7 | **`user_push_devices` table + registration API** | [MOBILE_PUSH.md](MOBILE_PUSH.md) | 1-2 days | **Phase 13** (push device management in notifications UI) | Phase 13 push device UI; Phase 16 Flutter registration | Spec only |
 | 8 | **Webhook dispatch** (HTTP POST to operator-configured URL; ntfy/Gotify/Discord/Slack/generic formats) | [MOBILE_PUSH.md](MOBILE_PUSH.md) | 2-3 days | **Phase 13** (default push channel; no mobile SDK needed) | Phase 13 notification delivery | Spec only |
@@ -70,7 +70,7 @@ Phase 13 was already the convergence point for i18n, push, and notifications. Th
 
 | New Task | Debt Item | Rationale |
 |---|---|---|
-| Set up Fluent server-side i18n (`fluent-i18n` crate, `server/locales/en/notifications.ftl`, migrate `notification_types.in_app_template` from English strings to Fluent message IDs) | #5 | Notification templates must be Fluent message IDs before dispatch ships. Forcing function per [I18N.md](I18N.md). |
+| Set up Fluent server-side i18n (`fluent-templates` crate, `server/locales/en/notifications.ftl`, migrate `notification_types.in_app_template` from English strings to Fluent message IDs) | #5 | Notification templates must be Fluent message IDs before dispatch ships. Forcing function per [I18N.md](I18N.md). ✅ Done in Phase 13b Task 1. |
 | Implement multi-channel dispatch pipeline (in-app + SSE + webhook + mobile push fan-out) | #6 | Notification dispatch must be multi-channel from day one. Forcing function per [MOBILE_PUSH.md](MOBILE_PUSH.md). |
 | Implement `user_push_devices` table + `POST /api/v1/user/push-devices` API | #7 | Push device registration for FCM/APNs/UnifiedPush tokens. Needed for push delivery. |
 | Implement webhook dispatch (ntfy/Gotify/Discord/Slack/generic formats) | #8 | Webhook is the recommended default push channel. No mobile SDK dependency. |
@@ -123,7 +123,7 @@ Each strategic design doc includes an "Implementation Status" table. This docume
 | [HTTP_CACHING.md](HTTP_CACHING.md) — Cache-Control + ETag | Spec only → **Pre-v1.0 hardening** | Pre-v1.0 |
 | [REAL_TIME_PUSH.md](REAL_TIME_PUSH.md) — SSE + EventBus | Spec only → **Phase 10** | Phase 10 |
 | [IMAGE_FORMATS.md](IMAGE_FORMATS.md) — WebP pipeline + artwork endpoint | Spec only → **Phase 10** | Phase 10 |
-| [I18N.md](I18N.md) — Paraglide + Fluent | Spec only → **Phase 13** (Fluent) + **Pre-v1.0** (Paraglide) | Phase 13 |
+| [I18N.md](I18N.md) — Paraglide + Fluent | ✅ Fluent implemented (Phase 13b Task 1) → **Pre-v1.0** (Paraglide + 7-locale translations + RTL) | Phase 13b |
 | [SEARCH.md](SEARCH.md) — PG FTS (default) + Meilisearch (post-v1.0) | ✅ PG FTS implemented (Phase 2) | Done |
 | [MULTI_INSTANCE.md](MULTI_INSTANCE.md) — Single-instance via lockfile | ✅ Implemented (Phase 3) | Done |
 | [REVERSE_PROXY.md](REVERSE_PROXY.md) — Built-in TLS + trusted proxies | ✅ Implemented (Phase 3) | Done |

@@ -117,7 +117,7 @@ The split boundary is determined by the inter-task dependency graph. Tasks group
 
 **Tasks:**
 
-1. Set up Fluent server-side i18n — `fluent-i18n` crate, `server/locales/en/notifications.ftl`, migrate `notification_types.in_app_template` from English strings to Fluent message IDs (debt item #5 from [IMPLEMENTATION_DEBT.md](IMPLEMENTATION_DEBT.md))
+1. ~~Set up Fluent server-side i18n — `fluent-i18n` crate, `server/locales/en/notifications.ftl`, migrate `notification_types.in_app_template` from English strings to Fluent message IDs (debt item #5 from [IMPLEMENTATION_DEBT.md](IMPLEMENTATION_DEBT.md))~~ **DONE** — crate switched to `fluent-templates` (async-safe explicit per-call locale); see BUILD_ORDER.md Phase 13b Task 1 notes and I18N.md "Crate Selection Rationale"
 2. Implement multi-channel dispatch pipeline — notification record always in DB; fan-out to in-app + SSE + webhook simultaneously; mobile push channel included in fan-out but client implementation deferred to Phase 16a (debt item #6)
 3. Implement notification CRUD — create, list, mark-as-read, delete; notification types and user preferences from Phase 2 tables
 4. Implement webhook dispatch — HTTP POST to operator-configured URL with ntfy/Gotify/Discord/Slack/generic formats; HMAC signing; retry with backoff (debt item #8)
@@ -125,6 +125,8 @@ The split boundary is determined by the inter-task dependency graph. Tasks group
 6. Build notifications UI — notification center, preferences, push device management, per-channel opt-in per notification type
 
 **Verification:** Admin triggers a test notification. Notification appears in-app (notification center), via SSE (live update if web client is open), and via webhook (operator-configured endpoint). Notification templates render in the user's preferred locale via Fluent. Push devices register and display in user settings.
+
+**Phase 13b status:** Task 1 complete (Fluent i18n infrastructure + template migration). 17 unit tests in `services::i18n`, 600 total server tests passing, 0 clippy warnings. Tasks 2-6 not yet started.
 
 ### Minimal Viable Notification System (Fallback)
 

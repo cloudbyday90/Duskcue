@@ -82,3 +82,7 @@ image = { version = "0.25", default-features = false, features = ["jpeg", "png",
 webp = { version = "0.3", default-features = false }
 ab_glyph = "0.2"
 resvg = "0.47"
+fluent-templates = "0.14"
+fluent-bundle = "0.16"
+fluent-langneg = "0.13"
+unic-langid = "0.9"
