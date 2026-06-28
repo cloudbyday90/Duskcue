@@ -34,6 +34,7 @@ pub mod image_pipeline;
 pub mod media_matching;
 pub mod metadata;
 pub mod nfo_parser;
+pub mod notification_dispatch;
 pub mod omdb_client;
 pub mod opensubtitles_client;
 pub mod overlays;

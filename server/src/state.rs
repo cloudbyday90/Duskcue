@@ -542,8 +542,53 @@ impl Default for TmdbProviderConfig {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct NotificationConfig {}
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct NotificationConfig {
+    pub webhook: WebhookDispatchConfig,
+    pub push: PushDispatchConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct WebhookDispatchConfig {
+    pub url: Option<String>,
+    pub secret: Option<String>,
+    pub format: String,
+}
+
+impl Default for WebhookDispatchConfig {
+    fn default() -> Self {
+        Self {
+            url: None,
+            secret: None,
+            format: "generic".to_string(),
+        }
+    }
+}
+
+impl WebhookDispatchConfig {
+    pub fn is_configured(&self) -> bool {
+        self.url.as_ref().is_some_and(|u| !u.trim().is_empty())
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PushDispatchConfig {
+    pub enabled: bool,
+    pub provider: Option<String>,
+}
+
+impl PushDispatchConfig {
+    pub fn is_configured(&self) -> bool {
+        self.enabled
+            && self
+                .provider
+                .as_ref()
+                .is_some_and(|p| matches!(p.as_str(), "fcm" | "apns" | "unifiedpush"))
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
@@ -1175,7 +1220,14 @@ pub async fn load_runtime_config(
         },
         auth: serde_json::from_value(auth).unwrap_or_default(),
         security: serde_json::from_value(security).unwrap_or_default(),
-        notifications: serde_json::from_value(notifications).unwrap_or_default(),
+        notifications: {
+            let mut nc: NotificationConfig =
+                serde_json::from_value(notifications).unwrap_or_default();
+            if let Some(key) = encryption_key {
+                crate::services::encryption::decrypt_notification_config(&mut nc, key);
+            }
+            nc
+        },
         backup: serde_json::from_value(backup).unwrap_or_default(),
         integrations: {
             let mut ic: IntegrationsConfig =

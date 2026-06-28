@@ -412,18 +412,43 @@ If an admin switches from FCM to APNs (or vice versa):
 | Component | Status | Notes |
 |---|---|---|
 | `notifications` table + `notification_types` seed | ✅ Implemented | Phase 2 migration |
-| In-app notification center (REST API) | Not started | Phase 13 |
-| SSE event bus for `notification` events | ✅ EventBus implemented (Phase 10 Task 11) | `services/event_bus.rs` — `DashMap<Uuid, broadcast::Sender>` per user; `notification` event fan-out not yet wired (Phase 13 dispatch will call `state.event_bus.publish(user_id, ServerEvent::new("notification", payload))`) |
-| Webhook dispatch | Not started | Phase 13 |
-| `user_push_devices` table | Not started | Phase 13 schema migration |
-| FCM HTTP v1 client (Rust) | Not started | Phase 13 (or Phase 16 prerequisite) |
-| APNs client (`a2` crate) | Not started | Phase 13 (or Phase 16 prerequisite) |
-| UnifiedPush (webhook variant) | Not started | Phase 13; reuses webhook infrastructure |
-| Per-user channel preferences UI | Not started | Phase 13 admin/user settings |
-| Flutter `firebase_messaging` integration | Not started | Phase 16 |
-| Flutter UnifiedPush integration | Not started | Phase 16 |
+| Fluent notification template rendering | ✅ Implemented | Phase 13b Task 1 — `services/i18n.rs`; `notification_types.in_app_template` migrated from English strings to Fluent message IDs |
+| Multi-channel dispatch pipeline | ✅ Implemented | Phase 13b Task 2 — `services/notification_dispatch.rs`; DB-write-first + SSE fan-out + webhook (generic format + HMAC) + push stub |
+| In-app notification center (REST API) | Not started | Phase 13b Task 3 |
+| SSE event bus for `notification` events | ✅ Wired by dispatch pipeline | `services/event_bus.rs` (Phase 10 Task 11); dispatch pipeline calls `state.event_bus.publish(user_id, ServerEvent::new("notification", payload))` |
+| Webhook dispatch (basic: generic format + HMAC signing) | ✅ Implemented | Phase 13b Task 2 — `notification_dispatch::dispatch_webhook()`; generic JSON payload + `X-Duskcue-Signature` HMAC-SHA256 |
+| Webhook dispatch (formats: ntfy/Gotify/Discord/Slack + retry) | Not started | Phase 13b Task 4 |
+| `user_push_devices` table + registration API | Not started | Phase 13b Task 5 |
+| Push dispatch fan-out (stub) | ✅ Stub implemented | Phase 13b Task 2 — dispatch pipeline checks config/preferences; actual FCM/APNs/UnifiedPush client deferred to Phase 16a |
+| FCM HTTP v1 client (Rust) | Not started | Phase 16a (mobile client prerequisite) |
+| APNs client (`a2` crate) | Not started | Phase 16a (mobile client prerequisite) |
+| UnifiedPush (webhook variant) | Not started | Phase 16a; reuses webhook infrastructure |
+| Per-user channel preferences UI | Not started | Phase 13b Task 6 |
+| Notifications UI | Not started | Phase 13b Task 6 |
+| Flutter `firebase_messaging` integration | Not started | Phase 16a |
+| Flutter UnifiedPush integration | Not started | Phase 16a |
 
-**Phase 13 is the forcing function.** Before Phase 13 ships notification dispatch, the dispatch architecture (multi-channel fan-out with always-on in-app + SSE + webhook, opt-in mobile push) must be in place. Otherwise the system bakes in single-channel delivery and requires rework to add webhook/mobile later.
+**Phase 13b Task 2 implementation notes:**
+
+- **Dispatch pipeline module**: `services/notification_dispatch.rs` — cross-cutting service consumed by workers (library scan, backup, analytics) and HTTP handlers. Follows the `services/` convention (like `event_bus.rs`, `encryption.rs`).
+- **DB-write-first guarantee**: The notification record is INSERT-ed to `notifications` before any channel fan-out. If all channels fail, the notification is still visible in-app (the in-app channel IS the DB record — it's always on by design).
+- **SSE fan-out is synchronous**: `EventBus::publish()` is a fast in-memory broadcast (no I/O). The dispatch pipeline calls it directly rather than `tokio::spawn`-ing it, since it's sub-microsecond.
+- **Webhook fan-out is fire-and-forget via `tokio::spawn`**: The HTTP POST to the webhook URL runs in a background task. Failures are logged at WARN and recorded in `notifications.delivery_status` JSONB. The dispatch pipeline does not await webhook completion — the caller (e.g., a library scan worker) should not block on webhook delivery latency.
+- **Push fan-out is a structured stub**: The dispatch pipeline resolves push config + preferences and logs the attempt, but the actual FCM/APNs/UnifiedPush HTTP call is not yet implemented. When Task 5 creates `user_push_devices` and Phase 16a implements the FCM/APNs clients, the push dispatch function body will be filled in without changing the pipeline API.
+- **Per-user locale rendering**: The dispatch pipeline reads the user's preferred locale from `users.metadata->>'locale'` (server-side dispatch has no HTTP Accept-Language header). Falls back to the base English locale. All notification title/body text is rendered via `services::i18n::render()` before DB INSERT, so the stored notification is already localized.
+- **Webhook HMAC signing**: `X-Duskcue-Signature: sha256=<hex>` header computed via `ring::hmac` over the raw request body bytes. This follows the GitHub `X-Hub-Signature-256` / Hook0 `X-Hook0-Signature` convention (the de-facto standard for webhook integrity verification as of 2025-2026). Task 4 will reuse this signing mechanism for all webhook formats.
+- **`NotificationConfig` expansion**: The empty placeholder `NotificationConfig` in `state.rs` is expanded with `webhook` (url, secret, format) and `push` (enabled, provider) sub-configs. The webhook secret is encrypted at rest via the existing `EncryptionKey` (AES-256-GCM), matching the metadata/subtitle/Trakt provider key pattern.
+- **`user_notification_preferences.push_enabled`**: Migration adds the `push_enabled BOOLEAN NOT NULL DEFAULT false` column per the design doc's schema extension. The existing `webhook_enabled` column (Phase 2, default false) is reused as-is; users opt in per notification type.
+- **Idempotency**: The notification UUID (UUIDv7) is included in the webhook payload as `notification_id` so recipients can deduplicate. This follows the webhook best practice identified in research (Hook0 docs, June 2026).
+- **Channel preference resolution**: When no `user_notification_preferences` row exists for a user + notification type, the dispatch pipeline uses sensible defaults: `in_app_enabled = true`, `webhook_enabled = false`, `push_enabled = false`. The `notification_types.is_enabled_by_default` flag gates whether the notification type is active at all.
+
+**Phase 13b Task 2 key decisions:**
+
+1. **Webhook secret encrypted at rest** — Uses the existing `EncryptionKey` + `decrypt_notification_config()` helper (same pattern as metadata/subtitle/Trakt provider keys). The decrypted secret is in the live `RuntimeConfig` for dispatch use; never logged.
+2. **Webhook fire-and-forget over synchronous** — Workers calling `dispatch()` should not block on webhook HTTP latency (potentially seconds for external services). The spawned task handles the POST and records `delivery_status`; the caller gets an immediate `DispatchResult` with `webhook: "pending"`.
+3. **Generic webhook format in Task 2, rich formats in Task 4** — Task 2 ships a `generic` JSON payload with HMAC signing (sufficient for operators using ntfy/generic endpoints). Task 4 adds format-specific payloads (ntfy headers, Gotify/Discord/Slack JSON shapes) and retry with exponential backoff.
+4. **Push dispatch stub returns `"not_implemented"` status** — The fan-out logic is complete (checks config + preferences); only the actual provider HTTP call is deferred. This makes the push channel a no-op now and a working channel when Task 5 + Phase 16a land, with no pipeline API change.
+5. **`ring::hmac` for webhook signing** — `ring` is already in the workspace (rustls, PBKDF2, AES-256-GCM). No new HMAC crate needed. `ring::hmac::{Key, HMAC_SHA256, sign}` is the canonical API.
 
 ## Key Decisions
 

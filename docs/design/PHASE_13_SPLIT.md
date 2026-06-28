@@ -126,7 +126,7 @@ The split boundary is determined by the inter-task dependency graph. Tasks group
 
 **Verification:** Admin triggers a test notification. Notification appears in-app (notification center), via SSE (live update if web client is open), and via webhook (operator-configured endpoint). Notification templates render in the user's preferred locale via Fluent. Push devices register and display in user settings.
 
-**Phase 13b status:** Task 1 complete (Fluent i18n infrastructure + template migration). 17 unit tests in `services::i18n`, 600 total server tests passing, 0 clippy warnings. Tasks 2-6 not yet started.
+**Phase 13b status:** Tasks 1-2 complete (Fluent i18n infrastructure + template migration; multi-channel dispatch pipeline with DB-write-first + SSE fan-out + webhook with HMAC signing + push stub). 9 unit tests in `services::notification_dispatch`, 17 in `services::i18n`, 609 total server tests passing, 0 clippy warnings. Tasks 3-6 remain (notification CRUD, webhook format-specific dispatch, push device registration, notifications UI).
 
 ### Minimal Viable Notification System (Fallback)
 

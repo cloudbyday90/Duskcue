@@ -231,6 +231,28 @@ pub fn encrypt_trakt_config(config: &mut crate::state::TraktConfig, key: &Encryp
     }
 }
 
+pub fn decrypt_notification_config(
+    config: &mut crate::state::NotificationConfig,
+    key: &EncryptionKey,
+) {
+    config.webhook.secret = key.decrypt_optional(&config.webhook.secret);
+}
+
+pub fn encrypt_notification_config(
+    config: &mut crate::state::NotificationConfig,
+    key: &EncryptionKey,
+) {
+    if let Some(ref secret) = config.webhook.secret
+        && !secret.is_empty()
+        && !secret.starts_with(ENCRYPTED_PREFIX)
+    {
+        match key.encrypt(secret) {
+            Ok(encrypted) => config.webhook.secret = Some(encrypted),
+            Err(e) => tracing::error!(error = %e, "Failed to encrypt webhook secret"),
+        }
+    }
+}
+
 pub fn decrypt_subtitle_provider_config(
     config: &mut crate::state::SubtitleProviderConfig,
     key: &EncryptionKey,

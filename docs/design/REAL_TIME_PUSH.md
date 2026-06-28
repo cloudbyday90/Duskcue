@@ -158,7 +158,7 @@ The server maintains a short ring buffer (default: 100 events per user, ~5 minut
 | `transcode_progress` | `services/transcoding.rs` | [STREAMING.md](STREAMING.md) | 1/sec during active transcode; updates `TranscodeSession.progress` |
 | `scan_progress` | `workers/library_scanner.rs` | [MEDIA_SCANNING.md](MEDIA_SCANNING.md) | 1/sec during active library scan |
 | `storyboard_progress` | `workers/storyboard_generator.rs` | [STORYBOARDS.md](STORYBOARDS.md) | Emitted on admin-triggered generation (`phase: started|progress|completed`); scheduled task does not emit |
-| `notification` | Phase 13 notification system | Phase 13 (TBD) | New in-app notification created |
+| `notification` | `services/notification_dispatch.rs` (Phase 13b Task 2) | [MOBILE_PUSH.md](MOBILE_PUSH.md) | New in-app notification created; published via `EventBus::publish()` on every dispatch |
 | `session_kicked` | `domains/auth/service.rs` | [AUTH.md](AUTH.md) | Admin force-logout; client must clear session and redirect to login |
 | `playback_command` | `domains/playback/` | [STREAMING.md](STREAMING.md) | Server-initiated stop/pause (e.g., streaming policy auto-terminate) |
 | `analytics_update` | Phase 11 analytics | Phase 11 (TBD) | Live dashboard refresh tick |
@@ -272,7 +272,8 @@ SSE complements these — it carries metadata about state changes ("your transco
 | Per-user connection limit | ✅ Implemented | `EventBus::register_connection()` enforces `DEFAULT_MAX_CONNECTIONS_PER_USER = 5`; excess returns `AppError::RateLimited { code: "SSE_LIMIT_REACHED" }` |
 | `tokio-stream` dependency | ✅ Added | `tokio-stream = { version = "0.1", features = ["sync"] }` — `BroadcastStream` wraps `broadcast::Receiver` as a `Stream` for Axum's `Sse` response |
 | Svelte `events.js` store | ✅ Implemented | Phase 10 Task 12 — `clients/web/src/lib/stores/events.js`. Owns `EventSource` lifecycle; handler registry dispatches named events to domain stores. Layout connects on `$isAuthenticated`, disconnects on logout. `libraries.js` consumes `storyboard_progress` events. |
-| Mobile push gateway (FCM/APNs) | Not implemented | Phase 16 |
+| `notification` SSE events | ✅ Wired by dispatch pipeline | Phase 13b Task 2 — `services/notification_dispatch.rs` publishes `notification` events via `EventBus::publish()` on every dispatch. Payload includes `id`, `notification_type`, `category`, `priority`, `title`, `body`, `link`, and `created_at`. |
+| Mobile push gateway (FCM/APNs) | Not implemented | Phase 16a |
 
 The first concrete consumer of SSE is **storyboard generation progress** (Phase 10 Task 11) — admin clicks "Generate Storyboards" and sees per-file progress streamed to the libraries page. Transcode progress migration (Phase 7 follow-up) is the next consumer; the `Player.svelte` currently polls `GET /api/v1/playback/{session_id}` every few seconds.
 
