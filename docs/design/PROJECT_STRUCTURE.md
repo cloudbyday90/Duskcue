@@ -232,6 +232,8 @@ project/
 │       │   ├── overlays.rs       # Overlay compositing pipeline (image + text + backdrop; ab_glyph + resvg; group/suppress/queue resolution) — **implemented**
 │       │   ├── conditions.rs     # Pure condition evaluation engine (JSONB filter rules, 8 operators, nested AND/OR) — **implemented**
 │       │   ├── clean_art.rs      # Clean art preservation (content-addressed clean backups, Blake3 config hash, artwork_overlay_state CRUD, overlaid-result resolution) — **implemented**
+│       │   ├── backup.rs         # Shared backup coordinator (WAL-G/pg_dump/verify command spawning, WAL-G env construction, retention cleanup, operation lock) — **implemented**
+│       │   ├── recovery_drill.rs # Recovery drill service (disposable PostgreSQL via Docker Compose, pg_restore, structural checks, evidence schema) — **implemented**
 │       │  
 │       └── workers/              # Background task definitions
 │           ├── mod.rs
@@ -248,7 +250,9 @@ project/
 │           ├── geoip_updater.rs
 │           ├── subtitle_processor.rs
 │           ├── reindex_maintenance.rs
-│           └── disk_space_check.rs
+│           ├── disk_space_check.rs
+│           ├── asset_directory_scanner.rs
+│           └── recovery_drill_runner.rs # Scheduler adapter for backup_recovery_drill (disposable PostgreSQL restore + structural checks) — **implemented**
 │
 ├── crates/                       # Shared Rust crates (workspace members)
 │   ├── types/                    # Shared types, DTOs, error definitions

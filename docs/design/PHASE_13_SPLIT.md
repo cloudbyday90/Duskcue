@@ -102,8 +102,10 @@ The split boundary is determined by the inter-task dependency graph. Tasks group
 6. Implement `server/src/workers/backup_runner.rs` — scheduled backup execution
 7. Implement `server/src/workers/reindex_maintenance.rs` — weekly REINDEX CONCURRENTLY
 8. Implement `server/src/workers/disk_space_check.rs` — 30-minute disk monitoring
-9. Implement `server/src/workers/recovery_drill_runner.rs` — manual/scheduled restore drills in disposable PostgreSQL; restore latest `pg_dump` or WAL-G backup, run structural checks, and persist evidence in `scheduled_task_runs.stats`
+9. ~~Implement `server/src/workers/recovery_drill_runner.rs` — manual/scheduled restore drills in disposable PostgreSQL; restore latest `pg_dump` or WAL-G backup, run structural checks, and persist evidence in `scheduled_task_runs.stats`~~ **DONE**
 10. ~~Build admin settings UI — all `server_config` JSONB fields as toggles, sliders, dropdowns; push/webhook config fields are visible but annotated "Activation requires Phase 13b — notification dispatch"; backup panel shows latest recovery-drill evidence~~ **DONE**
+
+**Phase 13a status:** All 10 tasks complete. Recovery drill ships as `backup_recovery_drill` scheduled task — restores latest pg_dump into disposable PostgreSQL via Docker Compose, runs 3 structural checks (schema migrations applied, core tables present, row count sample), and persists a full evidence bundle in `scheduled_task_runs.stats`. WAL-G physical restore is deferred until the embedded PostgreSQL layout is finalized for packaged deployments (Phase 15).
 
 **Verification:** Admin can configure all settings via UI. Backups run on schedule. Disk space alerts trigger when thresholds are exceeded. Scheduled tasks are visible and triggerable. Recovery drills prove that at least one recent backup can be restored into disposable infrastructure.
 

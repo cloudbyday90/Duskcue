@@ -528,7 +528,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 10: Segments & Storyboards | **Complete** (Tasks 1–12: 8 core + SSE + image pipeline + artwork endpoint + events store) | — |
 | Phase 11: Analytics & Trakt | **Complete** (Tasks 1–9: analytics + dashboard + trakt scaffolding + trakt OAuth + trakt sync engine + trakt sync worker + GeoIP service + impossible travel detection + GeoIP database updater) | — |
 | Phase 12: Kometa-Like System | **Complete** (Tasks 1–9: overlays, compositing, conditions, clean art, collections, overlay worker, poster management, asset-directory scan, community imports) | — |
-| Phase 13a: System Operations Core | **In progress** (Tasks 2-8 complete; Task 10 admin UI slice complete for generic `server_config` JSONB editing and backup/recovery panel; Task 9 recovery drill still pending) | — |
+| Phase 13a: System Operations Core | **Complete** (Tasks 2-10 all complete: server_config API, scheduled-task management, backup domain + coordination + scheduled runner, reindex maintenance, disk-space check, recovery drill runner, admin settings UI slice) | — |
 | Phase 13b–16 | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
@@ -764,7 +764,7 @@ Database defensibility strategy is documented in [BACKUP_RECOVERY.md](docs/opera
 - **pg_dump** for portable logical backups — cross-version, table-level selective restore
 - **Backup coordination API** — admin-only WAL-G status check, manual `pg_dump` trigger, and verification endpoints reuse `server/src/services/backup.rs`, with shell-free command execution and a process-local operation lock
 - **Scheduled backup execution** — `backup_database`, `backup_verification`, and `backup_retention_cleanup` executors reuse the same coordinator, mark scheduled runs failed through the fallible scheduler path when commands fail, and persist structured command results in `scheduled_task_runs.stats`
-- **Recovery Drill Runner planned** — Phase 13a now includes `backup_recovery_drill`, a manual/scheduled restore drill that restores a recent backup into disposable PostgreSQL and records evidence in scheduled-task history
+- **Recovery Drill Runner implemented** — Phase 13a Task 9 ships `backup_recovery_drill`, a manual/scheduled restore drill that spins up disposable PostgreSQL via Docker Compose, restores the latest `pg_dump` with `pg_restore --no-owner --no-privileges --role=duskcue --jobs=N`, runs three structural checks (schema migrations applied, core tables present, row count sample), and records a full evidence bundle (compose project, dump source, restore command output, per-check pass/fail, disposal status) in `scheduled_task_runs.stats`. Weekly Sunday 07:00 schedule; no-op when Docker is unavailable on the host. See [BACKUP_RECOVERY.md](docs/operations/BACKUP_RECOVERY.md) §"Recovery Drill Runner" for the evidence schema and task config table.
 - **`data_checksums=on`** — page-level silent corruption detection
 - **Built-in monitoring** — scheduled integrity checks, backup verification, WAL archival health alerts via existing notification system
 - **3-2-1 storage** — production + local NAS + optional S3 off-site

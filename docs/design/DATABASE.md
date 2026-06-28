@@ -2341,7 +2341,8 @@ CREATE TABLE scheduled_tasks (
         'collection_sync', 'collection_cleanup',
         'artwork_refresh', 'asset_directory_scan',
         'migration_cleanup', 'system_requirement_check',
-        'geoip_database_update'
+        'geoip_database_update',
+        'backup_recovery_drill'
     )),
 
     cron_expression TEXT,

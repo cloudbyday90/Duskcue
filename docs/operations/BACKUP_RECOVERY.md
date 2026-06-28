@@ -396,25 +396,91 @@ Implementation decisions:
 - The migration `20260627010000_seed_backup_scheduled_tasks.sql` seeds `backup_verification` and `backup_retention_cleanup`, normalizes `backup_database` to daily 03:00, and ensures backup tasks have `next_run_at` values.
 - Backup workers persist structured command results and cleanup counts into `scheduled_task_runs.stats`; the scheduler preserves those stats when marking the run complete.
 
-### Planned Recovery Drill Runner
+### Recovery Drill Runner (Phase 13a Task 9)
 
-Phase 13a includes a planned `server/src/workers/recovery_drill_runner.rs` worker. This is separate from `backup_verification`: verification proves that backup files and WAL archives are internally readable, while a recovery drill proves that Duskcue can restore a recent backup into a fresh PostgreSQL instance and pass structural checks.
+The recovery drill runner is implemented in `server/src/workers/recovery_drill_runner.rs` (scheduler adapter) and `server/src/services/recovery_drill.rs` (shared drill logic). It is registered on the scheduler under the task type `backup_recovery_drill` and is separate from `backup_verification`: verification proves that backup files and WAL archives are internally readable, while a recovery drill proves that Duskcue can restore a recent backup into a fresh PostgreSQL instance and pass structural checks.
 
-Planned behavior:
+Behavior:
 
-- Run manually through scheduled-task trigger and optionally on a weekly schedule as `backup_recovery_drill`.
-- Start disposable PostgreSQL using the same Docker Compose isolation pattern as `scripts/verify-migrations.ps1`.
-- Restore the latest eligible `pg_dump` custom-format backup first; WAL-G restore support follows once the physical backup layout is finalized for packaged deployments.
-- Run structural checks after restore: connect, query schema version, verify expected core tables, run selected read-only consistency assertions, and optionally boot the server against the restored database in CI/protected environments.
-- Store a compact evidence bundle in `scheduled_task_runs.stats`: backup source, backup timestamp, restore duration, schema version, check results, and disposal status.
-- Always clean up disposable containers, volumes, and temporary restore directories unless an admin explicitly requests keep-alive debugging.
+- Runs manually through `POST /api/v1/scheduled-tasks/{id}/trigger` (existing scheduler trigger API) and on a weekly schedule (Sundays 07:00) as `backup_recovery_drill`.
+- Starts disposable PostgreSQL using the same Docker Compose isolation pattern as `scripts/verify-migrations.ps1`: unique per-run compose project name, loopback-only port binding, per-run generated password, ephemeral named volume removed at the end.
+- Restores the latest eligible `pg_dump` custom-format backup into the disposable PostgreSQL with `pg_restore --no-owner --no-privileges --role=duskcue --jobs=2 --dbname=<url>`. The flags drop source ownership/ACLs and assign all restored objects to the disposable user. WAL-G physical restore is intentionally not implemented yet (deferred until the physical backup layout is finalized for packaged deployments).
+- Runs structural checks after restore: connect via a temporary `PgPool`, verify expected core tables exist in `information_schema.tables`, count rows in core tables, and assert the `sqlx_migrations` table indicates all migrations are applied. All checks are read-only.
+- Stores a compact evidence bundle in `scheduled_task_runs.stats` (see Evidence Schema below).
+- Always cleans up disposable containers and volumes via `docker compose -p <project> down -v --remove-orphans` unless an admin explicitly sets `keep_alive: true` in the task config.
 
-Security requirements:
+Security requirements (implemented):
 
-- Do not restore into the production database.
-- Bind any disposable PostgreSQL port to loopback only.
-- Generate per-run credentials and avoid logging database URLs or backup encryption material.
-- Reuse direct process execution; do not build shell command strings for `pg_restore`, WAL-G, or Docker invocation.
+- Never restores into the production database. The drill connects only to the disposable PostgreSQL instance spun up for the run.
+- The disposable PostgreSQL port is bound to `127.0.0.1` only; no host-network exposure.
+- Per-run database password generated with `rand::random::<u128>()`; the connection string is held in memory and never logged.
+- The compose project name includes a per-run UUID suffix (`duskcue-drill-<uuid>`) so concurrent drills cannot collide.
+- All subprocess invocation (`docker`, `pg_restore`, `pg_isready`) uses `tokio::process::Command` with explicit argv; no shell strings are constructed.
+
+Task config (JSONB on `scheduled_tasks.config`, overridable per manual trigger):
+
+| Key | Type | Default | Description |
+|---|---|---|---|
+| `postgres_image` | string | `postgres:18-alpine` | Disposable PostgreSQL image |
+| `port` | integer | `55433` | Loopback port for the disposable PG (avoids the `verify-migrations` default of 55432) |
+| `keep_alive` | bool | `false` | When `true`, leaves the disposable PG running after the drill for inspection; otherwise tears down with `down -v` |
+| `source` | string | `auto` | `auto` (pick newest pg_dump) or `pg_dump` (explicitly restrict) |
+| `dump_path` | string | _none_ | Explicit dump file path (must canonicalize under `server_config.backup.pg_dump_storage_path`) |
+| `restore_jobs` | integer | `2` | `pg_restore --jobs=N`; clamped to `[1, 4]` |
+| `timeout_seconds` | integer | `1800` | Per-drill timeout (the `scheduled_tasks.timeout_seconds` column sets the scheduler wrapper timeout) |
+
+Evidence Schema (`scheduled_task_runs.stats`):
+
+```json
+{
+    "status": "passed" | "failed" | "skipped" | "unavailable",
+    "started_at": "ISO-8601",
+    "completed_at": "ISO-8601",
+    "duration_ms": 12345,
+    "skip_reason": "string (when status=skipped)",
+    "disposable_postgres": {
+        "compose_project": "duskcue-drill-<uuid>",
+        "image": "postgres:18-alpine",
+        "port": 55433,
+        "ready_after_ms": 4321
+    },
+    "backup_source": {
+        "kind": "pg_dump",
+        "path": "/data/backups/dump/duskcue_scheduled_20260627T030000Z.dump",
+        "size_bytes": 1234567,
+        "backup_timestamp": "ISO-8601 (parsed from filename, null if unparseable)",
+        "pre_restore_verification": { "...CommandResult from services::backup::verify_pg_dump_file..." }
+    },
+    "restore": {
+        "tool": "pg_restore",
+        "success": true,
+        "duration_ms": 7654,
+        "stderr_summary": "last 512 bytes of pg_restore stderr (warnings only; errors set status=failed)"
+    },
+    "structural_checks": [
+        { "name": "schema_migrations_applied", "passed": true, "details": "15 migrations" },
+        { "name": "core_tables_present", "passed": true, "details": "libraries, media_items, users, server_config" },
+        { "name": "row_count_sample", "passed": true, "details": "users=1, libraries=2, media_items=432" }
+    ],
+    "disposal": {
+        "status": "removed" | "kept_alive" | "cleanup_failed",
+        "stderr": "string (when cleanup_failed)"
+    },
+    "errors": ["string (when any step failed)"]
+}
+```
+
+`status` resolution order: `unavailable` (Docker missing, pg_dump disabled, or no eligible dump) → `failed` (restore command failed or any structural check failed) → `skipped` (drill disabled by config or no eligible dump found but pg_dump is enabled) → `passed` (restore + all checks succeeded).
+
+Implementation notes:
+
+- The drill worker uses the scheduler's fallible executor path: infrastructure failures (Docker unavailable, command spawn failure, IO errors, DB write failure) mark the run as failed via the existing scheduler lifecycle, mirroring `backup_runner` and `disk_space_check`.
+- The drill does not run `pg_amcheck` against the restored database. The drill proves restorability and structural integrity; `pg_amcheck` is the responsibility of the separate `database_integrity_check` task that runs against the live cluster.
+- The drill is enabled by default in `seed_default_tasks` but is a no-op when Docker is not available on the host (which is the common case for direct bare-metal/dev deployments). The no-op logs an info message and persists a status of `"unavailable"` rather than failing the run.
+- The migration `20260628010000_add_backup_recovery_drill_task.sql` extends the `scheduled_tasks.task_type` CHECK constraint to include `backup_recovery_drill` and seeds the task for existing deployments.
+- The drill reuses `services::backup::find_latest_pg_dump` and `services::backup::verify_pg_dump_file` (Phase 13a Task 5 primitives) rather than re-implementing dump discovery or pre-restore verification.
+- WAL-G physical restore is documented as deferred. The service is structured so a future `restore_wal_g_branch` can plug in alongside `restore_pg_dump_branch` without restructuring the worker.
+- No notifications are created directly by the drill. Phase 13b will wrap the drill (and other backup workers) with notification dispatch via the multi-channel pipeline; for now, evidence is surfaced through the admin UI (`/settings/backups`) and `scheduled_task_runs`.
 
 ### Phase 13a Task 10 Admin UI Notes
 
@@ -428,7 +494,7 @@ The web admin backup panel is implemented at `clients/web/src/routes/settings/ba
 | Scheduled operations | `POST /api/v1/scheduled-tasks/{id}/trigger` | Triggers `backup_database`, `backup_verification`, and `backup_retention_cleanup` through the shared scheduler |
 | Recovery drill evidence | `GET /api/v1/scheduled-tasks/{id}/runs` | Displays the latest `backup_recovery_drill`/`recovery_drill` run once Phase 13a Task 9 registers the worker |
 
-The panel intentionally displays a "Worker pending" state for recovery drills when no drill task is registered. This keeps Task 10 UI work forward-compatible without inventing a fake recovery-drill API before Task 9 exists.
+The panel displays recovery-drill evidence from the latest `backup_recovery_drill` run. Task 9 registers the worker and persists structured evidence into `scheduled_task_runs.stats`, so the UI consumes the same scheduled-task-run shape used by the other backup workers. The panel renders the drill's `status` (`passed` / `failed` / `skipped` / `unavailable`), the dump source path and timestamp, restore duration, and per-check pass/fail — surfacing restore failures even when backup files themselves verify cleanly.
 
 ## 3-2-1 Storage Strategy
 

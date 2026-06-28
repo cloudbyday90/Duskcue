@@ -939,6 +939,12 @@ pub async fn seed_default_tasks(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> 
             None::<i32>,
         ),
         (
+            "Backup Recovery Drill",
+            "backup_recovery_drill",
+            Some("0 7 * * 0"),
+            None::<i32>,
+        ),
+        (
             "Reindex Maintenance",
             "reindex_maintenance",
             Some("0 2 * * 0"),

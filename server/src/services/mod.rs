@@ -37,6 +37,7 @@ pub mod omdb_client;
 pub mod opensubtitles_client;
 pub mod overlays;
 pub mod poster_management;
+pub mod recovery_drill;
 pub mod sandbox;
 pub mod scheduler;
 pub mod segments;

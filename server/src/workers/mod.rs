@@ -23,6 +23,7 @@ pub mod library_scanner;
 pub mod metadata_refresh;
 pub mod notification_cleanup;
 pub mod overlay_compositor;
+pub mod recovery_drill_runner;
 pub mod reindex_maintenance;
 pub mod segment_detector;
 pub mod storyboard_generator;

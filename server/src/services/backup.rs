@@ -430,7 +430,7 @@ fn parse_dump_timestamp(filename: &str) -> Option<DateTime<Utc>> {
         .map(|value| value.and_utc())
 }
 
-async fn verify_pg_dump_file(
+pub async fn verify_pg_dump_file(
     config: &BackupConfig,
     path: &Path,
 ) -> Result<CommandResult, BackupError> {
@@ -634,7 +634,7 @@ async fn validate_existing_dump_path(
     Ok(target)
 }
 
-async fn find_latest_pg_dump(config: &BackupConfig) -> Result<PathBuf, BackupError> {
+pub async fn find_latest_pg_dump(config: &BackupConfig) -> Result<PathBuf, BackupError> {
     let mut entries = tokio::fs::read_dir(&config.pg_dump_storage_path).await?;
     let mut newest: Option<(std::time::SystemTime, PathBuf)> = None;
 
