@@ -330,6 +330,7 @@ async fn main() {
     let reindex_maintenance_state = state.clone();
     let disk_space_check_state = state.clone();
     let recovery_drill_state = state.clone();
+    let migration_cleanup_state = state.clone();
     let scheduler = Arc::new(
         Scheduler::new(state.pool.clone())
             .register_executor("library_scan", |pool, task_id, config| {
@@ -479,6 +480,15 @@ async fn main() {
                         &pool, task_id, config,
                     )
                     .await;
+                }
+            })
+            .register_fallible_executor("migration_cleanup", move |_pool, task_id, config| {
+                let state = migration_cleanup_state.clone();
+                async move {
+                    duskcue::workers::migration_cleanup::run_migration_cleanup(
+                        &state, task_id, config,
+                    )
+                    .await
                 }
             })
             .register_fallible_executor("backup_database", move |_pool, task_id, config| {

@@ -733,6 +733,7 @@ After migration completes (or fails), the uploaded Plex database file is deleted
 
 A scheduled task `migration_cleanup` runs daily at 05:00 to:
 - Delete Plex database uploads for completed migrations older than 24 hours
+- Delete stale `plex.db.uploading` temporary files from failed/cancelled migrations older than 24 hours
 - Delete migration sources with `completed` status older than 90 days
 - Delete `migration_import_log` rows older than 90 days
 
@@ -741,12 +742,13 @@ Phase 14 Task 1 registers the `migration_cleanup` row for existing deployments w
 ```json
 {
     "delete_plex_uploads_after_hours": 24,
+    "delete_failed_temp_files_after_hours": 24,
     "delete_completed_sources_after_days": 90,
     "delete_import_logs_after_days": 90
 }
 ```
 
-The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids a scheduled failure before cleanup behavior exists while still making the task visible in scheduled-task management.
+Phase 14 Task 14 enables the scheduled row after registering the executor. Each run records stats on `scheduled_task_runs.stats` for selected completed Plex uploads, deleted/missing upload directories, stale temp files, pruned import logs, pruned completed sources, and any file cleanup errors. Plex upload deletion is path-guarded to UUID-named directories under `/data/migrations/`; successful or already-missing upload cleanup removes `connection_config.stored_path` and records cleanup metadata so old completed sources do not keep stale file pointers.
 
 ## Phase 14 Task 1 Implementation Notes
 
@@ -863,6 +865,13 @@ The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids
 - Prometheus metrics now cover `migration_runs_started_total`, `migration_runs_completed_total`, `migration_runs_failed_total`, `migration_active_runs`, `migration_source_items_processed_total`, `migration_match_confidence_total`, and `migration_import_errors_total`.
 - Completion/failure notifications dispatch through the existing DB-write-first notification pipeline. The existing notification center already consumes the resulting `notification` SSE event and REST feed, so no migration-specific notification UI wiring is required for Task 13.
 
+## Phase 14 Task 14 Implementation Notes
+
+- Added the fallible `migration_cleanup` scheduled executor and enabled the seeded daily 05:00 task for existing deployments.
+- The worker deletes completed Plex upload directories after `delete_plex_uploads_after_hours`, removes stale failed/cancelled/orphaned `plex.db.uploading` files after `delete_failed_temp_files_after_hours`, and records per-run cleanup stats.
+- Completed source pruning deletes `completed` sources after `delete_completed_sources_after_days`; `migration_user_mapping` and `migration_import_log` rows cascade from the source delete. Import-log pruning also removes old log rows for inactive sources after `delete_import_logs_after_days`.
+- Recursive file cleanup is constrained to UUID-named migration source directories under the configured data-directory migration root; old completed Plex sources with upload delete failures are excluded from source pruning until a later cleanup succeeds.
+
 ## Security Considerations
 
 | Concern | Mitigation |
@@ -914,3 +923,5 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 - EmbyServerAPI — PyPI auto-generated Emby REST API client with full endpoint list: https://pypi.org/project/EmbyServerAPI/
 - Emby Community — Get favourites and watch history by API (March 2026): https://emby.media/community/topic/146792-get-favourites-and-watch-history-by-api/
 - Milan Jovanovic — Understanding Cursor Pagination (for large dataset handling): https://www.milanjovanovic.tech/blog/understanding-cursor-pagination-and-why-its-so-fast-deep-dive
+- Tokio docs — `tokio::fs::remove_dir_all` recursive deletion API: https://docs.rs/tokio/latest/tokio/fs/fn.remove_dir_all.html
+- PostgreSQL docs — `DELETE` command and `USING` clause: https://www.postgresql.org/docs/current/sql-delete.html

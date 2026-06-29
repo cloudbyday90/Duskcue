@@ -21,6 +21,7 @@ pub mod disk_space_check;
 pub mod geoip_updater;
 pub mod library_scanner;
 pub mod metadata_refresh;
+pub mod migration_cleanup;
 pub mod migration_runner;
 pub mod notification_cleanup;
 pub mod overlay_compositor;
