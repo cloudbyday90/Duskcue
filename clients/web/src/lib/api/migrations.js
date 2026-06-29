@@ -72,6 +72,14 @@ export async function getMigrationProgress(migrationSourceId) {
     return get(`/migrations/${migrationSourceId}/progress`);
 }
 
+export async function getMigrationRollbackStatus(migrationSourceId) {
+    return get(`/migrations/${migrationSourceId}/rollback`);
+}
+
+export async function rollbackMigrationImport(migrationSourceId) {
+    return post(`/migrations/${migrationSourceId}/rollback`);
+}
+
 export async function getMigrationReviewItems(migrationSourceId, params = {}) {
     return get(`/migrations/${migrationSourceId}/review`, params);
 }

@@ -9,7 +9,9 @@
     import {
         getMigrationReviewCsvUrl,
         getMigrationReviewItems,
+        getMigrationRollbackStatus,
         listMigrationSources,
+        rollbackMigrationImport,
         resolveMigrationReviewItem,
     } from '$lib/api/migrations.js';
     import { listMediaItems } from '$lib/api/media.js';
@@ -28,6 +30,10 @@
     let reviewLoading = $state(false);
     let reviewItems = $state([]);
     let reviewTotal = $state(0);
+    let rollbackLoading = $state(false);
+    let rollbackRunning = $state(false);
+    let rollbackStatus = $state(null);
+    let rollbackError = $state(null);
     let mediaCandidates = $state({ movie: [], episode: [] });
     let manualMediaIds = $state({});
     let resolvingIds = $state({});
@@ -77,7 +83,7 @@
                 selectedMigrationId = migrations[0]?.id || '';
             }
             await loadCandidates();
-            await loadReview();
+            await Promise.all([loadReview(), loadRollbackStatus()]);
         } catch (err) {
             loadError = err.detail || err.message || 'Failed to load migrations';
         } finally {
@@ -130,10 +136,28 @@
         }
     }
 
+    async function loadRollbackStatus() {
+        if (!selectedMigrationId) {
+            rollbackStatus = null;
+            rollbackError = null;
+            return;
+        }
+        rollbackLoading = true;
+        rollbackError = null;
+        try {
+            rollbackStatus = await getMigrationRollbackStatus(selectedMigrationId);
+        } catch (err) {
+            rollbackStatus = null;
+            rollbackError = err.detail || err.message || 'Failed to load rollback status';
+        } finally {
+            rollbackLoading = false;
+        }
+    }
+
     async function selectMigration(id) {
         selectedMigrationId = id;
         actionMessage = null;
-        await loadReview();
+        await Promise.all([loadReview(), loadRollbackStatus()]);
     }
 
     async function setReviewFilter(value) {
@@ -180,6 +204,29 @@
         });
     }
 
+    async function rollbackImport() {
+        if (!selectedMigrationId || rollbackRunning) return;
+        if (
+            typeof window !== 'undefined' &&
+            !window.confirm('Rollback imported watch state for this migration?')
+        ) {
+            return;
+        }
+
+        rollbackRunning = true;
+        rollbackError = null;
+        actionMessage = null;
+        try {
+            const response = await rollbackMigrationImport(selectedMigrationId);
+            actionMessage = response.message;
+            await Promise.all([loadReview(), loadRollbackStatus()]);
+        } catch (err) {
+            rollbackError = err.detail || err.message || 'Failed to rollback migration import';
+        } finally {
+            rollbackRunning = false;
+        }
+    }
+
     function formatDate(value) {
         if (!value) return 'Not run';
         return new Intl.DateTimeFormat(undefined, {
@@ -195,6 +242,16 @@
 
     function candidateOptions(type) {
         return mediaCandidates[type] || [];
+    }
+
+    function formatRollbackStatus(status) {
+        const labels = {
+            available: 'Available',
+            blocked_by_newer_progress: 'Needs Review',
+            rolled_back: 'Rolled Back',
+            unavailable: 'Unavailable',
+        };
+        return labels[status] || status || 'Unavailable';
     }
 
     function providerSummary(providerIds) {
@@ -288,6 +345,73 @@
                             <span>{formatDate(migration.last_run_at)}</span>
                         </button>
                     {/each}
+                </div>
+            {/if}
+        </section>
+
+        <section class="rollback-panel">
+            <div class="section-header">
+                <div>
+                    <h2>Rollback</h2>
+                    <p>{selectedMigration?.name || 'Select a migration source'}</p>
+                </div>
+                <button
+                    class="btn-secondary"
+                    disabled={!selectedMigrationId || rollbackLoading || rollbackRunning}
+                    onclick={loadRollbackStatus}
+                >
+                    Refresh
+                </button>
+            </div>
+
+            {#if rollbackError}
+                <div class="notice error">{rollbackError}</div>
+            {/if}
+
+            {#if rollbackLoading}
+                <div class="loading-state small"><div class="loading-spinner"></div></div>
+            {:else if !selectedMigrationId}
+                <div class="empty-state">Select a migration source to view rollback status.</div>
+            {:else if rollbackStatus}
+                <div class="rollback-grid">
+                    <div>
+                        <span>Status</span>
+                        <strong>{formatRollbackStatus(rollbackStatus.status)}</strong>
+                    </div>
+                    <div>
+                        <span>Imported</span>
+                        <strong>{rollbackStatus.imported_count}</strong>
+                    </div>
+                    <div>
+                        <span>Available</span>
+                        <strong>{rollbackStatus.rollback_available_count}</strong>
+                    </div>
+                    <div>
+                        <span>Rolled Back</span>
+                        <strong>{rollbackStatus.rolled_back_count}</strong>
+                    </div>
+                    <div>
+                        <span>Newer Progress</span>
+                        <strong>{rollbackStatus.skipped_newer_local_progress_count}</strong>
+                    </div>
+                    <div>
+                        <span>Last Import</span>
+                        <strong>{formatDate(rollbackStatus.last_imported_at)}</strong>
+                    </div>
+                </div>
+
+                <div class="rollback-actions">
+                    <button
+                        class="btn-primary"
+                        disabled={
+                            rollbackRunning ||
+                            !rollbackStatus ||
+                            rollbackStatus.rollback_available_count <= 0
+                        }
+                        onclick={rollbackImport}
+                    >
+                        Rollback Import
+                    </button>
                 </div>
             {/if}
         </section>
@@ -426,6 +550,7 @@
     .page-header,
     .connect-panel,
     .section-header,
+    .rollback-actions,
     .review-actions,
     .review-main,
     .manual-row,
@@ -460,6 +585,7 @@
 
     .wizard-shell,
     .migration-list,
+    .rollback-panel,
     .review-panel {
         border: 1px solid var(--color-border);
         border-radius: var(--radius-md);
@@ -641,6 +767,43 @@
         color: var(--color-accent);
     }
 
+    .rollback-grid {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(0, 1fr));
+        gap: 0.75rem;
+    }
+
+    .rollback-grid div {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        min-width: 0;
+        padding: 0.75rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: var(--color-background);
+    }
+
+    .rollback-grid span {
+        color: var(--color-text-muted);
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    .rollback-grid strong {
+        overflow: hidden;
+        color: var(--color-text-primary);
+        font-size: 0.9375rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .rollback-actions {
+        justify-content: flex-end;
+        margin-top: 1rem;
+    }
+
     .review-list {
         display: grid;
         gap: 0.75rem;
@@ -765,6 +928,7 @@
 
         .step-strip,
         .source-grid,
+        .rollback-grid,
         .table-row {
             grid-template-columns: 1fr;
         }

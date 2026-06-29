@@ -73,6 +73,10 @@ pub fn router(state: AppState) -> Router<AppState> {
             get(handlers::get_migration_progress),
         )
         .route(
+            "/api/v1/migrations/{id}/rollback",
+            get(handlers::get_migration_rollback_status).post(handlers::rollback_migration_import),
+        )
+        .route(
             "/api/v1/migrations/{id}/review",
             get(handlers::get_migration_review),
         )

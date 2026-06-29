@@ -14,7 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use sqlx::Row;
+use serde_json::{Value, json};
+use sqlx::{Postgres, Row, Transaction};
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
@@ -40,6 +41,7 @@ struct MatchedImportRow {
     source_play_count: i32,
     source_resume_position_ms: i64,
     source_last_played_at: Option<chrono::DateTime<chrono::Utc>>,
+    import_batch_id: Uuid,
 }
 
 pub async fn spawn_migration_runner(
@@ -125,7 +127,9 @@ async fn run_migration(
         return Ok(());
     }
 
-    let imported_count = import_matched_items(&state, migration_source_id, &cancellation).await?;
+    let import_batch_id = Uuid::now_v7();
+    let imported_count =
+        import_matched_items(&state, migration_source_id, import_batch_id, &cancellation).await?;
     recalculate_mapping_counters(&state, migration_source_id).await?;
     let summary = load_run_summary(&state, migration_source_id).await?;
 
@@ -161,6 +165,7 @@ async fn run_migration(
 async fn import_matched_items(
     state: &AppState,
     migration_source_id: Uuid,
+    import_batch_id: Uuid,
     cancellation: &CancellationToken,
 ) -> Result<u64, MigrationError> {
     let rows = sqlx::query(
@@ -198,6 +203,7 @@ async fn import_matched_items(
             source_play_count: row.get("source_play_count"),
             source_resume_position_ms: row.get("source_resume_position_ms"),
             source_last_played_at: row.get("source_last_played_at"),
+            import_batch_id,
         };
 
         match import_single_matched_item(state, migration_source_id, &import_row).await {
@@ -237,6 +243,8 @@ async fn import_single_matched_item(
     let play_count = row.source_play_count.max(i32::from(row.source_is_watched));
 
     let mut tx = state.pool.begin().await?;
+    let previous_user_item_data =
+        load_previous_user_item_data(&mut tx, user_id, media_item_id).await?;
     let user_item_data_id: Uuid = sqlx::query(
         r#"
         INSERT INTO user_item_data (
@@ -278,7 +286,12 @@ async fn import_single_matched_item(
     sqlx::query(
         r#"
         UPDATE migration_import_log
-        SET imported_user_item_data_id = $3,
+        SET import_batch_id = $3,
+            previous_user_item_data = $4,
+            imported_user_item_data_id = $5,
+            imported_at = now(),
+            rolled_back_at = NULL,
+            rollback_detail = NULL,
             status = 'imported',
             error_detail = NULL
         WHERE migration_source_id = $1
@@ -288,12 +301,52 @@ async fn import_single_matched_item(
     )
     .bind(migration_source_id)
     .bind(row.id)
+    .bind(row.import_batch_id)
+    .bind(previous_user_item_data)
     .bind(user_item_data_id)
     .execute(&mut *tx)
     .await?;
 
     tx.commit().await?;
     Ok(())
+}
+
+async fn load_previous_user_item_data(
+    tx: &mut Transaction<'_, Postgres>,
+    user_id: Uuid,
+    media_item_id: Uuid,
+) -> Result<Option<Value>, MigrationError> {
+    let row = sqlx::query(
+        r#"
+        SELECT id, is_watched, play_count, last_played_at, resume_position_ms,
+               last_played_media_file_id, is_favorite, user_rating,
+               audio_stream_index, subtitle_stream_index, metadata
+        FROM user_item_data
+        WHERE user_id = $1
+          AND media_item_id = $2
+        FOR UPDATE
+        "#,
+    )
+    .bind(user_id)
+    .bind(media_item_id)
+    .fetch_optional(&mut **tx)
+    .await?;
+
+    Ok(row.map(|row| {
+        json!({
+            "id": row.get::<Uuid, _>("id"),
+            "is_watched": row.get::<bool, _>("is_watched"),
+            "play_count": row.get::<i32, _>("play_count"),
+            "last_played_at": row.get::<Option<chrono::DateTime<chrono::Utc>>, _>("last_played_at"),
+            "resume_position_ms": row.get::<i32, _>("resume_position_ms"),
+            "last_played_media_file_id": row.get::<Option<Uuid>, _>("last_played_media_file_id"),
+            "is_favorite": row.get::<bool, _>("is_favorite"),
+            "user_rating": row.get::<Option<i32>, _>("user_rating"),
+            "audio_stream_index": row.get::<Option<i32>, _>("audio_stream_index"),
+            "subtitle_stream_index": row.get::<Option<i32>, _>("subtitle_stream_index"),
+            "metadata": row.get::<Value, _>("metadata"),
+        })
+    }))
 }
 
 async fn mark_import_log_error(
@@ -329,7 +382,7 @@ async fn recalculate_mapping_counters(
         WITH rollup AS (
             SELECT
                 m.id,
-                COUNT(l.id) FILTER (WHERE l.status IN ('matched', 'imported', 'skipped'))::INT AS items_matched,
+                COUNT(l.id) FILTER (WHERE l.status IN ('matched', 'imported', 'rolled_back', 'skipped'))::INT AS items_matched,
                 COUNT(l.id) FILTER (WHERE l.status = 'unmatched')::INT AS items_unmatched,
                 COUNT(l.id) FILTER (WHERE l.status = 'imported')::INT AS items_imported,
                 COUNT(l.id) FILTER (WHERE l.status = 'skipped')::INT AS items_skipped,
@@ -377,7 +430,7 @@ async fn load_run_summary(
             COUNT(*)::BIGINT AS total_items,
             COUNT(*) FILTER (WHERE status = 'matched')::BIGINT AS matched_items,
             COUNT(*) FILTER (WHERE status = 'error')::BIGINT AS error_items,
-            COUNT(*) FILTER (WHERE status IN ('imported', 'skipped', 'unmatched', 'error'))::BIGINT AS terminal_items
+            COUNT(*) FILTER (WHERE status IN ('imported', 'rolled_back', 'skipped', 'unmatched', 'error'))::BIGINT AS terminal_items
         FROM migration_import_log
         WHERE migration_source_id = $1
         "#,

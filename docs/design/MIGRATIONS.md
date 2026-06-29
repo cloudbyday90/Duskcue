@@ -495,7 +495,12 @@ CREATE TABLE migration_import_log (
     match_confidence TEXT CHECK (match_confidence IS NULL OR match_confidence IN ('high', 'medium', 'low', 'unmatched')),
 
     imported_user_item_data_id UUID REFERENCES user_item_data(id) ON DELETE SET NULL,
-    status TEXT NOT NULL CHECK (status IN ('discovered', 'matched', 'unmatched', 'imported', 'skipped', 'error')),
+    import_batch_id UUID,
+    previous_user_item_data JSONB,
+    imported_at TIMESTAMPTZ,
+    rolled_back_at TIMESTAMPTZ,
+    rollback_detail TEXT,
+    status TEXT NOT NULL CHECK (status IN ('discovered', 'matched', 'unmatched', 'imported', 'rolled_back', 'skipped', 'error')),
     error_detail TEXT,
 
     UNIQUE(migration_user_mapping_id, source_item_id)
@@ -625,6 +630,8 @@ Unmatched Items (144):
 | `POST` | `/api/v1/migrations/{id}/preflight` | Admin | Run no-write readiness checks and return blockers/warnings |
 | `POST` | `/api/v1/migrations/{id}/start` | Admin | Begin the import |
 | `GET` | `/api/v1/migrations/{id}/progress` | Admin | Get real-time progress |
+| `GET` | `/api/v1/migrations/{id}/rollback` | Admin | Get rollback availability and conflict counts |
+| `POST` | `/api/v1/migrations/{id}/rollback` | Admin | Roll back imported watch-state rows where local progress has not changed since import |
 | `GET` | `/api/v1/migrations/{id}/review` | Admin | List unmatched and low-confidence review rows |
 | `POST` | `/api/v1/migrations/{id}/review/{item_id}` | Admin | Manually match, skip, or ignore a review row |
 | `GET` | `/api/v1/migrations/{id}/review.csv` | Admin | Export the current review queue as CSV |
@@ -665,6 +672,7 @@ As of Phase 14 Task 2, the migration service no longer returns `MIGR_011` from t
 | Import of single item fails (DB error) | Log error, skip item, continue processing |
 | All items fail | Mark migration as `failed`; report all errors |
 | Migration cancelled mid-import | Stop processing; keep already-imported data; mark as `pending` for resume |
+| Admin rollback finds newer local watch progress | Skip that item, preserve current `user_item_data`, and record `rollback_detail = newer_local_progress` |
 
 ## File Handling (Plex)
 
@@ -839,6 +847,14 @@ The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids
 - Cancellation checks still occur before importing each row, and restart/resume remains log-driven because already imported/skipped/unmatched/error rows are terminal.
 - Favorites and ratings remain deferred because Phase 14 extraction currently persists watch state only; no source favorite/rating fields are stored in `migration_import_log` yet.
 
+## Phase 14 Task 12 Implementation Notes
+
+- Added `20260629070000_migration_rollback_task12.sql` with import batch metadata, previous `user_item_data` snapshots, import/rollback timestamps, rollback details, and `status = 'rolled_back'`.
+- Each import run gets a UUIDv7 `import_batch_id`. Before a matched row mutates `user_item_data`, the runner locks any existing `(user_id, media_item_id)` row with `FOR UPDATE` and stores the previous watch-state/preference fields as JSONB on `migration_import_log.previous_user_item_data`.
+- Added `GET /api/v1/migrations/{id}/rollback` and `POST /api/v1/migrations/{id}/rollback`. The status endpoint reports imported rows, rollback-available rows, rolled-back rows, newer-local-progress skips, and the latest import batch/timestamp.
+- Rollback restores the previous snapshot or deletes the imported `user_item_data` row when no previous row existed. If the current `user_item_data.updated_at` is later than the stored import timestamp, rollback skips the row and records `rollback_detail = newer_local_progress` instead of overwriting newer local progress.
+- The migration settings page now exposes a selected-source Rollback panel with availability counts, skipped newer-progress count, latest import timestamp, and the rollback action.
+
 ## Security Considerations
 
 | Concern | Mitigation |
@@ -847,6 +863,7 @@ The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids
 | Jellyfin/Emby API keys stored | Hashed (SHA-256) like our own `api_keys`; only prefix stored; key held in memory during migration only |
 | Migration endpoints are admin-only | `can_manage_users` capability required |
 | Imported watch data overwrites existing | Merge strategy (MAX/GREATEST) never loses data — only improves it |
+| Bad import rollback overwrites newer progress | Rollback skips rows whose `user_item_data.updated_at` is newer than the import timestamp |
 | Large file upload (Plex) | Size limit 10 GB; disk space pre-check; streamed upload |
 
 ## Limitations

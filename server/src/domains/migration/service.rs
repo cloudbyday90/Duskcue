@@ -41,11 +41,42 @@ const API_CONFIG_TIMEOUT_SECONDS: u64 = 10;
 const API_CONFIG_MAX_RESPONSE_BYTES: u64 = 1024 * 1024;
 const API_PAGE_SIZE: i64 = 100;
 const API_EXTRACTION_CONCURRENCY: usize = 4;
+const ROLLBACK_SKIP_NEWER_PROGRESS: &str = "newer_local_progress";
 
 pub struct PlexUploadTarget {
     pub temp_path: PathBuf,
     final_path: PathBuf,
     original_filename: String,
+}
+
+#[derive(Debug)]
+struct RollbackImportRow {
+    id: Uuid,
+    imported_user_item_data_id: Uuid,
+    imported_at: DateTime<Utc>,
+    previous_user_item_data: Option<Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PreviousUserItemData {
+    is_watched: bool,
+    play_count: i32,
+    last_played_at: Option<DateTime<Utc>>,
+    resume_position_ms: i32,
+    last_played_media_file_id: Option<Uuid>,
+    is_favorite: bool,
+    user_rating: Option<i32>,
+    audio_stream_index: Option<i32>,
+    subtitle_stream_index: Option<i32>,
+    metadata: Option<Value>,
+}
+
+#[derive(Debug, Default)]
+struct RollbackCounters {
+    restored_count: i64,
+    deleted_count: i64,
+    skipped_newer_local_progress_count: i64,
+    error_count: i64,
 }
 
 pub fn validate_platform(value: &str) -> Result<(), MigrationError> {
@@ -823,6 +854,28 @@ mod tests {
             review_filter(Some("bad")),
             Err(MigrationError::InvalidSourceConfiguration(_))
         ));
+    }
+
+    #[test]
+    fn rollback_skips_rows_updated_after_import() {
+        let imported_at = DateTime::parse_from_rfc3339("2026-06-29T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let same_timestamp = imported_at;
+        let newer_timestamp = DateTime::parse_from_rfc3339("2026-06-29T12:00:01Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        assert!(!should_skip_rollback(same_timestamp, imported_at));
+        assert!(should_skip_rollback(newer_timestamp, imported_at));
+    }
+
+    #[test]
+    fn rollback_status_prioritizes_available_then_conflicts() {
+        assert_eq!(rollback_status_label(1, 1, 1), "available");
+        assert_eq!(rollback_status_label(0, 1, 1), "blocked_by_newer_progress");
+        assert_eq!(rollback_status_label(0, 0, 1), "rolled_back");
+        assert_eq!(rollback_status_label(0, 0, 0), "unavailable");
     }
 
     #[test]
@@ -2699,11 +2752,11 @@ pub async fn get_migration_progress(
         r#"
         SELECT
             COUNT(*)::INT AS items_discovered,
-            COUNT(*) FILTER (WHERE status IN ('matched', 'imported', 'skipped'))::INT AS items_matched,
+            COUNT(*) FILTER (WHERE status IN ('matched', 'imported', 'rolled_back', 'skipped'))::INT AS items_matched,
             COUNT(*) FILTER (WHERE status = 'unmatched')::INT AS items_unmatched,
             COUNT(*) FILTER (WHERE status = 'imported')::INT AS items_imported,
             COUNT(*) FILTER (WHERE status = 'skipped')::INT AS items_skipped,
-            COUNT(*) FILTER (WHERE status IN ('imported', 'skipped', 'unmatched', 'error'))::INT AS items_processed
+            COUNT(*) FILTER (WHERE status IN ('imported', 'rolled_back', 'skipped', 'unmatched', 'error'))::INT AS items_processed
         FROM migration_import_log
         WHERE migration_source_id = $1
         "#,
@@ -2732,6 +2785,362 @@ pub async fn get_migration_progress(
         items_imported: row.get("items_imported"),
         items_skipped: row.get("items_skipped"),
     })
+}
+
+pub async fn get_migration_rollback_status(
+    state: &AppState,
+    id: Uuid,
+) -> Result<MigrationRollbackStatusResponse, MigrationError> {
+    get_source(state, id).await?;
+
+    let row = sqlx::query(
+        r#"
+        SELECT
+            COUNT(*) FILTER (
+                WHERE status IN ('imported', 'rolled_back')
+                  AND imported_user_item_data_id IS NOT NULL
+            )::BIGINT AS imported_count,
+            COUNT(*) FILTER (
+                WHERE status = 'imported'
+                  AND imported_user_item_data_id IS NOT NULL
+                  AND imported_at IS NOT NULL
+                  AND rollback_detail IS DISTINCT FROM $2
+            )::BIGINT AS rollback_available_count,
+            COUNT(*) FILTER (WHERE status = 'rolled_back')::BIGINT AS rolled_back_count,
+            COUNT(*) FILTER (WHERE rollback_detail = $2)::BIGINT
+                AS skipped_newer_local_progress_count,
+            (
+                SELECT import_batch_id
+                FROM migration_import_log latest
+                WHERE latest.migration_source_id = $1
+                  AND latest.import_batch_id IS NOT NULL
+                ORDER BY latest.imported_at DESC NULLS LAST, latest.id DESC
+                LIMIT 1
+            ) AS last_import_batch_id,
+            MAX(imported_at) AS last_imported_at
+        FROM migration_import_log
+        WHERE migration_source_id = $1
+        "#,
+    )
+    .bind(id)
+    .bind(ROLLBACK_SKIP_NEWER_PROGRESS)
+    .fetch_one(&state.pool)
+    .await?;
+
+    let rollback_available_count = row.get("rollback_available_count");
+    let rolled_back_count = row.get("rolled_back_count");
+    let skipped_newer_local_progress_count = row.get("skipped_newer_local_progress_count");
+
+    Ok(MigrationRollbackStatusResponse {
+        migration_source_id: id,
+        status: rollback_status_label(
+            rollback_available_count,
+            skipped_newer_local_progress_count,
+            rolled_back_count,
+        )
+        .to_string(),
+        imported_count: row.get("imported_count"),
+        rollback_available_count,
+        rolled_back_count,
+        skipped_newer_local_progress_count,
+        last_import_batch_id: row.get("last_import_batch_id"),
+        last_imported_at: row.get("last_imported_at"),
+    })
+}
+
+pub async fn rollback_migration_import(
+    state: &AppState,
+    id: Uuid,
+) -> Result<MigrationRollbackResponse, MigrationError> {
+    let source = get_source(state, id).await?;
+    ensure_not_active(id, &source.status)?;
+
+    let already_rolled_back_count: i64 = sqlx::query(
+        r#"
+        SELECT COUNT(*)::BIGINT
+        FROM migration_import_log
+        WHERE migration_source_id = $1
+          AND status = 'rolled_back'
+        "#,
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?
+    .get(0);
+
+    let rows = sqlx::query(
+        r#"
+        SELECT id, imported_user_item_data_id, imported_at, previous_user_item_data
+        FROM migration_import_log
+        WHERE migration_source_id = $1
+          AND status = 'imported'
+          AND imported_user_item_data_id IS NOT NULL
+          AND imported_at IS NOT NULL
+          AND rollback_detail IS DISTINCT FROM $2
+        ORDER BY imported_at DESC, id DESC
+        "#,
+    )
+    .bind(id)
+    .bind(ROLLBACK_SKIP_NEWER_PROGRESS)
+    .fetch_all(&state.pool)
+    .await?;
+
+    let mut counters = RollbackCounters::default();
+    for row in rows {
+        let import_row = RollbackImportRow {
+            id: row.get("id"),
+            imported_user_item_data_id: row.get("imported_user_item_data_id"),
+            imported_at: row.get("imported_at"),
+            previous_user_item_data: row.get("previous_user_item_data"),
+        };
+
+        if rollback_import_log_row(state, id, &import_row, &mut counters)
+            .await
+            .is_err()
+        {
+            counters.error_count += 1;
+        }
+    }
+
+    refresh_mapping_import_counts(state, id).await?;
+    let status = get_migration_rollback_status(state, id).await?.status;
+    let affected_count = counters.restored_count + counters.deleted_count;
+
+    Ok(MigrationRollbackResponse {
+        migration_source_id: id,
+        status,
+        restored_count: counters.restored_count,
+        deleted_count: counters.deleted_count,
+        skipped_newer_local_progress_count: counters.skipped_newer_local_progress_count,
+        already_rolled_back_count,
+        error_count: counters.error_count,
+        message: format!(
+            "Rolled back {affected_count} item(s); skipped {} newer local change(s)",
+            counters.skipped_newer_local_progress_count
+        ),
+    })
+}
+
+async fn rollback_import_log_row(
+    state: &AppState,
+    migration_source_id: Uuid,
+    row: &RollbackImportRow,
+    counters: &mut RollbackCounters,
+) -> Result<(), MigrationError> {
+    let mut tx = state.pool.begin().await?;
+    let current = sqlx::query(
+        r#"
+        SELECT updated_at
+        FROM user_item_data
+        WHERE id = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(row.imported_user_item_data_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+
+    let Some(current) = current else {
+        mark_rollback_complete(
+            &mut tx,
+            migration_source_id,
+            row.id,
+            "user_item_data row was already missing",
+        )
+        .await?;
+        tx.commit().await?;
+        return Ok(());
+    };
+
+    let current_updated_at: DateTime<Utc> = current.get("updated_at");
+    if should_skip_rollback(current_updated_at, row.imported_at) {
+        sqlx::query(
+            r#"
+            UPDATE migration_import_log
+            SET rollback_detail = $3
+            WHERE migration_source_id = $1
+              AND id = $2
+            "#,
+        )
+        .bind(migration_source_id)
+        .bind(row.id)
+        .bind(ROLLBACK_SKIP_NEWER_PROGRESS)
+        .execute(&mut *tx)
+        .await?;
+        counters.skipped_newer_local_progress_count += 1;
+        tx.commit().await?;
+        return Ok(());
+    }
+
+    match row.previous_user_item_data.as_ref() {
+        None | Some(Value::Null) => {
+            sqlx::query("DELETE FROM user_item_data WHERE id = $1")
+                .bind(row.imported_user_item_data_id)
+                .execute(&mut *tx)
+                .await?;
+            mark_rollback_complete(
+                &mut tx,
+                migration_source_id,
+                row.id,
+                "Deleted user_item_data row created by migration import",
+            )
+            .await?;
+            counters.deleted_count += 1;
+        }
+        Some(snapshot) => {
+            let previous: PreviousUserItemData =
+                serde_json::from_value(snapshot.clone()).map_err(|error| {
+                    MigrationError::InvalidSourceConfiguration(format!(
+                        "invalid rollback snapshot for import log {}: {error}",
+                        row.id
+                    ))
+                })?;
+            restore_previous_user_item_data(&mut tx, row.imported_user_item_data_id, &previous)
+                .await?;
+            mark_rollback_complete(
+                &mut tx,
+                migration_source_id,
+                row.id,
+                "Restored previous user_item_data values",
+            )
+            .await?;
+            counters.restored_count += 1;
+        }
+    }
+
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn restore_previous_user_item_data(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    user_item_data_id: Uuid,
+    previous: &PreviousUserItemData,
+) -> Result<(), MigrationError> {
+    sqlx::query(
+        r#"
+        UPDATE user_item_data
+        SET is_watched = $2,
+            play_count = $3,
+            last_played_at = $4,
+            resume_position_ms = $5,
+            last_played_media_file_id = $6,
+            is_favorite = $7,
+            user_rating = $8,
+            audio_stream_index = $9,
+            subtitle_stream_index = $10,
+            metadata = $11,
+            updated_at = now()
+        WHERE id = $1
+        "#,
+    )
+    .bind(user_item_data_id)
+    .bind(previous.is_watched)
+    .bind(previous.play_count)
+    .bind(previous.last_played_at)
+    .bind(previous.resume_position_ms)
+    .bind(previous.last_played_media_file_id)
+    .bind(previous.is_favorite)
+    .bind(previous.user_rating)
+    .bind(previous.audio_stream_index)
+    .bind(previous.subtitle_stream_index)
+    .bind(previous.metadata.clone().unwrap_or_else(|| json!({})))
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+async fn mark_rollback_complete(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    migration_source_id: Uuid,
+    import_log_id: Uuid,
+    detail: &str,
+) -> Result<(), MigrationError> {
+    sqlx::query(
+        r#"
+        UPDATE migration_import_log
+        SET status = 'rolled_back',
+            rolled_back_at = now(),
+            rollback_detail = $3
+        WHERE migration_source_id = $1
+          AND id = $2
+        "#,
+    )
+    .bind(migration_source_id)
+    .bind(import_log_id)
+    .bind(detail)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
+}
+
+async fn refresh_mapping_import_counts(
+    state: &AppState,
+    migration_source_id: Uuid,
+) -> Result<(), MigrationError> {
+    sqlx::query(
+        r#"
+        WITH rollup AS (
+            SELECT
+                m.id,
+                COUNT(l.id) FILTER (WHERE l.status IN ('matched', 'imported', 'rolled_back', 'skipped'))::INT AS items_matched,
+                COUNT(l.id) FILTER (WHERE l.status = 'unmatched')::INT AS items_unmatched,
+                COUNT(l.id) FILTER (WHERE l.status = 'imported')::INT AS items_imported,
+                COUNT(l.id) FILTER (WHERE l.status = 'skipped')::INT AS items_skipped,
+                COUNT(l.id) FILTER (WHERE l.status = 'error')::INT AS items_error
+            FROM migration_user_mapping m
+            LEFT JOIN migration_import_log l ON l.migration_user_mapping_id = m.id
+            WHERE m.migration_source_id = $1
+            GROUP BY m.id
+        )
+        UPDATE migration_user_mapping m
+        SET
+            items_matched = rollup.items_matched,
+            items_unmatched = rollup.items_unmatched,
+            items_imported = rollup.items_imported,
+            items_skipped = rollup.items_skipped,
+            status = CASE
+                WHEN rollup.items_error > 0 THEN 'failed'
+                WHEN rollup.items_matched > 0
+                  AND rollup.items_matched = rollup.items_imported + rollup.items_skipped THEN 'imported'
+                ELSE 'pending'
+            END,
+            imported_at = CASE
+                WHEN rollup.items_matched > 0
+                  AND rollup.items_matched = rollup.items_imported + rollup.items_skipped THEN COALESCE(m.imported_at, now())
+                ELSE NULL
+            END
+        FROM rollup
+        WHERE m.id = rollup.id
+        "#,
+    )
+    .bind(migration_source_id)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(())
+}
+
+fn should_skip_rollback(current_updated_at: DateTime<Utc>, imported_at: DateTime<Utc>) -> bool {
+    current_updated_at > imported_at
+}
+
+fn rollback_status_label(
+    rollback_available_count: i64,
+    skipped_newer_local_progress_count: i64,
+    rolled_back_count: i64,
+) -> &'static str {
+    if rollback_available_count > 0 {
+        "available"
+    } else if skipped_newer_local_progress_count > 0 {
+        "blocked_by_newer_progress"
+    } else if rolled_back_count > 0 {
+        "rolled_back"
+    } else {
+        "unavailable"
+    }
 }
 
 pub async fn get_migration_review(

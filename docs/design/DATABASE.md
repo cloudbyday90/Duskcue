@@ -3085,7 +3085,12 @@ CREATE TABLE migration_import_log (
     match_confidence TEXT CHECK (match_confidence IS NULL OR match_confidence IN ('high', 'medium', 'low', 'unmatched')),
 
     imported_user_item_data_id UUID REFERENCES user_item_data(id) ON DELETE SET NULL,
-    status TEXT NOT NULL CHECK (status IN ('discovered', 'matched', 'unmatched', 'imported', 'skipped', 'error')),
+    import_batch_id UUID,
+    previous_user_item_data JSONB,
+    imported_at TIMESTAMPTZ,
+    rolled_back_at TIMESTAMPTZ,
+    rollback_detail TEXT,
+    status TEXT NOT NULL CHECK (status IN ('discovered', 'matched', 'unmatched', 'imported', 'rolled_back', 'skipped', 'error')),
     error_detail TEXT,
 
     UNIQUE(migration_user_mapping_id, source_item_id)
@@ -3102,6 +3107,12 @@ CREATE INDEX idx_migration_import_log_status ON migration_import_log (status);
 CREATE INDEX idx_migration_import_log_matched_media
     ON migration_import_log (matched_media_item_id)
     WHERE matched_media_item_id IS NOT NULL;
+CREATE INDEX idx_migration_import_log_import_batch
+    ON migration_import_log (migration_source_id, import_batch_id)
+    WHERE import_batch_id IS NOT NULL;
+CREATE INDEX idx_migration_import_log_rollback
+    ON migration_import_log (migration_source_id, status, imported_at)
+    WHERE imported_user_item_data_id IS NOT NULL;
 ```
 
 Full migration flow, JSONB schemas, and wizard documentation in [MIGRATIONS.md](MIGRATIONS.md).

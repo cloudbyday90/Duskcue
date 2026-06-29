@@ -202,6 +202,24 @@ pub async fn get_migration_progress(
     Ok(Json(service::get_migration_progress(&state, id).await?))
 }
 
+pub async fn get_migration_rollback_status(
+    _auth: Require<CanManageUsers>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<MigrationRollbackStatusResponse>, AppError> {
+    Ok(Json(
+        service::get_migration_rollback_status(&state, id).await?,
+    ))
+}
+
+pub async fn rollback_migration_import(
+    _auth: Require<CanManageUsers>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<MigrationRollbackResponse>, AppError> {
+    Ok(Json(service::rollback_migration_import(&state, id).await?))
+}
+
 pub async fn get_migration_review(
     _auth: Require<CanManageUsers>,
     State(state): State<AppState>,

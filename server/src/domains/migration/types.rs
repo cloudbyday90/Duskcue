@@ -329,6 +329,30 @@ pub struct MigrationReviewActionResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct MigrationRollbackStatusResponse {
+    pub migration_source_id: Uuid,
+    pub status: String,
+    pub imported_count: i64,
+    pub rollback_available_count: i64,
+    pub rolled_back_count: i64,
+    pub skipped_newer_local_progress_count: i64,
+    pub last_import_batch_id: Option<Uuid>,
+    pub last_imported_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrationRollbackResponse {
+    pub migration_source_id: Uuid,
+    pub status: String,
+    pub restored_count: i64,
+    pub deleted_count: i64,
+    pub skipped_newer_local_progress_count: i64,
+    pub already_rolled_back_count: i64,
+    pub error_count: i64,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct UnmatchedItemResponse {
     pub id: Uuid,
     pub source_item_id: String,
