@@ -526,6 +526,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 - **Phase 14 task 12 rollback complete** — imports now carry UUIDv7 batch IDs, previous `user_item_data` JSONB snapshots, import/rollback timestamps, and rollback detail state; admins can view rollback availability and undo imported watch-state rows while rows with newer local progress are skipped.
 - **Phase 14 task 13 progress/notifications complete** — migration imports now publish `migration_progress` SSE events to migration admins, record Prometheus run/item/confidence/error metrics, and dispatch `migration_completed` / `migration_failed` notifications through the existing notification center.
 - **Phase 14 task 14 cleanup complete** — the daily `migration_cleanup` scheduled executor now removes completed Plex upload directories, stale failed/cancelled upload temp files, old inactive import logs, and old completed source records with per-run stats and path-guarded filesystem deletion.
+- **Phase 14 task 15 migration wizard complete** — the migration settings page is now a guided workflow for source creation, Plex upload/API connection, discovery, preflight, user mapping, match review, import progress, results, rollback, and source cleanup.
 
 ## Current Implementation Status
 

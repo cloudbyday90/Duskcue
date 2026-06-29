@@ -6,16 +6,31 @@
   See LICENSE file for details.
 -->
 <script>
+    import { onMount } from 'svelte';
     import {
+        cancelMigration,
+        createMigrationSource,
+        deleteMigrationSource,
+        discoverMigrationSource,
+        getMigrationProgress,
         getMigrationReviewCsvUrl,
         getMigrationReviewItems,
         getMigrationRollbackStatus,
+        getMigrationUserMappingOptions,
         listMigrationSources,
+        matchMigrationItems,
         rollbackMigrationImport,
+        runMigrationPreflight,
+        saveMigrationUserMappings,
+        startMigration,
+        testMigrationConnection,
+        uploadPlexMigrationDatabase,
         resolveMigrationReviewItem,
     } from '$lib/api/migrations.js';
     import { listMediaItems } from '$lib/api/media.js';
     import { hasCapability } from '$lib/stores/auth.js';
+    import { events } from '$lib/stores/events.js';
+    import { notifications } from '$lib/stores/notifications.js';
 
     let loading = $state(true);
     let loadedOnce = $state(false);
@@ -23,9 +38,24 @@
     let loadError = $state(null);
     let reviewError = $state(null);
     let actionMessage = $state(null);
+    let actionError = $state(null);
     let migrations = $state([]);
     let selectedMigrationId = $state('');
     let selectedSource = $state('jellyfin');
+    let wizardStep = $state('source');
+    let operation = $state(null);
+    let sourceForm = $state({
+        name: '',
+        base_url: '',
+        api_key: '',
+        plex_file: null,
+    });
+    let credentialApiKey = $state('');
+    let preflightReport = $state(null);
+    let mappingOptions = $state(null);
+    let mappingRows = $state([]);
+    let lastDiscovery = $state(null);
+    let progress = $state(null);
     let reviewFilter = $state('needs_review');
     let reviewLoading = $state(false);
     let reviewItems = $state([]);
@@ -44,7 +74,16 @@
         { id: 'plex', label: 'Plex', detail: 'SQLite upload' },
     ];
 
-    const steps = ['Source', 'Connect', 'Preflight', 'Users', 'Review', 'Import'];
+    const steps = [
+        { id: 'source', label: 'Source' },
+        { id: 'connect', label: 'Connect' },
+        { id: 'preflight', label: 'Preflight' },
+        { id: 'users', label: 'Users' },
+        { id: 'review', label: 'Review' },
+        { id: 'import', label: 'Import' },
+        { id: 'results', label: 'Results' },
+    ];
+
     const reviewFilters = [
         { id: 'needs_review', label: 'Needs Review' },
         { id: 'unmatched', label: 'Unmatched' },
@@ -54,6 +93,13 @@
 
     let selectedMigration = $derived(
         migrations.find((migration) => migration.id === selectedMigrationId),
+    );
+    let selectedPlatform = $derived(selectedMigration?.platform || selectedSource);
+    let selectedSourceMeta = $derived(sources.find((source) => source.id === selectedPlatform));
+    let activeStepIndex = $derived(steps.findIndex((step) => step.id === wizardStep));
+    let displayProgress = $derived(progress || progressFromSource(selectedMigration));
+    let isActiveMigration = $derived(
+        ['discovering', 'matching', 'importing'].includes(displayProgress?.status),
     );
 
     $effect(() => {
@@ -72,23 +118,74 @@
         }
     });
 
-    async function load() {
-        loading = true;
+    onMount(() => {
+        events.connect();
+        const offMigrationProgress = events.on('migration_progress', async (payload) => {
+            if (!payload || payload.migration_source_id !== selectedMigrationId) return;
+            progress = {
+                migration_source_id: payload.migration_source_id,
+                status: payload.status,
+                percent_complete: payload.percent_complete,
+                items_discovered: payload.items_discovered,
+                items_matched: payload.items_matched,
+                items_unmatched: payload.items_unmatched,
+                items_imported: payload.items_imported,
+                items_skipped: payload.items_skipped,
+                items_error: payload.items_error,
+                items_processed: payload.items_processed,
+            };
+            if (['completed', 'failed', 'cancelled'].includes(payload.phase)) {
+                await load(selectedMigrationId, { quiet: true });
+                wizardStep = 'results';
+            }
+        });
+
+        const timer = window.setInterval(() => {
+            if (selectedMigrationId && isActiveMigration) {
+                loadProgress({ quiet: true });
+            }
+        }, 5000);
+
+        return () => {
+            offMigrationProgress();
+            window.clearInterval(timer);
+        };
+    });
+
+    async function load(preferredId = selectedMigrationId, options = {}) {
+        if (!options.quiet) {
+            loading = true;
+        }
         loadError = null;
-        actionMessage = null;
+        actionError = null;
         try {
-            const response = await listMigrationSources({ page: 1, page_size: 25 });
+            const response = await listMigrationSources({ page: 1, page_size: 50 });
             migrations = response.items || [];
-            if (!selectedMigrationId || !migrations.some((item) => item.id === selectedMigrationId)) {
+            if (preferredId && migrations.some((item) => item.id === preferredId)) {
+                selectedMigrationId = preferredId;
+            } else if (!selectedMigrationId || !migrations.some((item) => item.id === selectedMigrationId)) {
                 selectedMigrationId = migrations[0]?.id || '';
             }
+            const currentSelection = migrations.find((item) => item.id === selectedMigrationId);
+            if (currentSelection) {
+                selectedSource = currentSelection.platform;
+            }
             await loadCandidates();
-            await Promise.all([loadReview(), loadRollbackStatus()]);
+            await refreshSelectedDetails({ quiet: true });
         } catch (err) {
-            loadError = err.detail || err.message || 'Failed to load migrations';
+            loadError = errorText(err, 'Failed to load migrations');
         } finally {
             loading = false;
         }
+    }
+
+    async function refreshSelectedDetails(options = {}) {
+        await Promise.all([
+            loadProgress(options),
+            loadMappingOptions(options),
+            loadReview(options),
+            loadRollbackStatus(options),
+        ]);
     }
 
     async function loadCandidates() {
@@ -106,13 +203,48 @@
         }
     }
 
-    async function loadReview() {
+    async function loadProgress(options = {}) {
+        if (!selectedMigrationId) {
+            progress = null;
+            return;
+        }
+        try {
+            progress = await getMigrationProgress(selectedMigrationId);
+        } catch (err) {
+            if (!options.quiet) {
+                actionError = errorText(err, 'Failed to load migration progress');
+            }
+        }
+    }
+
+    async function loadMappingOptions(options = {}) {
+        if (!selectedMigrationId) {
+            mappingOptions = null;
+            mappingRows = [];
+            return;
+        }
+        try {
+            const response = await getMigrationUserMappingOptions(selectedMigrationId);
+            mappingOptions = response;
+            if (response.saved_mappings?.length) {
+                mappingRows = rowsFromSavedMappings(response.saved_mappings);
+            } else if (!mappingRows.length && lastDiscovery?.source_users?.length) {
+                mappingRows = rowsFromSourceUsers(lastDiscovery.source_users);
+            }
+        } catch (err) {
+            if (!options.quiet) {
+                actionError = errorText(err, 'Failed to load user mapping options');
+            }
+        }
+    }
+
+    async function loadReview(options = {}) {
         if (!selectedMigrationId) {
             reviewItems = [];
             reviewTotal = 0;
             return;
         }
-        reviewLoading = true;
+        reviewLoading = !options.quiet;
         reviewError = null;
         try {
             const response = await getMigrationReviewItems(selectedMigrationId, {
@@ -130,25 +262,27 @@
             }
             manualMediaIds = nextManualIds;
         } catch (err) {
-            reviewError = err.detail || err.message || 'Failed to load review items';
+            reviewError = errorText(err, 'Failed to load review items');
         } finally {
             reviewLoading = false;
         }
     }
 
-    async function loadRollbackStatus() {
+    async function loadRollbackStatus(options = {}) {
         if (!selectedMigrationId) {
             rollbackStatus = null;
             rollbackError = null;
             return;
         }
-        rollbackLoading = true;
+        rollbackLoading = !options.quiet;
         rollbackError = null;
         try {
             rollbackStatus = await getMigrationRollbackStatus(selectedMigrationId);
         } catch (err) {
             rollbackStatus = null;
-            rollbackError = err.detail || err.message || 'Failed to load rollback status';
+            if (!options.quiet) {
+                rollbackError = errorText(err, 'Failed to load rollback status');
+            }
         } finally {
             rollbackLoading = false;
         }
@@ -156,8 +290,251 @@
 
     async function selectMigration(id) {
         selectedMigrationId = id;
+        const migration = migrations.find((item) => item.id === id);
+        if (migration) {
+            selectedSource = migration.platform;
+        }
         actionMessage = null;
-        await Promise.all([loadReview(), loadRollbackStatus()]);
+        actionError = null;
+        preflightReport = null;
+        lastDiscovery = null;
+        mappingRows = [];
+        await refreshSelectedDetails();
+    }
+
+    function selectSource(id) {
+        selectedSource = id;
+        selectedMigrationId = '';
+        preflightReport = null;
+        lastDiscovery = null;
+        progress = null;
+        mappingOptions = null;
+        mappingRows = [];
+    }
+
+    async function createSource() {
+        actionMessage = null;
+        actionError = null;
+        const name = sourceForm.name.trim();
+        if (!name) {
+            actionError = 'Source name is required.';
+            return;
+        }
+
+        if (selectedSource === 'plex' && !sourceForm.plex_file) {
+            actionError = 'Choose a Plex database file.';
+            return;
+        }
+
+        if (selectedSource !== 'plex' && (!sourceForm.base_url.trim() || !sourceForm.api_key.trim())) {
+            actionError = 'Base URL and API key are required.';
+            return;
+        }
+
+        operation = 'create-source';
+        try {
+            const payload =
+                selectedSource === 'plex'
+                    ? {
+                          platform: 'plex',
+                          name,
+                          connection_config: {
+                              method: 'sqlite_upload',
+                              original_filename: sourceForm.plex_file.name,
+                              file_size_bytes: sourceForm.plex_file.size,
+                          },
+                      }
+                    : {
+                          platform: selectedSource,
+                          name,
+                          connection_config: {
+                              method: 'api',
+                              base_url: sourceForm.base_url,
+                              api_key: sourceForm.api_key,
+                          },
+                      };
+
+            const created = await createMigrationSource(payload);
+            selectedMigrationId = created.id;
+            selectedSource = created.platform;
+            credentialApiKey = selectedSource === 'plex' ? '' : sourceForm.api_key;
+
+            if (selectedSource === 'plex') {
+                const uploadResponse = await uploadPlexMigrationDatabase(created.id, sourceForm.plex_file);
+                actionMessage = uploadResponse.message;
+            } else {
+                actionMessage = 'Migration source created.';
+            }
+
+            sourceForm = { name: '', base_url: '', api_key: '', plex_file: null };
+            await load(created.id);
+            wizardStep = 'connect';
+        } catch (err) {
+            actionError = errorText(err, 'Failed to create migration source');
+        } finally {
+            operation = null;
+        }
+    }
+
+    async function uploadPlexFile() {
+        if (!selectedMigrationId || !sourceForm.plex_file) return;
+        operation = 'upload';
+        actionMessage = null;
+        actionError = null;
+        try {
+            const response = await uploadPlexMigrationDatabase(selectedMigrationId, sourceForm.plex_file);
+            actionMessage = response.message;
+            await load(selectedMigrationId);
+        } catch (err) {
+            actionError = errorText(err, 'Failed to upload Plex database');
+        } finally {
+            operation = null;
+        }
+    }
+
+    async function testConnection() {
+        if (!selectedMigrationId) return;
+        operation = 'connect';
+        actionMessage = null;
+        actionError = null;
+        try {
+            const response = await testMigrationConnection(selectedMigrationId, credentialPayload());
+            actionMessage = response.message;
+            await load(selectedMigrationId);
+        } catch (err) {
+            actionError = errorText(err, 'Failed to test source connection');
+        } finally {
+            operation = null;
+        }
+    }
+
+    async function discoverSource() {
+        if (!selectedMigrationId) return;
+        operation = 'discover';
+        actionMessage = null;
+        actionError = null;
+        try {
+            const response = await discoverMigrationSource(selectedMigrationId, credentialPayload());
+            lastDiscovery = response;
+            actionMessage = response.message;
+            if (response.source_users?.length) {
+                mappingRows = rowsFromSourceUsers(response.source_users);
+            }
+            await load(selectedMigrationId, { quiet: true });
+            wizardStep = response.users_mapped > 0 ? 'preflight' : 'users';
+        } catch (err) {
+            actionError = errorText(err, 'Failed to discover source data');
+        } finally {
+            operation = null;
+        }
+    }
+
+    async function runPreflight() {
+        if (!selectedMigrationId) return;
+        operation = 'preflight';
+        actionMessage = null;
+        actionError = null;
+        try {
+            preflightReport = await runMigrationPreflight(selectedMigrationId);
+            actionMessage = preflightReport.is_ready
+                ? 'Preflight passed.'
+                : `${preflightReport.blockers.length} blocker(s) found.`;
+        } catch (err) {
+            actionError = errorText(err, 'Failed to run preflight');
+        } finally {
+            operation = null;
+        }
+    }
+
+    async function saveMappings({ extract = false } = {}) {
+        if (!selectedMigrationId || !mappingRows.length) return;
+        operation = extract ? 'save-extract' : 'save-mappings';
+        actionMessage = null;
+        actionError = null;
+        try {
+            await saveMigrationUserMappings(selectedMigrationId, {
+                mappings: mappingRows.map((row) => ({
+                    source_user_id: row.source_user_id,
+                    source_user_name: row.source_user_name,
+                    platform_user_id: row.skip ? null : row.platform_user_id || null,
+                    skip: row.skip,
+                })),
+            });
+
+            if (extract) {
+                const response = await discoverMigrationSource(selectedMigrationId, credentialPayload());
+                lastDiscovery = response;
+                actionMessage = response.message;
+                wizardStep = 'preflight';
+            } else {
+                actionMessage = 'User mappings saved.';
+            }
+            await load(selectedMigrationId, { quiet: true });
+        } catch (err) {
+            actionError = errorText(err, 'Failed to save user mappings');
+        } finally {
+            operation = null;
+        }
+    }
+
+    async function runMatching() {
+        if (!selectedMigrationId) return;
+        operation = 'match';
+        actionMessage = null;
+        actionError = null;
+        try {
+            const response = await matchMigrationItems(selectedMigrationId);
+            actionMessage = response.message;
+            await Promise.all([loadReview(), loadProgress()]);
+            wizardStep = 'review';
+        } catch (err) {
+            actionError = errorText(err, 'Failed to match migration items');
+        } finally {
+            operation = null;
+        }
+    }
+
+    async function runDryRun() {
+        await startSelectedMigration(true);
+    }
+
+    async function runImport() {
+        await startSelectedMigration(false);
+    }
+
+    async function startSelectedMigration(dryRun) {
+        if (!selectedMigrationId) return;
+        operation = dryRun ? 'dry-run' : 'start-import';
+        actionMessage = null;
+        actionError = null;
+        try {
+            const response = await startMigration(selectedMigrationId, { dry_run: dryRun });
+            actionMessage = response.message;
+            await loadProgress();
+            if (!dryRun) {
+                wizardStep = 'import';
+            }
+        } catch (err) {
+            actionError = errorText(err, dryRun ? 'Dry run failed' : 'Failed to start import');
+        } finally {
+            operation = null;
+        }
+    }
+
+    async function cancelSelectedMigration() {
+        if (!selectedMigrationId) return;
+        operation = 'cancel';
+        actionMessage = null;
+        actionError = null;
+        try {
+            const response = await cancelMigration(selectedMigrationId);
+            actionMessage = response.message;
+            await load(selectedMigrationId, { quiet: true });
+        } catch (err) {
+            actionError = errorText(err, 'Failed to cancel migration');
+        } finally {
+            operation = null;
+        }
     }
 
     async function setReviewFilter(value) {
@@ -187,9 +564,9 @@
                 media_item_id: action === 'match' ? mediaItemId : null,
             });
             actionMessage = response.message;
-            await loadReview();
+            await Promise.all([loadReview(), loadProgress()]);
         } catch (err) {
-            reviewError = err.detail || err.message || 'Failed to save review decision';
+            reviewError = errorText(err, 'Failed to save review decision');
         } finally {
             const next = { ...resolvingIds };
             delete next[item.id];
@@ -219,12 +596,116 @@
         try {
             const response = await rollbackMigrationImport(selectedMigrationId);
             actionMessage = response.message;
-            await Promise.all([loadReview(), loadRollbackStatus()]);
+            await Promise.all([loadReview(), loadRollbackStatus(), loadProgress()]);
         } catch (err) {
-            rollbackError = err.detail || err.message || 'Failed to rollback migration import';
+            rollbackError = errorText(err, 'Failed to rollback migration import');
         } finally {
             rollbackRunning = false;
         }
+    }
+
+    async function cleanupSelectedSource() {
+        if (!selectedMigrationId) return;
+        if (
+            typeof window !== 'undefined' &&
+            !window.confirm('Delete this migration source and its saved import logs?')
+        ) {
+            return;
+        }
+
+        operation = 'cleanup-source';
+        actionMessage = null;
+        actionError = null;
+        try {
+            await deleteMigrationSource(selectedMigrationId);
+            notifications.success('Migration source deleted');
+            selectedMigrationId = '';
+            preflightReport = null;
+            progress = null;
+            mappingOptions = null;
+            mappingRows = [];
+            await load('', { quiet: true });
+            wizardStep = 'source';
+        } catch (err) {
+            actionError = errorText(err, 'Failed to delete migration source');
+        } finally {
+            operation = null;
+        }
+    }
+
+    function updateMapping(row, patch) {
+        mappingRows = mappingRows.map((item) =>
+            item.source_user_id === row.source_user_id ? { ...item, ...patch } : item,
+        );
+    }
+
+    function credentialPayload() {
+        if (selectedPlatform === 'plex') return {};
+        const apiKey = credentialApiKey.trim() || sourceForm.api_key.trim();
+        return apiKey ? { api_key: apiKey } : {};
+    }
+
+    function rowsFromSourceUsers(sourceUsers) {
+        const saved = new Map((mappingOptions?.saved_mappings || []).map((item) => [item.source_user_id, item]));
+        return sourceUsers.map((user) => {
+            const existing = saved.get(user.source_user_id);
+            return {
+                source_user_id: user.source_user_id,
+                source_user_name: user.source_user_name,
+                platform_user_id: existing?.platform_user_id || '',
+                skip: existing?.is_skipped || false,
+            };
+        });
+    }
+
+    function rowsFromSavedMappings(savedMappings) {
+        return savedMappings.map((mapping) => ({
+            source_user_id: mapping.source_user_id,
+            source_user_name: mapping.source_user_name,
+            platform_user_id: mapping.platform_user_id || '',
+            skip: mapping.is_skipped || false,
+        }));
+    }
+
+    function progressFromSource(source) {
+        if (!source) return null;
+        return {
+            migration_source_id: source.id,
+            status: source.status,
+            percent_complete: source.status === 'completed' ? 100 : 0,
+            items_discovered: 0,
+            items_matched: 0,
+            items_unmatched: 0,
+            items_imported: 0,
+            items_skipped: 0,
+        };
+    }
+
+    function statusClass(status) {
+        if (status === 'completed' || status === 'imported' || status === 'available') return 'ok';
+        if (status === 'failed' || status === 'error' || status === 'cancelled') return 'bad';
+        if (['discovering', 'matching', 'importing', 'blocked_by_newer_progress'].includes(status)) {
+            return 'warn';
+        }
+        return '';
+    }
+
+    function stepState(index) {
+        if (index < activeStepIndex) return 'done';
+        if (index === activeStepIndex) return 'active';
+        return '';
+    }
+
+    function isBusy(name) {
+        return operation === name;
+    }
+
+    function activeSourceLabel() {
+        return selectedSourceMeta?.label || selectedPlatform || 'Source';
+    }
+
+    function platformUsers() {
+        return mappingOptions?.platform_users || [];
     }
 
     function formatDate(value) {
@@ -233,6 +714,23 @@
             dateStyle: 'medium',
             timeStyle: 'short',
         }).format(new Date(value));
+    }
+
+    function formatBytes(bytes) {
+        if (!bytes && bytes !== 0) return '—';
+        const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+        let value = Number(bytes);
+        let index = 0;
+        while (value >= 1024 && index < units.length - 1) {
+            value /= 1024;
+            index += 1;
+        }
+        return `${value.toFixed(index === 0 ? 0 : 1)} ${units[index]}`;
+    }
+
+    function formatPercent(value) {
+        if (!value && value !== 0) return '0%';
+        return `${Math.round(value)}%`;
     }
 
     function mediaYear(item) {
@@ -262,6 +760,10 @@
         if (providerIds.tvdb) parts.push(`TVDb ${providerIds.tvdb}`);
         return parts.length ? parts.join(' · ') : 'No provider IDs';
     }
+
+    function errorText(err, fallback) {
+        return err?.detail || err?.message || fallback;
+    }
 </script>
 
 <div class="migration-settings">
@@ -271,7 +773,7 @@
             <h1 class="page-title">Platform Migration</h1>
         </div>
         {#if !loading && canManage}
-            <button class="btn-secondary" onclick={load}>Refresh</button>
+            <button class="btn-secondary" onclick={() => load()} disabled={!!operation}>Refresh</button>
         {/if}
     </div>
 
@@ -282,39 +784,565 @@
     {:else if loadError}
         <div class="empty-state stacked">
             <p class="error-text">{loadError}</p>
-            <button class="btn-secondary" onclick={load}>Retry</button>
+            <button class="btn-secondary" onclick={() => load()}>Retry</button>
         </div>
     {:else}
+        {#if actionMessage}
+            <div class="notice success">{actionMessage}</div>
+        {/if}
+        {#if actionError}
+            <div class="notice error">{actionError}</div>
+        {/if}
+
         <section class="wizard-shell">
             <div class="step-strip">
                 {#each steps as step, index}
-                    <div class="step" class:active={step === 'Review'}>
-                        <span>{index + 1}</span>
-                        <strong>{step}</strong>
-                    </div>
-                {/each}
-            </div>
-
-            <div class="source-grid">
-                {#each sources as source}
                     <button
-                        class="source-tile"
-                        class:selected={selectedSource === source.id}
-                        onclick={() => (selectedSource = source.id)}
+                        class="step"
+                        class:active={stepState(index) === 'active'}
+                        class:done={stepState(index) === 'done'}
+                        onclick={() => (wizardStep = step.id)}
                     >
-                        <span>{source.label}</span>
-                        <strong>{source.detail}</strong>
+                        <span>{index + 1}</span>
+                        <strong>{step.label}</strong>
                     </button>
                 {/each}
             </div>
 
-            <div class="connect-panel">
-                <div>
-                    <span class="panel-label">Selected Source</span>
-                    <strong>{sources.find((source) => source.id === selectedSource)?.label}</strong>
+            {#if wizardStep === 'source'}
+                <div class="wizard-panel">
+                    <div class="source-grid">
+                        {#each sources as source}
+                            <button
+                                class="source-tile"
+                                class:selected={selectedSource === source.id && !selectedMigrationId}
+                                onclick={() => selectSource(source.id)}
+                            >
+                                <span>{source.label}</span>
+                                <strong>{source.detail}</strong>
+                            </button>
+                        {/each}
+                    </div>
+
+                    <div class="form-grid">
+                        <label>
+                            <span>Name</span>
+                            <input
+                                type="text"
+                                value={sourceForm.name}
+                                oninput={(event) => (sourceForm.name = event.currentTarget.value)}
+                                placeholder={`${activeSourceLabel()} migration`}
+                            />
+                        </label>
+                        {#if selectedSource === 'plex'}
+                            <label>
+                                <span>Plex Database</span>
+                                <input
+                                    type="file"
+                                    accept=".db,.sqlite,application/vnd.sqlite3,application/octet-stream"
+                                    onchange={(event) =>
+                                        (sourceForm.plex_file = event.currentTarget.files?.[0] || null)}
+                                />
+                            </label>
+                        {:else}
+                            <label>
+                                <span>Base URL</span>
+                                <input
+                                    type="url"
+                                    value={sourceForm.base_url}
+                                    oninput={(event) =>
+                                        (sourceForm.base_url = event.currentTarget.value)}
+                                    placeholder="https://media.example.test"
+                                />
+                            </label>
+                            <label>
+                                <span>API Key</span>
+                                <input
+                                    type="password"
+                                    value={sourceForm.api_key}
+                                    oninput={(event) =>
+                                        (sourceForm.api_key = event.currentTarget.value)}
+                                    autocomplete="off"
+                                />
+                            </label>
+                        {/if}
+                    </div>
+
+                    <div class="panel-actions">
+                        <button
+                            class="btn-primary"
+                            disabled={!!operation}
+                            onclick={createSource}
+                        >
+                            {isBusy('create-source') ? 'Creating…' : 'Create Source'}
+                        </button>
+                    </div>
                 </div>
-                <button class="btn-primary" disabled>Create Source</button>
-            </div>
+            {:else if wizardStep === 'connect'}
+                <div class="wizard-panel">
+                    <div class="selected-summary">
+                        <div>
+                            <span>Selected</span>
+                            <strong>{selectedMigration?.name || 'No source selected'}</strong>
+                        </div>
+                        <div>
+                            <span>Platform</span>
+                            <strong>{activeSourceLabel()}</strong>
+                        </div>
+                        <div>
+                            <span>Status</span>
+                            <strong class={statusClass(displayProgress?.status)}>
+                                {displayProgress?.status || 'pending'}
+                            </strong>
+                        </div>
+                    </div>
+
+                    {#if selectedPlatform === 'plex'}
+                        <div class="form-grid">
+                            <label>
+                                <span>Plex Database</span>
+                                <input
+                                    type="file"
+                                    accept=".db,.sqlite,application/vnd.sqlite3,application/octet-stream"
+                                    onchange={(event) =>
+                                        (sourceForm.plex_file = event.currentTarget.files?.[0] || null)}
+                                />
+                            </label>
+                        </div>
+                        <div class="panel-actions">
+                            <button
+                                class="btn-secondary"
+                                disabled={!selectedMigrationId || !sourceForm.plex_file || !!operation}
+                                onclick={uploadPlexFile}
+                            >
+                                {isBusy('upload') ? 'Uploading…' : 'Upload Database'}
+                            </button>
+                            <button
+                                class="btn-primary"
+                                disabled={!selectedMigrationId || !!operation}
+                                onclick={discoverSource}
+                            >
+                                {isBusy('discover') ? 'Discovering…' : 'Discover Users'}
+                            </button>
+                        </div>
+                    {:else}
+                        <div class="form-grid">
+                            <label>
+                                <span>Session API Key</span>
+                                <input
+                                    type="password"
+                                    value={credentialApiKey}
+                                    oninput={(event) =>
+                                        (credentialApiKey = event.currentTarget.value)}
+                                    autocomplete="off"
+                                />
+                            </label>
+                        </div>
+                        <div class="panel-actions">
+                            <button
+                                class="btn-secondary"
+                                disabled={!selectedMigrationId || !!operation}
+                                onclick={testConnection}
+                            >
+                                {isBusy('connect') ? 'Testing…' : 'Test Connection'}
+                            </button>
+                            <button
+                                class="btn-primary"
+                                disabled={!selectedMigrationId || !!operation}
+                                onclick={discoverSource}
+                            >
+                                {isBusy('discover') ? 'Discovering…' : 'Discover Users'}
+                            </button>
+                        </div>
+                    {/if}
+                </div>
+            {:else if wizardStep === 'preflight'}
+                <div class="wizard-panel">
+                    <div class="panel-actions align-start">
+                        <button
+                            class="btn-primary"
+                            disabled={!selectedMigrationId || !!operation}
+                            onclick={runPreflight}
+                        >
+                            {isBusy('preflight') ? 'Running…' : 'Run Preflight'}
+                        </button>
+                        <button class="btn-secondary" onclick={() => (wizardStep = 'users')}>
+                            User Mapping
+                        </button>
+                    </div>
+
+                    {#if preflightReport}
+                        <div class="preflight-grid">
+                            <div class="summary-card">
+                                <span>Readiness</span>
+                                <strong class={preflightReport.is_ready ? 'ok' : 'bad'}>
+                                    {preflightReport.is_ready ? 'Ready' : 'Blocked'}
+                                </strong>
+                            </div>
+                            <div class="summary-card">
+                                <span>Mappings</span>
+                                <strong>{preflightReport.user_mapping_readiness.valid_mappings}</strong>
+                            </div>
+                            <div class="summary-card">
+                                <span>Estimated Matches</span>
+                                <strong>{preflightReport.estimated_counts.estimated_matches}</strong>
+                            </div>
+                            <div class="summary-card">
+                                <span>Match Rate</span>
+                                <strong>
+                                    {formatPercent(preflightReport.estimated_counts.estimated_match_rate_percent)}
+                                </strong>
+                            </div>
+                        </div>
+
+                        <div class="check-list">
+                            {#each preflightReport.checks as check}
+                                <div class="check-row">
+                                    <span class={statusClass(check.status)}>{check.status}</span>
+                                    <strong>{check.name}</strong>
+                                    <p>{check.message}</p>
+                                </div>
+                            {/each}
+                        </div>
+
+                        {#if preflightReport.blockers.length}
+                            <div class="finding-list error">
+                                {#each preflightReport.blockers as finding}
+                                    <p>{finding.message}</p>
+                                {/each}
+                            </div>
+                        {/if}
+                        {#if preflightReport.warnings.length}
+                            <div class="finding-list warn">
+                                {#each preflightReport.warnings as finding}
+                                    <p>{finding.message}</p>
+                                {/each}
+                            </div>
+                        {/if}
+                    {:else}
+                        <div class="empty-state">No preflight report has been run.</div>
+                    {/if}
+                </div>
+            {:else if wizardStep === 'users'}
+                <div class="wizard-panel">
+                    <div class="section-header compact">
+                        <div>
+                            <h2>User Mapping</h2>
+                            <p>{mappingRows.length} source user{mappingRows.length === 1 ? '' : 's'}</p>
+                        </div>
+                        <button
+                            class="btn-secondary"
+                            disabled={!selectedMigrationId || !!operation}
+                            onclick={discoverSource}
+                        >
+                            Refresh Users
+                        </button>
+                    </div>
+
+                    {#if mappingRows.length === 0}
+                        <div class="empty-state">No source users discovered.</div>
+                    {:else}
+                        <div class="mapping-list">
+                            {#each mappingRows as row}
+                                <div class="mapping-row">
+                                    <div>
+                                        <strong>{row.source_user_name}</strong>
+                                        <span>{row.source_user_id}</span>
+                                    </div>
+                                    <select
+                                        disabled={row.skip}
+                                        value={row.platform_user_id}
+                                        onchange={(event) =>
+                                            updateMapping(row, {
+                                                platform_user_id: event.currentTarget.value,
+                                            })}
+                                    >
+                                        <option value="">Choose Duskcue user</option>
+                                        {#each platformUsers() as user}
+                                            <option value={user.platform_user_id}>{user.label}</option>
+                                        {/each}
+                                    </select>
+                                    <label class="checkbox-label">
+                                        <input
+                                            type="checkbox"
+                                            checked={row.skip}
+                                            onchange={(event) =>
+                                                updateMapping(row, {
+                                                    skip: event.currentTarget.checked,
+                                                })}
+                                        />
+                                        <span>Skip</span>
+                                    </label>
+                                </div>
+                            {/each}
+                        </div>
+
+                        <div class="panel-actions">
+                            <button
+                                class="btn-secondary"
+                                disabled={!!operation}
+                                onclick={() => saveMappings()}
+                            >
+                                {isBusy('save-mappings') ? 'Saving…' : 'Save Mappings'}
+                            </button>
+                            <button
+                                class="btn-primary"
+                                disabled={!!operation}
+                                onclick={() => saveMappings({ extract: true })}
+                            >
+                                {isBusy('save-extract') ? 'Extracting…' : 'Save & Extract'}
+                            </button>
+                        </div>
+                    {/if}
+                </div>
+            {:else if wizardStep === 'review'}
+                <div class="wizard-panel">
+                    <div class="section-header compact">
+                        <div>
+                            <h2>Match Review</h2>
+                            <p>{selectedMigration?.name || 'Select a migration source'}</p>
+                        </div>
+                        <div class="review-actions">
+                            <span>{reviewTotal} item{reviewTotal === 1 ? '' : 's'}</span>
+                            <button
+                                class="btn-secondary"
+                                disabled={!selectedMigrationId || !!operation}
+                                onclick={runMatching}
+                            >
+                                {isBusy('match') ? 'Matching…' : 'Run Match'}
+                            </button>
+                            <button class="btn-secondary" disabled={!selectedMigrationId} onclick={exportCsv}>
+                                Export CSV
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="filter-strip">
+                        {#each reviewFilters as filter}
+                            <button
+                                class:active={reviewFilter === filter.id}
+                                onclick={() => setReviewFilter(filter.id)}
+                            >
+                                {filter.label}
+                            </button>
+                        {/each}
+                    </div>
+
+                    {#if reviewError}
+                        <div class="notice error">{reviewError}</div>
+                    {/if}
+
+                    {#if reviewLoading}
+                        <div class="loading-state small"><div class="loading-spinner"></div></div>
+                    {:else if !selectedMigrationId}
+                        <div class="empty-state">Select a migration source to review matches.</div>
+                    {:else if reviewItems.length === 0}
+                        <div class="empty-state">No review items match this filter.</div>
+                    {:else}
+                        <div class="review-list">
+                            {#each reviewItems as item}
+                                <article class="review-item">
+                                    <div class="review-main">
+                                        <div>
+                                            <h3>{item.source_item_title}</h3>
+                                            <p>
+                                                {item.source_item_type}
+                                                {#if item.source_item_year}
+                                                    · {item.source_item_year}
+                                                {/if}
+                                                · {providerSummary(item.source_provider_ids)}
+                                            </p>
+                                        </div>
+                                        <div class="badges">
+                                            <span>{item.status}</span>
+                                            <span>{item.match_confidence || 'unknown'}</span>
+                                        </div>
+                                    </div>
+
+                                    {#if item.error_detail}
+                                        <p class="review-detail">{item.error_detail}</p>
+                                    {:else if item.matched_media_title}
+                                        <p class="review-detail">
+                                            Current match: {item.matched_media_title}
+                                            {#if item.matched_media_year}
+                                                ({item.matched_media_year})
+                                            {/if}
+                                        </p>
+                                    {/if}
+
+                                    <div class="manual-row">
+                                        <select
+                                            value={manualMediaIds[item.id] || item.matched_media_item_id || ''}
+                                            onchange={(event) =>
+                                                setManualMediaId(item.id, event.currentTarget.value)}
+                                        >
+                                            <option value="">Choose recent {item.source_item_type}</option>
+                                            {#each candidateOptions(item.source_item_type) as candidate}
+                                                <option value={candidate.id}>
+                                                    {candidate.title}{mediaYear(candidate) ? ` (${mediaYear(candidate)})` : ''}
+                                                </option>
+                                            {/each}
+                                        </select>
+                                        <input
+                                            type="text"
+                                            placeholder="media_item_id"
+                                            value={manualMediaIds[item.id] || item.matched_media_item_id || ''}
+                                            oninput={(event) =>
+                                                setManualMediaId(item.id, event.currentTarget.value)}
+                                        />
+                                    </div>
+
+                                    <div class="decision-row">
+                                        <button
+                                            class="btn-primary"
+                                            disabled={resolvingIds[item.id]}
+                                            onclick={() => resolveItem(item, 'match')}
+                                        >
+                                            Match
+                                        </button>
+                                        <button
+                                            class="btn-secondary"
+                                            disabled={resolvingIds[item.id]}
+                                            onclick={() => resolveItem(item, 'skip')}
+                                        >
+                                            Skip
+                                        </button>
+                                        <button
+                                            class="btn-secondary"
+                                            disabled={resolvingIds[item.id]}
+                                            onclick={() => resolveItem(item, 'ignore')}
+                                        >
+                                            Ignore
+                                        </button>
+                                    </div>
+                                </article>
+                            {/each}
+                        </div>
+                    {/if}
+                </div>
+            {:else if wizardStep === 'import'}
+                <div class="wizard-panel">
+                    <div class="progress-panel">
+                        <div class="progress-head">
+                            <div>
+                                <span>Status</span>
+                                <strong class={statusClass(displayProgress?.status)}>
+                                    {displayProgress?.status || 'pending'}
+                                </strong>
+                            </div>
+                            <strong>{formatPercent(displayProgress?.percent_complete)}</strong>
+                        </div>
+                        <div class="progress-track">
+                            <div style={`width: ${displayProgress?.percent_complete || 0}%`}></div>
+                        </div>
+                        <div class="progress-grid">
+                            <div><span>Discovered</span><strong>{displayProgress?.items_discovered || 0}</strong></div>
+                            <div><span>Matched</span><strong>{displayProgress?.items_matched || 0}</strong></div>
+                            <div><span>Unmatched</span><strong>{displayProgress?.items_unmatched || 0}</strong></div>
+                            <div><span>Imported</span><strong>{displayProgress?.items_imported || 0}</strong></div>
+                            <div><span>Skipped</span><strong>{displayProgress?.items_skipped || 0}</strong></div>
+                        </div>
+                    </div>
+
+                    <div class="panel-actions">
+                        <button
+                            class="btn-secondary"
+                            disabled={!selectedMigrationId || !!operation}
+                            onclick={runDryRun}
+                        >
+                            {isBusy('dry-run') ? 'Checking…' : 'Dry Run'}
+                        </button>
+                        <button
+                            class="btn-primary"
+                            disabled={!selectedMigrationId || !!operation || isActiveMigration}
+                            onclick={runImport}
+                        >
+                            {isBusy('start-import') ? 'Starting…' : 'Start Import'}
+                        </button>
+                        <button
+                            class="btn-secondary"
+                            disabled={!selectedMigrationId || !!operation || !isActiveMigration}
+                            onclick={cancelSelectedMigration}
+                        >
+                            {isBusy('cancel') ? 'Cancelling…' : 'Cancel'}
+                        </button>
+                    </div>
+                </div>
+            {:else if wizardStep === 'results'}
+                <div class="wizard-panel">
+                    <div class="result-grid">
+                        <div class="summary-card">
+                            <span>Status</span>
+                            <strong class={statusClass(displayProgress?.status)}>
+                                {displayProgress?.status || 'pending'}
+                            </strong>
+                        </div>
+                        <div class="summary-card">
+                            <span>Imported</span>
+                            <strong>{displayProgress?.items_imported || 0}</strong>
+                        </div>
+                        <div class="summary-card">
+                            <span>Unmatched</span>
+                            <strong>{displayProgress?.items_unmatched || 0}</strong>
+                        </div>
+                        <div class="summary-card">
+                            <span>Last Run</span>
+                            <strong>{formatDate(selectedMigration?.last_run_at)}</strong>
+                        </div>
+                    </div>
+
+                    <div class="rollback-grid">
+                        <div>
+                            <span>Rollback</span>
+                            <strong>{formatRollbackStatus(rollbackStatus?.status)}</strong>
+                        </div>
+                        <div>
+                            <span>Imported</span>
+                            <strong>{rollbackStatus?.imported_count || 0}</strong>
+                        </div>
+                        <div>
+                            <span>Available</span>
+                            <strong>{rollbackStatus?.rollback_available_count || 0}</strong>
+                        </div>
+                        <div>
+                            <span>Rolled Back</span>
+                            <strong>{rollbackStatus?.rolled_back_count || 0}</strong>
+                        </div>
+                    </div>
+
+                    {#if rollbackError}
+                        <div class="notice error">{rollbackError}</div>
+                    {/if}
+
+                    <div class="panel-actions">
+                        <button
+                            class="btn-secondary"
+                            disabled={!selectedMigrationId || rollbackLoading || rollbackRunning}
+                            onclick={loadRollbackStatus}
+                        >
+                            Refresh Rollback
+                        </button>
+                        <button
+                            class="btn-primary"
+                            disabled={
+                                rollbackRunning ||
+                                !rollbackStatus ||
+                                rollbackStatus.rollback_available_count <= 0
+                            }
+                            onclick={rollbackImport}
+                        >
+                            {rollbackRunning ? 'Rolling Back…' : 'Rollback Import'}
+                        </button>
+                        <button
+                            class="btn-secondary danger"
+                            disabled={!selectedMigrationId || !!operation || isActiveMigration}
+                            onclick={cleanupSelectedSource}
+                        >
+                            {isBusy('cleanup-source') ? 'Deleting…' : 'Delete Source'}
+                        </button>
+                    </div>
+                </div>
+            {/if}
         </section>
 
         <section class="migration-list">
@@ -341,197 +1369,9 @@
                         >
                             <span>{migration.name}</span>
                             <span>{migration.platform}</span>
-                            <span>{migration.status}</span>
+                            <span class={statusClass(migration.status)}>{migration.status}</span>
                             <span>{formatDate(migration.last_run_at)}</span>
                         </button>
-                    {/each}
-                </div>
-            {/if}
-        </section>
-
-        <section class="rollback-panel">
-            <div class="section-header">
-                <div>
-                    <h2>Rollback</h2>
-                    <p>{selectedMigration?.name || 'Select a migration source'}</p>
-                </div>
-                <button
-                    class="btn-secondary"
-                    disabled={!selectedMigrationId || rollbackLoading || rollbackRunning}
-                    onclick={loadRollbackStatus}
-                >
-                    Refresh
-                </button>
-            </div>
-
-            {#if rollbackError}
-                <div class="notice error">{rollbackError}</div>
-            {/if}
-
-            {#if rollbackLoading}
-                <div class="loading-state small"><div class="loading-spinner"></div></div>
-            {:else if !selectedMigrationId}
-                <div class="empty-state">Select a migration source to view rollback status.</div>
-            {:else if rollbackStatus}
-                <div class="rollback-grid">
-                    <div>
-                        <span>Status</span>
-                        <strong>{formatRollbackStatus(rollbackStatus.status)}</strong>
-                    </div>
-                    <div>
-                        <span>Imported</span>
-                        <strong>{rollbackStatus.imported_count}</strong>
-                    </div>
-                    <div>
-                        <span>Available</span>
-                        <strong>{rollbackStatus.rollback_available_count}</strong>
-                    </div>
-                    <div>
-                        <span>Rolled Back</span>
-                        <strong>{rollbackStatus.rolled_back_count}</strong>
-                    </div>
-                    <div>
-                        <span>Newer Progress</span>
-                        <strong>{rollbackStatus.skipped_newer_local_progress_count}</strong>
-                    </div>
-                    <div>
-                        <span>Last Import</span>
-                        <strong>{formatDate(rollbackStatus.last_imported_at)}</strong>
-                    </div>
-                </div>
-
-                <div class="rollback-actions">
-                    <button
-                        class="btn-primary"
-                        disabled={
-                            rollbackRunning ||
-                            !rollbackStatus ||
-                            rollbackStatus.rollback_available_count <= 0
-                        }
-                        onclick={rollbackImport}
-                    >
-                        Rollback Import
-                    </button>
-                </div>
-            {/if}
-        </section>
-
-        <section class="review-panel">
-            <div class="section-header">
-                <div>
-                    <h2>Match Review</h2>
-                    <p>{selectedMigration?.name || 'Select a migration source'}</p>
-                </div>
-                <div class="review-actions">
-                    <span>{reviewTotal} item{reviewTotal === 1 ? '' : 's'}</span>
-                    <button class="btn-secondary" disabled={!selectedMigrationId} onclick={exportCsv}>
-                        Export CSV
-                    </button>
-                </div>
-            </div>
-
-            <div class="filter-strip">
-                {#each reviewFilters as filter}
-                    <button
-                        class:active={reviewFilter === filter.id}
-                        onclick={() => setReviewFilter(filter.id)}
-                    >
-                        {filter.label}
-                    </button>
-                {/each}
-            </div>
-
-            {#if actionMessage}
-                <div class="notice success">{actionMessage}</div>
-            {/if}
-            {#if reviewError}
-                <div class="notice error">{reviewError}</div>
-            {/if}
-
-            {#if reviewLoading}
-                <div class="loading-state small"><div class="loading-spinner"></div></div>
-            {:else if !selectedMigrationId}
-                <div class="empty-state">Select a migration source to review matches.</div>
-            {:else if reviewItems.length === 0}
-                <div class="empty-state">No review items match this filter.</div>
-            {:else}
-                <div class="review-list">
-                    {#each reviewItems as item}
-                        <article class="review-item">
-                            <div class="review-main">
-                                <div>
-                                    <h3>{item.source_item_title}</h3>
-                                    <p>
-                                        {item.source_item_type}
-                                        {#if item.source_item_year}
-                                            · {item.source_item_year}
-                                        {/if}
-                                        · {providerSummary(item.source_provider_ids)}
-                                    </p>
-                                </div>
-                                <div class="badges">
-                                    <span>{item.status}</span>
-                                    <span>{item.match_confidence || 'unknown'}</span>
-                                </div>
-                            </div>
-
-                            {#if item.error_detail}
-                                <p class="review-detail">{item.error_detail}</p>
-                            {:else if item.matched_media_title}
-                                <p class="review-detail">
-                                    Current match: {item.matched_media_title}
-                                    {#if item.matched_media_year}
-                                        ({item.matched_media_year})
-                                    {/if}
-                                </p>
-                            {/if}
-
-                            <div class="manual-row">
-                                <select
-                                    value={manualMediaIds[item.id] || item.matched_media_item_id || ''}
-                                    onchange={(event) =>
-                                        setManualMediaId(item.id, event.currentTarget.value)}
-                                >
-                                    <option value="">Choose recent {item.source_item_type}</option>
-                                    {#each candidateOptions(item.source_item_type) as candidate}
-                                        <option value={candidate.id}>
-                                            {candidate.title}{mediaYear(candidate) ? ` (${mediaYear(candidate)})` : ''}
-                                        </option>
-                                    {/each}
-                                </select>
-                                <input
-                                    type="text"
-                                    placeholder="media_item_id"
-                                    value={manualMediaIds[item.id] || item.matched_media_item_id || ''}
-                                    oninput={(event) =>
-                                        setManualMediaId(item.id, event.currentTarget.value)}
-                                />
-                            </div>
-
-                            <div class="decision-row">
-                                <button
-                                    class="btn-primary"
-                                    disabled={resolvingIds[item.id]}
-                                    onclick={() => resolveItem(item, 'match')}
-                                >
-                                    Match
-                                </button>
-                                <button
-                                    class="btn-secondary"
-                                    disabled={resolvingIds[item.id]}
-                                    onclick={() => resolveItem(item, 'skip')}
-                                >
-                                    Skip
-                                </button>
-                                <button
-                                    class="btn-secondary"
-                                    disabled={resolvingIds[item.id]}
-                                    onclick={() => resolveItem(item, 'ignore')}
-                                >
-                                    Ignore
-                                </button>
-                            </div>
-                        </article>
                     {/each}
                 </div>
             {/if}
@@ -544,25 +1384,25 @@
         display: flex;
         flex-direction: column;
         gap: 1.5rem;
-        max-width: 1100px;
+        max-width: 1180px;
     }
 
     .page-header,
-    .connect-panel,
     .section-header,
-    .rollback-actions,
+    .progress-head,
     .review-actions,
     .review-main,
     .manual-row,
-    .decision-row {
+    .decision-row,
+    .panel-actions {
         display: flex;
         gap: 1rem;
     }
 
     .page-header,
-    .connect-panel,
     .section-header,
-    .review-main {
+    .review-main,
+    .progress-head {
         align-items: flex-start;
         justify-content: space-between;
     }
@@ -584,9 +1424,7 @@
     }
 
     .wizard-shell,
-    .migration-list,
-    .rollback-panel,
-    .review-panel {
+    .migration-list {
         border: 1px solid var(--color-border);
         border-radius: var(--radius-md);
         background: var(--color-surface);
@@ -595,7 +1433,7 @@
 
     .step-strip {
         display: grid;
-        grid-template-columns: repeat(6, minmax(0, 1fr));
+        grid-template-columns: repeat(7, minmax(0, 1fr));
         gap: 0.5rem;
         margin-bottom: 1rem;
     }
@@ -605,8 +1443,13 @@
         align-items: center;
         gap: 0.5rem;
         min-width: 0;
+        min-height: 2.25rem;
+        border: 0;
+        background: transparent;
         color: var(--color-text-muted);
         font-size: 0.8125rem;
+        text-align: left;
+        cursor: pointer;
     }
 
     .step span {
@@ -626,7 +1469,8 @@
         white-space: nowrap;
     }
 
-    .step.active {
+    .step.active,
+    .step.done {
         color: var(--color-text-primary);
     }
 
@@ -634,6 +1478,16 @@
         border-color: var(--color-accent);
         background: var(--color-accent-muted);
         color: var(--color-accent);
+    }
+
+    .step.done span {
+        border-color: var(--color-success);
+        color: var(--color-success);
+    }
+
+    .wizard-panel {
+        display: grid;
+        gap: 1rem;
     }
 
     .source-grid {
@@ -675,29 +1529,101 @@
         font-weight: 500;
     }
 
-    .connect-panel {
+    .form-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 0.75rem;
+    }
+
+    label,
+    .selected-summary div,
+    .summary-card,
+    .rollback-grid div,
+    .progress-grid div {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+        min-width: 0;
+    }
+
+    label span,
+    .selected-summary span,
+    .summary-card span,
+    .rollback-grid span,
+    .progress-grid span,
+    .progress-head span {
+        color: var(--color-text-muted);
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+    }
+
+    input,
+    select {
+        min-width: 0;
+        height: 2.5rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: var(--color-background);
+        color: var(--color-text-primary);
+        padding: 0 0.75rem;
+    }
+
+    input[type='file'] {
+        padding: 0.5rem 0.75rem;
+    }
+
+    .selected-summary,
+    .preflight-grid,
+    .result-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.75rem;
+    }
+
+    .selected-summary div,
+    .summary-card,
+    .rollback-grid div,
+    .progress-grid div {
+        padding: 0.75rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: var(--color-background);
+    }
+
+    .selected-summary strong,
+    .summary-card strong,
+    .rollback-grid strong,
+    .progress-grid strong,
+    .progress-head strong {
+        overflow: hidden;
+        color: var(--color-text-primary);
+        font-size: 0.9375rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+    }
+
+    .panel-actions {
         align-items: center;
-        margin-top: 1rem;
+        flex-wrap: wrap;
+        justify-content: flex-end;
         padding-top: 1rem;
         border-top: 1px solid var(--color-border);
     }
 
-    .connect-panel div {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-    }
-
-    .panel-label {
-        font-size: 0.75rem;
-        color: var(--color-text-muted);
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
+    .panel-actions.align-start {
+        justify-content: flex-start;
+        padding-top: 0;
+        border-top: 0;
     }
 
     .section-header {
         align-items: center;
         margin-bottom: 0.75rem;
+    }
+
+    .section-header.compact {
+        margin-bottom: 0;
     }
 
     .section-header h2 {
@@ -742,14 +1668,58 @@
         font-size: 0.75rem;
         font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 0.04em;
+    }
+
+    .check-list,
+    .mapping-list,
+    .review-list {
+        display: grid;
+        gap: 0.75rem;
+    }
+
+    .check-row,
+    .mapping-row,
+    .review-item {
+        display: grid;
+        gap: 0.75rem;
+        padding: 1rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: var(--color-background);
+    }
+
+    .check-row {
+        grid-template-columns: 6rem 10rem 1fr;
+        align-items: center;
+    }
+
+    .check-row p,
+    .mapping-row span,
+    .review-main p {
+        color: var(--color-text-muted);
+        font-size: 0.8125rem;
+    }
+
+    .mapping-row {
+        grid-template-columns: minmax(12rem, 1fr) minmax(14rem, 1fr) auto;
+        align-items: center;
+    }
+
+    .checkbox-label {
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-end;
+    }
+
+    .checkbox-label input {
+        width: 1rem;
+        height: 1rem;
     }
 
     .filter-strip {
         display: flex;
         flex-wrap: wrap;
         gap: 0.5rem;
-        margin-bottom: 1rem;
     }
 
     .filter-strip button {
@@ -767,67 +1737,10 @@
         color: var(--color-accent);
     }
 
-    .rollback-grid {
-        display: grid;
-        grid-template-columns: repeat(6, minmax(0, 1fr));
-        gap: 0.75rem;
-    }
-
-    .rollback-grid div {
-        display: flex;
-        flex-direction: column;
-        gap: 0.35rem;
-        min-width: 0;
-        padding: 0.75rem;
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
-        background: var(--color-background);
-    }
-
-    .rollback-grid span {
-        color: var(--color-text-muted);
-        font-size: 0.75rem;
-        font-weight: 700;
-        text-transform: uppercase;
-    }
-
-    .rollback-grid strong {
-        overflow: hidden;
-        color: var(--color-text-primary);
-        font-size: 0.9375rem;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .rollback-actions {
-        justify-content: flex-end;
-        margin-top: 1rem;
-    }
-
-    .review-list {
-        display: grid;
-        gap: 0.75rem;
-    }
-
-    .review-item {
-        display: grid;
-        gap: 0.75rem;
-        padding: 1rem;
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
-        background: var(--color-background);
-    }
-
     .review-main h3 {
         font-size: 1rem;
         font-weight: 700;
         color: var(--color-text-primary);
-    }
-
-    .review-main p {
-        margin-top: 0.25rem;
-        font-size: 0.8125rem;
-        color: var(--color-text-muted);
     }
 
     .badges {
@@ -850,17 +1763,6 @@
         align-items: center;
     }
 
-    .manual-row select,
-    .manual-row input {
-        min-width: 0;
-        height: 2.5rem;
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
-        background: var(--color-surface);
-        color: var(--color-text-primary);
-        padding: 0 0.75rem;
-    }
-
     .manual-row select {
         flex: 1 1 18rem;
     }
@@ -870,75 +1772,181 @@
         font-family: var(--font-mono);
     }
 
-    .decision-row {
-        flex-wrap: wrap;
-    }
-
+    .decision-row,
     .review-actions {
         align-items: center;
         flex-wrap: wrap;
         justify-content: flex-end;
     }
 
-    .notice {
-        margin-bottom: 0.75rem;
+    .rollback-grid,
+    .progress-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0.75rem;
+    }
+
+    .progress-grid {
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+    }
+
+    .progress-panel {
+        display: grid;
+        gap: 0.75rem;
+    }
+
+    .progress-track {
+        height: 0.75rem;
+        overflow: hidden;
+        border-radius: 999px;
+        background: var(--color-background);
+        border: 1px solid var(--color-border);
+    }
+
+    .progress-track div {
+        height: 100%;
+        max-width: 100%;
+        background: var(--color-accent);
+    }
+
+    .finding-list {
+        display: grid;
+        gap: 0.35rem;
         padding: 0.75rem;
         border-radius: var(--radius-sm);
         font-size: 0.875rem;
     }
 
-    .notice.success {
-        color: var(--color-success);
-        background: color-mix(in srgb, var(--color-success) 12%, transparent);
+    .finding-list.error {
+        border: 1px solid var(--color-danger);
+        color: var(--color-danger);
     }
 
-    .notice.error,
+    .finding-list.warn {
+        border: 1px solid var(--color-warning);
+        color: var(--color-warning);
+    }
+
+    .notice {
+        padding: 0.75rem 1rem;
+        border-radius: var(--radius-sm);
+        font-size: 0.875rem;
+    }
+
+    .notice.success {
+        border: 1px solid var(--color-success);
+        color: var(--color-success);
+    }
+
+    .notice.error {
+        border: 1px solid var(--color-danger);
+        color: var(--color-danger);
+    }
+
+    .ok {
+        color: var(--color-success) !important;
+    }
+
+    .warn {
+        color: var(--color-warning) !important;
+    }
+
+    .bad {
+        color: var(--color-danger) !important;
+    }
+
+    .danger {
+        color: var(--color-danger);
+    }
+
+    .loading-state {
+        display: grid;
+        min-height: 10rem;
+        place-items: center;
+    }
+
+    .loading-state.small {
+        min-height: 4rem;
+    }
+
+    .loading-spinner {
+        width: 2rem;
+        height: 2rem;
+        border: 2px solid var(--color-border);
+        border-top-color: var(--color-accent);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+
+    .empty-state {
+        padding: 1.5rem;
+        border: 1px dashed var(--color-border);
+        border-radius: var(--radius-sm);
+        color: var(--color-text-muted);
+        text-align: center;
+    }
+
+    .empty-state.stacked {
+        display: grid;
+        gap: 1rem;
+        justify-items: center;
+    }
+
     .error-text {
         color: var(--color-danger);
     }
 
-    .empty-state,
-    .loading-state {
-        display: flex;
-        min-height: 8rem;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        color: var(--color-text-muted);
-    }
-
-    .loading-state.small {
-        min-height: 5rem;
-    }
-
-    .stacked {
-        flex-direction: column;
-        gap: 1rem;
-    }
-
-    @media (max-width: 760px) {
-        .page-header,
-        .connect-panel,
-        .section-header,
-        .review-main,
-        .manual-row {
-            flex-direction: column;
-            align-items: stretch;
+    @keyframes spin {
+        to {
+            transform: rotate(360deg);
         }
+    }
 
+    @media (max-width: 900px) {
         .step-strip,
         .source-grid,
+        .form-grid,
+        .selected-summary,
+        .preflight-grid,
+        .result-grid,
         .rollback-grid,
+        .progress-grid {
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .mapping-row,
+        .check-row,
         .table-row {
             grid-template-columns: 1fr;
         }
 
-        .table-head {
-            display: none;
+        .manual-row {
+            flex-direction: column;
+            align-items: stretch;
+        }
+    }
+
+    @media (max-width: 640px) {
+        .step-strip,
+        .source-grid,
+        .form-grid,
+        .selected-summary,
+        .preflight-grid,
+        .result-grid,
+        .rollback-grid,
+        .progress-grid {
+            grid-template-columns: 1fr;
         }
 
-        .badges,
-        .review-actions {
+        .page-header,
+        .section-header,
+        .panel-actions {
+            flex-direction: column;
+            align-items: stretch;
+        }
+
+        .review-actions,
+        .decision-row {
             justify-content: flex-start;
         }
     }

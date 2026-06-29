@@ -872,6 +872,14 @@ Phase 14 Task 14 enables the scheduled row after registering the executor. Each 
 - Completed source pruning deletes `completed` sources after `delete_completed_sources_after_days`; `migration_user_mapping` and `migration_import_log` rows cascade from the source delete. Import-log pruning also removes old log rows for inactive sources after `delete_import_logs_after_days`.
 - Recursive file cleanup is constrained to UUID-named migration source directories under the configured data-directory migration root; old completed Plex sources with upload delete failures are excluded from source pruning until a later cleanup succeeds.
 
+## Phase 14 Task 15 Implementation Notes
+
+- Replaced the migration settings scaffold with a guided admin wizard covering source creation, Plex upload/API connection, discovery, preflight, user mapping, match review, import execution, live progress, rollback, and source cleanup.
+- The wizard keeps Jellyfin/Emby API keys session-only after source creation and prompts for a session API key when testing or discovering existing API sources, matching the hash-only storage model from Task 3.
+- First-time mapping uses the `source_users` returned by discovery and saved mappings returned by `GET /map-users`, so admins can create mappings immediately after discovery without backend schema changes.
+- Live import progress uses the existing `migration_progress` SSE event store and falls back to periodic progress polling while a selected source is active. The results step exposes rollback status/actions and a guarded source delete action for explicit migration-record cleanup.
+- The page preserves the manual review CSV export and manual match/skip/ignore workflow from Task 10, now embedded inside the step flow with the provider/fallback match action.
+
 ## Security Considerations
 
 | Concern | Mitigation |
@@ -925,3 +933,6 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 - Milan Jovanovic — Understanding Cursor Pagination (for large dataset handling): https://www.milanjovanovic.tech/blog/understanding-cursor-pagination-and-why-its-so-fast-deep-dive
 - Tokio docs — `tokio::fs::remove_dir_all` recursive deletion API: https://docs.rs/tokio/latest/tokio/fs/fn.remove_dir_all.html
 - PostgreSQL docs — `DELETE` command and `USING` clause: https://www.postgresql.org/docs/current/sql-delete.html
+- Svelte docs — stores and subscriptions: https://svelte.dev/docs/svelte/stores
+- Svelte docs — lifecycle hooks and `onMount`: https://svelte.dev/docs/svelte/lifecycle-hooks
+- Svelte docs — event handler attributes: https://svelte.dev/docs/svelte/basic-markup#Event-handlers
