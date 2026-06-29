@@ -783,7 +783,7 @@ The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids
 - Active migration runs are tracked in `AppState.migration_runs` with one `CancellationToken` per migration source, preventing duplicate in-process starts and giving cancel requests an immediate signal path.
 - Dry-run starts remain no-write and return a preflight summary. Real starts require user mappings, a blocker-free preflight, and existing `migration_import_log` rows; if discovery has not produced watch-data rows yet, the API returns `MIGR_008`.
 - The runner persists lifecycle state through `migration_sources.status`, recalculates `migration_user_mapping` counters from `migration_import_log`, and derives completion/failure from terminal durable row statuses.
-- Resume and crash-safety use `migration_import_log` as the source of truth. A restarted run skips rows already marked `imported`, `skipped`, `unmatched`, or `error`; rows still marked `matched` remain pending for the Task 11 import/merge implementation.
+- Resume and crash-safety use `migration_import_log` as the source of truth. A restarted run skips rows already marked `imported`, `skipped`, `unmatched`, or `error`; rows still marked `matched` remain pending import work for the runner.
 - Cancel requests update `migration_sources.status = 'cancelled'` and signal any live runner token. The runner checks both the token and persisted source status before committing final state.
 
 ## Phase 14 Task 6 Implementation Notes
@@ -829,6 +829,15 @@ The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids
 - Added `POST /api/v1/migrations/{id}/review/{item_id}`. `action = match` requires a `media_item_id`, verifies that the target local media row exists and has the same importable type (`movie` or `episode`), then sets `matched_media_item_id`, `match_method = 'manual'`, `match_confidence = 'high'`, and `status = 'matched'`. `action = skip` and `action = ignore` clear the match and set `status = 'skipped'` with an audit reason.
 - Added `GET /api/v1/migrations/{id}/review.csv`, served as `text/csv; charset=utf-8` with `Content-Disposition: attachment`, using RFC 4180-compatible quoting for commas, quotes, and embedded line breaks.
 - The settings migration page now exposes a Match Review panel with migration-source selection, review filters, recent local movie/episode candidate dropdowns from `GET /api/v1/media-items`, direct `media_item_id` entry, Match/Skip/Ignore actions, and CSV export. Manual matches return rows to the pending `matched` state so the import runner can process them when Task 11 lands.
+
+## Phase 14 Task 11 Implementation Notes
+
+- The async migration runner now processes `migration_import_log.status = 'matched'` rows directly into `user_item_data`.
+- Import uses a single PostgreSQL UPSERT per row on `UNIQUE(user_id, media_item_id)`: `is_watched` is merged with OR, `play_count` uses the greatest existing/source value, `last_played_at` keeps the latest non-null timestamp, and `resume_position_ms` resets to `0` if either side is watched; otherwise it keeps the greatest resume position.
+- The returned `user_item_data.id` is stored in `migration_import_log.imported_user_item_data_id`; successfully imported rows move to `status = 'imported'` with cleared `error_detail`.
+- Per-item import failures are isolated: the row moves to `status = 'error'` with `error_detail`, remaining matched rows continue, and final migration source status becomes `failed` if any errors remain.
+- Cancellation checks still occur before importing each row, and restart/resume remains log-driven because already imported/skipped/unmatched/error rows are terminal.
+- Favorites and ratings remain deferred because Phase 14 extraction currently persists watch state only; no source favorite/rating fields are stored in `migration_import_log` yet.
 
 ## Security Considerations
 
