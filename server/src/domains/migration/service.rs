@@ -16,7 +16,7 @@
 
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use chrono::{DateTime, Utc};
@@ -36,11 +36,17 @@ use super::error::MigrationError;
 use super::types::*;
 
 const ACTIVE_STATUSES: &[&str] = &["discovering", "matching", "importing"];
-const MAX_PLEX_DATABASE_BYTES: u64 = 10 * 1024 * 1024 * 1024;
+pub const MAX_PLEX_DATABASE_BYTES: u64 = 10 * 1024 * 1024 * 1024;
 const API_CONFIG_TIMEOUT_SECONDS: u64 = 10;
 const API_CONFIG_MAX_RESPONSE_BYTES: u64 = 1024 * 1024;
 const API_PAGE_SIZE: i64 = 100;
 const API_EXTRACTION_CONCURRENCY: usize = 4;
+
+pub struct PlexUploadTarget {
+    pub temp_path: PathBuf,
+    final_path: PathBuf,
+    original_filename: String,
+}
 
 pub fn validate_platform(value: &str) -> Result<(), MigrationError> {
     if VALID_MIGRATION_PLATFORMS.contains(&value) {
@@ -181,6 +187,93 @@ pub async fn test_connection(
         message:
             "Migration source is registered; Plex connection checks are handled by the upload task"
                 .to_string(),
+    })
+}
+
+pub async fn prepare_plex_upload(
+    state: &AppState,
+    id: Uuid,
+    original_filename: &str,
+) -> Result<PlexUploadTarget, MigrationError> {
+    let source = get_source(state, id).await?;
+    ensure_not_active(id, &source.status)?;
+    if source.platform != "plex" {
+        return Err(MigrationError::InvalidSourceConfiguration(
+            "Plex database upload is only valid for Plex migration sources".to_string(),
+        ));
+    }
+    validate_plex_database_filename(original_filename)?;
+
+    let upload_dir = plex_upload_dir(state, id);
+    tokio::fs::create_dir_all(&upload_dir)
+        .await
+        .map_err(|e| MigrationError::InvalidPlexDatabase(e.to_string()))?;
+
+    let temp_path = upload_dir.join("plex.db.uploading");
+    let final_path = upload_dir.join("plex.db");
+    let _ = tokio::fs::remove_file(&temp_path).await;
+
+    Ok(PlexUploadTarget {
+        temp_path,
+        final_path,
+        original_filename: original_filename.to_string(),
+    })
+}
+
+pub async fn complete_plex_upload(
+    state: &AppState,
+    id: Uuid,
+    target: PlexUploadTarget,
+    file_size_bytes: u64,
+) -> Result<MigrationActionResponse, MigrationError> {
+    if let Err(error) = validate_plex_upload_size(file_size_bytes)
+        .and_then(|_| ensure_plex_upload_disk_space(state, file_size_bytes))
+        .and_then(|_| validate_plex_database_file(&target.temp_path, file_size_bytes))
+    {
+        let _ = tokio::fs::remove_file(&target.temp_path).await;
+        return Err(error);
+    }
+
+    tokio::fs::rename(&target.temp_path, &target.final_path)
+        .await
+        .map_err(|e| MigrationError::InvalidPlexDatabase(e.to_string()))?;
+
+    let stored_path = target.final_path.to_string_lossy().to_string();
+    let config_patch = json!({
+        "method": "sqlite_upload",
+        "original_filename": target.original_filename,
+        "uploaded_at": Utc::now(),
+        "file_size_bytes": file_size_bytes,
+        "stored_path": stored_path,
+        "credential_mode": "none",
+        "validation": {
+            "max_file_size_bytes": MAX_PLEX_DATABASE_BYTES,
+            "requires_sqlite_header": true,
+            "required_tables": ["accounts", "metadata_items", "metadata_item_settings"],
+            "validated_at": Utc::now(),
+        },
+    });
+
+    let row = sqlx::query(
+        r#"
+        UPDATE migration_sources
+        SET connection_config = connection_config || $2::jsonb,
+            status = 'pending',
+            last_run_at = COALESCE(last_run_at, now())
+        WHERE id = $1
+        RETURNING status
+        "#,
+    )
+    .bind(id)
+    .bind(config_patch)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(MigrationError::NotFound(id))?;
+
+    Ok(MigrationActionResponse {
+        migration_source_id: id,
+        status: row.get("status"),
+        message: format!("Plex database uploaded and validated ({file_size_bytes} bytes)"),
     })
 }
 
@@ -481,6 +574,41 @@ fn available_space_for_path(path: &Path) -> Option<u64> {
         .map(|disk| disk.available_space())
 }
 
+fn plex_upload_dir(state: &AppState, id: Uuid) -> PathBuf {
+    state
+        .bootstrap
+        .data_dir
+        .join("migrations")
+        .join(id.to_string())
+}
+
+fn plex_database_path(
+    state: &AppState,
+    id: Uuid,
+    source: &MigrationSourceResponse,
+) -> Result<PathBuf, MigrationError> {
+    let configured = source
+        .connection_config
+        .get("stored_path")
+        .and_then(Value::as_str)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| plex_upload_dir(state, id).join("plex.db"));
+
+    let upload_dir = plex_upload_dir(state, id);
+    let canonical_dir = std::fs::canonicalize(&upload_dir)
+        .map_err(|e| MigrationError::InvalidPlexDatabase(e.to_string()))?;
+    let canonical_file = std::fs::canonicalize(&configured)
+        .map_err(|e| MigrationError::InvalidPlexDatabase(e.to_string()))?;
+
+    if !canonical_file.starts_with(&canonical_dir) {
+        return Err(MigrationError::InvalidPlexDatabase(
+            "stored Plex database path is outside the migration upload directory".to_string(),
+        ));
+    }
+
+    Ok(canonical_file)
+}
+
 fn resolve_existing_ancestor(path: &Path) -> Option<std::path::PathBuf> {
     let mut current = path.to_path_buf();
     while !current.exists() {
@@ -693,6 +821,91 @@ mod tests {
             parse_source_datetime(Some("2025-02-01T00:00:00Z"))
         );
     }
+
+    #[test]
+    fn plex_guid_parser_extracts_external_provider_ids() {
+        assert_eq!(
+            parse_plex_provider_guid("com.plexapp.agents.imdb://tt0133093?lang=en"),
+            Some(("imdb", "tt0133093".to_string()))
+        );
+        assert_eq!(
+            parse_plex_provider_guid("com.plexapp.agents.themoviedb://603?lang=en"),
+            Some(("tmdb", "603".to_string()))
+        );
+        assert_eq!(
+            parse_plex_provider_guid("com.plexapp.agents.thetvdb://78874?lang=en"),
+            Some(("tvdb", "78874".to_string()))
+        );
+        assert_eq!(
+            parse_plex_provider_guid("plex://movie/5d776885e6d5c9001dcecb72"),
+            None
+        );
+    }
+
+    #[test]
+    fn plex_sqlite_extraction_reads_users_watch_state_and_secondary_guids() {
+        let path =
+            std::env::temp_dir().join(format!("duskcue-plex-extract-{}.db", uuid::Uuid::now_v7()));
+        {
+            let conn = rusqlite::Connection::open(&path).unwrap();
+            conn.execute_batch(
+                r#"
+                CREATE TABLE accounts (id INTEGER, name TEXT);
+                CREATE TABLE metadata_items (
+                    id INTEGER,
+                    title TEXT,
+                    metadata_type INTEGER,
+                    year INTEGER,
+                    guid TEXT,
+                    parent_id INTEGER,
+                    "index" INTEGER,
+                    parent_index INTEGER
+                );
+                CREATE TABLE metadata_item_settings (
+                    account_id INTEGER,
+                    guid TEXT,
+                    view_count INTEGER,
+                    view_offset INTEGER,
+                    last_viewed_at INTEGER
+                );
+                CREATE TABLE metadata_item_guids (
+                    metadata_item_id INTEGER,
+                    guid TEXT
+                );
+                INSERT INTO accounts (id, name) VALUES (1, 'DadPlex');
+                INSERT INTO metadata_items (id, title, metadata_type, year, guid, parent_id, "index", parent_index)
+                VALUES (10, 'The Matrix', 1, 1999, 'com.plexapp.agents.imdb://tt0133093?lang=en', NULL, NULL, NULL);
+                INSERT INTO metadata_item_settings (account_id, guid, view_count, view_offset, last_viewed_at)
+                VALUES (1, 'com.plexapp.agents.imdb://tt0133093?lang=en', 1, 12345, 1700000000);
+                INSERT INTO metadata_item_guids (metadata_item_id, guid)
+                VALUES (10, 'com.plexapp.agents.themoviedb://603?lang=en');
+                "#,
+            )
+            .unwrap();
+        }
+
+        let users = extract_plex_users(&path).unwrap();
+        assert_eq!(users.len(), 1);
+        assert_eq!(users[0].source_user_id, "1");
+        assert_eq!(users[0].source_user_name, "DadPlex");
+
+        let mapping = SourceMapping {
+            id: Uuid::now_v7(),
+            source_user_id: "1".to_string(),
+        };
+        let items = extract_plex_watch_items(&path, &[mapping]).unwrap();
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].source_item_title, "The Matrix");
+        assert_eq!(items[0].source_item_type, "movie");
+        assert!(items[0].source_is_watched);
+        assert_eq!(items[0].source_resume_position_ms, 0);
+        assert_eq!(items[0].source_play_count, 1);
+        assert_eq!(items[0].source_provider_ids["imdb"], "tt0133093");
+        assert_eq!(items[0].source_provider_ids["tmdb"], "603");
+
+        let _ = std::fs::remove_file(path);
+    }
 }
 
 pub async fn discover_source(
@@ -703,24 +916,21 @@ pub async fn discover_source(
     let source = get_source(state, id).await?;
     ensure_not_active(id, &source.status)?;
 
-    if !matches!(source.platform.as_str(), "jellyfin" | "emby") {
-        return Ok(MigrationDiscoveryResponse {
-            migration_source_id: id,
-            status: source.status,
-            users_discovered: 0,
-            users_mapped: 0,
-            items_extracted: 0,
-            items_inserted: 0,
-            items_updated: 0,
-            source_users: Vec::new(),
-            message: "Plex discovery is implemented by the SQLite upload task".to_string(),
-        });
-    }
-
-    let client = build_api_migration_client(&source, &request)?;
-    set_source_status(state, id, "discovering").await?;
-
-    let result = discover_api_source(state, id, &client).await;
+    let result = match source.platform.as_str() {
+        "plex" => {
+            set_source_status(state, id, "discovering").await?;
+            discover_plex_source(state, id, &source).await
+        }
+        "jellyfin" | "emby" => {
+            let client = build_api_migration_client(&source, &request)?;
+            set_source_status(state, id, "discovering").await?;
+            discover_api_source(state, id, &client).await
+        }
+        _ => Err(MigrationError::InvalidSourceConfiguration(format!(
+            "invalid platform: {}",
+            source.platform
+        ))),
+    };
     let final_status = if result.is_ok() { "pending" } else { "failed" };
     let status = set_source_status(state, id, final_status).await?;
 
@@ -768,6 +978,55 @@ async fn discover_api_source(
             "Extracted {} Jellyfin/Emby watch-state item(s)",
             items.len()
         ),
+    })
+}
+
+async fn discover_plex_source(
+    state: &AppState,
+    id: Uuid,
+    source: &MigrationSourceResponse,
+) -> Result<MigrationDiscoveryResponse, MigrationError> {
+    let db_path = plex_database_path(state, id, source)?;
+    let users_path = db_path.clone();
+    let source_users = tokio::task::spawn_blocking(move || extract_plex_users(&users_path))
+        .await
+        .map_err(|e| MigrationError::InvalidPlexDatabase(e.to_string()))??;
+    let mappings = load_source_mappings(state, id).await?;
+
+    if mappings.is_empty() {
+        return Ok(MigrationDiscoveryResponse {
+            migration_source_id: id,
+            status: "pending".to_string(),
+            users_discovered: source_users.len(),
+            users_mapped: 0,
+            items_extracted: 0,
+            items_inserted: 0,
+            items_updated: 0,
+            source_users,
+            message: "Plex users discovered; save user mappings before extracting watch data"
+                .to_string(),
+        });
+    }
+
+    let extract_path = db_path.clone();
+    let extract_mappings = mappings.clone();
+    let items = tokio::task::spawn_blocking(move || {
+        extract_plex_watch_items(&extract_path, &extract_mappings)
+    })
+    .await
+    .map_err(|e| MigrationError::InvalidPlexDatabase(e.to_string()))??;
+    let (items_inserted, items_updated) = upsert_discovered_items(state, id, &items).await?;
+
+    Ok(MigrationDiscoveryResponse {
+        migration_source_id: id,
+        status: "pending".to_string(),
+        users_discovered: source_users.len(),
+        users_mapped: mappings.len(),
+        items_extracted: items.len(),
+        items_inserted,
+        items_updated,
+        source_users,
+        message: format!("Extracted {} Plex watch-state item(s)", items.len()),
     })
 }
 
@@ -1115,6 +1374,320 @@ fn parse_api_items(value: Value) -> Result<Vec<ApiItemDto>, MigrationError> {
     };
 
     serde_json::from_value(item_value).map_err(|e| MigrationError::SourceUnreachable(e.to_string()))
+}
+
+fn extract_plex_users(db_path: &Path) -> Result<Vec<MigrationSourceUserResponse>, MigrationError> {
+    let conn = open_plex_database(db_path)?;
+    let mut stmt = conn
+        .prepare("SELECT id, name FROM accounts WHERE id > 0 ORDER BY name, id")
+        .map_err(|e| MigrationError::InvalidPlexDatabase(e.to_string()))?;
+    let rows = stmt
+        .query_map([], |row| {
+            let id: i64 = row.get(0)?;
+            let name: String = row.get(1)?;
+            Ok(MigrationSourceUserResponse {
+                source_user_id: id.to_string(),
+                source_user_name: name,
+            })
+        })
+        .map_err(|e| MigrationError::InvalidPlexDatabase(e.to_string()))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| MigrationError::InvalidPlexDatabase(e.to_string()))
+}
+
+fn extract_plex_watch_items(
+    db_path: &Path,
+    mappings: &[SourceMapping],
+) -> Result<Vec<SourceWatchItem>, MigrationError> {
+    let conn = open_plex_database(db_path)?;
+    let mut out = Vec::new();
+    for mapping in mappings {
+        let account_id = mapping.source_user_id.parse::<i64>().map_err(|_| {
+            MigrationError::InvalidPlexDatabase(format!(
+                "Plex source user id is not numeric: {}",
+                mapping.source_user_id
+            ))
+        })?;
+        out.extend(extract_plex_watch_items_for_account(
+            &conn, mapping, account_id,
+        )?);
+    }
+    Ok(merge_source_watch_items(out))
+}
+
+fn extract_plex_watch_items_for_account(
+    conn: &rusqlite::Connection,
+    mapping: &SourceMapping,
+    account_id: i64,
+) -> Result<Vec<SourceWatchItem>, MigrationError> {
+    let has_metadata_item_guids = sqlite_table_exists(conn, "metadata_item_guids")?;
+    let has_metadata_item_providers = sqlite_table_exists(conn, "metadata_item_providers")?;
+    let mut stmt = conn
+        .prepare(
+            r#"
+            SELECT
+                mi.id,
+                mis.guid,
+                COALESCE(mis.view_count, 0),
+                COALESCE(mis.view_offset, 0),
+                mis.last_viewed_at,
+                mi.title,
+                mi.metadata_type,
+                mi.year,
+                mi.guid,
+                mi.parent_id,
+                parent.title,
+                mi."index",
+                mi.parent_index
+            FROM metadata_item_settings mis
+            JOIN metadata_items mi ON mis.guid = mi.guid
+            LEFT JOIN metadata_items parent ON mi.parent_id = parent.id
+            WHERE mis.account_id = ?1
+              AND (COALESCE(mis.view_count, 0) > 0 OR COALESCE(mis.view_offset, 0) > 0)
+              AND mi.metadata_type IN (1, 4)
+            ORDER BY mi.title, mi.id
+            "#,
+        )
+        .map_err(|e| MigrationError::InvalidPlexDatabase(e.to_string()))?;
+
+    let rows = stmt
+        .query_map([account_id], |row| {
+            Ok(PlexWatchRow {
+                metadata_item_id: row.get(0)?,
+                source_item_id: row.get(1)?,
+                view_count: row.get(2)?,
+                view_offset: row.get(3)?,
+                last_viewed_at: row.get(4)?,
+                title: row.get(5)?,
+                metadata_type: row.get(6)?,
+                year: row.get(7)?,
+                primary_guid: row.get(8)?,
+                parent_id: row.get(9)?,
+                parent_title: row.get(10)?,
+                episode_number: row.get(11)?,
+                season_number: row.get(12)?,
+            })
+        })
+        .map_err(|e| MigrationError::InvalidPlexDatabase(e.to_string()))?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        let row = row.map_err(|e| MigrationError::InvalidPlexDatabase(e.to_string()))?;
+        let Some(source_item_type) = plex_source_item_type(row.metadata_type) else {
+            continue;
+        };
+        let secondary_guids = load_plex_secondary_guids(
+            conn,
+            row.metadata_item_id,
+            has_metadata_item_guids,
+            has_metadata_item_providers,
+        );
+        let source_is_watched = row.view_count > 0;
+        let source_resume_position_ms = if source_is_watched {
+            0
+        } else {
+            row.view_offset.max(0)
+        };
+        let source_play_count = i32::try_from(row.view_count.max(0)).unwrap_or(i32::MAX);
+        let source_provider_ids = normalize_plex_provider_ids(&row.primary_guid, &secondary_guids);
+
+        out.push(SourceWatchItem {
+            migration_user_mapping_id: mapping.id,
+            source_item_id: row.source_item_id.clone(),
+            source_item_title: row.title.clone(),
+            source_item_type: source_item_type.to_string(),
+            source_item_year: row.year,
+            source_provider_ids,
+            source_is_watched,
+            source_play_count,
+            source_resume_position_ms,
+            source_last_played_at: row
+                .last_viewed_at
+                .and_then(|timestamp| DateTime::<Utc>::from_timestamp(timestamp, 0)),
+            source_item_metadata: json!({
+                "source_item_id": row.source_item_id,
+                "metadata_item_id": row.metadata_item_id,
+                "metadata_type": row.metadata_type,
+                "primary_guid": row.primary_guid,
+                "secondary_guids": secondary_guids,
+                "parent_id": row.parent_id,
+                "series_name": row.parent_title,
+                "season_number": row.season_number,
+                "episode_number": row.episode_number,
+            }),
+        });
+    }
+    Ok(out)
+}
+
+#[derive(Debug)]
+struct PlexWatchRow {
+    metadata_item_id: i64,
+    source_item_id: String,
+    view_count: i64,
+    view_offset: i64,
+    last_viewed_at: Option<i64>,
+    title: String,
+    metadata_type: i64,
+    year: Option<i32>,
+    primary_guid: String,
+    parent_id: Option<i64>,
+    parent_title: Option<String>,
+    episode_number: Option<i32>,
+    season_number: Option<i32>,
+}
+
+fn open_plex_database(db_path: &Path) -> Result<rusqlite::Connection, MigrationError> {
+    let conn = rusqlite::Connection::open_with_flags(
+        db_path,
+        rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    )
+    .map_err(|e| MigrationError::InvalidPlexDatabase(e.to_string()))?;
+    conn.pragma_update(None, "query_only", true)
+        .map_err(|e| MigrationError::InvalidPlexDatabase(e.to_string()))?;
+    Ok(conn)
+}
+
+fn sqlite_table_exists(
+    conn: &rusqlite::Connection,
+    table_name: &str,
+) -> Result<bool, MigrationError> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [table_name],
+            |row| row.get(0),
+        )
+        .map_err(|e| MigrationError::InvalidPlexDatabase(e.to_string()))?;
+    Ok(count > 0)
+}
+
+fn load_plex_secondary_guids(
+    conn: &rusqlite::Connection,
+    metadata_item_id: i64,
+    has_metadata_item_guids: bool,
+    has_metadata_item_providers: bool,
+) -> Vec<String> {
+    let mut guids = Vec::new();
+    if has_metadata_item_guids {
+        collect_plex_guid_column(
+            conn,
+            "SELECT guid FROM metadata_item_guids WHERE metadata_item_id = ?1",
+            metadata_item_id,
+            &mut guids,
+        );
+    }
+    if has_metadata_item_providers {
+        collect_plex_guid_column(
+            conn,
+            "SELECT guid FROM metadata_item_providers WHERE metadata_item_id = ?1",
+            metadata_item_id,
+            &mut guids,
+        );
+        collect_plex_provider_rows(conn, metadata_item_id, &mut guids);
+    }
+    guids.sort();
+    guids.dedup();
+    guids
+}
+
+fn collect_plex_guid_column(
+    conn: &rusqlite::Connection,
+    sql: &str,
+    metadata_item_id: i64,
+    out: &mut Vec<String>,
+) {
+    let Ok(mut stmt) = conn.prepare(sql) else {
+        return;
+    };
+    let Ok(rows) = stmt.query_map([metadata_item_id], |row| row.get::<_, String>(0)) else {
+        return;
+    };
+    for guid in rows.flatten() {
+        if !guid.trim().is_empty() {
+            out.push(guid);
+        }
+    }
+}
+
+fn collect_plex_provider_rows(
+    conn: &rusqlite::Connection,
+    metadata_item_id: i64,
+    out: &mut Vec<String>,
+) {
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT provider, provider_id FROM metadata_item_providers WHERE metadata_item_id = ?1",
+    ) else {
+        return;
+    };
+    let Ok(rows) = stmt.query_map([metadata_item_id], |row| {
+        let provider: String = row.get(0)?;
+        let provider_id: String = row.get(1)?;
+        Ok((provider, provider_id))
+    }) else {
+        return;
+    };
+    for row in rows.flatten() {
+        if !row.0.trim().is_empty() && !row.1.trim().is_empty() {
+            out.push(format!("{}://{}", row.0.trim(), row.1.trim()));
+        }
+    }
+}
+
+fn plex_source_item_type(metadata_type: i64) -> Option<&'static str> {
+    match metadata_type {
+        1 => Some("movie"),
+        4 => Some("episode"),
+        _ => None,
+    }
+}
+
+fn normalize_plex_provider_ids(primary_guid: &str, secondary_guids: &[String]) -> Value {
+    let mut tmdb = None;
+    let mut imdb = None;
+    let mut tvdb = None;
+    for guid in std::iter::once(primary_guid).chain(secondary_guids.iter().map(String::as_str)) {
+        if let Some((provider, id)) = parse_plex_provider_guid(guid) {
+            match provider {
+                "tmdb" if tmdb.is_none() => tmdb = Some(id),
+                "imdb" if imdb.is_none() => imdb = Some(id),
+                "tvdb" if tvdb.is_none() => tvdb = Some(id),
+                _ => {}
+            }
+        }
+    }
+
+    json!({
+        "tmdb": tmdb,
+        "imdb": imdb,
+        "tvdb": tvdb,
+        "raw": {
+            "primary_guid": primary_guid,
+            "secondary_guids": secondary_guids,
+        },
+    })
+}
+
+fn parse_plex_provider_guid(guid: &str) -> Option<(&'static str, String)> {
+    let trimmed = guid.trim();
+    let (prefix, rest) = trimmed.split_once("://")?;
+    let value = rest
+        .split(['?', '/', '#'])
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())?;
+    let prefix = prefix.to_ascii_lowercase();
+    let provider = if prefix.contains("imdb") {
+        "imdb"
+    } else if prefix.contains("themoviedb") || prefix.contains("tmdb") {
+        "tmdb"
+    } else if prefix.contains("thetvdb") || prefix.contains("tvdb") {
+        "tvdb"
+    } else {
+        return None;
+    };
+    Some((provider, value.to_string()))
 }
 
 fn source_watch_item_from_api_item(

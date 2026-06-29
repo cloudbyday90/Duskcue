@@ -15,7 +15,9 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use axum::Json;
+use axum::extract::Multipart;
 use axum::extract::{Path, Query, State};
+use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 use validator::Validate;
 
@@ -23,6 +25,7 @@ use crate::error::{AppError, FieldError};
 use crate::extractors::{CanManageUsers, Require};
 use crate::state::AppState;
 
+use super::error::MigrationError;
 use super::service;
 use super::types::*;
 
@@ -82,6 +85,65 @@ pub async fn discover_source(
 ) -> Result<Json<MigrationDiscoveryResponse>, AppError> {
     let req = validate_optional_credentials(payload, "/api/v1/migrations/{id}/discover")?;
     Ok(Json(service::discover_source(&state, id, req).await?))
+}
+
+pub async fn upload_plex_database(
+    _auth: Require<CanManageUsers>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    mut multipart: Multipart,
+) -> Result<Json<MigrationActionResponse>, AppError> {
+    while let Some(mut field) = multipart
+        .next_field()
+        .await
+        .map_err(|e| AppError::from(MigrationError::InvalidPlexDatabase(e.to_string())))?
+    {
+        if field.name() != Some("file") {
+            continue;
+        }
+
+        let original_filename = field
+            .file_name()
+            .unwrap_or("com.plexapp.plugins.library.db")
+            .to_string();
+        let target = service::prepare_plex_upload(&state, id, &original_filename).await?;
+        let mut file = tokio::fs::File::create(&target.temp_path)
+            .await
+            .map_err(|e| AppError::from(MigrationError::InvalidPlexDatabase(e.to_string())))?;
+        let mut file_size_bytes = 0_u64;
+
+        while let Some(chunk) = field
+            .chunk()
+            .await
+            .map_err(|e| AppError::from(MigrationError::InvalidPlexDatabase(e.to_string())))?
+        {
+            file_size_bytes = file_size_bytes.saturating_add(chunk.len() as u64);
+            if file_size_bytes > service::MAX_PLEX_DATABASE_BYTES {
+                let _ = tokio::fs::remove_file(&target.temp_path).await;
+                return Err(MigrationError::PlexDatabaseTooLarge.into());
+            }
+            file.write_all(&chunk)
+                .await
+                .map_err(|e| AppError::from(MigrationError::InvalidPlexDatabase(e.to_string())))?;
+        }
+
+        file.flush()
+            .await
+            .map_err(|e| AppError::from(MigrationError::InvalidPlexDatabase(e.to_string())))?;
+        drop(file);
+
+        let response = service::complete_plex_upload(&state, id, target, file_size_bytes).await?;
+        return Ok(Json(response));
+    }
+
+    Err(AppError::Validation {
+        errors: vec![FieldError {
+            field: "file".to_string(),
+            code: "required".to_string(),
+            message: "multipart field file is required".to_string(),
+        }],
+        instance: Some("/api/v1/migrations/{id}/upload".to_string()),
+    })
 }
 
 pub async fn save_user_mappings(

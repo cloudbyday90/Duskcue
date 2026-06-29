@@ -124,7 +124,8 @@ export async function request(method, path, options = {}) {
     const headers = buildHeaders(options);
 
     const hasBody = options.body !== undefined && options.body !== null;
-    if (hasBody) {
+    const isFormData = typeof FormData !== 'undefined' && options.body instanceof FormData;
+    if (hasBody && !isFormData) {
         headers['Content-Type'] = 'application/json';
     }
 
@@ -137,7 +138,7 @@ export async function request(method, path, options = {}) {
         fetchOptions.signal = options.signal;
     }
     if (hasBody) {
-        fetchOptions.body = JSON.stringify(options.body);
+        fetchOptions.body = isFormData ? options.body : JSON.stringify(options.body);
     }
 
     let response;
@@ -208,4 +209,3 @@ export function put(path, body = undefined, options = {}) {
 export function del(path, options = {}) {
     return request('DELETE', path, options);
 }
-

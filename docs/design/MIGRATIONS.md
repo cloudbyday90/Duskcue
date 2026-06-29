@@ -607,6 +607,7 @@ Unmatched Items (144):
 | `DELETE` | `/api/v1/migrations/{id}` | Admin | Delete migration and its log |
 | `POST` | `/api/v1/migrations/{id}/connect` | Admin | Test connection to source |
 | `POST` | `/api/v1/migrations/{id}/discover` | Admin | Discover users and items from source |
+| `POST` | `/api/v1/migrations/{id}/upload` | Admin | Upload and validate Plex SQLite database |
 | `POST` | `/api/v1/migrations/{id}/map-users` | Admin | Save user mappings |
 | `POST` | `/api/v1/migrations/{id}/preflight` | Admin | Run no-write readiness checks and return blockers/warnings |
 | `POST` | `/api/v1/migrations/{id}/start` | Admin | Begin the import |
@@ -643,7 +644,7 @@ As of Phase 14 Task 2, the migration service no longer returns `MIGR_011` from t
 | Scenario | Behavior |
 |---|---|
 | Source API times out during discovery | Retry 3 times with backoff (1s, 5s, 15s); fail with `MIGR_003` |
-| Plex DB upload interrupted | Resume via range upload; fail after 3 retries |
+| Plex DB upload interrupted | Temporary `.uploading` file is discarded; resumable/range upload remains a future upload-pipeline extension |
 | Item match fails | Log as `unmatched`, continue processing remaining items |
 | Import of single item fails (DB error) | Log error, skip item, continue processing |
 | All items fail | Mark migration as `failed`; report all errors |
@@ -659,7 +660,7 @@ As of Phase 14 Task 2, the migration service no longer returns `MIGR_011` from t
    - SQLite 3 header (first 16 bytes: `SQLite format 3\000`)
    - Required tables exist: `accounts`, `metadata_items`, `metadata_item_settings`
    - If any validation fails: `MIGR_005`
-3. File stored at `/data/migrations/{migration_id}/plex.db`
+3. File streamed to `/data/migrations/{migration_id}/plex.db.uploading`, then atomically moved to `/data/migrations/{migration_id}/plex.db` after validation
 4. Available disk space checked before upload (`MIGR_010`)
 
 ### Reading
@@ -778,6 +779,16 @@ The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids
 - Source requests preserve the Task 3 network policy: redirect blocking, no proxy, 10-second timeout, 1 MiB response limit, and `X-Emby-Token` authentication. Retry backoff is 1s, 5s, and 15s; mapped users are extracted with a four-user concurrency cap.
 - Extracted rows are upserted as `discovered`, keyed by `(migration_user_mapping_id, source_item_id)`, with normalized `tmdb`/`imdb`/`tvdb` provider IDs, raw provider payload, episode metadata, source watch state, resume milliseconds from Jellyfin/Emby ticks, and latest played timestamp.
 - Progress and preflight counts treat `discovered` rows as source watch data but not as matched/imported rows. Task 9 owns transition from `discovered` to `matched` or `unmatched`.
+
+## Phase 14 Task 7 Implementation Notes
+
+- Enabled axum multipart support and added `POST /api/v1/migrations/{id}/upload` for Plex SQLite uploads with a route-scoped 10 GiB + overhead body limit.
+- Uploads must use multipart field `file` and the canonical `com.plexapp.plugins.library.db` filename. The server streams to a temporary `.uploading` file, enforces the 10 GiB limit during streaming, validates SQLite header/table requirements, removes invalid temporary files, then stores `/data/migrations/{id}/plex.db`.
+- Successful upload updates `migration_sources.connection_config` with `stored_path`, `file_size_bytes`, `uploaded_at`, and validation metadata. `stored_path` is canonicalized and must remain under the migration upload directory before it is read.
+- Plex `/discover` now reads the stored database through a read-only, query-only `rusqlite` connection. It discovers source users from `accounts` and, once mappings exist, extracts mapped Movie/Episode rows from `metadata_item_settings` joined to `metadata_items`.
+- Extracted Plex rows use `view_count > 0` as watched state, `view_offset` as resume milliseconds, `last_viewed_at` as Unix seconds, and `metadata_type` 1/4 as movie/episode. Watched rows reset resume to 0 to match the import merge strategy.
+- Provider IDs are parsed from primary Plex GUIDs and optional secondary `metadata_item_guids` / `metadata_item_providers` rows when those tables exist. IMDb, TMDb, and TVDb IDs are normalized into the same `source_provider_ids` shape used by Jellyfin/Emby extraction.
+- Resumable/range upload is not wired yet because the current client/server path only supports a single multipart request; interrupted uploads leave no durable partial import state.
 
 ## Security Considerations
 

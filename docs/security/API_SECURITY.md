@@ -407,6 +407,8 @@ let outbound_client = reqwest::Client::builder()
 
 **Migration source exception:** Jellyfin and Emby migration sources are admin-entered and often legitimately live on private LAN addresses. Phase 14 Task 3 applies network-mode policy instead of a fixed public allowlist: local mode permits LAN/loopback targets after URL/DNS validation, while exposed mode rejects private, loopback, link-local, unique-local, reserved, and cloud metadata addresses. Stored migration configs also record redirect blocking, 10-second timeout, and 1 MiB response-size policy for the REST clients. Phase 14 Task 6 keeps raw Jellyfin/Emby API keys session-only for `/connect` and `/discover`: the supplied key must hash to the stored `api_key_hash` before any source API request is sent, and the raw key is not persisted.
 
+**Plex upload exception:** Phase 14 Task 7 allows a large multipart body only on `POST /api/v1/migrations/{id}/upload`; the route streams the upload to a per-migration directory, enforces the 10 GiB Plex DB cap while writing, validates the SQLite header and required tables before accepting the file, and canonicalizes the stored path before read-only extraction.
+
 ---
 
 ## 7. Outbound API Response Validation

@@ -518,6 +518,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 - **Phase 14 task 4 preflight report complete** — `/api/v1/migrations/{id}/preflight` returns no-write blockers/warnings across library readiness, mappings, source reachability, disk headroom, and discovery-derived match estimates.
 - **Phase 14 task 5 async runner complete** — real migration starts spawn `workers::migration_runner` outside the HTTP handler after mappings, preflight, and discovery data checks; cancellation uses per-source tokens plus persisted `cancelled` status; resume/crash safety is anchored to `migration_import_log` row statuses.
 - **Phase 14 task 6 Jellyfin/Emby extraction complete** — credentialed `/connect` and `/discover` calls now use live Jellyfin/Emby REST APIs to discover users and extract mapped watched/resume Movie/Episode state into `migration_import_log` as durable `discovered` rows with normalized provider IDs.
+- **Phase 14 task 7 Plex extraction complete** — `/api/v1/migrations/{id}/upload` accepts streamed multipart Plex SQLite uploads, validates and stores `plex.db`, and `/discover` reads it via read-only `rusqlite` to extract accounts, watched/resume rows, and primary/secondary provider GUIDs into durable `discovered` import-log rows.
 
 ## Current Implementation Status
 

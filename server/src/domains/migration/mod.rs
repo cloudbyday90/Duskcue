@@ -22,9 +22,12 @@ pub mod types;
 pub use error::MigrationError;
 
 use axum::Router;
+use axum::extract::DefaultBodyLimit;
 use axum::routing::{get, post};
 
 use crate::state::AppState;
+
+const PLEX_UPLOAD_BODY_LIMIT_BYTES: usize = 10 * 1024 * 1024 * 1024 + 1024 * 1024;
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
@@ -43,6 +46,11 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/migrations/{id}/discover",
             post(handlers::discover_source),
+        )
+        .route(
+            "/api/v1/migrations/{id}/upload",
+            post(handlers::upload_plex_database)
+                .layer(DefaultBodyLimit::max(PLEX_UPLOAD_BODY_LIMIT_BYTES)),
         )
         .route(
             "/api/v1/migrations/{id}/map-users",
