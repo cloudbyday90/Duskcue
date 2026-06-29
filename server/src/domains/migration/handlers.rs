@@ -102,6 +102,14 @@ pub async fn start_migration(
     Ok(Json(service::start_migration(&state, id, req).await?))
 }
 
+pub async fn run_preflight(
+    _auth: Require<CanManageUsers>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<MigrationPreflightResponse>, AppError> {
+    Ok(Json(service::run_preflight(&state, id).await?))
+}
+
 pub async fn get_migration_progress(
     _auth: Require<CanManageUsers>,
     State(state): State<AppState>,

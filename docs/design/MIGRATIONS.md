@@ -603,6 +603,7 @@ Unmatched Items (144):
 | `POST` | `/api/v1/migrations/{id}/connect` | Admin | Test connection to source |
 | `POST` | `/api/v1/migrations/{id}/discover` | Admin | Discover users and items from source |
 | `POST` | `/api/v1/migrations/{id}/map-users` | Admin | Save user mappings |
+| `POST` | `/api/v1/migrations/{id}/preflight` | Admin | Run no-write readiness checks and return blockers/warnings |
 | `POST` | `/api/v1/migrations/{id}/start` | Admin | Begin the import |
 | `GET` | `/api/v1/migrations/{id}/progress` | Admin | Get real-time progress |
 | `GET` | `/api/v1/migrations/{id}/unmatched` | Admin | Get unmatched items report |
@@ -743,6 +744,17 @@ The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids
 - Plex configs require `method = "sqlite_upload"` and the canonical `com.plexapp.plugins.library.db` filename; declared file sizes over 10 GiB are rejected and declared sizes must fit with 2x headroom on the `data_dir/migrations` volume.
 - `validate_plex_database_file()` verifies the SQLite 3 header and required Plex tables (`accounts`, `metadata_items`, `metadata_item_settings`) for the later multipart upload path.
 
+## Phase 14 Task 4 Implementation Notes
+
+- Added `POST /api/v1/migrations/{id}/preflight` as the no-write admin review endpoint.
+- The report returns `is_ready`, structured blockers, warnings, per-check status, library readiness, user mapping readiness, source readiness, disk readiness, and estimated counts.
+- Library readiness counts active libraries, scanned libraries, movie/episode import targets, provider-ID coverage, and warns below 80% provider-ID coverage.
+- User mapping readiness counts total, valid, and invalid mappings and blocks when no mappings exist or mapped platform users have been deleted.
+- Jellyfin/Emby source readiness performs a lightweight `GET /System/Info/Public` with redirects disabled, no proxy, the 10-second timeout from Task 3, and the 1 MiB response-size policy. HTTP 2xx, 401, and 403 prove reachability; other statuses or network errors become blockers.
+- Plex source readiness is no-write and reports whether upload metadata exists. Full SQLite readability validation remains tied to the upload path through `validate_plex_database_file()`.
+- Disk readiness checks 2x declared Plex upload size against the `data_dir/migrations` volume when a Plex file size is known.
+- Estimated source item counts and match rates are derived from `migration_import_log` when discovery data exists; before discovery, the report returns a warning instead of fabricating match-rate estimates.
+
 ## Security Considerations
 
 | Concern | Mitigation |
@@ -776,6 +788,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 ## Research Sources
 
 - OWASP Cheat Sheet Series — Server-Side Request Forgery Prevention Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html
+- OWASP Cheat Sheet Series — File Upload Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/File_Upload_Cheat_Sheet.html
 - Jellyfin API — official API documentation: https://api.jellyfin.org/
 - Emby API — official API documentation: https://dev.emby.media/reference/RestAPI.html
 - Plex Support — Plex Media Server data directory / database location: https://support.plex.tv/articles/202915258-where-is-the-plex-media-server-data-directory-located/

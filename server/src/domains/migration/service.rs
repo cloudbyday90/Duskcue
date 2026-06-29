@@ -16,6 +16,7 @@
 
 use std::net::IpAddr;
 use std::path::Path;
+use std::time::Duration;
 
 use chrono::Utc;
 use serde_json::{Value, json};
@@ -698,6 +699,55 @@ pub async fn start_migration(
     })
 }
 
+pub async fn run_preflight(
+    state: &AppState,
+    id: Uuid,
+) -> Result<MigrationPreflightResponse, MigrationError> {
+    let source = get_source(state, id).await?;
+    ensure_not_active(id, &source.status)?;
+
+    let library_readiness = load_library_readiness(state).await?;
+    let user_mapping_readiness = load_user_mapping_readiness(state, id).await?;
+    let estimated_counts = load_preflight_estimated_counts(state, id).await?;
+    let source_readiness = check_source_readiness(&source).await;
+    let disk_readiness = check_disk_readiness(state, &source);
+
+    let mut blockers = Vec::new();
+    let mut warnings = Vec::new();
+    let mut checks = Vec::new();
+
+    push_library_findings(
+        &library_readiness,
+        &mut blockers,
+        &mut warnings,
+        &mut checks,
+    );
+    push_mapping_findings(
+        &user_mapping_readiness,
+        &mut blockers,
+        &mut warnings,
+        &mut checks,
+    );
+    push_source_findings(&source_readiness, &mut blockers, &mut warnings, &mut checks);
+    push_disk_findings(&disk_readiness, &mut blockers, &mut warnings, &mut checks);
+    push_estimate_findings(&estimated_counts, &mut warnings, &mut checks);
+
+    Ok(MigrationPreflightResponse {
+        migration_source_id: id,
+        platform: source.platform,
+        status: source.status,
+        is_ready: blockers.is_empty(),
+        blockers,
+        warnings,
+        checks,
+        library_readiness,
+        user_mapping_readiness,
+        source_readiness,
+        disk_readiness,
+        estimated_counts,
+    })
+}
+
 pub async fn get_migration_progress(
     state: &AppState,
     id: Uuid,
@@ -814,6 +864,427 @@ pub async fn cancel_migration(
         status: source.status,
         message: "Migration is not running; no cancellation was needed".to_string(),
     })
+}
+
+async fn load_library_readiness(state: &AppState) -> Result<LibraryReadiness, MigrationError> {
+    let row = sqlx::query(
+        r#"
+        SELECT
+            COUNT(DISTINCT l.id)::BIGINT AS active_libraries,
+            COUNT(DISTINCT l.id) FILTER (WHERE l.last_scan_at IS NOT NULL)::BIGINT AS scanned_libraries,
+            COUNT(mi.id) FILTER (WHERE mi.type IN ('movie', 'episode'))::BIGINT AS importable_items,
+            COUNT(mi.id) FILTER (
+                WHERE mi.type IN ('movie', 'episode')
+                  AND (mi.tmdb_id IS NOT NULL OR mi.imdb_id IS NOT NULL OR mi.tvdb_id IS NOT NULL)
+            )::BIGINT AS items_with_provider_ids
+        FROM libraries l
+        LEFT JOIN media_items mi ON mi.library_id = l.id
+        WHERE l.deleted_at IS NULL
+        "#,
+    )
+    .fetch_one(&state.pool)
+    .await?;
+
+    let importable_items: i64 = row.get("importable_items");
+    let items_with_provider_ids: i64 = row.get("items_with_provider_ids");
+    let provider_id_coverage_percent = percent(items_with_provider_ids, importable_items);
+
+    Ok(LibraryReadiness {
+        active_libraries: row.get("active_libraries"),
+        scanned_libraries: row.get("scanned_libraries"),
+        importable_items,
+        items_with_provider_ids,
+        provider_id_coverage_percent,
+    })
+}
+
+async fn load_user_mapping_readiness(
+    state: &AppState,
+    id: Uuid,
+) -> Result<UserMappingReadiness, MigrationError> {
+    let row = sqlx::query(
+        r#"
+        SELECT
+            COUNT(m.id)::BIGINT AS mappings_total,
+            COUNT(m.id) FILTER (WHERE u.id IS NOT NULL)::BIGINT AS valid_mappings
+        FROM migration_user_mapping m
+        LEFT JOIN users u ON u.id = m.platform_user_id AND u.deleted_at IS NULL
+        WHERE m.migration_source_id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    let mappings_total: i64 = row.get("mappings_total");
+    let valid_mappings: i64 = row.get("valid_mappings");
+
+    Ok(UserMappingReadiness {
+        mappings_total,
+        valid_mappings,
+        invalid_mappings: mappings_total.saturating_sub(valid_mappings),
+    })
+}
+
+async fn load_preflight_estimated_counts(
+    state: &AppState,
+    id: Uuid,
+) -> Result<PreflightEstimatedCounts, MigrationError> {
+    let row = sqlx::query(
+        r#"
+        SELECT
+            COUNT(*)::BIGINT AS source_items_discovered,
+            COUNT(*) FILTER (WHERE status IN ('matched', 'unmatched', 'imported', 'skipped', 'error'))::BIGINT AS source_items_with_watch_data,
+            COUNT(*) FILTER (WHERE status IN ('matched', 'imported', 'skipped'))::BIGINT AS estimated_matches,
+            COUNT(*) FILTER (WHERE match_method = 'title_year')::BIGINT AS low_confidence_count,
+            COUNT(*) FILTER (WHERE status = 'unmatched' OR match_method = 'unmatched')::BIGINT AS unmatched_count
+        FROM migration_import_log
+        WHERE migration_source_id = $1
+        "#,
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    let source_items_with_watch_data: i64 = row.get("source_items_with_watch_data");
+    let estimated_matches: i64 = row.get("estimated_matches");
+
+    Ok(PreflightEstimatedCounts {
+        source_items_discovered: row.get("source_items_discovered"),
+        source_items_with_watch_data,
+        estimated_matches,
+        estimated_match_rate_percent: percent(estimated_matches, source_items_with_watch_data),
+        low_confidence_count: row.get("low_confidence_count"),
+        unmatched_count: row.get("unmatched_count"),
+    })
+}
+
+async fn check_source_readiness(source: &MigrationSourceResponse) -> SourceReadiness {
+    let method = source
+        .connection_config
+        .get("method")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown")
+        .to_string();
+    let credential_mode = source
+        .connection_config
+        .get("credential_mode")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown")
+        .to_string();
+
+    if source.platform == "plex" {
+        let file_size_bytes = source
+            .connection_config
+            .get("file_size_bytes")
+            .and_then(Value::as_u64)
+            .unwrap_or(0);
+        let message = if file_size_bytes > 0 {
+            "Plex upload metadata is present; full SQLite validation runs when an uploaded file is available"
+        } else {
+            "Plex database upload has not been attached yet"
+        };
+        return SourceReadiness {
+            platform: source.platform.clone(),
+            method,
+            reachable: None,
+            credential_mode,
+            message: message.to_string(),
+        };
+    }
+
+    let Some(base_url) = source
+        .connection_config
+        .get("base_url")
+        .and_then(Value::as_str)
+    else {
+        return SourceReadiness {
+            platform: source.platform.clone(),
+            method,
+            reachable: Some(false),
+            credential_mode,
+            message: "API source is missing base_url".to_string(),
+        };
+    };
+
+    match check_api_source_reachability(base_url).await {
+        Ok(status) => SourceReadiness {
+            platform: source.platform.clone(),
+            method,
+            reachable: Some(true),
+            credential_mode,
+            message: format!("Source responded with HTTP {status}"),
+        },
+        Err(message) => SourceReadiness {
+            platform: source.platform.clone(),
+            method,
+            reachable: Some(false),
+            credential_mode,
+            message,
+        },
+    }
+}
+
+async fn check_api_source_reachability(base_url: &str) -> Result<reqwest::StatusCode, String> {
+    let url = format!("{}/System/Info/Public", base_url.trim_end_matches('/'));
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(API_CONFIG_TIMEOUT_SECONDS))
+        .no_proxy()
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = client.get(url).send().await.map_err(|e| e.to_string())?;
+
+    if let Some(content_length) = response.content_length()
+        && content_length > API_CONFIG_MAX_RESPONSE_BYTES
+    {
+        return Err("Source response exceeds the preflight size limit".to_string());
+    }
+
+    let status = response.status();
+    if status.is_success() || status.as_u16() == 401 || status.as_u16() == 403 {
+        Ok(status)
+    } else {
+        Err(format!("Source responded with HTTP {status}"))
+    }
+}
+
+fn check_disk_readiness(state: &AppState, source: &MigrationSourceResponse) -> DiskReadiness {
+    let required_bytes = if source.platform == "plex" {
+        source
+            .connection_config
+            .get("file_size_bytes")
+            .and_then(Value::as_u64)
+            .filter(|size| *size > 0)
+            .map(|size| size.saturating_mul(2))
+    } else {
+        None
+    };
+
+    let Some(required_bytes) = required_bytes else {
+        return DiskReadiness {
+            required_bytes: None,
+            available_bytes: None,
+            has_headroom: None,
+        };
+    };
+
+    let upload_dir = state.bootstrap.data_dir.join("migrations");
+    let available_bytes = available_space_for_path(&upload_dir);
+
+    DiskReadiness {
+        required_bytes: Some(required_bytes),
+        available_bytes,
+        has_headroom: available_bytes.map(|available| available >= required_bytes),
+    }
+}
+
+fn push_library_findings(
+    readiness: &LibraryReadiness,
+    blockers: &mut Vec<PreflightFinding>,
+    warnings: &mut Vec<PreflightFinding>,
+    checks: &mut Vec<PreflightCheck>,
+) {
+    if readiness.active_libraries == 0 {
+        blockers.push(finding(
+            "MIGR_PREFLIGHT_NO_LIBRARIES",
+            "No active libraries are available for migration matching",
+        ));
+    }
+    if readiness.scanned_libraries == 0 {
+        blockers.push(finding(
+            "MIGR_PREFLIGHT_LIBRARIES_NOT_SCANNED",
+            "No active libraries have completed a scan",
+        ));
+    }
+    if readiness.importable_items == 0 {
+        blockers.push(finding(
+            "MIGR_PREFLIGHT_NO_IMPORTABLE_ITEMS",
+            "No movie or episode items are available for watch-state matching",
+        ));
+    } else if readiness.provider_id_coverage_percent < 80.0 {
+        warnings.push(finding(
+            "MIGR_PREFLIGHT_LOW_PROVIDER_ID_COVERAGE",
+            "Provider ID coverage is below 80%; fallback matching may need manual review",
+        ));
+    }
+
+    checks.push(check(
+        "library_provider_id_readiness",
+        if readiness.importable_items > 0 && readiness.items_with_provider_ids > 0 {
+            "passed"
+        } else {
+            "blocked"
+        },
+        format!(
+            "{} of {} importable items have provider IDs",
+            readiness.items_with_provider_ids, readiness.importable_items
+        ),
+    ));
+}
+
+fn push_mapping_findings(
+    readiness: &UserMappingReadiness,
+    blockers: &mut Vec<PreflightFinding>,
+    warnings: &mut Vec<PreflightFinding>,
+    checks: &mut Vec<PreflightCheck>,
+) {
+    if readiness.mappings_total == 0 {
+        blockers.push(finding(
+            "MIGR_PREFLIGHT_NO_USER_MAPPINGS",
+            "At least one source user must be mapped before migration can start",
+        ));
+    }
+    if readiness.invalid_mappings > 0 {
+        blockers.push(finding(
+            "MIGR_PREFLIGHT_INVALID_USER_MAPPINGS",
+            "One or more mapped platform users no longer exist",
+        ));
+    }
+    if readiness.mappings_total == 1 {
+        warnings.push(finding(
+            "MIGR_PREFLIGHT_SINGLE_USER_MAPPING",
+            "Only one user is mapped; verify skipped source users before importing",
+        ));
+    }
+
+    checks.push(check(
+        "user_mapping_readiness",
+        if readiness.mappings_total > 0 && readiness.invalid_mappings == 0 {
+            "passed"
+        } else {
+            "blocked"
+        },
+        format!(
+            "{} valid mappings, {} invalid mappings",
+            readiness.valid_mappings, readiness.invalid_mappings
+        ),
+    ));
+}
+
+fn push_source_findings(
+    readiness: &SourceReadiness,
+    blockers: &mut Vec<PreflightFinding>,
+    warnings: &mut Vec<PreflightFinding>,
+    checks: &mut Vec<PreflightCheck>,
+) {
+    match readiness.reachable {
+        Some(true) => checks.push(check("source_reachability", "passed", &readiness.message)),
+        Some(false) => {
+            blockers.push(finding(
+                "MIGR_PREFLIGHT_SOURCE_UNREACHABLE",
+                &readiness.message,
+            ));
+            checks.push(check("source_reachability", "blocked", &readiness.message));
+        }
+        None => {
+            warnings.push(finding(
+                "MIGR_PREFLIGHT_SOURCE_REACHABILITY_DEFERRED",
+                &readiness.message,
+            ));
+            checks.push(check("source_reachability", "warning", &readiness.message));
+        }
+    }
+}
+
+fn push_disk_findings(
+    readiness: &DiskReadiness,
+    blockers: &mut Vec<PreflightFinding>,
+    warnings: &mut Vec<PreflightFinding>,
+    checks: &mut Vec<PreflightCheck>,
+) {
+    match readiness.has_headroom {
+        Some(true) => checks.push(check(
+            "disk_headroom",
+            "passed",
+            "Migration upload disk headroom is available",
+        )),
+        Some(false) => {
+            blockers.push(finding(
+                "MIGR_PREFLIGHT_INSUFFICIENT_DISK",
+                "Insufficient disk space for the declared Plex database upload",
+            ));
+            checks.push(check(
+                "disk_headroom",
+                "blocked",
+                "Insufficient disk space for the declared Plex database upload",
+            ));
+        }
+        None if readiness.required_bytes.is_some() => {
+            warnings.push(finding(
+                "MIGR_PREFLIGHT_DISK_UNKNOWN",
+                "Could not determine upload disk headroom",
+            ));
+            checks.push(check(
+                "disk_headroom",
+                "warning",
+                "Could not determine upload disk headroom",
+            ));
+        }
+        None => checks.push(check(
+            "disk_headroom",
+            "passed",
+            "No source upload disk headroom is required",
+        )),
+    }
+}
+
+fn push_estimate_findings(
+    counts: &PreflightEstimatedCounts,
+    warnings: &mut Vec<PreflightFinding>,
+    checks: &mut Vec<PreflightCheck>,
+) {
+    if counts.source_items_discovered == 0 {
+        warnings.push(finding(
+            "MIGR_PREFLIGHT_NO_DISCOVERY_DATA",
+            "No source item discovery data exists yet; match-rate estimates will be available after discovery",
+        ));
+        checks.push(check(
+            "match_estimate",
+            "warning",
+            "No source item discovery data exists yet",
+        ));
+        return;
+    }
+
+    if counts.estimated_match_rate_percent < 80.0 {
+        warnings.push(finding(
+            "MIGR_PREFLIGHT_LOW_ESTIMATED_MATCH_RATE",
+            "Estimated match rate is below 80%; expect manual review",
+        ));
+    }
+
+    checks.push(check(
+        "match_estimate",
+        "passed",
+        format!(
+            "{} of {} source items are currently estimated to match",
+            counts.estimated_matches, counts.source_items_with_watch_data
+        ),
+    ));
+}
+
+fn finding(code: &str, message: &str) -> PreflightFinding {
+    PreflightFinding {
+        code: code.to_string(),
+        message: message.to_string(),
+    }
+}
+
+fn check(name: &str, status: &str, message: impl Into<String>) -> PreflightCheck {
+    PreflightCheck {
+        name: name.to_string(),
+        status: status.to_string(),
+        message: message.into(),
+    }
+}
+
+fn percent(numerator: i64, denominator: i64) -> f32 {
+    if denominator <= 0 {
+        0.0
+    } else {
+        ((numerator as f32) / (denominator as f32) * 100.0).clamp(0.0, 100.0)
+    }
 }
 
 async fn get_source(state: &AppState, id: Uuid) -> Result<MigrationSourceResponse, MigrationError> {

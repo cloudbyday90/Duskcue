@@ -50,6 +50,10 @@ export async function startMigration(migrationSourceId, data = {}) {
     return post(`/migrations/${migrationSourceId}/start`, data);
 }
 
+export async function runMigrationPreflight(migrationSourceId) {
+    return post(`/migrations/${migrationSourceId}/preflight`);
+}
+
 export async function getMigrationProgress(migrationSourceId) {
     return get(`/migrations/${migrationSourceId}/progress`);
 }

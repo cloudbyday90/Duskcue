@@ -53,6 +53,10 @@ pub fn router(state: AppState) -> Router<AppState> {
             post(handlers::start_migration),
         )
         .route(
+            "/api/v1/migrations/{id}/preflight",
+            post(handlers::run_preflight),
+        )
+        .route(
             "/api/v1/migrations/{id}/progress",
             get(handlers::get_migration_progress),
         )
