@@ -172,10 +172,7 @@ pub async fn run_disk_space_check(
     }
 
     let breached_count = reports.iter().filter(|r| r.exceeded).count();
-    let unavailable_count = reports
-        .iter()
-        .filter(|r| r.status == "unavailable")
-        .count();
+    let unavailable_count = reports.iter().filter(|r| r.status == "unavailable").count();
 
     let status = if breached_count > 0 {
         "threshold_exceeded"
@@ -300,8 +297,7 @@ fn find_disk_for_path<'a>(
     for snapshot in snapshots {
         if path.starts_with(&snapshot.mount_point)
             && (best.is_none()
-                || snapshot.mount_point.as_os_str().len()
-                    > best?.mount_point.as_os_str().len())
+                || snapshot.mount_point.as_os_str().len() > best?.mount_point.as_os_str().len())
         {
             best = Some(snapshot);
         }
@@ -504,10 +500,7 @@ mod tests {
 
     #[test]
     fn resolve_threshold_uses_task_value_when_in_range() {
-        assert_eq!(
-            resolve_threshold(Some(&serde_json::json!(75)), 90),
-            75
-        );
+        assert_eq!(resolve_threshold(Some(&serde_json::json!(75)), 90), 75);
     }
 
     #[test]

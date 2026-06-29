@@ -521,8 +521,10 @@ async fn main() {
             .register_fallible_executor("disk_space_check", move |_pool, task_id, config| {
                 let state = disk_space_check_state.clone();
                 async move {
-                    duskcue::workers::disk_space_check::run_disk_space_check(&state, task_id, config)
-                        .await
+                    duskcue::workers::disk_space_check::run_disk_space_check(
+                        &state, task_id, config,
+                    )
+                    .await
                 }
             })
             .register_fallible_executor("backup_recovery_drill", move |_pool, task_id, config| {

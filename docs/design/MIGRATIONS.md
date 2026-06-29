@@ -610,6 +610,9 @@ All endpoints require admin capability (`can_manage_users`).
 | `MIGR_008` | 422 | No watch data found on source platform |
 | `MIGR_009` | 413 | Plex database file too large (max 10 GB) |
 | `MIGR_010` | 507 | Insufficient disk space for Plex database upload |
+| `MIGR_011` | 501 | Migration API scaffold is wired but the requested operation is not implemented yet |
+
+`MIGR_011` is a temporary scaffold code used during Phase 14 task sequencing. Remove it from reachable paths as CRUD, discovery, preflight, import, and review behavior is implemented.
 
 ### Error Scenarios
 

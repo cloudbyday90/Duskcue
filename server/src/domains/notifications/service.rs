@@ -71,11 +71,9 @@ const MARK_ALL_READ_SQL: &str = r#"
     WHERE user_id = $1 AND is_read = false
 "#;
 
-const DELETE_NOTIFICATION_SQL: &str =
-    "DELETE FROM notifications WHERE id = $1 AND user_id = $2";
+const DELETE_NOTIFICATION_SQL: &str = "DELETE FROM notifications WHERE id = $1 AND user_id = $2";
 
-const DELETE_READ_SQL: &str =
-    "DELETE FROM notifications WHERE user_id = $1 AND is_read = true";
+const DELETE_READ_SQL: &str = "DELETE FROM notifications WHERE user_id = $1 AND is_read = true";
 
 const LIST_NOTIFICATION_TYPES_SQL: &str = r#"
     SELECT id, name, category, priority, in_app_template, is_enabled_by_default, created_at
@@ -141,7 +139,11 @@ pub async fn list_notifications(
         .await?;
 
     let has_more = rows.len() > limit as usize;
-    let rows = if has_more { &rows[..limit as usize] } else { &rows };
+    let rows = if has_more {
+        &rows[..limit as usize]
+    } else {
+        &rows
+    };
 
     let items: Vec<NotificationResponse> = rows.iter().map(row_to_response).collect();
 
@@ -166,7 +168,9 @@ pub async fn count_unread(
         .bind(user_id)
         .fetch_one(pool)
         .await?;
-    Ok(UnreadCountResponse { unread_count: count })
+    Ok(UnreadCountResponse {
+        unread_count: count,
+    })
 }
 
 pub async fn mark_read(
@@ -187,13 +191,12 @@ pub async fn mark_read(
             read_at: ts,
         }),
         None => {
-            let exists: Option<Uuid> = sqlx::query_scalar(
-                "SELECT id FROM notifications WHERE id = $1 AND user_id = $2",
-            )
-            .bind(notification_id)
-            .bind(user_id)
-            .fetch_optional(pool)
-            .await?;
+            let exists: Option<Uuid> =
+                sqlx::query_scalar("SELECT id FROM notifications WHERE id = $1 AND user_id = $2")
+                    .bind(notification_id)
+                    .bind(user_id)
+                    .fetch_optional(pool)
+                    .await?;
             if exists.is_some() {
                 let now = chrono::Utc::now();
                 Ok(MarkReadResponse {
@@ -341,12 +344,8 @@ fn row_to_response(r: &sqlx::postgres::PgRow) -> NotificationResponse {
     NotificationResponse {
         id: r.try_get("id").unwrap_or_default(),
         user_id: r.try_get("user_id").unwrap_or_default(),
-        notification_type: r
-            .try_get("notification_type_name")
-            .unwrap_or_default(),
-        category: r
-            .try_get("notification_type_category")
-            .unwrap_or_default(),
+        notification_type: r.try_get("notification_type_name").unwrap_or_default(),
+        category: r.try_get("notification_type_category").unwrap_or_default(),
         title: r.try_get("title").unwrap_or_default(),
         body: r.try_get("body").unwrap_or_default(),
         priority: r.try_get("priority").unwrap_or_default(),
@@ -403,8 +402,7 @@ fn parse_cursor(cursor: Option<&str>) -> Option<Uuid> {
 
 fn encode_cursor(id: Uuid) -> String {
     let json = serde_json::json!({ "id": id.to_string() });
-    base64::engine::general_purpose::STANDARD
-        .encode(serde_json::to_vec(&json).unwrap_or_default())
+    base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&json).unwrap_or_default())
 }
 
 const UPSERT_PUSH_DEVICE_SQL: &str = r#"
@@ -443,8 +441,7 @@ const UPDATE_PUSH_DEVICE_SQL: &str = r#"
               last_seen_at, is_active, invalidated_at, created_at, updated_at
 "#;
 
-const DELETE_PUSH_DEVICE_SQL: &str =
-    "DELETE FROM user_push_devices WHERE id = $1 AND user_id = $2";
+const DELETE_PUSH_DEVICE_SQL: &str = "DELETE FROM user_push_devices WHERE id = $1 AND user_id = $2";
 
 const DEACTIVATE_STALE_DEVICES_SQL: &str = r#"
     UPDATE user_push_devices
@@ -468,11 +465,7 @@ pub async fn register_push_device(
         MAX_DEVICE_NAME_LEN,
         "device_name",
     )?;
-    validate_optional_length(
-        req.platform.as_deref(),
-        MAX_PLATFORM_LEN,
-        "platform",
-    )?;
+    validate_optional_length(req.platform.as_deref(), MAX_PLATFORM_LEN, "platform")?;
     validate_optional_length(
         req.app_version.as_deref(),
         MAX_APP_VERSION_LEN,
@@ -517,11 +510,7 @@ pub async fn update_push_device(
         MAX_DEVICE_NAME_LEN,
         "device_name",
     )?;
-    validate_optional_length(
-        req.platform.as_deref(),
-        MAX_PLATFORM_LEN,
-        "platform",
-    )?;
+    validate_optional_length(req.platform.as_deref(), MAX_PLATFORM_LEN, "platform")?;
     validate_optional_length(
         req.app_version.as_deref(),
         MAX_APP_VERSION_LEN,
@@ -605,7 +594,9 @@ fn mask_token(token: &str) -> String {
 
 fn validate_push_provider(provider: &str) -> Result<(), NotificationsError> {
     if !VALID_PUSH_PROVIDERS.contains(&provider) {
-        return Err(NotificationsError::InvalidPushProvider(provider.to_string()));
+        return Err(NotificationsError::InvalidPushProvider(
+            provider.to_string(),
+        ));
     }
     Ok(())
 }
@@ -673,8 +664,8 @@ mod tests {
     #[test]
     fn parse_cursor_missing_id_returns_none() {
         let json = serde_json::json!({ "wrong": "field" });
-        let encoded = base64::engine::general_purpose::STANDARD
-            .encode(serde_json::to_vec(&json).unwrap());
+        let encoded =
+            base64::engine::general_purpose::STANDARD.encode(serde_json::to_vec(&json).unwrap());
         assert_eq!(parse_cursor(Some(&encoded)), None);
     }
 
@@ -727,10 +718,10 @@ mod tests {
     fn encode_cursor_uses_base64_json() {
         let id = Uuid::now_v7();
         let encoded = encode_cursor(id);
-        let decoded =
-            base64::engine::general_purpose::STANDARD.decode(&encoded).expect("base64 decode");
-        let json: serde_json::Value =
-            serde_json::from_slice(&decoded).expect("json parse");
+        let decoded = base64::engine::general_purpose::STANDARD
+            .decode(&encoded)
+            .expect("base64 decode");
+        let json: serde_json::Value = serde_json::from_slice(&decoded).expect("json parse");
         assert_eq!(json["id"], id.to_string());
     }
 
@@ -792,11 +783,13 @@ mod tests {
 
     #[test]
     fn validate_push_token_accepts_unifiedpush_url() {
-        assert!(validate_push_token(
-            "unifiedpush",
-            "https://ntfy.example.com/duskcue-up/abcdef123"
-        )
-        .is_ok());
+        assert!(
+            validate_push_token(
+                "unifiedpush",
+                "https://ntfy.example.com/duskcue-up/abcdef123"
+            )
+            .is_ok()
+        );
     }
 
     #[test]

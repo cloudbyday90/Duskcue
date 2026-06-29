@@ -45,9 +45,9 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 
 use fluent_bundle::FluentValue;
-use fluent_langneg::{negotiate_languages, parse_accepted_languages, NegotiationStrategy};
-use fluent_templates::{static_loader, Loader};
-use unic_langid::{langid, LanguageIdentifier};
+use fluent_langneg::{NegotiationStrategy, negotiate_languages, parse_accepted_languages};
+use fluent_templates::{Loader, static_loader};
+use unic_langid::{LanguageIdentifier, langid};
 
 static_loader! {
     static LOCALES = {
@@ -265,14 +265,8 @@ mod tests {
     #[test]
     fn converts_metadata_string_values_to_fluent_args() {
         let mut metadata = serde_json::Map::new();
-        metadata.insert(
-            "title".to_string(),
-            json!("The Matrix"),
-        );
-        metadata.insert(
-            "library".to_string(),
-            json!("Action Movies"),
-        );
+        metadata.insert("title".to_string(), json!("The Matrix"));
+        metadata.insert("library".to_string(), json!("Action Movies"));
         let args = args_from_metadata(&metadata);
         let rendered = render("new-media-added", &DEFAULT_LOCALE, &args);
         assert_eq!(rendered, "The Matrix was added to Action Movies");
@@ -298,27 +292,43 @@ mod tests {
     #[test]
     fn renders_all_seeded_notification_ids() {
         let cases = [
-            ("new-media-added", vec![("title", "Movie"), ("library", "Lib")]),
+            (
+                "new-media-added",
+                vec![("title", "Movie"), ("library", "Lib")],
+            ),
             ("library-scan-complete", vec![("stats", "100 items")]),
-            ("playback-started", vec![("username", "Bob"), ("title", "Show")]),
-            ("classifarr-decision", vec![("title", "Movie"), ("library", "Lib")]),
+            (
+                "playback-started",
+                vec![("username", "Bob"), ("title", "Show")],
+            ),
+            (
+                "classifarr-decision",
+                vec![("title", "Movie"), ("library", "Lib")],
+            ),
             ("server-alert", vec![("message", "Alert")]),
             ("server-update", vec![("version", "1.0")]),
             ("task-failed", vec![("task-name", "Task"), ("error", "Err")]),
-            ("trust-alert", vec![("username", "Bob"), ("details", "Suspicious")]),
-            ("new-login", vec![("username", "Bob"), ("ip", "1.2.3.4"), ("device", "Chrome")]),
-            ("user-invited", vec![("action", "created"), ("email", "a@b.com")]),
-            ("trakt-sync-error", vec![("username", "Bob"), ("error", "timeout")]),
+            (
+                "trust-alert",
+                vec![("username", "Bob"), ("details", "Suspicious")],
+            ),
+            (
+                "new-login",
+                vec![("username", "Bob"), ("ip", "1.2.3.4"), ("device", "Chrome")],
+            ),
+            (
+                "user-invited",
+                vec![("action", "created"), ("email", "a@b.com")],
+            ),
+            (
+                "trakt-sync-error",
+                vec![("username", "Bob"), ("error", "timeout")],
+            ),
         ];
         for (message_id, arg_pairs) in cases {
             let args: HashMap<Cow<'static, str>, FluentValue> = arg_pairs
                 .into_iter()
-                .map(|(k, v)| {
-                    (
-                        Cow::Borrowed(k),
-                        FluentValue::String(v.to_string().into()),
-                    )
-                })
+                .map(|(k, v)| (Cow::Borrowed(k), FluentValue::String(v.to_string().into())))
                 .collect();
             let rendered = render(message_id, &DEFAULT_LOCALE, &args);
             assert_ne!(

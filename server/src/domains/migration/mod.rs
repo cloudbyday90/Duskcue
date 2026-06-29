@@ -14,3 +14,55 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod error;
+pub mod handlers;
+pub mod service;
+pub mod types;
+
+pub use error::MigrationError;
+
+use axum::Router;
+use axum::routing::{get, post};
+
+use crate::state::AppState;
+
+pub fn router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/v1/migrations",
+            post(handlers::create_migration_source).get(handlers::list_migration_sources),
+        )
+        .route(
+            "/api/v1/migrations/{id}",
+            get(handlers::get_migration_source).delete(handlers::delete_migration_source),
+        )
+        .route(
+            "/api/v1/migrations/{id}/connect",
+            post(handlers::test_connection),
+        )
+        .route(
+            "/api/v1/migrations/{id}/discover",
+            post(handlers::discover_source),
+        )
+        .route(
+            "/api/v1/migrations/{id}/map-users",
+            post(handlers::save_user_mappings),
+        )
+        .route(
+            "/api/v1/migrations/{id}/start",
+            post(handlers::start_migration),
+        )
+        .route(
+            "/api/v1/migrations/{id}/progress",
+            get(handlers::get_migration_progress),
+        )
+        .route(
+            "/api/v1/migrations/{id}/unmatched",
+            get(handlers::get_unmatched_report),
+        )
+        .route(
+            "/api/v1/migrations/{id}/cancel",
+            post(handlers::cancel_migration),
+        )
+        .with_state(state)
+}

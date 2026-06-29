@@ -150,7 +150,7 @@ project/
 │       │   │   ├── mod.rs
 │       │   │   ├── handlers.rs
 │       │   │   ├── service.rs
-│       │   │   ├── error.rs       # MIGR_001–010
+│       │   │   ├── error.rs       # MIGR_001–011
 │       │   │   └── types.rs
 │       │   │
 │       │   ├── subtitles/         # Subtitle discovery, conversion, sync, fetching

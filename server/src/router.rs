@@ -130,9 +130,9 @@ pub fn build_router(state: AppState) -> Router<AppState> {
         .merge(crate::domains::overlays::router(state.clone()))
         .merge(crate::domains::collections::router(state.clone()))
         .merge(crate::domains::posters::router(state.clone()))
-        .merge(crate::domains::backup::router(state.clone()));
+        .merge(crate::domains::backup::router(state.clone()))
+        .merge(crate::domains::migration::router(state.clone()));
     // Phase 13: .merge(crate::domains::system::router())
-    // Phase 14: .merge(crate::domains::migration::router())
 
     router = router
         .layer(axum::middleware::from_fn_with_state(

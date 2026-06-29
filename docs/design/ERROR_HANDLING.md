@@ -615,6 +615,9 @@ All `RATE_*` responses include a `Retry-After` header with the number of seconds
 | `MIGR_008` | 422 | No watch data found on source platform |
 | `MIGR_009` | 413 | Plex database file too large (max 10 GB) |
 | `MIGR_010` | 507 | Insufficient disk space for Plex database upload |
+| `MIGR_011` | 501 | Migration API scaffold is wired but the requested operation is not implemented yet |
+
+`MIGR_011` is temporary during Phase 14 task sequencing and should disappear from reachable paths as the API foundation and service behavior are implemented.
 
 ## Environment-Aware Error Responses
 

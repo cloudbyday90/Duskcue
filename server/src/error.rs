@@ -108,6 +108,9 @@ pub enum AppError {
     Media(#[from] crate::domains::media::MediaError),
 
     #[error(transparent)]
+    Migration(#[from] crate::domains::migration::MigrationError),
+
+    #[error(transparent)]
     Notifications(#[from] crate::domains::notifications::NotificationsError),
 
     #[error(transparent)]
@@ -166,6 +169,10 @@ impl IntoResponse for AppError {
             }
             AppError::Media(e) => {
                 let (s, c, d) = media_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Migration(e) => {
+                let (s, c, d) = migration_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::Notifications(e) => {
@@ -669,6 +676,75 @@ fn users_error_to_http(
             "Cannot modify own account role or status".into(),
         ),
         UsersError::Database(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL",
+            "Internal server error".into(),
+        ),
+    }
+}
+
+fn migration_error_to_http(
+    err: &crate::domains::migration::MigrationError,
+) -> (StatusCode, &'static str, String) {
+    use crate::domains::migration::MigrationError;
+
+    match err {
+        MigrationError::NotFound(_) => (
+            StatusCode::NOT_FOUND,
+            "MIGR_001",
+            "Migration not found".into(),
+        ),
+        MigrationError::AlreadyInProgress(_) => (
+            StatusCode::CONFLICT,
+            "MIGR_002",
+            "Migration already in progress".into(),
+        ),
+        MigrationError::SourceUnreachable(msg) => (
+            StatusCode::BAD_GATEWAY,
+            "MIGR_003",
+            format!("Source platform unreachable: {msg}"),
+        ),
+        MigrationError::InvalidSourceConfiguration(msg) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "MIGR_004",
+            format!("Invalid source configuration: {msg}"),
+        ),
+        MigrationError::InvalidPlexDatabase(msg) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "MIGR_005",
+            format!("Invalid Plex database file: {msg}"),
+        ),
+        MigrationError::UserMappingConflict(msg) => (
+            StatusCode::CONFLICT,
+            "MIGR_006",
+            format!("User mapping conflict: {msg}"),
+        ),
+        MigrationError::NoUserMappings => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "MIGR_007",
+            "No user mappings provided".into(),
+        ),
+        MigrationError::NoWatchData => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "MIGR_008",
+            "No watch data found on source platform".into(),
+        ),
+        MigrationError::PlexDatabaseTooLarge => (
+            StatusCode::PAYLOAD_TOO_LARGE,
+            "MIGR_009",
+            "Plex database file too large".into(),
+        ),
+        MigrationError::InsufficientDiskSpace => (
+            StatusCode::INSUFFICIENT_STORAGE,
+            "MIGR_010",
+            "Insufficient disk space for Plex database upload".into(),
+        ),
+        MigrationError::NotImplemented(feature) => (
+            StatusCode::NOT_IMPLEMENTED,
+            "MIGR_011",
+            format!("Migration feature is not implemented yet: {feature}"),
+        ),
+        MigrationError::Database(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "INTERNAL",
             "Internal server error".into(),

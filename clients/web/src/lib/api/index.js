@@ -30,3 +30,4 @@ export * from './storyboards.js';
 export * from './subtitles.js';
 export * from './notifications.js';
 export * from './backups.js';
+export * from './migrations.js';

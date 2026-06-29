@@ -20,6 +20,7 @@ pub mod backup;
 pub mod collections;
 pub mod libraries;
 pub mod media;
+pub mod migration;
 pub mod notifications;
 pub mod overlays;
 pub mod playback;

@@ -56,7 +56,7 @@
 
 use std::collections::HashMap;
 
-use ring::hmac::{Key, HMAC_SHA256};
+use ring::hmac::{HMAC_SHA256, Key};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use sqlx::{PgPool, Row};
@@ -194,7 +194,10 @@ pub enum DispatchError {
 /// 6. Spawns a background task for webhook delivery (if configured + enabled)
 /// 7. Resolves push config (stub — actual push deferred to Phase 16a)
 /// 8. Returns a [`DispatchResult`] with per-channel status
-pub async fn dispatch(state: &AppState, input: &NotificationInput) -> Result<DispatchResult, DispatchError> {
+pub async fn dispatch(
+    state: &AppState,
+    input: &NotificationInput,
+) -> Result<DispatchResult, DispatchError> {
     let pool = &state.pool;
 
     let nt = fetch_notification_type(pool, &input.notification_type).await?;
@@ -211,8 +214,13 @@ pub async fn dispatch(state: &AppState, input: &NotificationInput) -> Result<Dis
     let user_info = fetch_user_info(pool, input.user_id).await?;
 
     let locale = i18n::negotiate_locale(user_info.locale.as_deref(), None);
-    let (rendered_title, rendered_body) =
-        render_notification(&nt.in_app_template, &locale, &input.metadata, &input.title, &input.body);
+    let (rendered_title, rendered_body) = render_notification(
+        &nt.in_app_template,
+        &locale,
+        &input.metadata,
+        &input.title,
+        &input.body,
+    );
 
     let prefs = fetch_user_prefs(pool, input.user_id, nt.id).await;
 
@@ -239,13 +247,28 @@ pub async fn dispatch(state: &AppState, input: &NotificationInput) -> Result<Dis
         .fetch_one(pool)
         .await?;
 
-    let sse_status = publish_sse(state, input.user_id, notification_id, &nt, &rendered_title, &rendered_body, input);
+    let sse_status = publish_sse(
+        state,
+        input.user_id,
+        notification_id,
+        &nt,
+        &rendered_title,
+        &rendered_body,
+        input,
+    );
 
     let in_app_status = ChannelStatus::Delivered;
 
     let push_status = dispatch_push(state, input.user_id, &nt, &prefs);
 
-    let webhook_status = if prefs.webhook_enabled && state.runtime_config.load().notifications.webhook.is_configured() {
+    let webhook_status = if prefs.webhook_enabled
+        && state
+            .runtime_config
+            .load()
+            .notifications
+            .webhook
+            .is_configured()
+    {
         let webhook_config = state.runtime_config.load();
         let webhook = webhook_config.notifications.webhook.clone();
         drop(webhook_config);
@@ -350,11 +373,18 @@ fn publish_sse(
         "created_at": chrono::Utc::now(),
     });
 
-    state.event_bus.publish(user_id, ServerEvent::new("notification", payload));
+    state
+        .event_bus
+        .publish(user_id, ServerEvent::new("notification", payload));
     ChannelStatus::Delivered
 }
 
-fn dispatch_push(state: &AppState, _user_id: Uuid, nt: &NotificationTypeInfo, prefs: &UserPrefs) -> ChannelStatus {
+fn dispatch_push(
+    state: &AppState,
+    _user_id: Uuid,
+    nt: &NotificationTypeInfo,
+    prefs: &UserPrefs,
+) -> ChannelStatus {
     let config = state.runtime_config.load();
     if !prefs.push_enabled {
         return ChannelStatus::Skipped;
@@ -386,15 +416,7 @@ fn spawn_webhook_delivery(
     };
     let secret = config.secret.clone();
 
-    let mut req = format_request(
-        format,
-        &url,
-        notification_id,
-        nt,
-        title,
-        body,
-        input,
-    );
+    let mut req = format_request(format, &url, notification_id, nt, title, body, input);
     sign_request(&mut req, &secret);
 
     let format_label = config.format.clone();
@@ -416,14 +438,15 @@ fn spawn_webhook_delivery(
             }
         };
 
-        let current_status: Value = match sqlx::query("SELECT delivery_status FROM notifications WHERE id = $1")
-            .bind(notification_id)
-            .fetch_one(&pool)
-            .await
-        {
-            Ok(row) => row.try_get("delivery_status").unwrap_or(Value::Null),
-            Err(_) => Value::Null,
-        };
+        let current_status: Value =
+            match sqlx::query("SELECT delivery_status FROM notifications WHERE id = $1")
+                .bind(notification_id)
+                .fetch_one(&pool)
+                .await
+            {
+                Ok(row) => row.try_get("delivery_status").unwrap_or(Value::Null),
+                Err(_) => Value::Null,
+            };
 
         let mut status_map = match current_status {
             Value::Object(map) => map,
@@ -525,7 +548,10 @@ fn format_request(
                 content_type: "text/plain; charset=utf-8",
                 headers: vec![
                     ("Title".to_string(), title.to_string()),
-                    ("Priority".to_string(), ntfy_priority(&nt.priority).to_string()),
+                    (
+                        "Priority".to_string(),
+                        ntfy_priority(&nt.priority).to_string(),
+                    ),
                     ("Tags".to_string(), ntfy_tags(&nt.category).to_string()),
                     ("Markdown".to_string(), "yes".to_string()),
                 ],
@@ -647,8 +673,10 @@ fn sign_request(req: &mut FormattedRequest, secret: &Option<String>) {
         && !secret.is_empty()
     {
         let signature = compute_hmac_signature(secret.as_bytes(), &req.body);
-        req.headers
-            .push(("X-Duskcue-Signature".to_string(), format!("sha256={signature}")));
+        req.headers.push((
+            "X-Duskcue-Signature".to_string(),
+            format!("sha256={signature}"),
+        ));
     }
 }
 
@@ -672,7 +700,11 @@ fn is_retryable_status(status: u16) -> bool {
 /// (`Retry-After: 120`) used by ntfy/Gotify/Discord/Slack. HTTP-date form is
 /// ignored (returns `None`) — rare for these services.
 fn parse_retry_after(header_value: &str) -> Option<std::time::Duration> {
-    header_value.trim().parse::<u64>().ok().map(std::time::Duration::from_secs)
+    header_value
+        .trim()
+        .parse::<u64>()
+        .ok()
+        .map(std::time::Duration::from_secs)
 }
 
 /// Apply full jitter to a duration: returns a value in `[0.5×, 1.5×)` of the
@@ -721,7 +753,11 @@ async fn dispatch_webhook(req: &FormattedRequest) -> Result<(), WebhookError> {
                 );
                 return Err(e);
             }
-            Err(WebhookError::RetryableStatus { retry_after, status, .. }) => {
+            Err(WebhookError::RetryableStatus {
+                retry_after,
+                status,
+                ..
+            }) => {
                 if let Some(ra) = retry_after {
                     // 429 with Retry-After: honor it (capped at 10 minutes so a
                     // malicious or misconfigured endpoint can't stall delivery).
@@ -760,10 +796,7 @@ async fn dispatch_webhook(req: &FormattedRequest) -> Result<(), WebhookError> {
     ))
 }
 
-async fn send_once(
-    client: &reqwest::Client,
-    req: &FormattedRequest,
-) -> Result<(), WebhookError> {
+async fn send_once(client: &reqwest::Client, req: &FormattedRequest) -> Result<(), WebhookError> {
     let mut request = client
         .post(&req.url)
         .header("Content-Type", req.content_type)
@@ -857,8 +890,12 @@ async fn fetch_notification_type(
 
     Ok(NotificationTypeInfo {
         id: row.try_get("id").unwrap_or_else(|_| Uuid::nil()),
-        category: row.try_get("category").unwrap_or_else(|_| "system".to_string()),
-        priority: row.try_get("priority").unwrap_or_else(|_| "low".to_string()),
+        category: row
+            .try_get("category")
+            .unwrap_or_else(|_| "system".to_string()),
+        priority: row
+            .try_get("priority")
+            .unwrap_or_else(|_| "low".to_string()),
         in_app_template: row
             .try_get("in_app_template")
             .unwrap_or_else(|_| name.to_string()),
@@ -1117,16 +1154,25 @@ mod tests {
 
     #[test]
     fn webhook_format_parses_known_values_case_insensitively() {
-        assert_eq!(WebhookFormat::from_config("generic"), WebhookFormat::Generic);
+        assert_eq!(
+            WebhookFormat::from_config("generic"),
+            WebhookFormat::Generic
+        );
         assert_eq!(WebhookFormat::from_config("NTFY"), WebhookFormat::Ntfy);
         assert_eq!(WebhookFormat::from_config("Gotify"), WebhookFormat::Gotify);
-        assert_eq!(WebhookFormat::from_config("discord"), WebhookFormat::Discord);
+        assert_eq!(
+            WebhookFormat::from_config("discord"),
+            WebhookFormat::Discord
+        );
         assert_eq!(WebhookFormat::from_config(" slack "), WebhookFormat::Slack);
     }
 
     #[test]
     fn webhook_format_unknown_falls_back_to_generic() {
-        assert_eq!(WebhookFormat::from_config("telegram"), WebhookFormat::Generic);
+        assert_eq!(
+            WebhookFormat::from_config("telegram"),
+            WebhookFormat::Generic
+        );
         assert_eq!(WebhookFormat::from_config(""), WebhookFormat::Generic);
     }
 
@@ -1384,7 +1430,8 @@ mod tests {
             let (mut sock, _) = listener.accept().await.unwrap();
             let mut buf = vec![0u8; 4096];
             let _ = sock.read(&mut buf).await.unwrap();
-            let resp = "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 2\r\nContent-Length: 0\r\n\r\n";
+            let resp =
+                "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 2\r\nContent-Length: 0\r\n\r\n";
             sock.write_all(resp.as_bytes()).await.unwrap();
         });
 

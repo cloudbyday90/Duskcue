@@ -71,8 +71,7 @@ pub async fn mark_notification_read(
     user: AuthenticatedUser,
     Path(notification_id): Path<Uuid>,
 ) -> Result<Json<MarkReadResponse>, AppError> {
-    let result =
-        service::mark_read(&state.pool, user.user_id, notification_id).await?;
+    let result = service::mark_read(&state.pool, user.user_id, notification_id).await?;
     Ok(Json(result))
 }
 
@@ -124,8 +123,7 @@ pub async fn update_user_preference(
     Json(req): Json<UpdatePreferenceRequest>,
 ) -> Result<Json<PreferenceUpdateResponse>, AppError> {
     req.validate().map_err(map_validation_errors)?;
-    let result =
-        service::update_preference(&state.pool, user.user_id, type_id, &req).await?;
+    let result = service::update_preference(&state.pool, user.user_id, type_id, &req).await?;
     Ok(Json(result))
 }
 
@@ -136,10 +134,7 @@ pub async fn send_test_notification(
 ) -> Result<Json<serde_json::Value>, AppError> {
     req.validate().map_err(map_validation_errors)?;
 
-    let notification_type = req
-        .notification_type
-        .as_deref()
-        .unwrap_or("server_alert");
+    let notification_type = req.notification_type.as_deref().unwrap_or("server_alert");
     let mut input = NotificationInput::new(
         auth.user.user_id,
         notification_type,
@@ -167,8 +162,7 @@ pub async fn register_push_device(
     Json(req): Json<RegisterPushDeviceRequest>,
 ) -> Result<Json<PushDeviceResponse>, AppError> {
     req.validate().map_err(map_validation_errors)?;
-    let result =
-        service::register_push_device(&state.pool, user.user_id, &req).await?;
+    let result = service::register_push_device(&state.pool, user.user_id, &req).await?;
     Ok(Json(result))
 }
 
@@ -187,8 +181,7 @@ pub async fn update_push_device(
     Json(req): Json<UpdatePushDeviceRequest>,
 ) -> Result<Json<PushDeviceResponse>, AppError> {
     req.validate().map_err(map_validation_errors)?;
-    let result =
-        service::update_push_device(&state.pool, user.user_id, device_id, &req).await?;
+    let result = service::update_push_device(&state.pool, user.user_id, device_id, &req).await?;
     Ok(Json(result))
 }
 

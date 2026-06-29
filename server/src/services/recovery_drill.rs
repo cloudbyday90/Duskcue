@@ -36,7 +36,7 @@ use tokio::process::Command;
 use uuid::Uuid;
 
 use crate::domains::backup::BackupError;
-use crate::services::backup::{find_latest_pg_dump, verify_pg_dump_file, CommandResult};
+use crate::services::backup::{CommandResult, find_latest_pg_dump, verify_pg_dump_file};
 use crate::state::{AppState, BackupConfig};
 
 const DEFAULT_POSTGRES_IMAGE: &str = "postgres:18-alpine";
@@ -310,19 +310,18 @@ pub async fn run_recovery_drill(
     let port = options.port;
 
     let compose_dir = std::env::temp_dir().join(&project);
-    let compose_path = match write_compose_file(&compose_dir, &options.postgres_image, port, &password)
-        .await
-    {
-        Ok(path) => path,
-        Err(err) => {
-            stats
-                .errors
-                .push(format!("failed to write compose file: {err}"));
-            stats.status = "failed".to_string();
-            finalize_stats(&mut stats, start);
-            return Ok(stats);
-        }
-    };
+    let compose_path =
+        match write_compose_file(&compose_dir, &options.postgres_image, port, &password).await {
+            Ok(path) => path,
+            Err(err) => {
+                stats
+                    .errors
+                    .push(format!("failed to write compose file: {err}"));
+                stats.status = "failed".to_string();
+                finalize_stats(&mut stats, start);
+                return Ok(stats);
+            }
+        };
 
     let startup_start = Instant::now();
     let compose_path_str = compose_path.to_string_lossy().into_owned();
@@ -340,8 +339,13 @@ pub async fn run_recovery_drill(
                 .errors
                 .push(format!("failed to start disposable postgres: {err}"));
             stats.status = "failed".to_string();
-            stats.disposal =
-                dispose(&project, &compose_path_str, &compose_dir, options.keep_alive).await;
+            stats.disposal = dispose(
+                &project,
+                &compose_path_str,
+                &compose_dir,
+                options.keep_alive,
+            )
+            .await;
             finalize_stats(&mut stats, start);
             return Ok(stats);
         }
@@ -363,9 +367,10 @@ pub async fn run_recovery_drill(
     };
     let restore_succeeded = restore_report.success;
     if !restore_succeeded && !restore_report.stderr_summary.is_empty() {
-        stats
-            .errors
-            .push(format!("pg_restore stderr: {}", restore_report.stderr_summary));
+        stats.errors.push(format!(
+            "pg_restore stderr: {}",
+            restore_report.stderr_summary
+        ));
     }
     stats.restore = Some(restore_report);
 
@@ -377,17 +382,18 @@ pub async fn run_recovery_drill(
                     stats.status = "passed".to_string();
                 } else {
                     stats.status = "failed".to_string();
-                    let failed: Vec<&str> =
-                        checks.iter().filter(|c| !c.passed).map(|c| c.name.as_str()).collect();
+                    let failed: Vec<&str> = checks
+                        .iter()
+                        .filter(|c| !c.passed)
+                        .map(|c| c.name.as_str())
+                        .collect();
                     stats
                         .errors
                         .push(format!("structural checks failed: {}", failed.join(", ")));
                 }
             }
             Err(err) => {
-                stats
-                    .errors
-                    .push(format!("structural check error: {err}"));
+                stats.errors.push(format!("structural check error: {err}"));
                 stats.status = "failed".to_string();
             }
         }
@@ -395,7 +401,13 @@ pub async fn run_recovery_drill(
         stats.status = "failed".to_string();
     }
 
-    stats.disposal = dispose(&project, &compose_path_str, &compose_dir, options.keep_alive).await;
+    stats.disposal = dispose(
+        &project,
+        &compose_path_str,
+        &compose_dir,
+        options.keep_alive,
+    )
+    .await;
     if stats.disposal.status == "cleanup_failed"
         && let Some(stderr) = stats.disposal.stderr.as_ref()
     {
@@ -410,7 +422,9 @@ pub async fn run_recovery_drill(
 
 async fn docker_is_available() -> bool {
     let mut cmd = Command::new("docker");
-    cmd.arg("version").arg("--format").arg("{{.Server.Version}}");
+    cmd.arg("version")
+        .arg("--format")
+        .arg("{{.Server.Version}}");
     cmd.stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null());
@@ -499,9 +513,14 @@ async fn bring_up_disposable_postgres(
     compose_path: &str,
     timeout: Duration,
 ) -> Result<(), BackupError> {
-    let up_result =
-        run_docker_compose(project, compose_path, &["up", "-d"], Duration::from_secs(120), true)
-            .await;
+    let up_result = run_docker_compose(
+        project,
+        compose_path,
+        &["up", "-d"],
+        Duration::from_secs(120),
+        true,
+    )
+    .await;
     if let Err(err) = up_result {
         let _ = cleanup_compose(project, compose_path).await;
         return Err(err);
@@ -572,10 +591,12 @@ async fn restore_pg_dump(
     command.stderr(Stdio::piped());
 
     let start = Instant::now();
-    let child = command.spawn().map_err(|e| BackupError::CommandUnavailable {
-        tool: "pg_restore".to_string(),
-        reason: e.to_string(),
-    })?;
+    let child = command
+        .spawn()
+        .map_err(|e| BackupError::CommandUnavailable {
+            tool: "pg_restore".to_string(),
+            reason: e.to_string(),
+        })?;
 
     let output = tokio::time::timeout(options.timeout, child.wait_with_output())
         .await
@@ -685,9 +706,7 @@ async fn check_schema_migrations(pool: &sqlx::PgPool) -> Result<(i64, bool), sql
     Ok((applied, applied == total && total > 0))
 }
 
-async fn check_core_tables(
-    pool: &sqlx::PgPool,
-) -> Result<(Vec<String>, Vec<String>), sqlx::Error> {
+async fn check_core_tables(pool: &sqlx::PgPool) -> Result<(Vec<String>, Vec<String>), sqlx::Error> {
     let rows = sqlx::query(
         r#"
         SELECT table_name
@@ -896,7 +915,8 @@ mod tests {
 
     #[test]
     fn options_defaults_when_config_empty() {
-        let options = DrillOptions::from_config_and_task(&BackupConfig::default(), &serde_json::json!({}));
+        let options =
+            DrillOptions::from_config_and_task(&BackupConfig::default(), &serde_json::json!({}));
         assert_eq!(options.postgres_image, DEFAULT_POSTGRES_IMAGE);
         assert_eq!(options.port, DEFAULT_PORT);
         assert!(!options.keep_alive);
@@ -1185,7 +1205,12 @@ mod tests {
         ));
         let path = tokio::runtime::Runtime::new()
             .unwrap()
-            .block_on(write_compose_file(&temp, "postgres:18-alpine", 55433, "secret"))
+            .block_on(write_compose_file(
+                &temp,
+                "postgres:18-alpine",
+                55433,
+                "secret",
+            ))
             .unwrap();
         let content = std::fs::read_to_string(&path).unwrap();
         assert!(content.contains("127.0.0.1:55433:5432"));

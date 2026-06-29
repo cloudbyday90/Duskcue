@@ -258,7 +258,7 @@ impl FanartClient {
         ));
         candidates.extend(Self::extract_images(response.moviedisc.as_ref(), "disc"));
 
-        candidates.sort_by(|a, b| b.vote_count.unwrap_or(0).cmp(&a.vote_count.unwrap_or(0)));
+        candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.vote_count.unwrap_or(0)));
 
         candidates
     }
@@ -302,7 +302,7 @@ impl FanartClient {
             "seasonbanner",
         ));
 
-        candidates.sort_by(|a, b| b.vote_count.unwrap_or(0).cmp(&a.vote_count.unwrap_or(0)));
+        candidates.sort_by_key(|candidate| std::cmp::Reverse(candidate.vote_count.unwrap_or(0)));
 
         candidates
     }

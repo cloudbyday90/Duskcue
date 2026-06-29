@@ -170,7 +170,12 @@ pub async fn list_overlays(
         .map(row_to_response)
         .collect();
 
-    let total: i64 = count_builder.build().fetch_one(pool).await?.try_get("count").unwrap_or(0);
+    let total: i64 = count_builder
+        .build()
+        .fetch_one(pool)
+        .await?
+        .try_get("count")
+        .unwrap_or(0);
 
     Ok(OverlayListResponse { items, total })
 }
@@ -265,28 +270,40 @@ pub async fn update_overlay(
         builder.push(", library_id = ").push_bind(library_id);
     }
     if let Some(image_path) = &req.image_path {
-        builder.push(", image_path = ").push_bind(image_path.clone());
+        builder
+            .push(", image_path = ")
+            .push_bind(image_path.clone());
     }
     if let Some(text_template) = &req.text_template {
-        builder.push(", text_template = ").push_bind(text_template.clone());
+        builder
+            .push(", text_template = ")
+            .push_bind(text_template.clone());
     }
     if let Some(font_family) = &req.font_family {
-        builder.push(", font_family = ").push_bind(font_family.clone());
+        builder
+            .push(", font_family = ")
+            .push_bind(font_family.clone());
     }
     if let Some(font_size) = req.font_size {
         builder.push(", font_size = ").push_bind(font_size);
     }
     if let Some(font_color) = &req.font_color {
-        builder.push(", font_color = ").push_bind(font_color.clone());
+        builder
+            .push(", font_color = ")
+            .push_bind(font_color.clone());
     }
     if let Some(stroke_color) = &req.stroke_color {
-        builder.push(", stroke_color = ").push_bind(stroke_color.clone());
+        builder
+            .push(", stroke_color = ")
+            .push_bind(stroke_color.clone());
     }
     if let Some(stroke_width) = req.stroke_width {
         builder.push(", stroke_width = ").push_bind(stroke_width);
     }
     if let Some(back_color) = &req.back_color {
-        builder.push(", back_color = ").push_bind(back_color.clone());
+        builder
+            .push(", back_color = ")
+            .push_bind(back_color.clone());
     }
     if let Some(back_width) = req.back_width {
         builder.push(", back_width = ").push_bind(back_width);
@@ -301,16 +318,24 @@ pub async fn update_overlay(
         builder.push(", back_padding = ").push_bind(back_padding);
     }
     if let Some(horizontal_offset) = req.horizontal_offset {
-        builder.push(", horizontal_offset = ").push_bind(horizontal_offset);
+        builder
+            .push(", horizontal_offset = ")
+            .push_bind(horizontal_offset);
     }
     if let Some(horizontal_align) = &req.horizontal_align {
-        builder.push(", horizontal_align = ").push_bind(horizontal_align.clone());
+        builder
+            .push(", horizontal_align = ")
+            .push_bind(horizontal_align.clone());
     }
     if let Some(vertical_offset) = req.vertical_offset {
-        builder.push(", vertical_offset = ").push_bind(vertical_offset);
+        builder
+            .push(", vertical_offset = ")
+            .push_bind(vertical_offset);
     }
     if let Some(vertical_align) = &req.vertical_align {
-        builder.push(", vertical_align = ").push_bind(vertical_align.clone());
+        builder
+            .push(", vertical_align = ")
+            .push_bind(vertical_align.clone());
     }
     if let Some(scale_width) = req.scale_width {
         builder.push(", scale_width = ").push_bind(scale_width);
@@ -319,22 +344,30 @@ pub async fn update_overlay(
         builder.push(", scale_height = ").push_bind(scale_height);
     }
     if let Some(group_name) = &req.group_name {
-        builder.push(", group_name = ").push_bind(group_name.clone());
+        builder
+            .push(", group_name = ")
+            .push_bind(group_name.clone());
     }
     if let Some(weight) = req.weight {
         builder.push(", weight = ").push_bind(weight);
     }
     if let Some(queue_name) = &req.queue_name {
-        builder.push(", queue_name = ").push_bind(queue_name.clone());
+        builder
+            .push(", queue_name = ")
+            .push_bind(queue_name.clone());
     }
     if let Some(conditions) = req.conditions {
         builder.push(", conditions = ").push_bind(conditions);
     }
     if let Some(suppresses) = &req.suppresses {
-        builder.push(", suppresses = ").push_bind(suppresses.clone());
+        builder
+            .push(", suppresses = ")
+            .push_bind(suppresses.clone());
     }
     if let Some(applies_to) = &req.applies_to {
-        builder.push(", applies_to = ").push_bind(applies_to.clone());
+        builder
+            .push(", applies_to = ")
+            .push_bind(applies_to.clone());
     }
     if let Some(is_enabled) = req.is_enabled {
         builder.push(", is_enabled = ").push_bind(is_enabled);
@@ -347,7 +380,11 @@ pub async fn update_overlay(
     builder.push(" RETURNING ");
     builder.push(RETURNING_COLUMNS);
 
-    let row = builder.build().fetch_optional(pool).await?.ok_or(OverlayError::NotFound)?;
+    let row = builder
+        .build()
+        .fetch_optional(pool)
+        .await?
+        .ok_or(OverlayError::NotFound)?;
     Ok(row_to_response(row_to_definition_row(&row)?))
 }
 
@@ -652,9 +689,7 @@ pub async fn list_templates(pool: &PgPool) -> Result<Vec<OverlayTemplateSummary>
         .map(|row| OverlayTemplateSummary {
             name: row.try_get("name").unwrap_or_default(),
             version: row.try_get("version").unwrap_or(1),
-            overlay_count: row
-                .try_get::<i64, _>("overlay_count")
-                .unwrap_or(0) as usize,
+            overlay_count: row.try_get::<i64, _>("overlay_count").unwrap_or(0) as usize,
         })
         .collect();
 

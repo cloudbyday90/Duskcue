@@ -69,7 +69,13 @@ pub async fn apply_overlays_for_config(
         return Ok(OverlayApplicationResult::default());
     }
 
-    apply_targets(state, targets, resolved.reapply_all, resolved.max_concurrent).await
+    apply_targets(
+        state,
+        targets,
+        resolved.reapply_all,
+        resolved.max_concurrent,
+    )
+    .await
 }
 
 pub async fn apply_overlays_now(
@@ -199,7 +205,10 @@ async fn apply_targets(
 }
 
 fn spawn_target(
-    tasks: &mut JoinSet<(OverlayTarget, Result<overlay_service::CompositeResult, OverlayError>)>,
+    tasks: &mut JoinSet<(
+        OverlayTarget,
+        Result<overlay_service::CompositeResult, OverlayError>,
+    )>,
     state: AppState,
     target: OverlayTarget,
     reapply_all: bool,
@@ -217,7 +226,10 @@ fn spawn_target(
 }
 
 async fn drain_one(
-    tasks: &mut JoinSet<(OverlayTarget, Result<overlay_service::CompositeResult, OverlayError>)>,
+    tasks: &mut JoinSet<(
+        OverlayTarget,
+        Result<overlay_service::CompositeResult, OverlayError>,
+    )>,
     aggregate: &mut OverlayApplicationResult,
 ) {
     let Some(joined) = tasks.join_next().await else {
@@ -329,7 +341,12 @@ fn parse_artwork_types(config: &serde_json::Value) -> Vec<String> {
         })
         .filter(|values| !values.is_empty());
 
-    parsed.unwrap_or_else(|| VALID_ARTWORK_TYPES.iter().map(|s| (*s).to_string()).collect())
+    parsed.unwrap_or_else(|| {
+        VALID_ARTWORK_TYPES
+            .iter()
+            .map(|s| (*s).to_string())
+            .collect()
+    })
 }
 
 #[cfg(test)]
@@ -353,7 +370,10 @@ mod tests {
     #[test]
     fn parse_artwork_types_defaults_to_all_supported_types() {
         let types = parse_artwork_types(&json!({}));
-        assert_eq!(types, vec!["poster", "backdrop", "season_poster", "episode_thumb"]);
+        assert_eq!(
+            types,
+            vec!["poster", "backdrop", "season_poster", "episode_thumb"]
+        );
     }
 
     #[test]

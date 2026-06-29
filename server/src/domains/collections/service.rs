@@ -113,7 +113,9 @@ pub async fn list_collections(
     }
     if let Some(ref collection_type) = query.collection_type {
         builder.push(if where_started { " AND" } else { " WHERE" });
-        builder.push(" collection_type = ").push_bind(collection_type);
+        builder
+            .push(" collection_type = ")
+            .push_bind(collection_type);
         where_started = true;
     }
     if let Some(ref visibility) = query.visibility {
@@ -134,7 +136,9 @@ pub async fn list_collections(
     }
     if let Some(ref collection_type) = query.collection_type {
         count_builder.push(if count_where { " AND" } else { " WHERE" });
-        count_builder.push(" collection_type = ").push_bind(collection_type);
+        count_builder
+            .push(" collection_type = ")
+            .push_bind(collection_type);
         count_where = true;
     }
     if let Some(ref visibility) = query.visibility {
@@ -246,8 +250,7 @@ pub async fn update_collection(
     collection_id: Uuid,
     req: UpdateCollectionRequest,
 ) -> Result<CollectionResponse, CollectionsError> {
-    let mut builder =
-        sqlx::QueryBuilder::new("UPDATE collections SET updated_at = now()");
+    let mut builder = sqlx::QueryBuilder::new("UPDATE collections SET updated_at = now()");
     if let Some(name) = &req.name {
         check_name_unique(pool, req.library_id, name).await?;
         builder.push(", name = ").push_bind(name.clone());
@@ -257,29 +260,41 @@ pub async fn update_collection(
         builder.push(", library_id = ").push_bind(library_id);
     }
     if let Some(description) = &req.description {
-        builder.push(", description = ").push_bind(description.clone());
+        builder
+            .push(", description = ")
+            .push_bind(description.clone());
     }
     if let Some(collection_type) = &req.collection_type {
-        builder.push(", collection_type = ").push_bind(collection_type.clone());
+        builder
+            .push(", collection_type = ")
+            .push_bind(collection_type.clone());
         let is_dynamic = collection_type == "dynamic";
         let is_smart = collection_type == "smart";
         builder.push(", is_dynamic = ").push_bind(is_dynamic);
         builder.push(", is_smart = ").push_bind(is_smart);
     }
     if let Some(visibility) = &req.visibility {
-        builder.push(", visibility = ").push_bind(visibility.clone());
+        builder
+            .push(", visibility = ")
+            .push_bind(visibility.clone());
     }
     if let Some(dynamic_config) = req.dynamic_config {
-        builder.push(", dynamic_config = ").push_bind(dynamic_config);
+        builder
+            .push(", dynamic_config = ")
+            .push_bind(dynamic_config);
     }
     if let Some(smart_filter) = req.smart_filter {
         builder.push(", smart_filter = ").push_bind(smart_filter);
     }
     if let Some(poster_artwork_id) = req.poster_artwork_id {
-        builder.push(", poster_artwork_id = ").push_bind(poster_artwork_id);
+        builder
+            .push(", poster_artwork_id = ")
+            .push_bind(poster_artwork_id);
     }
     if let Some(backdrop_artwork_id) = req.backdrop_artwork_id {
-        builder.push(", backdrop_artwork_id = ").push_bind(backdrop_artwork_id);
+        builder
+            .push(", backdrop_artwork_id = ")
+            .push_bind(backdrop_artwork_id);
     }
     if let Some(sort_order) = req.sort_order {
         builder.push(", sort_order = ").push_bind(sort_order);
@@ -312,10 +327,7 @@ pub async fn update_collection(
     Ok(row_to_response(row_to_collection_row(&row)))
 }
 
-pub async fn delete_collection(
-    pool: &PgPool,
-    collection_id: Uuid,
-) -> Result<(), AppError> {
+pub async fn delete_collection(pool: &PgPool, collection_id: Uuid) -> Result<(), AppError> {
     let row = sqlx::query("SELECT is_system FROM collections WHERE id = $1")
         .bind(collection_id)
         .fetch_optional(pool)
@@ -385,12 +397,11 @@ pub async fn list_collection_items(
 
     let items: Vec<CollectionItemResponse> = rows.iter().map(row_to_item_response).collect();
 
-    let total: i64 = sqlx::query_scalar(
-        r#"SELECT COUNT(*) FROM collection_items WHERE collection_id = $1"#,
-    )
-    .bind(collection_id)
-    .fetch_one(pool)
-    .await?;
+    let total: i64 =
+        sqlx::query_scalar(r#"SELECT COUNT(*) FROM collection_items WHERE collection_id = $1"#)
+            .bind(collection_id)
+            .fetch_one(pool)
+            .await?;
 
     Ok(CollectionItemsResponse {
         items,
@@ -585,7 +596,9 @@ pub async fn list_templates(
             id: row.try_get("id").unwrap_or_default(),
             name: row.try_get("name").unwrap_or_default(),
             description: row.try_get("description").ok().flatten(),
-            template_type: row.try_get("template_type").unwrap_or_else(|_| "single".into()),
+            template_type: row
+                .try_get("template_type")
+                .unwrap_or_else(|_| "single".into()),
             author: row.try_get("author").ok().flatten(),
             source_url: row.try_get("source_url").ok().flatten(),
             is_system: row.try_get("is_system").unwrap_or(false),
@@ -672,9 +685,7 @@ async fn update_collection_counters(
 }
 
 fn row_to_collection_row(row: &sqlx::postgres::PgRow) -> CollectionRow {
-    let metadata: serde_json::Value = row
-        .try_get("metadata")
-        .unwrap_or(serde_json::Value::Null);
+    let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::Value::Null);
     let metadata = if metadata.is_null() {
         serde_json::json!({})
     } else {
@@ -682,8 +693,12 @@ fn row_to_collection_row(row: &sqlx::postgres::PgRow) -> CollectionRow {
     };
     CollectionRow {
         id: row.try_get("id").unwrap_or_default(),
-        created_at: row.try_get("created_at").unwrap_or_else(|_| chrono::Utc::now()),
-        updated_at: row.try_get("updated_at").unwrap_or_else(|_| chrono::Utc::now()),
+        created_at: row
+            .try_get("created_at")
+            .unwrap_or_else(|_| chrono::Utc::now()),
+        updated_at: row
+            .try_get("updated_at")
+            .unwrap_or_else(|_| chrono::Utc::now()),
         library_id: row.try_get("library_id").ok().flatten(),
         name: row.try_get("name").unwrap_or_default(),
         slug: row.try_get("slug").unwrap_or_default(),
@@ -701,11 +716,15 @@ fn row_to_collection_row(row: &sqlx::postgres::PgRow) -> CollectionRow {
         poster_artwork_id: row.try_get("poster_artwork_id").ok().flatten(),
         backdrop_artwork_id: row.try_get("backdrop_artwork_id").ok().flatten(),
         sort_order: row.try_get("sort_order").unwrap_or(0),
-        sort_by: row.try_get("sort_by").unwrap_or_else(|_| "title.asc".into()),
+        sort_by: row
+            .try_get("sort_by")
+            .unwrap_or_else(|_| "title.asc".into()),
         item_count: row.try_get("item_count").unwrap_or(0),
         total_duration_seconds: row.try_get("total_duration_seconds").unwrap_or(0),
         sync_mode: row.try_get("sync_mode").unwrap_or_else(|_| "sync".into()),
-        schedule: row.try_get("schedule").unwrap_or_else(|_| "0 6 * * *".into()),
+        schedule: row
+            .try_get("schedule")
+            .unwrap_or_else(|_| "0 6 * * *".into()),
         last_synced_at: row.try_get("last_synced_at").ok().flatten(),
         last_sync_result: row.try_get("last_sync_result").ok().flatten(),
         is_enabled: row.try_get("is_enabled").unwrap_or(true),
@@ -753,7 +772,9 @@ fn row_to_item_response(row: &sqlx::postgres::PgRow) -> CollectionItemResponse {
         position: row.try_get("position").unwrap_or(0),
         is_missing: row.try_get("is_missing").unwrap_or(false),
         missing_reason: row.try_get("missing_reason").ok().flatten(),
-        created_at: row.try_get("created_at").unwrap_or_else(|_| chrono::Utc::now()),
+        created_at: row
+            .try_get("created_at")
+            .unwrap_or_else(|_| chrono::Utc::now()),
     }
 }
 

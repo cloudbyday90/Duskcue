@@ -37,10 +37,7 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/api/v1/notifications/read-all",
             post(handlers::mark_all_read),
         )
-        .route(
-            "/api/v1/notifications/read",
-            delete(handlers::delete_read),
-        )
+        .route("/api/v1/notifications/read", delete(handlers::delete_read))
         .route(
             "/api/v1/notifications/test",
             post(handlers::send_test_notification),

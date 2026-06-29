@@ -32,7 +32,7 @@
         { href: '/settings/collections', label: 'Collections', icon: 'M3 3h18v18H3z', desc: 'Collection management' },
         { href: '/settings/notifications', label: 'Notifications', icon: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0', desc: 'Notification feed, preferences, and push devices' },
         { href: '/settings/backups', label: 'Backups', icon: 'M21 8v13H3V8M1 3h22v5H1z', desc: 'Backup and recovery' },
-        { href: '/settings/migration', label: 'Migration', icon: 'M3 12h18M3 6h18M3 18h18', desc: 'Import from other platforms', soon: true },
+        { href: '/settings/migration', label: 'Migration', icon: 'M3 12h18M3 6h18M3 18h18', desc: 'Import from other platforms' },
         { href: '/settings/security', label: 'Security', icon: 'M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z', desc: 'Security settings', soon: true },
         { href: '/settings/storage', label: 'Storage', icon: 'M3 3h18v18H3z', desc: 'Cache and storage management', soon: true },
     ];
