@@ -277,6 +277,7 @@ LIMIT 1;
 | TVDb ID match | HIGH | Yes |
 | Title + Year + Type exact | MEDIUM | Yes (if no provider ID available) |
 | Series title + season + episode exact | LOW | Yes, but surfaced for manual review |
+| Admin manual override | HIGH | Yes, explicit admin decision |
 | Unmatched | UNMATCHED | No |
 
 ### Unmatched Items
@@ -304,7 +305,9 @@ Common reasons for unmatched items:
 
 Admin can resolve unmatched items by:
 - Adding the media to our library and re-running migration
-- Manually marking items as watched in our platform
+- Manually matching the source row to a specific `media_item_id`
+- Skipping or ignoring rows that should not be imported
+- Exporting the review queue to CSV for offline audit or bulk investigation
 
 ## Data Import
 
@@ -488,7 +491,7 @@ CREATE TABLE migration_import_log (
     source_item_metadata JSONB NOT NULL DEFAULT '{}',
 
     matched_media_item_id UUID REFERENCES media_items(id) ON DELETE SET NULL,
-    match_method TEXT CHECK (match_method IN ('tmdb_id', 'imdb_id', 'tvdb_id', 'title_year', 'series_episode', 'unmatched')),
+    match_method TEXT CHECK (match_method IN ('tmdb_id', 'imdb_id', 'tvdb_id', 'title_year', 'series_episode', 'manual', 'unmatched')),
     match_confidence TEXT CHECK (match_confidence IS NULL OR match_confidence IN ('high', 'medium', 'low', 'unmatched')),
 
     imported_user_item_data_id UUID REFERENCES user_item_data(id) ON DELETE SET NULL,
@@ -622,6 +625,9 @@ Unmatched Items (144):
 | `POST` | `/api/v1/migrations/{id}/preflight` | Admin | Run no-write readiness checks and return blockers/warnings |
 | `POST` | `/api/v1/migrations/{id}/start` | Admin | Begin the import |
 | `GET` | `/api/v1/migrations/{id}/progress` | Admin | Get real-time progress |
+| `GET` | `/api/v1/migrations/{id}/review` | Admin | List unmatched and low-confidence review rows |
+| `POST` | `/api/v1/migrations/{id}/review/{item_id}` | Admin | Manually match, skip, or ignore a review row |
+| `GET` | `/api/v1/migrations/{id}/review.csv` | Admin | Export the current review queue as CSV |
 | `GET` | `/api/v1/migrations/{id}/unmatched` | Admin | Get unmatched items report |
 | `POST` | `/api/v1/migrations/{id}/cancel` | Admin | Cancel in-progress migration |
 
@@ -816,6 +822,14 @@ The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids
 - Matched rows are persisted with `matched_media_item_id`, `match_method`, `match_confidence`, `status = 'matched'`, and cleared error detail. Unmatched rows are persisted with `match_method = 'unmatched'`, `match_confidence = 'unmatched'`, `status = 'unmatched'`, and an audit reason describing attempted identifiers/fallbacks.
 - Preflight estimates count low-confidence rows from `match_confidence = 'low'`, and unmatched report rows include `match_confidence` for the Task 10 manual review workflow.
 
+## Phase 14 Task 10 Implementation Notes
+
+- Added `20260629060000_migration_manual_review_task10.sql` so `migration_import_log.match_method` accepts `manual` for admin decisions.
+- Added `GET /api/v1/migrations/{id}/review` for the review queue. The default `status = needs_review` filter returns rows with `status = 'unmatched'` plus matched rows with `match_confidence = 'low'`; `unmatched`, `low_confidence`, and `all` filters are also supported.
+- Added `POST /api/v1/migrations/{id}/review/{item_id}`. `action = match` requires a `media_item_id`, verifies that the target local media row exists and has the same importable type (`movie` or `episode`), then sets `matched_media_item_id`, `match_method = 'manual'`, `match_confidence = 'high'`, and `status = 'matched'`. `action = skip` and `action = ignore` clear the match and set `status = 'skipped'` with an audit reason.
+- Added `GET /api/v1/migrations/{id}/review.csv`, served as `text/csv; charset=utf-8` with `Content-Disposition: attachment`, using RFC 4180-compatible quoting for commas, quotes, and embedded line breaks.
+- The settings migration page now exposes a Match Review panel with migration-source selection, review filters, recent local movie/episode candidate dropdowns from `GET /api/v1/media-items`, direct `media_item_id` entry, Match/Skip/Ignore actions, and CSV export. Manual matches return rows to the pending `matched` state so the import runner can process them when Task 11 lands.
+
 ## Security Considerations
 
 | Concern | Mitigation |
@@ -858,6 +872,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 - Reddit r/PleX — Export user watch history tools: https://www.reddit.com/r/PleX/comments/1pkavos/any_tools_to_let_me_export_a_users_watch_history/
 - Plex Forums — Export/Import watch history discussion: https://forums.plex.tv/t/export-import-watch-history/808477
 - Jellyfin API — Discussion #7259 on setting playback progress: https://github.com/orgs/jellyfin/discussions/7259
+- IETF RFC 4180 — Common Format and MIME Type for CSV Files: https://www.rfc-editor.org/rfc/rfc4180
 - Forceu/jellyfinmanager — Go CLI for Jellyfin watched status backup/restore with provider ID matching: https://github.com/Forceu/jellyfinmanager
 - luigi311/JellyPlex-Watched — Multi-user watch sync between Plex and Jellyfin via provider IDs: https://github.com/luigi311/JellyPlex-Watched
 - Florian Jensen — How to migrate from Plex to Jellyfin (August 2024): https://florianjensen.com/2024/08/21/how-to-migrate-from-plex-to-jellyfin/

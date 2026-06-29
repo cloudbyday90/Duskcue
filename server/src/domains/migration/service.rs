@@ -810,6 +810,30 @@ mod tests {
     }
 
     #[test]
+    fn review_filter_defaults_to_items_needing_manual_review() {
+        assert_eq!(
+            review_filter(None).unwrap(),
+            "(l.status = 'unmatched' OR (l.status = 'matched' AND l.match_confidence = 'low'))"
+        );
+        assert_eq!(
+            review_filter(Some("unmatched")).unwrap(),
+            "l.status = 'unmatched'"
+        );
+        assert!(matches!(
+            review_filter(Some("bad")),
+            Err(MigrationError::InvalidSourceConfiguration(_))
+        ));
+    }
+
+    #[test]
+    fn csv_escape_quotes_commas_quotes_and_newlines() {
+        assert_eq!(csv_escape("plain"), "plain");
+        assert_eq!(csv_escape("a,b"), "\"a,b\"");
+        assert_eq!(csv_escape("a\"b"), "\"a\"\"b\"");
+        assert_eq!(csv_escape("a\nb"), "\"a\nb\"");
+    }
+
+    #[test]
     fn source_watch_item_merge_preserves_watched_and_latest_progress() {
         let mapping_id = Uuid::now_v7();
         let mut first = SourceWatchItem {
@@ -2416,12 +2440,14 @@ async fn refresh_mapping_match_counts(
         r#"
         UPDATE migration_user_mapping m
         SET items_matched = counts.items_matched,
-            items_unmatched = counts.items_unmatched
+            items_unmatched = counts.items_unmatched,
+            items_skipped = counts.items_skipped
         FROM (
             SELECT
                 m2.id,
                 COUNT(l.id) FILTER (WHERE l.status IN ('matched', 'imported', 'skipped'))::INT AS items_matched,
-                COUNT(l.id) FILTER (WHERE l.status = 'unmatched')::INT AS items_unmatched
+                COUNT(l.id) FILTER (WHERE l.status = 'unmatched')::INT AS items_unmatched,
+                COUNT(l.id) FILTER (WHERE l.status = 'skipped')::INT AS items_skipped
             FROM migration_user_mapping m2
             LEFT JOIN migration_import_log l ON l.migration_user_mapping_id = m2.id
             WHERE m2.migration_source_id = $1
@@ -2706,6 +2732,342 @@ pub async fn get_migration_progress(
         items_imported: row.get("items_imported"),
         items_skipped: row.get("items_skipped"),
     })
+}
+
+pub async fn get_migration_review(
+    state: &AppState,
+    id: Uuid,
+    query: MigrationReviewQuery,
+    page: u32,
+    page_size: u32,
+) -> Result<MigrationReviewReportResponse, MigrationError> {
+    get_source(state, id).await?;
+
+    let filter = review_filter(query.status.as_deref())?;
+    let limit = page_size.max(1) as i64;
+    let offset = (page.saturating_sub(1) as i64) * limit;
+
+    let mut builder = sqlx::QueryBuilder::new(
+        r#"
+        SELECT l.id, l.source_item_id, l.source_item_title, l.source_item_type,
+               l.source_item_year, l.source_provider_ids, l.source_item_metadata,
+               l.matched_media_item_id, matched.title AS matched_media_title,
+               matched.type AS matched_media_type,
+               EXTRACT(YEAR FROM matched.premiere_date)::INT AS matched_media_year,
+               l.match_method, l.match_confidence, l.status, l.error_detail
+        FROM migration_import_log l
+        LEFT JOIN media_items matched ON matched.id = l.matched_media_item_id
+        WHERE l.migration_source_id =
+        "#,
+    );
+    builder.push_bind(id);
+    builder.push(" AND ");
+    builder.push(filter);
+    builder.push(
+        r#"
+        ORDER BY
+            CASE WHEN l.status = 'unmatched' THEN 0 ELSE 1 END,
+            l.source_item_title,
+            l.source_item_year NULLS LAST,
+            l.source_item_id
+        LIMIT
+        "#,
+    );
+    builder.push_bind(limit);
+    builder.push(" OFFSET ");
+    builder.push_bind(offset);
+
+    let rows = builder.build().fetch_all(&state.pool).await?;
+
+    let mut count_builder = sqlx::QueryBuilder::new(
+        r#"
+        SELECT COUNT(*)
+        FROM migration_import_log l
+        WHERE l.migration_source_id =
+        "#,
+    );
+    count_builder.push_bind(id);
+    count_builder.push(" AND ");
+    count_builder.push(filter);
+    let total: i64 = count_builder.build().fetch_one(&state.pool).await?.get(0);
+
+    Ok(MigrationReviewReportResponse {
+        items: rows.iter().map(row_to_review_item).collect(),
+        total,
+        page,
+        page_size,
+        total_pages: ((total as f64) / (page_size as f64)).ceil() as u32,
+    })
+}
+
+pub async fn resolve_migration_review_item(
+    state: &AppState,
+    id: Uuid,
+    item_id: Uuid,
+    request: ResolveMigrationReviewItemRequest,
+) -> Result<MigrationReviewActionResponse, MigrationError> {
+    let source = get_source(state, id).await?;
+    ensure_not_active(id, &source.status)?;
+
+    let action = request.action.trim().to_ascii_lowercase();
+    match action.as_str() {
+        "match" => resolve_review_match(state, id, item_id, request.media_item_id).await,
+        "skip" | "ignore" => resolve_review_skip(state, id, item_id, &action).await,
+        _ => Err(MigrationError::InvalidSourceConfiguration(format!(
+            "invalid review action: {}",
+            request.action
+        ))),
+    }
+}
+
+pub async fn export_migration_review_csv(
+    state: &AppState,
+    id: Uuid,
+    query: MigrationReviewQuery,
+) -> Result<String, MigrationError> {
+    get_source(state, id).await?;
+    let filter = review_filter(query.status.as_deref())?;
+    let mut builder = sqlx::QueryBuilder::new(
+        r#"
+        SELECT l.id, l.source_item_id, l.source_item_title, l.source_item_type,
+               l.source_item_year, l.source_provider_ids, l.source_item_metadata,
+               l.matched_media_item_id, matched.title AS matched_media_title,
+               matched.type AS matched_media_type,
+               EXTRACT(YEAR FROM matched.premiere_date)::INT AS matched_media_year,
+               l.match_method, l.match_confidence, l.status, l.error_detail
+        FROM migration_import_log l
+        LEFT JOIN media_items matched ON matched.id = l.matched_media_item_id
+        WHERE l.migration_source_id =
+        "#,
+    );
+    builder.push_bind(id);
+    builder.push(" AND ");
+    builder.push(filter);
+    builder.push(
+        r#"
+        ORDER BY
+            CASE WHEN l.status = 'unmatched' THEN 0 ELSE 1 END,
+            l.source_item_title,
+            l.source_item_year NULLS LAST,
+            l.source_item_id
+        "#,
+    );
+
+    let rows = builder.build().fetch_all(&state.pool).await?;
+    Ok(review_rows_to_csv(&rows))
+}
+
+async fn resolve_review_match(
+    state: &AppState,
+    migration_source_id: Uuid,
+    import_log_id: Uuid,
+    media_item_id: Option<Uuid>,
+) -> Result<MigrationReviewActionResponse, MigrationError> {
+    let media_item_id = media_item_id.ok_or_else(|| {
+        MigrationError::InvalidSourceConfiguration(
+            "media_item_id is required for match action".to_string(),
+        )
+    })?;
+
+    let source_item_type = load_review_source_item_type(state, migration_source_id, import_log_id)
+        .await?
+        .ok_or(MigrationError::NotFound(migration_source_id))?;
+    let media_row = sqlx::query(
+        r#"
+        SELECT id, type
+        FROM media_items
+        WHERE id = $1
+          AND type IN ('movie', 'episode')
+        "#,
+    )
+    .bind(media_item_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or_else(|| {
+        MigrationError::InvalidSourceConfiguration(format!(
+            "media item not found or not importable: {media_item_id}"
+        ))
+    })?;
+
+    let media_type: String = media_row.get("type");
+    if media_type != source_item_type {
+        return Err(MigrationError::InvalidSourceConfiguration(format!(
+            "media item type {media_type} does not match source item type {source_item_type}"
+        )));
+    }
+
+    sqlx::query(
+        r#"
+        UPDATE migration_import_log
+        SET matched_media_item_id = $3,
+            match_method = 'manual',
+            match_confidence = 'high',
+            status = 'matched',
+            error_detail = NULL
+        WHERE migration_source_id = $1
+          AND id = $2
+        "#,
+    )
+    .bind(migration_source_id)
+    .bind(import_log_id)
+    .bind(media_item_id)
+    .execute(&state.pool)
+    .await?;
+
+    refresh_mapping_match_counts(state, migration_source_id).await?;
+    Ok(MigrationReviewActionResponse {
+        migration_source_id,
+        import_log_id,
+        status: "matched".to_string(),
+        message: "Review item manually matched and queued for import".to_string(),
+    })
+}
+
+async fn resolve_review_skip(
+    state: &AppState,
+    migration_source_id: Uuid,
+    import_log_id: Uuid,
+    action: &str,
+) -> Result<MigrationReviewActionResponse, MigrationError> {
+    load_review_source_item_type(state, migration_source_id, import_log_id)
+        .await?
+        .ok_or(MigrationError::NotFound(migration_source_id))?;
+
+    let reason = if action == "ignore" {
+        "Ignored during manual migration review"
+    } else {
+        "Skipped during manual migration review"
+    };
+
+    sqlx::query(
+        r#"
+        UPDATE migration_import_log
+        SET matched_media_item_id = NULL,
+            match_method = 'manual',
+            match_confidence = 'unmatched',
+            status = 'skipped',
+            error_detail = $3
+        WHERE migration_source_id = $1
+          AND id = $2
+        "#,
+    )
+    .bind(migration_source_id)
+    .bind(import_log_id)
+    .bind(reason)
+    .execute(&state.pool)
+    .await?;
+
+    refresh_mapping_match_counts(state, migration_source_id).await?;
+    Ok(MigrationReviewActionResponse {
+        migration_source_id,
+        import_log_id,
+        status: "skipped".to_string(),
+        message: format!("Review item {action} decision saved"),
+    })
+}
+
+async fn load_review_source_item_type(
+    state: &AppState,
+    migration_source_id: Uuid,
+    import_log_id: Uuid,
+) -> Result<Option<String>, MigrationError> {
+    Ok(sqlx::query_scalar(
+        r#"
+        SELECT source_item_type
+        FROM migration_import_log
+        WHERE migration_source_id = $1
+          AND id = $2
+        "#,
+    )
+    .bind(migration_source_id)
+    .bind(import_log_id)
+    .fetch_optional(&state.pool)
+    .await?)
+}
+
+fn review_filter(status: Option<&str>) -> Result<&'static str, MigrationError> {
+    match status.unwrap_or("needs_review") {
+        "needs_review" => {
+            Ok("(l.status = 'unmatched' OR (l.status = 'matched' AND l.match_confidence = 'low'))")
+        }
+        "unmatched" => Ok("l.status = 'unmatched'"),
+        "low_confidence" => Ok("l.status = 'matched' AND l.match_confidence = 'low'"),
+        "all" => Ok("l.status IN ('matched', 'unmatched', 'skipped')"),
+        value => Err(MigrationError::InvalidSourceConfiguration(format!(
+            "invalid review status filter: {value}"
+        ))),
+    }
+}
+
+fn row_to_review_item(row: &sqlx::postgres::PgRow) -> MigrationReviewItemResponse {
+    MigrationReviewItemResponse {
+        id: row.get("id"),
+        source_item_id: row.get("source_item_id"),
+        source_item_title: row.get("source_item_title"),
+        source_item_type: row.get("source_item_type"),
+        source_item_year: row.get("source_item_year"),
+        source_provider_ids: row.get("source_provider_ids"),
+        source_item_metadata: row.get("source_item_metadata"),
+        matched_media_item_id: row.get("matched_media_item_id"),
+        matched_media_title: row.get("matched_media_title"),
+        matched_media_type: row.get("matched_media_type"),
+        matched_media_year: row.get("matched_media_year"),
+        match_method: row.get("match_method"),
+        match_confidence: row.get("match_confidence"),
+        status: row.get("status"),
+        error_detail: row.get("error_detail"),
+    }
+}
+
+fn review_rows_to_csv(rows: &[sqlx::postgres::PgRow]) -> String {
+    let mut csv = String::from(
+        "source_item_id,source_title,source_type,source_year,tmdb_id,imdb_id,tvdb_id,match_method,match_confidence,status,error_detail,matched_media_item_id,matched_media_title\n",
+    );
+
+    for row in rows {
+        let provider_ids: Value = row.get("source_provider_ids");
+        let fields = [
+            row.get::<String, _>("source_item_id"),
+            row.get::<String, _>("source_item_title"),
+            row.get::<String, _>("source_item_type"),
+            row.get::<Option<i32>, _>("source_item_year")
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+            provider_id_string(&provider_ids, "tmdb").unwrap_or_default(),
+            provider_id_string(&provider_ids, "imdb").unwrap_or_default(),
+            provider_id_string(&provider_ids, "tvdb").unwrap_or_default(),
+            row.get::<Option<String>, _>("match_method")
+                .unwrap_or_default(),
+            row.get::<Option<String>, _>("match_confidence")
+                .unwrap_or_default(),
+            row.get::<String, _>("status"),
+            row.get::<Option<String>, _>("error_detail")
+                .unwrap_or_default(),
+            row.get::<Option<Uuid>, _>("matched_media_item_id")
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+            row.get::<Option<String>, _>("matched_media_title")
+                .unwrap_or_default(),
+        ];
+        csv.push_str(
+            &fields
+                .iter()
+                .map(|field| csv_escape(field))
+                .collect::<Vec<_>>()
+                .join(","),
+        );
+        csv.push('\n');
+    }
+
+    csv
+}
+
+fn csv_escape(value: &str) -> String {
+    if value.contains([',', '"', '\n', '\r']) {
+        format!("\"{}\"", value.replace('"', "\"\""))
+    } else {
+        value.to_string()
+    }
 }
 
 pub async fn get_unmatched_report(

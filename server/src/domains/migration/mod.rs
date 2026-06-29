@@ -73,6 +73,18 @@ pub fn router(state: AppState) -> Router<AppState> {
             get(handlers::get_migration_progress),
         )
         .route(
+            "/api/v1/migrations/{id}/review",
+            get(handlers::get_migration_review),
+        )
+        .route(
+            "/api/v1/migrations/{id}/review.csv",
+            get(handlers::export_migration_review_csv),
+        )
+        .route(
+            "/api/v1/migrations/{id}/review/{item_id}",
+            post(handlers::resolve_migration_review_item),
+        )
+        .route(
             "/api/v1/migrations/{id}/unmatched",
             get(handlers::get_unmatched_report),
         )

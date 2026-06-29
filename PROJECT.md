@@ -521,6 +521,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 - **Phase 14 task 7 Plex extraction complete** — `/api/v1/migrations/{id}/upload` accepts streamed multipart Plex SQLite uploads, validates and stores `plex.db`, and `/discover` reads it via read-only `rusqlite` to extract accounts, watched/resume rows, and primary/secondary provider GUIDs into durable `discovered` import-log rows.
 - **Phase 14 task 8 user mapping complete** — migration mapping now exposes platform-user options with invite display-name context, persists skipped source users, enforces unique mapped platform users, and requires at least one non-skipped mapping for preflight/start.
 - **Phase 14 task 9 provider/fallback matching complete** — `/api/v1/migrations/{id}/match` transitions discovered rows to `matched` or `unmatched` via TMDb/IMDb/TVDb lookups, exact title + premiere-year + type fallback, and TV series-title + season/episode fallback with persisted confidence.
+- **Phase 14 task 10 manual match review complete** — `/api/v1/migrations/{id}/review` lists unmatched/low-confidence rows, manual match/skip/ignore decisions are persisted with audit state, review CSV export is available, and the migration settings UI exposes the review workflow.
 
 ## Current Implementation Status
 

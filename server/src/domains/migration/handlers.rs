@@ -17,6 +17,8 @@
 use axum::Json;
 use axum::extract::Multipart;
 use axum::extract::{Path, Query, State};
+use axum::http::header::{CONTENT_DISPOSITION, CONTENT_TYPE};
+use axum::response::Response;
 use tokio::io::AsyncWriteExt;
 use uuid::Uuid;
 use validator::Validate;
@@ -198,6 +200,52 @@ pub async fn get_migration_progress(
     Path(id): Path<Uuid>,
 ) -> Result<Json<MigrationProgressResponse>, AppError> {
     Ok(Json(service::get_migration_progress(&state, id).await?))
+}
+
+pub async fn get_migration_review(
+    _auth: Require<CanManageUsers>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<MigrationReviewQuery>,
+) -> Result<Json<MigrationReviewReportResponse>, AppError> {
+    let (page, page_size) = validate_page(
+        query.page,
+        query.page_size,
+        "/api/v1/migrations/{id}/review",
+    )?;
+    Ok(Json(
+        service::get_migration_review(&state, id, query, page, page_size).await?,
+    ))
+}
+
+pub async fn resolve_migration_review_item(
+    _auth: Require<CanManageUsers>,
+    State(state): State<AppState>,
+    Path((id, item_id)): Path<(Uuid, Uuid)>,
+    Json(req): Json<ResolveMigrationReviewItemRequest>,
+) -> Result<Json<MigrationReviewActionResponse>, AppError> {
+    req.validate()
+        .map_err(|e| validation_error(e, "/api/v1/migrations/{id}/review/{item_id}"))?;
+    Ok(Json(
+        service::resolve_migration_review_item(&state, id, item_id, req).await?,
+    ))
+}
+
+pub async fn export_migration_review_csv(
+    _auth: Require<CanManageUsers>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+    Query(query): Query<MigrationReviewQuery>,
+) -> Result<Response, AppError> {
+    let csv = service::export_migration_review_csv(&state, id, query).await?;
+    Response::builder()
+        .header(CONTENT_TYPE, "text/csv; charset=utf-8")
+        .header(
+            CONTENT_DISPOSITION,
+            format!("attachment; filename=\"migration-{id}-review.csv\""),
+        )
+        .body(csv.into())
+        .map_err(|e| AppError::from(MigrationError::InvalidSourceConfiguration(e.to_string())))
 }
 
 pub async fn get_unmatched_report(

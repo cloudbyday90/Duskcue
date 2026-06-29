@@ -102,6 +102,20 @@ pub struct MigrationSourceCredentialRequest {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct MigrationReviewQuery {
+    pub status: Option<String>,
+    pub page: Option<u32>,
+    pub page_size: Option<u32>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct ResolveMigrationReviewItemRequest {
+    #[validate(length(min = 1, max = 20))]
+    pub action: String,
+    pub media_item_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct UnmatchedReportQuery {
     pub page: Option<u32>,
     pub page_size: Option<u32>,
@@ -276,6 +290,42 @@ pub struct PreflightEstimatedCounts {
     pub estimated_match_rate_percent: f32,
     pub low_confidence_count: i64,
     pub unmatched_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrationReviewItemResponse {
+    pub id: Uuid,
+    pub source_item_id: String,
+    pub source_item_title: String,
+    pub source_item_type: String,
+    pub source_item_year: Option<i32>,
+    pub source_provider_ids: serde_json::Value,
+    pub source_item_metadata: serde_json::Value,
+    pub matched_media_item_id: Option<Uuid>,
+    pub matched_media_title: Option<String>,
+    pub matched_media_type: Option<String>,
+    pub matched_media_year: Option<i32>,
+    pub match_method: Option<String>,
+    pub match_confidence: Option<String>,
+    pub status: String,
+    pub error_detail: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrationReviewReportResponse {
+    pub items: Vec<MigrationReviewItemResponse>,
+    pub total: i64,
+    pub page: u32,
+    pub page_size: u32,
+    pub total_pages: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrationReviewActionResponse {
+    pub migration_source_id: Uuid,
+    pub import_log_id: Uuid,
+    pub status: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

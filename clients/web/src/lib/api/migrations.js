@@ -16,7 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { get, post, del } from './core.js';
+import { buildApiUrl, get, post, del } from './core.js';
 
 export async function createMigrationSource(data) {
     return post('/migrations', data);
@@ -70,6 +70,18 @@ export async function runMigrationPreflight(migrationSourceId) {
 
 export async function getMigrationProgress(migrationSourceId) {
     return get(`/migrations/${migrationSourceId}/progress`);
+}
+
+export async function getMigrationReviewItems(migrationSourceId, params = {}) {
+    return get(`/migrations/${migrationSourceId}/review`, params);
+}
+
+export async function resolveMigrationReviewItem(migrationSourceId, itemId, data) {
+    return post(`/migrations/${migrationSourceId}/review/${itemId}`, data);
+}
+
+export function getMigrationReviewCsvUrl(migrationSourceId, params = {}) {
+    return buildApiUrl(`/migrations/${migrationSourceId}/review.csv`, params);
 }
 
 export async function getUnmatchedMigrationItems(migrationSourceId, params = {}) {
