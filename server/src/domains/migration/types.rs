@@ -57,6 +57,23 @@ pub struct CreateMigrationSourceRequest {
     pub connection_config: serde_json::Value,
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct ApiMigrationConnectionConfig {
+    pub method: Option<String>,
+    pub base_url: String,
+    pub api_key: Option<String>,
+    pub api_key_hash: Option<String>,
+    pub api_key_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct PlexMigrationConnectionConfig {
+    pub method: Option<String>,
+    pub original_filename: Option<String>,
+    pub uploaded_at: Option<DateTime<Utc>>,
+    pub file_size_bytes: Option<u64>,
+}
+
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct SaveUserMappingsRequest {
     #[validate(length(min = 1, max = 500))]

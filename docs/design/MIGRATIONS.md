@@ -394,7 +394,15 @@ Jellyfin:
     "method": "api",
     "base_url": "http://192.168.1.100:8096",
     "api_key_hash": "sha256:abcdef...",
-    "api_key_prefix": "jk3m"
+    "api_key_prefix": "jk3m",
+    "credential_mode": "hash_only",
+    "auth_header": "X-Emby-Token",
+    "ssrf_policy": {
+        "redirects": "blocked",
+        "timeout_seconds": 10,
+        "max_response_bytes": 1048576,
+        "private_networks": "allowed_in_local_mode"
+    }
 }
 ```
 
@@ -404,11 +412,19 @@ Emby:
     "method": "api",
     "base_url": "http://192.168.1.101:8096",
     "api_key_hash": "sha256:ghijkl...",
-    "api_key_prefix": "pq7x"
+    "api_key_prefix": "pq7x",
+    "credential_mode": "hash_only",
+    "auth_header": "X-Emby-Token",
+    "ssrf_policy": {
+        "redirects": "blocked",
+        "timeout_seconds": 10,
+        "max_response_bytes": 1048576,
+        "private_networks": "allowed_in_local_mode"
+    }
 }
 ```
 
-API keys are hashed (SHA-256) like our own `api_keys` table. Only the prefix (first 4 chars) is stored in plaintext. The full key is held in memory during the migration session only.
+API keys are hashed (SHA-256) like our own short-lived code patterns. Only the prefix (first 4 chars) is stored in plaintext. The full key is session-only input and is not written to `migration_sources.connection_config`; later source clients must receive a fresh key or use a future encrypted credential path if resumable remote API pulls require it.
 
 ### Migration User Mapping
 
@@ -718,6 +734,15 @@ The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids
 - `POST /api/v1/migrations/{id}/cancel` records `cancelled` for active source states and is a no-op action response for inactive states.
 - Connection, discovery, and start endpoints are now DB-backed action boundaries: they validate source existence and active-state safety but deliberately do not perform source network checks, SQLite inspection, preflight, or runner dispatch until Tasks 3-7.
 
+## Phase 14 Task 3 Implementation Notes
+
+- `POST /api/v1/migrations` now sanitizes and normalizes `connection_config` before insertion.
+- Jellyfin/Emby configs require `method = "api"`, a valid `http` or `https` `base_url`, and an API key supplied as session-only input. The stored config contains only `api_key_hash`, `api_key_prefix`, `credential_mode = "hash_only"`, `auth_header = "X-Emby-Token"`, and outbound-policy metadata.
+- URL validation rejects embedded credentials, fragments, unsupported schemes, unresolvable hosts, cloud metadata service addresses, and always-invalid reserved addresses. In `network_mode = "exposed"`, resolved private, loopback, link-local, and unique-local targets are rejected; local mode allows LAN/loopback media servers.
+- The stored API source policy records disabled redirects, 10-second timeout, and 1 MiB max response size for later Jellyfin/Emby clients.
+- Plex configs require `method = "sqlite_upload"` and the canonical `com.plexapp.plugins.library.db` filename; declared file sizes over 10 GiB are rejected and declared sizes must fit with 2x headroom on the `data_dir/migrations` volume.
+- `validate_plex_database_file()` verifies the SQLite 3 header and required Plex tables (`accounts`, `metadata_items`, `metadata_item_settings`) for the later multipart upload path.
+
 ## Security Considerations
 
 | Concern | Mitigation |
@@ -750,6 +775,10 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 
 ## Research Sources
 
+- OWASP Cheat Sheet Series — Server-Side Request Forgery Prevention Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html
+- Jellyfin API — official API documentation: https://api.jellyfin.org/
+- Emby API — official API documentation: https://dev.emby.media/reference/RestAPI.html
+- Plex Support — Plex Media Server data directory / database location: https://support.plex.tv/articles/202915258-where-is-the-plex-media-server-data-directory-located/
 - Plex Support — Move Viewstate/Ratings from One Install to Another: https://support.plex.tv/articles/201154527-move-viewstate-ratings-from-one-install-to-another/
 - Reddit r/PleX — Fresh install watch history restoration (SQLite export): https://www.reddit.com/r/PleX/comments/e8aox1/fresh_install_how_do_i_restore_my_watch_history/
 - Reddit r/PleX — Export user watch history tools: https://www.reddit.com/r/PleX/comments/1pkavos/any_tools_to_let_me_export_a_users_watch_history/

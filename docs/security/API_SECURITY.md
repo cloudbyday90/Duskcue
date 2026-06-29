@@ -372,6 +372,7 @@ impl OutboundUrlValidator {
 | Trakt.tv | `api.trakt.tv`, `trakt.tv` | Yes — Trakt account link |
 | SubDL subtitles | `api.subdl.com`, `dl.subdl.com` | Yes — `server_config.integrations` |
 | OpenSubtitles subtitles | `api.opensubtitles.com` | Yes — `server_config.integrations` |
+| Migration sources | Admin-entered Jellyfin/Emby base URLs | Yes — Phase 14 migration setup, guarded by network-mode policy |
 | Artwork sources | Provider domains above | Yes |
 | ACME (exposed mode only) | Let's Encrypt ACME directory | Yes — `server_config.security.tls` |
 
@@ -403,6 +404,8 @@ let outbound_client = reqwest::Client::builder()
 ```
 
 **Consumers of this hardened config:** all metadata/artwork/subtitle/Trakt outbound clients (Phase 6+), and the notification webhook dispatch client (`services::notification_dispatch::build_webhook_client`, Phase 13b Task 4). The webhook URL is operator-configured (trusted), but defense-in-depth applies — `no_proxy()` prevents a malicious `HTTP_PROXY` env var from redirecting notification traffic, and `redirect(Policy::none())` blocks SSRF via redirect chains.
+
+**Migration source exception:** Jellyfin and Emby migration sources are admin-entered and often legitimately live on private LAN addresses. Phase 14 Task 3 applies network-mode policy instead of a fixed public allowlist: local mode permits LAN/loopback targets after URL/DNS validation, while exposed mode rejects private, loopback, link-local, unique-local, reserved, and cloud metadata addresses. Stored migration configs also record redirect blocking, 10-second timeout, and 1 MiB response-size policy for the later REST clients.
 
 ---
 
