@@ -143,6 +143,10 @@ The preferences list endpoint returns all notification types with the user's per
 - Dispatches via the standard pipeline (DB-write-first + SSE + webhook + push stub)
 - Returns the `DispatchResult` so the admin can verify per-channel status
 
+### Migration Notifications
+
+Phase 14 Task 13 adds the `migration_completed` and `migration_failed` notification types. They are produced by `workers::migration_runner` for users who can manage migrations and use the standard dispatch pipeline, so they appear in the notification center, the navbar bell SSE feed, and any enabled webhook channel without migration-specific client code.
+
 ### Not Implemented (Deferred to Future Tasks)
 
 - **`user_push_devices` table + registration API** — ✅ Implemented in Phase 13b Task 5. See [MOBILE_PUSH.md](MOBILE_PUSH.md) "Phase 13b Task 5 implementation notes". Four routes under `/api/v1/user/push-devices` (register + list + heartbeat + revoke) with token lifecycle (24h heartbeat → 30-day stale deactivation).

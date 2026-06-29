@@ -20,6 +20,8 @@ use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
 use crate::domains::migration::MigrationError;
+use crate::services::event_bus::ServerEvent;
+use crate::services::notification_dispatch::{NotificationInput, dispatch};
 use crate::state::AppState;
 
 const RUNNING_STATUS: &str = "importing";
@@ -30,6 +32,9 @@ struct MigrationRunSummary {
     matched_items: i64,
     error_items: i64,
     terminal_items: i64,
+    imported_items: i64,
+    skipped_items: i64,
+    unmatched_items: i64,
 }
 
 #[derive(Debug)]
@@ -42,6 +47,27 @@ struct MatchedImportRow {
     source_resume_position_ms: i64,
     source_last_played_at: Option<chrono::DateTime<chrono::Utc>>,
     import_batch_id: Uuid,
+}
+
+#[derive(Debug, Clone)]
+struct MigrationRunContext {
+    migration_source_id: Uuid,
+    platform: String,
+    source_name: String,
+    admin_user_ids: Vec<Uuid>,
+}
+
+#[derive(Debug)]
+struct MigrationProgressSnapshot {
+    status: String,
+    percent_complete: f32,
+    items_discovered: i64,
+    items_matched: i64,
+    items_unmatched: i64,
+    items_imported: i64,
+    items_skipped: i64,
+    items_error: i64,
+    items_processed: i64,
 }
 
 pub async fn spawn_migration_runner(
@@ -58,7 +84,7 @@ pub async fn spawn_migration_runner(
         SET status = $2, last_run_at = now()
         WHERE id = $1
           AND status NOT IN ('discovering', 'matching', 'importing')
-        RETURNING status
+        RETURNING status, platform
         "#,
     )
     .bind(migration_source_id)
@@ -83,11 +109,14 @@ pub async fn spawn_migration_runner(
     state
         .migration_runs
         .insert(migration_source_id, cancellation.clone());
+    let platform: String = row.get("platform");
+    record_migration_started(&platform, state.migration_runs.len());
     let task_state = state.clone();
 
     tokio::spawn(async move {
         let result = run_migration(task_state.clone(), migration_source_id, cancellation).await;
         task_state.migration_runs.remove(&migration_source_id);
+        record_active_migration_runs(task_state.migration_runs.len());
 
         if let Err(error) = result {
             tracing::error!(
@@ -104,6 +133,9 @@ pub async fn spawn_migration_runner(
                     "Failed to persist migration runner failure"
                 );
             }
+            publish_migration_failed_progress(&task_state, migration_source_id).await;
+            record_migration_failed(&task_state, migration_source_id).await;
+            notify_migration_failed(&task_state, migration_source_id, &error.to_string()).await;
         }
     });
 
@@ -123,17 +155,21 @@ async fn run_migration(
     migration_source_id: Uuid,
     cancellation: CancellationToken,
 ) -> Result<(), MigrationError> {
+    let context = load_run_context(&state, migration_source_id).await?;
+    publish_migration_progress(&state, &context, "started").await?;
+
     if cancellation.is_cancelled() || is_source_cancelled(&state, migration_source_id).await? {
         return Ok(());
     }
 
     let import_batch_id = Uuid::now_v7();
     let imported_count =
-        import_matched_items(&state, migration_source_id, import_batch_id, &cancellation).await?;
+        import_matched_items(&state, &context, import_batch_id, &cancellation).await?;
     recalculate_mapping_counters(&state, migration_source_id).await?;
     let summary = load_run_summary(&state, migration_source_id).await?;
 
     if cancellation.is_cancelled() || is_source_cancelled(&state, migration_source_id).await? {
+        publish_migration_progress(&state, &context, "cancelled").await?;
         return Ok(());
     }
 
@@ -151,6 +187,21 @@ async fn run_migration(
     .execute(&state.pool)
     .await?;
 
+    record_migration_terminal(&context.platform, final_status);
+    publish_migration_progress(&state, &context, final_status).await?;
+    match final_status {
+        "completed" => notify_migration_completed(&state, &context, &summary).await,
+        "failed" => {
+            notify_migration_failed(
+                &state,
+                migration_source_id,
+                "one or more import rows failed; review migration details",
+            )
+            .await
+        }
+        _ => {}
+    }
+
     if imported_count > 0 {
         tracing::info!(
             migration_source_id = %migration_source_id,
@@ -164,10 +215,11 @@ async fn run_migration(
 
 async fn import_matched_items(
     state: &AppState,
-    migration_source_id: Uuid,
+    context: &MigrationRunContext,
     import_batch_id: Uuid,
     cancellation: &CancellationToken,
 ) -> Result<u64, MigrationError> {
+    let migration_source_id = context.migration_source_id;
     let rows = sqlx::query(
         r#"
         SELECT
@@ -190,6 +242,7 @@ async fn import_matched_items(
     .await?;
 
     let mut imported_count = 0_u64;
+    let mut processed_count = 0_u64;
     for row in rows {
         if cancellation.is_cancelled() || is_source_cancelled(state, migration_source_id).await? {
             break;
@@ -207,7 +260,11 @@ async fn import_matched_items(
         };
 
         match import_single_matched_item(state, migration_source_id, &import_row).await {
-            Ok(()) => imported_count += 1,
+            Ok(()) => {
+                imported_count += 1;
+                processed_count += 1;
+                record_migration_item_processed(&context.platform, "imported");
+            }
             Err(error) => {
                 mark_import_log_error(
                     state,
@@ -216,10 +273,22 @@ async fn import_matched_items(
                     &error.to_string(),
                 )
                 .await?;
+                processed_count += 1;
+                record_migration_item_processed(&context.platform, "error");
+                metrics::counter!(
+                    "migration_import_errors_total",
+                    "platform" => context.platform.clone()
+                )
+                .increment(1);
             }
+        }
+
+        if processed_count == 1 || processed_count.is_multiple_of(25) {
+            publish_migration_progress(state, context, "importing").await?;
         }
     }
 
+    publish_migration_progress(state, context, "importing").await?;
     Ok(imported_count)
 }
 
@@ -430,7 +499,10 @@ async fn load_run_summary(
             COUNT(*)::BIGINT AS total_items,
             COUNT(*) FILTER (WHERE status = 'matched')::BIGINT AS matched_items,
             COUNT(*) FILTER (WHERE status = 'error')::BIGINT AS error_items,
-            COUNT(*) FILTER (WHERE status IN ('imported', 'rolled_back', 'skipped', 'unmatched', 'error'))::BIGINT AS terminal_items
+            COUNT(*) FILTER (WHERE status IN ('imported', 'rolled_back', 'skipped', 'unmatched', 'error'))::BIGINT AS terminal_items,
+            COUNT(*) FILTER (WHERE status = 'imported')::BIGINT AS imported_items,
+            COUNT(*) FILTER (WHERE status = 'skipped')::BIGINT AS skipped_items,
+            COUNT(*) FILTER (WHERE status = 'unmatched')::BIGINT AS unmatched_items
         FROM migration_import_log
         WHERE migration_source_id = $1
         "#,
@@ -444,7 +516,316 @@ async fn load_run_summary(
         matched_items: row.get("matched_items"),
         error_items: row.get("error_items"),
         terminal_items: row.get("terminal_items"),
+        imported_items: row.get("imported_items"),
+        skipped_items: row.get("skipped_items"),
+        unmatched_items: row.get("unmatched_items"),
     })
+}
+
+async fn load_run_context(
+    state: &AppState,
+    migration_source_id: Uuid,
+) -> Result<MigrationRunContext, MigrationError> {
+    let row = sqlx::query(
+        r#"
+        SELECT platform, name
+        FROM migration_sources
+        WHERE id = $1
+        "#,
+    )
+    .bind(migration_source_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(MigrationError::NotFound(migration_source_id))?;
+
+    Ok(MigrationRunContext {
+        migration_source_id,
+        platform: row.get("platform"),
+        source_name: row.get("name"),
+        admin_user_ids: load_migration_admin_user_ids(state).await?,
+    })
+}
+
+async fn load_migration_admin_user_ids(state: &AppState) -> Result<Vec<Uuid>, MigrationError> {
+    let rows = sqlx::query(
+        r#"
+        SELECT u.id
+        FROM users u
+        WHERE u.deleted_at IS NULL
+          AND u.status = 'active'
+          AND (
+              u.role = 'owner'
+              OR EXISTS (
+                  SELECT 1
+                  FROM user_capabilities granted
+                  WHERE granted.user_id = u.id
+                    AND granted.capability = 'can_manage_users'
+                    AND granted.is_granted = true
+              )
+              OR (
+                  u.role = 'admin'
+                  AND NOT EXISTS (
+                      SELECT 1
+                      FROM user_capabilities denied
+                      WHERE denied.user_id = u.id
+                        AND denied.capability = 'can_manage_users'
+                        AND denied.is_granted = false
+                  )
+              )
+          )
+        ORDER BY u.id
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(rows.iter().map(|row| row.get("id")).collect())
+}
+
+async fn publish_migration_progress(
+    state: &AppState,
+    context: &MigrationRunContext,
+    phase: &str,
+) -> Result<(), MigrationError> {
+    let progress = load_progress_snapshot(state, context.migration_source_id).await?;
+    let payload = json!({
+        "phase": phase,
+        "migration_source_id": context.migration_source_id,
+        "platform": context.platform,
+        "source_name": context.source_name,
+        "status": progress.status,
+        "percent_complete": progress.percent_complete,
+        "items_discovered": progress.items_discovered,
+        "items_matched": progress.items_matched,
+        "items_unmatched": progress.items_unmatched,
+        "items_imported": progress.items_imported,
+        "items_skipped": progress.items_skipped,
+        "items_error": progress.items_error,
+        "items_processed": progress.items_processed,
+    });
+
+    for user_id in &context.admin_user_ids {
+        state.event_bus.publish(
+            *user_id,
+            ServerEvent::new("migration_progress", payload.clone()),
+        );
+    }
+
+    Ok(())
+}
+
+async fn load_progress_snapshot(
+    state: &AppState,
+    migration_source_id: Uuid,
+) -> Result<MigrationProgressSnapshot, MigrationError> {
+    let source_status: String = sqlx::query_scalar(
+        r#"
+        SELECT status
+        FROM migration_sources
+        WHERE id = $1
+        "#,
+    )
+    .bind(migration_source_id)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(MigrationError::NotFound(migration_source_id))?;
+
+    let row = sqlx::query(
+        r#"
+        SELECT
+            COUNT(*)::BIGINT AS items_discovered,
+            COUNT(*) FILTER (WHERE status IN ('matched', 'imported', 'rolled_back', 'skipped'))::BIGINT AS items_matched,
+            COUNT(*) FILTER (WHERE status = 'unmatched')::BIGINT AS items_unmatched,
+            COUNT(*) FILTER (WHERE status = 'imported')::BIGINT AS items_imported,
+            COUNT(*) FILTER (WHERE status = 'skipped')::BIGINT AS items_skipped,
+            COUNT(*) FILTER (WHERE status = 'error')::BIGINT AS items_error,
+            COUNT(*) FILTER (WHERE status IN ('imported', 'rolled_back', 'skipped', 'unmatched', 'error'))::BIGINT AS items_processed
+        FROM migration_import_log
+        WHERE migration_source_id = $1
+        "#,
+    )
+    .bind(migration_source_id)
+    .fetch_one(&state.pool)
+    .await?;
+
+    let items_discovered = row.get("items_discovered");
+    let items_processed = row.get("items_processed");
+    let percent_complete =
+        migration_percent_complete(&source_status, items_discovered, items_processed);
+
+    Ok(MigrationProgressSnapshot {
+        status: source_status,
+        percent_complete,
+        items_discovered,
+        items_matched: row.get("items_matched"),
+        items_unmatched: row.get("items_unmatched"),
+        items_imported: row.get("items_imported"),
+        items_skipped: row.get("items_skipped"),
+        items_error: row.get("items_error"),
+        items_processed,
+    })
+}
+
+fn migration_percent_complete(
+    source_status: &str,
+    items_discovered: i64,
+    items_processed: i64,
+) -> f32 {
+    if source_status == "completed" {
+        100.0
+    } else if items_discovered > 0 {
+        ((items_processed as f32) / (items_discovered as f32) * 100.0).clamp(0.0, 100.0)
+    } else {
+        0.0
+    }
+}
+
+fn record_migration_started(platform: &str, active_runs: usize) {
+    metrics::counter!("migration_runs_started_total", "platform" => platform.to_string())
+        .increment(1);
+    record_active_migration_runs(active_runs);
+}
+
+fn record_migration_terminal(platform: &str, status: &str) {
+    match status {
+        "completed" => {
+            metrics::counter!("migration_runs_completed_total", "platform" => platform.to_string())
+                .increment(1);
+        }
+        "failed" => {
+            metrics::counter!("migration_runs_failed_total", "platform" => platform.to_string())
+                .increment(1);
+        }
+        _ => {}
+    }
+}
+
+async fn record_migration_failed(state: &AppState, migration_source_id: Uuid) {
+    let platform: Option<String> =
+        sqlx::query_scalar("SELECT platform FROM migration_sources WHERE id = $1")
+            .bind(migration_source_id)
+            .fetch_optional(&state.pool)
+            .await
+            .ok()
+            .flatten();
+    metrics::counter!(
+        "migration_runs_failed_total",
+        "platform" => platform.unwrap_or_else(|| "unknown".to_string())
+    )
+    .increment(1);
+}
+
+async fn publish_migration_failed_progress(state: &AppState, migration_source_id: Uuid) {
+    match load_run_context(state, migration_source_id).await {
+        Ok(context) => {
+            if let Err(error) = publish_migration_progress(state, &context, "failed").await {
+                tracing::warn!(
+                    migration_source_id = %migration_source_id,
+                    error = %error,
+                    "Failed to publish migration failure progress event"
+                );
+            }
+        }
+        Err(error) => {
+            tracing::warn!(
+                migration_source_id = %migration_source_id,
+                error = %error,
+                "Failed to load migration context for failure progress event"
+            );
+        }
+    }
+}
+
+fn record_active_migration_runs(active_runs: usize) {
+    metrics::gauge!("migration_active_runs").set(active_runs as f64);
+}
+
+fn record_migration_item_processed(platform: &str, status: &str) {
+    metrics::counter!(
+        "migration_source_items_processed_total",
+        "platform" => platform.to_string(),
+        "stage" => "import",
+        "status" => status.to_string()
+    )
+    .increment(1);
+}
+
+async fn notify_migration_completed(
+    state: &AppState,
+    context: &MigrationRunContext,
+    summary: &MigrationRunSummary,
+) {
+    let metadata = json!({
+        "source-name": context.source_name,
+        "platform": context.platform,
+        "imported-count": summary.imported_items.to_string(),
+        "skipped-count": summary.skipped_items.to_string(),
+        "unmatched-count": summary.unmatched_items.to_string(),
+        "migration_source_id": context.migration_source_id,
+    });
+
+    dispatch_migration_notification(
+        state,
+        &context.admin_user_ids,
+        "migration_completed",
+        metadata,
+        context.migration_source_id,
+    )
+    .await;
+}
+
+async fn notify_migration_failed(state: &AppState, migration_source_id: Uuid, error: &str) {
+    let context = match load_run_context(state, migration_source_id).await {
+        Ok(context) => context,
+        Err(load_error) => {
+            tracing::warn!(
+                migration_source_id = %migration_source_id,
+                error = %load_error,
+                "Failed to load migration context for failure notification"
+            );
+            return;
+        }
+    };
+    let metadata = json!({
+        "source-name": context.source_name,
+        "platform": context.platform,
+        "error": error,
+        "migration_source_id": context.migration_source_id,
+    });
+
+    dispatch_migration_notification(
+        state,
+        &context.admin_user_ids,
+        "migration_failed",
+        metadata,
+        context.migration_source_id,
+    )
+    .await;
+}
+
+async fn dispatch_migration_notification(
+    state: &AppState,
+    user_ids: &[Uuid],
+    notification_type: &str,
+    metadata: Value,
+    migration_source_id: Uuid,
+) {
+    for user_id in user_ids {
+        let mut input = NotificationInput::new(*user_id, notification_type, metadata.clone());
+        input.link = Some("/settings/migration".to_string());
+        input.related_item_type = Some("migration_source".to_string());
+        input.related_item_id = Some(migration_source_id);
+
+        if let Err(error) = dispatch(state, &input).await {
+            tracing::warn!(
+                user_id = %user_id,
+                migration_source_id = %migration_source_id,
+                notification_type,
+                error = %error,
+                "Failed to dispatch migration notification"
+            );
+        }
+    }
 }
 
 fn final_status_from_summary(summary: &MigrationRunSummary) -> &'static str {
@@ -490,6 +871,9 @@ mod tests {
                 matched_items: 0,
                 error_items: 1,
                 terminal_items: 1,
+                imported_items: 0,
+                skipped_items: 0,
+                unmatched_items: 0,
             }),
             "failed"
         );
@@ -499,6 +883,9 @@ mod tests {
                 matched_items: 1,
                 error_items: 0,
                 terminal_items: 0,
+                imported_items: 0,
+                skipped_items: 0,
+                unmatched_items: 0,
             }),
             "pending"
         );
@@ -508,9 +895,20 @@ mod tests {
                 matched_items: 0,
                 error_items: 0,
                 terminal_items: 2,
+                imported_items: 2,
+                skipped_items: 0,
+                unmatched_items: 0,
             }),
             "completed"
         );
+    }
+
+    #[test]
+    fn migration_percent_tracks_terminal_completion_and_bounds() {
+        assert_eq!(migration_percent_complete("completed", 10, 3), 100.0);
+        assert_eq!(migration_percent_complete("importing", 0, 0), 0.0);
+        assert!((migration_percent_complete("importing", 10, 3) - 30.0).abs() < 0.001);
+        assert_eq!(migration_percent_complete("importing", 10, 20), 100.0);
     }
 }
 

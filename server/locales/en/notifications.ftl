@@ -43,3 +43,9 @@ user-invited =
 
 trakt-sync-error =
     Trakt sync failed for { $username }: { $error }
+
+migration-completed =
+    Migration { $source-name } completed: { $imported-count } item(s) imported
+
+migration-failed =
+    Migration { $source-name } failed: { $error }

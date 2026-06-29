@@ -2196,6 +2196,7 @@ pub async fn match_migration_items(
     let status = set_source_status(state, id, final_status).await?;
 
     let counts = result?;
+    record_migration_match_metrics(&source.platform, &counts);
     Ok(MigrationMatchResponse {
         migration_source_id: id,
         status,
@@ -2210,6 +2211,32 @@ pub async fn match_migration_items(
             counts.matched, counts.unmatched
         ),
     })
+}
+
+fn record_migration_match_metrics(platform: &str, counts: &MigrationMatchCounts) {
+    metrics::counter!(
+        "migration_source_items_processed_total",
+        "platform" => platform.to_string(),
+        "stage" => "match",
+        "status" => "processed"
+    )
+    .increment(counts.processed as u64);
+
+    for (confidence, count) in [
+        ("high", counts.high_confidence),
+        ("medium", counts.medium_confidence),
+        ("low", counts.low_confidence),
+        ("unmatched", counts.unmatched),
+    ] {
+        if count > 0 {
+            metrics::counter!(
+                "migration_match_confidence_total",
+                "platform" => platform.to_string(),
+                "confidence" => confidence.to_string()
+            )
+            .increment(count as u64);
+        }
+    }
 }
 
 async fn load_match_candidates(

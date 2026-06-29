@@ -158,6 +158,7 @@ The server maintains a short ring buffer (default: 100 events per user, ~5 minut
 | `transcode_progress` | `services/transcoding.rs` | [STREAMING.md](STREAMING.md) | 1/sec during active transcode; updates `TranscodeSession.progress` |
 | `scan_progress` | `workers/library_scanner.rs` | [MEDIA_SCANNING.md](MEDIA_SCANNING.md) | 1/sec during active library scan |
 | `storyboard_progress` | `workers/storyboard_generator.rs` | [STORYBOARDS.md](STORYBOARDS.md) | Emitted on admin-triggered generation (`phase: started|progress|completed`); scheduled task does not emit |
+| `migration_progress` | `workers/migration_runner.rs` | [MIGRATIONS.md](MIGRATIONS.md) | Emitted to users with `can_manage_users` during import (`phase: started|importing|completed|failed|cancelled`) |
 | `notification` | `services/notification_dispatch.rs` (Phase 13b Task 2) | [MOBILE_PUSH.md](MOBILE_PUSH.md) | New in-app notification created; published via `EventBus::publish()` on every dispatch |
 | `session_kicked` | `domains/auth/service.rs` | [AUTH.md](AUTH.md) | Admin force-logout; client must clear session and redirect to login |
 | `playback_command` | `domains/playback/` | [STREAMING.md](STREAMING.md) | Server-initiated stop/pause (e.g., streaming policy auto-terminate) |

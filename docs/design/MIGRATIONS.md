@@ -855,6 +855,14 @@ The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids
 - Rollback restores the previous snapshot or deletes the imported `user_item_data` row when no previous row existed. If the current `user_item_data.updated_at` is later than the stored import timestamp, rollback skips the row and records `rollback_detail = newer_local_progress` instead of overwriting newer local progress.
 - The migration settings page now exposes a selected-source Rollback panel with availability counts, skipped newer-progress count, latest import timestamp, and the rollback action.
 
+## Phase 14 Task 13 Implementation Notes
+
+- Added `20260629080000_migration_notifications_task13.sql` to seed `migration_completed` and `migration_failed` notification types, backed by `migration-completed` and `migration-failed` Fluent messages in `server/locales/en/notifications.ftl`.
+- The async migration runner publishes `migration_progress` SSE events through `EventBus` to active users who can manage migrations (`owner`, effective `admin`, or explicit `can_manage_users` grant). Payloads include `phase`, source ID/name/platform, current persisted status, percent complete, discovered/matched/imported/skipped/unmatched/error counts, and processed count.
+- Import progress events are emitted when a run starts, after the first imported/error row, every 25 processed rows, at the end of the import loop, and at terminal `completed`, `failed`, or `cancelled` phases.
+- Prometheus metrics now cover `migration_runs_started_total`, `migration_runs_completed_total`, `migration_runs_failed_total`, `migration_active_runs`, `migration_source_items_processed_total`, `migration_match_confidence_total`, and `migration_import_errors_total`.
+- Completion/failure notifications dispatch through the existing DB-write-first notification pipeline. The existing notification center already consumes the resulting `notification` SSE event and REST feed, so no migration-specific notification UI wiring is required for Task 13.
+
 ## Security Considerations
 
 | Concern | Mitigation |

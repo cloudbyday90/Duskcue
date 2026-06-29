@@ -324,6 +324,14 @@ mod tests {
                 "trakt-sync-error",
                 vec![("username", "Bob"), ("error", "timeout")],
             ),
+            (
+                "migration-completed",
+                vec![("source-name", "Plex"), ("imported-count", "42")],
+            ),
+            (
+                "migration-failed",
+                vec![("source-name", "Plex"), ("error", "timeout")],
+            ),
         ];
         for (message_id, arg_pairs) in cases {
             let args: HashMap<Cow<'static, str>, FluentValue> = arg_pairs
