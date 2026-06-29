@@ -28,4 +28,5 @@ export * from './quality.js';
 export * from './segments.js';
 export * from './storyboards.js';
 export * from './subtitles.js';
+export * from './notifications.js';
 export * from './backups.js';

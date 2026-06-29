@@ -414,7 +414,7 @@ If an admin switches from FCM to APNs (or vice versa):
 | `notifications` table + `notification_types` seed | ✅ Implemented | Phase 2 migration |
 | Fluent notification template rendering | ✅ Implemented | Phase 13b Task 1 — `services/i18n.rs`; `notification_types.in_app_template` migrated from English strings to Fluent message IDs |
 | Multi-channel dispatch pipeline | ✅ Implemented | Phase 13b Task 2 — `services/notification_dispatch.rs`; DB-write-first + SSE fan-out + webhook (generic format + HMAC) + push stub |
-| In-app notification center (REST API) | Not started | Phase 13b Task 3 |
+| In-app notification center (REST API) | ✅ Implemented | Phase 13b Task 3 — `domains/notifications/` (10 routes: list + unread-count + mark-read single/all + delete single/all + notification-types + preferences list/update + admin test dispatch). See [NOTIFICATIONS.md](NOTIFICATIONS.md) |
 | SSE event bus for `notification` events | ✅ Wired by dispatch pipeline | `services/event_bus.rs` (Phase 10 Task 11); dispatch pipeline calls `state.event_bus.publish(user_id, ServerEvent::new("notification", payload))` |
 | Webhook dispatch (basic: generic format + HMAC signing) | ✅ Implemented | Phase 13b Task 2 — `notification_dispatch::dispatch_webhook()`; generic JSON payload + `X-Duskcue-Signature` HMAC-SHA256 |
 | Webhook dispatch (formats: ntfy/Gotify/Discord/Slack + retry) | Not started | Phase 13b Task 4 |
@@ -449,6 +449,15 @@ If an admin switches from FCM to APNs (or vice versa):
 3. **Generic webhook format in Task 2, rich formats in Task 4** — Task 2 ships a `generic` JSON payload with HMAC signing (sufficient for operators using ntfy/generic endpoints). Task 4 adds format-specific payloads (ntfy headers, Gotify/Discord/Slack JSON shapes) and retry with exponential backoff.
 4. **Push dispatch stub returns `"not_implemented"` status** — The fan-out logic is complete (checks config + preferences); only the actual provider HTTP call is deferred. This makes the push channel a no-op now and a working channel when Task 5 + Phase 16a land, with no pipeline API change.
 5. **`ring::hmac` for webhook signing** — `ring` is already in the workspace (rustls, PBKDF2, AES-256-GCM). No new HMAC crate needed. `ring::hmac::{Key, HMAC_SHA256, sign}` is the canonical API.
+
+**Phase 13b Task 3 implementation notes:**
+
+- **In-app notification center is the in-app channel** — The dispatch pipeline (Task 2) writes the notification record to the DB; Task 3 exposes that record via REST. The DB record IS the in-app channel — "the notification record always exists in the database, regardless of which channels deliver it" (Task 2 key decision). Task 3 makes that guarantee visible to clients.
+- **Notification CRUD surface** — 10 routes under `/api/v1/notifications` + `/api/v1/notification-types` + `/api/v1/user/notification-preferences`. All user-scoped routes require `AuthenticatedUser` (BOLA enforced at SQL layer — `user_id` bound into every `WHERE` clause). The single admin route (`POST /api/v1/notifications/test`) requires `Require<CanManageServer>` and dispatches via the existing pipeline.
+- **Cursor pagination per API_CONVENTIONS.md** — Notifications use cursor pagination ("Chronological feed" per the Pagination Strategy table). `notifications.id` is `UUID DEFAULT uuidv7()` — UUIDv7's embedded timestamp makes the primary key naturally time-ordered. Cursor encode/decode reuses the media domain's base64+JSON pattern.
+- **Preferences materialize defaults** — `GET /api/v1/user/notification-preferences` LEFT JOINs `notification_types` with `user_notification_preferences`. Most users will have zero explicit preference rows — they accept defaults from `notification_types.is_enabled_by_default`. The `is_using_defaults: bool` flag tells the UI whether the user has explicitly overridden anything for that type.
+- **Test endpoint for verification** — `POST /api/v1/notifications/test` (admin-only) dispatches via the existing pipeline. Serves the Phase 13b verification criterion: "Admin triggers a test notification. Notification appears in-app, via SSE, and via webhook." Returns per-channel status (`in_app`/`sse`/`webhook`/`push`) so the admin can verify fan-out.
+- **See [NOTIFICATIONS.md](NOTIFICATIONS.md)** for the authoritative design — route table, authorization model, pagination strategy, error handling, and implementation notes for the in-app notification center API.
 
 ## Key Decisions
 

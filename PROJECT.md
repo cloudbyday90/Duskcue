@@ -529,7 +529,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 11: Analytics & Trakt | **Complete** (Tasks 1–9: analytics + dashboard + trakt scaffolding + trakt OAuth + trakt sync engine + trakt sync worker + GeoIP service + impossible travel detection + GeoIP database updater) | — |
 | Phase 12: Kometa-Like System | **Complete** (Tasks 1–11 complete: overlays, compositing, conditions, clean art, collections, overlay worker, poster management, asset-directory scan, community imports, overlays admin UI + definition CRUD, collections admin UI + collection CRUD/items/templates) | — |
 | Phase 13a: System Operations Core | **Complete** (Tasks 2-10 all complete: server_config API, scheduled-task management, backup domain + coordination + scheduled runner, reindex maintenance, disk-space check, recovery drill runner, admin settings UI slice) | — |
-| Phase 13b: Notification System | **In progress** (Tasks 1-2 complete — Fluent i18n + multi-channel dispatch pipeline with SSE/webhook/push fan-out) | — |
+| Phase 13b: Notification System | **In progress** (Tasks 1-3 complete — Fluent i18n, multi-channel dispatch pipeline with SSE/webhook/push fan-out, in-app notification center CRUD with cursor pagination + preferences + admin test dispatch) | — |
 | Phase 14–16 | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.

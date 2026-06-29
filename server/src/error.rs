@@ -108,6 +108,9 @@ pub enum AppError {
     Media(#[from] crate::domains::media::MediaError),
 
     #[error(transparent)]
+    Notifications(#[from] crate::domains::notifications::NotificationsError),
+
+    #[error(transparent)]
     Overlay(#[from] crate::domains::overlays::OverlayError),
 
     #[error(transparent)]
@@ -163,6 +166,10 @@ impl IntoResponse for AppError {
             }
             AppError::Media(e) => {
                 let (s, c, d) = media_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Notifications(e) => {
+                let (s, c, d) = notifications_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::Overlay(e) => {
@@ -838,6 +845,45 @@ fn media_error_to_http(
             format!("Duplicate episode number {} for season", n),
         ),
         MediaError::Database(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL",
+            "Internal server error".into(),
+        ),
+    }
+}
+
+fn notifications_error_to_http(
+    err: &crate::domains::notifications::NotificationsError,
+) -> (StatusCode, &'static str, String) {
+    use crate::domains::notifications::NotificationsError;
+
+    match err {
+        NotificationsError::NotFound => (
+            StatusCode::NOT_FOUND,
+            "SYS_004",
+            "Notification not found".into(),
+        ),
+        NotificationsError::NotificationTypeNotFound => (
+            StatusCode::NOT_FOUND,
+            "NOT_FOUND",
+            "Notification type not found".into(),
+        ),
+        NotificationsError::InvalidCategory(c) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALID_001",
+            format!("Invalid category: {c}"),
+        ),
+        NotificationsError::InvalidPriority(p) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALID_001",
+            format!("Invalid priority: {p}"),
+        ),
+        NotificationsError::InvalidChannelConfig(msg) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALID_001",
+            format!("Invalid channel configuration: {msg}"),
+        ),
+        NotificationsError::Database(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "INTERNAL",
             "Internal server error".into(),

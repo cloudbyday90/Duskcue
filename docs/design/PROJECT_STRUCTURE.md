@@ -132,6 +132,13 @@ project/
 │       │   │   ├── error.rs
 │       │   │   └── types.rs
 │       │   │
+│       │   ├── notifications/    # In-app notification center CRUD + preferences
+│       │   │   ├── mod.rs
+│       │   │   ├── handlers.rs
+│       │   │   ├── service.rs
+│       │   │   ├── error.rs
+│       │   │   └── types.rs
+│       │   │
 │       │   └── backup/           # Backup coordination, WAL-G integration
 │       │       ├── mod.rs
 │       │       ├── handlers.rs
@@ -556,6 +563,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(users::router(state.clone()))
         .merge(libraries::router(state.clone()))
         .merge(media::router(state.clone()))
+        .merge(notifications::router(state.clone()))
         .merge(playback::router(state.clone()))
         .merge(analytics::router(state.clone()))
         .merge(trakt::router(state.clone()))

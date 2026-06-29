@@ -7,27 +7,32 @@
 // (at your option) any later version.
 //
 // This program is distributed in the hope that it will be useful,
-// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// but WITHOUT ANY WARRANTY; without even implied
 // MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
 // GNU Affero General Public License for more details.
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-pub mod analytics;
-pub mod auth;
-pub mod backup;
-pub mod collections;
-pub mod libraries;
-pub mod media;
-pub mod notifications;
-pub mod overlays;
-pub mod playback;
-pub mod posters;
-pub mod quality;
-pub mod segments;
-pub mod storyboards;
-pub mod subtitles;
-pub mod system;
-pub mod trakt;
-pub mod users;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum NotificationsError {
+    #[error("notification not found")]
+    NotFound,
+
+    #[error("notification type not found")]
+    NotificationTypeNotFound,
+
+    #[error("invalid category: {0}")]
+    InvalidCategory(String),
+
+    #[error("invalid priority: {0}")]
+    InvalidPriority(String),
+
+    #[error("invalid channel configuration: {0}")]
+    InvalidChannelConfig(String),
+
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+}
