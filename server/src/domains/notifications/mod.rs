@@ -22,7 +22,7 @@ pub mod types;
 pub use error::NotificationsError;
 
 use axum::Router;
-use axum::routing::{get, post};
+use axum::routing::{delete, get, post, put};
 
 use crate::state::AppState;
 
@@ -39,7 +39,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/api/v1/notifications/read",
-            axum::routing::delete(handlers::delete_read),
+            delete(handlers::delete_read),
         )
         .route(
             "/api/v1/notifications/test",
@@ -51,7 +51,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/api/v1/notifications/{notification_id}",
-            axum::routing::delete(handlers::delete_notification),
+            delete(handlers::delete_notification),
         )
         .route(
             "/api/v1/notification-types",
@@ -63,7 +63,15 @@ pub fn router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/api/v1/user/notification-preferences/{type_id}",
-            axum::routing::put(handlers::update_user_preference),
+            put(handlers::update_user_preference),
+        )
+        .route(
+            "/api/v1/user/push-devices",
+            post(handlers::register_push_device).get(handlers::list_push_devices),
+        )
+        .route(
+            "/api/v1/user/push-devices/{device_id}",
+            put(handlers::update_push_device).delete(handlers::delete_push_device),
         )
         .with_state(state)
 }

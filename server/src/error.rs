@@ -883,6 +883,21 @@ fn notifications_error_to_http(
             "VALID_001",
             format!("Invalid channel configuration: {msg}"),
         ),
+        NotificationsError::PushDeviceNotFound => (
+            StatusCode::NOT_FOUND,
+            "SYS_004",
+            "Push device not found".into(),
+        ),
+        NotificationsError::InvalidPushProvider(p) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALID_001",
+            format!("Invalid push provider: {p}"),
+        ),
+        NotificationsError::InvalidPushToken(msg) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALID_001",
+            format!("Invalid push token: {msg}"),
+        ),
         NotificationsError::Database(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "INTERNAL",

@@ -68,7 +68,7 @@ pub fn router(state: AppState) -> Router<AppState> {
 | System config | `/api/v1/server/config` | Full config and per-group config reads/writes |
 | Scheduled tasks | `/api/v1/scheduled-tasks` | List, get, trigger, cancel, run history |
 | Backups | `/api/v1/backups/*` | Backup readiness/status, WAL-G check, manual pg_dump, verification, scheduled-task view, recent runs |
-| Notifications | `/api/v1/notifications/*`, `/api/v1/notification-types`, `/api/v1/user/notification-preferences` | List, unread count, mark-read (single/all), delete (single/all-read), notification types, per-user channel preferences, admin test dispatch |
+| Notifications | `/api/v1/notifications/*`, `/api/v1/notification-types`, `/api/v1/user/notification-preferences`, `/api/v1/user/push-devices` | List, unread count, mark-read (single/all), delete (single/all-read), notification types, per-user channel preferences, admin test dispatch, push device registration/heartbeat/revoke |
 | Search | `/api/v1/search` | Full-text search across media |
 | Quality | `/api/v1/quality/*` | Device profiles, capability wizard, telemetry |
 | Subtitles | `/api/v1/subtitles/*` | List, upload, download, sync settings |

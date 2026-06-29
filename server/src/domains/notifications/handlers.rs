@@ -160,3 +160,43 @@ pub async fn send_test_notification(
         "push": result.push,
     })))
 }
+
+pub async fn register_push_device(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<RegisterPushDeviceRequest>,
+) -> Result<Json<PushDeviceResponse>, AppError> {
+    req.validate().map_err(map_validation_errors)?;
+    let result =
+        service::register_push_device(&state.pool, user.user_id, &req).await?;
+    Ok(Json(result))
+}
+
+pub async fn list_push_devices(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+) -> Result<Json<PushDeviceListResponse>, AppError> {
+    let result = service::list_push_devices(&state.pool, user.user_id).await?;
+    Ok(Json(result))
+}
+
+pub async fn update_push_device(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(device_id): Path<Uuid>,
+    Json(req): Json<UpdatePushDeviceRequest>,
+) -> Result<Json<PushDeviceResponse>, AppError> {
+    req.validate().map_err(map_validation_errors)?;
+    let result =
+        service::update_push_device(&state.pool, user.user_id, device_id, &req).await?;
+    Ok(Json(result))
+}
+
+pub async fn delete_push_device(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(device_id): Path<Uuid>,
+) -> Result<Json<PushDeviceDeletedResponse>, AppError> {
+    service::delete_push_device(&state.pool, user.user_id, device_id).await?;
+    Ok(Json(PushDeviceDeletedResponse { deleted: true }))
+}

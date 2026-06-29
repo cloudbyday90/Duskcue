@@ -926,7 +926,7 @@ Common alternatives considered:
 - `AppState` stores the initialized `Arc<Scheduler>` in a shared `OnceLock`, so manual trigger/cancel requests use the same executor registry as the background scheduler
 - Manual triggers create one `scheduled_task_runs` row and use a state-claim update before execution, preventing duplicate runs when a task is already `running`
 - Run lifecycle now completes history rows for success, failure, timeout, and cancellation; cancellation uses per-task `CancellationToken`s and leaves the current task state `idle` with `last_run_result = 'cancelled'`
-- `notification_cleanup` is registered as a Phase 13a maintenance executor only; it deletes expired notifications or rows older than `config.max_age_days` and does not depend on Phase 13b dispatch
+- `notification_cleanup` is registered as a Phase 13a maintenance executor; it deletes expired notifications or rows older than `config.max_age_days`. As of Phase 13b Task 5, it also deactivates push devices not seen in `config.stale_device_days` days (default 30) by setting `is_active = false, invalidated_at = now()` in `user_push_devices`. The stale-device step is non-fatal — failures are logged at WARN and do not block notification deletion.
 
 **Phase 13a Task 10 (admin settings UI slice):**
 

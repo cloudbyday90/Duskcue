@@ -199,6 +199,7 @@ Promote JSONB fields to real columns when they become frequently queried.
         ──< invitations (created_by)
         ──< notifications >── notification_types
          ──< user_notification_preferences >── notification_types
+         ──< user_push_devices
         ──< client_network_reports >── play_sessions
         ──< qoe_reports >── play_sessions
 
@@ -1586,7 +1587,7 @@ A *capability* is an atomic, named permission (e.g. `can_transcode`, `can_view_a
 
 ### Relationship to Other Domains
 
-- `users` is referenced by `user_item_data`, `play_sessions`, `trakt_accounts`, `trakt_sync_state`, `user_trust_events`, `user_trust_scores`, `bookmarks`, `playlists`, and `notifications`
+- `users` is referenced by `user_item_data`, `play_sessions`, `trakt_accounts`, `trakt_sync_state`, `user_trust_events`, `user_trust_scores`, `bookmarks`, `playlists`, `notifications`, `user_notification_preferences`, and `user_push_devices`
 - `user_sessions` complements `play_sessions` — sessions track *authentication* (when/how a user logged in), play sessions track *activity* (what a user watched)
 - `user_trust_scores` (Activity domain) integrates with session management — low trust scores can trigger session termination or MFA re-challenge
 
@@ -2204,8 +2205,9 @@ The system domain handles server configuration, background task scheduling, and 
 - `notifications` hold individual instances per user with read state, delivery tracking, and polymorphic entity links
 - In-app delivery initially; schema supports multi-channel from day one (email, webhook, push)
 - Per-user per-type opt-in/out preferences; defaults from `notification_types.is_enabled_by_default`
+- `user_push_devices` registers per-user mobile push tokens (FCM/APNs/UnifiedPush) with lifecycle (heartbeat, 30-day stale deactivation, manual revoke); Phase 13b Task 5
 - No partitioning — volume is negligible at 1-50 users (~100-200 notifications/day max)
-- Templates use `{{variable}}` substitution; rendered at notification creation time, not delivery time
+- Templates use Fluent message IDs (Phase 13b Task 1); rendered at notification creation time via `services/i18n.rs`, not delivery time
 - Polymorphic `related_item_type` + `related_item_id` links notifications to any entity
 
 ### Default Scheduled Tasks
@@ -2255,7 +2257,9 @@ server_config (single row)
 scheduled_tasks ──< scheduled_task_runs
 
 notification_types ──< notifications >── users
-                  ──< user_notification_preferences >── users
+                   ──< user_notification_preferences >── users
+
+users ──< user_push_devices
 ```
 
 ### Schema DDL
@@ -2305,7 +2309,7 @@ JSONB column contents (structure documented here, validated by application):
 - `metadata` — Default language, providers, refresh intervals, artwork, overlays, collections. Example: `{ "default_language": "en", "providers": ["tmdb", "tvdb"], "auto_refresh_hours": 6, "artwork_language_priority": ["en"], "artwork_auto_download": true, "artwork_download_originals_only": true, "asset_directory": null, "overlays_enabled": true, "overlay_apply_schedule": "0 5 * * *", "overlay_image_format": "webp", "overlay_image_quality": 90, "overlay_max_image_size_mb": 10, "overlay_default_font": "Inter", "overlay_reapply_on_artwork_change": true, "collections_enabled": true, "collection_sync_schedule": "0 6 * * *", "collection_default_poster_source": "auto", "collection_max_items_default": 100, "collection_track_missing": true, "collection_external_rate_limit_per_minute": 30 }`. Full schema documented in [POSTER_MANAGEMENT.md](POSTER_MANAGEMENT.md), [METADATA_OVERLAYS.md](METADATA_OVERLAYS.md), and [COLLECTIONS.md](COLLECTIONS.md)
 - `security` — TLS config, stream signing, CORS origins, VPN detection. Example: `{ "allowed_origins": [], "tls": { "enabled": false, "port": 443, "acme_directory": "https://acme-v02.api.letsencrypt.org/directory", "acme_email": "", "challenge_type": "http-01", "cert_path": null, "key_path": null, "hsts_max_age_seconds": 63072000, "min_tls_version": "1.2" }, "stream_signing": { "enabled": false, "manifest_ttl_seconds": 60, "segment_ttl_seconds": 300, "key_rotation_hours": 24 }, "vpn_detection": { "auto_detect": true, "vpn_interfaces": ["tun0", "wg0", "utun", "tailscale0"] } }`. Full design documented in [SECURITY.md](../security/SECURITY.md)
 - `auth` — Network mode, WebAuthn RP ID, first-run setup state, auth enforcement, invite code settings, device linking settings, re-auth settings, session timeouts, HTTP rate limits. Example: `{ "network_mode": "local", "rp_id": "media.example.com", "rp_origin": "https://media.example.com", "setup_complete": true, "auth_required": false, "require_https": false, "max_login_attempts": 5, "lockout_duration_minutes": 30, "invite_code_length": 24, "invite_code_default_expiry_days": 30, "invite_code_max_attempts_per_ip": 5, "invite_code_attempt_window_minutes": 15, "device_linking_code_length": 8, "device_linking_code_expiry_seconds": 900, "device_linking_poll_interval_seconds": 5, "reauth_code_length": 16, "reauth_code_expiry_hours": 24, "reauth_max_requests_per_user_per_day": 3, "session_absolute_timeout_days": 90, "session_idle_timeout_hours": null, "session_renewal_timeout_hours": 720, "rate_limits": { "global_per_minute": 100, "global_burst": 50, "auth_per_minute": 10, "auth_burst": 5, "authenticated_per_minute": 300, "authenticated_burst": 100, "streaming_per_minute": 600, "streaming_burst": 50, "admin_per_minute": 1000, "admin_burst": 200 } }`. Rate limit design documented in [API_CONVENTIONS.md](API_CONVENTIONS.md)
-- `notifications` — SMTP configuration for email delivery. Example: `{ "smtp_host": "", "smtp_port": 587, "smtp_from": "", "smtp_tls": true }`
+- `notifications` — Multi-channel dispatch configuration: webhook (URL, secret, format) + mobile push (enabled, provider). Example: `{ "webhook": { "url": "https://ntfy.example.com/duskcue", "secret": "<encrypted>", "format": "ntfy" }, "push": { "enabled": false, "provider": null } }`. Full schema documented in [MOBILE_PUSH.md](MOBILE_PUSH.md); the webhook secret is encrypted at rest via the existing `EncryptionKey` (AES-256-GCM)
 - `backup` — WAL-G and pg_dump configuration, storage, retention. Example: `{ "wal_g_enabled": true, "wal_g_storage_type": "local", "wal_g_storage_path": "/data/backups/wal-g", "wal_g_retention_full": 7, "pg_dump_enabled": true, "pg_dump_storage_path": "/data/backups/dump", "pg_dump_retention_daily": 30, "archive_timeout_seconds": 60, "data_checksums": true, "verification_enabled": true }`. Full schema documented in [BACKUP_RECOVERY.md](../operations/BACKUP_RECOVERY.md)
 - `integrations` — Classifarr and third-party integration settings. Example: `{ "classifarr_enabled": false, "subtitle_providers": { "opensubtitles": { "enabled": true, "api_key": "", "auto_fetch_enabled": true, "auto_fetch_languages": ["en"], "prefer_hearing_impaired": false }, "subdl": { "enabled": false, "api_key": "", "auto_fetch_enabled": false, "auto_fetch_languages": [] } } }`. Subtitle provider settings documented in [SUBTITLES.md](SUBTITLES.md)
 - `logging` — Log level, file rotation, output format. Example: `{ "level": "info", "max_file_size_mb": 10, "max_files": 5, "format": "json" }`. Full design documented in [LOGGING_OBSERVABILITY.md](../operations/LOGGING_OBSERVABILITY.md)
@@ -2518,6 +2522,46 @@ CREATE INDEX idx_user_notification_prefs_user ON user_notification_preferences (
 ```
 
 Per-user per-notification-type channel preferences. If no row exists for a user + type, the application uses `notification_types.is_enabled_by_default`. Most users will have zero rows in this table — they accept defaults. Only explicit opt-in/out creates a row.
+
+`push_enabled BOOLEAN NOT NULL DEFAULT false` was added by Phase 13b Task 2 migration `20260628030000` per [MOBILE_PUSH.md](MOBILE_PUSH.md) schema extension. Users opt into push per notification type via the preferences UI.
+
+#### User Push Devices (Per-User Mobile Push Registration)
+
+```sql
+CREATE TABLE user_push_devices (
+    id UUID DEFAULT uuidv7() PRIMARY KEY,
+    created_at TIMESTAMPTZ GENERATED ALWAYS AS (uuid_extract_timestamp(id)) STORED,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+
+    provider TEXT NOT NULL CHECK (provider IN ('fcm', 'apns', 'unifiedpush')),
+
+    token TEXT NOT NULL,
+
+    device_name TEXT,
+    platform TEXT,
+    app_version TEXT,
+
+    last_seen_at TIMESTAMPTZ,
+    is_active BOOLEAN NOT NULL DEFAULT true,
+
+    invalidated_at TIMESTAMPTZ,
+
+    UNIQUE(user_id, provider, token)
+);
+
+CREATE INDEX idx_user_push_devices_user ON user_push_devices (user_id) WHERE is_active = true;
+```
+
+Created by Phase 13b Task 5 migration `20260629010000`. Per-user mobile push device registration for FCM/APNs/UnifiedPush tokens. Full design in [MOBILE_PUSH.md](MOBILE_PUSH.md).
+
+- **`provider`** — push provider: `fcm` (Firebase Cloud Messaging, covers Android + iOS), `apns` (Apple Push Notification service, iOS-only direct), `unifiedpush` (Android-only, privacy-maximalist via distributor). CHECK constraint matches `PushDispatchConfig::is_configured()`.
+- **`token`** — provider-specific opaque token. FCM: registration token (~152 chars, format may change per Google guidance — not pattern-validated). APNs: device token (historically 64 hex chars; Apple says "don't make assumptions about size"). UnifiedPush: endpoint URL (URL-validated at registration).
+- **`UNIQUE(user_id, provider, token)`** — enables idempotent re-registration via `ON CONFLICT DO UPDATE`. Registration is an upsert: reactivates invalidated devices (`is_active = true, invalidated_at = NULL`) and refreshes `last_seen_at` + metadata.
+- **`last_seen_at`** — updated on registration and heartbeat (`PUT /{id}`). The `notification_cleanup` scheduled task deactivates devices not seen in 30 days (`stale_device_days` config, default 30) by setting `is_active = false, invalidated_at = now()`.
+- **`is_active` / `invalidated_at`** — lifecycle flags. `is_active = false` skips the device during push fan-out. Invalidation sources: (1) staleness (30-day no-heartbeat, server-side), (2) provider "token revoked" response (FCM `UNREGISTERED`/APNs `BadDeviceToken` — requires the push client, deferred to Phase 16a), (3) manual revoke (`DELETE` — hard row removal, not soft-delete).
+- **Partial index `WHERE is_active = true`** — the dispatch pipeline only fans out to active devices, so this index covers the hot path without indexing inactive historical rows.
 
 ---
 

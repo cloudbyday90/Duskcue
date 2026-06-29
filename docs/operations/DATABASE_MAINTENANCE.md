@@ -459,7 +459,7 @@ Two new task types added to the `scheduled_tasks` table:
 | Trakt Sync | Every 1800s (30 min) | 30m | `{}` |
 | Database Backup | `0 4 * * *` (daily 04:00) | 2h | `{}` |
 | Media Health Check | `0 2 * * 0` (weekly Sun 02:00) | 4h | `{}` |
-| Notification Cleanup | Every 86400s (daily) | 5m | `{ "max_age_days": 90 }` |
+| Notification Cleanup | Every 86400s (daily) | 5m | `{ "max_age_days": 90, "stale_device_days": 30 }` |
 | Trust Score Recalculation | Every 3600s (hourly) | 5m | `{}` |
 | Segment Analysis | `0 3 * * *` (daily 03:00) | 4h | `{ "max_concurrent_analyses": 1 }` |
 | Storyboard Generation | `0 4 * * *` (daily 04:00) | 4h | `{ "max_concurrent_analyses": 1, "interval_mode": "adaptive" }` |

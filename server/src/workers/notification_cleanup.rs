@@ -24,6 +24,12 @@ pub async fn run_notification_cleanup(pool: &PgPool, task_id: Uuid, config: serd
         .unwrap_or(90)
         .clamp(1, 3650);
 
+    let stale_device_days = config
+        .get("stale_device_days")
+        .and_then(|v| v.as_i64())
+        .unwrap_or(30)
+        .clamp(1, 3650) as i32;
+
     let result = sqlx::query(
         r#"
         DELETE FROM notifications
@@ -50,6 +56,27 @@ pub async fn run_notification_cleanup(pool: &PgPool, task_id: Uuid, config: serd
                 max_age_days,
                 error = %e,
                 "Notification cleanup failed"
+            );
+        }
+    }
+
+    match crate::domains::notifications::service::deactivate_stale_devices(pool, stale_device_days)
+        .await
+    {
+        Ok(deactivated) => {
+            tracing::info!(
+                task_id = %task_id,
+                deactivated,
+                stale_device_days,
+                "Stale push device deactivation completed"
+            );
+        }
+        Err(e) => {
+            tracing::warn!(
+                task_id = %task_id,
+                stale_device_days,
+                error = %e,
+                "Stale push device deactivation failed"
             );
         }
     }

@@ -3328,7 +3328,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - `user_push_devices` table + registration API — Phase 13b Task 5
 - Notifications UI (notification center, preferences editor, push device management) — Phase 13b Task 6
 4. ~~Implement webhook dispatch — HTTP POST to operator-configured URL with ntfy/Gotify/Discord/Slack/generic formats; HMAC signing; retry with backoff (debt item #8 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))~~ **DONE** — see Task 4 notes below.
-5. Create `user_push_devices` table + `POST /api/v1/user/push-devices` API — device registration for FCM/APNs/UnifiedPush tokens; token lifecycle (heartbeat, auto-invalidation, manual revoke) (debt item #7 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))
+5. ~~Create `user_push_devices` table + `POST /api/v1/user/push-devices` API — device registration for FCM/APNs/UnifiedPush tokens; token lifecycle (heartbeat, auto-invalidation, manual revoke) (debt item #7 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))~~ **DONE** — see Task 5 notes below.
 6. Build notifications UI — notification center, preferences, push device management, per-channel opt-in per notification type
 
 **Verification:** Admin triggers a test notification. Notification appears in-app (notification center), via SSE (live update if web client is open), and via webhook (operator-configured endpoint). Notification templates render in the user's preferred locale via Fluent. Push devices register and display in user settings.
@@ -3357,6 +3357,33 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **Fire-and-forget preserved; no "degraded + admin notified" yet** — Retry loop runs entirely in the spawned `tokio::spawn` task. After exhaustion, `delivery_status.webhook = "failed"` + WARN log. The MOBILE_PUSH.md "after 5 failures mark degraded and notify admin" deferred — admin self-notification via the dispatch pipeline risks recursion; deferred to a future hardening task. The notification record in the DB is always the source of truth, so webhook failure is never data loss.
 - **Webhook client adds `connect_timeout(10s)` + `no_proxy()`** — Task 2's client had only `timeout(15s)` + `redirect::none()`. Task 4 adds the connection-phase timeout (so a silent TCP drop fails fast instead of consuming the full 15s) and `no_proxy()` per API_SECURITY.md SSRF hardening (prevents a malicious `HTTP_PROXY` env var from redirecting webhook traffic).
 - **16 unit + 2 integration tests** — Unit tests cover format parsing, all 5 format bodies, HMAC presence/absence, status classification, Retry-After parsing, jitter band, and the backoff schedule. The 2 `tokio::test` integration tests use a raw `TcpListener` to serve a real HTTP 429 (with `Retry-After: 2`) and a real 404, verifying `send_once` classifies them correctly into `RetryableStatus`/`NonRetryableStatus` with parsed headers. No `mockito`/`wiremock` crate added — raw TCP keeps the test dependency-free. 638 server tests pass (620 prior + 18 new), 0 clippy warnings, 0 svelte-check warnings.
+
+**What was built for Task 5:**
+
+| File | Purpose |
+|---|---|
+| `server/migrations/20260629010000_create_user_push_devices.sql` | `user_push_devices` table per MOBILE_PUSH.md DDL — UUIDv7 PK, `UNIQUE(user_id, provider, token)` for upsert-safe re-registration, partial index `WHERE is_active = true`, `provider` CHECK matching `PushDispatchConfig::is_configured()` |
+| `server/src/domains/notifications/service.rs` | 5 push-device service functions: `register_push_device` (upsert on conflict reactivates invalidated devices + refreshes metadata via COALESCE), `list_push_devices` (ordered active-first, recently-seen-first), `update_push_device` (heartbeat — `last_seen_at=now()`, optional metadata refresh; `is_active=true` guard), `delete_push_device` (hard DELETE; manual revoke), `deactivate_stale_devices` (server-side 30-day staleness deactivation for the cleanup worker); 3 validators: `validate_push_provider`, `validate_push_token` (no pattern validation for FCM/APNs per Google/Apple guidance; URL validation for UnifiedPush), `validate_optional_length`; `mask_token` helper (first 8 + last 4 chars); 11 unit tests |
+| `server/src/domains/notifications/handlers.rs` | 4 working handlers: `register_push_device`, `list_push_devices`, `update_push_device`, `delete_push_device` — all user-scoped via `AuthenticatedUser`, BOLA at SQL layer |
+| `server/src/domains/notifications/mod.rs` | Added 2 route groups: `/api/v1/user/push-devices` (POST + GET), `/api/v1/user/push-devices/{device_id}` (PUT + DELETE) |
+| `server/src/domains/notifications/types.rs` | Three-type DTOs: `PushDeviceRow` (internal), `RegisterPushDeviceRequest`/`UpdatePushDeviceRequest` (Deserialize + Validate), `PushDeviceResponse`/`PushDeviceListResponse`/`PushDeviceDeletedResponse` (Serialize); 5 validation statics (`VALID_PUSH_PROVIDERS`, `MAX_PUSH_TOKEN_LEN`, `MAX_DEVICE_NAME_LEN`, `MAX_PLATFORM_LEN`, `MAX_APP_VERSION_LEN`) |
+| `server/src/domains/notifications/error.rs` | Added 3 error variants: `PushDeviceNotFound` (SYS_004), `InvalidPushProvider` (VALID_001), `InvalidPushToken` (VALID_001) |
+| `server/src/error.rs` | Mapped the 3 new variants in `notifications_error_to_http()` |
+| `server/src/workers/notification_cleanup.rs` | Wired `deactivate_stale_devices()` call after expired-notification deletion; reads `stale_device_days` from task config (default 30, clamped [1, 3650]) |
+
+**Key decisions from Task 5:**
+
+- **No pattern validation for FCM/APNs tokens** — Research (June 2026) confirmed both Google ([FCM manage-tokens docs](https://firebase.google.com/docs/cloud-messaging/manage-tokens)) and Apple ([APNs send docs](https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns): *"Don't make assumptions about device token size"*) explicitly warn the format may change and should not be validated against patterns. Duskcue validates only: non-empty + ≤4096 chars + printable ASCII (bytes ≥ 0x20). Strict validation happens at delivery time (provider returns `UNREGISTERED`/`BadDeviceToken` → server-side invalidation in Phase 16a)
+- **UnifiedPush tokens ARE URL-validated** — Unlike FCM/APNs, UnifiedPush tokens are endpoint URLs returned by the distributor (e.g., `https://ntfy.example.com/duskcue-up/abcdef`). `url::Url::parse` validation catches malformed registrations early. Matches the "Duskcue treats UnifiedPush as a special webhook" design
+- **Registration is an upsert (idempotent re-registration)** — `ON CONFLICT (user_id, provider, token) DO UPDATE SET last_seen_at = now(), is_active = true, invalidated_at = NULL`. This reactivates previously invalidated devices (app re-install with the same FCM token after Google rotation) and refreshes metadata via COALESCE. Mobile apps should call `POST` on every launch — no separate "register vs heartbeat" decision for the client
+- **Heartbeat (`PUT /{device_id}`) requires `is_active = true`** — The `WHERE id = $1 AND user_id = $2 AND is_active = true` clause means heartbeats on invalidated devices return `PushDeviceNotFound` (BOLA-safe: no information leakage). The mobile app re-registers via `POST` on next launch, which reactivates
+- **30-day stale-device deactivation wired into `notification_cleanup`** — The existing scheduled task (every 1h, per Phase 2 seed) now calls `deactivate_stale_devices()` after deleting expired notifications. Devices with `last_seen_at < now() - INTERVAL '30 days'` are set `is_active = false, invalidated_at = now()`. Configurable via task config `stale_device_days` (default 30). Implements the "Devices not seen in 30 days are marked inactive" rule without a new scheduled task
+- **Token-revoked-response invalidation deferred to Phase 16a** — Setting `invalidated_at`/`is_active = false` when FCM returns `UNREGISTERED` (404) or APNs returns `BadDeviceToken`/`Unregistered` requires the FCM/APNs HTTP client. Task 5 ships schema + lifecycle API + staleness deactivation; provider-response invalidation lands with the push client in Phase 16a (matches PHASE_13_SPLIT.md MVP boundary)
+- **Token preview (masked) in responses** — `PushDeviceResponse.token_preview` shows first 8 + last 4 chars with `…` separator. Tokens shorter than 12 chars show `***`. Minimizes token exposure in API responses/logs while still letting users identify which device is which alongside the `device_name` field
+- **Manual revoke is a hard DELETE** — `DELETE /{device_id}` removes the row entirely (not soft-delete). The user explicitly wants the device gone; re-registration creates a new row; soft-deleted rows would accumulate as dead weight. Differs from automatic invalidation (provider response or staleness) which uses `is_active = false` + `invalidated_at` so the dispatch pipeline skips and the mobile app can detect invalidation and re-register
+- **No new error codes** — `PushDeviceNotFound` reuses `SYS_004` (already registered for "Notification not found"); `InvalidPushProvider`/`InvalidPushToken` use `VALID_001`. Follows the established precedent of mapping domain variants to existing codes
+- **No new workspace dependencies** — validation uses existing `url` crate (Phase 4 Task 2 for WebAuthn); all DB/routing/validation uses existing `sqlx`/`axum`/`validator`
+- **11 new unit tests, 0 clippy warnings** — All 651 server tests pass (638 prior + 13 new across notifications service)
 
 **What was built for Task 1:**
 
@@ -3726,7 +3753,7 @@ Phase 8: Web Client Core (COMPLETE — 6 tasks) ←─── (consumes all above
     ├── Phase 12: Kometa-Like System (COMPLETE — 11 tasks)
     ├── Phase 13a: System Operations Core (COMPLETE — config + backup + maintenance)
     │       ↓
-    │   Phase 13b: Notification System (Fluent + dispatch + push)  ←── can overlap with Phase 14 — Tasks 1-2 COMPLETE (Fluent i18n + dispatch pipeline); Tasks 3-6 remain
+    │   Phase 13b: Notification System (Fluent + dispatch + push)  ←── can overlap with Phase 14 — Tasks 1-5 COMPLETE (Fluent i18n + dispatch pipeline + notification CRUD + webhook dispatch + push device registration); Task 6 (notifications UI) remains
     │       │
     ├── Phase 14: Platform Migration  ←── proceeds after 13a, independent of 13b
     │       │

@@ -176,3 +176,65 @@ pub struct PreferenceUpdateResponse {
     pub webhook_enabled: bool,
     pub push_enabled: bool,
 }
+
+pub const VALID_PUSH_PROVIDERS: &[&str] = &["fcm", "apns", "unifiedpush"];
+pub const MAX_PUSH_TOKEN_LEN: usize = 4096;
+pub const MAX_DEVICE_NAME_LEN: usize = 200;
+pub const MAX_PLATFORM_LEN: usize = 50;
+pub const MAX_APP_VERSION_LEN: usize = 50;
+
+pub struct PushDeviceRow {
+    pub id: Uuid,
+    pub user_id: Uuid,
+    pub provider: String,
+    pub token: String,
+    pub device_name: Option<String>,
+    pub platform: Option<String>,
+    pub app_version: Option<String>,
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub is_active: bool,
+    pub invalidated_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct RegisterPushDeviceRequest {
+    pub provider: String,
+    pub token: String,
+    pub device_name: Option<String>,
+    pub platform: Option<String>,
+    pub app_version: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct UpdatePushDeviceRequest {
+    pub device_name: Option<String>,
+    pub platform: Option<String>,
+    pub app_version: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PushDeviceResponse {
+    pub id: Uuid,
+    pub provider: String,
+    pub token_preview: String,
+    pub device_name: Option<String>,
+    pub platform: Option<String>,
+    pub app_version: Option<String>,
+    pub last_seen_at: Option<DateTime<Utc>>,
+    pub is_active: bool,
+    pub invalidated_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PushDeviceListResponse {
+    pub devices: Vec<PushDeviceResponse>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PushDeviceDeletedResponse {
+    pub deleted: bool,
+}

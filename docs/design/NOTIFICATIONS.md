@@ -145,7 +145,7 @@ The preferences list endpoint returns all notification types with the user's per
 
 ### Not Implemented (Deferred to Future Tasks)
 
-- **`user_push_devices` table + registration API** — Phase 13b Task 5
+- **`user_push_devices` table + registration API** — ✅ Implemented in Phase 13b Task 5. See [MOBILE_PUSH.md](MOBILE_PUSH.md) "Phase 13b Task 5 implementation notes". Four routes under `/api/v1/user/push-devices` (register + list + heartbeat + revoke) with token lifecycle (24h heartbeat → 30-day stale deactivation).
 - **Notifications UI** (notification center, preferences editor, push device management) — Phase 13b Task 6
 - **Email delivery channel** — future; `email_template` column exists in `notification_types` but no SMTP infrastructure
 - **Scheduled digests** (daily/weekly email summary) — future enhancement

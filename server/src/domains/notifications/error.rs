@@ -33,6 +33,15 @@ pub enum NotificationsError {
     #[error("invalid channel configuration: {0}")]
     InvalidChannelConfig(String),
 
+    #[error("push device not found")]
+    PushDeviceNotFound,
+
+    #[error("invalid push provider: {0}")]
+    InvalidPushProvider(String),
+
+    #[error("invalid push token: {0}")]
+    InvalidPushToken(String),
+
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 }
