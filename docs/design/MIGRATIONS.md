@@ -614,6 +614,8 @@ All endpoints require admin capability (`can_manage_users`).
 
 `MIGR_011` is a temporary scaffold code used during Phase 14 task sequencing. Remove it from reachable paths as CRUD, discovery, preflight, import, and review behavior is implemented.
 
+As of Phase 14 Task 2, the migration service no longer returns `MIGR_011` from the wired endpoints. The enum mapping remains until all later task seams are filled, but current CRUD/status paths return concrete `MIGR_001`-`MIGR_010` errors or successful action responses.
+
 ### Error Scenarios
 
 | Scenario | Behavior |
@@ -704,6 +706,17 @@ The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids
 - Added migration-domain query indexes for `migration_sources.status`, `migration_user_mapping.migration_source_id`, `migration_import_log.migration_source_id`, `migration_import_log.status`, and `migration_import_log.matched_media_item_id`.
 - Added `cancelled` to `migration_sources.status`; cancelled migrations remain auditable and can be resumed later by returning to the pending/import path from persisted import logs.
 - Registered `Migration Cleanup` as a `migration_cleanup` scheduled task for existing deployments, disabled until the cleanup executor lands in Task 14.
+
+## Phase 14 Task 2 Implementation Notes
+
+- `POST /api/v1/migrations` persists migration sources with validated platform values and returns the created source row.
+- `GET /api/v1/migrations` supports platform/status filtering, newest-first ordering, and offset pagination.
+- `GET` and `DELETE /api/v1/migrations/{id}` use real source lookup and return `MIGR_001` for missing sources; delete is blocked while a source is in `discovering`, `matching`, or `importing`.
+- `POST /api/v1/migrations/{id}/map-users` replaces all mappings for the source in one transaction after validating at least one mapping, duplicate source users, duplicate platform users, and platform-user existence.
+- `GET /api/v1/migrations/{id}/progress` aggregates discovered, matched, unmatched, imported, skipped, and processed counts from `migration_import_log`.
+- `GET /api/v1/migrations/{id}/unmatched` paginates unmatched/import-log rows for the admin review workflow.
+- `POST /api/v1/migrations/{id}/cancel` records `cancelled` for active source states and is a no-op action response for inactive states.
+- Connection, discovery, and start endpoints are now DB-backed action boundaries: they validate source existence and active-state safety but deliberately do not perform source network checks, SQLite inspection, preflight, or runner dispatch until Tasks 3-7.
 
 ## Security Considerations
 

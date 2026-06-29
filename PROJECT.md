@@ -511,8 +511,9 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 - **Import targets** — `user_item_data` only (watch times and resume positions); no favorites, ratings, or playlists
 - **3 new tables** — `migration_sources`, `migration_user_mapping`, `migration_import_log`
 - **11 MIGR error codes** (MIGR_001–MIGR_011; MIGR_011 is temporary scaffold-only HTTP 501)
-- **Phase 14 task 0 scaffold complete** — backend five-file migration domain, `/api/v1/migrations` route shape, `can_manage_users` protection, web API helper, and settings wizard shell are wired; service behavior remains intentionally stubbed for Task 2.
+- **Phase 14 task 0 scaffold complete** — backend five-file migration domain, `/api/v1/migrations` route shape, `can_manage_users` protection, web API helper, and settings wizard shell are wired.
 - **Phase 14 task 1 schema hardening complete** — migration-domain status/filter indexes are in place, `migration_sources.status` supports `cancelled`, and a disabled `migration_cleanup` scheduled task row is seeded for existing deployments until the Task 14 executor lands.
+- **Phase 14 task 2 API foundation complete** — migration source CRUD/listing, user mapping persistence, progress aggregation, unmatched report reads, cancellation state recording, and guarded action responses are DB-backed; source-specific connection/discovery/import behavior remains in later Phase 14 tasks.
 
 ## Current Implementation Status
 
@@ -532,7 +533,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 12: Kometa-Like System | **Complete** (Tasks 1–11 complete: overlays, compositing, conditions, clean art, collections, overlay worker, poster management, asset-directory scan, community imports, overlays admin UI + definition CRUD, collections admin UI + collection CRUD/items/templates) | — |
 | Phase 13a: System Operations Core | **Complete** (Tasks 2-10 all complete: server_config API, scheduled-task management, backup domain + coordination + scheduled runner, reindex maintenance, disk-space check, recovery drill runner, admin settings UI slice) | — |
 | Phase 13b: Notification System | **Complete** (All 6 tasks — Fluent i18n infrastructure + template migration, multi-channel dispatch pipeline with SSE/webhook/push fan-out + DB-write-first guarantee, in-app notification center CRUD with cursor pagination + preferences + admin test dispatch, webhook format-specific dispatch [generic/ntfy/gotify/discord/slack] + HMAC signing for all formats + exponential-backoff retry with full jitter + retryable/non-retryable status classification, `user_push_devices` table + registration/heartbeat/revoke API + 30-day stale-device deactivation, notifications UI — navbar bell + dropdown + persistent notification center store with SSE + polling + full-page Feed/Preferences/Push-Devices/Admin-Test hub) | — |
-| Phase 14: Platform Migration | **In progress** (Tasks 0-1 complete: scaffold + schema/task hardening) | — |
+| Phase 14: Platform Migration | **In progress** (Tasks 0-2 complete: scaffold + schema/task hardening + API foundation) | — |
 | Phase 15–16 | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
