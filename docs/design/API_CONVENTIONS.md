@@ -779,7 +779,7 @@ GET /api/v1/events?types=transcode_progress,scan_progress
 | `storyboard_progress` | Server → Client | `{ phase: "started"\|"progress"\|"completed", library_id, media_file_id, media_item_id, candidates, processed, generated, errors }` |
 | `transcode_progress` | Server → Client | `{ session_id, progress, speed, eta_seconds }` |
 | `scan_progress` | Server → Client | `{ library_id, files_found, files_processed, percent }` |
-| `notification` | Server → Client | `{ type, title, message, action_url }` |
+| `notification` | Server → Client | `{ id, notification_type, category, priority, title, body, link, related_item_type, related_item_id, created_at }` |
 | `session_kicked` | Server → Client | `{ reason }` |
 | `playback_command` | Server → Client | `{ command: "stop" \| "pause", reason }` |
 

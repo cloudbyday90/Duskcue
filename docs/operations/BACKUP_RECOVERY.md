@@ -480,7 +480,7 @@ Implementation notes:
 - The migration `20260628010000_add_backup_recovery_drill_task.sql` extends the `scheduled_tasks.task_type` CHECK constraint to include `backup_recovery_drill` and seeds the task for existing deployments.
 - The drill reuses `services::backup::find_latest_pg_dump` and `services::backup::verify_pg_dump_file` (Phase 13a Task 5 primitives) rather than re-implementing dump discovery or pre-restore verification.
 - WAL-G physical restore is documented as deferred. The service is structured so a future `restore_wal_g_branch` can plug in alongside `restore_pg_dump_branch` without restructuring the worker.
-- No notifications are created directly by the drill. Phase 13b will wrap the drill (and other backup workers) with notification dispatch via the multi-channel pipeline; for now, evidence is surfaced through the admin UI (`/settings/backups`) and `scheduled_task_runs`.
+- No notifications are created directly by the drill. Phase 13b's notification dispatch pipeline (`services/notification_dispatch.rs`) is now available to wrap the drill (and other backup workers) with notification dispatch; integrating dispatch into the backup workers is a follow-up wiring task. For now, evidence is surfaced through the admin UI (`/settings/backups`) and `scheduled_task_runs`.
 
 ### Phase 13a Task 10 Admin UI Notes
 

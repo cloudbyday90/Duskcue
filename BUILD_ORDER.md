@@ -3272,7 +3272,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 ---
 
-## Phase 13b — Notification System
+## Phase 13b — Notification System (COMPLETE)
 
 **Goal:** Notification dispatch with multi-channel delivery (in-app + SSE + webhook), localized templates via Fluent, and push device registration for future mobile push.
 
@@ -3329,9 +3329,38 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - Notifications UI (notification center, preferences editor, push device management) — Phase 13b Task 6
 4. ~~Implement webhook dispatch — HTTP POST to operator-configured URL with ntfy/Gotify/Discord/Slack/generic formats; HMAC signing; retry with backoff (debt item #8 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))~~ **DONE** — see Task 4 notes below.
 5. ~~Create `user_push_devices` table + `POST /api/v1/user/push-devices` API — device registration for FCM/APNs/UnifiedPush tokens; token lifecycle (heartbeat, auto-invalidation, manual revoke) (debt item #7 from [IMPLEMENTATION_DEBT.md](docs/design/IMPLEMENTATION_DEBT.md))~~ **DONE** — see Task 5 notes below.
-6. Build notifications UI — notification center, preferences, push device management, per-channel opt-in per notification type
+6. ~~Build notifications UI — notification center, preferences, push device management, per-channel opt-in per notification type~~ **DONE** — see Task 6 notes below.
 
 **Verification:** Admin triggers a test notification. Notification appears in-app (notification center), via SSE (live update if web client is open), and via webhook (operator-configured endpoint). Notification templates render in the user's preferred locale via Fluent. Push devices register and display in user settings.
+
+**Phase 13b status:** All 6 tasks complete (Fluent i18n infrastructure + template migration; multi-channel dispatch pipeline with DB-write-first + SSE fan-out + webhook with HMAC signing + push stub; in-app notification center CRUD with cursor pagination + preferences + admin test dispatch; webhook format-specific dispatch [generic/ntfy/gotify/discord/slack] + HMAC signing for all formats + exponential-backoff retry with full jitter + retryable/non-retryable status classification + `Retry-After` honored; `user_push_devices` table + registration/heartbeat/revoke API + 30-day stale-device deactivation wired into `notification_cleanup`; notifications UI — notification bell + dropdown in navbar, persistent notification center store with SSE + polling, full-page feed/preferences/push-devices/admin-test hub). 0 svelte-check warnings, 0 build errors.
+
+**What was built for Task 6:**
+
+| File | Purpose |
+|---|---|
+| `clients/web/src/lib/api/notifications.js` | Added 4 push device API functions: `listPushDevices`, `registerPushDevice`, `updatePushDevice` (heartbeat), `deletePushDevice` (revoke) — completing the client API surface for Task 5's backend endpoints |
+| `clients/web/src/lib/stores/notificationCenter.js` | Persistent server notification store: `init()`/`shutdown()` lifecycle (mounted by NotificationBell); SSE `notification` event subscription via `events.on()` prepends live notifications + increments unread; 60s unread-count polling fallback (`fetchUnreadCount`) for when SSE is disconnected; `refresh()` loads first page + unread count in parallel; `loadMore()` cursor pagination; `markRead`/`markAllRead`/`remove`/`deleteRead` with optimistic UI updates (decrement unread, toggle `is_read`); `reset()` on logout; derived exports: `notificationItems`, `unreadCount`, `notificationsLoading`, `notificationsError` |
+| `clients/web/src/lib/components/NotificationBell.svelte` | Navbar bell component: bell-icon button with unread-count badge (caps at 99+); dropdown panel showing 6 recent notifications with category icons, priority indicators, relative timestamps; click notification → mark-read + navigate `link`; per-item delete button; "Mark all read" bulk action; "View all" link to settings page; backdrop close + Escape key support; empty state ("You're all caught up"); initializes and shuts down the `notificationCenter` store on mount/destroy |
+| `clients/web/src/routes/+layout.svelte` | Wired `NotificationBell` between `.nav-search` and `.nav-user` (industry-standard placement — GitHub/GitLab/Slack/Discord); added Notifications link to mobile drawer for discoverability |
+| `clients/web/src/routes/settings/notifications/+page.svelte` | Full notifications hub with 3 tabs: **Feed** (full list with all/unread filter chips, mark-all-read, delete-read, per-item delete, cursor "Load more", empty states), **Preferences** (per-notification-type × per-channel [in-app/webhook/push] toggle matrix with "default" tags, per-row dirty-state save buttons, mobile responsive with `data-label` channel labels), **Push Devices** (registered device list with provider labels, token previews, last-seen/invalidated timestamps, active/inactive badges, revoke buttons; empty state directing to mobile app) + admin-only **Test Notification** section (`Require<CanManageServer>`-gated dispatch button with delivery-status toast feedback) |
+| `clients/web/src/routes/settings/+page.svelte` | Added Notifications link to `settingsLinks` array (bell icon, between Collections and Backups) |
+
+**Key decisions from Task 6:**
+
+- **Distinct store name `notificationCenter` over `notifications`** — The existing `stores/notifications.js` is the ephemeral toast store (transient UI feedback, 5s auto-dismiss). The persistent server notification center needs a different name to avoid collision. `notificationCenter` clearly distinguishes the long-lived, DB-backed notification feed from the short-lived toast messages. Both coexist: toasts fire for user-action feedback ("Preference saved"), the center holds server-dispatched notifications ("New media added").
+- **Bell + dropdown for quick access, full page for management** — The bell dropdown (6 recent items) satisfies the "notification center" verification criterion without a dedicated full-page route for quick glances. The `/settings/notifications` page provides the full feed (cursor pagination, filters), preferences editor, and push device management. This matches the GitHub/GitLab/Slack pattern: bell icon for recent, full page for everything.
+- **SSE primary, polling fallback for unread count** — The store subscribes to the `notification` SSE event (emitted by `notification_dispatch.rs::publish_sse`) for instant updates. A 60s `setInterval` polls `GET /notifications/unread-count` as a safety net for when SSE is disconnected (browser tab backgrounded long enough for the connection to drop, or network blip). The poll only updates the count, not the list — the list refreshes on next page focus / manual refresh.
+- **Optimistic UI on all mutations** — `markRead`, `markAllRead`, `remove`, and `deleteRead` update local state immediately (decrement unread, toggle `is_read`, remove item) before awaiting the API response. Network failures surface as toast errors but the optimistic state remains (the server is authoritative on next `refresh()`). This matches the toast store's synchronous feel and avoids lag on quick mark-read/delete actions.
+- **Per-user preferences accessible to all authenticated users** — Unlike subtitle/overlay/system settings (admin-gated via `can_manage_server`), notification preferences are per-user (`/api/v1/user/notification-preferences` is `AuthenticatedUser`-scoped). The preferences and push-devices tabs are available to every signed-in user. Only the "Test Notification" section within the Push Devices tab is admin-gated (`hasCapability('can_manage_server')`), matching the backend `Require<CanManageServer>` on `POST /notifications/test`.
+- **Push device registration is NOT in the web UI** — Per MOBILE_PUSH.md, device registration happens from the mobile app (`POST /api/v1/user/push-devices` with a provider token from FCM/APNs/UnifiedPush). The web UI only lists registered devices and allows revocation. The empty state directs users to "Install the Duskcue mobile app and sign in to register a device." This matches the PHASE_13_SPLIT.md MVP boundary (schema + API ship now; FCM/APNs client implementations are Phase 16a).
+- **Preferences as a type × channel matrix** — Each notification type is a row; the three channels (in-app, webhook, push) are columns with toggle switches. A "default" tag indicates the user hasn't overridden the system default (`is_using_defaults: true`). Per-row save buttons appear only when that row is dirty, avoiding a single "save all" that might accidentally persist unchanged rows. Mobile collapses to a stacked layout with `data-label` channel names.
+- **Category-color theming** — Each notification category (security=red, system=accent, media=green, task/user=secondary) has a consistent color applied to the badge dot, icon background, and category label. Uses `color-mix(in srgb, ...)` for tinted backgrounds — a modern CSS feature supported by all Duskcue target browsers (Chromium-based, 2024+).
+- **`<div role="button">` over `<li>` for interactive feed items** — Svelte 5's a11y rules warn when non-interactive elements (`<li>`, `<nav>`) get interactive roles or click handlers. Feed items use `<div role="button" tabindex="0" onkeydown>` for keyboard accessibility (Enter/Space activation). The tablist uses `<div role="tablist">` instead of `<nav role="tablist">`. 0 svelte-check warnings maintained.
+- **Test notification shows delivery status** — The admin test button calls `sendTestNotification()` and displays the `delivery_status` per-channel result in a toast (`in_app: delivered, sse: delivered, webhook: pending, push: skipped`). After 600ms, the feed refreshes to show the newly-created in-app notification. This satisfies the Phase 13b verification flow end-to-end through the UI.
+- **No new npm dependencies** — All UI uses Svelte 5 runes (`$state`/`$derived`/`$effect`), `svelte/transition` (`fly`, `fade`), `svelte/animate` (`flip`), and the existing `core.js` HTTP wrapper + `events.js` SSE store. CSS uses design tokens from `app.css` and `color-mix()` for category tints.
+
+**Verification:** `npx svelte-check --threshold warning` → 0 errors, 0 warnings. `npm run build` → success (0 errors). Matches the verification bar from Phase 10 Tasks 7–8 and Phase 8 Task 4.
 
 **MVP fallback:** If Phase 13b takes longer than estimated, ship in-app + SSE + webhook only. Defer FCM/APNs/UnifiedPush client implementations to Phase 16a. The `user_push_devices` table and API still ship (schema-only) to avoid Phase 16a schema migration. See [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md) for details.
 
@@ -3442,6 +3471,8 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 ## Phase 14 — Platform Migration
 
 **Goal:** Import watch history from Plex, Jellyfin, and Emby.
+
+**Prerequisites:** Phase 13a complete. Phase 13b is now also complete — the notification dispatch pipeline is available so long-running migrations can surface progress/failure notifications (optional integration; not a hard dependency). Phase 14 proceeds independently of Phase 13b per [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md).
 
 **Authoritative docs:**
 
@@ -3753,7 +3784,7 @@ Phase 8: Web Client Core (COMPLETE — 6 tasks) ←─── (consumes all above
     ├── Phase 12: Kometa-Like System (COMPLETE — 11 tasks)
     ├── Phase 13a: System Operations Core (COMPLETE — config + backup + maintenance)
     │       ↓
-    │   Phase 13b: Notification System (Fluent + dispatch + push)  ←── can overlap with Phase 14 — Tasks 1-5 COMPLETE (Fluent i18n + dispatch pipeline + notification CRUD + webhook dispatch + push device registration); Task 6 (notifications UI) remains
+     │   Phase 13b: Notification System (Fluent + dispatch + push)  ←── COMPLETE — can overlap with Phase 14 — All 6 tasks done (Fluent i18n + dispatch pipeline + notification CRUD + webhook dispatch + push device registration + notifications UI)
     │       │
     ├── Phase 14: Platform Migration  ←── proceeds after 13a, independent of 13b
     │       │

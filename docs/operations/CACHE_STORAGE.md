@@ -454,9 +454,9 @@ The transcode tier reads from `transcoding.transcode_path` (not a separate `stor
 
 `StorageConfig` was expanded from an empty placeholder to hold `DiskSpaceWarnings` (the `disk_space_warnings` JSONB group). `#[serde(default)]` on both structs ensures existing `{}` storage JSONB rows deserialize into the CACHE_STORAGE.md defaults (90/90/80 thresholds, 1800s interval, `notify_on_warning: true`). The remaining `StorageConfig` fields from the design (paths, cache limits, eviction policy) are deferred to the future cache-eviction task — Task 8 only needs the warning thresholds.
 
-### Notification boundary (Phase 13b)
+### Notification boundary (Phase 13b complete)
 
-CACHE_STORAGE.md specifies "Create a `server_alert` notification for all admin users" on threshold breach. Notification **dispatch** (Fluent templates, SSE + webhook fan-out, push channel) is Phase 13b Task 2. Creating raw `notifications` rows now would produce unrenderable entries (no Fluent template, no dispatch). **Task 8 boundary: log WARN + record Prometheus metrics + persist run stats.** Notification creation is deferred to Phase 13b, which will add a `notify_on_warning` check around the existing worker findings. This mirrors the backup domain precedent (Task 4 read-only status preceded Task 5 execution).
+CACHE_STORAGE.md specifies "Create a `server_alert` notification for all admin users" on threshold breach. Phase 13b is now complete — notification **dispatch** (Fluent templates, SSE + webhook fan-out, push channel) is fully implemented in `services/notification_dispatch.rs`. The disk-space worker (`workers/disk_space_check.rs`) currently logs WARN + records Prometheus metrics + persists run stats; integrating the dispatch pipeline to create `server_alert` notifications on threshold breach is a follow-up wiring task that wraps the existing worker findings. This mirrors the backup domain precedent (Task 4 read-only status preceded Task 5 execution).
 
 ### Metrics
 

@@ -14,6 +14,7 @@
     import { notifications } from '$lib/stores/notifications.js';
     import { events } from '$lib/stores/events.js';
     import NotificationToast from '$lib/components/NotificationToast.svelte';
+    import NotificationBell from '$lib/components/NotificationBell.svelte';
     import SearchBar from '$lib/components/SearchBar.svelte';
 
     let { children } = $props();
@@ -109,6 +110,8 @@
                         <SearchBar compact onsearch={handleSearch} navigate={false} />
                     </div>
 
+                    <NotificationBell />
+
                     <div class="nav-user">
                         <button
                             class="user-button"
@@ -191,6 +194,9 @@
 
                 <div class="drawer-divider"></div>
 
+                <a href="/settings/notifications" class="drawer-link" onclick={closeMobileMenu}>
+                    Notifications
+                </a>
                 <a href="/settings" class="drawer-link" onclick={closeMobileMenu}>
                     Settings
                 </a>

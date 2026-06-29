@@ -57,3 +57,19 @@ export async function updateNotificationPreference(typeId, data) {
 export async function sendTestNotification(data = {}) {
     return post('/notifications/test', data);
 }
+
+export async function listPushDevices() {
+    return get('/user/push-devices');
+}
+
+export async function registerPushDevice(data) {
+    return post('/user/push-devices', data);
+}
+
+export async function updatePushDevice(deviceId, data) {
+    return put(`/user/push-devices/${deviceId}`, data);
+}
+
+export async function deletePushDevice(deviceId) {
+    return del(`/user/push-devices/${deviceId}`);
+}

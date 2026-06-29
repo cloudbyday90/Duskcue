@@ -423,8 +423,8 @@ If an admin switches from FCM to APNs (or vice versa):
 | FCM HTTP v1 client (Rust) | Not started | Phase 16a (mobile client prerequisite) |
 | APNs client (`a2` crate) | Not started | Phase 16a (mobile client prerequisite) |
 | UnifiedPush (webhook variant) | Not started | Phase 16a; reuses webhook infrastructure |
-| Per-user channel preferences UI | Not started | Phase 13b Task 6 |
-| Notifications UI | Not started | Phase 13b Task 6 |
+| Per-user channel preferences UI | ✅ Implemented | Phase 13b Task 6 — `/settings/notifications` Preferences tab: per-notification-type × per-channel (in-app/webhook/push) toggle matrix with dirty-state per-row save; available to all authenticated users (per-user preferences, not admin-gated) |
+| Notifications UI | ✅ Implemented | Phase 13b Task 6 — `NotificationBell.svelte` (navbar bell + unread badge + dropdown panel with recent notifications); `notificationCenter.js` store (SSE `notification` event subscription + 60s polling fallback + optimistic mutations); `/settings/notifications` page with Feed/Preferences/Push-Devices tabs + admin-only test dispatch |
 | Flutter `firebase_messaging` integration | Not started | Phase 16a |
 | Flutter UnifiedPush integration | Not started | Phase 16a |
 
