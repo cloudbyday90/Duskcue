@@ -68,16 +68,20 @@ pub async fn test_connection(
     _auth: Require<CanManageUsers>,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
+    payload: Option<Json<MigrationSourceCredentialRequest>>,
 ) -> Result<Json<MigrationActionResponse>, AppError> {
-    Ok(Json(service::test_connection(&state, id).await?))
+    let req = validate_optional_credentials(payload, "/api/v1/migrations/{id}/connect")?;
+    Ok(Json(service::test_connection(&state, id, req).await?))
 }
 
 pub async fn discover_source(
     _auth: Require<CanManageUsers>,
     State(state): State<AppState>,
     Path(id): Path<Uuid>,
-) -> Result<Json<MigrationActionResponse>, AppError> {
-    Ok(Json(service::discover_source(&state, id).await?))
+    payload: Option<Json<MigrationSourceCredentialRequest>>,
+) -> Result<Json<MigrationDiscoveryResponse>, AppError> {
+    let req = validate_optional_credentials(payload, "/api/v1/migrations/{id}/discover")?;
+    Ok(Json(service::discover_source(&state, id, req).await?))
 }
 
 pub async fn save_user_mappings(
@@ -190,4 +194,15 @@ fn validation_error(errors: validator::ValidationErrors, instance: &str) -> AppE
             .collect(),
         instance: Some(instance.to_string()),
     }
+}
+
+fn validate_optional_credentials(
+    payload: Option<Json<MigrationSourceCredentialRequest>>,
+    instance: &str,
+) -> Result<MigrationSourceCredentialRequest, AppError> {
+    let req = payload
+        .map(|Json(req)| req)
+        .unwrap_or(MigrationSourceCredentialRequest { api_key: None });
+    req.validate().map_err(|e| validation_error(e, instance))?;
+    Ok(req)
 }

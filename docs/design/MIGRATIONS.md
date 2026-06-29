@@ -474,12 +474,17 @@ CREATE TABLE migration_import_log (
     source_item_type TEXT NOT NULL CHECK (source_item_type IN ('movie', 'episode')),
     source_item_year INT,
     source_provider_ids JSONB NOT NULL DEFAULT '{}',
+    source_is_watched BOOLEAN NOT NULL DEFAULT FALSE,
+    source_play_count INT NOT NULL DEFAULT 0 CHECK (source_play_count >= 0),
+    source_resume_position_ms BIGINT NOT NULL DEFAULT 0 CHECK (source_resume_position_ms >= 0),
+    source_last_played_at TIMESTAMPTZ,
+    source_item_metadata JSONB NOT NULL DEFAULT '{}',
 
     matched_media_item_id UUID REFERENCES media_items(id) ON DELETE SET NULL,
     match_method TEXT CHECK (match_method IN ('tmdb_id', 'imdb_id', 'tvdb_id', 'title_year', 'unmatched')),
 
     imported_user_item_data_id UUID REFERENCES user_item_data(id) ON DELETE SET NULL,
-    status TEXT NOT NULL CHECK (status IN ('matched', 'unmatched', 'imported', 'skipped', 'error')),
+    status TEXT NOT NULL CHECK (status IN ('discovered', 'matched', 'unmatched', 'imported', 'skipped', 'error')),
     error_detail TEXT,
 
     UNIQUE(migration_user_mapping_id, source_item_id)
@@ -763,6 +768,16 @@ The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids
 - The runner persists lifecycle state through `migration_sources.status`, recalculates `migration_user_mapping` counters from `migration_import_log`, and derives completion/failure from terminal durable row statuses.
 - Resume and crash-safety use `migration_import_log` as the source of truth. A restarted run skips rows already marked `imported`, `skipped`, `unmatched`, or `error`; rows still marked `matched` remain pending for the Task 11 import/merge implementation.
 - Cancel requests update `migration_sources.status = 'cancelled'` and signal any live runner token. The runner checks both the token and persisted source status before committing final state.
+
+## Phase 14 Task 6 Implementation Notes
+
+- Added `20260629030000_migration_api_extraction_task6.sql` to persist extracted source watch state on `migration_import_log` and to add the pre-match `discovered` row status.
+- Jellyfin/Emby `/connect` verifies `GET /System/Info` with a session-supplied API key. The raw key is never stored; it must hash to the stored `api_key_hash` before the server sends any source request.
+- Jellyfin/Emby `/discover` returns source users from `GET /Users` or `GET /Users/Query`. If no mappings exist yet, the response stops after user discovery so the wizard can map users.
+- Once mappings exist, `/discover` extracts watched items from `GET /Users/{UserId}/Items` with `IsPlayed=true`/`Filters=IsPlayed` and resume items from `GET /Users/{UserId}/Items/Resume`, limited to Movie/Episode rows with `ProviderIds,UserData`.
+- Source requests preserve the Task 3 network policy: redirect blocking, no proxy, 10-second timeout, 1 MiB response limit, and `X-Emby-Token` authentication. Retry backoff is 1s, 5s, and 15s; mapped users are extracted with a four-user concurrency cap.
+- Extracted rows are upserted as `discovered`, keyed by `(migration_user_mapping_id, source_item_id)`, with normalized `tmdb`/`imdb`/`tvdb` provider IDs, raw provider payload, episode metadata, source watch state, resume milliseconds from Jellyfin/Emby ticks, and latest played timestamp.
+- Progress and preflight counts treat `discovered` rows as source watch data but not as matched/imported rows. Task 9 owns transition from `discovered` to `matched` or `unmatched`.
 
 ## Security Considerations
 

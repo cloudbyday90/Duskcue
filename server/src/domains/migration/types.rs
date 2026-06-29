@@ -94,6 +94,12 @@ pub struct StartMigrationRequest {
     pub dry_run: Option<bool>,
 }
 
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct MigrationSourceCredentialRequest {
+    #[validate(length(min = 8, max = 4096))]
+    pub api_key: Option<String>,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct UnmatchedReportQuery {
     pub page: Option<u32>,
@@ -125,6 +131,25 @@ pub struct MigrationActionResponse {
     pub migration_source_id: Uuid,
     pub status: String,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrationDiscoveryResponse {
+    pub migration_source_id: Uuid,
+    pub status: String,
+    pub users_discovered: usize,
+    pub users_mapped: usize,
+    pub items_extracted: usize,
+    pub items_inserted: u64,
+    pub items_updated: u64,
+    pub source_users: Vec<MigrationSourceUserResponse>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrationSourceUserResponse {
+    pub source_user_id: String,
+    pub source_user_name: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

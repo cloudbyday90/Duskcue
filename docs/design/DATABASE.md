@@ -3070,12 +3070,17 @@ CREATE TABLE migration_import_log (
     source_item_type TEXT NOT NULL CHECK (source_item_type IN ('movie', 'episode')),
     source_item_year INT,
     source_provider_ids JSONB NOT NULL DEFAULT '{}',
+    source_is_watched BOOLEAN NOT NULL DEFAULT FALSE,
+    source_play_count INT NOT NULL DEFAULT 0 CHECK (source_play_count >= 0),
+    source_resume_position_ms BIGINT NOT NULL DEFAULT 0 CHECK (source_resume_position_ms >= 0),
+    source_last_played_at TIMESTAMPTZ,
+    source_item_metadata JSONB NOT NULL DEFAULT '{}',
 
     matched_media_item_id UUID REFERENCES media_items(id) ON DELETE SET NULL,
     match_method TEXT CHECK (match_method IN ('tmdb_id', 'imdb_id', 'tvdb_id', 'title_year', 'unmatched')),
 
     imported_user_item_data_id UUID REFERENCES user_item_data(id) ON DELETE SET NULL,
-    status TEXT NOT NULL CHECK (status IN ('matched', 'unmatched', 'imported', 'skipped', 'error')),
+    status TEXT NOT NULL CHECK (status IN ('discovered', 'matched', 'unmatched', 'imported', 'skipped', 'error')),
     error_detail TEXT,
 
     UNIQUE(migration_user_mapping_id, source_item_id)

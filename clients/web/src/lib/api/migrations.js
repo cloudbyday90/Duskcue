@@ -34,12 +34,12 @@ export async function deleteMigrationSource(migrationSourceId) {
     return del(`/migrations/${migrationSourceId}`);
 }
 
-export async function testMigrationConnection(migrationSourceId) {
-    return post(`/migrations/${migrationSourceId}/connect`);
+export async function testMigrationConnection(migrationSourceId, data = {}) {
+    return post(`/migrations/${migrationSourceId}/connect`, data);
 }
 
-export async function discoverMigrationSource(migrationSourceId) {
-    return post(`/migrations/${migrationSourceId}/discover`);
+export async function discoverMigrationSource(migrationSourceId, data = {}) {
+    return post(`/migrations/${migrationSourceId}/discover`, data);
 }
 
 export async function saveMigrationUserMappings(migrationSourceId, data) {

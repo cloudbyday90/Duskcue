@@ -14,14 +14,17 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::Path;
 use std::time::Duration;
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
+use serde::Deserialize;
 use serde_json::{Value, json};
 use sqlx::Row;
 use tokio::net::lookup_host;
+use tokio::task::JoinSet;
 use url::Url;
 use uuid::Uuid;
 
@@ -36,6 +39,8 @@ const ACTIVE_STATUSES: &[&str] = &["discovering", "matching", "importing"];
 const MAX_PLEX_DATABASE_BYTES: u64 = 10 * 1024 * 1024 * 1024;
 const API_CONFIG_TIMEOUT_SECONDS: u64 = 10;
 const API_CONFIG_MAX_RESPONSE_BYTES: u64 = 1024 * 1024;
+const API_PAGE_SIZE: i64 = 100;
+const API_EXTRACTION_CONCURRENCY: usize = 4;
 
 pub fn validate_platform(value: &str) -> Result<(), MigrationError> {
     if VALID_MIGRATION_PLATFORMS.contains(&value) {
@@ -147,14 +152,35 @@ pub async fn delete_migration_source(state: &AppState, id: Uuid) -> Result<(), M
 pub async fn test_connection(
     state: &AppState,
     id: Uuid,
+    request: MigrationSourceCredentialRequest,
 ) -> Result<MigrationActionResponse, MigrationError> {
     let source = get_source(state, id).await?;
     ensure_not_active(id, &source.status)?;
 
+    if matches!(source.platform.as_str(), "jellyfin" | "emby") {
+        let client = build_api_migration_client(&source, &request)?;
+        let info = client.get_json("/System/Info", &[]).await?;
+        let version = info
+            .get("Version")
+            .and_then(Value::as_str)
+            .or_else(|| info.get("version").and_then(Value::as_str))
+            .unwrap_or("unknown");
+        return Ok(MigrationActionResponse {
+            migration_source_id: id,
+            status: source.status,
+            message: format!(
+                "{} connection verified; source version {version}",
+                source.platform
+            ),
+        });
+    }
+
     Ok(MigrationActionResponse {
         migration_source_id: id,
         status: source.status,
-        message: "Migration source is registered; source-specific connection checks are handled by later Phase 14 adapters".to_string(),
+        message:
+            "Migration source is registered; Plex connection checks are handled by the upload task"
+                .to_string(),
     })
 }
 
@@ -611,20 +637,732 @@ mod tests {
         ));
         let _ = std::fs::remove_file(path);
     }
+
+    #[test]
+    fn provider_id_normalization_keeps_standard_ids_and_raw_payload() {
+        let normalized = normalize_provider_ids(&json!({
+            "Tmdb": "603",
+            "Imdb": "tt0133093",
+            "Tvdb": "12345",
+            "Custom": "abc"
+        }));
+
+        assert_eq!(normalized["tmdb"], "603");
+        assert_eq!(normalized["imdb"], "tt0133093");
+        assert_eq!(normalized["tvdb"], "12345");
+        assert_eq!(normalized["raw"]["Custom"], "abc");
+    }
+
+    #[test]
+    fn source_watch_item_merge_preserves_watched_and_latest_progress() {
+        let mapping_id = Uuid::now_v7();
+        let mut first = SourceWatchItem {
+            migration_user_mapping_id: mapping_id,
+            source_item_id: "item-1".to_string(),
+            source_item_title: "Example".to_string(),
+            source_item_type: "movie".to_string(),
+            source_item_year: Some(1999),
+            source_provider_ids: json!({}),
+            source_is_watched: false,
+            source_play_count: 0,
+            source_resume_position_ms: 120_000,
+            source_last_played_at: parse_source_datetime(Some("2025-01-01T00:00:00Z")),
+            source_item_metadata: json!({}),
+        };
+        let incoming = SourceWatchItem {
+            migration_user_mapping_id: mapping_id,
+            source_item_id: "item-1".to_string(),
+            source_item_title: "Example".to_string(),
+            source_item_type: "movie".to_string(),
+            source_item_year: Some(1999),
+            source_provider_ids: json!({}),
+            source_is_watched: true,
+            source_play_count: 2,
+            source_resume_position_ms: 90_000,
+            source_last_played_at: parse_source_datetime(Some("2025-02-01T00:00:00Z")),
+            source_item_metadata: json!({}),
+        };
+
+        merge_source_watch_item(&mut first, &incoming);
+
+        assert!(first.source_is_watched);
+        assert_eq!(first.source_play_count, 2);
+        assert_eq!(first.source_resume_position_ms, 0);
+        assert_eq!(
+            first.source_last_played_at,
+            parse_source_datetime(Some("2025-02-01T00:00:00Z"))
+        );
+    }
 }
 
 pub async fn discover_source(
     state: &AppState,
     id: Uuid,
-) -> Result<MigrationActionResponse, MigrationError> {
+    request: MigrationSourceCredentialRequest,
+) -> Result<MigrationDiscoveryResponse, MigrationError> {
     let source = get_source(state, id).await?;
     ensure_not_active(id, &source.status)?;
 
-    Ok(MigrationActionResponse {
+    if !matches!(source.platform.as_str(), "jellyfin" | "emby") {
+        return Ok(MigrationDiscoveryResponse {
+            migration_source_id: id,
+            status: source.status,
+            users_discovered: 0,
+            users_mapped: 0,
+            items_extracted: 0,
+            items_inserted: 0,
+            items_updated: 0,
+            source_users: Vec::new(),
+            message: "Plex discovery is implemented by the SQLite upload task".to_string(),
+        });
+    }
+
+    let client = build_api_migration_client(&source, &request)?;
+    set_source_status(state, id, "discovering").await?;
+
+    let result = discover_api_source(state, id, &client).await;
+    let final_status = if result.is_ok() { "pending" } else { "failed" };
+    let status = set_source_status(state, id, final_status).await?;
+
+    let mut response = result?;
+    response.status = status;
+    Ok(response)
+}
+
+async fn discover_api_source(
+    state: &AppState,
+    id: Uuid,
+    client: &ApiMigrationClient,
+) -> Result<MigrationDiscoveryResponse, MigrationError> {
+    let source_users = client.fetch_source_users().await?;
+    let mappings = load_source_mappings(state, id).await?;
+
+    if mappings.is_empty() {
+        return Ok(MigrationDiscoveryResponse {
+            migration_source_id: id,
+            status: "pending".to_string(),
+            users_discovered: source_users.len(),
+            users_mapped: 0,
+            items_extracted: 0,
+            items_inserted: 0,
+            items_updated: 0,
+            source_users,
+            message: "Source users discovered; save user mappings before extracting watch data"
+                .to_string(),
+        });
+    }
+
+    let items = extract_api_watch_items(client, &mappings).await?;
+    let (items_inserted, items_updated) = upsert_discovered_items(state, id, &items).await?;
+
+    Ok(MigrationDiscoveryResponse {
         migration_source_id: id,
-        status: source.status,
-        message: "Migration source is ready for discovery; source-specific discovery is implemented in later Phase 14 tasks".to_string(),
+        status: "pending".to_string(),
+        users_discovered: source_users.len(),
+        users_mapped: mappings.len(),
+        items_extracted: items.len(),
+        items_inserted,
+        items_updated,
+        source_users,
+        message: format!(
+            "Extracted {} Jellyfin/Emby watch-state item(s)",
+            items.len()
+        ),
     })
+}
+
+#[derive(Clone)]
+struct ApiMigrationClient {
+    platform: String,
+    base_url: String,
+    api_key: String,
+    http: reqwest::Client,
+}
+
+#[derive(Debug, Clone)]
+struct SourceMapping {
+    id: Uuid,
+    source_user_id: String,
+}
+
+#[derive(Debug, Clone)]
+struct SourceWatchItem {
+    migration_user_mapping_id: Uuid,
+    source_item_id: String,
+    source_item_title: String,
+    source_item_type: String,
+    source_item_year: Option<i32>,
+    source_provider_ids: Value,
+    source_is_watched: bool,
+    source_play_count: i32,
+    source_resume_position_ms: i64,
+    source_last_played_at: Option<DateTime<Utc>>,
+    source_item_metadata: Value,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiUserDto {
+    #[serde(default, rename = "Id")]
+    id: Option<String>,
+    #[serde(default, rename = "Name")]
+    name: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiItemDto {
+    #[serde(default, rename = "Id")]
+    id: Option<String>,
+    #[serde(default, rename = "Name")]
+    name: Option<String>,
+    #[serde(default, rename = "Type")]
+    item_type: Option<String>,
+    #[serde(default, rename = "ProductionYear")]
+    production_year: Option<i32>,
+    #[serde(default, rename = "ProviderIds")]
+    provider_ids: Value,
+    #[serde(default, rename = "UserData")]
+    user_data: Option<ApiUserDataDto>,
+    #[serde(default, rename = "SeriesName")]
+    series_name: Option<String>,
+    #[serde(default, rename = "ParentIndexNumber")]
+    season_number: Option<i32>,
+    #[serde(default, rename = "IndexNumber")]
+    episode_number: Option<i32>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ApiUserDataDto {
+    #[serde(default, rename = "Played")]
+    played: Option<bool>,
+    #[serde(default, rename = "PlayCount")]
+    play_count: Option<i32>,
+    #[serde(default, rename = "PlaybackPositionTicks")]
+    playback_position_ticks: Option<i64>,
+    #[serde(default, rename = "LastPlayedDate")]
+    last_played_date: Option<String>,
+}
+
+fn build_api_migration_client(
+    source: &MigrationSourceResponse,
+    request: &MigrationSourceCredentialRequest,
+) -> Result<ApiMigrationClient, MigrationError> {
+    let base_url = source
+        .connection_config
+        .get("base_url")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            MigrationError::InvalidSourceConfiguration(
+                "API migration source is missing base_url".to_string(),
+            )
+        })?;
+
+    let api_key = request
+        .api_key
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            MigrationError::InvalidSourceConfiguration(
+                "api_key must be supplied for Jellyfin/Emby source API calls".to_string(),
+            )
+        })?;
+    verify_supplied_api_key(source, api_key)?;
+
+    let http = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .timeout(Duration::from_secs(API_CONFIG_TIMEOUT_SECONDS))
+        .no_proxy()
+        .build()
+        .map_err(|e| MigrationError::SourceUnreachable(e.to_string()))?;
+
+    Ok(ApiMigrationClient {
+        platform: source.platform.clone(),
+        base_url: base_url.to_string(),
+        api_key: api_key.to_string(),
+        http,
+    })
+}
+
+fn verify_supplied_api_key(
+    source: &MigrationSourceResponse,
+    api_key: &str,
+) -> Result<(), MigrationError> {
+    let stored_hash = source
+        .connection_config
+        .get("api_key_hash")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            MigrationError::InvalidSourceConfiguration(
+                "stored API credential hash is missing".to_string(),
+            )
+        })?;
+
+    let computed_hash = format!("sha256:{}", sha256_hex(api_key));
+    if computed_hash != stored_hash {
+        return Err(MigrationError::InvalidSourceConfiguration(
+            "supplied API key does not match the stored credential hash".to_string(),
+        ));
+    }
+
+    Ok(())
+}
+
+impl ApiMigrationClient {
+    async fn fetch_source_users(&self) -> Result<Vec<MigrationSourceUserResponse>, MigrationError> {
+        let primary_path = if self.platform == "emby" {
+            "/Users/Query"
+        } else {
+            "/Users"
+        };
+        let fallback_path = if self.platform == "emby" {
+            "/Users"
+        } else {
+            "/Users/Query"
+        };
+
+        let value = match self
+            .get_json(primary_path, &[("IsDisabled", "false".to_string())])
+            .await
+        {
+            Ok(value) => value,
+            Err(_) => {
+                self.get_json(fallback_path, &[("IsDisabled", "false".to_string())])
+                    .await?
+            }
+        };
+
+        parse_source_users(value)
+    }
+
+    async fn fetch_mapping_items(
+        &self,
+        mapping: SourceMapping,
+    ) -> Result<Vec<SourceWatchItem>, MigrationError> {
+        let watched = self.fetch_user_items(&mapping, true).await?;
+        let resume = self.fetch_user_items(&mapping, false).await?;
+        Ok(merge_source_watch_items(watched.into_iter().chain(resume)))
+    }
+
+    async fn fetch_user_items(
+        &self,
+        mapping: &SourceMapping,
+        watched: bool,
+    ) -> Result<Vec<SourceWatchItem>, MigrationError> {
+        let mut start_index = 0_i64;
+        let mut out = Vec::new();
+        loop {
+            let path = if watched {
+                format!(
+                    "/Users/{}/Items",
+                    urlencoding::encode(&mapping.source_user_id)
+                )
+            } else {
+                format!(
+                    "/Users/{}/Items/Resume",
+                    urlencoding::encode(&mapping.source_user_id)
+                )
+            };
+
+            let mut params = vec![
+                ("Recursive", "true".to_string()),
+                ("IncludeItemTypes", "Movie,Episode".to_string()),
+                ("Fields", "ProviderIds,UserData".to_string()),
+                ("EnableUserData", "true".to_string()),
+                ("EnableImages", "false".to_string()),
+                ("StartIndex", start_index.to_string()),
+                ("Limit", API_PAGE_SIZE.to_string()),
+            ];
+            if watched {
+                params.push(("IsPlayed", "true".to_string()));
+                params.push(("Filters", "IsPlayed".to_string()));
+            }
+
+            let value = self.get_json(&path, &params).await?;
+            let items = parse_api_items(value)?;
+            let returned = items.len() as i64;
+            for item in items {
+                if let Some(mapped) = source_watch_item_from_api_item(mapping, item, watched) {
+                    out.push(mapped);
+                }
+            }
+
+            if returned < API_PAGE_SIZE {
+                break;
+            }
+            start_index += returned;
+        }
+        Ok(out)
+    }
+
+    async fn get_json(
+        &self,
+        path: &str,
+        params: &[(&str, String)],
+    ) -> Result<Value, MigrationError> {
+        let delays = [1_u64, 5, 15];
+        let mut last_error = None;
+
+        for attempt in 0..=delays.len() {
+            match self.get_json_once(path, params).await {
+                Ok(value) => return Ok(value),
+                Err(MigrationError::InvalidSourceConfiguration(message)) => {
+                    return Err(MigrationError::InvalidSourceConfiguration(message));
+                }
+                Err(error) => {
+                    last_error = Some(error.to_string());
+                    if attempt < delays.len() {
+                        tokio::time::sleep(Duration::from_secs(delays[attempt])).await;
+                    }
+                }
+            }
+        }
+
+        Err(MigrationError::SourceUnreachable(
+            last_error.unwrap_or_else(|| "source API request failed".to_string()),
+        ))
+    }
+
+    async fn get_json_once(
+        &self,
+        path: &str,
+        params: &[(&str, String)],
+    ) -> Result<Value, MigrationError> {
+        let mut url = Url::parse(&format!("{}{}", self.base_url.trim_end_matches('/'), path))
+            .map_err(|e| MigrationError::InvalidSourceConfiguration(e.to_string()))?;
+        {
+            let mut query = url.query_pairs_mut();
+            for (key, value) in params {
+                query.append_pair(key, value);
+            }
+        }
+
+        let response = self
+            .http
+            .get(url)
+            .header("X-Emby-Token", &self.api_key)
+            .send()
+            .await
+            .map_err(|e| MigrationError::SourceUnreachable(e.to_string()))?;
+
+        if response.status() == reqwest::StatusCode::UNAUTHORIZED
+            || response.status() == reqwest::StatusCode::FORBIDDEN
+        {
+            return Err(MigrationError::InvalidSourceConfiguration(
+                "source API key was rejected".to_string(),
+            ));
+        }
+
+        if !response.status().is_success() {
+            return Err(MigrationError::SourceUnreachable(format!(
+                "source API returned HTTP {}",
+                response.status()
+            )));
+        }
+
+        if let Some(content_length) = response.content_length()
+            && content_length > API_CONFIG_MAX_RESPONSE_BYTES
+        {
+            return Err(MigrationError::SourceUnreachable(
+                "source API response exceeds size limit".to_string(),
+            ));
+        }
+
+        let body = response
+            .bytes()
+            .await
+            .map_err(|e| MigrationError::SourceUnreachable(e.to_string()))?;
+        if body.len() as u64 > API_CONFIG_MAX_RESPONSE_BYTES {
+            return Err(MigrationError::SourceUnreachable(
+                "source API response exceeds size limit".to_string(),
+            ));
+        }
+
+        serde_json::from_slice(&body).map_err(|e| MigrationError::SourceUnreachable(e.to_string()))
+    }
+}
+
+fn parse_source_users(value: Value) -> Result<Vec<MigrationSourceUserResponse>, MigrationError> {
+    let user_value = if value.is_array() {
+        value
+    } else {
+        value
+            .get("Items")
+            .cloned()
+            .unwrap_or_else(|| Value::Array(Vec::new()))
+    };
+
+    let users: Vec<ApiUserDto> = serde_json::from_value(user_value)
+        .map_err(|e| MigrationError::SourceUnreachable(e.to_string()))?;
+    Ok(users
+        .into_iter()
+        .filter_map(|user| {
+            Some(MigrationSourceUserResponse {
+                source_user_id: user.id?,
+                source_user_name: user.name?,
+            })
+        })
+        .collect())
+}
+
+fn parse_api_items(value: Value) -> Result<Vec<ApiItemDto>, MigrationError> {
+    let item_value = if value.is_array() {
+        value
+    } else {
+        value
+            .get("Items")
+            .cloned()
+            .unwrap_or_else(|| Value::Array(Vec::new()))
+    };
+
+    serde_json::from_value(item_value).map_err(|e| MigrationError::SourceUnreachable(e.to_string()))
+}
+
+fn source_watch_item_from_api_item(
+    mapping: &SourceMapping,
+    item: ApiItemDto,
+    from_watched_endpoint: bool,
+) -> Option<SourceWatchItem> {
+    let source_item_id = item.id?;
+    let raw_type = item.item_type?;
+    let source_item_type = match raw_type.as_str() {
+        "Movie" | "movie" => "movie",
+        "Episode" | "episode" => "episode",
+        _ => return None,
+    }
+    .to_string();
+    let user_data = item.user_data.unwrap_or(ApiUserDataDto {
+        played: None,
+        play_count: None,
+        playback_position_ticks: None,
+        last_played_date: None,
+    });
+    let source_is_watched = from_watched_endpoint || user_data.played.unwrap_or(false);
+    let source_play_count = user_data
+        .play_count
+        .unwrap_or(i32::from(source_is_watched))
+        .max(0);
+    let mut source_resume_position_ms = user_data
+        .playback_position_ticks
+        .unwrap_or(0)
+        .saturating_div(10_000)
+        .max(0);
+    if source_is_watched {
+        source_resume_position_ms = 0;
+    }
+
+    Some(SourceWatchItem {
+        migration_user_mapping_id: mapping.id,
+        source_item_id: source_item_id.clone(),
+        source_item_title: item.name.unwrap_or(source_item_id.clone()),
+        source_item_type,
+        source_item_year: item.production_year,
+        source_provider_ids: normalize_provider_ids(&item.provider_ids),
+        source_is_watched,
+        source_play_count,
+        source_resume_position_ms,
+        source_last_played_at: parse_source_datetime(user_data.last_played_date.as_deref()),
+        source_item_metadata: json!({
+            "source_item_id": source_item_id,
+            "source_type": raw_type,
+            "series_name": item.series_name,
+            "season_number": item.season_number,
+            "episode_number": item.episode_number,
+        }),
+    })
+}
+
+fn merge_source_watch_items<I>(items: I) -> Vec<SourceWatchItem>
+where
+    I: IntoIterator<Item = SourceWatchItem>,
+{
+    let mut merged: HashMap<(Uuid, String), SourceWatchItem> = HashMap::new();
+    for item in items {
+        let key = (item.migration_user_mapping_id, item.source_item_id.clone());
+        merged
+            .entry(key)
+            .and_modify(|existing| merge_source_watch_item(existing, &item))
+            .or_insert(item);
+    }
+    merged.into_values().collect()
+}
+
+fn merge_source_watch_item(existing: &mut SourceWatchItem, incoming: &SourceWatchItem) {
+    existing.source_is_watched |= incoming.source_is_watched;
+    existing.source_play_count = existing.source_play_count.max(incoming.source_play_count);
+    if existing.source_is_watched {
+        existing.source_resume_position_ms = 0;
+    } else {
+        existing.source_resume_position_ms = existing
+            .source_resume_position_ms
+            .max(incoming.source_resume_position_ms);
+    }
+    existing.source_last_played_at = match (
+        existing.source_last_played_at,
+        incoming.source_last_played_at,
+    ) {
+        (Some(existing_date), Some(incoming_date)) => Some(existing_date.max(incoming_date)),
+        (Some(existing_date), None) => Some(existing_date),
+        (None, Some(incoming_date)) => Some(incoming_date),
+        (None, None) => None,
+    };
+}
+
+fn normalize_provider_ids(provider_ids: &Value) -> Value {
+    json!({
+        "tmdb": provider_id_value(provider_ids, &["Tmdb", "TMDb", "tmdb"]),
+        "imdb": provider_id_value(provider_ids, &["Imdb", "IMDb", "imdb"]),
+        "tvdb": provider_id_value(provider_ids, &["Tvdb", "TVDb", "TVDB", "tvdb"]),
+        "raw": provider_ids,
+    })
+}
+
+fn provider_id_value(provider_ids: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter()
+        .find_map(|key| provider_ids.get(*key).and_then(Value::as_str))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToString::to_string)
+}
+
+fn parse_source_datetime(value: Option<&str>) -> Option<DateTime<Utc>> {
+    let value = value?.trim();
+    if value.is_empty() {
+        return None;
+    }
+    DateTime::parse_from_rfc3339(value)
+        .map(|date| date.with_timezone(&Utc))
+        .ok()
+}
+
+async fn load_source_mappings(
+    state: &AppState,
+    id: Uuid,
+) -> Result<Vec<SourceMapping>, MigrationError> {
+    let rows = sqlx::query(
+        r#"
+        SELECT id, source_user_id
+        FROM migration_user_mapping
+        WHERE migration_source_id = $1
+        ORDER BY source_user_name, source_user_id
+        "#,
+    )
+    .bind(id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| SourceMapping {
+            id: row.get("id"),
+            source_user_id: row.get("source_user_id"),
+        })
+        .collect())
+}
+
+async fn extract_api_watch_items(
+    client: &ApiMigrationClient,
+    mappings: &[SourceMapping],
+) -> Result<Vec<SourceWatchItem>, MigrationError> {
+    let mut out = Vec::new();
+    for chunk in mappings.chunks(API_EXTRACTION_CONCURRENCY) {
+        let mut tasks = JoinSet::new();
+        for mapping in chunk.iter().cloned() {
+            let client = client.clone();
+            tasks.spawn(async move { client.fetch_mapping_items(mapping).await });
+        }
+        while let Some(result) = tasks.join_next().await {
+            let items = result.map_err(|e| MigrationError::SourceUnreachable(e.to_string()))??;
+            out.extend(items);
+        }
+    }
+    Ok(out)
+}
+
+async fn upsert_discovered_items(
+    state: &AppState,
+    migration_source_id: Uuid,
+    items: &[SourceWatchItem],
+) -> Result<(u64, u64), MigrationError> {
+    let mut inserted = 0_u64;
+    let mut updated = 0_u64;
+    let mut tx = state.pool.begin().await?;
+
+    for item in items {
+        let existing: Option<Uuid> = sqlx::query_scalar(
+            r#"
+            SELECT id
+            FROM migration_import_log
+            WHERE migration_user_mapping_id = $1
+              AND source_item_id = $2
+            "#,
+        )
+        .bind(item.migration_user_mapping_id)
+        .bind(&item.source_item_id)
+        .fetch_optional(&mut *tx)
+        .await?;
+
+        sqlx::query(
+            r#"
+            INSERT INTO migration_import_log (
+                migration_source_id,
+                migration_user_mapping_id,
+                source_item_id,
+                source_item_title,
+                source_item_type,
+                source_item_year,
+                source_provider_ids,
+                source_is_watched,
+                source_play_count,
+                source_resume_position_ms,
+                source_last_played_at,
+                source_item_metadata,
+                status
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, 'discovered')
+            ON CONFLICT (migration_user_mapping_id, source_item_id)
+            DO UPDATE SET
+                source_item_title = EXCLUDED.source_item_title,
+                source_item_type = EXCLUDED.source_item_type,
+                source_item_year = EXCLUDED.source_item_year,
+                source_provider_ids = EXCLUDED.source_provider_ids,
+                source_is_watched = migration_import_log.source_is_watched OR EXCLUDED.source_is_watched,
+                source_play_count = GREATEST(migration_import_log.source_play_count, EXCLUDED.source_play_count),
+                source_resume_position_ms = CASE
+                    WHEN migration_import_log.source_is_watched OR EXCLUDED.source_is_watched THEN 0
+                    ELSE GREATEST(migration_import_log.source_resume_position_ms, EXCLUDED.source_resume_position_ms)
+                END,
+                source_last_played_at = GREATEST(migration_import_log.source_last_played_at, EXCLUDED.source_last_played_at),
+                source_item_metadata = EXCLUDED.source_item_metadata,
+                status = CASE
+                    WHEN migration_import_log.status IN ('matched', 'unmatched', 'imported', 'skipped') THEN migration_import_log.status
+                    ELSE 'discovered'
+                END
+            "#,
+        )
+        .bind(migration_source_id)
+        .bind(item.migration_user_mapping_id)
+        .bind(&item.source_item_id)
+        .bind(&item.source_item_title)
+        .bind(&item.source_item_type)
+        .bind(item.source_item_year)
+        .bind(&item.source_provider_ids)
+        .bind(item.source_is_watched)
+        .bind(item.source_play_count)
+        .bind(item.source_resume_position_ms)
+        .bind(item.source_last_played_at)
+        .bind(&item.source_item_metadata)
+        .execute(&mut *tx)
+        .await?;
+
+        if existing.is_some() {
+            updated += 1;
+        } else {
+            inserted += 1;
+        }
+    }
+
+    tx.commit().await?;
+    Ok((inserted, updated))
 }
 
 pub async fn save_user_mappings(
@@ -964,7 +1702,7 @@ async fn load_preflight_estimated_counts(
         r#"
         SELECT
             COUNT(*)::BIGINT AS source_items_discovered,
-            COUNT(*) FILTER (WHERE status IN ('matched', 'unmatched', 'imported', 'skipped', 'error'))::BIGINT AS source_items_with_watch_data,
+            COUNT(*) FILTER (WHERE status IN ('discovered', 'matched', 'unmatched', 'imported', 'skipped', 'error'))::BIGINT AS source_items_with_watch_data,
             COUNT(*) FILTER (WHERE status IN ('matched', 'imported', 'skipped'))::BIGINT AS estimated_matches,
             COUNT(*) FILTER (WHERE match_method = 'title_year')::BIGINT AS low_confidence_count,
             COUNT(*) FILTER (WHERE status = 'unmatched' OR match_method = 'unmatched')::BIGINT AS unmatched_count
@@ -1327,6 +2065,28 @@ async fn get_source(state: &AppState, id: Uuid) -> Result<MigrationSourceRespons
     .ok_or(MigrationError::NotFound(id))?;
 
     Ok(row_to_source_response(&row))
+}
+
+async fn set_source_status(
+    state: &AppState,
+    id: Uuid,
+    status: &str,
+) -> Result<String, MigrationError> {
+    let row = sqlx::query(
+        r#"
+        UPDATE migration_sources
+        SET status = $2, last_run_at = COALESCE(last_run_at, now())
+        WHERE id = $1
+        RETURNING status
+        "#,
+    )
+    .bind(id)
+    .bind(status)
+    .fetch_optional(&state.pool)
+    .await?
+    .ok_or(MigrationError::NotFound(id))?;
+
+    Ok(row.get("status"))
 }
 
 async fn update_active_source_status(
