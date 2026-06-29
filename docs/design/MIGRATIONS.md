@@ -437,10 +437,14 @@ CREATE TABLE migration_user_mapping (
     source_user_id TEXT NOT NULL,
     source_user_name TEXT NOT NULL,
 
-    platform_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    platform_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
 
     status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'imported', 'failed')),
+        CHECK (status IN ('pending', 'skipped', 'imported', 'failed')),
+    CHECK (
+        (status = 'skipped' AND platform_user_id IS NULL)
+        OR (status <> 'skipped' AND platform_user_id IS NOT NULL)
+    ),
 
     items_matched INT NOT NULL DEFAULT 0,
     items_unmatched INT NOT NULL DEFAULT 0,
@@ -608,6 +612,7 @@ Unmatched Items (144):
 | `POST` | `/api/v1/migrations/{id}/connect` | Admin | Test connection to source |
 | `POST` | `/api/v1/migrations/{id}/discover` | Admin | Discover users and items from source |
 | `POST` | `/api/v1/migrations/{id}/upload` | Admin | Upload and validate Plex SQLite database |
+| `GET` | `/api/v1/migrations/{id}/map-users` | Admin | Get saved mappings and platform-user options |
 | `POST` | `/api/v1/migrations/{id}/map-users` | Admin | Save user mappings |
 | `POST` | `/api/v1/migrations/{id}/preflight` | Admin | Run no-write readiness checks and return blockers/warnings |
 | `POST` | `/api/v1/migrations/{id}/start` | Admin | Begin the import |
@@ -735,7 +740,7 @@ The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids
 - `POST /api/v1/migrations` persists migration sources with validated platform values and returns the created source row.
 - `GET /api/v1/migrations` supports platform/status filtering, newest-first ordering, and offset pagination.
 - `GET` and `DELETE /api/v1/migrations/{id}` use real source lookup and return `MIGR_001` for missing sources; delete is blocked while a source is in `discovering`, `matching`, or `importing`.
-- `POST /api/v1/migrations/{id}/map-users` replaces all mappings for the source in one transaction after validating at least one mapping, duplicate source users, duplicate platform users, and platform-user existence.
+- `POST /api/v1/migrations/{id}/map-users` replaces all mappings for the source in one transaction after validating at least one non-skipped mapping, duplicate source users, duplicate platform users, skip conflicts, and platform-user existence.
 - `GET /api/v1/migrations/{id}/progress` aggregates discovered, matched, unmatched, imported, skipped, and processed counts from `migration_import_log`.
 - `GET /api/v1/migrations/{id}/unmatched` paginates unmatched/import-log rows for the admin review workflow.
 - `POST /api/v1/migrations/{id}/cancel` records `cancelled` for active source states and is a no-op action response for inactive states.
@@ -789,6 +794,14 @@ The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids
 - Extracted Plex rows use `view_count > 0` as watched state, `view_offset` as resume milliseconds, `last_viewed_at` as Unix seconds, and `metadata_type` 1/4 as movie/episode. Watched rows reset resume to 0 to match the import merge strategy.
 - Provider IDs are parsed from primary Plex GUIDs and optional secondary `metadata_item_guids` / `metadata_item_providers` rows when those tables exist. IMDb, TMDb, and TVDb IDs are normalized into the same `source_provider_ids` shape used by Jellyfin/Emby extraction.
 - Resumable/range upload is not wired yet because the current client/server path only supports a single multipart request; interrupted uploads leave no durable partial import state.
+
+## Phase 14 Task 8 Implementation Notes
+
+- Added `20260629040000_migration_user_mapping_task8.sql` so skipped source users are persisted as `migration_user_mapping.status = 'skipped'` with `platform_user_id = NULL`, while mapped rows must still have a platform user.
+- Added a partial unique index on `(migration_source_id, platform_user_id)` for non-null platform users to prevent mapping the same platform user to multiple source users in one migration.
+- `GET /api/v1/migrations/{id}/map-users` returns saved mapping decisions and platform-user options. Options include `users.username`, `users.display_name`, email/status, the latest linked `invitations.display_name` and invitation email when present, and a ready-to-display label.
+- `POST /api/v1/migrations/{id}/map-users` accepts mapped rows with `platform_user_id` or skipped rows with `skip = true`; duplicate source users, duplicate mapped platform users, missing platform users, and skip+platform conflicts return `MIGR_006`.
+- All-skipped submissions return `MIGR_007`. Preflight, start, and extraction require at least one non-skipped mapping and ignore skipped rows when extracting source watch data.
 
 ## Security Considerations
 

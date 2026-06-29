@@ -3044,10 +3044,14 @@ CREATE TABLE migration_user_mapping (
     source_user_id TEXT NOT NULL,
     source_user_name TEXT NOT NULL,
 
-    platform_user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    platform_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
 
     status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'imported', 'failed')),
+        CHECK (status IN ('pending', 'skipped', 'imported', 'failed')),
+    CHECK (
+        (status = 'skipped' AND platform_user_id IS NULL)
+        OR (status <> 'skipped' AND platform_user_id IS NOT NULL)
+    ),
 
     items_matched INT NOT NULL DEFAULT 0,
     items_unmatched INT NOT NULL DEFAULT 0,

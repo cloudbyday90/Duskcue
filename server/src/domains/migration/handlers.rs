@@ -87,6 +87,14 @@ pub async fn discover_source(
     Ok(Json(service::discover_source(&state, id, req).await?))
 }
 
+pub async fn get_user_mapping_options(
+    _auth: Require<CanManageUsers>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<MigrationUserMappingOptionsResponse>, AppError> {
+    Ok(Json(service::get_user_mapping_options(&state, id).await?))
+}
+
 pub async fn upload_plex_database(
     _auth: Require<CanManageUsers>,
     State(state): State<AppState>,

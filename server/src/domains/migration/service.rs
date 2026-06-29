@@ -906,6 +906,64 @@ mod tests {
 
         let _ = std::fs::remove_file(path);
     }
+
+    #[test]
+    fn user_mapping_validation_accepts_mapped_and_skipped_users() {
+        let request = SaveUserMappingsRequest {
+            mappings: vec![
+                UserMappingRequest {
+                    source_user_id: "source-1".to_string(),
+                    source_user_name: "Source One".to_string(),
+                    platform_user_id: Some(Uuid::now_v7()),
+                    skip: Some(false),
+                },
+                UserMappingRequest {
+                    source_user_id: "source-2".to_string(),
+                    source_user_name: "Source Two".to_string(),
+                    platform_user_id: None,
+                    skip: Some(true),
+                },
+            ],
+        };
+
+        assert!(validate_mapping_conflicts(&request).is_ok());
+        assert!(ensure_at_least_one_active_mapping(&request).is_ok());
+    }
+
+    #[test]
+    fn user_mapping_validation_rejects_all_skipped_users() {
+        let request = SaveUserMappingsRequest {
+            mappings: vec![UserMappingRequest {
+                source_user_id: "source-1".to_string(),
+                source_user_name: "Source One".to_string(),
+                platform_user_id: None,
+                skip: Some(true),
+            }],
+        };
+
+        assert!(validate_mapping_conflicts(&request).is_ok());
+        assert!(matches!(
+            ensure_at_least_one_active_mapping(&request),
+            Err(MigrationError::NoUserMappings)
+        ));
+    }
+
+    #[test]
+    fn user_mapping_validation_rejects_skip_with_platform_user() {
+        let request = SaveUserMappingsRequest {
+            mappings: vec![UserMappingRequest {
+                source_user_id: "source-1".to_string(),
+                source_user_name: "Source One".to_string(),
+                platform_user_id: Some(Uuid::now_v7()),
+                skip: Some(true),
+            }],
+        };
+
+        assert!(matches!(
+            validate_mapping_conflicts(&request),
+            Err(MigrationError::UserMappingConflict(_))
+        ));
+    }
 }
 
 pub async fn discover_source(
@@ -937,6 +995,53 @@ pub async fn discover_source(
     let mut response = result?;
     response.status = status;
     Ok(response)
+}
+
+pub async fn get_user_mapping_options(
+    state: &AppState,
+    id: Uuid,
+) -> Result<MigrationUserMappingOptionsResponse, MigrationError> {
+    get_source(state, id).await?;
+
+    let saved_rows = sqlx::query(
+        r#"
+        SELECT source_user_id, source_user_name, platform_user_id, status
+        FROM migration_user_mapping
+        WHERE migration_source_id = $1
+        ORDER BY source_user_name, source_user_id
+        "#,
+    )
+    .bind(id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    let platform_rows = sqlx::query(
+        r#"
+        SELECT DISTINCT ON (u.id)
+            u.id,
+            u.username,
+            u.display_name,
+            u.email,
+            u.status,
+            i.display_name AS invitation_display_name,
+            i.email AS invitation_email
+        FROM users u
+        LEFT JOIN invitations i ON i.user_id = u.id
+        WHERE u.deleted_at IS NULL
+        ORDER BY u.id, i.created_at DESC
+        "#,
+    )
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(MigrationUserMappingOptionsResponse {
+        migration_source_id: id,
+        saved_mappings: saved_rows.iter().map(row_to_saved_user_mapping).collect(),
+        platform_users: platform_rows
+            .iter()
+            .map(row_to_platform_user_option)
+            .collect(),
+    })
 }
 
 async fn discover_api_source(
@@ -1816,6 +1921,8 @@ async fn load_source_mappings(
         SELECT id, source_user_id
         FROM migration_user_mapping
         WHERE migration_source_id = $1
+          AND status <> 'skipped'
+          AND platform_user_id IS NOT NULL
         ORDER BY source_user_name, source_user_id
         "#,
     )
@@ -1951,6 +2058,7 @@ pub async fn save_user_mappings(
     }
 
     validate_mapping_conflicts(&request)?;
+    ensure_at_least_one_active_mapping(&request)?;
     validate_platform_users_exist(state, &request).await?;
 
     let mut tx = state.pool.begin().await?;
@@ -1967,15 +2075,21 @@ pub async fn save_user_mappings(
                 migration_source_id,
                 source_user_id,
                 source_user_name,
-                platform_user_id
+                platform_user_id,
+                status
             )
-            VALUES ($1, $2, $3, $4)
+            VALUES ($1, $2, $3, $4, $5)
             "#,
         )
         .bind(id)
-        .bind(mapping.source_user_id)
-        .bind(mapping.source_user_name)
+        .bind(&mapping.source_user_id)
+        .bind(&mapping.source_user_name)
         .bind(mapping.platform_user_id)
+        .bind(if mapping.skip.unwrap_or(false) {
+            "skipped"
+        } else {
+            "pending"
+        })
         .execute(&mut *tx)
         .await?;
     }
@@ -2247,7 +2361,8 @@ async fn load_user_mapping_readiness(
         r#"
         SELECT
             COUNT(m.id)::BIGINT AS mappings_total,
-            COUNT(m.id) FILTER (WHERE u.id IS NOT NULL)::BIGINT AS valid_mappings
+            COUNT(m.id) FILTER (WHERE m.status <> 'skipped' AND u.id IS NOT NULL)::BIGINT AS valid_mappings,
+            COUNT(m.id) FILTER (WHERE m.status = 'skipped')::BIGINT AS skipped_mappings
         FROM migration_user_mapping m
         LEFT JOIN users u ON u.id = m.platform_user_id AND u.deleted_at IS NULL
         WHERE m.migration_source_id = $1
@@ -2259,11 +2374,13 @@ async fn load_user_mapping_readiness(
 
     let mappings_total: i64 = row.get("mappings_total");
     let valid_mappings: i64 = row.get("valid_mappings");
+    let skipped_mappings: i64 = row.get("skipped_mappings");
 
     Ok(UserMappingReadiness {
         mappings_total,
         valid_mappings,
-        invalid_mappings: mappings_total.saturating_sub(valid_mappings),
+        invalid_mappings: mappings_total.saturating_sub(valid_mappings + skipped_mappings),
+        skipped_mappings,
     })
 }
 
@@ -2470,7 +2587,7 @@ fn push_mapping_findings(
     warnings: &mut Vec<PreflightFinding>,
     checks: &mut Vec<PreflightCheck>,
 ) {
-    if readiness.mappings_total == 0 {
+    if readiness.valid_mappings == 0 {
         blockers.push(finding(
             "MIGR_PREFLIGHT_NO_USER_MAPPINGS",
             "At least one source user must be mapped before migration can start",
@@ -2482,7 +2599,7 @@ fn push_mapping_findings(
             "One or more mapped platform users no longer exist",
         ));
     }
-    if readiness.mappings_total == 1 {
+    if readiness.valid_mappings == 1 {
         warnings.push(finding(
             "MIGR_PREFLIGHT_SINGLE_USER_MAPPING",
             "Only one user is mapped; verify skipped source users before importing",
@@ -2491,14 +2608,14 @@ fn push_mapping_findings(
 
     checks.push(check(
         "user_mapping_readiness",
-        if readiness.mappings_total > 0 && readiness.invalid_mappings == 0 {
+        if readiness.valid_mappings > 0 && readiness.invalid_mappings == 0 {
             "passed"
         } else {
             "blocked"
         },
         format!(
-            "{} valid mappings, {} invalid mappings",
-            readiness.valid_mappings, readiness.invalid_mappings
+            "{} valid mappings, {} skipped mappings, {} invalid mappings",
+            readiness.valid_mappings, readiness.skipped_mappings, readiness.invalid_mappings
         ),
     ));
 }
@@ -2725,15 +2842,48 @@ fn validate_mapping_conflicts(request: &SaveUserMappingsRequest) -> Result<(), M
             )));
         }
 
-        if !platform_user_ids.insert(mapping.platform_user_id) {
+        let is_skipped = mapping.skip.unwrap_or(false);
+        match (is_skipped, mapping.platform_user_id) {
+            (true, Some(_)) => {
+                return Err(MigrationError::UserMappingConflict(format!(
+                    "source user {} is marked skipped but also has a platform user",
+                    mapping.source_user_id
+                )));
+            }
+            (false, None) => {
+                return Err(MigrationError::UserMappingConflict(format!(
+                    "source user {} must be mapped or explicitly skipped",
+                    mapping.source_user_id
+                )));
+            }
+            _ => {}
+        }
+
+        if let Some(platform_user_id) = mapping.platform_user_id
+            && !platform_user_ids.insert(platform_user_id)
+        {
             return Err(MigrationError::UserMappingConflict(format!(
                 "platform user {} is mapped more than once",
-                mapping.platform_user_id
+                platform_user_id
             )));
         }
     }
 
     Ok(())
+}
+
+fn ensure_at_least_one_active_mapping(
+    request: &SaveUserMappingsRequest,
+) -> Result<(), MigrationError> {
+    if request
+        .mappings
+        .iter()
+        .any(|mapping| !mapping.skip.unwrap_or(false) && mapping.platform_user_id.is_some())
+    {
+        Ok(())
+    } else {
+        Err(MigrationError::NoUserMappings)
+    }
 }
 
 async fn validate_platform_users_exist(
@@ -2743,8 +2893,12 @@ async fn validate_platform_users_exist(
     let platform_user_ids: Vec<Uuid> = request
         .mappings
         .iter()
-        .map(|m| m.platform_user_id)
+        .filter_map(|m| m.platform_user_id)
         .collect();
+
+    if platform_user_ids.is_empty() {
+        return Ok(());
+    }
 
     let existing_count: i64 =
         sqlx::query("SELECT COUNT(*) FROM users WHERE id = ANY($1) AND deleted_at IS NULL")
@@ -2763,12 +2917,19 @@ async fn validate_platform_users_exist(
 }
 
 async fn ensure_has_mappings(state: &AppState, id: Uuid) -> Result<(), MigrationError> {
-    let count: i64 =
-        sqlx::query("SELECT COUNT(*) FROM migration_user_mapping WHERE migration_source_id = $1")
-            .bind(id)
-            .fetch_one(&state.pool)
-            .await?
-            .get(0);
+    let count: i64 = sqlx::query(
+        r#"
+            SELECT COUNT(*)
+            FROM migration_user_mapping
+            WHERE migration_source_id = $1
+              AND status <> 'skipped'
+              AND platform_user_id IS NOT NULL
+            "#,
+    )
+    .bind(id)
+    .fetch_one(&state.pool)
+    .await?
+    .get(0);
 
     if count == 0 {
         return Err(MigrationError::NoUserMappings);
@@ -2801,6 +2962,41 @@ fn row_to_source_response(row: &sqlx::postgres::PgRow) -> MigrationSourceRespons
         connection_config: row.get("connection_config"),
         last_run_at: row.get("last_run_at"),
         status: row.get("status"),
+    }
+}
+
+fn row_to_saved_user_mapping(row: &sqlx::postgres::PgRow) -> MigrationSavedUserMappingResponse {
+    let status: String = row.get("status");
+    MigrationSavedUserMappingResponse {
+        source_user_id: row.get("source_user_id"),
+        source_user_name: row.get("source_user_name"),
+        platform_user_id: row.try_get("platform_user_id").ok(),
+        is_skipped: status == "skipped",
+        status,
+    }
+}
+
+fn row_to_platform_user_option(row: &sqlx::postgres::PgRow) -> MigrationPlatformUserOptionResponse {
+    let username: String = row.get("username");
+    let display_name: String = row.get("display_name");
+    let invitation_display_name: Option<String> = row.try_get("invitation_display_name").ok();
+    let invitation_email: Option<String> = row.try_get("invitation_email").ok();
+    let label = match invitation_display_name.as_deref() {
+        Some(invite_name) if invite_name != display_name => {
+            format!("{display_name} ({username}) - invite: {invite_name}")
+        }
+        _ => format!("{display_name} ({username})"),
+    };
+
+    MigrationPlatformUserOptionResponse {
+        platform_user_id: row.get("id"),
+        username,
+        display_name,
+        email: row.try_get("email").ok(),
+        status: row.get("status"),
+        invitation_display_name,
+        invitation_email,
+        label,
     }
 }
 

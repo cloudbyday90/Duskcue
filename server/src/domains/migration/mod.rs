@@ -54,7 +54,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/api/v1/migrations/{id}/map-users",
-            post(handlers::save_user_mappings),
+            get(handlers::get_user_mapping_options).post(handlers::save_user_mappings),
         )
         .route(
             "/api/v1/migrations/{id}/start",

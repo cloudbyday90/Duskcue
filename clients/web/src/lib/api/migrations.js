@@ -48,6 +48,10 @@ export async function uploadPlexMigrationDatabase(migrationSourceId, file) {
     return post(`/migrations/${migrationSourceId}/upload`, data);
 }
 
+export async function getMigrationUserMappingOptions(migrationSourceId) {
+    return get(`/migrations/${migrationSourceId}/map-users`);
+}
+
 export async function saveMigrationUserMappings(migrationSourceId, data) {
     return post(`/migrations/${migrationSourceId}/map-users`, data);
 }

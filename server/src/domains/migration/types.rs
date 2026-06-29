@@ -86,7 +86,8 @@ pub struct UserMappingRequest {
     pub source_user_id: String,
     #[validate(length(min = 1, max = 200))]
     pub source_user_name: String,
-    pub platform_user_id: Uuid,
+    pub platform_user_id: Option<Uuid>,
+    pub skip: Option<bool>,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
@@ -153,6 +154,34 @@ pub struct MigrationSourceUserResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct MigrationUserMappingOptionsResponse {
+    pub migration_source_id: Uuid,
+    pub saved_mappings: Vec<MigrationSavedUserMappingResponse>,
+    pub platform_users: Vec<MigrationPlatformUserOptionResponse>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrationSavedUserMappingResponse {
+    pub source_user_id: String,
+    pub source_user_name: String,
+    pub platform_user_id: Option<Uuid>,
+    pub status: String,
+    pub is_skipped: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MigrationPlatformUserOptionResponse {
+    pub platform_user_id: Uuid,
+    pub username: String,
+    pub display_name: String,
+    pub email: Option<String>,
+    pub status: String,
+    pub invitation_display_name: Option<String>,
+    pub invitation_email: Option<String>,
+    pub label: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct MigrationProgressResponse {
     pub migration_source_id: Uuid,
     pub status: String,
@@ -207,6 +236,7 @@ pub struct UserMappingReadiness {
     pub mappings_total: i64,
     pub valid_mappings: i64,
     pub invalid_mappings: i64,
+    pub skipped_mappings: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]
