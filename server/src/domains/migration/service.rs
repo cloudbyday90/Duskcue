@@ -27,6 +27,7 @@ use uuid::Uuid;
 
 use crate::state::AppState;
 use crate::state::NetworkMode;
+use crate::workers::migration_runner;
 
 use super::error::MigrationError;
 use super::types::*;
@@ -686,16 +687,39 @@ pub async fn start_migration(
     ensure_not_active(id, &source.status)?;
     ensure_has_mappings(state, id).await?;
 
-    let message = if request.dry_run.unwrap_or(false) {
-        "Migration dry-run request accepted; preflight and runner behavior are implemented in later Phase 14 tasks"
-    } else {
-        "Migration start request accepted; runner behavior is implemented in later Phase 14 tasks"
-    };
+    if request.dry_run.unwrap_or(false) {
+        let report = run_preflight(state, id).await?;
+        return Ok(MigrationActionResponse {
+            migration_source_id: id,
+            status: report.status,
+            message: format!(
+                "Migration dry-run preflight completed: {} blocker(s), {} warning(s)",
+                report.blockers.len(),
+                report.warnings.len()
+            ),
+        });
+    }
+
+    let report = run_preflight(state, id).await?;
+    if !report.blockers.is_empty() {
+        let blockers = report
+            .blockers
+            .iter()
+            .map(|finding| finding.code.as_str())
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(MigrationError::InvalidSourceConfiguration(format!(
+            "preflight blockers must be resolved before start: {blockers}"
+        )));
+    }
+
+    ensure_has_watch_data(state, id).await?;
+    let status = migration_runner::spawn_migration_runner(state, id).await?;
 
     Ok(MigrationActionResponse {
         migration_source_id: id,
-        status: source.status,
-        message: message.to_string(),
+        status,
+        message: "Migration runner started".to_string(),
     })
 }
 
@@ -851,11 +875,17 @@ pub async fn cancel_migration(
     let source = get_source(state, id).await?;
 
     if ACTIVE_STATUSES.contains(&source.status.as_str()) {
-        let status = update_source_status(state, id, "cancelled").await?;
+        let signalled = migration_runner::cancel_migration_runner(state, id);
+        let status = update_active_source_status(state, id, "cancelled").await?;
+        let message = if signalled {
+            "Migration cancellation requested"
+        } else {
+            "Migration cancellation recorded"
+        };
         return Ok(MigrationActionResponse {
             migration_source_id: id,
             status,
-            message: "Migration cancellation recorded".to_string(),
+            message: message.to_string(),
         });
     }
 
@@ -1299,7 +1329,7 @@ async fn get_source(state: &AppState, id: Uuid) -> Result<MigrationSourceRespons
     Ok(row_to_source_response(&row))
 }
 
-async fn update_source_status(
+async fn update_active_source_status(
     state: &AppState,
     id: Uuid,
     status: &str,
@@ -1309,16 +1339,20 @@ async fn update_source_status(
         UPDATE migration_sources
         SET status = $2, last_run_at = COALESCE(last_run_at, now())
         WHERE id = $1
+          AND status IN ('discovering', 'matching', 'importing')
         RETURNING status
         "#,
     )
     .bind(id)
     .bind(status)
     .fetch_optional(&state.pool)
-    .await?
-    .ok_or(MigrationError::NotFound(id))?;
+    .await?;
 
-    Ok(row.get("status"))
+    if let Some(row) = row {
+        return Ok(row.get("status"));
+    }
+
+    Ok(get_source(state, id).await?.status)
 }
 
 fn ensure_not_active(id: Uuid, status: &str) -> Result<(), MigrationError> {
@@ -1405,6 +1439,21 @@ async fn ensure_has_mappings(state: &AppState, id: Uuid) -> Result<(), Migration
 
     if count == 0 {
         return Err(MigrationError::NoUserMappings);
+    }
+
+    Ok(())
+}
+
+async fn ensure_has_watch_data(state: &AppState, id: Uuid) -> Result<(), MigrationError> {
+    let count: i64 =
+        sqlx::query("SELECT COUNT(*) FROM migration_import_log WHERE migration_source_id = $1")
+            .bind(id)
+            .fetch_one(&state.pool)
+            .await?
+            .get(0);
+
+    if count == 0 {
+        return Err(MigrationError::NoWatchData);
     }
 
     Ok(())

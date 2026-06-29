@@ -24,6 +24,7 @@ use ipnet::IpNet;
 use metrics_exporter_prometheus::PrometheusHandle;
 use serde::{Deserialize, Serialize};
 use sqlx::{PgPool, Row};
+use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 use webauthn_rs::prelude::{PasskeyAuthentication, PasskeyRegistration, Webauthn};
 
@@ -946,6 +947,7 @@ pub struct AppState {
     pub webauthn: Arc<Webauthn>,
     pub webauthn_challenges: Arc<DashMap<String, WebauthnChallenge>>,
     pub trakt_sync_locks: Arc<DashMap<Uuid, std::time::Instant>>,
+    pub migration_runs: Arc<DashMap<Uuid, CancellationToken>>,
     pub fs_watcher: Arc<LibraryWatcherManager>,
     pub enrichment: Arc<EnrichmentOrchestrator>,
     pub encryption_key: Arc<EncryptionKey>,
@@ -985,6 +987,7 @@ impl AppState {
             webauthn: Arc::new(webauthn),
             webauthn_challenges: Arc::new(DashMap::new()),
             trakt_sync_locks: Arc::new(DashMap::new()),
+            migration_runs: Arc::new(DashMap::new()),
             fs_watcher,
             enrichment,
             encryption_key: Arc::new(encryption_key),
@@ -1042,6 +1045,7 @@ impl AppState {
             webauthn: Arc::new(webauthn),
             webauthn_challenges: Arc::new(DashMap::new()),
             trakt_sync_locks: Arc::new(DashMap::new()),
+            migration_runs: Arc::new(DashMap::new()),
             fs_watcher,
             enrichment,
             encryption_key: Arc::new(encryption_key),

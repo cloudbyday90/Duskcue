@@ -755,6 +755,15 @@ The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids
 - Disk readiness checks 2x declared Plex upload size against the `data_dir/migrations` volume when a Plex file size is known.
 - Estimated source item counts and match rates are derived from `migration_import_log` when discovery data exists; before discovery, the report returns a warning instead of fabricating match-rate estimates.
 
+## Phase 14 Task 5 Implementation Notes
+
+- Added `server/src/workers/migration_runner.rs` as the service-owned background runner used by `POST /api/v1/migrations/{id}/start`.
+- Active migration runs are tracked in `AppState.migration_runs` with one `CancellationToken` per migration source, preventing duplicate in-process starts and giving cancel requests an immediate signal path.
+- Dry-run starts remain no-write and return a preflight summary. Real starts require user mappings, a blocker-free preflight, and existing `migration_import_log` rows; if discovery has not produced watch-data rows yet, the API returns `MIGR_008`.
+- The runner persists lifecycle state through `migration_sources.status`, recalculates `migration_user_mapping` counters from `migration_import_log`, and derives completion/failure from terminal durable row statuses.
+- Resume and crash-safety use `migration_import_log` as the source of truth. A restarted run skips rows already marked `imported`, `skipped`, `unmatched`, or `error`; rows still marked `matched` remain pending for the Task 11 import/merge implementation.
+- Cancel requests update `migration_sources.status = 'cancelled'` and signal any live runner token. The runner checks both the token and persisted source status before committing final state.
+
 ## Security Considerations
 
 | Concern | Mitigation |
