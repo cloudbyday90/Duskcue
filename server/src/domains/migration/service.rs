@@ -782,6 +782,34 @@ mod tests {
     }
 
     #[test]
+    fn matching_helpers_parse_provider_ids_and_episode_metadata() {
+        let provider_ids = json!({
+            "tmdb": "603",
+            "imdb": "tt0133093",
+            "tvdb": 78874
+        });
+        let metadata = json!({
+            "series_name": "  Example  Series ",
+            "season_number": "2",
+            "episode_number": 7
+        });
+
+        assert_eq!(provider_id_i64(&provider_ids, "tmdb"), Some(603));
+        assert_eq!(
+            provider_id_string(&provider_ids, "imdb"),
+            Some("tt0133093".to_string())
+        );
+        assert_eq!(provider_id_i64(&provider_ids, "tvdb"), Some(78874));
+        assert_eq!(
+            metadata_string(&metadata, "series_name"),
+            Some("Example  Series".to_string())
+        );
+        assert_eq!(metadata_i32(&metadata, "season_number"), Some(2));
+        assert_eq!(metadata_i32(&metadata, "episode_number"), Some(7));
+        assert_eq!(normalize_match_text(" Example   Series "), "example series");
+    }
+
+    #[test]
     fn source_watch_item_merge_preserves_watched_and_latest_progress() {
         let mapping_id = Uuid::now_v7();
         let mut first = SourceWatchItem {
@@ -2045,6 +2073,444 @@ async fn upsert_discovered_items(
     Ok((inserted, updated))
 }
 
+#[derive(Debug, Clone)]
+struct MigrationMatchCandidate {
+    id: Uuid,
+    source_item_id: String,
+    source_item_title: String,
+    source_item_type: String,
+    source_item_year: Option<i32>,
+    source_provider_ids: Value,
+    source_item_metadata: Value,
+}
+
+#[derive(Debug, Clone)]
+struct MigrationItemMatch {
+    media_item_id: Uuid,
+    method: &'static str,
+    confidence: &'static str,
+}
+
+#[derive(Debug, Default)]
+struct MigrationMatchCounts {
+    processed: usize,
+    matched: usize,
+    unmatched: usize,
+    high_confidence: usize,
+    medium_confidence: usize,
+    low_confidence: usize,
+}
+
+pub async fn match_migration_items(
+    state: &AppState,
+    id: Uuid,
+) -> Result<MigrationMatchResponse, MigrationError> {
+    let source = get_source(state, id).await?;
+    ensure_not_active(id, &source.status)?;
+
+    let candidates = load_match_candidates(state, id).await?;
+    if candidates.is_empty() {
+        return Err(MigrationError::NoWatchData);
+    }
+
+    set_source_status(state, id, "matching").await?;
+    let result = run_item_matching(state, id, &candidates).await;
+    let final_status = if result.is_ok() { "pending" } else { "failed" };
+    let status = set_source_status(state, id, final_status).await?;
+
+    let counts = result?;
+    Ok(MigrationMatchResponse {
+        migration_source_id: id,
+        status,
+        items_processed: counts.processed,
+        items_matched: counts.matched,
+        items_unmatched: counts.unmatched,
+        high_confidence: counts.high_confidence,
+        medium_confidence: counts.medium_confidence,
+        low_confidence: counts.low_confidence,
+        message: format!(
+            "Matched {} item(s); {} item(s) remain unmatched",
+            counts.matched, counts.unmatched
+        ),
+    })
+}
+
+async fn load_match_candidates(
+    state: &AppState,
+    migration_source_id: Uuid,
+) -> Result<Vec<MigrationMatchCandidate>, MigrationError> {
+    let rows = sqlx::query(
+        r#"
+        SELECT id, source_item_id, source_item_title, source_item_type,
+               source_item_year, source_provider_ids, source_item_metadata
+        FROM migration_import_log
+        WHERE migration_source_id = $1
+          AND status IN ('discovered', 'unmatched')
+        ORDER BY source_item_title, source_item_year NULLS LAST, source_item_id
+        "#,
+    )
+    .bind(migration_source_id)
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(rows
+        .iter()
+        .map(|row| MigrationMatchCandidate {
+            id: row.get("id"),
+            source_item_id: row.get("source_item_id"),
+            source_item_title: row.get("source_item_title"),
+            source_item_type: row.get("source_item_type"),
+            source_item_year: row.get("source_item_year"),
+            source_provider_ids: row.get("source_provider_ids"),
+            source_item_metadata: row.get("source_item_metadata"),
+        })
+        .collect())
+}
+
+async fn run_item_matching(
+    state: &AppState,
+    migration_source_id: Uuid,
+    candidates: &[MigrationMatchCandidate],
+) -> Result<MigrationMatchCounts, MigrationError> {
+    let mut counts = MigrationMatchCounts::default();
+
+    for candidate in candidates {
+        let item_match = match_candidate(state, candidate).await?;
+        counts.processed += 1;
+
+        if let Some(item_match) = item_match {
+            sqlx::query(
+                r#"
+                UPDATE migration_import_log
+                SET matched_media_item_id = $2,
+                    match_method = $3,
+                    match_confidence = $4,
+                    status = 'matched',
+                    error_detail = NULL
+                WHERE id = $1
+                "#,
+            )
+            .bind(candidate.id)
+            .bind(item_match.media_item_id)
+            .bind(item_match.method)
+            .bind(item_match.confidence)
+            .execute(&state.pool)
+            .await?;
+
+            counts.matched += 1;
+            match item_match.confidence {
+                "high" => counts.high_confidence += 1,
+                "medium" => counts.medium_confidence += 1,
+                "low" => counts.low_confidence += 1,
+                _ => {}
+            }
+        } else {
+            sqlx::query(
+                r#"
+                UPDATE migration_import_log
+                SET matched_media_item_id = NULL,
+                    match_method = 'unmatched',
+                    match_confidence = 'unmatched',
+                    status = 'unmatched',
+                    error_detail = $2
+                WHERE id = $1
+                "#,
+            )
+            .bind(candidate.id)
+            .bind(unmatched_reason(candidate))
+            .execute(&state.pool)
+            .await?;
+
+            counts.unmatched += 1;
+        }
+    }
+
+    refresh_mapping_match_counts(state, migration_source_id).await?;
+    Ok(counts)
+}
+
+async fn match_candidate(
+    state: &AppState,
+    candidate: &MigrationMatchCandidate,
+) -> Result<Option<MigrationItemMatch>, MigrationError> {
+    if let Some(item_match) = find_provider_match(state, candidate, "tmdb").await? {
+        return Ok(Some(item_match));
+    }
+    if let Some(item_match) = find_provider_match(state, candidate, "imdb").await? {
+        return Ok(Some(item_match));
+    }
+    if let Some(item_match) = find_provider_match(state, candidate, "tvdb").await? {
+        return Ok(Some(item_match));
+    }
+    if let Some(item_match) = find_title_year_match(state, candidate).await? {
+        return Ok(Some(item_match));
+    }
+    if candidate.source_item_type == "episode" {
+        return find_series_episode_match(state, candidate).await;
+    }
+
+    Ok(None)
+}
+
+async fn find_provider_match(
+    state: &AppState,
+    candidate: &MigrationMatchCandidate,
+    provider: &'static str,
+) -> Result<Option<MigrationItemMatch>, MigrationError> {
+    let media_item_id: Option<Uuid> = match provider {
+        "tmdb" => {
+            let Some(provider_id) = provider_id_i64(&candidate.source_provider_ids, "tmdb") else {
+                return Ok(None);
+            };
+            sqlx::query_scalar(
+                r#"
+                SELECT id
+                FROM media_items
+                WHERE type = $1
+                  AND tmdb_id = $2
+                ORDER BY id
+                LIMIT 1
+                "#,
+            )
+            .bind(&candidate.source_item_type)
+            .bind(provider_id)
+            .fetch_optional(&state.pool)
+            .await?
+        }
+        "imdb" => {
+            let Some(provider_id) = provider_id_string(&candidate.source_provider_ids, "imdb")
+            else {
+                return Ok(None);
+            };
+            sqlx::query_scalar(
+                r#"
+                SELECT id
+                FROM media_items
+                WHERE type = $1
+                  AND imdb_id = $2
+                ORDER BY id
+                LIMIT 1
+                "#,
+            )
+            .bind(&candidate.source_item_type)
+            .bind(provider_id)
+            .fetch_optional(&state.pool)
+            .await?
+        }
+        "tvdb" => {
+            let Some(provider_id) = provider_id_i64(&candidate.source_provider_ids, "tvdb") else {
+                return Ok(None);
+            };
+            sqlx::query_scalar(
+                r#"
+                SELECT id
+                FROM media_items
+                WHERE type = $1
+                  AND tvdb_id = $2
+                ORDER BY id
+                LIMIT 1
+                "#,
+            )
+            .bind(&candidate.source_item_type)
+            .bind(provider_id)
+            .fetch_optional(&state.pool)
+            .await?
+        }
+        _ => None,
+    };
+
+    Ok(media_item_id.map(|media_item_id| MigrationItemMatch {
+        media_item_id,
+        method: match provider {
+            "tmdb" => "tmdb_id",
+            "imdb" => "imdb_id",
+            "tvdb" => "tvdb_id",
+            _ => "unmatched",
+        },
+        confidence: "high",
+    }))
+}
+
+async fn find_title_year_match(
+    state: &AppState,
+    candidate: &MigrationMatchCandidate,
+) -> Result<Option<MigrationItemMatch>, MigrationError> {
+    let Some(year) = candidate.source_item_year else {
+        return Ok(None);
+    };
+
+    let title = normalize_match_text(&candidate.source_item_title);
+    let media_item_id: Option<Uuid> = sqlx::query_scalar(
+        r#"
+        SELECT id
+        FROM media_items
+        WHERE type = $1
+          AND LOWER(REGEXP_REPLACE(BTRIM(title), '[[:space:]]+', ' ', 'g')) = $2
+          AND EXTRACT(YEAR FROM premiere_date)::INT = $3
+        ORDER BY id
+        LIMIT 1
+        "#,
+    )
+    .bind(&candidate.source_item_type)
+    .bind(title)
+    .bind(year)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    Ok(media_item_id.map(|media_item_id| MigrationItemMatch {
+        media_item_id,
+        method: "title_year",
+        confidence: "medium",
+    }))
+}
+
+async fn find_series_episode_match(
+    state: &AppState,
+    candidate: &MigrationMatchCandidate,
+) -> Result<Option<MigrationItemMatch>, MigrationError> {
+    let Some(series_name) = metadata_string(&candidate.source_item_metadata, "series_name") else {
+        return Ok(None);
+    };
+    let Some(season_number) = metadata_i32(&candidate.source_item_metadata, "season_number") else {
+        return Ok(None);
+    };
+    let Some(episode_number) = metadata_i32(&candidate.source_item_metadata, "episode_number")
+    else {
+        return Ok(None);
+    };
+
+    let media_item_id: Option<Uuid> = sqlx::query_scalar(
+        r#"
+        SELECT episode_item.id
+        FROM media_items episode_item
+        JOIN episodes e ON e.id = episode_item.id
+        JOIN seasons season ON season.id = e.season_id
+        JOIN media_items series_item ON series_item.id = e.series_id
+        WHERE episode_item.type = 'episode'
+          AND series_item.type = 'series'
+          AND LOWER(REGEXP_REPLACE(BTRIM(series_item.title), '[[:space:]]+', ' ', 'g')) = $1
+          AND season.season_number = $2
+          AND e.episode_number = $3
+        ORDER BY episode_item.id
+        LIMIT 1
+        "#,
+    )
+    .bind(normalize_match_text(&series_name))
+    .bind(season_number)
+    .bind(episode_number)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    Ok(media_item_id.map(|media_item_id| MigrationItemMatch {
+        media_item_id,
+        method: "series_episode",
+        confidence: "low",
+    }))
+}
+
+async fn refresh_mapping_match_counts(
+    state: &AppState,
+    migration_source_id: Uuid,
+) -> Result<(), MigrationError> {
+    sqlx::query(
+        r#"
+        UPDATE migration_user_mapping m
+        SET items_matched = counts.items_matched,
+            items_unmatched = counts.items_unmatched
+        FROM (
+            SELECT
+                m2.id,
+                COUNT(l.id) FILTER (WHERE l.status IN ('matched', 'imported', 'skipped'))::INT AS items_matched,
+                COUNT(l.id) FILTER (WHERE l.status = 'unmatched')::INT AS items_unmatched
+            FROM migration_user_mapping m2
+            LEFT JOIN migration_import_log l ON l.migration_user_mapping_id = m2.id
+            WHERE m2.migration_source_id = $1
+            GROUP BY m2.id
+        ) counts
+        WHERE m.id = counts.id
+        "#,
+    )
+    .bind(migration_source_id)
+    .execute(&state.pool)
+    .await?;
+
+    Ok(())
+}
+
+fn provider_id_string(provider_ids: &Value, key: &str) -> Option<String> {
+    provider_ids.get(key).and_then(|value| {
+        value
+            .as_str()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+            .or_else(|| value.as_i64().map(|id| id.to_string()))
+            .or_else(|| value.as_u64().map(|id| id.to_string()))
+    })
+}
+
+fn provider_id_i64(provider_ids: &Value, key: &str) -> Option<i64> {
+    provider_id_string(provider_ids, key)?.parse().ok()
+}
+
+fn metadata_string(metadata: &Value, key: &str) -> Option<String> {
+    metadata
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn metadata_i32(metadata: &Value, key: &str) -> Option<i32> {
+    metadata.get(key).and_then(|value| {
+        value
+            .as_i64()
+            .and_then(|number| i32::try_from(number).ok())
+            .or_else(|| value.as_str()?.trim().parse().ok())
+    })
+}
+
+fn normalize_match_text(value: &str) -> String {
+    value
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase()
+}
+
+fn unmatched_reason(candidate: &MigrationMatchCandidate) -> String {
+    let mut attempted = Vec::new();
+    for provider in ["tmdb", "imdb", "tvdb"] {
+        if let Some(value) = provider_id_string(&candidate.source_provider_ids, provider) {
+            attempted.push(format!("{provider}:{value}"));
+        }
+    }
+    if candidate.source_item_year.is_some() {
+        attempted.push("title_year".to_string());
+    }
+    if candidate.source_item_type == "episode"
+        && metadata_string(&candidate.source_item_metadata, "series_name").is_some()
+        && metadata_i32(&candidate.source_item_metadata, "season_number").is_some()
+        && metadata_i32(&candidate.source_item_metadata, "episode_number").is_some()
+    {
+        attempted.push("series_episode".to_string());
+    }
+
+    if attempted.is_empty() {
+        format!(
+            "No provider IDs or usable fallback metadata for source item {}",
+            candidate.source_item_id
+        )
+    } else {
+        format!(
+            "No media_item matched source item {} via {}",
+            candidate.source_item_id,
+            attempted.join(", ")
+        )
+    }
+}
+
 pub async fn save_user_mappings(
     state: &AppState,
     id: Uuid,
@@ -2257,7 +2723,8 @@ pub async fn get_unmatched_report(
     let rows = sqlx::query(
         r#"
         SELECT id, source_item_id, source_item_title, source_item_type,
-               source_item_year, source_provider_ids, match_method, status, error_detail
+               source_item_year, source_provider_ids, match_method, match_confidence,
+               status, error_detail
         FROM migration_import_log
         WHERE migration_source_id = $1
           AND (status = 'unmatched' OR match_method = 'unmatched')
@@ -2394,7 +2861,7 @@ async fn load_preflight_estimated_counts(
             COUNT(*)::BIGINT AS source_items_discovered,
             COUNT(*) FILTER (WHERE status IN ('discovered', 'matched', 'unmatched', 'imported', 'skipped', 'error'))::BIGINT AS source_items_with_watch_data,
             COUNT(*) FILTER (WHERE status IN ('matched', 'imported', 'skipped'))::BIGINT AS estimated_matches,
-            COUNT(*) FILTER (WHERE match_method = 'title_year')::BIGINT AS low_confidence_count,
+            COUNT(*) FILTER (WHERE match_confidence = 'low')::BIGINT AS low_confidence_count,
             COUNT(*) FILTER (WHERE status = 'unmatched' OR match_method = 'unmatched')::BIGINT AS unmatched_count
         FROM migration_import_log
         WHERE migration_source_id = $1
@@ -3009,6 +3476,7 @@ fn row_to_unmatched_item(row: &sqlx::postgres::PgRow) -> UnmatchedItemResponse {
         source_item_year: row.get("source_item_year"),
         source_provider_ids: row.get("source_provider_ids"),
         match_method: row.get("match_method"),
+        match_confidence: row.get("match_confidence"),
         status: row.get("status"),
         error_detail: row.get("error_detail"),
     }

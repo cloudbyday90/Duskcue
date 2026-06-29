@@ -148,6 +148,19 @@ pub struct MigrationDiscoveryResponse {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct MigrationMatchResponse {
+    pub migration_source_id: Uuid,
+    pub status: String,
+    pub items_processed: usize,
+    pub items_matched: usize,
+    pub items_unmatched: usize,
+    pub high_confidence: usize,
+    pub medium_confidence: usize,
+    pub low_confidence: usize,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct MigrationSourceUserResponse {
     pub source_user_id: String,
     pub source_user_name: String,
@@ -274,6 +287,7 @@ pub struct UnmatchedItemResponse {
     pub source_item_year: Option<i32>,
     pub source_provider_ids: serde_json::Value,
     pub match_method: Option<String>,
+    pub match_confidence: Option<String>,
     pub status: String,
     pub error_detail: Option<String>,
 }

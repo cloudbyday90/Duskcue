@@ -3081,7 +3081,8 @@ CREATE TABLE migration_import_log (
     source_item_metadata JSONB NOT NULL DEFAULT '{}',
 
     matched_media_item_id UUID REFERENCES media_items(id) ON DELETE SET NULL,
-    match_method TEXT CHECK (match_method IN ('tmdb_id', 'imdb_id', 'tvdb_id', 'title_year', 'unmatched')),
+    match_method TEXT CHECK (match_method IN ('tmdb_id', 'imdb_id', 'tvdb_id', 'title_year', 'series_episode', 'unmatched')),
+    match_confidence TEXT CHECK (match_confidence IS NULL OR match_confidence IN ('high', 'medium', 'low', 'unmatched')),
 
     imported_user_item_data_id UUID REFERENCES user_item_data(id) ON DELETE SET NULL,
     status TEXT NOT NULL CHECK (status IN ('discovered', 'matched', 'unmatched', 'imported', 'skipped', 'error')),

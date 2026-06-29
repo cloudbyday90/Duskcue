@@ -42,6 +42,10 @@ export async function discoverMigrationSource(migrationSourceId, data = {}) {
     return post(`/migrations/${migrationSourceId}/discover`, data);
 }
 
+export async function matchMigrationItems(migrationSourceId) {
+    return post(`/migrations/${migrationSourceId}/match`);
+}
+
 export async function uploadPlexMigrationDatabase(migrationSourceId, file) {
     const data = new FormData();
     data.append('file', file);

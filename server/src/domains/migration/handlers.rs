@@ -87,6 +87,14 @@ pub async fn discover_source(
     Ok(Json(service::discover_source(&state, id, req).await?))
 }
 
+pub async fn match_migration_items(
+    _auth: Require<CanManageUsers>,
+    State(state): State<AppState>,
+    Path(id): Path<Uuid>,
+) -> Result<Json<MigrationMatchResponse>, AppError> {
+    Ok(Json(service::match_migration_items(&state, id).await?))
+}
+
 pub async fn get_user_mapping_options(
     _auth: Require<CanManageUsers>,
     State(state): State<AppState>,

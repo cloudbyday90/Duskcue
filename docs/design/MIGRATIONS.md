@@ -246,9 +246,10 @@ Each provider ID is queried independently. The first match wins. Order of preced
 When no provider IDs match (or source item has none):
 
 ```sql
-SELECT id FROM media_items
-WHERE LOWER(title) = LOWER($1)
-  AND year = $2
+SELECT id
+FROM media_items
+WHERE LOWER(REGEXP_REPLACE(BTRIM(title), '[[:space:]]+', ' ', 'g')) = $1
+  AND EXTRACT(YEAR FROM premiere_date)::INT = $2
   AND type = $3    -- 'movie' or 'episode'
 LIMIT 1;
 ```
@@ -256,11 +257,12 @@ LIMIT 1;
 For TV episodes, the fallback also matches on show title + season + episode number:
 
 ```sql
-SELECT e.id
-FROM episodes e
-JOIN series s ON e.series_id = s.id
+SELECT episode_item.id
+FROM media_items episode_item
+JOIN episodes e ON e.id = episode_item.id
 JOIN seasons sn ON e.season_id = sn.id
-WHERE LOWER(s.title) = LOWER($1)      -- show title
+JOIN media_items series_item ON series_item.id = e.series_id
+WHERE LOWER(REGEXP_REPLACE(BTRIM(series_item.title), '[[:space:]]+', ' ', 'g')) = $1
   AND sn.season_number = $2            -- season number
   AND e.episode_number = $3            -- episode number
 LIMIT 1;
@@ -274,7 +276,8 @@ LIMIT 1;
 | IMDb ID match | HIGH | Yes |
 | TVDb ID match | HIGH | Yes |
 | Title + Year + Type exact | MEDIUM | Yes (if no provider ID available) |
-| Title fuzzy + Year + Type | LOW | No — requires admin review |
+| Series title + season + episode exact | LOW | Yes, but surfaced for manual review |
+| Unmatched | UNMATCHED | No |
 
 ### Unmatched Items
 
@@ -485,7 +488,8 @@ CREATE TABLE migration_import_log (
     source_item_metadata JSONB NOT NULL DEFAULT '{}',
 
     matched_media_item_id UUID REFERENCES media_items(id) ON DELETE SET NULL,
-    match_method TEXT CHECK (match_method IN ('tmdb_id', 'imdb_id', 'tvdb_id', 'title_year', 'unmatched')),
+    match_method TEXT CHECK (match_method IN ('tmdb_id', 'imdb_id', 'tvdb_id', 'title_year', 'series_episode', 'unmatched')),
+    match_confidence TEXT CHECK (match_confidence IS NULL OR match_confidence IN ('high', 'medium', 'low', 'unmatched')),
 
     imported_user_item_data_id UUID REFERENCES user_item_data(id) ON DELETE SET NULL,
     status TEXT NOT NULL CHECK (status IN ('discovered', 'matched', 'unmatched', 'imported', 'skipped', 'error')),
@@ -611,6 +615,7 @@ Unmatched Items (144):
 | `DELETE` | `/api/v1/migrations/{id}` | Admin | Delete migration and its log |
 | `POST` | `/api/v1/migrations/{id}/connect` | Admin | Test connection to source |
 | `POST` | `/api/v1/migrations/{id}/discover` | Admin | Discover users and items from source |
+| `POST` | `/api/v1/migrations/{id}/match` | Admin | Match discovered source items to local media |
 | `POST` | `/api/v1/migrations/{id}/upload` | Admin | Upload and validate Plex SQLite database |
 | `GET` | `/api/v1/migrations/{id}/map-users` | Admin | Get saved mappings and platform-user options |
 | `POST` | `/api/v1/migrations/{id}/map-users` | Admin | Save user mappings |
@@ -802,6 +807,14 @@ The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids
 - `GET /api/v1/migrations/{id}/map-users` returns saved mapping decisions and platform-user options. Options include `users.username`, `users.display_name`, email/status, the latest linked `invitations.display_name` and invitation email when present, and a ready-to-display label.
 - `POST /api/v1/migrations/{id}/map-users` accepts mapped rows with `platform_user_id` or skipped rows with `skip = true`; duplicate source users, duplicate mapped platform users, missing platform users, and skip+platform conflicts return `MIGR_006`.
 - All-skipped submissions return `MIGR_007`. Preflight, start, and extraction require at least one non-skipped mapping and ignore skipped rows when extracting source watch data.
+
+## Phase 14 Task 9 Implementation Notes
+
+- Added `20260629050000_migration_matching_task9.sql` with `migration_import_log.match_confidence`, a confidence index, and the `series_episode` match method.
+- Added `POST /api/v1/migrations/{id}/match` plus `matchMigrationItems()` in the web API client. The endpoint is admin-only, blocks concurrent active migration states, sets the source to `matching` during the pass, and returns processed/matched/unmatched counts plus high/medium/low confidence totals.
+- Matching runs against durable `migration_import_log` rows in `discovered` or `unmatched` status. It tries TMDb, IMDb, and TVDb provider IDs first, then exact normalized title + `premiere_date` year + type, then episode fallback by source series title + season + episode through `episodes`, `seasons`, and the series `media_items` row.
+- Matched rows are persisted with `matched_media_item_id`, `match_method`, `match_confidence`, `status = 'matched'`, and cleared error detail. Unmatched rows are persisted with `match_method = 'unmatched'`, `match_confidence = 'unmatched'`, `status = 'unmatched'`, and an audit reason describing attempted identifiers/fallbacks.
+- Preflight estimates count low-confidence rows from `match_confidence = 'low'`, and unmatched report rows include `match_confidence` for the Task 10 manual review workflow.
 
 ## Security Considerations
 

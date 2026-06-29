@@ -48,6 +48,10 @@ pub fn router(state: AppState) -> Router<AppState> {
             post(handlers::discover_source),
         )
         .route(
+            "/api/v1/migrations/{id}/match",
+            post(handlers::match_migration_items),
+        )
+        .route(
             "/api/v1/migrations/{id}/upload",
             post(handlers::upload_plex_database)
                 .layer(DefaultBodyLimit::max(PLEX_UPLOAD_BODY_LIMIT_BYTES)),
