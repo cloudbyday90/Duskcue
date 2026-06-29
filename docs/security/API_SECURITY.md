@@ -402,6 +402,8 @@ let outbound_client = reqwest::Client::builder()
     .build()?;
 ```
 
+**Consumers of this hardened config:** all metadata/artwork/subtitle/Trakt outbound clients (Phase 6+), and the notification webhook dispatch client (`services::notification_dispatch::build_webhook_client`, Phase 13b Task 4). The webhook URL is operator-configured (trusted), but defense-in-depth applies — `no_proxy()` prevents a malicious `HTTP_PROXY` env var from redirecting notification traffic, and `redirect(Policy::none())` blocks SSRF via redirect chains.
+
 ---
 
 ## 7. Outbound API Response Validation

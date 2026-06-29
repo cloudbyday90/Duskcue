@@ -27,8 +27,9 @@
 //!    to the [`EventBus`](crate::services::event_bus::EventBus) for live
 //!    foreground clients. This is sub-microsecond (in-memory broadcast).
 //! 3. **Webhook fan-out (fire-and-forget)** — Spawns a background task to POST
-//!    to the operator-configured webhook URL with HMAC-SHA256 signing. Task 4
-//!    adds format-specific payloads (ntfy/Gotify/Discord/Slack) and retry.
+//!    to the operator-configured webhook URL in one of five formats
+//!    (`generic`/`ntfy`/`gotify`/`discord`/`slack`) with HMAC-SHA256 signing
+//!    and exponential-backoff retry (1s, 5s, 30s, 2m, 10m with full jitter).
 //! 4. **Push fan-out (stub)** — Resolves push config + preferences but the
 //!    actual FCM/APNs/UnifiedPush client is deferred to Phase 16a.
 //!
@@ -378,32 +379,38 @@ fn spawn_webhook_delivery(
     body: &str,
     input: &NotificationInput,
 ) {
-    let payload = build_webhook_payload(notification_id, nt, title, body, input);
-    let body_bytes = match serde_json::to_vec(&payload) {
-        Ok(bytes) => bytes,
-        Err(e) => {
-            tracing::error!(notification_id = %notification_id, error = %e, "Failed to serialize webhook payload");
-            return;
-        }
-    };
-
+    let format = WebhookFormat::from_config(&config.format);
     let url = match &config.url {
         Some(u) => u.clone(),
         None => return,
     };
     let secret = config.secret.clone();
-    let format = config.format.clone();
+
+    let mut req = format_request(
+        format,
+        &url,
+        notification_id,
+        nt,
+        title,
+        body,
+        input,
+    );
+    sign_request(&mut req, &secret);
+
+    let format_label = config.format.clone();
 
     tokio::spawn(async move {
-        let result = dispatch_webhook(&url, &secret, &format, &body_bytes).await;
+        let result = dispatch_webhook(&req).await;
         let status_str = match &result {
             Ok(()) => "delivered",
             Err(e) => {
                 tracing::warn!(
                     notification_id = %notification_id,
                     url = %url,
+                    format = %format_label,
                     error = %e,
-                    "Webhook delivery failed"
+                    attempts = WEBHOOK_BACKOFF_SECONDS.len() + 1,
+                    "Webhook delivery exhausted retries; marked failed"
                 );
                 "failed"
             }
@@ -432,6 +439,154 @@ fn spawn_webhook_delivery(
     });
 }
 
+/// Supported webhook payload formats. Selected via
+/// `server_config.notifications.webhook.format`. Unknown config values fall
+/// back to [`WebhookFormat::Generic`] so a typo never breaks dispatch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WebhookFormat {
+    Generic,
+    Ntfy,
+    Gotify,
+    Discord,
+    Slack,
+}
+
+impl WebhookFormat {
+    /// Parse a format string from config. Unknown values fall back to
+    /// [`WebhookFormat::Generic`] (logged at INFO by the caller) so a typo
+    /// never breaks dispatch. Infallible by design — does not implement
+    /// `FromStr` (which would require returning `Result`).
+    pub fn from_config(s: &str) -> Self {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "ntfy" => Self::Ntfy,
+            "gotify" => Self::Gotify,
+            "discord" => Self::Discord,
+            "slack" => Self::Slack,
+            _ => Self::Generic,
+        }
+    }
+
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Generic => "generic",
+            Self::Ntfy => "ntfy",
+            Self::Gotify => "gotify",
+            Self::Discord => "discord",
+            Self::Slack => "slack",
+        }
+    }
+}
+
+/// A fully-formed webhook request, ready to send. Produced by
+/// [`format_request`] per the selected [`WebhookFormat`].
+struct FormattedRequest {
+    /// URL to POST to. May differ from the operator's base URL (e.g. Discord
+    /// appends `?wait=true` so the response carries a real status code).
+    url: String,
+    /// `Content-Type` header value.
+    content_type: &'static str,
+    /// Additional headers (format-specific `Title`/`Priority` for ntfy, plus
+    /// the `X-Duskcue-Signature` HMAC header added by [`sign_request`]).
+    headers: Vec<(String, String)>,
+    /// Serialized request body bytes. The HMAC signature (when a secret is
+    /// configured) is computed over these exact bytes.
+    body: Vec<u8>,
+}
+
+fn format_request(
+    format: WebhookFormat,
+    url: &str,
+    notification_id: Uuid,
+    nt: &NotificationTypeInfo,
+    title: &str,
+    body: &str,
+    input: &NotificationInput,
+) -> FormattedRequest {
+    match format {
+        WebhookFormat::Generic => {
+            let payload = build_webhook_payload(notification_id, nt, title, body, input);
+            FormattedRequest {
+                url: url.to_string(),
+                content_type: "application/json",
+                headers: Vec::new(),
+                body: serde_json::to_vec(&payload).unwrap_or_default(),
+            }
+        }
+        WebhookFormat::Ntfy => {
+            // ntfy takes a plain-text body with Title/Priority/Tags/Markdown headers
+            // (https://docs.ntfy.sh/publish/). The body is the message text.
+            let body_text = if title.is_empty() {
+                body.to_string()
+            } else {
+                format!("{title}\n\n{body}")
+            };
+            FormattedRequest {
+                url: url.to_string(),
+                content_type: "text/plain; charset=utf-8",
+                headers: vec![
+                    ("Title".to_string(), title.to_string()),
+                    ("Priority".to_string(), ntfy_priority(&nt.priority).to_string()),
+                    ("Tags".to_string(), ntfy_tags(&nt.category).to_string()),
+                    ("Markdown".to_string(), "yes".to_string()),
+                ],
+                body: body_text.into_bytes(),
+            }
+        }
+        WebhookFormat::Gotify => {
+            // Gotify message JSON: {title, message, priority}. The app token is
+            // part of the operator-configured URL (?token=...), so no auth header.
+            let payload = serde_json::json!({
+                "title": title,
+                "message": body,
+                "priority": gotify_priority(&nt.priority),
+            });
+            FormattedRequest {
+                url: url.to_string(),
+                content_type: "application/json",
+                headers: Vec::new(),
+                body: serde_json::to_vec(&payload).unwrap_or_default(),
+            }
+        }
+        WebhookFormat::Discord => {
+            // Discord caps `content` at 2000 chars. Compose a single message
+            // with a bold title. ?wait=true ensures Discord returns a real
+            // status (otherwise it replies 204 even for rate-limited drops).
+            let composed = if title.is_empty() {
+                body.to_string()
+            } else {
+                format!("**{title}**\n{body}")
+            };
+            let truncated: String = composed.chars().take(2000).collect();
+            let payload = serde_json::json!({
+                "username": "Duskcue",
+                "content": truncated,
+            });
+            let sep = if url.contains('?') { '&' } else { '?' };
+            FormattedRequest {
+                url: format!("{url}{sep}wait=true"),
+                content_type: "application/json",
+                headers: Vec::new(),
+                body: serde_json::to_vec(&payload).unwrap_or_default(),
+            }
+        }
+        WebhookFormat::Slack => {
+            // Slack incoming webhook: {text}. mrkdwn is on by default.
+            let text = if title.is_empty() {
+                body.to_string()
+            } else {
+                format!("*{title}*\n{body}")
+            };
+            let payload = serde_json::json!({ "text": text });
+            FormattedRequest {
+                url: url.to_string(),
+                content_type: "application/json",
+                headers: Vec::new(),
+                body: serde_json::to_vec(&payload).unwrap_or_default(),
+            }
+        }
+    }
+}
+
 fn build_webhook_payload(
     notification_id: Uuid,
     nt: &NotificationTypeInfo,
@@ -454,43 +609,198 @@ fn build_webhook_payload(
     })
 }
 
-async fn dispatch_webhook(
-    url: &str,
-    secret: &Option<String>,
-    _format: &str,
-    body_bytes: &[u8],
-) -> Result<(), WebhookError> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(15))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|e| WebhookError::ClientBuild(e.to_string()))?;
+/// Map a Duskcue priority (`low`/`medium`/`high`) to the ntfy 1-5 priority
+/// scale (1=min, 2=low, 3=default, 4=high, 5=max).
+fn ntfy_priority(priority: &str) -> u8 {
+    match priority {
+        "high" => 5,
+        "medium" => 3,
+        _ => 2,
+    }
+}
 
-    let mut request = client
-        .post(url)
-        .header("Content-Type", "application/json")
-        .header("User-Agent", "Duskcue-Notifications/1.0");
+/// Map a Duskcue priority to the Gotify 0-10 priority scale.
+fn gotify_priority(priority: &str) -> i32 {
+    match priority {
+        "high" => 8,
+        "medium" => 5,
+        _ => 2,
+    }
+}
 
+/// ntfy emoji tag set per notification category (ntfy renders these as emoji).
+fn ntfy_tags(category: &str) -> &'static str {
+    match category {
+        "security" => "rotating_light,warning",
+        "system" => "gear",
+        "media" => "film_projector",
+        "task" => "clipboard",
+        "user" => "bust_in_silhouette",
+        _ => "bell",
+    }
+}
+
+/// Append the `X-Duskcue-Signature` HMAC-SHA256 header (computed over the
+/// request body) when a shared secret is configured. Applied to all formats.
+fn sign_request(req: &mut FormattedRequest, secret: &Option<String>) {
     if let Some(secret) = secret
         && !secret.is_empty()
     {
-        let signature = compute_hmac_signature(secret.as_bytes(), body_bytes);
-        request = request.header("X-Duskcue-Signature", format!("sha256={signature}"));
+        let signature = compute_hmac_signature(secret.as_bytes(), &req.body);
+        req.headers
+            .push(("X-Duskcue-Signature".to_string(), format!("sha256={signature}")));
+    }
+}
+
+/// Backoff schedule (seconds) between retries, per
+/// [MOBILE_PUSH.md](../../docs/design/MOBILE_PUSH.md) §Retry policy.
+/// The webhook is attempted once immediately, then retried up to
+/// `WEBHOOK_BACKOFF_SECONDS.len()` times with these waits applied before each
+/// retry (1s, 5s, 30s, 2m, 10m). Full jitter (0.5×–1.5×) is applied to every
+/// wait to avoid thundering-herd spikes when many notifications fail at once.
+const WEBHOOK_BACKOFF_SECONDS: [u64; 5] = [1, 5, 30, 120, 600];
+
+/// HTTP status codes worth retrying. All 4xx (except 429) are treated as
+/// permanent failures (bad URL, revoked token, deleted webhook). See
+/// MOBILE_PUSH.md §Retry policy and the Hookdeck/Svix retry best-practice
+/// guides cited in MOBILE_PUSH.md Research Sources.
+fn is_retryable_status(status: u16) -> bool {
+    matches!(status, 408 | 429 | 500 | 502 | 503 | 504)
+}
+
+/// Parse a `Retry-After` header value. Supports the integer-seconds form
+/// (`Retry-After: 120`) used by ntfy/Gotify/Discord/Slack. HTTP-date form is
+/// ignored (returns `None`) — rare for these services.
+fn parse_retry_after(header_value: &str) -> Option<std::time::Duration> {
+    header_value.trim().parse::<u64>().ok().map(std::time::Duration::from_secs)
+}
+
+/// Apply full jitter to a duration: returns a value in `[0.5×, 1.5×)` of the
+/// input. Bounds the random factor so a 1s base never becomes a 0ms sleep.
+fn jittered_duration(base: std::time::Duration) -> std::time::Duration {
+    let factor = 0.5 + rand::random::<f64>();
+    let millis = (base.as_millis() as f64 * factor) as u64;
+    std::time::Duration::from_millis(millis.max(1))
+}
+
+fn build_webhook_client() -> Result<reqwest::Client, WebhookError> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| WebhookError::ClientBuild(e.to_string()))
+}
+
+async fn dispatch_webhook(req: &FormattedRequest) -> Result<(), WebhookError> {
+    let client = build_webhook_client()?;
+
+    // Initial attempt (no preceding wait), then up to WEBHOOK_BACKOFF_SECONDS
+    // retries with jittered exponential backoff.
+    for attempt in 0..=WEBHOOK_BACKOFF_SECONDS.len() {
+        if attempt > 0 {
+            let backoff = WEBHOOK_BACKOFF_SECONDS[attempt - 1];
+            let delay = jittered_duration(std::time::Duration::from_secs(backoff));
+            tracing::debug!(
+                attempt,
+                backoff_seconds = backoff,
+                delay_ms = delay.as_millis(),
+                "Webhook backing off before retry"
+            );
+            tokio::time::sleep(delay).await;
+        }
+
+        match send_once(&client, req).await {
+            Ok(()) => return Ok(()),
+            Err(e @ WebhookError::NonRetryableStatus { .. }) => {
+                tracing::warn!(
+                    attempt,
+                    error = %e,
+                    "Webhook returned non-retryable status; not retrying"
+                );
+                return Err(e);
+            }
+            Err(WebhookError::RetryableStatus { retry_after, status, .. }) => {
+                if let Some(ra) = retry_after {
+                    // 429 with Retry-After: honor it (capped at 10 minutes so a
+                    // malicious or misconfigured endpoint can't stall delivery).
+                    let capped = std::cmp::min(ra, std::time::Duration::from_secs(600));
+                    tracing::warn!(
+                        attempt,
+                        status,
+                        retry_after_ms = capped.as_millis(),
+                        "Webhook rate-limited (429); honoring Retry-After"
+                    );
+                    tokio::time::sleep(jittered_duration(capped)).await;
+                } else {
+                    tracing::warn!(
+                        attempt,
+                        status,
+                        "Webhook returned retryable status; will back off"
+                    );
+                }
+            }
+            Err(WebhookError::ClientBuild(_)) => {
+                // Cannot recur (client already built above); treat as terminal.
+                unreachable!("client built once before loop")
+            }
+            Err(e @ WebhookError::RequestFailed(_)) => {
+                tracing::warn!(
+                    attempt,
+                    error = %e,
+                    "Webhook network/timeout error; will retry"
+                );
+            }
+        }
+    }
+
+    Err(WebhookError::RequestFailed(
+        "exhausted all retry attempts".to_string(),
+    ))
+}
+
+async fn send_once(
+    client: &reqwest::Client,
+    req: &FormattedRequest,
+) -> Result<(), WebhookError> {
+    let mut request = client
+        .post(&req.url)
+        .header("Content-Type", req.content_type)
+        .header("User-Agent", "Duskcue-Notifications/1.0");
+
+    for (name, value) in &req.headers {
+        request = request.header(name, value);
     }
 
     let response = request
-        .body(body_bytes.to_vec())
+        .body(req.body.clone())
         .send()
         .await
         .map_err(|e| WebhookError::RequestFailed(e.to_string()))?;
 
     let status = response.status();
     if status.is_success() {
-        Ok(())
+        return Ok(());
+    }
+
+    let status_code = status.as_u16();
+    let retry_after = response
+        .headers()
+        .get(reqwest::header::RETRY_AFTER)
+        .and_then(|v| v.to_str().ok())
+        .and_then(parse_retry_after);
+    let body_text = response.text().await.unwrap_or_default();
+
+    if is_retryable_status(status_code) {
+        Err(WebhookError::RetryableStatus {
+            status: status_code,
+            retry_after,
+            body: body_text,
+        })
     } else {
-        let body_text = response.text().await.unwrap_or_default();
-        Err(WebhookError::NonSuccessStatus {
-            status: status.as_u16(),
+        Err(WebhookError::NonRetryableStatus {
+            status: status_code,
             body: body_text,
         })
     }
@@ -516,8 +826,14 @@ enum WebhookError {
     ClientBuild(String),
     #[error("Request failed: {0}")]
     RequestFailed(String),
-    #[error("Webhook returned non-success status {status}: {body}")]
-    NonSuccessStatus { status: u16, body: String },
+    #[error("Webhook returned non-retryable status {status}: {body}")]
+    NonRetryableStatus { status: u16, body: String },
+    #[error("Webhook returned retryable status {status}")]
+    RetryableStatus {
+        status: u16,
+        retry_after: Option<std::time::Duration>,
+        body: String,
+    },
 }
 
 struct NotificationTypeInfo {
@@ -787,5 +1103,343 @@ mod tests {
         );
 
         assert_eq!(body, "Inception was added to Movies");
+    }
+
+    fn sample_nt(category: &str, priority: &str) -> NotificationTypeInfo {
+        NotificationTypeInfo {
+            id: Uuid::nil(),
+            category: category.to_string(),
+            priority: priority.to_string(),
+            in_app_template: "new-media-added".to_string(),
+            is_enabled_by_default: true,
+        }
+    }
+
+    #[test]
+    fn webhook_format_parses_known_values_case_insensitively() {
+        assert_eq!(WebhookFormat::from_config("generic"), WebhookFormat::Generic);
+        assert_eq!(WebhookFormat::from_config("NTFY"), WebhookFormat::Ntfy);
+        assert_eq!(WebhookFormat::from_config("Gotify"), WebhookFormat::Gotify);
+        assert_eq!(WebhookFormat::from_config("discord"), WebhookFormat::Discord);
+        assert_eq!(WebhookFormat::from_config(" slack "), WebhookFormat::Slack);
+    }
+
+    #[test]
+    fn webhook_format_unknown_falls_back_to_generic() {
+        assert_eq!(WebhookFormat::from_config("telegram"), WebhookFormat::Generic);
+        assert_eq!(WebhookFormat::from_config(""), WebhookFormat::Generic);
+    }
+
+    #[test]
+    fn generic_format_produces_json_with_full_payload() {
+        let nt = sample_nt("media", "high");
+        let input = NotificationInput::new(Uuid::nil(), "new_media_added", serde_json::json!({}));
+        let req = format_request(
+            WebhookFormat::Generic,
+            "https://example.com/hook",
+            Uuid::nil(),
+            &nt,
+            "Title",
+            "Body",
+            &input,
+        );
+
+        assert_eq!(req.content_type, "application/json");
+        assert!(req.url.ends_with("/hook"));
+        let parsed: Value = serde_json::from_slice(&req.body).unwrap();
+        assert_eq!(parsed["title"], "Title");
+        assert_eq!(parsed["body"], "Body");
+        assert_eq!(parsed["category"], "media");
+        assert!(parsed["notification_id"].is_string());
+    }
+
+    #[test]
+    fn ntfy_format_uses_plain_text_with_priority_headers() {
+        let nt = sample_nt("security", "high");
+        let input = NotificationInput::new(Uuid::nil(), "trust_alert", serde_json::json!({}));
+        let req = format_request(
+            WebhookFormat::Ntfy,
+            "https://ntfy.example.com/topic",
+            Uuid::nil(),
+            &nt,
+            "Alert",
+            "Suspicious login",
+            &input,
+        );
+
+        assert_eq!(req.content_type, "text/plain; charset=utf-8");
+        let hdrs: std::collections::HashMap<&str, &str> = req
+            .headers
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        assert_eq!(hdrs.get("Title"), Some(&"Alert"));
+        assert_eq!(hdrs.get("Priority"), Some(&"5")); // high → 5
+        assert_eq!(hdrs.get("Markdown"), Some(&"yes"));
+        assert_eq!(hdrs.get("Tags"), Some(&"rotating_light,warning")); // security category
+        let body = String::from_utf8(req.body).unwrap();
+        assert!(body.contains("Alert"));
+        assert!(body.contains("Suspicious login"));
+    }
+
+    #[test]
+    fn ntfy_priority_maps_correctly() {
+        assert_eq!(ntfy_priority("high"), 5);
+        assert_eq!(ntfy_priority("medium"), 3);
+        assert_eq!(ntfy_priority("low"), 2);
+        assert_eq!(ntfy_priority("unknown"), 2);
+    }
+
+    #[test]
+    fn gotify_format_produces_message_json_with_priority() {
+        let nt = sample_nt("media", "medium");
+        let input = NotificationInput::new(Uuid::nil(), "new_media_added", serde_json::json!({}));
+        let req = format_request(
+            WebhookFormat::Gotify,
+            "https://gotify.example.com/message?token=Aabc123",
+            Uuid::nil(),
+            &nt,
+            "New Media",
+            "Body text",
+            &input,
+        );
+
+        assert_eq!(req.content_type, "application/json");
+        // URL preserved (token stays in query string, no auth header added)
+        assert!(req.url.contains("token=Aabc123"));
+        let parsed: Value = serde_json::from_slice(&req.body).unwrap();
+        assert_eq!(parsed["title"], "New Media");
+        assert_eq!(parsed["message"], "Body text");
+        assert_eq!(parsed["priority"], 5); // medium → 5
+    }
+
+    #[test]
+    fn discord_format_truncates_content_and_appends_wait() {
+        let nt = sample_nt("media", "low");
+        let long_body: String = "x".repeat(3000);
+        let input = NotificationInput::new(Uuid::nil(), "new_media_added", serde_json::json!({}));
+        let req = format_request(
+            WebhookFormat::Discord,
+            "https://discord.com/api/webhooks/123/abc",
+            Uuid::nil(),
+            &nt,
+            "T",
+            &long_body,
+            &input,
+        );
+
+        let parsed: Value = serde_json::from_slice(&req.body).unwrap();
+        let content = parsed["content"].as_str().unwrap();
+        assert!(content.chars().count() <= 2000);
+        assert_eq!(parsed["username"], "Duskcue");
+        // ?wait=true appended (no existing query)
+        assert!(req.url.ends_with("?wait=true"));
+    }
+
+    #[test]
+    fn discord_format_preserves_existing_query_when_appending_wait() {
+        let nt = sample_nt("media", "low");
+        let input = NotificationInput::new(Uuid::nil(), "t", serde_json::json!({}));
+        let req = format_request(
+            WebhookFormat::Discord,
+            "https://discord.com/api/webhooks/123/abc?thread_id=99",
+            Uuid::nil(),
+            &nt,
+            "T",
+            "B",
+            &input,
+        );
+        assert!(req.url.contains("&wait=true"));
+        assert!(req.url.contains("thread_id=99"));
+    }
+
+    #[test]
+    fn slack_format_produces_text_payload() {
+        let nt = sample_nt("system", "high");
+        let input = NotificationInput::new(Uuid::nil(), "backup_failed", serde_json::json!({}));
+        let req = format_request(
+            WebhookFormat::Slack,
+            "https://hooks.slack.com/services/T/B/X",
+            Uuid::nil(),
+            &nt,
+            "Backup Failed",
+            "See logs",
+            &input,
+        );
+
+        let parsed: Value = serde_json::from_slice(&req.body).unwrap();
+        assert!(parsed["text"].as_str().unwrap().contains("*Backup Failed*"));
+        assert!(parsed["text"].as_str().unwrap().contains("See logs"));
+    }
+
+    #[test]
+    fn sign_request_appends_hmac_header_when_secret_present() {
+        let nt = sample_nt("media", "low");
+        let input = NotificationInput::new(Uuid::nil(), "t", serde_json::json!({}));
+        let mut req = format_request(
+            WebhookFormat::Generic,
+            "https://example.com/h",
+            Uuid::nil(),
+            &nt,
+            "T",
+            "B",
+            &input,
+        );
+        assert!(req.headers.is_empty());
+
+        sign_request(&mut req, &Some("shared-secret".to_string()));
+
+        let sig_header = req
+            .headers
+            .iter()
+            .find(|(k, _)| k == "X-Duskcue-Signature")
+            .expect("signature header missing");
+        assert!(sig_header.1.starts_with("sha256="));
+        // Signature length: "sha256=" + 64 hex chars
+        assert_eq!(sig_header.1.len(), "sha256=".len() + 64);
+    }
+
+    #[test]
+    fn sign_request_skips_when_secret_absent_or_empty() {
+        let nt = sample_nt("media", "low");
+        let input = NotificationInput::new(Uuid::nil(), "t", serde_json::json!({}));
+        let mut req = format_request(
+            WebhookFormat::Generic,
+            "https://example.com/h",
+            Uuid::nil(),
+            &nt,
+            "T",
+            "B",
+            &input,
+        );
+        sign_request(&mut req, &None);
+        assert!(req.headers.is_empty());
+
+        sign_request(&mut req, &Some(String::new()));
+        assert!(req.headers.is_empty());
+    }
+
+    #[test]
+    fn retryable_status_classification_matches_best_practices() {
+        // Retryable (transient)
+        for code in [408, 429, 500, 502, 503, 504] {
+            assert!(is_retryable_status(code), "{code} should be retryable");
+        }
+        // Non-retryable (permanent client errors)
+        for code in [400, 401, 403, 404, 405, 410, 422] {
+            assert!(!is_retryable_status(code), "{code} should NOT be retryable");
+        }
+        // 2xx not classified as retryable (they're successes, handled separately)
+        assert!(!is_retryable_status(200));
+    }
+
+    #[test]
+    fn parse_retry_after_accepts_integer_seconds() {
+        assert_eq!(
+            parse_retry_after("120"),
+            Some(std::time::Duration::from_secs(120))
+        );
+        assert_eq!(
+            parse_retry_after("  5 "),
+            Some(std::time::Duration::from_secs(5))
+        );
+    }
+
+    #[test]
+    fn parse_retry_after_rejects_non_integer_and_http_date() {
+        assert_eq!(parse_retry_after("Wed, 21 Oct 2026 07:28:00 GMT"), None);
+        assert_eq!(parse_retry_after("not-a-number"), None);
+        assert_eq!(parse_retry_after(""), None);
+    }
+
+    #[test]
+    fn jittered_duration_stays_within_half_to_one_and_a_half_band() {
+        let base = std::time::Duration::from_secs(10);
+        for _ in 0..200 {
+            let jittered = jittered_duration(base);
+            assert!(
+                jittered >= std::time::Duration::from_millis(5000)
+                    && jittered < std::time::Duration::from_millis(15000),
+                "jittered duration {jittered:?} out of [5s, 15s) band"
+            );
+        }
+    }
+
+    #[test]
+    fn backoff_schedule_matches_mobile_push_doc() {
+        // 1s, 5s, 30s, 2m, 10m per MOBILE_PUSH.md §Retry policy
+        assert_eq!(WEBHOOK_BACKOFF_SECONDS, [1, 5, 30, 120, 600]);
+    }
+
+    #[tokio::test]
+    async fn send_once_classifies_429_as_retryable() {
+        // Mock a 429 response by using a server that always returns 429.
+        // We test send_once directly against a mockito-style listener.
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let url = format!("http://{addr}/hook");
+
+        let server = tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let _ = sock.read(&mut buf).await.unwrap();
+            let resp = "HTTP/1.1 429 Too Many Requests\r\nRetry-After: 2\r\nContent-Length: 0\r\n\r\n";
+            sock.write_all(resp.as_bytes()).await.unwrap();
+        });
+
+        let client = build_webhook_client().unwrap();
+        let req = FormattedRequest {
+            url,
+            content_type: "application/json",
+            headers: vec![],
+            body: br#"{"x":1}"#.to_vec(),
+        };
+        let err = send_once(&client, &req).await.unwrap_err();
+        match err {
+            WebhookError::RetryableStatus {
+                status,
+                retry_after,
+                ..
+            } => {
+                assert_eq!(status, 429);
+                assert_eq!(retry_after, Some(std::time::Duration::from_secs(2)));
+            }
+            other => panic!("expected RetryableStatus, got {other:?}"),
+        }
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn send_once_classifies_404_as_non_retryable() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let url = format!("http://{addr}/hook");
+
+        let server = tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let (mut sock, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 4096];
+            let _ = sock.read(&mut buf).await.unwrap();
+            let resp = "HTTP/1.1 404 Not Found\r\nContent-Length: 9\r\n\r\nnot found";
+            sock.write_all(resp.as_bytes()).await.unwrap();
+        });
+
+        let client = build_webhook_client().unwrap();
+        let req = FormattedRequest {
+            url,
+            content_type: "application/json",
+            headers: vec![],
+            body: vec![],
+        };
+        let err = send_once(&client, &req).await.unwrap_err();
+        match err {
+            WebhookError::NonRetryableStatus { status, body } => {
+                assert_eq!(status, 404);
+                assert_eq!(body, "not found");
+            }
+            other => panic!("expected NonRetryableStatus, got {other:?}"),
+        }
+        server.await.unwrap();
     }
 }

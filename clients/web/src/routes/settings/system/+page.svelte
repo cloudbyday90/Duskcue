@@ -364,8 +364,9 @@
                 text('vapid_public_key', 'VAPID Public Key', 'Activation requires Phase 13b - notification dispatch'),
                 password('vapid_private_key', 'VAPID Private Key', 'Activation requires Phase 13b - notification dispatch'),
                 toggle('webhook_enabled', 'Enable Webhooks', 'Activation requires Phase 13b - notification dispatch'),
-                text('webhook_url', 'Webhook URL', 'Activation requires Phase 13b - notification dispatch'),
-                password('webhook_secret', 'Webhook Secret', 'Activation requires Phase 13b - notification dispatch'),
+                text('webhook_url', 'Webhook URL', 'Destination URL. For ntfy/gotify/discord/slack, include any required token in the URL.'),
+                select('webhook_format', 'Webhook Format', ['generic', 'ntfy', 'gotify', 'discord', 'slack'], 'Payload shape. ntfy = plain text + headers; gotify/discord/slack = native JSON; generic = full Duskcue JSON with HMAC signature.'),
+                password('webhook_secret', 'Webhook Secret', 'Optional shared secret for X-Duskcue-Signature HMAC-SHA256. Applied to all formats.'),
             ],
         },
     ];

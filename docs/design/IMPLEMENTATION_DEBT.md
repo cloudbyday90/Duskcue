@@ -31,7 +31,7 @@ No artificial "Phase 8.5" or dedicated "refactoring sprint" is created. The rese
 | 5 | **Fluent server-side setup** (`fluent-templates` crate, `server/locales/en/` directory, notification template migration) | [I18N.md](I18N.md) | 2-3 days | **Phase 13b** (notification dispatch is forcing function) | Phase 13 notification templates; error message localization (future) | ✅ Phase 13b Task 1 |
 | 6 | **Multi-channel dispatch pipeline** (fan-out to in-app + SSE + webhook + mobile push) | [MOBILE_PUSH.md](MOBILE_PUSH.md) | 3-5 days | **Phase 13** (notification system is forcing function) | Phase 13 notification delivery; Phase 16 mobile push | ✅ Phase 13b Task 2 (in-app + SSE + webhook + push stub; FCM/APNs client deferred to Phase 16a) |
 | 7 | **`user_push_devices` table + registration API** | [MOBILE_PUSH.md](MOBILE_PUSH.md) | 1-2 days | **Phase 13** (push device management in notifications UI) | Phase 13 push device UI; Phase 16 Flutter registration | Spec only |
-| 8 | **Webhook dispatch** (HTTP POST to operator-configured URL; ntfy/Gotify/Discord/Slack/generic formats) | [MOBILE_PUSH.md](MOBILE_PUSH.md) | 2-3 days | **Phase 13** (default push channel; no mobile SDK needed) | Phase 13 notification delivery | Spec only |
+| 8 | **Webhook dispatch** (HTTP POST to operator-configured URL; ntfy/Gotify/Discord/Slack/generic formats) | [MOBILE_PUSH.md](MOBILE_PUSH.md) | 2-3 days | **Phase 13** (default push channel; no mobile SDK needed) | Phase 13 notification delivery | ✅ Phase 13b Task 4 |
 | 9 | **Cache-Control + ETag response headers** | [HTTP_CACHING.md](HTTP_CACHING.md) | 1-2 days | **Pre-v1.0 hardening** | Nothing blocks; quality optimization | Spec only |
 | 10 | **Paraglide JS adoption** (web client string extraction + initial `en.json`) | [I18N.md](I18N.md) | 3-5 days | **Pre-v1.0 hardening** | Community translation onboarding | Spec only |
 | 11 | **Faceted search UI** (genre/year/rating filter pills on search results page) | [SEARCH.md](SEARCH.md) | 2-3 days | **Pre-v1.0 hardening** | Nothing blocks; quality feature | Not started |
@@ -73,7 +73,7 @@ Phase 13 was already the convergence point for i18n, push, and notifications. Th
 | Set up Fluent server-side i18n (`fluent-templates` crate, `server/locales/en/notifications.ftl`, migrate `notification_types.in_app_template` from English strings to Fluent message IDs) | #5 | Notification templates must be Fluent message IDs before dispatch ships. Forcing function per [I18N.md](I18N.md). ✅ Done in Phase 13b Task 1. |
 | Implement multi-channel dispatch pipeline (in-app + SSE + webhook + mobile push fan-out) | #6 | Notification dispatch must be multi-channel from day one. Forcing function per [MOBILE_PUSH.md](MOBILE_PUSH.md). |
 | Implement `user_push_devices` table + `POST /api/v1/user/push-devices` API | #7 | Push device registration for FCM/APNs/UnifiedPush tokens. Needed for push delivery. |
-| Implement webhook dispatch (ntfy/Gotify/Discord/Slack/generic formats) | #8 | Webhook is the recommended default push channel. No mobile SDK dependency. |
+| Implement webhook dispatch (ntfy/Gotify/Discord/Slack/generic formats) | #8 | Webhook is the recommended default push channel. No mobile SDK dependency. ✅ Done in Phase 13b Task 4 (5 formats + exponential backoff with full jitter + retryable/non-retryable status classification + `Retry-After` honored). |
 
 **Phase 13 revised task list (existing 11 tasks + 4 new = 15 tasks):**
 

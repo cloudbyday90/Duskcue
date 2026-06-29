@@ -145,7 +145,6 @@ The preferences list endpoint returns all notification types with the user's per
 
 ### Not Implemented (Deferred to Future Tasks)
 
-- **Webhook format-specific payloads** (ntfy/Gotify/Discord/Slack) — Phase 13b Task 4
 - **`user_push_devices` table + registration API** — Phase 13b Task 5
 - **Notifications UI** (notification center, preferences editor, push device management) — Phase 13b Task 6
 - **Email delivery channel** — future; `email_template` column exists in `notification_types` but no SMTP infrastructure
