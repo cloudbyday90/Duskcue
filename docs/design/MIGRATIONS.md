@@ -372,7 +372,7 @@ CREATE TABLE migration_sources (
 
     last_run_at TIMESTAMPTZ,
     status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'discovering', 'matching', 'importing', 'completed', 'failed'))
+        CHECK (status IN ('pending', 'discovering', 'matching', 'importing', 'completed', 'failed', 'cancelled'))
 );
 ```
 
@@ -686,6 +686,24 @@ A scheduled task `migration_cleanup` runs daily at 05:00 to:
 - Delete Plex database uploads for completed migrations older than 24 hours
 - Delete migration sources with `completed` status older than 90 days
 - Delete `migration_import_log` rows older than 90 days
+
+Phase 14 Task 1 registers the `migration_cleanup` row for existing deployments with the daily 05:00 schedule, 30-minute timeout, 3 retries, and retention config:
+
+```json
+{
+    "delete_plex_uploads_after_hours": 24,
+    "delete_completed_sources_after_days": 90,
+    "delete_import_logs_after_days": 90
+}
+```
+
+The row is seeded disabled until Phase 14 Task 14 adds the executor. This avoids a scheduled failure before cleanup behavior exists while still making the task visible in scheduled-task management.
+
+## Phase 14 Task 1 Implementation Notes
+
+- Added migration-domain query indexes for `migration_sources.status`, `migration_user_mapping.migration_source_id`, `migration_import_log.migration_source_id`, `migration_import_log.status`, and `migration_import_log.matched_media_item_id`.
+- Added `cancelled` to `migration_sources.status`; cancelled migrations remain auditable and can be resumed later by returning to the pending/import path from persisted import logs.
+- Registered `Migration Cleanup` as a `migration_cleanup` scheduled task for existing deployments, disabled until the cleanup executor lands in Task 14.
 
 ## Security Considerations
 

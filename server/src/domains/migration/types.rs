@@ -27,6 +27,7 @@ pub static VALID_MIGRATION_STATUSES: &[&str] = &[
     "importing",
     "completed",
     "failed",
+    "cancelled",
 ];
 
 pub struct MigrationSourceRow {

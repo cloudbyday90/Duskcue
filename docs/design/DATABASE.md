@@ -3033,7 +3033,7 @@ CREATE TABLE migration_sources (
 
     last_run_at TIMESTAMPTZ,
     status TEXT NOT NULL DEFAULT 'pending'
-        CHECK (status IN ('pending', 'discovering', 'matching', 'importing', 'completed', 'failed'))
+        CHECK (status IN ('pending', 'discovering', 'matching', 'importing', 'completed', 'failed', 'cancelled'))
 );
 
 CREATE TABLE migration_user_mapping (
@@ -3080,6 +3080,18 @@ CREATE TABLE migration_import_log (
 
     UNIQUE(migration_user_mapping_id, source_item_id)
 );
+```
+
+Phase 14 Task 1 hardens the migration domain with these supporting indexes:
+
+```sql
+CREATE INDEX idx_migration_sources_status ON migration_sources (status);
+CREATE INDEX idx_migration_user_mapping_source ON migration_user_mapping (migration_source_id);
+CREATE INDEX idx_migration_import_log_source ON migration_import_log (migration_source_id);
+CREATE INDEX idx_migration_import_log_status ON migration_import_log (status);
+CREATE INDEX idx_migration_import_log_matched_media
+    ON migration_import_log (matched_media_item_id)
+    WHERE matched_media_item_id IS NOT NULL;
 ```
 
 Full migration flow, JSONB schemas, and wizard documentation in [MIGRATIONS.md](MIGRATIONS.md).
