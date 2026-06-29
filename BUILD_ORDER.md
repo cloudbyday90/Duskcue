@@ -3470,7 +3470,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 ## Phase 14 — Platform Migration
 
-**Goal:** Import watch history from Plex, Jellyfin, and Emby.
+**Goal:** Import watch history and user item state from Plex, Jellyfin, and Emby with safe preflight, resumable execution, progress reporting, and auditable results.
 
 **Prerequisites:** Phase 13a complete. Phase 13b is now also complete — the notification dispatch pipeline is available so long-running migrations can surface progress/failure notifications (optional integration; not a hard dependency). Phase 14 proceeds independently of Phase 13b per [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md).
 
@@ -3478,19 +3478,28 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 | Doc | What to build from it |
 |---|---|
-| [MIGRATIONS.md](docs/design/MIGRATIONS.md) | **Primary** — three source platforms, user mapping via invite code display names, provider ID matching, merge strategy |
+| [MIGRATIONS.md](docs/design/MIGRATIONS.md) | **Primary** — three source platforms, user mapping via invite code display names, provider ID matching, merge strategy, progress tracking, error handling, rollback, cleanup |
 
 **Tasks:**
 
-1. Create `server/src/domains/migration/` — five-file pattern
-2. Implement Jellyfin/Emby migration — REST API connection, user mapping, watch state import
-3. Implement Plex migration — SQLite DB upload, `com.plexapp.plugins.library.db` parsing via `rusqlite`
-4. Implement user mapping — invite code `display_name` field links source users to platform users
-5. Implement provider ID matching — TMDb/IMDb/TVDB ID cross-reference, title+year+type fallback
-6. Implement merge strategy — `is_watched` OR, `play_count` MAX, `resume_position_ms` MAX
-7. Build migration wizard UI — step-by-step admin flow
+0. Phase reconciliation and scaffolding — replace the existing license-header stubs in `server/src/domains/migration/` with the five-file pattern; add `pub mod migration` in `server/src/domains/mod.rs`; add `migration::router(state.clone())` to `router.rs`; add `clients/web/src/lib/api/migrations.js`; remove the Phase 14 "coming soon" placeholder route once the wizard shell exists.
+1. Schema and task hardening — add idempotent migration indexes for `migration_sources.status`, `migration_user_mapping.migration_source_id`, `migration_import_log.migration_source_id`, `migration_import_log.status`, and `migration_import_log.matched_media_item_id`; extend migration status values for cancellation/resume if needed; seed/register `migration_cleanup` scheduled task for existing deployments.
+2. Implement migration domain API foundation — CRUD/status endpoints from [MIGRATIONS.md](docs/design/MIGRATIONS.md): create/list/get/delete migration sources, connection test, discovery, user mapping, start, progress, unmatched report, cancel; all endpoints require `can_manage_users`; return `MIGR_*` error codes through RFC 9457.
+3. Implement source configuration security — validate Jellyfin/Emby URLs with SSRF protections, redirect blocking, timeout/response-size limits, and network-mode policy; store resumable API credentials encrypted-at-rest or session-only depending on run mode; hash/prefix API keys in `connection_config`; validate Plex upload size, disk space, SQLite header, and required tables before accepting the file.
+4. Implement preflight and dry-run report — no-write scan that validates library/provider-ID readiness, user mapping readiness, source reachability, Plex DB readability, estimated item counts, estimated match rate, low-confidence count, disk requirements, and blockers/warnings for the admin review step.
+5. Implement async migration runner — long-running imports execute outside HTTP handlers via service-owned task orchestration or `server/src/workers/migration_runner.rs`; persist progress to migration tables; support cancellation, retry/resume from import log, and crash-safe restart from the last completed source item.
+6. Implement Jellyfin/Emby discovery and extraction — REST API connection test, source user discovery, watched item extraction, in-progress item extraction, provider ID normalization, shared source item DTOs, bounded concurrency, source API retries with backoff, and per-platform request timeout handling.
+7. Implement Plex discovery and extraction — multipart SQLite upload, read-only `rusqlite` access to `com.plexapp.plugins.library.db`, account discovery, watch state extraction, provider GUID parsing, secondary provider ID extraction when available, resumable/range upload handling if the multipart pipeline supports it, and cleanup of temporary files.
+8. Implement user mapping — invite code `display_name` and platform user selection, skip support for unmapped source users, conflict validation, persisted `migration_user_mapping` rows, and at least-one-mapping enforcement.
+9. Implement provider ID and fallback matching — TMDb/IMDb/TVDB cross-reference using existing media indexes; exact title+year+type fallback; TV episode fallback by series title + season + episode; confidence classification (`high`, `medium`, `low`, `unmatched`) in service output.
+10. Implement manual match review — APIs and UI for unmatched/low-confidence candidates, admin override to a specific `media_item_id`, skip/ignore decisions, CSV export of unmatched items, and re-run import for resolved rows.
+11. Implement import and merge strategy — import to `user_item_data` with `is_watched` OR, `play_count` MAX, `resume_position_ms` MAX except reset to 0 when watched, `last_played_at` MAX; optionally import `is_favorite` and `user_rating` when supported by source data because `user_item_data` already has those fields; log every item in `migration_import_log`.
+12. Implement rollback/undo support — assign import batch metadata and record previous `user_item_data` values before mutation so an admin can undo a bad import without losing newer local watch progress; expose rollback status and results in the migration detail view.
+13. Implement progress events, metrics, and notifications — publish `migration_progress` SSE events through the existing `EventBus`; add Prometheus counters/gauges for migrations started/completed/failed, source items processed, match confidence counts, import errors, and active migration runs; add `migration_completed` and `migration_failed` notification types + Fluent templates; surface long-running migration completion/failure in the notification center.
+14. Implement migration cleanup worker — daily `migration_cleanup` executor deletes Plex uploads for completed migrations older than 24 hours, removes stale temporary files from failed/cancelled runs according to retention settings, and prunes old migration logs/sources per [MIGRATIONS.md](docs/design/MIGRATIONS.md).
+15. Build migration wizard UI — step-by-step admin flow: choose source, connect/upload, preflight, map users, review matches, start import, live progress, results, unmatched/manual review, rollback/cleanup actions.
 
-**Verification:** Admin can import watch history from Jellyfin via REST API and Plex via SQLite upload. Watch states appear correctly in `user_item_data`.
+**Verification:** Admin can run a no-write preflight, import watch history from Jellyfin/Emby via REST API and Plex via SQLite upload, observe live SSE progress, cancel/resume a run, review unmatched/low-confidence items, and verify watch states appear correctly in `user_item_data`. Completed and failed migrations emit notifications, cleanup removes temporary Plex uploads, and rollback restores imported rows without destroying newer local progress.
 
 ---
 
