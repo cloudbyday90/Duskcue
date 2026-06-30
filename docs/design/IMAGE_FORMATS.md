@@ -287,6 +287,7 @@ RGBA bytes are extracted via `DynamicImage::to_rgba8().into_raw()` and handed to
 | Storyboard WebP generation | ✅ Implemented | Phase 10 Task 4 — per [STORYBOARDS.md](STORYBOARDS.md); FFmpeg emits WebP directly (does not use `image_pipeline.rs` — different code path, FFmpeg's own libwebp encoder) |
 | Overlay compositing to WebP | ✅ Implemented | Phase 12 Task 2 — `services/overlays.rs::composite()` returns `RgbaImage`, encoded to WebP via `image_pipeline::encode_webp()` (now public); preview endpoint at `POST /api/v1/overlays/preview` writes to `/cache/images/overlays/previews/`; per [METADATA_OVERLAYS.md](METADATA_OVERLAYS.md) |
 | Clean art preservation | ✅ Implemented | Phase 12 Task 4 — `services/clean_art.rs` scales source artwork to canvas and caches as content-addressed WebP (`/cache/images/clean/{type}/{artwork_id}.webp`); source originals are never modified; display layer serves overlaid results from `/cache/images/overlays/`; per [METADATA_OVERLAYS.md](METADATA_OVERLAYS.md) Task 4 |
+| Image variant Prometheus metrics | ✅ Implemented | Pre-v1.0 Task 4 — `image_variant_requests_total{category,variant,result}` for cache-hit/generated request accounting, `image_variant_generations_total{category,variant,status}`, and `image_variant_generation_duration_seconds{category,variant,status}` |
 | User upload pipeline | Spec only | Phase 13 (admin UI) |
 | `<picture>` fallback in web client | Spec only | Phase 8 follow-up or when artwork delivery endpoint lands |
 
@@ -308,6 +309,8 @@ RGBA bytes are extracted via `DynamicImage::to_rgba8().into_raw()` and handed to
 4. If the cache file exists → serve it directly (fast path)
 5. If the cache file is missing → read the source original from `artwork.local_path`, call `image_pipeline::generate_variant` to decode → resize → encode WebP, write the variant to cache, serve the bytes (on-demand generation, <500ms per image per the latency budget)
 6. If the source file is corrupt or unreadable → `404` (graceful degradation per the "Corrupt Source Image" edge case)
+
+Pre-v1.0 Task 4 instruments this flow through Prometheus. Cache hit rate is derived from `image_variant_requests_total{result="cache_hit"}` versus `result="generated"`, and generation throughput/latency comes from `image_variant_generations_total` plus `image_variant_generation_duration_seconds`. Labels are bounded to artwork category, variant label, and result/status; source paths, media IDs, and artwork IDs are intentionally excluded.
 
 **HTTP headers:**
 - `Content-Type: image/webp`

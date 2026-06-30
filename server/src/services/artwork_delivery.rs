@@ -33,6 +33,7 @@
 //! budget per image.
 
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -87,12 +88,14 @@ pub async fn resolve_variant(
             image_pipeline::variant_path(images_cache_root, category, variant_label, &stem);
 
         if let Some(bytes) = try_read_cache(&cache_path).await {
+            record_variant_request(category, variant_label, "cache_hit");
             return Ok(ResolvedArtwork {
                 bytes,
                 artwork_id: overlaid.artwork_id,
             });
         }
 
+        let generation_started = Instant::now();
         let variant = image_pipeline::generate_variant(
             &overlaid.bytes,
             category,
@@ -100,6 +103,7 @@ pub async fn resolve_variant(
             encode_config,
         )
         .map_err(|e| {
+            record_variant_generation(category, variant_label, "failed", generation_started);
             tracing::warn!(
                 error = %e,
                 %media_item_id,
@@ -107,6 +111,8 @@ pub async fn resolve_variant(
             );
             MediaError::ArtworkNotFound
         })?;
+        record_variant_generation(category, variant_label, "generated", generation_started);
+        record_variant_request(category, variant_label, "generated");
 
         if let Err(e) = image_pipeline::write_variant(images_cache_root, category, &stem, &variant)
         {
@@ -147,6 +153,7 @@ pub async fn resolve_variant(
         image_pipeline::variant_path(images_cache_root, category, variant_label, &stem);
 
     if let Some(bytes) = try_read_cache(&cache_path).await {
+        record_variant_request(category, variant_label, "cache_hit");
         return Ok(ResolvedArtwork { bytes, artwork_id });
     }
 
@@ -160,9 +167,11 @@ pub async fn resolve_variant(
         MediaError::ArtworkNotFound
     })?;
 
+    let generation_started = Instant::now();
     let variant =
         image_pipeline::generate_variant(&source_bytes, category, variant_label, encode_config)
             .map_err(|e| {
+                record_variant_generation(category, variant_label, "failed", generation_started);
                 tracing::warn!(
                     error = %e,
                     %media_item_id,
@@ -171,6 +180,8 @@ pub async fn resolve_variant(
                 );
                 MediaError::ArtworkNotFound
             })?;
+    record_variant_generation(category, variant_label, "generated", generation_started);
+    record_variant_request(category, variant_label, "generated");
 
     if let Err(e) = image_pipeline::write_variant(images_cache_root, category, &stem, &variant) {
         tracing::warn!(
@@ -214,6 +225,38 @@ fn overlay_artwork_type(category: ArtworkCategory) -> Option<&'static str> {
         ArtworkCategory::Thumbnail => Some("episode_thumb"),
         ArtworkCategory::Logo | ArtworkCategory::Banner => None,
     }
+}
+
+fn record_variant_request(category: ArtworkCategory, variant_label: &str, result: &str) {
+    metrics::counter!(
+        "image_variant_requests_total",
+        "category" => category.as_str(),
+        "variant" => variant_label.to_string(),
+        "result" => result.to_string()
+    )
+    .increment(1);
+}
+
+fn record_variant_generation(
+    category: ArtworkCategory,
+    variant_label: &str,
+    status: &str,
+    started: Instant,
+) {
+    metrics::counter!(
+        "image_variant_generations_total",
+        "category" => category.as_str(),
+        "variant" => variant_label.to_string(),
+        "status" => status.to_string()
+    )
+    .increment(1);
+    metrics::histogram!(
+        "image_variant_generation_duration_seconds",
+        "category" => category.as_str(),
+        "variant" => variant_label.to_string(),
+        "status" => status.to_string()
+    )
+    .record(started.elapsed().as_secs_f64());
 }
 
 #[cfg(test)]

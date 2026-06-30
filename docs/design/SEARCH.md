@@ -136,6 +136,8 @@ These assume:
 
 **Soft trigger (recommend migration):** Library exceeds **50,000 items** OR measured p95 search latency exceeds **200ms** OR admin reports user complaints about search quality.
 
+Measured latency uses the Prometheus histogram `search_query_duration_seconds` added in Pre-v1.0 Task 4. Operators calculate p95 with `histogram_quantile(0.95, rate(search_query_duration_seconds_bucket[5m]))`, and can slice by `status` and `has_filters` labels to separate successful filtered searches from failed or unfiltered requests.
+
 When triggered, the admin enables Meilisearch via `server_config.search.engine = "meilisearch"` and configures the Meilisearch endpoint. Duskcue:
 1. Detects the config change at runtime (via `ArcSwap<RuntimeConfig>` reload)
 2. Spawns a background indexer (`workers/search_indexer.rs`) that backfills the existing `media_items` corpus into Meilisearch
@@ -381,10 +383,13 @@ If an admin triggers a manual Meilisearch full-rebuild while the indexer is also
 | `server_config.search.engine` config field | Not started | Post-v1.0 |
 | Meilisearch sidecar in Docker image | Not started | Phase 15 follow-up after search integration lands |
 | Faceted search UI (genre/year/rating filters) | ✅ Implemented | Pre-v1.0 Task 3; URL-backed type/genre/year/rating filters |
+| Search latency and volume metrics | ✅ Implemented | Pre-v1.0 Task 4; `search_query_duration_seconds{status,has_filters}` histogram + `search_queries_total{status,has_filters}` counter |
 
 **First concrete post-v1.0 search work:** When an admin reports the soft-trigger threshold crossed (50k+ items or 200ms+ p95), implement the `SearchBackend` abstraction + Meilisearch sidecar + indexer worker. Until then, PG FTS is sufficient.
 
 **Pre-v1.0 Task 3 implementation note:** `server/src/domains/search/` owns `GET /api/v1/search` using PostgreSQL FTS for v1.0. The response includes ranked `items` plus `facets` for type, genre, year, and rating thresholds. Facets run as parallel GROUP BY queries via `tokio::try_join!`, and the Svelte search page stores active filters in the URL so filtered search results are shareable.
+
+**Pre-v1.0 Task 4 implementation note:** Search volume and latency are now observable through Prometheus. `search_queries_total{status,has_filters}` counts successful and failed searches, while `search_query_duration_seconds{status,has_filters}` provides p50/p95/p99 latency through `histogram_quantile()`. Labels deliberately avoid query text, user IDs, media IDs, and library IDs.
 
 ## Key Decisions
 

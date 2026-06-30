@@ -298,6 +298,11 @@ pub async fn dispatch(
         .execute(pool)
         .await;
 
+    record_notification_delivery("in_app", &in_app_status);
+    record_notification_delivery("sse", &sse_status);
+    record_notification_delivery("webhook", &webhook_status);
+    record_notification_delivery("push", &push_status);
+
     Ok(DispatchResult {
         notification_id,
         in_app: in_app_status,
@@ -437,6 +442,7 @@ fn spawn_webhook_delivery(
                 "failed"
             }
         };
+        record_notification_delivery_status("webhook", status_str);
 
         let current_status: Value =
             match sqlx::query("SELECT delivery_status FROM notifications WHERE id = $1")
@@ -460,6 +466,19 @@ fn spawn_webhook_delivery(
             .execute(&pool)
             .await;
     });
+}
+
+fn record_notification_delivery(channel: &str, status: &ChannelStatus) {
+    record_notification_delivery_status(channel, status.as_str());
+}
+
+fn record_notification_delivery_status(channel: &str, status: &str) {
+    metrics::counter!(
+        "notification_delivery_total",
+        "channel" => channel.to_string(),
+        "status" => status.to_string()
+    )
+    .increment(1);
 }
 
 /// Supported webhook payload formats. Selected via

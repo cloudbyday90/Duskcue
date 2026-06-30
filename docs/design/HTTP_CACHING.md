@@ -206,7 +206,7 @@ The HTTP `Cache-Control` directive + eventual TanStack Query covers the legitima
 |---|---|---|
 | `ETag` / `If-None-Match` / `304` | ✅ Implemented | `cache::conditional_etag` computes SHA-256 ETags for JSON single-resource routes and honors existing artwork ETags. Web client `core.js` already has `options.ifNoneMatch` plumbing. |
 | `Cache-Control: no-cache` on subtitle content | ✅ Implemented | `domains/subtitles/handlers.rs::get_subtitle_content` |
-| `Cache-Control` per-endpoint table | ✅ Implemented for available routes | `SetResponseHeaderLayer::if_not_present` applies media metadata, library config, artwork, server config/config groups, health, and metrics policies at route level. Search remains pending because the server search route is not implemented yet. |
+| `Cache-Control` per-endpoint table | ✅ Implemented for available routes | `SetResponseHeaderLayer::if_not_present` applies media metadata, library config, artwork, server config/config groups, health, metrics, and search policies at route level. |
 | `stale-while-revalidate` directives | ✅ Implemented | Emitted on media metadata, library config, and static artwork routes per the API contract. |
 | TanStack Svelte Query | Not adopted | Deferred to Phase 11+ per decision above |
 

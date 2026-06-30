@@ -328,6 +328,10 @@ Access control: the `/metrics` endpoint is **not** behind auth (Prometheus scrap
 | **Trakt** | `trakt.sync.operations.total`, `trakt.sync.duration`, `trakt.sync.errors.total` | Counter + Histogram |
 | **Transcode** | `transcode.jobs.active`, `transcode.jobs.duration`, `transcode.hardware.accel.used`, `transcode.rejections_total`, `transcode.kill_total`, `transcode.zombie_reaped_total` | Gauge + Histogram + Counter |
 | **Analytics** | `analytics.geoip.lookups_total`, `analytics.geoip.lookup_duration`, `analytics.geoip.database_age_hours`, `analytics.trust.events_total`, `analytics.trust.events_suppressed_total`, `analytics.trust.score_average`, `analytics.trust.score_minimum` | Counter + Histogram + Gauge |
+| **Real-time events** | `sse_connections`, `sse_connected_users`, `sse_events_published_total` | Gauge + Counter |
+| **Image variants** | `image_variant_requests_total`, `image_variant_generations_total`, `image_variant_generation_duration_seconds` | Counter + Histogram |
+| **Search** | `search_queries_total`, `search_query_duration_seconds` | Counter + Histogram |
+| **Notifications** | `notification_delivery_total` | Counter |
 
 ### Standard Labels
 
@@ -340,6 +344,9 @@ All metrics include consistent labels:
 | `library_id` | `01912abc...` | Library UUID (library metrics) |
 | `media_type` | `movie` | Media item type |
 | `hardware_accel` | `nvenc` | Hardware acceleration method |
+| `channel` | `webhook` | Notification delivery channel |
+| `result` | `cache_hit` | Bounded operation result |
+| `has_filters` | `true` | Whether a search query used filters |
 
 ---
 
@@ -610,6 +617,19 @@ The server exposes the data (metrics endpoint, JSON logs, optional OTel traces).
 - `metrics` v0.24, `metrics-exporter-prometheus` v0.18, `ipnet` v2 added to workspace dependencies
 - Metrics recorder installed at startup step 3 (after logging init, before router build) — ensures all subsequent operations emit metrics
 - HTTP metrics middleware placed between TraceLayer and CorsLayer in the middleware stack — all requests tracked (including rate-limited 429s), within trace span context
+
+### Pre-v1.0 Task 4 — Cross-Cutting Infrastructure Metrics
+
+**Module:** `server/src/logging.rs`, `server/src/services/event_bus.rs`, `server/src/services/artwork_delivery.rs`, `server/src/domains/search/service.rs`, `server/src/services/notification_dispatch.rs`
+
+**What was implemented:**
+
+- `init_metrics()` now registers histogram buckets for `search_query_duration_seconds` and `image_variant_generation_duration_seconds` in addition to the existing HTTP duration buckets.
+- SSE metrics: `sse_connections_opened_total`, `sse_connections_rejected_total`, `sse_connections`, `sse_connected_users`, and `sse_events_published_total{event_type,delivered}`.
+- Image variant metrics: `image_variant_requests_total{category,variant,result}` for cache-hit vs generated request accounting, `image_variant_generations_total{category,variant,status}`, and `image_variant_generation_duration_seconds{category,variant,status}`.
+- Search metrics: `search_queries_total{status,has_filters}` and `search_query_duration_seconds{status,has_filters}`. Admins can calculate p50/p95/p99 with Prometheus `histogram_quantile()` and compare p95 against SEARCH.md's 200ms soft and 500ms hard migration triggers.
+- Notification delivery metrics: `notification_delivery_total{channel,status}` for in-app, SSE, webhook, and push channels. Webhook dispatch records both scheduled `pending` and background terminal `delivered`/`failed` statuses.
+- Labels intentionally exclude user IDs, query strings, media IDs, notification IDs, webhook URLs, and other unbounded or sensitive values.
 
 **Deferred:**
 

@@ -133,6 +133,7 @@ impl Drop for ConnectionGuard {
                 .connections
                 .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
         }
+        self.bus.record_connection_metrics();
     }
 }
 
@@ -187,6 +188,7 @@ impl EventBus {
     /// buffered for replay). Send errors (channel closed) are silently
     /// swallowed because channels are lazy and long-lived.
     pub fn publish(&self, user_id: Uuid, event: ServerEvent) -> bool {
+        let event_type = event.event_type.clone();
         let channel = self.channel_for(user_id);
 
         {
@@ -197,7 +199,14 @@ impl EventBus {
             ring.push_back(event.clone());
         }
 
-        channel.sender.send(event).is_ok()
+        let delivered = channel.sender.send(event).is_ok();
+        metrics::counter!(
+            "sse_events_published_total",
+            "event_type" => event_type,
+            "delivered" => delivered.to_string()
+        )
+        .increment(1);
+        delivered
     }
 
     /// Subscribe to a user's channel, returning a fresh `Receiver` that will
@@ -263,12 +272,16 @@ impl EventBus {
             channel
                 .connections
                 .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            metrics::counter!("sse_connections_rejected_total").increment(1);
+            self.record_connection_metrics();
             return Err(ConnectionLimitReached {
                 user_id,
                 current: prev,
                 limit: self.max_connections_per_user,
             });
         }
+        metrics::counter!("sse_connections_opened_total").increment(1);
+        self.record_connection_metrics();
         Ok(ConnectionGuard {
             bus: Arc::new(EventBus {
                 channels: self.channels.clone(),
@@ -293,6 +306,20 @@ impl EventBus {
         self.channels.len()
     }
 
+    pub fn connected_user_count(&self) -> usize {
+        self.channels
+            .iter()
+            .filter(|entry| entry.connections.load(std::sync::atomic::Ordering::Relaxed) > 0)
+            .count()
+    }
+
+    pub fn total_connection_count(&self) -> u32 {
+        self.channels
+            .iter()
+            .map(|entry| entry.connections.load(std::sync::atomic::Ordering::Relaxed))
+            .sum()
+    }
+
     /// Get-or-create the channel for a user. Lazy creation means users who
     /// never connect incur zero allocation cost.
     fn channel_for(&self, user_id: Uuid) -> Arc<UserChannel> {
@@ -307,6 +334,11 @@ impl EventBus {
                 new_channel
             }
         }
+    }
+
+    fn record_connection_metrics(&self) {
+        metrics::gauge!("sse_connections").set(self.total_connection_count() as f64);
+        metrics::gauge!("sse_connected_users").set(self.connected_user_count() as f64);
     }
 }
 

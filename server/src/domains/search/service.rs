@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 use sqlx::Row;
+use std::time::Instant;
 
 use crate::domains::media::service::{row_to_response, validate_media_type};
 use crate::extractors::AuthenticatedUser;
@@ -218,6 +219,18 @@ pub async fn search_media(
     user: &AuthenticatedUser,
     params: SearchParams,
 ) -> Result<SearchResponse, SearchError> {
+    let started = Instant::now();
+    let has_filters = has_active_filters(&params);
+    let result = search_media_inner(pool, user, params).await;
+    record_search_metrics(started, result.is_ok(), has_filters);
+    result
+}
+
+async fn search_media_inner(
+    pool: &sqlx::PgPool,
+    user: &AuthenticatedUser,
+    params: SearchParams,
+) -> Result<SearchResponse, SearchError> {
     if params.query.is_empty() {
         return Ok(SearchResponse {
             items: Vec::new(),
@@ -248,6 +261,29 @@ pub async fn search_media(
             ratings,
         },
     })
+}
+
+fn has_active_filters(params: &SearchParams) -> bool {
+    params.media_type.is_some()
+        || params.genre.is_some()
+        || params.year.is_some()
+        || params.rating_min.is_some()
+}
+
+fn record_search_metrics(started: Instant, success: bool, has_filters: bool) {
+    let status = if success { "success" } else { "error" };
+    metrics::counter!(
+        "search_queries_total",
+        "status" => status,
+        "has_filters" => has_filters.to_string()
+    )
+    .increment(1);
+    metrics::histogram!(
+        "search_query_duration_seconds",
+        "status" => status,
+        "has_filters" => has_filters.to_string()
+    )
+    .record(started.elapsed().as_secs_f64());
 }
 
 async fn run_facet_query(

@@ -420,6 +420,7 @@ If an admin switches from FCM to APNs (or vice versa):
 | Webhook dispatch (formats: ntfy/Gotify/Discord/Slack + retry) | ✅ Implemented | Phase 13b Task 4 — `WebhookFormat` enum + `format_request()` + exponential-backoff retry with full jitter (1s, 5s, 30s, 2m, 10m); retryable-status classification; `Retry-After` honored. See "Phase 13b Task 4 implementation notes" below |
 | `user_push_devices` table + registration API | ✅ Implemented | Phase 13b Task 5 — `domains/notifications/` (4 routes: register + list + heartbeat + revoke). Token lifecycle (24h heartbeat → 30-day stale deactivation wired into `notification_cleanup` worker). See "Phase 13b Task 5 implementation notes" below |
 | Push dispatch fan-out (stub) | ✅ Stub implemented | Phase 13b Task 2 — dispatch pipeline checks config/preferences; actual FCM/APNs/UnifiedPush client deferred to Phase 16a |
+| Notification delivery Prometheus metrics | ✅ Implemented | Pre-v1.0 Task 4 — `notification_delivery_total{channel,status}` for in-app, SSE, webhook, and push; webhook records both scheduled `pending` and terminal `delivered`/`failed` statuses |
 | FCM HTTP v1 client (Rust) | Not started | Phase 16a (mobile client prerequisite) |
 | APNs client (`a2` crate) | Not started | Phase 16a (mobile client prerequisite) |
 | UnifiedPush (webhook variant) | Not started | Phase 16a; reuses webhook infrastructure |
@@ -441,6 +442,7 @@ If an admin switches from FCM to APNs (or vice versa):
 - **`user_notification_preferences.push_enabled`**: Migration adds the `push_enabled BOOLEAN NOT NULL DEFAULT false` column per the design doc's schema extension. The existing `webhook_enabled` column (Phase 2, default false) is reused as-is; users opt in per notification type.
 - **Idempotency**: The notification UUID (UUIDv7) is included in the webhook payload as `notification_id` so recipients can deduplicate. This follows the webhook best practice identified in research (Hook0 docs, June 2026).
 - **Channel preference resolution**: When no `user_notification_preferences` row exists for a user + notification type, the dispatch pipeline uses sensible defaults: `in_app_enabled = true`, `webhook_enabled = false`, `push_enabled = false`. The `notification_types.is_enabled_by_default` flag gates whether the notification type is active at all.
+- **Delivery metrics**: Pre-v1.0 Task 4 records `notification_delivery_total{channel,status}` after each channel status update. For webhook, the initial scheduled state is counted as `pending` and the background task records the terminal `delivered` or `failed` outcome after retry completes. Push success-rate dashboards should calculate delivered versus failed terminal statuses once Phase 16a replaces the structured push stub with provider clients.
 
 **Phase 13b Task 2 key decisions:**
 
