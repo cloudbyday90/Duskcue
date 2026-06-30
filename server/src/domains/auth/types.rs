@@ -51,6 +51,7 @@ pub struct InviteAuthRequest {
     pub code: String,
     #[validate(length(min = 1, max = 200))]
     pub server: String,
+    pub device_id: Option<String>,
     pub device_name: Option<String>,
     pub client_name: Option<String>,
     pub client_version: Option<String>,
@@ -63,6 +64,7 @@ pub struct PasswordLoginRequest {
     pub username: String,
     #[validate(length(min = 1, max = 200))]
     pub password: String,
+    pub device_id: Option<String>,
     pub device_name: Option<String>,
     pub client_name: Option<String>,
     pub client_version: Option<String>,
@@ -84,6 +86,11 @@ pub struct WebauthnStartRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct WebauthnFinishRequest {
     pub credential: serde_json::Value,
+    pub device_id: Option<String>,
+    pub device_name: Option<String>,
+    pub client_name: Option<String>,
+    pub client_version: Option<String>,
+    pub client_platform: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -115,6 +122,7 @@ pub struct ReauthRequest {
     pub code: String,
     #[validate(length(min = 1, max = 200))]
     pub server: String,
+    pub device_id: Option<String>,
     pub device_name: Option<String>,
     pub client_name: Option<String>,
     pub client_version: Option<String>,
@@ -129,6 +137,7 @@ pub struct ReauthCodeResponse {
 
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct DeviceCodeRequest {
+    pub device_id: Option<String>,
     #[validate(length(min = 1, max = 200))]
     pub client_name: Option<String>,
     pub client_platform: Option<String>,

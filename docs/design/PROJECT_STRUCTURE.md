@@ -882,6 +882,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 3 connection status:** `clients/mobile` now owns the visible server-selection/onboarding flow, saved-server list, last-used server, and `/health/ready` connection test. `clients/desktop/src-tauri` now owns native commands for canonical server-origin validation, saved-server persistence, and readiness testing, while the shared web API core can target an explicit selected origin for Tauri static builds. Both clients canonicalize server URLs to `http(s)://<server>:48027` and reject the internal Docker API port `48028`.
 
+**Task 4 auth status:** `clients/mobile` now contains auth/session models, an `AuthService`, secure device identity generation, a native passkey method-channel adapter, `/auth` routing, saved-session restore, and account/session management in settings. `clients/desktop/src-tauri` stores session tokens in the OS keyring through Tauri commands; only non-secret saved-server metadata remains in app data JSON.
+
 ## Development Workflow
 
 ### Server Development

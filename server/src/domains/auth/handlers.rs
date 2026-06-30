@@ -159,6 +159,7 @@ pub async fn auth_invite(
 ) -> Result<impl IntoResponse, AppError> {
     let device_info = extract_device_info(
         &headers,
+        req.device_id.as_deref(),
         req.device_name.as_deref(),
         req.client_name.as_deref(),
         req.client_version.as_deref(),
@@ -185,6 +186,7 @@ pub async fn auth_login(
 ) -> Result<impl IntoResponse, AppError> {
     let device_info = extract_device_info(
         &headers,
+        req.device_id.as_deref(),
         req.device_name.as_deref(),
         req.client_name.as_deref(),
         req.client_version.as_deref(),
@@ -293,11 +295,11 @@ pub async fn webauthn_finish(
     }
 
     let device_info = DeviceInfo {
-        device_id: None,
-        device_name: None,
-        client_name: None,
-        client_version: None,
-        client_platform: None,
+        device_id: req.device_id,
+        device_name: req.device_name,
+        client_name: req.client_name,
+        client_version: req.client_version,
+        client_platform: req.client_platform,
         ip_address: headers
             .get("x-forwarded-for")
             .or_else(|| headers.get("x-real-ip"))
@@ -371,6 +373,7 @@ pub async fn device_code(
         &state.pool,
         &state,
         service::CreateDeviceCodeParams {
+            device_id: req.device_id,
             client_name: req.client_name,
             client_platform: req.client_platform,
             client_version: req.client_version,
@@ -431,6 +434,7 @@ pub async fn reauth(
 
     let device_info = extract_device_info(
         &headers,
+        req.device_id.as_deref(),
         req.device_name.as_deref(),
         req.client_name.as_deref(),
         req.client_version.as_deref(),
@@ -807,6 +811,7 @@ pub async fn update_user_capabilities(
 
 fn extract_device_info(
     headers: &HeaderMap,
+    device_id: Option<&str>,
     device_name: Option<&str>,
     client_name: Option<&str>,
     client_version: Option<&str>,
@@ -825,7 +830,7 @@ fn extract_device_info(
         .map(|v| v.trim().to_string());
 
     DeviceInfo {
-        device_id: None,
+        device_id: device_id.map(String::from),
         device_name: device_name.map(String::from),
         client_name: client_name.map(String::from),
         client_version: client_version.map(String::from),

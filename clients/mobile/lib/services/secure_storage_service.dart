@@ -18,6 +18,26 @@ class SecureStorageService {
     return _storage.delete(key: 'session_token');
   }
 
+  Future<void> writeUser(String value) {
+    return _storage.write(key: 'session_user', value: value);
+  }
+
+  Future<String?> readUser() {
+    return _storage.read(key: 'session_user');
+  }
+
+  Future<void> clearUser() {
+    return _storage.delete(key: 'session_user');
+  }
+
+  Future<void> writeDeviceIdentifier(String value) {
+    return _storage.write(key: 'device_identifier', value: value);
+  }
+
+  Future<String?> readDeviceIdentifier() {
+    return _storage.read(key: 'device_identifier');
+  }
+
   Future<void> writeSavedServers(String value) {
     return _storage.write(key: 'saved_servers', value: value);
   }
@@ -32,5 +52,10 @@ class SecureStorageService {
 
   Future<String?> readLastServerOrigin() {
     return _storage.read(key: 'last_server_origin');
+  }
+
+  Future<void> clearSession() async {
+    await clearToken();
+    await clearUser();
   }
 }

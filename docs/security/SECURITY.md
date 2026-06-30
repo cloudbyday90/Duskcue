@@ -457,6 +457,8 @@ Phase 16a client storage rules are defined in [DESKTOP_MOBILE_CLIENTS.md](../des
 
 Phase 16a server selection stores only non-secret server origins and labels in the client saved-server list. Clients canonicalize origins to `http(s)://<server>:48027`, reject Docker's internal `48028` API port, and test `/health/ready` before selecting a server. Local and Remote VPN modes may use HTTP because the deployment is LAN/VPN-scoped; Exposed mode requires HTTPS with a certificate trusted by the client OS. Self-signed and private-CA certificates are not silently trusted by mobile clients and must be installed/trusted through Android or iOS device management before connection.
 
+Phase 16a auth/session clients separate non-secret connection state from bearer-token state. Desktop stores bearer tokens through the OS credential store via the Rust `keyring` crate and keys entries by normalized server origin. Mobile stores the session token, cached user summary, and stable client device identifier through `flutter_secure_storage`, backed by Android Keystore/iOS Keychain. When the API reports `401`, mobile clears the bearer token and cached user before returning to the auth flow.
+
 ---
 
 ## CORS Configuration

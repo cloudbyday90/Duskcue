@@ -1120,6 +1120,7 @@ fn format_user_code(code: &str) -> String {
 }
 
 pub struct CreateDeviceCodeParams {
+    pub device_id: Option<String>,
     pub client_name: Option<String>,
     pub client_platform: Option<String>,
     pub client_version: Option<String>,
@@ -1148,13 +1149,14 @@ pub async fn create_device_linking_code(
     sqlx::query(
         r#"
         INSERT INTO device_linking_codes (
-            user_code, device_code, client_name, client_platform, client_version,
+            user_code, device_code, device_id, client_name, client_platform, client_version,
             ip_address, user_agent, expires_at
-        ) VALUES ($1, $2, $3, $4, $5, $6::inet, $7, now() + ($8 || ' seconds')::interval)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7::inet, $8, now() + ($9 || ' seconds')::interval)
         "#,
     )
     .bind(&raw_user_code)
     .bind(&device_code_hash)
+    .bind(&params.device_id)
     .bind(&params.client_name)
     .bind(&params.client_platform)
     .bind(&params.client_version)
@@ -1182,7 +1184,7 @@ pub async fn poll_device_linking_token(
 
     let row = sqlx::query(
         r#"
-        SELECT id, client_name, client_platform, client_version,
+        SELECT id, device_id, client_name, client_platform, client_version,
                ip_address::text as ip_address, user_agent, expires_at,
                is_approved, approved_by_user_id
         FROM device_linking_codes
@@ -1215,7 +1217,7 @@ pub async fn poll_device_linking_token(
         .map_err(|_| AuthError::DeviceLinkingDenied)?;
 
     let device_info = DeviceInfo {
-        device_id: None,
+        device_id: row.try_get("device_id").ok(),
         device_name: None,
         client_name: row.try_get("client_name").ok(),
         client_version: row.try_get("client_version").ok(),

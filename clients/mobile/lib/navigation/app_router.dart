@@ -1,3 +1,4 @@
+import 'package:duskcue_mobile/screens/auth_screen.dart';
 import 'package:duskcue_mobile/screens/dashboard_screen.dart';
 import 'package:duskcue_mobile/screens/server_selection_screen.dart';
 import 'package:duskcue_mobile/screens/settings_screen.dart';
@@ -9,6 +10,10 @@ final GoRouter appRouter = GoRouter(
     GoRoute(
       path: '/server',
       builder: (context, state) => const ServerSelectionScreen(),
+    ),
+    GoRoute(
+      path: '/auth',
+      builder: (context, state) => const AuthScreen(),
     ),
     GoRoute(
       path: '/dashboard',

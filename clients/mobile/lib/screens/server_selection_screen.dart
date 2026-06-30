@@ -70,8 +70,22 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
       await apiClient.ready();
 
       await ref.read(serverRepositoryProvider).saveConnectedServer(profile);
-      ref.read(sessionProvider.notifier).selectServer(profile.copyWith(lastConnectedAt: DateTime.now().toUtc()));
-      if (mounted) context.go('/dashboard');
+      final connectedProfile = profile.copyWith(lastConnectedAt: DateTime.now().toUtc());
+      ref.read(sessionProvider.notifier).selectServer(connectedProfile);
+
+      try {
+        final session = await ref.read(authServiceProvider).restore(connectedProfile);
+        if (session != null) {
+          ref.read(sessionProvider.notifier).setAuthenticated(session.user);
+          if (mounted) context.go('/dashboard');
+          return;
+        }
+      } catch (_) {
+        await ref.read(authServiceProvider).clearLocalSession();
+        ref.read(sessionProvider.notifier).clearAuthentication();
+      }
+
+      if (mounted) context.go('/auth');
     } on FormatException catch (error) {
       _showMessage(error.message);
     } on ClientError catch (error) {

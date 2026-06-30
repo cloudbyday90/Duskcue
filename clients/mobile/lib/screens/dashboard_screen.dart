@@ -28,6 +28,10 @@ class DashboardScreen extends ConsumerWidget {
               session.server?.origin.toString() ?? 'No server selected',
               style: Theme.of(context).textTheme.titleMedium,
             ),
+            if (session.user != null) ...[
+              const SizedBox(height: 8),
+              Text('Signed in as ${session.user!.displayName}'),
+            ],
             if (session.server != null) ...[
               const SizedBox(height: 8),
               Text(session.server!.networkMode.label),

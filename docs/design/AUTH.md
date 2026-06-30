@@ -724,7 +724,7 @@ Task 5 implements the Capability Evaluation rules from the "Capability-Based Acc
 
 Task 6 implements the RFC 8628 Device Authorization Grant flow from the "Device Linking (RFC 8628 Device Authorization Grant)" section above. Prior to Task 6, the three device endpoints (`POST /api/v1/device/code`, `POST /api/v1/device/token`, `POST /api/v1/device/verify`) were `todo!()` stubs with all routes, DTOs, and error variants already in place from Task 1.
 
-**Device code flow:** The device (TV/console) calls `POST /api/v1/device/code` with optional `client_name`, `client_platform`, `client_version`. The server generates a `user_code` (8 base-20 chars, formatted as `XXXX-XXXX`) and a `device_code` (32 random bytes, hex-encoded, 256 bits). The device displays the `user_code` and `verification_uri`, then polls `POST /api/v1/device/token` every `interval` seconds. The authenticated user visits the verification URI and calls `POST /api/v1/device/verify` with the `user_code` to approve. The next poll returns a session token.
+**Device code flow:** The device (TV/console/mobile client) calls `POST /api/v1/device/code` with optional `device_id`, `client_name`, `client_platform`, and `client_version`. The server generates a `user_code` (8 base-20 chars, formatted as `XXXX-XXXX`) and a `device_code` (32 random bytes, hex-encoded, 256 bits). The device displays the `user_code` and `verification_uri`, then polls `POST /api/v1/device/token` every `interval` seconds. The authenticated user visits the verification URI and calls `POST /api/v1/device/verify` with the `user_code` to approve. The next poll returns a session token.
 
 **Device code hashed at rest:** The internal `device_code` is SHA-256 hashed before storage in `device_linking_codes.device_code`, consistent with the session token pattern. The raw code is sent to the device once in the initial response and never stored.
 
@@ -736,11 +736,22 @@ Task 6 implements the RFC 8628 Device Authorization Grant flow from the "Device 
 
 **Token exchange cleanup:** After a successful token exchange, the `device_linking_codes` row is deleted. This prevents the same device code from creating multiple sessions and serves as implicit cleanup. Expired codes are also cleaned on access (deleted when a poll finds an expired code).
 
-**Session creation uses stored device metadata:** When the device polls and finds `is_approved = true`, a session is created for `approved_by_user_id` using the `client_name`, `client_platform`, `client_version`, `ip_address`, and `user_agent` stored from the original device code request.
+**Session creation uses stored device metadata:** When the device polls and finds `is_approved = true`, a session is created for `approved_by_user_id` using the `device_id`, `client_name`, `client_platform`, `client_version`, `ip_address`, and `user_agent` stored from the original device code request.
 
 **`CreateDeviceCodeParams` struct:** Introduced to satisfy clippy `too_many_arguments` (8 params → 3), following the same pattern as `CreateInvitationParams` from Task 3.
 
 **No new dependencies:** Device code generation uses existing `rand` 0.9 and `BASE20_CHARS`; hashing uses existing `sha256_hex`.
+
+### Phase 16a Desktop/Mobile Auth Consumption
+
+Phase 16a Task 4 adds client-side consumption of the existing auth/session APIs:
+
+- Desktop exposes Tauri commands for per-server bearer-token write/read/clear through the OS keyring via the Rust `keyring` crate.
+- Mobile uses `flutter_secure_storage` for the bearer token, cached user summary, saved server metadata, and stable `device_id`.
+- Mobile sends `device_id`, `device_name`, `client_name = Duskcue Mobile`, `client_version`, and `client_platform` with password, invite, re-auth, WebAuthn finish, and device-linking requests.
+- The server now accepts `device_id` on those DTOs and stores it in `user_sessions.device_id`; `device_linking_codes.device_id` is added by migration `20260630090000_add_device_id_to_device_linking.sql` so device-linking sessions retain the initiating device identifier.
+- Mobile clears secure local credentials and returns to auth on `401`/`authExpired`; `session_kicked` will call the same clear path when Phase 16a foreground SSE lands.
+- Native passkey bodies are surfaced behind a Flutter method channel named `com.duskcue.mobile/passkeys`; Android Credential Manager and iOS AuthenticationServices implementations are the platform side of that channel.
 
 ### Re-Authentication Codes (Task 7)
 

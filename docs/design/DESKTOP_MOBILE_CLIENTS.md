@@ -207,6 +207,44 @@ Verification:
 
 Flutter and Dart are not installed in the current Windows environment, so `flutter analyze`, `flutter test`, and device-level Android/iOS local-network prompts were not run here.
 
+### Task 4 — Secure Auth and Session Lifecycle
+
+Implementation:
+
+- Desktop added OS-backed bearer-token storage commands in `clients/desktop/src-tauri` using the Rust `keyring` crate. Tokens are keyed by normalized server origin and never written to saved-server JSON.
+- Mobile added `AuthService`, typed auth/session DTOs, stable device identity generation, native passkey method-channel adapter, `/auth` routing, and secure local session restore.
+- Mobile stores `session_token`, cached user summary, saved server metadata, and stable `device_identifier` through `flutter_secure_storage`.
+- Mobile login supports password, invite code, re-auth code, device-linking code creation/polling, and passkey login through the `com.duskcue.mobile/passkeys` channel.
+- Mobile passkey registration is exposed in `AuthService.registerPasskey()` for the settings/account flows that grow in Task 11.
+- Settings now lists active sessions, supports per-session deletion, and supports logout/logout-all.
+- `DuskcueApiClient` can update/clear bearer headers after the selected server is configured.
+- The server auth DTOs now accept `device_id` across direct login, re-auth, passkey finish, and device-linking; `device_linking_codes` has a migration for pending-code device identifiers.
+
+Session handling:
+
+- Server selection configures the API client and tests `/health/ready`.
+- If a secure-stored token exists, mobile restores it by calling `GET /api/v1/user/sessions`.
+- Restore success marks the session authenticated; restore failure clears local token/user state and routes to `/auth`.
+- Any observed `authExpired` error in settings clears local credentials and returns to `/auth`.
+- Phase 16a Task 8 foreground SSE will route `session_kicked` through the same clear-local-session path.
+
+Deferred/platform-gated:
+
+- Android Credential Manager and iOS AuthenticationServices native method-channel bodies need Flutter/Android/iOS SDK verification and will be completed in a platform SDK environment. The Dart/server contract is in place.
+- Auth-screen strings are intentionally minimal until Task 6 establishes the mobile localization workflow.
+
+Verification:
+
+- `cargo check -p duskcue`
+- `cargo check -p duskcue-desktop`
+- `cargo fmt --check`
+- `node scripts/verify-client-contracts.mjs`
+- `npm run build` from `clients/desktop`
+- `node --check clients/web/src/lib/api/core.js`
+- `git diff --check`
+
+Flutter and Dart are not installed in the current Windows environment, so `flutter analyze`, `flutter test`, and native passkey channel checks were not run here.
+
 ## Relationship to Other Documents
 
 | Document | Relationship |

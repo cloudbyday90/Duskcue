@@ -20,6 +20,8 @@ mod commands {
     use tauri::Manager;
     use url::Url;
 
+    const KEYRING_SERVICE: &str = "com.duskcue.desktop";
+
     #[derive(serde::Serialize)]
     pub struct AppInfo {
         name: &'static str,
@@ -66,6 +68,17 @@ mod commands {
         body: Option<serde_json::Value>,
     }
 
+    #[derive(serde::Deserialize)]
+    pub struct SessionTokenRequest {
+        server_origin: String,
+        token: String,
+    }
+
+    #[derive(serde::Deserialize)]
+    pub struct SessionTokenLookup {
+        server_origin: String,
+    }
+
     fn default_network_mode() -> NetworkMode {
         NetworkMode::Local
     }
@@ -89,6 +102,36 @@ mod commands {
     #[tauri::command]
     pub fn read_server_connections(app: tauri::AppHandle) -> Result<ServerConnectionState, String> {
         read_state(&app)
+    }
+
+    #[tauri::command]
+    pub fn write_session_token(req: SessionTokenRequest) -> Result<(), String> {
+        let origin = normalize_origin(&req.server_origin, &NetworkMode::Local)?;
+        let entry = keyring::Entry::new(KEYRING_SERVICE, &origin).map_err(|err| err.to_string())?;
+        entry
+            .set_password(&req.token)
+            .map_err(|err| err.to_string())
+    }
+
+    #[tauri::command]
+    pub fn read_session_token(req: SessionTokenLookup) -> Result<Option<String>, String> {
+        let origin = normalize_origin(&req.server_origin, &NetworkMode::Local)?;
+        let entry = keyring::Entry::new(KEYRING_SERVICE, &origin).map_err(|err| err.to_string())?;
+        match entry.get_password() {
+            Ok(token) => Ok(Some(token)),
+            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(err) => Err(err.to_string()),
+        }
+    }
+
+    #[tauri::command]
+    pub fn clear_session_token(req: SessionTokenLookup) -> Result<(), String> {
+        let origin = normalize_origin(&req.server_origin, &NetworkMode::Local)?;
+        let entry = keyring::Entry::new(KEYRING_SERVICE, &origin).map_err(|err| err.to_string())?;
+        match entry.delete_credential() {
+            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Err(err) => Err(err.to_string()),
+        }
     }
 
     #[tauri::command]
@@ -209,7 +252,10 @@ pub fn run() {
             commands::normalize_server_origin,
             commands::read_server_connections,
             commands::save_server_connection,
-            commands::test_server_connection
+            commands::test_server_connection,
+            commands::write_session_token,
+            commands::read_session_token,
+            commands::clear_session_token
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Duskcue desktop app");

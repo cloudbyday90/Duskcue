@@ -10,6 +10,13 @@ The current app includes server selection/onboarding:
 - saved server profiles and last-used server origin in OS-backed secure storage;
 - rejection of Docker's internal `48028` API port.
 
+The current auth/session foundation includes:
+
+- secure-stored session token and cached user summary;
+- stable secure-stored mobile device identifier;
+- password, invite, re-auth, device-linking, and passkey method-channel sign-in paths;
+- logout, logout-all, active-session listing, and per-session deletion.
+
 Local and VPN modes may use HTTP for LAN/VPN deployments. Exposed mode requires HTTPS with a certificate trusted by Android/iOS. Private CA and self-signed certificates must be installed and trusted at the OS/profile level before the app can connect.
 
 ## Commands
@@ -22,4 +29,4 @@ flutter build apk --debug
 flutter build ios --simulator
 ```
 
-Auth, browsing, playback, foreground SSE, push registration, and quality reporting are implemented by later Phase 16a tasks.
+Browsing, playback, foreground SSE, push registration, and quality reporting are implemented by later Phase 16a tasks.

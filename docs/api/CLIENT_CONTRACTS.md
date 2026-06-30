@@ -78,6 +78,18 @@ Mobile maps Problem Details into typed client error kinds:
 
 The initial Dart implementation lives in `clients/mobile/lib/api/problem_detail.dart` and `clients/mobile/lib/api/client_error.dart`.
 
+## Auth Session Metadata
+
+Phase 16a mobile/desktop auth requests include stable client metadata where the server DTO supports it:
+
+- `device_id`
+- `device_name`
+- `client_name`
+- `client_version`
+- `client_platform`
+
+Mobile generates and secure-stores a stable `device_id` through `flutter_secure_storage`. Desktop uses the selected server origin as the key for OS-keyring token storage and sends client metadata from the reused web/native bridge flows as those screens are wired.
+
 ## Bearer Token Semantics
 
 Desktop/Tauri webview keeps compatibility with `clients/web/src/lib/api/core.js`:
@@ -86,6 +98,7 @@ Desktop/Tauri webview keeps compatibility with `clients/web/src/lib/api/core.js`
 - Web and Tauri webview calls use same-origin credentials.
 - Native desktop or mobile calls inject `Authorization: Bearer <token>` from OS-backed secure storage.
 - Bearer tokens are never put in query strings, logs, crash reports, or diagnostics bundles.
+- Desktop stores bearer tokens in the OS keyring through Tauri commands; mobile stores them through `flutter_secure_storage`.
 - `204 No Content` and `304 Not Modified` map to `null`/empty success.
 - Media and HLS URL builders return URLs for platform media components rather than JSON-fetching binary streams.
 
