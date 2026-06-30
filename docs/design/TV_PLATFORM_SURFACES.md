@@ -254,7 +254,7 @@ Task 3 implementation details:
 - Continue Watching uses unfinished movie/episode `user_item_data` rows with meaningful resume progress.
 - Next Up returns one next unwatched episode per watched series.
 - New Episodes returns the newest unwatched episode per started series.
-- Recommended is deterministic and uses unwatched movie/episode candidates ordered by rating, date, and title until Task 5 expands ranking.
+- Recommended is deterministic and scores enabled collection membership, recent genre/tag/person overlap, rating, date, and title.
 - Normal feed sections exclude inaccessible libraries, deleted libraries, and items without a healthy media file.
 - `generated_at` is derived from feed data rather than wall-clock time so unchanged responses can reuse ETags.
 

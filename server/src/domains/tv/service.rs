@@ -260,6 +260,80 @@ LIMIT $4
 "#;
 
 const RECOMMENDED_SQL: &str = r#"
+WITH recent_items AS (
+    SELECT uid.media_item_id
+    FROM user_item_data uid
+    JOIN media_items mi ON mi.id = uid.media_item_id
+    JOIN libraries l ON l.id = mi.library_id
+    WHERE uid.user_id = $1
+      AND uid.last_played_at IS NOT NULL
+      AND mi.type IN ('movie', 'episode')
+      AND l.deleted_at IS NULL
+      AND ($2::bool OR mi.library_id = ANY($3::uuid[]))
+      AND EXISTS (
+          SELECT 1
+          FROM media_files mf_ok
+          WHERE mf_ok.media_item_id = mi.id AND mf_ok.is_healthy = true
+      )
+    ORDER BY uid.last_played_at DESC
+    LIMIT 50
+),
+preferred_genres AS (
+    SELECT mg.genre_id, count(*)::int AS weight
+    FROM recent_items ri
+    JOIN media_genres mg ON mg.media_item_id = ri.media_item_id
+    GROUP BY mg.genre_id
+),
+preferred_tags AS (
+    SELECT mt.tag_id, count(*)::int AS weight
+    FROM recent_items ri
+    JOIN media_tags mt ON mt.media_item_id = ri.media_item_id
+    GROUP BY mt.tag_id
+),
+preferred_people AS (
+    SELECT mc.person_id, count(*)::int AS weight
+    FROM recent_items ri
+    JOIN media_credits mc ON mc.media_item_id = ri.media_item_id
+    WHERE mc.credit_type IN ('cast', 'crew') AND mc."order" <= 5
+    GROUP BY mc.person_id
+),
+collection_scores AS (
+    SELECT ci.media_item_id, (count(*)::int * 5) AS score
+    FROM collection_items ci
+    JOIN collections c ON c.id = ci.collection_id
+    WHERE c.is_enabled = true
+      AND ci.is_missing = false
+    GROUP BY ci.media_item_id
+),
+candidate_scores AS (
+    SELECT mi.id,
+           COALESCE(cs.score, 0)
+           + COALESCE(genre_score.score, 0)
+           + COALESCE(tag_score.score, 0)
+           + COALESCE(people_score.score, 0) AS recommendation_score
+    FROM media_items mi
+    LEFT JOIN collection_scores cs ON cs.media_item_id = mi.id
+    LEFT JOIN LATERAL (
+        SELECT sum(pg.weight * 3)::int AS score
+        FROM media_genres mg
+        JOIN preferred_genres pg ON pg.genre_id = mg.genre_id
+        WHERE mg.media_item_id = mi.id
+    ) genre_score ON true
+    LEFT JOIN LATERAL (
+        SELECT sum(pt.weight * 2)::int AS score
+        FROM media_tags mt
+        JOIN preferred_tags pt ON pt.tag_id = mt.tag_id
+        WHERE mt.media_item_id = mi.id
+    ) tag_score ON true
+    LEFT JOIN LATERAL (
+        SELECT sum(pp.weight)::int AS score
+        FROM media_credits mc
+        JOIN preferred_people pp ON pp.person_id = mc.person_id
+        WHERE mc.media_item_id = mi.id
+          AND mc.credit_type IN ('cast', 'crew')
+          AND mc."order" <= 5
+    ) people_score ON true
+)
 SELECT mi.id,
        mi.type,
        mi.title,
@@ -271,8 +345,10 @@ SELECT mi.id,
        sn.season_number,
        ep.episode_number,
        series_mi.title AS series_title,
-       COALESCE(mf.file_count, 0) AS file_count
+       COALESCE(mf.file_count, 0) AS file_count,
+       COALESCE(cand.recommendation_score, 0) AS recommendation_score
 FROM media_items mi
+JOIN candidate_scores cand ON cand.id = mi.id
 JOIN libraries l ON l.id = mi.library_id
 LEFT JOIN episodes ep ON ep.id = mi.id
 LEFT JOIN seasons sn ON sn.id = ep.season_id
@@ -293,7 +369,8 @@ WHERE mi.type IN ('movie', 'episode')
       FROM media_files mf_ok
       WHERE mf_ok.media_item_id = mi.id AND mf_ok.is_healthy = true
   )
-ORDER BY COALESCE(mi.rating_average, 0) DESC,
+ORDER BY COALESCE(cand.recommendation_score, 0) DESC,
+         COALESCE(mi.rating_average, 0) DESC,
          mi.premiere_date DESC NULLS LAST,
          mi.sort_title ASC
 LIMIT $4

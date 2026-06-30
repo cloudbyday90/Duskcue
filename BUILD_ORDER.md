@@ -3822,12 +3822,14 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
    - Cover admin/profile edge cases, disabled users, soft-deleted users, and library access changes.~~ **DONE**
 
 **Task 4 implementation note:** Added a shared `TvAccessScope` loaded once per TV request from the authenticated user's `has_all_library_access` flag plus active, non-deleted `user_library_access` libraries. Feed queries now use that scope instead of repeated access subqueries, and direct resolve lookup uses the same scope. Normal feed sections now exclude inaccessible libraries, deleted libraries, and items without a healthy media file so launcher rows do not point at revoked or unavailable playback targets. `GET /api/v1/tv/resolve/{platform_content_id}` keeps malformed IDs as `TV_005` but maps inaccessible, cross-type, missing, and otherwise unavailable content to `TV_002` so callers cannot use direct resolve to probe library membership or media-item existence. Disabled and soft-deleted users remain covered at the `AuthenticatedUser` extractor/session-validation boundary, which only returns active, non-deleted users.
-5. Implement TV surface service logic:
+5. ~~Implement TV surface service logic:
    - Continue Watching: movies/episodes with meaningful progress but not watched; sort by `user_item_data.last_played_at DESC`; include current resume position.
    - Next Up: at most one episode per series; choose the next unwatched episode after latest completed/played episode; respect season/episode ordering and specials policy.
    - New Episodes: episodes from series the user has started or follows; avoid multiple entries from the same series on constrained surfaces.
    - Recommended: deterministic v1 recommendations from collections, related metadata, genres/tags/credits, and recent activity; avoid unstable random ordering.
-   - Empty states: return explicit empty sections and reason hints rather than omitting expected rows silently.
+   - Empty states: return explicit empty sections and reason hints rather than omitting expected rows silently.~~ **DONE**
+
+**Task 5 implementation note:** Completed the TV surface service logic in `server/src/domains/tv/service.rs`. Continue Watching, Next Up, New Episodes, total-limit handling, and explicit empty reasons were established in Task 3 and hardened by Task 4 access filtering. Task 5 replaces the initial recommendation fallback with deterministic scoring: enabled collection membership adds a collection boost, recent played/watched items build genre/tag/person preference weights, candidate media receive weighted genre/tag/credit overlap scores, and final ordering falls back to rating, premiere date, then title. The query remains deterministic and uses existing collections, `media_genres`, `media_tags`, `media_credits`, and recent `user_item_data` activity without adding schema or random ordering.
 6. Add availability and diagnostics metadata:
    - Mark items as `playable`, `needs_transcode`, `library_offline`, `missing_file`, `access_revoked`, `metadata_incomplete`, or equivalent bounded states.
    - Include enough data for TV clients to show a useful error without exposing paths or internal server details.
