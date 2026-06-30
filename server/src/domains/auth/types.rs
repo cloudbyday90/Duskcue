@@ -114,6 +114,7 @@ pub struct PasskeyRegisterStartRequest {
 #[derive(Debug, Clone, Deserialize)]
 pub struct PasskeyRegisterFinishRequest {
     pub credential: serde_json::Value,
+    pub name: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
@@ -213,6 +214,7 @@ pub struct SessionListResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct SessionDetailResponse {
     pub id: Uuid,
+    pub device_id: Option<String>,
     pub device_name: Option<String>,
     pub client_name: Option<String>,
     pub client_version: Option<String>,

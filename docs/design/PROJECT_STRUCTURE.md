@@ -896,6 +896,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 10 mobile quality status:** `clients/mobile/lib/services/quality_service.dart` owns mobile capability reporting, per-item quality preference storage, bandwidth probes, telemetry, and QoE submission. `clients/mobile/lib/screens/playback_entry_screen.dart` owns the current Quality picker and playback-scoped probe/QoE timers. The server playback quality-mode contract lives in `server/src/domains/playback/types.rs` and `server/src/domains/playback/service.rs`.
 
+**Task 11 mobile settings status:** `clients/mobile/lib/screens/settings_screen.dart` owns the mobile account/settings hub, including profile/server summary, current-device session labeling, session revocation, passkey registration/list/delete, notification preference toggles, push-device status/revocation, default quality mode, and the web-first admin settings handoff. `clients/mobile/lib/services/auth_service.dart` owns the typed account-management API calls, while `server/src/domains/auth/types.rs` and `server/src/domains/auth/handlers.rs` expose `device_id` in session list responses and preserve passkey display names.
+
 ## Development Workflow
 
 ### Server Development

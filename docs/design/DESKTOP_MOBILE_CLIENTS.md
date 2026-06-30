@@ -402,6 +402,33 @@ Verification:
 
 Flutter/Dart are not installed in the current Windows environment, so `flutter pub get`, `flutter analyze`, `flutter test`, Android build, iOS build, real probe cadence validation, and device-player QoE validation remain first-run verification for an environment with the Flutter SDK and target devices.
 
+### Task 11 — Settings and Account Management
+
+Implementation:
+
+- The Flutter settings route is now an account hub instead of a sessions-only page. It shows the signed-in profile summary, selected server origin, network mode, and a server-switch action that clears local auth before returning to server selection.
+- The session list labels the current device by comparing the mobile stable device identifier with `device_id` returned by `GET /api/v1/user/sessions`; other sessions can be revoked individually, and the page still supports local sign-out and all-device sign-out.
+- Passkey management uses the existing native passkey channel for registration and the server passkey list/delete endpoints for account maintenance. The server now preserves the passkey display name supplied by the client when registration finishes.
+- Notification preference toggles edit the existing in-app, push, and webhook preference endpoints. Push device status lists provider, token preview, app/platform version, active/invalidated state, and allows revocation.
+- Quality settings persist a device-level default Auto/Maximum/Manual mode through `QualityService`; playback continues to support per-item overrides.
+- Mobile exposes a copyable web settings URL for admin workflows. Desktop already hosts the full web settings UI through Tauri, so no duplicated desktop settings implementation is needed.
+
+Web-first admin boundary:
+
+- Mobile and desktop account settings cover personal sessions, passkeys, notification preferences, push devices, quality default, and server selection.
+- Full server/system configuration, provider credentials, library management, storage/cache operations, backup/restore, migration, and full quality policy administration remain web-first workflows.
+
+Verification:
+
+- `cargo fmt --all -- --check`
+- `cargo check -p duskcue`
+- `node scripts/verify-client-contracts.mjs`
+- `git diff --check` with CRLF-aware Git whitespace settings
+- `flutter --version` attempted and failed because Flutter is not installed in the current Windows environment.
+- `dart --version` attempted and failed because Dart is not installed in the current Windows environment.
+
+Flutter/Dart are not installed in the current Windows environment, so `flutter analyze`, `flutter test`, mobile passkey registration on Android/iOS, and push preference/device UI checks remain first-run verification for an environment with the Flutter SDK and target devices.
+
 ## Relationship to Other Documents
 
 | Document | Relationship |
@@ -420,6 +447,7 @@ Flutter/Dart are not installed in the current Windows environment, so `flutter p
 
 - Tauri capabilities: https://v2.tauri.app/security/capabilities/
 - Tauri deep linking: https://v2.tauri.app/plugin/deep-linking/
+- Tauri opener plugin: https://v2.tauri.app/plugin/opener/
 - Tauri updater: https://v2.tauri.app/plugin/updater/
 - Tauri Stronghold: https://v2.tauri.app/plugin/stronghold/
 - Flutter install/project docs: https://docs.flutter.dev/install
@@ -434,6 +462,9 @@ Flutter/Dart are not installed in the current Windows environment, so `flutter p
 - Flutter video_player package: https://pub.dev/packages/video_player
 - Flutter app lifecycle: https://api.flutter.dev/flutter/widgets/WidgetsBindingObserver-class.html
 - connectivity_plus package: https://pub.dev/packages/connectivity_plus
+- flutter_secure_storage package: https://pub.dev/packages/flutter_secure_storage
+- Android Credential Manager passkeys: https://developer.android.com/identity/sign-in/credential-manager
+- Apple AuthenticationServices passkeys: https://developer.apple.com/documentation/authenticationservices
 - Android Media3 analytics events: https://developer.android.com/media/media3/exoplayer/analytics
 - Apple AVPlayerItem access logs: https://developer.apple.com/documentation/avfoundation/avplayeritem/accesslog()
 - MDN server-sent events: https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events

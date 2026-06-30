@@ -753,6 +753,8 @@ Phase 16a Task 4 adds client-side consumption of the existing auth/session APIs:
 - Mobile clears secure local credentials and returns to auth on `401`/`authExpired`; `session_kicked` will call the same clear path when Phase 16a foreground SSE lands.
 - Native passkey bodies are surfaced behind a Flutter method channel named `com.duskcue.mobile/passkeys`; Android Credential Manager and iOS AuthenticationServices implementations are the platform side of that channel.
 
+**Phase 16a Task 11 account settings update:** `GET /api/v1/user/sessions` now includes the non-secret `device_id` in `SessionDetailResponse` so first-party clients can label the current device without guessing from name/platform strings. The Flutter settings screen uses that field to distinguish current-session sign-out from remote-session revocation. Passkey registration finish also accepts an optional `name` and preserves the caller-supplied display name instead of forcing every newly registered credential to `New Passkey`. Mobile settings consume the existing passkey list/delete endpoints for account maintenance and keep native registration behind the same platform-channel boundary described above.
+
 ### Re-Authentication Codes (Task 7)
 
 Task 7 implements the "Sign Out Everywhere" + re-authentication code flow from the "Session Management → Account Recovery" section above. Prior to Task 7, `reauth` and `reauth_request` handlers were `todo!()` stubs with routes, DTOs (`ReauthRequest`, `ReauthCodeResponse`), and error variants (`ReauthCodeInvalid`, `ReauthRateLimited`) already in place from Task 1.

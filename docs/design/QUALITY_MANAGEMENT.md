@@ -712,3 +712,8 @@ Quality management error codes are defined in [ERROR_HANDLING.md](ERROR_HANDLING
 - Mobile probes `/api/v1/probe/bandwidth` during active playback and submits `/api/v1/probe/bandwidth/result`; probes skip cellular connections by default via `connectivity_plus`.
 - Mobile submits heartbeat-cadenced coarse segment telemetry and 30-second QoE reports. The current Flutter `video_player` surface does not expose HLS segment request byte counts or native access logs, so exact segment download timing remains a future native Media3/AVPlayer adapter improvement.
 - Desktop/web continues to submit coarse QoE through the shared web player. Deeper hls.js fragment telemetry remains a future web-player enhancement.
+
+**Phase 16a Task 11 settings integration notes:**
+
+- The Flutter settings route persists a device-level default quality mode through `QualityService.saveDefaultSelection`. Playback still checks per-item preferences first, then falls back to the `_default` entry.
+- Full server-side quality policy administration remains web-first; mobile exposes the personal default quality setting and a copyable web settings URL for admin workflows.

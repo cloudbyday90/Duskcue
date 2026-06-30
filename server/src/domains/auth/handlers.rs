@@ -484,6 +484,7 @@ pub async fn list_user_sessions(
             .into_iter()
             .map(|s| SessionDetailResponse {
                 id: s.id,
+                device_id: s.device_id,
                 device_name: s.device_name,
                 client_name: s.client_name,
                 client_version: s.client_version,
@@ -649,8 +650,17 @@ pub async fn passkey_register_finish(
         drop(entry);
     }
 
+    let passkey_name = req
+        .name
+        .as_deref()
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+        .unwrap_or("New Passkey");
+    if passkey_name.chars().count() > 200 {
+        return Err(AppError::BadRequest("Passkey name is too long".into()));
+    }
     let passkey =
-        service::finish_passkey_registration(&state, &challenge_id, &req.credential, "New Passkey")
+        service::finish_passkey_registration(&state, &challenge_id, &req.credential, passkey_name)
             .await?;
 
     Ok(Json(passkey))

@@ -139,6 +139,17 @@ class QualityService {
     return QualitySelection(mode: QualityMode.fromName(modeName));
   }
 
+  Future<QualitySelection> defaultSelection() async {
+    final values = await _readQualityPreferences();
+    return QualitySelection(mode: QualityMode.fromName(values['_default']));
+  }
+
+  Future<void> saveDefaultSelection(QualityMode mode) async {
+    final values = await _readQualityPreferences();
+    values['_default'] = mode.name;
+    await _storage.writeQualityPreferences(jsonEncode(values));
+  }
+
   Future<void> saveSelectionForItem(String itemId, QualityMode mode) async {
     final values = await _readQualityPreferences();
     values[itemId] = mode.name;

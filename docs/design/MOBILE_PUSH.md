@@ -500,6 +500,11 @@ If an admin switches from FCM to APNs (or vice versa):
 - **11 new unit tests** covering: provider validation (accept known/reject unknown), token validation (reject empty/whitespace, reject overlong, accept FCM token, accept APNs hex, reject non-ASCII, accept UnifiedPush URL, reject UnifiedPush non-URL), token masking (short → `***`, long → prefix…suffix), optional-length validation (reject overlong, accept None + in-bounds). All 651 server tests pass (638 prior + 13 new across notifications service). 0 clippy warnings.
 - **No new workspace dependencies** — All validation uses existing `url` crate (Phase 4 Task 2 for WebAuthn); all DB access uses existing `sqlx`; all routing/validation uses existing `axum` + `validator`.
 
+**Phase 16a Task 11 settings integration notes:**
+
+- The Flutter settings hub consumes `GET /api/v1/user/notification-preferences`, `PUT /api/v1/user/notification-preferences/{type_id}`, `GET /api/v1/user/push-devices`, and `DELETE /api/v1/user/push-devices/{device_id}` so users can edit in-app/push/webhook delivery choices and revoke stale mobile push devices without opening the web UI.
+- Provider credential setup and admin test-dispatch workflows remain web-first in `/settings/notifications` because they are operator/server configuration, not per-user mobile account preferences.
+
 ## Key Decisions
 
 1. **Mobile push is opt-in, never default** — Routing notification content through Google (FCM) or Apple (APNs) is a values tension for a local-first, security-conscious media server. Users who want push opt in; default is in-app + SSE + webhook.

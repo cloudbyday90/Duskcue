@@ -87,6 +87,7 @@ class SessionDetail {
     required this.isSecure,
     required this.lastActiveAt,
     required this.createdAt,
+    this.deviceId,
     this.deviceName,
     this.clientName,
     this.clientVersion,
@@ -95,6 +96,7 @@ class SessionDetail {
   });
 
   final String id;
+  final String? deviceId;
   final String? deviceName;
   final String? clientName;
   final String? clientVersion;
@@ -107,6 +109,7 @@ class SessionDetail {
   factory SessionDetail.fromJson(Map<String, Object?> json) {
     return SessionDetail(
       id: json['id'] as String? ?? '',
+      deviceId: json['device_id'] as String?,
       deviceName: json['device_name'] as String?,
       clientName: json['client_name'] as String?,
       clientVersion: json['client_version'] as String?,
@@ -115,6 +118,129 @@ class SessionDetail {
       isSecure: json['is_secure'] as bool? ?? false,
       lastActiveAt: DateTime.tryParse(json['last_active_at'] as String? ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
       createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
+    );
+  }
+}
+
+class PasskeySummary {
+  const PasskeySummary({
+    required this.id,
+    required this.name,
+    required this.transports,
+    required this.createdAt,
+    this.lastUsedAt,
+  });
+
+  final String id;
+  final String name;
+  final List<String> transports;
+  final DateTime createdAt;
+  final DateTime? lastUsedAt;
+
+  factory PasskeySummary.fromJson(Map<String, Object?> json) {
+    return PasskeySummary(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? 'Passkey',
+      transports: (json['transports'] as List? ?? const []).whereType<String>().toList(growable: false),
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
+      lastUsedAt: DateTime.tryParse(json['last_used_at'] as String? ?? ''),
+    );
+  }
+}
+
+class NotificationPreference {
+  const NotificationPreference({
+    required this.notificationTypeId,
+    required this.name,
+    required this.category,
+    required this.priority,
+    required this.inAppEnabled,
+    required this.webhookEnabled,
+    required this.pushEnabled,
+    required this.isUsingDefaults,
+  });
+
+  final String notificationTypeId;
+  final String name;
+  final String category;
+  final String priority;
+  final bool inAppEnabled;
+  final bool webhookEnabled;
+  final bool pushEnabled;
+  final bool isUsingDefaults;
+
+  NotificationPreference copyWith({
+    bool? inAppEnabled,
+    bool? webhookEnabled,
+    bool? pushEnabled,
+    bool? isUsingDefaults,
+  }) {
+    return NotificationPreference(
+      notificationTypeId: notificationTypeId,
+      name: name,
+      category: category,
+      priority: priority,
+      inAppEnabled: inAppEnabled ?? this.inAppEnabled,
+      webhookEnabled: webhookEnabled ?? this.webhookEnabled,
+      pushEnabled: pushEnabled ?? this.pushEnabled,
+      isUsingDefaults: isUsingDefaults ?? this.isUsingDefaults,
+    );
+  }
+
+  factory NotificationPreference.fromJson(Map<String, Object?> json) {
+    return NotificationPreference(
+      notificationTypeId: json['notification_type_id'] as String? ?? '',
+      name: json['name'] as String? ?? 'notification',
+      category: json['category'] as String? ?? '',
+      priority: json['priority'] as String? ?? '',
+      inAppEnabled: json['in_app_enabled'] as bool? ?? false,
+      webhookEnabled: json['webhook_enabled'] as bool? ?? false,
+      pushEnabled: json['push_enabled'] as bool? ?? false,
+      isUsingDefaults: json['is_using_defaults'] as bool? ?? false,
+    );
+  }
+}
+
+class PushDeviceSummary {
+  const PushDeviceSummary({
+    required this.id,
+    required this.provider,
+    required this.tokenPreview,
+    required this.isActive,
+    required this.createdAt,
+    required this.updatedAt,
+    this.deviceName,
+    this.platform,
+    this.appVersion,
+    this.lastSeenAt,
+    this.invalidatedAt,
+  });
+
+  final String id;
+  final String provider;
+  final String tokenPreview;
+  final bool isActive;
+  final String? deviceName;
+  final String? platform;
+  final String? appVersion;
+  final DateTime? lastSeenAt;
+  final DateTime? invalidatedAt;
+  final DateTime createdAt;
+  final DateTime updatedAt;
+
+  factory PushDeviceSummary.fromJson(Map<String, Object?> json) {
+    return PushDeviceSummary(
+      id: json['id'] as String? ?? '',
+      provider: json['provider'] as String? ?? '',
+      tokenPreview: json['token_preview'] as String? ?? '',
+      deviceName: json['device_name'] as String?,
+      platform: json['platform'] as String?,
+      appVersion: json['app_version'] as String?,
+      lastSeenAt: DateTime.tryParse(json['last_seen_at'] as String? ?? ''),
+      isActive: json['is_active'] as bool? ?? false,
+      invalidatedAt: DateTime.tryParse(json['invalidated_at'] as String? ?? ''),
+      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
+      updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
 }
