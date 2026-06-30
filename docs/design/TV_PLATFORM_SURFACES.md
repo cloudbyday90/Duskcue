@@ -187,7 +187,7 @@ Phase 16b Task 1 added the initial authenticated TV domain shell under `server/s
 | Route | Current Phase 16b behavior | Later task |
 |---|---|---|
 | `GET /api/v1/users/me/tv-surface` | Validates `platform`, `limit`, and `sections`; returns accessible, healthy user-scoped Continue Watching, Next Up, New Episodes, and deterministic Recommendation sections with private cache headers, ETags, bounded availability states, and privacy-safe availability details. | Task 9 adds event-driven refresh hints. |
-| `GET /api/v1/tv/resolve/{platform_content_id}` | Validates canonical `duskcue:{movie|episode}:{uuid}` IDs, performs inverse lookup through the shared TV access scope, and returns BOLA-safe unavailable content for inaccessible, missing, or cross-type items. | Task 7 implements playback-ready resolve responses. |
+| `GET /api/v1/tv/resolve/{platform_content_id}` | Validates canonical `duskcue:{movie|episode}:{uuid}` IDs, performs inverse lookup through the shared TV access scope, reloads current resume/media-file state, and returns playback-start hints for accessible items. | Task 8 documents the full playback-entry flow. |
 | `GET /api/v1/tv/settings` | Returns default enabled TV publication settings for the supported platform enum. | Task 8+ define settings persistence and playback-entry policy. |
 | `GET /api/v1/tv/diagnostics` | Requires `can_manage_server`; validates feed query parameters and returns candidate counts, included section counts, aggregate exclusion reasons, and a bounded privacy-safe exclusion sample. | Task 10 adds integration-status settings. |
 
@@ -265,6 +265,51 @@ Task 6 implementation details:
 - Admin diagnostics classify non-included candidates as `library_offline`, `access_revoked`, `missing_file`, `metadata_incomplete`, or `not_selected`.
 - Diagnostics return `candidate_count`, `included_count`, `section_counts`, `reason_counts`, and a bounded `excluded` sample so support tooling can explain feed composition without exporting private filesystem data.
 - TV surface observability uses bounded Prometheus labels only: platform, status, section, and reason.
+
+Resolve response shape:
+
+```json
+{
+  "platform_content_id": "duskcue:episode:019...",
+  "media_item_id": "019...",
+  "media_type": "episode",
+  "title": "Episode Title",
+  "subtitle": "Show Name S02E04",
+  "description": "Episode overview...",
+  "duration_ms": 2640000,
+  "resume_position_ms": 615000,
+  "availability": "playable",
+  "availability_detail": null,
+  "playback_action": "start_playback",
+  "playback_start_path": "/api/v1/playback/start",
+  "playback_start": {
+    "method": "POST",
+    "path": "/api/v1/playback/start",
+    "media_item_id": "019...",
+    "media_file_id": "019...",
+    "start_position_ms": 615000,
+    "force_transcode": false,
+    "device_profile_required": false
+  },
+  "deep_link": "duskcue://play/episode/019...",
+  "web_url": "/media/019...",
+  "artwork": {
+    "poster_url": "/api/v1/items/019.../artwork/poster",
+    "backdrop_url": "/api/v1/items/019.../artwork/backdrop",
+    "logo_url": "/api/v1/items/019.../artwork/logo",
+    "thumbnail_url": "/api/v1/items/019.../artwork/thumbnail"
+  },
+  "requires_auth": true
+}
+```
+
+Task 7 implementation details:
+
+- Resolve never trusts resume state embedded in a platform tile. It reloads `user_item_data` for the authenticated Duskcue user on every request.
+- Watched items resolve with `resume_position_ms = 0`; unfinished items resolve with the latest stored resume position.
+- The preferred `media_file_id` is the current largest healthy media file for the item, matching the playback domain's default file selection.
+- Inaccessible, deleted-library, missing, malformed, and cross-type IDs remain BOLA-safe and return unavailable content rather than revealing library membership.
+- Accessible items with no healthy file return a bounded unavailable action and availability detail instead of a filesystem path or internal error.
 
 ### Selection Rules
 

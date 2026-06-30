@@ -73,6 +73,46 @@ JOIN libraries l ON l.id = mi.library_id
 WHERE mi.id = $1 AND l.deleted_at IS NULL
 "#;
 
+const RESOLVE_PLATFORM_CONTENT_SQL: &str = r#"
+SELECT mi.id,
+       mi.type,
+       mi.title,
+       mi.overview,
+       mi.premiere_date,
+       mi.runtime_seconds,
+       CASE
+           WHEN COALESCE(uid.is_watched, false) THEN 0
+           ELSE COALESCE(uid.resume_position_ms, 0)
+       END AS resume_position_ms,
+       sn.season_number,
+       ep.episode_number,
+       series_mi.title AS series_title,
+       COALESCE(file_stats.file_count, 0) AS file_count,
+       best_file.id AS best_media_file_id
+FROM media_items mi
+JOIN libraries l ON l.id = mi.library_id
+LEFT JOIN user_item_data uid
+       ON uid.user_id = $2 AND uid.media_item_id = mi.id
+LEFT JOIN episodes ep ON ep.id = mi.id
+LEFT JOIN seasons sn ON sn.id = ep.season_id
+LEFT JOIN media_items series_mi ON series_mi.id = ep.series_id
+LEFT JOIN LATERAL (
+    SELECT count(*) AS file_count
+    FROM media_files mf
+    WHERE mf.media_item_id = mi.id AND mf.is_healthy = true
+) file_stats ON true
+LEFT JOIN LATERAL (
+    SELECT mf.id
+    FROM media_files mf
+    WHERE mf.media_item_id = mi.id AND mf.is_healthy = true
+    ORDER BY mf.file_size DESC
+    LIMIT 1
+) best_file ON true
+WHERE mi.id = $1
+  AND mi.type IN ('movie', 'episode')
+  AND l.deleted_at IS NULL
+"#;
+
 const ACCESSIBLE_LIBRARY_IDS_SQL: &str = r#"
 SELECT ula.library_id
 FROM user_library_access ula
@@ -818,6 +858,106 @@ pub async fn lookup_platform_content(
     })
 }
 
+pub async fn resolve_platform_content(
+    pool: &sqlx::PgPool,
+    user: &AuthenticatedUser,
+    value: &str,
+) -> Result<TvResolveResponse, TvError> {
+    let lookup = lookup_platform_content(pool, user, value).await?;
+    if lookup.access_status == TvContentAccessStatus::AccessDenied {
+        return Err(TvError::AccessDenied);
+    }
+
+    let row = sqlx::query(RESOLVE_PLATFORM_CONTENT_SQL)
+        .bind(lookup.media_item_id)
+        .bind(user.user_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(TvError::UnavailableContent)?;
+
+    row_to_resolve_response(&row, &lookup)
+}
+
+fn row_to_resolve_response(
+    row: &sqlx::postgres::PgRow,
+    lookup: &TvPlatformContentLookup,
+) -> Result<TvResolveResponse, TvError> {
+    let media_item_id: Uuid = row.try_get("id")?;
+    let media_type_raw: String = row.try_get("type")?;
+    validate_platform_content_type(
+        &PlatformContentId {
+            media_type: lookup.media_type,
+            media_item_id,
+        },
+        &media_type_raw,
+    )
+    .map_err(|_| TvError::UnavailableContent)?;
+
+    let title: String = row.try_get("title")?;
+    let overview: Option<String> = row.try_get("overview")?;
+    let premiere_date: Option<NaiveDate> = row.try_get("premiere_date")?;
+    let runtime_seconds: Option<i32> = row.try_get("runtime_seconds")?;
+    let resume_position_ms: i32 = row.try_get("resume_position_ms")?;
+    let season_number: Option<i32> = row.try_get("season_number")?;
+    let episode_number: Option<i32> = row.try_get("episode_number")?;
+    let series_title: Option<String> = row.try_get("series_title")?;
+    let file_count: i64 = row.try_get("file_count")?;
+    let best_media_file_id: Option<Uuid> = row.try_get("best_media_file_id")?;
+    let availability = availability_for(file_count, &title, runtime_seconds);
+    let availability_detail = availability_detail(availability).map(str::to_string);
+    let duration_ms = runtime_seconds.map(|seconds| i64::from(seconds) * 1000);
+    let playback_start_path = "/api/v1/playback/start".to_string();
+    let playback_action = if is_playback_start_available(availability, best_media_file_id) {
+        "start_playback"
+    } else {
+        "unavailable"
+    }
+    .to_string();
+
+    Ok(TvResolveResponse {
+        platform_content_id: lookup.platform_content_id.clone(),
+        media_item_id,
+        media_type: lookup.media_type,
+        title,
+        subtitle: item_subtitle(
+            lookup.media_type,
+            series_title,
+            season_number,
+            episode_number,
+            premiere_date,
+        ),
+        description: overview,
+        duration_ms,
+        resume_position_ms: i64::from(resume_position_ms),
+        availability,
+        availability_detail,
+        playback_action,
+        playback_start_path: playback_start_path.clone(),
+        playback_start: TvPlaybackStartHints {
+            method: "POST".to_string(),
+            path: playback_start_path,
+            media_item_id,
+            media_file_id: best_media_file_id,
+            start_position_ms: i64::from(resume_position_ms),
+            force_transcode: false,
+            device_profile_required: false,
+        },
+        deep_link: format!(
+            "duskcue://play/{}/{}",
+            media_type_slug(lookup.media_type),
+            media_item_id
+        ),
+        web_url: format!("/media/{media_item_id}"),
+        artwork: TvArtworkHints {
+            poster_url: Some(format!("/api/v1/items/{media_item_id}/artwork/poster")),
+            backdrop_url: Some(format!("/api/v1/items/{media_item_id}/artwork/backdrop")),
+            logo_url: Some(format!("/api/v1/items/{media_item_id}/artwork/logo")),
+            thumbnail_url: Some(format!("/api/v1/items/{media_item_id}/artwork/thumbnail")),
+        },
+        requires_auth: true,
+    })
+}
+
 pub fn build_platform_content_id(media_type: TvMediaType, media_item_id: Uuid) -> String {
     format!("duskcue:{}:{media_item_id}", media_type_slug(media_type))
 }
@@ -993,6 +1133,19 @@ fn availability_detail(state: TvAvailabilityState) -> Option<&'static str> {
             Some("Required runtime or title metadata is incomplete.")
         }
     }
+}
+
+fn is_playback_start_available(
+    availability: TvAvailabilityState,
+    media_file_id: Option<Uuid>,
+) -> bool {
+    media_file_id.is_some()
+        && matches!(
+            availability,
+            TvAvailabilityState::Playable
+                | TvAvailabilityState::NeedsTranscode
+                | TvAvailabilityState::MetadataIncomplete
+        )
 }
 
 fn diagnostic_availability_for_reason(reason: &str) -> TvAvailabilityState {
@@ -1321,5 +1474,27 @@ mod tests {
             resolve_failure_reason(&TvError::InvalidPlatformContentId("bad".to_string())),
             "invalid_platform_content_id"
         );
+    }
+
+    #[test]
+    fn playback_start_requires_available_file() {
+        let media_file_id = Uuid::now_v7();
+
+        assert!(is_playback_start_available(
+            TvAvailabilityState::Playable,
+            Some(media_file_id)
+        ));
+        assert!(is_playback_start_available(
+            TvAvailabilityState::MetadataIncomplete,
+            Some(media_file_id)
+        ));
+        assert!(!is_playback_start_available(
+            TvAvailabilityState::MissingFile,
+            Some(media_file_id)
+        ));
+        assert!(!is_playback_start_available(
+            TvAvailabilityState::Playable,
+            None
+        ));
     }
 }

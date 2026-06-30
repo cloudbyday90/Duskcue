@@ -137,15 +137,29 @@ pub struct TvResolveResponse {
     pub media_type: TvMediaType,
     pub title: String,
     pub subtitle: Option<String>,
+    pub description: Option<String>,
+    pub duration_ms: Option<i64>,
     pub resume_position_ms: i64,
     pub availability: TvAvailabilityState,
     pub availability_detail: Option<String>,
     pub playback_action: String,
     pub playback_start_path: String,
+    pub playback_start: TvPlaybackStartHints,
     pub deep_link: String,
     pub web_url: String,
     pub artwork: TvArtworkHints,
     pub requires_auth: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TvPlaybackStartHints {
+    pub method: String,
+    pub path: String,
+    pub media_item_id: Uuid,
+    pub media_file_id: Option<Uuid>,
+    pub start_position_ms: i64,
+    pub force_transcode: bool,
+    pub device_profile_required: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

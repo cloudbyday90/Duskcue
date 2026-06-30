@@ -41,21 +41,17 @@ pub async fn resolve_platform_content(
     user: AuthenticatedUser,
     Path(platform_content_id): Path<String>,
 ) -> Result<Json<TvResolveResponse>, AppError> {
-    let lookup =
-        match service::lookup_platform_content(&state.pool, &user, &platform_content_id).await {
-            Ok(lookup) => lookup,
-            Err(err) => {
-                service::record_tv_resolve_failure(&err);
-                return Err(err.into());
-            }
-        };
-    if lookup.access_status == TvContentAccessStatus::AccessDenied {
-        service::record_tv_resolve_failure(&TvError::AccessDenied);
-        return Err(TvError::UnavailableContent.into());
+    match service::resolve_platform_content(&state.pool, &user, &platform_content_id).await {
+        Ok(response) => Ok(Json(response)),
+        Err(TvError::AccessDenied) => {
+            service::record_tv_resolve_failure(&TvError::AccessDenied);
+            Err(TvError::UnavailableContent.into())
+        }
+        Err(err) => {
+            service::record_tv_resolve_failure(&err);
+            Err(err.into())
+        }
     }
-
-    service::record_tv_resolve_failure(&TvError::UnavailableContent);
-    Err(TvError::UnavailableContent.into())
 }
 
 pub async fn get_tv_settings(
