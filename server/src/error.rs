@@ -129,6 +129,9 @@ pub enum AppError {
     Quality(#[from] crate::domains::quality::QualityError),
 
     #[error(transparent)]
+    Search(#[from] crate::domains::search::SearchError),
+
+    #[error(transparent)]
     Subtitle(#[from] crate::domains::subtitles::SubtitleError),
 
     #[error(transparent)]
@@ -197,6 +200,10 @@ impl IntoResponse for AppError {
             }
             AppError::Quality(e) => {
                 let (s, c, d) = quality_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Search(e) => {
+                let (s, c, d) = search_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::Subtitle(e) => {
@@ -1375,6 +1382,41 @@ fn quality_error_to_http(
             "Requested media version not found".into(),
         ),
         QualityError::Database(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL",
+            "Internal server error".into(),
+        ),
+    }
+}
+
+fn search_error_to_http(
+    err: &crate::domains::search::SearchError,
+) -> (StatusCode, &'static str, String) {
+    use crate::domains::search::SearchError;
+    use axum::http::StatusCode;
+
+    match err {
+        SearchError::QueryTooLong => (
+            StatusCode::BAD_REQUEST,
+            "VALID_001",
+            "Search query must not exceed 200 characters".into(),
+        ),
+        SearchError::InvalidMediaType(t) => (
+            StatusCode::BAD_REQUEST,
+            "VALID_001",
+            format!("Invalid media type: {}", t),
+        ),
+        SearchError::InvalidYear(y) => (
+            StatusCode::BAD_REQUEST,
+            "VALID_001",
+            format!("Invalid year: {}", y),
+        ),
+        SearchError::InvalidRating(r) => (
+            StatusCode::BAD_REQUEST,
+            "VALID_001",
+            format!("Invalid rating threshold: {}", r),
+        ),
+        SearchError::Database(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "INTERNAL",
             "Internal server error".into(),

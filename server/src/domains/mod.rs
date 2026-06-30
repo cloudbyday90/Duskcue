@@ -26,6 +26,7 @@ pub mod overlays;
 pub mod playback;
 pub mod posters;
 pub mod quality;
+pub mod search;
 pub mod segments;
 pub mod storyboards;
 pub mod subtitles;

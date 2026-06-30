@@ -73,7 +73,7 @@ LIMIT 20;
 
 ### Why PG FTS for v1.0 Default
 
-1. **Already built and working** — Phase 2 created the full infrastructure (triggers, weights, GIN index, trigram). Phase 8 web client has a working search UI against it. Zero new code for v1.0 search.
+1. **Already built and working** — Phase 2 created the full infrastructure (triggers, weights, GIN index, trigram). Pre-v1.0 Task 3 added the authenticated `GET /api/v1/search` endpoint and faceted web search UI on top of it.
 2. **Zero deployment complexity** — No extra process, no extra container, no extra port, no extra data directory to manage. Single PostgreSQL database handles search alongside all other data. Critical for self-hosted NAS deployments where simplicity is paramount.
 3. **Sufficient for 95%+ of deployments** — Typical home media servers have 500–5000 items. PG FTS at this scale returns queries in <10ms. Even at 10k items, latency is comfortable (10–50ms).
 4. **Real-time consistency** — Trigger-based updates mean search results are never stale. Dedicated engines require sync infrastructure (debezium, polling, batch) that introduces lag and complexity.
@@ -320,11 +320,11 @@ Meilisearch auto-detects document language at index time and applies the appropr
 | Commitment | Status |
 |---|---|
 | PostgreSQL FTS as default search | ✅ Already built (Phase 2), works for v1.0 |
-| Search API (`GET /api/v1/search?q=...`) | ✅ Already built (Phase 8 web client search page) |
+| Search API (`GET /api/v1/search?q=...`) | ✅ Implemented (Pre-v1.0 Task 3) |
 | Trigram fuzzy title matching | ✅ Already built (Phase 2 `pg_trgm` index) |
 | Weighted relevance (A/B/C/D) | ✅ Already built (Phase 2 trigger) |
 | Per-library language stemming | ✅ Already built (Phase 2 `metadata_language` → `regconfig`) |
-| Faceted filtering UI | Phase 8 follow-up — three-query PG pattern documented above |
+| Faceted filtering UI | ✅ Implemented (Pre-v1.0 Task 3) |
 | Meilisearch integration | Post-v1.0 — enabled when trigger threshold crossed |
 | Search backend abstraction layer | Post-v1.0 — added when Meilisearch integration lands |
 | `server_config.search.engine` config field | Post-v1.0 — added alongside Meilisearch integration |
@@ -375,14 +375,16 @@ If an admin triggers a manual Meilisearch full-rebuild while the indexer is also
 |---|---|---|
 | `search_vector` column + triggers + GIN index | ✅ Implemented | Phase 2 migration `20260530060200` |
 | `idx_media_items_title_trgm` trigram index | ✅ Implemented | Phase 2 migration |
-| `GET /api/v1/search` endpoint | ✅ Implemented | Phase 8 web client |
+| `GET /api/v1/search` endpoint | ✅ Implemented | Pre-v1.0 Task 3; returns `{ items, facets }` |
 | `SearchBackend` abstraction layer | Not started | Post-v1.0, lands with Meilisearch integration |
 | `workers/search_indexer.rs` (Meilisearch sync) | Not started | Post-v1.0 |
 | `server_config.search.engine` config field | Not started | Post-v1.0 |
 | Meilisearch sidecar in Docker image | Not started | Phase 15 follow-up after search integration lands |
-| Faceted search UI (genre/year/rating filters) | Not started | Phase 8 follow-up (works with PG FTS today via parallel queries) |
+| Faceted search UI (genre/year/rating filters) | ✅ Implemented | Pre-v1.0 Task 3; URL-backed type/genre/year/rating filters |
 
 **First concrete post-v1.0 search work:** When an admin reports the soft-trigger threshold crossed (50k+ items or 200ms+ p95), implement the `SearchBackend` abstraction + Meilisearch sidecar + indexer worker. Until then, PG FTS is sufficient.
+
+**Pre-v1.0 Task 3 implementation note:** `server/src/domains/search/` owns `GET /api/v1/search` using PostgreSQL FTS for v1.0. The response includes ranked `items` plus `facets` for type, genre, year, and rating thresholds. Facets run as parallel GROUP BY queries via `tokio::try_join!`, and the Svelte search page stores active filters in the URL so filtered search results are shareable.
 
 ## Key Decisions
 
@@ -409,7 +411,7 @@ If an admin triggers a manual Meilisearch full-rebuild while the indexer is also
 | [METADATA_PROVIDERS.md](METADATA_PROVIDERS.md) | TMDB `/changes` refresh updates overviews → trigger fires → search reflects new metadata |
 | [CONFIGURATION.md](../operations/CONFIGURATION.md) | Future `server_config.search.engine` field (post-v1.0) |
 | [DOCKER_DEPLOYMENT.md](../operations/DOCKER_DEPLOYMENT.md) | Meilisearch sidecar addition when search engine enabled |
-| [BUILD_ORDER.md](../../BUILD_ORDER.md) | v1.0 ships PG FTS (already done Phase 2 + Phase 8); post-v1.0 Meilisearch integration tracked as Phase 15 follow-up |
+| [BUILD_ORDER.md](../../BUILD_ORDER.md) | v1.0 ships PG FTS (Phase 2 infrastructure + Pre-v1.0 Task 3 API/UI); post-v1.0 Meilisearch integration tracked as Phase 15 follow-up |
 
 ## Research Sources
 

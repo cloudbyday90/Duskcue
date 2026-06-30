@@ -7,21 +7,36 @@
 -->
 <script>
     import { m } from '$lib/paraglide/messages.js';
-    import { onMount } from 'svelte';
+    import { goto } from '$app/navigation';
     import { page } from '$app/stores';
     import { search } from '$lib/api/search.js';
     import MediaCard from '$lib/components/MediaCard.svelte';
 
     let loading = $state(false);
     let results = $state([]);
+    let facets = $state(emptyFacets());
     let error = $state(null);
-    let typeFilter = $state('');
+    let searchRun = 0;
 
     let query = $derived($page.url.searchParams.get('q') || '');
+    let typeFilter = $derived($page.url.searchParams.get('type') || '');
+    let genreFilter = $derived($page.url.searchParams.get('genre') || '');
+    let yearFilter = $derived($page.url.searchParams.get('year') || '');
+    let ratingFilter = $derived($page.url.searchParams.get('rating_min') || '');
+    let hasActiveFilters = $derived(Boolean(typeFilter || genreFilter || yearFilter || ratingFilter));
+
+    const typeValues = ['', 'movie', 'series', 'season', 'episode'];
+    const ratingValues = ['9', '8', '7', '6'];
+
+    function emptyFacets() {
+        return { types: [], genres: [], years: [], ratings: [] };
+    }
 
     async function performSearch() {
+        const run = ++searchRun;
         if (!query.trim()) {
             results = [];
+            facets = emptyFacets();
             return;
         }
         loading = true;
@@ -29,13 +44,20 @@
         try {
             const params = {};
             if (typeFilter) params.type = typeFilter;
+            if (genreFilter) params.genre = genreFilter;
+            if (yearFilter) params.year = yearFilter;
+            if (ratingFilter) params.rating_min = ratingFilter;
             const response = await search(query, params);
-            results = response.items || response || [];
+            if (run !== searchRun) return;
+            results = response.items || [];
+            facets = response.facets || emptyFacets();
         } catch (err) {
+            if (run !== searchRun) return;
             error = err.detail || err.message || m.routes_search_page_search_failed();
             results = [];
+            facets = emptyFacets();
         } finally {
-            loading = false;
+            if (run === searchRun) loading = false;
         }
     }
 
@@ -47,9 +69,57 @@
         }
     });
 
-    function changeFilter(type) {
-        typeFilter = type;
-        performSearch();
+    function updateFilter(key, value) {
+        const url = new URL($page.url);
+        if (value) {
+            url.searchParams.set(key, value);
+        } else {
+            url.searchParams.delete(key);
+        }
+        goto(`${url.pathname}?${url.searchParams.toString()}`, {
+            keepFocus: true,
+            noScroll: true,
+            replaceState: false,
+        });
+    }
+
+    function clearFilters() {
+        const url = new URL($page.url);
+        for (const key of ['type', 'genre', 'year', 'rating_min']) {
+            url.searchParams.delete(key);
+        }
+        goto(`${url.pathname}?${url.searchParams.toString()}`, {
+            keepFocus: true,
+            noScroll: true,
+            replaceState: false,
+        });
+    }
+
+    function mediaTypeLabel(type) {
+        switch (type) {
+            case 'movie':
+                return m.routes_search_page_movies();
+            case 'series':
+                return m.routes_search_page_series();
+            case 'season':
+                return m.routes_search_page_seasons();
+            case 'episode':
+                return m.routes_search_page_episodes();
+            default:
+                return m.routes_search_page_all();
+        }
+    }
+
+    function typeCount(type) {
+        return facets.types.find((facet) => facet.value === type)?.count;
+    }
+
+    function ratingCount(rating) {
+        return facets.ratings.find((facet) => facet.value === rating)?.count;
+    }
+
+    function ratingLabel(rating) {
+        return m.routes_search_page_rating_plus({ rating });
     }
 </script>
 
@@ -57,24 +127,102 @@
     <div class="search-header">
         <h1 class="page-title">
             {#if query}
-                Results for "{query}"
+                {m.routes_search_page_results_for({ query })}
             {:else}
-                Search
+                {m.routes_search_page_search()}
             {/if}
         </h1>
     </div>
 
     {#if query}
-        <div class="filter-bar">
-            {#each ['', 'movie', 'series', 'season', 'episode'] as type}
-                <button
-                    class="filter-chip"
-                    class:active={typeFilter === type}
-                    onclick={() => changeFilter(type)}
-                >
-                    {type || 'All'}
+        <div class="filters">
+            <div class="filter-group">
+                <span class="filter-label">{m.routes_search_page_type()}</span>
+                <div class="filter-bar">
+                    {#each typeValues as type}
+                        <button
+                            class="filter-chip"
+                            class:active={typeFilter === type}
+                            onclick={() => updateFilter('type', type)}
+                        >
+                            <span>{mediaTypeLabel(type)}</span>
+                            {#if type && typeCount(type)}
+                                <span class="filter-count">{typeCount(type)}</span>
+                            {/if}
+                        </button>
+                    {/each}
+                </div>
+            </div>
+
+            {#if facets.genres.length > 0 || genreFilter}
+                <div class="filter-group">
+                    <span class="filter-label">{m.routes_search_page_genre()}</span>
+                    <div class="filter-bar">
+                        {#if genreFilter}
+                            <button class="filter-chip active" onclick={() => updateFilter('genre', '')}>
+                                {m.routes_search_page_all_genres()}
+                            </button>
+                        {/if}
+                        {#each facets.genres as genre}
+                            <button
+                                class="filter-chip"
+                                class:active={genreFilter === genre.value}
+                                onclick={() => updateFilter('genre', genreFilter === genre.value ? '' : genre.value)}
+                            >
+                                <span>{genre.label}</span>
+                                <span class="filter-count">{genre.count}</span>
+                            </button>
+                        {/each}
+                    </div>
+                </div>
+            {/if}
+
+            {#if facets.years.length > 0 || yearFilter}
+                <div class="filter-group">
+                    <span class="filter-label">{m.routes_search_page_year()}</span>
+                    <div class="filter-bar">
+                        {#if yearFilter}
+                            <button class="filter-chip active" onclick={() => updateFilter('year', '')}>
+                                {m.routes_search_page_all_years()}
+                            </button>
+                        {/if}
+                        {#each facets.years as year}
+                            <button
+                                class="filter-chip"
+                                class:active={yearFilter === year.value}
+                                onclick={() => updateFilter('year', yearFilter === year.value ? '' : year.value)}
+                            >
+                                <span>{year.label}</span>
+                                <span class="filter-count">{year.count}</span>
+                            </button>
+                        {/each}
+                    </div>
+                </div>
+            {/if}
+
+            <div class="filter-group">
+                <span class="filter-label">{m.routes_search_page_rating()}</span>
+                <div class="filter-bar">
+                    {#each ratingValues as rating}
+                        <button
+                            class="filter-chip"
+                            class:active={ratingFilter === rating}
+                            onclick={() => updateFilter('rating_min', ratingFilter === rating ? '' : rating)}
+                        >
+                            <span>{ratingLabel(rating)}</span>
+                            {#if ratingCount(rating)}
+                                <span class="filter-count">{ratingCount(rating)}</span>
+                            {/if}
+                        </button>
+                    {/each}
+                </div>
+            </div>
+
+            {#if hasActiveFilters}
+                <button class="clear-filters" onclick={clearFilters}>
+                    {m.routes_search_page_clear_filters()}
                 </button>
-            {/each}
+            {/if}
         </div>
     {/if}
 
@@ -131,7 +279,31 @@
         flex-wrap: wrap;
     }
 
+    .filters {
+        display: flex;
+        flex-direction: column;
+        gap: 0.75rem;
+        padding-block-end: 0.25rem;
+    }
+
+    .filter-group {
+        display: grid;
+        grid-template-columns: 4.5rem 1fr;
+        align-items: start;
+        gap: 0.625rem;
+    }
+
+    .filter-label {
+        padding-top: 0.4375rem;
+        color: var(--color-text-muted);
+        font-size: 0.75rem;
+        font-weight: 600;
+    }
+
     .filter-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.375rem;
         padding: 0.375rem 0.875rem;
         font-size: 0.75rem;
         font-weight: 500;
@@ -139,8 +311,13 @@
         background-color: var(--color-bg-elevated);
         border: 1px solid var(--color-border-subtle);
         border-radius: var(--radius-sm);
-        text-transform: capitalize;
         transition: all var(--transition-fast);
+    }
+
+    .filter-count {
+        color: var(--color-text-muted);
+        font-size: 0.6875rem;
+        font-variant-numeric: tabular-nums;
     }
 
     .filter-chip:hover {
@@ -152,6 +329,26 @@
         color: var(--color-accent);
         border-color: var(--color-accent);
         background-color: var(--color-accent-muted);
+    }
+
+    .filter-chip.active .filter-count {
+        color: var(--color-accent);
+    }
+
+    .clear-filters {
+        align-self: flex-start;
+        padding: 0.375rem 0.875rem;
+        color: var(--color-text-secondary);
+        background-color: transparent;
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-sm);
+        font-size: 0.75rem;
+        font-weight: 500;
+    }
+
+    .clear-filters:hover {
+        color: var(--color-text-primary);
+        border-color: var(--color-border);
     }
 
     .results-grid {
@@ -223,6 +420,15 @@
             overflow-x: auto;
             flex-wrap: nowrap;
             padding-bottom: 0.25rem;
+        }
+
+        .filter-group {
+            grid-template-columns: 1fr;
+            gap: 0.375rem;
+        }
+
+        .filter-label {
+            padding-top: 0;
         }
 
         .filter-chip {

@@ -13,4 +13,22 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
+use thiserror::Error;
 
+#[derive(Error, Debug)]
+pub enum SearchError {
+    #[error("search query is too long")]
+    QueryTooLong,
+
+    #[error("invalid media type: {0}")]
+    InvalidMediaType(String),
+
+    #[error("invalid year: {0}")]
+    InvalidYear(i32),
+
+    #[error("invalid rating threshold: {0}")]
+    InvalidRating(f32),
+
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+}

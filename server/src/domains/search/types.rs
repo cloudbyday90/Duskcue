@@ -13,4 +13,48 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
+use serde::{Deserialize, Serialize};
 
+use crate::domains::media::types::MediaItemResponse;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchQuery {
+    pub q: Option<String>,
+    #[serde(rename = "type")]
+    pub media_type: Option<String>,
+    pub genre: Option<String>,
+    pub year: Option<i32>,
+    pub rating_min: Option<f32>,
+    pub limit: Option<u32>,
+}
+
+#[derive(Debug, Clone)]
+pub struct SearchParams {
+    pub query: String,
+    pub media_type: Option<String>,
+    pub genre: Option<String>,
+    pub year: Option<i32>,
+    pub rating_min: Option<f32>,
+    pub limit: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchFacetCount {
+    pub value: String,
+    pub label: String,
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct SearchFacets {
+    pub types: Vec<SearchFacetCount>,
+    pub genres: Vec<SearchFacetCount>,
+    pub years: Vec<SearchFacetCount>,
+    pub ratings: Vec<SearchFacetCount>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchResponse {
+    pub items: Vec<MediaItemResponse>,
+    pub facets: SearchFacets,
+}

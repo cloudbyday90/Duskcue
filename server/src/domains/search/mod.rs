@@ -13,4 +13,24 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
+pub mod error;
+pub mod handlers;
+pub mod service;
+pub mod types;
 
+pub use error::SearchError;
+
+use axum::Router;
+use axum::routing::get;
+
+use crate::cache::{NO_STORE_CACHE_CONTROL, cache_control_layer};
+use crate::state::AppState;
+
+pub fn router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route(
+            "/api/v1/search",
+            get(handlers::search).route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL)),
+        )
+        .with_state(state)
+}

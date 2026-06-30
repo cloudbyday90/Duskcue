@@ -13,4 +13,22 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
+use axum::Json;
+use axum::extract::{Query, State};
 
+use crate::error::AppError;
+use crate::extractors::AuthenticatedUser;
+use crate::state::AppState;
+
+use super::service;
+use super::types::{SearchQuery, SearchResponse};
+
+pub async fn search(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Query(query): Query<SearchQuery>,
+) -> Result<Json<SearchResponse>, AppError> {
+    let params = service::validate_search_query(query)?;
+    let response = service::search_media(&state.pool, &user, params).await?;
+    Ok(Json(response))
+}
