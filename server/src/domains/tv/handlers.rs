@@ -43,7 +43,7 @@ pub async fn resolve_platform_content(
 ) -> Result<Json<TvResolveResponse>, AppError> {
     let lookup = service::lookup_platform_content(&state.pool, &user, &platform_content_id).await?;
     if lookup.access_status == TvContentAccessStatus::AccessDenied {
-        return Err(TvError::AccessDenied.into());
+        return Err(TvError::UnavailableContent.into());
     }
 
     Err(TvError::UnavailableContent.into())

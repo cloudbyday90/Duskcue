@@ -186,8 +186,8 @@ Phase 16b Task 1 added the initial authenticated TV domain shell under `server/s
 
 | Route | Current Phase 16b behavior | Later task |
 |---|---|---|
-| `GET /api/v1/users/me/tv-surface` | Validates `platform`, `limit`, and `sections`; returns user-scoped Continue Watching, Next Up, New Episodes, and deterministic Recommendation sections with private cache headers and ETags. | Task 5 expands feed ranking and section logic. |
-| `GET /api/v1/tv/resolve/{platform_content_id}` | Validates canonical `duskcue:{movie|episode}:{uuid}` IDs, performs inverse lookup, validates movie/episode type matches, and reports denied content before returning the Task 7 unavailable-content placeholder. | Task 7 implements playback-ready resolve responses. |
+| `GET /api/v1/users/me/tv-surface` | Validates `platform`, `limit`, and `sections`; returns accessible, healthy user-scoped Continue Watching, Next Up, New Episodes, and deterministic Recommendation sections with private cache headers and ETags. | Task 5 expands feed ranking and section logic. |
+| `GET /api/v1/tv/resolve/{platform_content_id}` | Validates canonical `duskcue:{movie|episode}:{uuid}` IDs, performs inverse lookup through the shared TV access scope, and returns BOLA-safe unavailable content for inaccessible, missing, or cross-type items. | Task 7 implements playback-ready resolve responses. |
 | `GET /api/v1/tv/settings` | Returns default enabled TV publication settings for the supported platform enum. | Task 8+ define settings persistence and playback-entry policy. |
 | `GET /api/v1/tv/diagnostics` | Validates feed query parameters and returns an empty diagnostics payload. | Task 6 adds exclusion reasons, counts, and metrics. |
 
@@ -255,6 +255,7 @@ Task 3 implementation details:
 - Next Up returns one next unwatched episode per watched series.
 - New Episodes returns the newest unwatched episode per started series.
 - Recommended is deterministic and uses unwatched movie/episode candidates ordered by rating, date, and title until Task 5 expands ranking.
+- Normal feed sections exclude inaccessible libraries, deleted libraries, and items without a healthy media file.
 - `generated_at` is derived from feed data rather than wall-clock time so unchanged responses can reuse ETags.
 
 ### Selection Rules

@@ -25,18 +25,57 @@ use crate::extractors::AuthenticatedUser;
 const DEFAULT_LIMIT: u32 = 30;
 const MAX_LIMIT: u32 = 100;
 
+#[derive(Debug, Clone)]
+pub struct TvAccessScope {
+    pub user_id: Uuid,
+    pub has_all_library_access: bool,
+    pub library_ids: Vec<Uuid>,
+}
+
+impl TvAccessScope {
+    fn can_access_library(&self, library_id: Uuid) -> bool {
+        self.has_all_library_access || self.library_ids.contains(&library_id)
+    }
+}
+
+pub async fn load_tv_access_scope(
+    pool: &sqlx::PgPool,
+    user: &AuthenticatedUser,
+) -> Result<TvAccessScope, TvError> {
+    let library_ids = if user.has_all_library_access {
+        Vec::new()
+    } else {
+        let rows = sqlx::query(ACCESSIBLE_LIBRARY_IDS_SQL)
+            .bind(user.user_id)
+            .fetch_all(pool)
+            .await?;
+
+        rows.iter()
+            .map(|row| row.try_get("library_id"))
+            .collect::<Result<Vec<Uuid>, sqlx::Error>>()?
+    };
+
+    Ok(TvAccessScope {
+        user_id: user.user_id,
+        has_all_library_access: user.has_all_library_access,
+        library_ids,
+    })
+}
+
 const LOOKUP_PLATFORM_CONTENT_SQL: &str = r#"
 SELECT mi.id,
        mi.type,
-       mi.library_id,
-       ($2::bool OR EXISTS (
-           SELECT 1
-           FROM user_library_access ula
-           WHERE ula.user_id = $3 AND ula.library_id = mi.library_id
-       )) AS has_access
+       mi.library_id
 FROM media_items mi
 JOIN libraries l ON l.id = mi.library_id
 WHERE mi.id = $1 AND l.deleted_at IS NULL
+"#;
+
+const ACCESSIBLE_LIBRARY_IDS_SQL: &str = r#"
+SELECT ula.library_id
+FROM user_library_access ula
+JOIN libraries l ON l.id = ula.library_id
+WHERE ula.user_id = $1 AND l.deleted_at IS NULL
 "#;
 
 const CONTINUE_WATCHING_SQL: &str = r#"
@@ -69,13 +108,14 @@ WHERE uid.user_id = $1
   AND uid.is_watched = false
   AND uid.resume_position_ms >= 60000
   AND uid.last_played_at IS NOT NULL
-  AND ($2::bool OR EXISTS (
+  AND ($2::bool OR mi.library_id = ANY($3::uuid[]))
+  AND EXISTS (
       SELECT 1
-      FROM user_library_access ula
-      WHERE ula.user_id = $1 AND ula.library_id = mi.library_id
-  ))
+      FROM media_files mf_ok
+      WHERE mf_ok.media_item_id = mi.id AND mf_ok.is_healthy = true
+  )
 ORDER BY uid.last_played_at DESC, mi.sort_title ASC
-LIMIT $3
+LIMIT $4
 "#;
 
 const NEXT_UP_SQL: &str = r#"
@@ -93,11 +133,12 @@ WITH latest_watched AS (
     WHERE uid.user_id = $1
       AND uid.is_watched = true
       AND l.deleted_at IS NULL
-      AND ($2::bool OR EXISTS (
+      AND ($2::bool OR mi.library_id = ANY($3::uuid[]))
+      AND EXISTS (
           SELECT 1
-          FROM user_library_access ula
-          WHERE ula.user_id = $1 AND ula.library_id = mi.library_id
-      ))
+          FROM media_files mf_ok
+          WHERE mf_ok.media_item_id = mi.id AND mf_ok.is_healthy = true
+      )
     ORDER BY ep.series_id,
              sn.season_number DESC NULLS LAST,
              ep.episode_number DESC NULLS LAST,
@@ -126,11 +167,12 @@ next_episode AS (
                   AND COALESCE(ep.episode_number, -1) > COALESCE(lw.episode_number, -1)
               )
           )
-          AND ($2::bool OR EXISTS (
+          AND ($2::bool OR mi.library_id = ANY($3::uuid[]))
+          AND EXISTS (
               SELECT 1
-              FROM user_library_access ula
-              WHERE ula.user_id = $1 AND ula.library_id = mi.library_id
-          ))
+              FROM media_files mf_ok
+              WHERE mf_ok.media_item_id = mi.id AND mf_ok.is_healthy = true
+          )
         ORDER BY sn.season_number ASC NULLS LAST,
                  ep.episode_number ASC NULLS LAST,
                  mi.sort_title ASC
@@ -160,7 +202,7 @@ LEFT JOIN LATERAL (
     WHERE mf.media_item_id = mi.id AND mf.is_healthy = true
 ) mf ON true
 ORDER BY ne.last_played_at DESC NULLS LAST, series_mi.sort_title ASC
-LIMIT $3
+LIMIT $4
 "#;
 
 const NEW_EPISODES_SQL: &str = r#"
@@ -199,11 +241,12 @@ latest_per_series AS (
     ) mf ON true
     WHERE l.deleted_at IS NULL
       AND COALESCE(uid_seen.is_watched, false) = false
-      AND ($2::bool OR EXISTS (
+      AND ($2::bool OR mi.library_id = ANY($3::uuid[]))
+      AND EXISTS (
           SELECT 1
-          FROM user_library_access ula
-          WHERE ula.user_id = $1 AND ula.library_id = mi.library_id
-      ))
+          FROM media_files mf_ok
+          WHERE mf_ok.media_item_id = mi.id AND mf_ok.is_healthy = true
+      )
     ORDER BY ep.series_id,
              mi.premiere_date DESC NULLS LAST,
              mi.created_at DESC,
@@ -213,7 +256,7 @@ latest_per_series AS (
 SELECT *
 FROM latest_per_series
 ORDER BY premiere_date DESC NULLS LAST, last_engaged_at DESC
-LIMIT $3
+LIMIT $4
 "#;
 
 const RECOMMENDED_SQL: &str = r#"
@@ -244,15 +287,16 @@ LEFT JOIN LATERAL (
 WHERE mi.type IN ('movie', 'episode')
   AND l.deleted_at IS NULL
   AND COALESCE(uid_seen.is_watched, false) = false
-  AND ($2::bool OR EXISTS (
+  AND ($2::bool OR mi.library_id = ANY($3::uuid[]))
+  AND EXISTS (
       SELECT 1
-      FROM user_library_access ula
-      WHERE ula.user_id = $1 AND ula.library_id = mi.library_id
-  ))
+      FROM media_files mf_ok
+      WHERE mf_ok.media_item_id = mi.id AND mf_ok.is_healthy = true
+  )
 ORDER BY COALESCE(mi.rating_average, 0) DESC,
          mi.premiere_date DESC NULLS LAST,
          mi.sort_title ASC
-LIMIT $3
+LIMIT $4
 "#;
 
 pub fn resolve_surface_query(query: TvSurfaceQuery) -> Result<ResolvedTvSurfaceQuery, TvError> {
@@ -294,6 +338,7 @@ pub async fn get_tv_surface(
     user: &AuthenticatedUser,
     query: &ResolvedTvSurfaceQuery,
 ) -> Result<TvSurfaceResponse, TvError> {
+    let access_scope = load_tv_access_scope(pool, user).await?;
     let mut remaining = query.limit as usize;
     let mut sections = Vec::with_capacity(query.sections.len());
 
@@ -301,7 +346,7 @@ pub async fn get_tv_surface(
         let items = if remaining == 0 {
             Vec::new()
         } else {
-            fetch_surface_items(pool, user, *section_type, remaining).await?
+            fetch_surface_items(pool, &access_scope, *section_type, remaining).await?
         };
 
         remaining = remaining.saturating_sub(items.len());
@@ -355,7 +400,7 @@ pub fn default_settings() -> TvSurfaceSettingsResponse {
 
 async fn fetch_surface_items(
     pool: &sqlx::PgPool,
-    user: &AuthenticatedUser,
+    access_scope: &TvAccessScope,
     section_type: TvSurfaceSectionType,
     limit: usize,
 ) -> Result<Vec<TvSurfaceItemResponse>, TvError> {
@@ -367,8 +412,9 @@ async fn fetch_surface_items(
     };
 
     let rows = sqlx::query(sql)
-        .bind(user.user_id)
-        .bind(user.has_all_library_access)
+        .bind(access_scope.user_id)
+        .bind(access_scope.has_all_library_access)
+        .bind(&access_scope.library_ids)
         .bind(limit as i64)
         .fetch_all(pool)
         .await?;
@@ -507,18 +553,20 @@ pub async fn lookup_platform_content(
     value: &str,
 ) -> Result<TvPlatformContentLookup, TvError> {
     let parsed = parse_platform_content_id(value)?;
+    let access_scope = load_tv_access_scope(pool, user).await?;
     let row = sqlx::query(LOOKUP_PLATFORM_CONTENT_SQL)
         .bind(parsed.media_item_id)
-        .bind(user.has_all_library_access)
-        .bind(user.user_id)
         .fetch_optional(pool)
         .await?
         .ok_or(TvError::UnavailableContent)?;
 
     let actual_media_type: String = row.try_get("type")?;
-    validate_platform_content_type(&parsed, &actual_media_type)?;
+    if validate_platform_content_type(&parsed, &actual_media_type).is_err() {
+        return Err(TvError::UnavailableContent);
+    }
 
-    let has_access: bool = row.try_get("has_access")?;
+    let library_id: Uuid = row.try_get("library_id")?;
+    let has_access = access_scope.can_access_library(library_id);
     let access_status = if has_access {
         TvContentAccessStatus::Accessible
     } else {
@@ -529,7 +577,7 @@ pub async fn lookup_platform_content(
         platform_content_id: build_platform_content_id(parsed.media_type, parsed.media_item_id),
         media_item_id: parsed.media_item_id,
         media_type: parsed.media_type,
-        library_id: row.try_get("library_id")?,
+        library_id,
         access_status,
     })
 }
@@ -833,5 +881,25 @@ mod tests {
         let err = validate_platform_content_type(&parsed, "movie").unwrap_err();
 
         assert!(matches!(err, TvError::InvalidPlatformContentId(_)));
+    }
+
+    #[test]
+    fn access_scope_checks_explicit_libraries() {
+        let allowed = Uuid::now_v7();
+        let denied = Uuid::now_v7();
+        let restricted = TvAccessScope {
+            user_id: Uuid::now_v7(),
+            has_all_library_access: false,
+            library_ids: vec![allowed],
+        };
+        let unrestricted = TvAccessScope {
+            user_id: Uuid::now_v7(),
+            has_all_library_access: true,
+            library_ids: Vec::new(),
+        };
+
+        assert!(restricted.can_access_library(allowed));
+        assert!(!restricted.can_access_library(denied));
+        assert!(unrestricted.can_access_library(denied));
     }
 }
