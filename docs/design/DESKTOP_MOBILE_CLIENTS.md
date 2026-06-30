@@ -273,6 +273,34 @@ Verification:
 - `node --check clients/web/src/lib/desktop/tauri.js`
 - `node --check clients/desktop/scripts/build-web-static.mjs`
 
+### Task 6 — Flutter Mobile Shell and Navigation
+
+Implementation:
+
+- `clients/mobile/lib/navigation/app_router.dart` now exposes a Riverpod-backed GoRouter with authenticated redirects and a `StatefulShellRoute.indexedStack` app shell.
+- The authenticated mobile shell has Dashboard, Libraries, Search, Collections, Notifications, and Settings destinations through a Material `NavigationBar`.
+- Detail routes now exist for library contents, media details, collection contents, and playback entry.
+- `ContentService` wraps the Phase 16a client-contract routes used by the mobile browsing surface: libraries, library items, media items, search, collections, collection items, notifications, unread count, and notification read actions.
+- `content_models.dart` uses tolerant DTO parsing for the curated-manifest era, accepting the common `items`/`results` payload shapes and nested `media_item` rows where collection/search responses include them.
+- Dashboard, library, search, collection, and notification screens implement pull-to-refresh, empty states, error states, and cursor-style load-more pagination where the server returns a next cursor.
+- Media detail and media list/card widgets load artwork through `cached_network_image` using authenticated `/api/v1/items/{id}/artwork/{type}` URLs and bearer headers from `DuskcueApiClient`.
+- `AppStrings` plus Flutter's localization delegates centralize the new shell surface strings. This avoids spreading a large new English-only surface across widgets and gives mobile a direct migration path to generated ARB/Weblate-backed catalogs when non-web localization is expanded.
+- `/play/{itemId}` is wired as the playback entry point, with actual playback startup, HLS selection, heartbeat, and media-session controls intentionally left for Task 7.
+
+Navigation and state decisions:
+
+- Saved-server selection and auth stay outside the shell at `/server` and `/auth`.
+- Authenticated tabs stay mounted through `StatefulShellRoute.indexedStack`, preserving search text, scroll positions, and loaded pages while moving between main destinations.
+- Session redirects remain client-side convenience only; every browsing and detail route still loads through the authenticated server API, so library/media access remains server-authoritative.
+
+Verification:
+
+- `node scripts/verify-client-contracts.mjs`
+- `flutter --version` attempted and failed because Flutter is not installed in the current Windows environment.
+- `dart --version` attempted and failed because Dart is not installed in the current Windows environment.
+
+Flutter/Dart are not installed in the current Windows environment, so `flutter pub get`, `flutter analyze`, `flutter test`, Android build, and iOS build remain first-run checks for an environment with the Flutter SDK.
+
 ## Relationship to Other Documents
 
 | Document | Relationship |
@@ -295,6 +323,12 @@ Verification:
 - Tauri Stronghold: https://v2.tauri.app/plugin/stronghold/
 - Flutter install/project docs: https://docs.flutter.dev/install
 - Flutter packages/plugins: https://docs.flutter.dev/packages-and-plugins/using-packages
+- Flutter navigation: https://docs.flutter.dev/ui/navigation
+- go_router StatefulShellRoute: https://pub.dev/documentation/go_router/latest/go_router/StatefulShellRoute-class.html
+- Flutter internationalization: https://docs.flutter.dev/ui/accessibility-and-internationalization/internationalization
+- Flutter RefreshIndicator: https://api.flutter.dev/flutter/material/RefreshIndicator-class.html
+- Flutter NavigationBar: https://api.flutter.dev/flutter/material/NavigationBar-class.html
+- cached_network_image package: https://pub.dev/packages/cached_network_image
 - Flutter video playback cookbook: https://docs.flutter.dev/cookbook/plugins/play-video
 - Flutter Android release: https://docs.flutter.dev/deployment/android
 - Flutter iOS release: https://docs.flutter.dev/deployment/ios

@@ -886,6 +886,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 5 desktop wrapper status:** `clients/desktop` now builds the shared SvelteKit app through a desktop-only static adapter path while normal web/Docker builds keep adapter-node. `clients/desktop/src-tauri` owns tray actions, `duskcue://` deep-link routing, single-instance forwarding, native folder dialogs, and native notification dispatch. `clients/web/src/lib/desktop/tauri.js` is the web-to-native bridge used by the shared web UI when it runs inside Tauri.
 
+**Task 6 mobile shell status:** `clients/mobile/lib/navigation/app_router.dart` now uses a Riverpod-backed GoRouter `StatefulShellRoute.indexedStack` for the authenticated mobile app shell. `clients/mobile/lib/services/content_service.dart` is the current Dart browsing API boundary for libraries, media, search, collections, and notifications. Task 6 screen files live under `clients/mobile/lib/screens/`, reusable authenticated artwork/list state widgets live under `clients/mobile/lib/widgets/`, and shell strings are centralized in `clients/mobile/lib/l10n/app_strings.dart` pending a generated mobile localization catalog.
+
 ## Development Workflow
 
 ### Server Development

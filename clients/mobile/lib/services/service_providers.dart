@@ -1,5 +1,6 @@
 import 'package:duskcue_mobile/services/auth_service.dart';
 import 'package:duskcue_mobile/services/api_client.dart';
+import 'package:duskcue_mobile/services/content_service.dart';
 import 'package:duskcue_mobile/services/device_identity_service.dart';
 import 'package:duskcue_mobile/services/native_passkey_service.dart';
 import 'package:duskcue_mobile/services/secure_storage_service.dart';
@@ -33,4 +34,8 @@ final authServiceProvider = Provider<AuthService>((ref) {
     deviceIdentity: ref.watch(deviceIdentityProvider),
     passkeys: ref.watch(nativePasskeyProvider),
   );
+});
+
+final contentServiceProvider = Provider<ContentService>((ref) {
+  return ContentService(ref.watch(apiClientProvider));
 });

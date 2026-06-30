@@ -9,6 +9,9 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  cached_network_image: ^3.4.1
   connectivity_plus: ^7.2.0
   cupertino_icons: ^1.0.9
   dio: ^5.10.0

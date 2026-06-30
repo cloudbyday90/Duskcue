@@ -34,7 +34,25 @@ class DuskcueApiClient {
 
   bool get isConfigured => _serverOrigin != null;
 
+  Uri? get serverOrigin => _serverOrigin;
+
   String? get bearerToken => _bearerToken;
+
+  Uri absoluteUri(String path, {Map<String, Object?>? query}) {
+    final origin = _serverOrigin;
+    if (origin == null) {
+      throw StateError('DuskcueApiClient is not configured.');
+    }
+    return origin.replace(
+      path: path,
+      queryParameters: query == null
+          ? null
+          : {
+              for (final entry in query.entries)
+                if (entry.value != null) entry.key: entry.value.toString(),
+            },
+    );
+  }
 
   Future<bool> ready() async {
     final response = await get('/health/ready');
