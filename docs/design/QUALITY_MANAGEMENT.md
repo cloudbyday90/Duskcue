@@ -703,3 +703,12 @@ Quality management error codes are defined in [ERROR_HANDLING.md](ERROR_HANDLING
 - 21 unit tests covering all decision paths
 
 **Not yet implemented** (Tasks 8–13): Streaming policy system, HLS manifest/segment serving, direct play/remux, HW accel detection, play session tracking, user item data.
+
+**Phase 16a Task 10 client integration notes:**
+
+- `clients/mobile/lib/services/quality_service.dart` is the mobile boundary for capability reporting, per-item quality preference storage, active bandwidth probes, telemetry, and QoE reporting.
+- Mobile reports a conservative platform capability profile on authenticated app launch/login and after app/client version changes. The playback route sends that same profile in `POST /api/v1/playback/start`.
+- `POST /api/v1/playback/start` accepts optional `quality_mode` (`auto`, `maximum`, `manual`) in addition to `max_streaming_bitrate`. Manual mobile choices map to bitrate presets and server-side resolution caps; Auto/Maximum keep the existing network/device decision behavior.
+- Mobile probes `/api/v1/probe/bandwidth` during active playback and submits `/api/v1/probe/bandwidth/result`; probes skip cellular connections by default via `connectivity_plus`.
+- Mobile submits heartbeat-cadenced coarse segment telemetry and 30-second QoE reports. The current Flutter `video_player` surface does not expose HLS segment request byte counts or native access logs, so exact segment download timing remains a future native Media3/AVPlayer adapter improvement.
+- Desktop/web continues to submit coarse QoE through the shared web player. Deeper hls.js fragment telemetry remains a future web-player enhancement.

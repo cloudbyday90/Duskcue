@@ -105,6 +105,7 @@ pub struct StartPlaybackRequest {
     pub max_streaming_bitrate: Option<u64>,
     pub force_transcode: Option<bool>,
     pub device_profile: Option<serde_json::Value>,
+    pub quality_mode: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]

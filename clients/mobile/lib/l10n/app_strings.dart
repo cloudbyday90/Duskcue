@@ -41,6 +41,7 @@ class AppStrings {
   String get loadingPlayback => 'Starting playback...';
   String get audio => 'Audio';
   String get subtitles => 'Subtitles';
+  String get quality => 'Quality';
   String get noSubtitle => 'No subtitle';
   String get restartPlayback => 'Restart playback';
   String get stop => 'Stop';

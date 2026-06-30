@@ -381,6 +381,27 @@ Verification:
 
 Flutter/Dart are not installed in the current Windows environment, so `flutter pub get`, `flutter analyze`, `flutter test`, Android build, iOS build, Firebase project initialization, APNs entitlement/device receipt, and UnifiedPush distributor receipt remain first-run verification for an environment with the Flutter SDK, platform SDKs, and provider credentials.
 
+### Task 10 — Quality Management
+
+Implementation:
+
+- The server playback-start contract accepts optional `quality_mode` alongside the existing `max_streaming_bitrate` and `device_profile` fields. Manual quality maps bitrate choices to a resolution cap for the decision engine; Auto/Maximum preserve existing decision behavior.
+- `QualityService` reports mobile device capabilities on authenticated app launch/login, including device identifier, platform, client version, codec/container/subtitle assumptions, bitrate, HDR, and bit-depth fields consumed by the playback decision engine.
+- Mobile stores per-item quality selections in secure storage and sends Auto/Maximum/Manual choices into playback start. The playback route exposes a Quality picker and restarts playback when the mode changes.
+- Active bandwidth probes download `/api/v1/probe/bandwidth`, measure elapsed time, and submit `/api/v1/probe/bandwidth/result`. Probes are playback-scoped and skip cellular connectivity by default.
+- The mobile player submits coarse segment telemetry on the heartbeat cadence and QoE reports every 30 seconds with startup time, rebuffer ratio, stream-switch count, selected rung/decision, and selected manual bitrate when present.
+- Desktop/web already had coarse QoE reporting through the shared web player. True per-HLS-segment byte/download timing is still a native-player-adapter follow-up because Flutter `video_player` does not expose HLS request hooks or access logs.
+
+Verification:
+
+- `cargo check -p duskcue`
+- `node scripts/verify-client-contracts.mjs`
+- `git diff --check` with CRLF-aware Git whitespace settings
+- `flutter --version` attempted and failed because Flutter is not installed in the current Windows environment.
+- `dart --version` attempted and failed because Dart is not installed in the current Windows environment.
+
+Flutter/Dart are not installed in the current Windows environment, so `flutter pub get`, `flutter analyze`, `flutter test`, Android build, iOS build, real probe cadence validation, and device-player QoE validation remain first-run verification for an environment with the Flutter SDK and target devices.
+
 ## Relationship to Other Documents
 
 | Document | Relationship |
@@ -412,6 +433,9 @@ Flutter/Dart are not installed in the current Windows environment, so `flutter p
 - Flutter video playback cookbook: https://docs.flutter.dev/cookbook/plugins/play-video
 - Flutter video_player package: https://pub.dev/packages/video_player
 - Flutter app lifecycle: https://api.flutter.dev/flutter/widgets/WidgetsBindingObserver-class.html
+- connectivity_plus package: https://pub.dev/packages/connectivity_plus
+- Android Media3 analytics events: https://developer.android.com/media/media3/exoplayer/analytics
+- Apple AVPlayerItem access logs: https://developer.apple.com/documentation/avfoundation/avplayeritem/accesslog()
 - MDN server-sent events: https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events
 - MDN EventSource Last-Event-ID behavior: https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events
 - Flutter Android release: https://docs.flutter.dev/deployment/android

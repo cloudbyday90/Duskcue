@@ -66,6 +66,14 @@ class SecureStorageService {
     return _storage.delete(key: 'push_device_ids');
   }
 
+  Future<void> writeQualityPreferences(String value) {
+    return _storage.write(key: 'quality_preferences', value: value);
+  }
+
+  Future<String?> readQualityPreferences() {
+    return _storage.read(key: 'quality_preferences');
+  }
+
   Future<void> clearSession() async {
     await clearToken();
     await clearUser();

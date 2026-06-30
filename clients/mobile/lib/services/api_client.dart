@@ -63,6 +63,19 @@ class DuskcueApiClient {
     return _request(() => _dio.get<T>(path, queryParameters: query, options: _options(headers)));
   }
 
+  Future<Response<List<int>>> getBytes(String path, {Map<String, Object?>? query, Map<String, Object?>? headers}) {
+    return _request(
+      () => _dio.get<List<int>>(
+        path,
+        queryParameters: query,
+        options: Options(
+          responseType: ResponseType.bytes,
+          headers: headers == null ? null : Map<String, dynamic>.from(headers),
+        ),
+      ),
+    );
+  }
+
   Future<Response<T>> post<T>(String path, {Object? body, Map<String, Object?>? headers}) {
     return _request(() => _dio.post<T>(path, data: body, options: _options(headers)));
   }

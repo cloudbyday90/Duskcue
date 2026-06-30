@@ -68,6 +68,7 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
     if (session.isAuthenticated && foreground) {
       unawaited(realtime.connect());
       unawaited(ref.read(pushRegistrationServiceProvider).startOrRefresh());
+      unawaited(ref.read(qualityServiceProvider).reportCapabilities());
       if (refresh) {
         unawaited(_pollFallback(force: true));
       }

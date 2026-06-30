@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:duskcue_mobile/l10n/app_strings.dart';
 import 'package:duskcue_mobile/models/content_models.dart';
 import 'package:duskcue_mobile/models/playback_models.dart';
+import 'package:duskcue_mobile/services/quality_service.dart';
 import 'package:duskcue_mobile/services/service_providers.dart';
 import 'package:duskcue_mobile/widgets/mobile_state_views.dart';
 import 'package:flutter/material.dart';
@@ -20,16 +21,28 @@ class PlaybackEntryScreen extends ConsumerStatefulWidget {
 
 class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with WidgetsBindingObserver {
   static const _heartbeatInterval = Duration(seconds: 15);
+  static const _qoeInterval = Duration(seconds: 30);
+  static const _probeInterval = Duration(minutes: 5);
 
   VideoPlayerController? _controller;
   MediaItemSummary? _item;
   PlaybackStart? _playback;
   Timer? _heartbeatTimer;
+  Timer? _qoeTimer;
+  Timer? _probeTimer;
   List<AudioTrack> _audioTracks = const [];
   List<SubtitleTrack> _subtitleTracks = const [];
   List<SegmentSkip> _segments = const [];
   int? _selectedAudioStreamIndex;
   int? _selectedSubtitleStreamIndex;
+  QualityMode _qualityMode = QualityMode.auto;
+  int _telemetrySampleIndex = 0;
+  int _rebufferCount = 0;
+  int _rebufferTotalMs = 0;
+  int _qualitySwitches = 0;
+  DateTime? _startupStartedAt;
+  DateTime? _bufferingStartedAt;
+  int? _startupTimeMs;
   bool _loading = true;
   bool _buffering = false;
   bool _seeking = false;
@@ -47,6 +60,8 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _heartbeatTimer?.cancel();
+    _qoeTimer?.cancel();
+    _probeTimer?.cancel();
     unawaited(_stopPlayback());
     _controller?.removeListener(_handleVideoState);
     _controller?.dispose();
@@ -73,16 +88,29 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
     try {
       final content = ref.read(contentServiceProvider);
       final playbackService = ref.read(playbackServiceProvider);
+      final qualityService = ref.read(qualityServiceProvider);
+      _startupStartedAt = DateTime.now();
+      _startupTimeMs = null;
+      _bufferingStartedAt = null;
+      _telemetrySampleIndex = 0;
+      _rebufferCount = 0;
+      _rebufferTotalMs = 0;
+      _qualitySwitches = 0;
 
       final item = await content.getMediaItem(widget.itemId);
       final watchData = await playbackService.getWatchData(widget.itemId);
+      final selection = await qualityService.selectionForItem(widget.itemId);
       final audioTracks = await playbackService.listAudioTracks(widget.itemId);
       final subtitles = await playbackService.listSubtitles(widget.itemId);
       final segments = await playbackService.listSegments(widget.itemId);
+      final deviceProfile = await qualityService.mobileDeviceProfile();
       final playback = await playbackService.startPlayback(
         mediaItemId: widget.itemId,
         audioStreamIndex: _selectedAudioStreamIndex,
         subtitleStreamIndex: _selectedSubtitleStreamIndex,
+        qualityMode: selection.mode.apiValue,
+        maxStreamingBitrate: selection.mode.maxStreamingBitrate,
+        deviceProfile: deviceProfile,
       );
 
       final controller = await playbackService.createNetworkController(playbackService.streamUri(playback.streamUrl));
@@ -96,14 +124,22 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
 
       final oldController = _controller;
       _heartbeatTimer?.cancel();
+      _qoeTimer?.cancel();
+      _probeTimer?.cancel();
       _controller = controller;
       _heartbeatTimer = Timer.periodic(_heartbeatInterval, (_) => unawaited(_sendHeartbeat()));
+      _qoeTimer = Timer.periodic(_qoeInterval, (_) => unawaited(_sendQoeReport()));
+      _probeTimer = Timer.periodic(_probeInterval, (_) => unawaited(_runBandwidthProbe()));
       await oldController?.dispose();
+      _startupTimeMs = _startupStartedAt == null ? null : DateTime.now().difference(_startupStartedAt!).inMilliseconds;
+      unawaited(_sendQoeReport());
+      unawaited(_runBandwidthProbe());
 
       if (!mounted) return;
       setState(() {
         _item = item;
         _playback = playback;
+        _qualityMode = selection.mode;
         _audioTracks = audioTracks;
         _subtitleTracks = subtitles;
         _segments = segments;
@@ -132,6 +168,13 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
     final value = controller.value;
     final isBuffering = value.isBuffering;
     if (_buffering != isBuffering) {
+      if (isBuffering) {
+        _bufferingStartedAt = DateTime.now();
+      } else if (_bufferingStartedAt != null) {
+        _rebufferCount += 1;
+        _rebufferTotalMs += DateTime.now().difference(_bufferingStartedAt!).inMilliseconds;
+        _bufferingStartedAt = null;
+      }
       setState(() => _buffering = isBuffering);
     }
     if (value.hasError) {
@@ -168,6 +211,7 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
           positionMs: position.inMilliseconds,
         );
     if (result.streamUrl != null && result.streamUrl!.isNotEmpty) {
+      _qualitySwitches += 1;
       await _replaceStream(result.streamUrl!, position);
     }
     await _sendHeartbeat();
@@ -197,6 +241,7 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
             isPaused: !controller.value.isPlaying,
             isBuffering: controller.value.isBuffering,
           );
+      await _sendTelemetry();
     } catch (_) {}
   }
 
@@ -205,10 +250,58 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
     if (playback == null) return;
     final positionMs = _positionMs;
     _heartbeatTimer?.cancel();
+    _qoeTimer?.cancel();
+    _probeTimer?.cancel();
     _playback = null;
     try {
+      await _sendQoeReport(sessionIdOverride: playback.sessionId);
       await ref.read(playbackServiceProvider).stop(sessionId: playback.sessionId, positionMs: positionMs);
     } catch (_) {}
+  }
+
+  Future<void> _sendTelemetry() async {
+    final playback = _playback;
+    if (playback == null) return;
+    await ref.read(qualityServiceProvider).submitSegmentTelemetry(
+          sessionId: playback.sessionId,
+          sampleIndex: _telemetrySampleIndex++,
+          rung: playback.streamDecision,
+          rebufferCount: _rebufferCount,
+          rebufferTotalMs: _rebufferTotalMs,
+        );
+  }
+
+  Future<void> _sendQoeReport({String? sessionIdOverride}) async {
+    final playback = _playback;
+    final controller = _controller;
+    final sessionId = sessionIdOverride ?? playback?.sessionId;
+    if (sessionId == null) return;
+    final elapsedSeconds = _startupStartedAt == null ? 0 : DateTime.now().difference(_startupStartedAt!).inSeconds;
+    final playbackSeconds = elapsedSeconds <= 0 ? 1 : elapsedSeconds;
+    final rebufferRatio = _rebufferTotalMs / (playbackSeconds * 1000);
+    await ref.read(qualityServiceProvider).submitQoeReport(
+          sessionId: sessionId,
+          startupTimeMs: _startupTimeMs,
+          rebufferRatio: rebufferRatio,
+          averageBitrateBps: _qualityMode.maxStreamingBitrate,
+          switchesPerMinute: _qualitySwitches / (playbackSeconds / 60),
+          qualityDrops: 0,
+          currentRung: playback?.streamDecision,
+          currentBufferSeconds: controller?.value.isBuffering == true ? 0.0 : null,
+        );
+  }
+
+  Future<void> _runBandwidthProbe() async {
+    final playback = _playback;
+    if (playback == null) return;
+    await ref.read(qualityServiceProvider).runBandwidthProbe(sessionId: playback.sessionId);
+  }
+
+  Future<void> _setQualityMode(QualityMode mode) async {
+    if (_qualityMode == mode) return;
+    setState(() => _qualityMode = mode);
+    await ref.read(qualityServiceProvider).saveSelectionForItem(widget.itemId, mode);
+    await _restartWithSelections();
   }
 
   int get _positionMs => _controller?.value.position.inMilliseconds ?? 0;
@@ -282,6 +375,17 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
                                 ),
                                 if (_buffering) Text(strings.buffering),
                                 const SizedBox(height: 16),
+                                DropdownButtonFormField<QualityMode>(
+                                  value: _qualityMode,
+                                  decoration: InputDecoration(labelText: strings.quality, border: const OutlineInputBorder()),
+                                  items: QualityMode.values
+                                      .map((mode) => DropdownMenuItem<QualityMode>(value: mode, child: Text(mode.label)))
+                                      .toList(growable: false),
+                                  onChanged: (value) {
+                                    if (value != null) unawaited(_setQualityMode(value));
+                                  },
+                                ),
+                                const SizedBox(height: 12),
                                 DropdownButtonFormField<int?>(
                                   value: _selectedAudioStreamIndex,
                                   decoration: InputDecoration(labelText: strings.audio, border: const OutlineInputBorder()),

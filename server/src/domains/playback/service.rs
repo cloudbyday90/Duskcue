@@ -61,7 +61,11 @@ pub async fn start_playback(
 
     let network = build_network_conditions(pool, user_id, req.max_streaming_bitrate).await;
 
-    let engine_config = build_decision_engine_config(config, req.max_streaming_bitrate);
+    let engine_config = build_decision_engine_config(
+        config,
+        req.quality_mode.as_deref(),
+        req.max_streaming_bitrate,
+    );
 
     let mut decision = decision_engine::decide(&media_info, &device_caps, &network, &engine_config);
 
@@ -135,6 +139,8 @@ pub async fn start_playback(
         stream_decision_str,
         transcode_session_id,
         Some(media_file_details.id),
+        req.quality_mode.as_deref(),
+        req.max_streaming_bitrate,
     )
     .await?;
 
@@ -449,8 +455,10 @@ async fn build_network_conditions(
 
 fn build_decision_engine_config(
     config: &RuntimeConfig,
-    _max_streaming_bitrate: Option<u64>,
+    quality_mode: Option<&str>,
+    max_streaming_bitrate: Option<u64>,
 ) -> DecisionEngineConfig {
+    let mode = quality_mode.unwrap_or(&config.quality.default_quality_mode);
     DecisionEngineConfig {
         default_video_codec: config.transcoding.default_video_codec.clone(),
         default_audio_codec: config.transcoding.default_audio_codec.clone(),
@@ -462,8 +470,23 @@ fn build_decision_engine_config(
         allow_client_side_dv_fallback: config.quality.allow_client_side_dv_fallback,
         audio_passthrough_enabled: config.quality.audio_passthrough_enabled,
         subtitle_burn_in_policy: config.quality.subtitle_burn_in_policy.clone(),
-        quality_mode: decision_engine::parse_quality_mode(&config.quality.default_quality_mode),
-        manual_max_resolution: None,
+        quality_mode: decision_engine::parse_quality_mode(mode),
+        manual_max_resolution: mode
+            .eq_ignore_ascii_case("manual")
+            .then(|| max_streaming_bitrate.map(max_resolution_for_manual_bitrate))
+            .flatten(),
+    }
+}
+
+fn max_resolution_for_manual_bitrate(bitrate_bps: u64) -> (u32, u32) {
+    if bitrate_bps >= 10_000_000 {
+        (3840, 2160)
+    } else if bitrate_bps >= 5_000_000 {
+        (1920, 1080)
+    } else if bitrate_bps >= 2_000_000 {
+        (1280, 720)
+    } else {
+        (854, 480)
     }
 }
 
@@ -475,6 +498,8 @@ async fn create_play_session(
     stream_decision: &str,
     transcode_session_id: Option<Uuid>,
     media_file_id: Option<Uuid>,
+    quality_mode: Option<&str>,
+    max_streaming_bitrate: Option<u64>,
 ) -> Result<Uuid, PlaybackError> {
     let session_id = Uuid::now_v7();
 
@@ -483,6 +508,8 @@ async fn create_play_session(
         "media_file_id": media_file_id,
         "current_state": "playing",
         "current_position_ms": 0,
+        "quality_mode": quality_mode,
+        "max_streaming_bitrate": max_streaming_bitrate,
     });
 
     sqlx::query(

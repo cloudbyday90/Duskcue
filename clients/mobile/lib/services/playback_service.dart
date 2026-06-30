@@ -13,6 +13,8 @@ class PlaybackService {
     int? audioStreamIndex,
     int? subtitleStreamIndex,
     int? maxStreamingBitrate,
+    String? qualityMode,
+    Map<String, Object?>? deviceProfile,
     bool forceTranscode = false,
   }) async {
     final response = await _apiClient.post<Map<String, Object?>>(
@@ -23,8 +25,9 @@ class PlaybackService {
         if (audioStreamIndex != null) 'audio_stream_index': audioStreamIndex,
         if (subtitleStreamIndex != null) 'subtitle_stream_index': subtitleStreamIndex,
         if (maxStreamingBitrate != null) 'max_streaming_bitrate': maxStreamingBitrate,
+        if (qualityMode != null) 'quality_mode': qualityMode,
         'force_transcode': forceTranscode,
-        'device_profile': _mobileDeviceProfile,
+        'device_profile': deviceProfile ?? _mobileDeviceProfile,
       },
     );
     return PlaybackStart.fromJson(Map<String, Object?>.from(response.data ?? const {}));

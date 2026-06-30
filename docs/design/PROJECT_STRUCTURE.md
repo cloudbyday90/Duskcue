@@ -894,6 +894,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 9 mobile push status:** `clients/mobile/lib/services/push_registration_service.dart` owns FCM/APNs/optional UnifiedPush token registration, secure storage of returned push-device IDs, 24-hour heartbeat refresh, token-rotation handling, and safe notification tap routing into the authenticated shell. Server-side provider dispatch remains in `server/src/services/notification_dispatch.rs`, backed by nested push config structs in `server/src/state.rs` and encrypted provider private-key handling in `server/src/services/encryption.rs`.
 
+**Task 10 mobile quality status:** `clients/mobile/lib/services/quality_service.dart` owns mobile capability reporting, per-item quality preference storage, bandwidth probes, telemetry, and QoE submission. `clients/mobile/lib/screens/playback_entry_screen.dart` owns the current Quality picker and playback-scoped probe/QoE timers. The server playback quality-mode contract lives in `server/src/domains/playback/types.rs` and `server/src/domains/playback/service.rs`.
+
 ## Development Workflow
 
 ### Server Development
