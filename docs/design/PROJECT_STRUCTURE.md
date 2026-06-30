@@ -900,6 +900,12 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 11 mobile settings status:** `clients/mobile/lib/screens/settings_screen.dart` owns the mobile account/settings hub, including profile/server summary, current-device session labeling, session revocation, passkey registration/list/delete, notification preference toggles, push-device status/revocation, default quality mode, and the web-first admin settings handoff. `clients/mobile/lib/services/auth_service.dart` owns the typed account-management API calls, while `server/src/domains/auth/types.rs` and `server/src/domains/auth/handlers.rs` expose `device_id` in session list responses and preserve passkey display names.
 
+### Phase 16b TV Domain Structure Update
+
+[TV_PLATFORM_SURFACES.md](TV_PLATFORM_SURFACES.md) is the authoritative Phase 16b design document for TV and console surface contracts.
+
+**Task 1 server-domain status:** `server/src/domains/tv/` now follows the five-file domain pattern with authenticated surface, resolve, settings, and diagnostics routes. `server/src/domains/tv/types.rs` owns the TV feed, section, item, resolve, settings, diagnostics, availability, and SSE event DTOs; `service.rs` owns initial `platform`, `limit`, `sections`, and `platform_content_id` validation; `error.rs` maps through central `AppError` as `TV_001`-`TV_008`. Feed population, inverse content-ID lookup, access enforcement, cache/ETag behavior, diagnostics data, and event emission remain later Phase 16b tasks.
+
 ## Development Workflow
 
 ### Server Development

@@ -14,23 +14,34 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-pub mod analytics;
-pub mod auth;
-pub mod backup;
-pub mod collections;
-pub mod libraries;
-pub mod media;
-pub mod migration;
-pub mod notifications;
-pub mod overlays;
-pub mod playback;
-pub mod posters;
-pub mod quality;
-pub mod search;
-pub mod segments;
-pub mod storyboards;
-pub mod subtitles;
-pub mod system;
-pub mod trakt;
-pub mod tv;
-pub mod users;
+use thiserror::Error;
+
+#[derive(Error, Debug)]
+pub enum TvError {
+    #[error("invalid TV platform: {0}")]
+    InvalidPlatform(String),
+
+    #[error("invalid TV surface section: {0}")]
+    InvalidSection(String),
+
+    #[error("invalid TV surface limit: {0}")]
+    InvalidLimit(u32),
+
+    #[error("invalid platform content ID: {0}")]
+    InvalidPlatformContentId(String),
+
+    #[error("platform content is unavailable")]
+    UnavailableContent,
+
+    #[error("TV surface access denied")]
+    AccessDenied,
+
+    #[error("unsupported platform hint: {0}")]
+    UnsupportedPlatformHint(String),
+
+    #[error("TV surface diagnostics unavailable")]
+    DiagnosticsUnavailable,
+
+    #[error(transparent)]
+    Database(#[from] sqlx::Error),
+}

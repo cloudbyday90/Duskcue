@@ -14,23 +14,26 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-pub mod analytics;
-pub mod auth;
-pub mod backup;
-pub mod collections;
-pub mod libraries;
-pub mod media;
-pub mod migration;
-pub mod notifications;
-pub mod overlays;
-pub mod playback;
-pub mod posters;
-pub mod quality;
-pub mod search;
-pub mod segments;
-pub mod storyboards;
-pub mod subtitles;
-pub mod system;
-pub mod trakt;
-pub mod tv;
-pub mod users;
+pub mod error;
+pub mod handlers;
+pub mod service;
+pub mod types;
+
+pub use error::TvError;
+
+use axum::Router;
+use axum::routing::get;
+
+use crate::state::AppState;
+
+pub fn router(state: AppState) -> Router<AppState> {
+    Router::new()
+        .route("/api/v1/users/me/tv-surface", get(handlers::get_tv_surface))
+        .route(
+            "/api/v1/tv/resolve/{platform_content_id}",
+            get(handlers::resolve_platform_content),
+        )
+        .route("/api/v1/tv/settings", get(handlers::get_tv_settings))
+        .route("/api/v1/tv/diagnostics", get(handlers::get_tv_diagnostics))
+        .with_state(state)
+}

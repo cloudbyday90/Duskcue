@@ -143,6 +143,9 @@ pub enum AppError {
     #[error(transparent)]
     Trakt(#[from] crate::domains::trakt::TraktError),
 
+    #[error(transparent)]
+    Tv(#[from] crate::domains::tv::TvError),
+
     #[error("internal server error")]
     Internal(#[source] anyhow::Error),
 }
@@ -220,6 +223,10 @@ impl IntoResponse for AppError {
             }
             AppError::Trakt(e) => {
                 let (s, c, d) = trakt_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Tv(e) => {
+                let (s, c, d) = tv_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::NotFound(msg) => (
@@ -1087,6 +1094,59 @@ fn collections_error_to_http(
             "Collection template not found".into(),
         ),
         CollectionsError::Database(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL",
+            "Internal server error".into(),
+        ),
+    }
+}
+
+fn tv_error_to_http(err: &crate::domains::tv::TvError) -> (StatusCode, &'static str, String) {
+    use crate::domains::tv::TvError;
+    use axum::http::StatusCode;
+
+    match err {
+        TvError::InvalidPlatform(platform) => (
+            StatusCode::BAD_REQUEST,
+            "TV_001",
+            format!("Invalid TV platform: {platform}"),
+        ),
+        TvError::UnavailableContent => (
+            StatusCode::NOT_FOUND,
+            "TV_002",
+            "Platform content is unavailable".into(),
+        ),
+        TvError::AccessDenied => (
+            StatusCode::FORBIDDEN,
+            "TV_003",
+            "TV surface access denied".into(),
+        ),
+        TvError::UnsupportedPlatformHint(platform) => (
+            StatusCode::BAD_REQUEST,
+            "TV_004",
+            format!("Unsupported platform hint: {platform}"),
+        ),
+        TvError::InvalidPlatformContentId(id) => (
+            StatusCode::BAD_REQUEST,
+            "TV_005",
+            format!("Invalid platform content ID: {id}"),
+        ),
+        TvError::InvalidSection(section) => (
+            StatusCode::BAD_REQUEST,
+            "TV_006",
+            format!("Invalid TV surface section: {section}"),
+        ),
+        TvError::InvalidLimit(limit) => (
+            StatusCode::BAD_REQUEST,
+            "TV_007",
+            format!("Invalid TV surface limit: {limit}"),
+        ),
+        TvError::DiagnosticsUnavailable => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "TV_008",
+            "TV surface diagnostics unavailable".into(),
+        ),
+        TvError::Database(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "INTERNAL",
             "Internal server error".into(),
