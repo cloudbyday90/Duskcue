@@ -58,8 +58,24 @@ static_loader! {
 }
 
 pub const DEFAULT_LOCALE: LanguageIdentifier = langid!("en");
+pub const LOCALE_FR: LanguageIdentifier = langid!("fr");
+pub const LOCALE_DE: LanguageIdentifier = langid!("de");
+pub const LOCALE_ES: LanguageIdentifier = langid!("es");
+pub const LOCALE_IT: LanguageIdentifier = langid!("it");
+pub const LOCALE_AR: LanguageIdentifier = langid!("ar");
+pub const LOCALE_ZH_HANS: LanguageIdentifier = langid!("zh-Hans");
+pub const LOCALE_ZH_HANT: LanguageIdentifier = langid!("zh-Hant");
 
-pub const AVAILABLE_LOCALES: &[LanguageIdentifier] = &[DEFAULT_LOCALE];
+pub const AVAILABLE_LOCALES: &[LanguageIdentifier] = &[
+    DEFAULT_LOCALE,
+    LOCALE_FR,
+    LOCALE_DE,
+    LOCALE_ES,
+    LOCALE_IT,
+    LOCALE_AR,
+    LOCALE_ZH_HANS,
+    LOCALE_ZH_HANT,
+];
 
 pub fn negotiate_locale(
     user_preference: Option<&str>,
@@ -153,14 +169,20 @@ mod tests {
 
     #[test]
     fn negotiates_user_preference_first() {
-        let resolved = negotiate_locale(Some("en"), Some("de"));
-        assert_eq!(resolved, DEFAULT_LOCALE);
+        let resolved = negotiate_locale(Some("fr"), Some("de"));
+        assert_eq!(resolved, LOCALE_FR);
     }
 
     #[test]
     fn negotiates_accept_language_without_user_preference() {
         let resolved = negotiate_locale(None, Some("de,en;q=0.8"));
-        assert_eq!(resolved, DEFAULT_LOCALE);
+        assert_eq!(resolved, LOCALE_DE);
+    }
+
+    #[test]
+    fn negotiates_scripted_chinese_locale() {
+        let resolved = negotiate_locale(Some("zh-Hant"), Some("zh-Hans,en;q=0.8"));
+        assert_eq!(resolved, LOCALE_ZH_HANT);
     }
 
     #[test]
@@ -349,5 +371,82 @@ mod tests {
     #[test]
     fn available_locales_includes_default() {
         assert!(AVAILABLE_LOCALES.contains(&DEFAULT_LOCALE));
+    }
+
+    #[test]
+    fn available_locales_matches_launch_window_targets() {
+        assert_eq!(
+            AVAILABLE_LOCALES,
+            &[
+                DEFAULT_LOCALE,
+                LOCALE_FR,
+                LOCALE_DE,
+                LOCALE_ES,
+                LOCALE_IT,
+                LOCALE_AR,
+                LOCALE_ZH_HANS,
+                LOCALE_ZH_HANT
+            ]
+        );
+    }
+
+    #[test]
+    fn all_available_locales_render_seeded_notifications() {
+        let cases = [
+            (
+                "new-media-added",
+                vec![("title", "Movie"), ("library", "Lib")],
+            ),
+            ("library-scan-complete", vec![("stats", "100 items")]),
+            (
+                "playback-started",
+                vec![("username", "Bob"), ("title", "Show")],
+            ),
+            (
+                "classifarr-decision",
+                vec![("title", "Movie"), ("library", "Lib")],
+            ),
+            ("server-alert", vec![("message", "Alert")]),
+            ("server-update", vec![("version", "1.0")]),
+            ("task-failed", vec![("task-name", "Task"), ("error", "Err")]),
+            (
+                "trust-alert",
+                vec![("username", "Bob"), ("details", "Suspicious")],
+            ),
+            (
+                "new-login",
+                vec![("username", "Bob"), ("ip", "1.2.3.4"), ("device", "Chrome")],
+            ),
+            (
+                "user-invited",
+                vec![("action", "created"), ("email", "a@b.com")],
+            ),
+            (
+                "trakt-sync-error",
+                vec![("username", "Bob"), ("error", "timeout")],
+            ),
+            (
+                "migration-completed",
+                vec![("source-name", "Plex"), ("imported-count", "42")],
+            ),
+            (
+                "migration-failed",
+                vec![("source-name", "Plex"), ("error", "timeout")],
+            ),
+        ];
+
+        for locale in AVAILABLE_LOCALES {
+            for (message_id, arg_pairs) in cases.clone() {
+                let args: HashMap<Cow<'static, str>, FluentValue> = arg_pairs
+                    .into_iter()
+                    .map(|(k, v)| (Cow::Borrowed(k), FluentValue::String(v.to_string().into())))
+                    .collect();
+                let rendered = render(message_id, locale, &args);
+                assert_ne!(
+                    rendered, message_id,
+                    "Fluent message `{message_id}` missing from {locale}/notifications.ftl"
+                );
+            }
+        }
     }
 }

@@ -123,7 +123,7 @@ Each strategic design doc includes an "Implementation Status" table. This docume
 | [HTTP_CACHING.md](HTTP_CACHING.md) — Cache-Control + ETag | ✅ Pre-v1.0 Task 1 | Pre-v1.0 |
 | [REAL_TIME_PUSH.md](REAL_TIME_PUSH.md) — SSE + EventBus | Spec only → **Phase 10** | Phase 10 |
 | [IMAGE_FORMATS.md](IMAGE_FORMATS.md) — WebP pipeline + artwork endpoint | Spec only → **Phase 10** | Phase 10 |
-| [I18N.md](I18N.md) — Paraglide + Fluent | ✅ Fluent implemented (Phase 13b Task 1); ✅ Paraglide web integration (Pre-v1.0 Task 2); 7-locale translations + RTL review + activation remain | Phase 13b + Pre-v1.0 |
+| [I18N.md](I18N.md) — Paraglide + Fluent | ✅ Fluent implemented (Phase 13b Task 1); ✅ Paraglide web integration (Pre-v1.0 Task 2); ✅ 7-locale preview translations (Pre-v1.0 Task 5); RTL review + activation remain | Phase 13b + Pre-v1.0 |
 | [SEARCH.md](SEARCH.md) — PG FTS (default) + Meilisearch (post-v1.0) | ✅ PG FTS implemented (Phase 2); ✅ faceted search API/UI implemented (Pre-v1.0 Task 3) | Done |
 | [MULTI_INSTANCE.md](MULTI_INSTANCE.md) — Single-instance via lockfile | ✅ Implemented (Phase 3) | Done |
 | [REVERSE_PROXY.md](REVERSE_PROXY.md) — Built-in TLS + trusted proxies | ✅ Implemented (Phase 3) | Done |
