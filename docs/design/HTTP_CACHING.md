@@ -66,9 +66,10 @@ The `304 Not Modified` response has no body — the client uses its cached copy.
 |---|---|
 | `GET /api/v1/media-items/{id}` | Per-item metadata |
 | `GET /api/v1/libraries/{id}` | Library config |
+| `GET /api/v1/users/me/tv-surface` | Per-user TV surface feed |
 | `GET /api/v1/server/config` | Full server config |
 
-Collection list endpoints do NOT use ETag — paginated responses change frequently (new items shift cursors), so the validation cost exceeds the savings.
+Paginated collection list endpoints do NOT use ETag — paginated responses change frequently (new items shift cursors), so the validation cost exceeds the savings. Bounded personalized feeds such as the TV surface feed may use ETags when the response body is stable for unchanged source data.
 
 ### `Last-Modified` — Not Used
 
@@ -84,6 +85,7 @@ The authoritative per-endpoint table lives in [API_CONVENTIONS.md](API_CONVENTIO
 |---|---|---|
 | Media item metadata | `private, max-age=300, stale-while-revalidate=600` | 5 min fresh; 10 min stale-serve; per-user due to watch status |
 | Library config | `private, max-age=60, stale-while-revalidate=300` | 1 min fresh; 5 min stale-serve; changes are rare but visible |
+| TV surface feed | `private, max-age=60, stale-while-revalidate=300` | 1 min fresh; 5 min stale-serve; personalized launcher rows and resume state |
 | Static artwork URLs | `public, max-age=86400, stale-while-revalidate=604800, immutable` | 24 hr fresh; 7 day stale-serve; artwork rarely changes |
 | HLS segments | `no-cache` | Always revalidate for streaming session validity |
 | HLS manifest / playlist | `no-cache, no-store, must-revalidate` | Live transcode state changes; immutable segments |
@@ -154,7 +156,7 @@ Adding `stale-if-error` would be cargo-cult header noise with no behavioral effe
 
 `stale-while-revalidate` and `ETag` conditional requests are **complementary, not alternatives**. When a stale response is served from cache, the background revalidation is a normal HTTP request — it includes `If-None-Match` with the cached ETag. If the content hasn't changed, the server returns `304 Not Modified` (no body), and the cache resets its freshness timer without re-sending the response body. This minimizes both perceived latency AND bandwidth.
 
-Implementation rule: apply `ETag` + `stale-while-revalidate` together on the same endpoints (single-resource metadata endpoints). Collection endpoints use neither.
+Implementation rule: apply `ETag` + `stale-while-revalidate` together on the same endpoints (single-resource metadata endpoints and explicitly bounded personalized feeds). Paginated collection endpoints use neither.
 
 ## Client-Side SWR Pattern
 
@@ -216,6 +218,7 @@ Pre-v1.0 Hardening Task 1 wires the HTTP caching contract without changing handl
 
 - `server/src/cache.rs` owns the cache policy constants, `SetResponseHeaderLayer::if_not_present` helper, SHA-256 ETag generation, and conditional request handling.
 - `GET /api/v1/media-items/{id}` and `GET /api/v1/libraries/{id}` emit private `Cache-Control` headers with `stale-while-revalidate` and SHA-256 ETags over the serialized JSON body.
+- `GET /api/v1/users/me/tv-surface` emits private `Cache-Control` headers with `stale-while-revalidate` and SHA-256 ETags over a stable data-derived feed body.
 - `GET /api/v1/server/config` emits `Cache-Control: no-store` plus a SHA-256 ETag for explicit client revalidation. `GET /api/v1/server/config/{group}` emits `no-store` without ETag because it is not listed in the ETag contract.
 - `GET /api/v1/items/{id}/artwork/{type}` emits the public immutable artwork cache policy via route middleware and continues using the existing strong artwork variant ETag.
 - `/health` and `/metrics` emit `Cache-Control: no-store`.
@@ -232,7 +235,7 @@ Pre-v1.0 Hardening Task 1 wires the HTTP caching contract without changing handl
 6. **`private` by default on authenticated endpoints** — Duskcue responses embed user-scoped data (watch state, ratings, capabilities); never allow shared-cache storage of authenticated responses.
 7. **`immutable` only on fingerprinted URLs** — artwork URLs include content hashes (TMDB file path + ID), so they're truly immutable across versions and skip revalidation even on reload.
 8. **`s-maxage` never used** — Duskcue is self-hosted with no shared cache; the browser is always the only HTTP cache.
-9. **ETag and `stale-while-revalidate` together** — applied jointly on single-resource metadata endpoints. Collection endpoints use neither.
+9. **ETag and `stale-while-revalidate` together** — applied jointly on single-resource metadata endpoints and explicitly bounded personalized feeds. Paginated collection endpoints use neither.
 
 ## Relationship to Other Domains
 

@@ -25,6 +25,7 @@ use tower_http::set_header::SetResponseHeaderLayer;
 
 pub const MEDIA_METADATA_CACHE_CONTROL: &str = "private, max-age=300, stale-while-revalidate=600";
 pub const LIBRARY_CONFIG_CACHE_CONTROL: &str = "private, max-age=60, stale-while-revalidate=300";
+pub const TV_SURFACE_CACHE_CONTROL: &str = "private, max-age=60, stale-while-revalidate=300";
 pub const ARTWORK_CACHE_CONTROL: &str =
     "public, max-age=86400, stale-while-revalidate=604800, immutable";
 pub const NO_STORE_CACHE_CONTROL: &str = "no-store";

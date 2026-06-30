@@ -186,7 +186,7 @@ Phase 16b Task 1 added the initial authenticated TV domain shell under `server/s
 
 | Route | Current Phase 16b behavior | Later task |
 |---|---|---|
-| `GET /api/v1/users/me/tv-surface` | Validates `platform`, `limit`, and `sections`; returns explicit empty sections with `tv_surface_service_not_populated`. | Task 3 and Task 5 populate user-scoped feed data and cache validators. |
+| `GET /api/v1/users/me/tv-surface` | Validates `platform`, `limit`, and `sections`; returns user-scoped Continue Watching, Next Up, New Episodes, and deterministic Recommendation sections with private cache headers and ETags. | Task 5 expands feed ranking and section logic. |
 | `GET /api/v1/tv/resolve/{platform_content_id}` | Validates canonical `duskcue:{movie|episode}:{uuid}` IDs, performs inverse lookup, validates movie/episode type matches, and reports denied content before returning the Task 7 unavailable-content placeholder. | Task 7 implements playback-ready resolve responses. |
 | `GET /api/v1/tv/settings` | Returns default enabled TV publication settings for the supported platform enum. | Task 8+ define settings persistence and playback-entry policy. |
 | `GET /api/v1/tv/diagnostics` | Validates feed query parameters and returns an empty diagnostics payload. | Task 6 adds exclusion reasons, counts, and metrics. |
@@ -205,7 +205,7 @@ Optional query parameters:
 
 | Parameter | Purpose |
 |---|---|
-| `platform` | `android_tv`, `fire_tv`, `roku`, `tvos`, `tizen`, `webos`; used only for shaping optional hints, not authorization. |
+| `platform` | `android_tv`, `google_tv`, `fire_tv`, `roku`, `tvos`, `tizen`, `webos`, `xbox`; used only for shaping optional hints, not authorization. |
 | `limit` | Maximum total items. Default 30, maximum 100. |
 | `sections` | Comma-separated list: `continue`, `next_up`, `recommended`, `new_episodes`. |
 
@@ -214,30 +214,48 @@ Response shape:
 ```json
 {
   "generated_at": "2026-06-27T00:00:00Z",
-  "items": [
+  "platform": "android_tv",
+  "limit": 30,
+  "sections": [
     {
-      "surface_item_id": "01J...",
-      "media_item_id": "01J...",
-      "platform_content_id": "duskcue:episode:01J...",
-      "media_type": "episode",
-      "surface_type": "next_up",
-      "title": "Show Name",
-      "subtitle": "S02E04 - Episode Title",
-      "description": "Episode overview...",
-      "season_number": 2,
-      "episode_number": 4,
-      "duration_ms": 2640000,
-      "resume_position_ms": 0,
-      "progress_percent": 0,
-      "last_engaged_at": "2026-06-26T23:00:00Z",
-      "poster_url": "/api/v1/artwork/...",
-      "backdrop_url": "/api/v1/artwork/...",
-      "deep_link": "duskcue://play/episode/01J...",
-      "web_url": "https://server.example/media/01J..."
+      "section_type": "next_up",
+      "title": "Next Up",
+      "empty_reason": null,
+      "items": [
+        {
+          "surface_item_id": "tv:next_up:duskcue_episode_019...",
+          "media_item_id": "019...",
+          "platform_content_id": "duskcue:episode:019...",
+          "media_type": "episode",
+          "section_type": "next_up",
+          "title": "Episode Title",
+          "subtitle": "Show Name S02E04",
+          "description": "Episode overview...",
+          "season_number": 2,
+          "episode_number": 4,
+          "duration_ms": 2640000,
+          "resume_position_ms": 0,
+          "progress_percent": 0,
+          "last_engaged_at": "2026-06-26T23:00:00Z",
+          "poster_url": "/api/v1/items/019.../artwork/poster",
+          "backdrop_url": "/api/v1/items/019.../artwork/backdrop",
+          "deep_link": "duskcue://play/episode/019...",
+          "web_url": "/media/019...",
+          "availability": "playable"
+        }
+      ]
     }
   ]
 }
 ```
+
+Task 3 implementation details:
+
+- Continue Watching uses unfinished movie/episode `user_item_data` rows with meaningful resume progress.
+- Next Up returns one next unwatched episode per watched series.
+- New Episodes returns the newest unwatched episode per started series.
+- Recommended is deterministic and uses unwatched movie/episode candidates ordered by rating, date, and title until Task 5 expands ranking.
+- `generated_at` is derived from feed data rather than wall-clock time so unchanged responses can reuse ETags.
 
 ### Selection Rules
 

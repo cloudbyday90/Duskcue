@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use chrono::Utc;
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -37,6 +37,222 @@ SELECT mi.id,
 FROM media_items mi
 JOIN libraries l ON l.id = mi.library_id
 WHERE mi.id = $1 AND l.deleted_at IS NULL
+"#;
+
+const CONTINUE_WATCHING_SQL: &str = r#"
+SELECT mi.id,
+       mi.type,
+       mi.title,
+       mi.overview,
+       mi.premiere_date,
+       mi.runtime_seconds,
+       uid.resume_position_ms,
+       uid.last_played_at AS last_engaged_at,
+       sn.season_number,
+       ep.episode_number,
+       series_mi.title AS series_title,
+       COALESCE(mf.file_count, 0) AS file_count
+FROM user_item_data uid
+JOIN media_items mi ON mi.id = uid.media_item_id
+JOIN libraries l ON l.id = mi.library_id
+LEFT JOIN episodes ep ON ep.id = mi.id
+LEFT JOIN seasons sn ON sn.id = ep.season_id
+LEFT JOIN media_items series_mi ON series_mi.id = ep.series_id
+LEFT JOIN LATERAL (
+    SELECT count(*) AS file_count
+    FROM media_files mf
+    WHERE mf.media_item_id = mi.id AND mf.is_healthy = true
+) mf ON true
+WHERE uid.user_id = $1
+  AND mi.type IN ('movie', 'episode')
+  AND l.deleted_at IS NULL
+  AND uid.is_watched = false
+  AND uid.resume_position_ms >= 60000
+  AND uid.last_played_at IS NOT NULL
+  AND ($2::bool OR EXISTS (
+      SELECT 1
+      FROM user_library_access ula
+      WHERE ula.user_id = $1 AND ula.library_id = mi.library_id
+  ))
+ORDER BY uid.last_played_at DESC, mi.sort_title ASC
+LIMIT $3
+"#;
+
+const NEXT_UP_SQL: &str = r#"
+WITH latest_watched AS (
+    SELECT DISTINCT ON (ep.series_id)
+           ep.series_id,
+           sn.season_number,
+           ep.episode_number,
+           uid.last_played_at
+    FROM user_item_data uid
+    JOIN episodes ep ON ep.id = uid.media_item_id
+    JOIN seasons sn ON sn.id = ep.season_id
+    JOIN media_items mi ON mi.id = uid.media_item_id
+    JOIN libraries l ON l.id = mi.library_id
+    WHERE uid.user_id = $1
+      AND uid.is_watched = true
+      AND l.deleted_at IS NULL
+      AND ($2::bool OR EXISTS (
+          SELECT 1
+          FROM user_library_access ula
+          WHERE ula.user_id = $1 AND ula.library_id = mi.library_id
+      ))
+    ORDER BY ep.series_id,
+             sn.season_number DESC NULLS LAST,
+             ep.episode_number DESC NULLS LAST,
+             uid.last_played_at DESC NULLS LAST
+),
+next_episode AS (
+    SELECT lw.series_id,
+           lw.last_played_at,
+           candidate.id AS media_item_id
+    FROM latest_watched lw
+    JOIN LATERAL (
+        SELECT ep.id
+        FROM episodes ep
+        JOIN seasons sn ON sn.id = ep.season_id
+        JOIN media_items mi ON mi.id = ep.id
+        JOIN libraries l ON l.id = mi.library_id
+        LEFT JOIN user_item_data uid_next
+               ON uid_next.user_id = $1 AND uid_next.media_item_id = ep.id
+        WHERE ep.series_id = lw.series_id
+          AND l.deleted_at IS NULL
+          AND COALESCE(uid_next.is_watched, false) = false
+          AND (
+              COALESCE(sn.season_number, -1) > COALESCE(lw.season_number, -1)
+              OR (
+                  COALESCE(sn.season_number, -1) = COALESCE(lw.season_number, -1)
+                  AND COALESCE(ep.episode_number, -1) > COALESCE(lw.episode_number, -1)
+              )
+          )
+          AND ($2::bool OR EXISTS (
+              SELECT 1
+              FROM user_library_access ula
+              WHERE ula.user_id = $1 AND ula.library_id = mi.library_id
+          ))
+        ORDER BY sn.season_number ASC NULLS LAST,
+                 ep.episode_number ASC NULLS LAST,
+                 mi.sort_title ASC
+        LIMIT 1
+    ) candidate ON true
+)
+SELECT mi.id,
+       mi.type,
+       mi.title,
+       mi.overview,
+       mi.premiere_date,
+       mi.runtime_seconds,
+       0::int AS resume_position_ms,
+       ne.last_played_at AS last_engaged_at,
+       sn.season_number,
+       ep.episode_number,
+       series_mi.title AS series_title,
+       COALESCE(mf.file_count, 0) AS file_count
+FROM next_episode ne
+JOIN media_items mi ON mi.id = ne.media_item_id
+JOIN episodes ep ON ep.id = mi.id
+JOIN seasons sn ON sn.id = ep.season_id
+JOIN media_items series_mi ON series_mi.id = ep.series_id
+LEFT JOIN LATERAL (
+    SELECT count(*) AS file_count
+    FROM media_files mf
+    WHERE mf.media_item_id = mi.id AND mf.is_healthy = true
+) mf ON true
+ORDER BY ne.last_played_at DESC NULLS LAST, series_mi.sort_title ASC
+LIMIT $3
+"#;
+
+const NEW_EPISODES_SQL: &str = r#"
+WITH started_series AS (
+    SELECT DISTINCT ep.series_id
+    FROM user_item_data uid
+    JOIN episodes ep ON ep.id = uid.media_item_id
+    WHERE uid.user_id = $1
+),
+latest_per_series AS (
+    SELECT DISTINCT ON (ep.series_id)
+           mi.id,
+           mi.type,
+           mi.title,
+           mi.overview,
+           mi.premiere_date,
+           mi.runtime_seconds,
+           0::int AS resume_position_ms,
+           mi.created_at AS last_engaged_at,
+           sn.season_number,
+           ep.episode_number,
+           series_mi.title AS series_title,
+           COALESCE(mf.file_count, 0) AS file_count
+    FROM started_series ss
+    JOIN episodes ep ON ep.series_id = ss.series_id
+    JOIN seasons sn ON sn.id = ep.season_id
+    JOIN media_items mi ON mi.id = ep.id
+    JOIN libraries l ON l.id = mi.library_id
+    JOIN media_items series_mi ON series_mi.id = ep.series_id
+    LEFT JOIN user_item_data uid_seen
+           ON uid_seen.user_id = $1 AND uid_seen.media_item_id = mi.id
+    LEFT JOIN LATERAL (
+        SELECT count(*) AS file_count
+        FROM media_files mf
+        WHERE mf.media_item_id = mi.id AND mf.is_healthy = true
+    ) mf ON true
+    WHERE l.deleted_at IS NULL
+      AND COALESCE(uid_seen.is_watched, false) = false
+      AND ($2::bool OR EXISTS (
+          SELECT 1
+          FROM user_library_access ula
+          WHERE ula.user_id = $1 AND ula.library_id = mi.library_id
+      ))
+    ORDER BY ep.series_id,
+             mi.premiere_date DESC NULLS LAST,
+             mi.created_at DESC,
+             sn.season_number DESC NULLS LAST,
+             ep.episode_number DESC NULLS LAST
+)
+SELECT *
+FROM latest_per_series
+ORDER BY premiere_date DESC NULLS LAST, last_engaged_at DESC
+LIMIT $3
+"#;
+
+const RECOMMENDED_SQL: &str = r#"
+SELECT mi.id,
+       mi.type,
+       mi.title,
+       mi.overview,
+       mi.premiere_date,
+       mi.runtime_seconds,
+       0::int AS resume_position_ms,
+       mi.created_at AS last_engaged_at,
+       sn.season_number,
+       ep.episode_number,
+       series_mi.title AS series_title,
+       COALESCE(mf.file_count, 0) AS file_count
+FROM media_items mi
+JOIN libraries l ON l.id = mi.library_id
+LEFT JOIN episodes ep ON ep.id = mi.id
+LEFT JOIN seasons sn ON sn.id = ep.season_id
+LEFT JOIN media_items series_mi ON series_mi.id = ep.series_id
+LEFT JOIN user_item_data uid_seen
+       ON uid_seen.user_id = $1 AND uid_seen.media_item_id = mi.id
+LEFT JOIN LATERAL (
+    SELECT count(*) AS file_count
+    FROM media_files mf
+    WHERE mf.media_item_id = mi.id AND mf.is_healthy = true
+) mf ON true
+WHERE mi.type IN ('movie', 'episode')
+  AND l.deleted_at IS NULL
+  AND COALESCE(uid_seen.is_watched, false) = false
+  AND ($2::bool OR EXISTS (
+      SELECT 1
+      FROM user_library_access ula
+      WHERE ula.user_id = $1 AND ula.library_id = mi.library_id
+  ))
+ORDER BY COALESCE(mi.rating_average, 0) DESC,
+         mi.premiere_date DESC NULLS LAST,
+         mi.sort_title ASC
+LIMIT $3
 "#;
 
 pub fn resolve_surface_query(query: TvSurfaceQuery) -> Result<ResolvedTvSurfaceQuery, TvError> {
@@ -73,6 +289,50 @@ pub fn empty_surface_response(query: &ResolvedTvSurfaceQuery) -> TvSurfaceRespon
     }
 }
 
+pub async fn get_tv_surface(
+    pool: &sqlx::PgPool,
+    user: &AuthenticatedUser,
+    query: &ResolvedTvSurfaceQuery,
+) -> Result<TvSurfaceResponse, TvError> {
+    let mut remaining = query.limit as usize;
+    let mut sections = Vec::with_capacity(query.sections.len());
+
+    for section_type in &query.sections {
+        let items = if remaining == 0 {
+            Vec::new()
+        } else {
+            fetch_surface_items(pool, user, *section_type, remaining).await?
+        };
+
+        remaining = remaining.saturating_sub(items.len());
+        let empty_reason = if items.is_empty() {
+            if remaining == 0 {
+                Some("limit_reached".to_string())
+            } else {
+                Some("no_matching_items".to_string())
+            }
+        } else {
+            None
+        };
+
+        sections.push(TvSurfaceSectionResponse {
+            section_type: *section_type,
+            title: section_title(*section_type).to_string(),
+            empty_reason,
+            items,
+        });
+    }
+
+    let generated_at = surface_generated_at(&sections);
+
+    Ok(TvSurfaceResponse {
+        generated_at,
+        platform: query.platform,
+        limit: query.limit,
+        sections,
+    })
+}
+
 pub fn default_settings() -> TvSurfaceSettingsResponse {
     TvSurfaceSettingsResponse {
         tv_publication_enabled: true,
@@ -91,6 +351,144 @@ pub fn default_settings() -> TvSurfaceSettingsResponse {
         publish_new_episodes: true,
         publish_recommendations: true,
     }
+}
+
+async fn fetch_surface_items(
+    pool: &sqlx::PgPool,
+    user: &AuthenticatedUser,
+    section_type: TvSurfaceSectionType,
+    limit: usize,
+) -> Result<Vec<TvSurfaceItemResponse>, TvError> {
+    let sql = match section_type {
+        TvSurfaceSectionType::Continue => CONTINUE_WATCHING_SQL,
+        TvSurfaceSectionType::NextUp => NEXT_UP_SQL,
+        TvSurfaceSectionType::NewEpisodes => NEW_EPISODES_SQL,
+        TvSurfaceSectionType::Recommended => RECOMMENDED_SQL,
+    };
+
+    let rows = sqlx::query(sql)
+        .bind(user.user_id)
+        .bind(user.has_all_library_access)
+        .bind(limit as i64)
+        .fetch_all(pool)
+        .await?;
+
+    rows.iter()
+        .map(|row| row_to_surface_item(row, section_type))
+        .collect()
+}
+
+fn row_to_surface_item(
+    row: &sqlx::postgres::PgRow,
+    section_type: TvSurfaceSectionType,
+) -> Result<TvSurfaceItemResponse, TvError> {
+    let media_item_id: Uuid = row.try_get("id")?;
+    let media_type_raw: String = row.try_get("type")?;
+    let media_type = match media_type_raw.as_str() {
+        "movie" => TvMediaType::Movie,
+        "episode" => TvMediaType::Episode,
+        _ => return Err(TvError::InvalidPlatformContentId(media_type_raw)),
+    };
+    let title: String = row.try_get("title")?;
+    let overview: Option<String> = row.try_get("overview")?;
+    let premiere_date: Option<NaiveDate> = row.try_get("premiere_date")?;
+    let runtime_seconds: Option<i32> = row.try_get("runtime_seconds")?;
+    let resume_position_ms: i32 = row.try_get("resume_position_ms")?;
+    let last_engaged_at: Option<DateTime<Utc>> = row.try_get("last_engaged_at")?;
+    let season_number: Option<i32> = row.try_get("season_number")?;
+    let episode_number: Option<i32> = row.try_get("episode_number")?;
+    let series_title: Option<String> = row.try_get("series_title")?;
+    let file_count: i64 = row.try_get("file_count")?;
+
+    let platform_content_id = build_platform_content_id(media_type, media_item_id);
+    let duration_ms = runtime_seconds.map(|seconds| i64::from(seconds) * 1000);
+    let progress_percent = duration_ms
+        .filter(|duration| *duration > 0)
+        .map(|duration| ((f64::from(resume_position_ms) / duration as f64) * 100.0).min(100.0))
+        .unwrap_or(0.0);
+
+    Ok(TvSurfaceItemResponse {
+        surface_item_id: format!(
+            "tv:{}:{}",
+            section_slug(section_type),
+            encode_platform_content_id(
+                &PlatformContentId {
+                    media_type,
+                    media_item_id,
+                },
+                TvPlatformIdTarget::RokuFeed,
+            )
+        ),
+        platform_content_id,
+        media_item_id,
+        media_type,
+        section_type,
+        title,
+        subtitle: item_subtitle(
+            media_type,
+            series_title,
+            season_number,
+            episode_number,
+            premiere_date,
+        ),
+        description: overview,
+        season_number,
+        episode_number,
+        duration_ms,
+        resume_position_ms: i64::from(resume_position_ms),
+        progress_percent,
+        last_engaged_at,
+        poster_url: Some(format!("/api/v1/items/{media_item_id}/artwork/poster")),
+        backdrop_url: Some(format!("/api/v1/items/{media_item_id}/artwork/backdrop")),
+        deep_link: format!(
+            "duskcue://play/{}/{}",
+            media_type_slug(media_type),
+            media_item_id
+        ),
+        web_url: format!("/media/{media_item_id}"),
+        availability: if file_count > 0 {
+            TvAvailabilityState::Playable
+        } else {
+            TvAvailabilityState::MissingFile
+        },
+    })
+}
+
+fn item_subtitle(
+    media_type: TvMediaType,
+    series_title: Option<String>,
+    season_number: Option<i32>,
+    episode_number: Option<i32>,
+    premiere_date: Option<NaiveDate>,
+) -> Option<String> {
+    match media_type {
+        TvMediaType::Movie => premiere_date.map(|date| date.year().to_string()),
+        TvMediaType::Episode => {
+            let episode_label = match (season_number, episode_number) {
+                (Some(season), Some(episode)) => Some(format!("S{season:02}E{episode:02}")),
+                (Some(season), None) => Some(format!("Season {season}")),
+                (None, Some(episode)) => Some(format!("Episode {episode}")),
+                (None, None) => None,
+            };
+
+            match (series_title, episode_label) {
+                (Some(series), Some(label)) => Some(format!("{series} {label}")),
+                (Some(series), None) => Some(series),
+                (None, Some(label)) => Some(label),
+                (None, None) => None,
+            }
+        }
+    }
+}
+
+fn surface_generated_at(sections: &[TvSurfaceSectionResponse]) -> DateTime<Utc> {
+    sections
+        .iter()
+        .flat_map(|section| section.items.iter())
+        .filter_map(|item| item.last_engaged_at.as_ref())
+        .max()
+        .cloned()
+        .unwrap_or_else(|| DateTime::<Utc>::from_timestamp(0, 0).expect("valid Unix epoch"))
 }
 
 pub fn empty_diagnostics(platform: Option<TvPlatform>) -> TvDiagnosticsResponse {
@@ -300,6 +698,15 @@ fn section_title(section_type: TvSurfaceSectionType) -> &'static str {
         TvSurfaceSectionType::NextUp => "Next Up",
         TvSurfaceSectionType::NewEpisodes => "New Episodes",
         TvSurfaceSectionType::Recommended => "Recommended",
+    }
+}
+
+fn section_slug(section_type: TvSurfaceSectionType) -> &'static str {
+    match section_type {
+        TvSurfaceSectionType::Continue => "continue",
+        TvSurfaceSectionType::NextUp => "next_up",
+        TvSurfaceSectionType::NewEpisodes => "new_episodes",
+        TvSurfaceSectionType::Recommended => "recommended",
     }
 }
 

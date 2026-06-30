@@ -24,11 +24,17 @@ pub use error::TvError;
 use axum::Router;
 use axum::routing::get;
 
+use crate::cache::{TV_SURFACE_CACHE_CONTROL, cache_control_layer, conditional_etag};
 use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
-        .route("/api/v1/users/me/tv-surface", get(handlers::get_tv_surface))
+        .route(
+            "/api/v1/users/me/tv-surface",
+            get(handlers::get_tv_surface)
+                .route_layer(cache_control_layer(TV_SURFACE_CACHE_CONTROL))
+                .route_layer(axum::middleware::from_fn(conditional_etag)),
+        )
         .route(
             "/api/v1/tv/resolve/{platform_content_id}",
             get(handlers::resolve_platform_content),

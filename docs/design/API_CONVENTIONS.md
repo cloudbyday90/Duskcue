@@ -727,7 +727,7 @@ The authoritative strategy, semantics, and platform-support analysis for HTTP re
 
 ### ETag
 
-Single-resource metadata endpoints return strong `ETag` headers (SHA-256 of the JSON body) so clients can revalidate cheaply with `If-None-Match` → `304 Not Modified`. Collection endpoints do NOT use ETag.
+Single-resource metadata endpoints and explicitly bounded personalized feeds return strong `ETag` headers (SHA-256 of the JSON body) so clients can revalidate cheaply with `If-None-Match` → `304 Not Modified`. Paginated collection endpoints do NOT use ETag.
 
 ```
 GET /api/v1/media-items/01950abc... → 200 with ETag: "abc123def456"
@@ -739,6 +739,7 @@ If-None-Match: "abc123def456"        → 304 Not Modified (no body)
 |---|---|
 | `GET /api/v1/media-items/{id}` | Per-item metadata |
 | `GET /api/v1/libraries/{id}` | Library config |
+| `GET /api/v1/users/me/tv-surface` | Per-user TV surface feed |
 | `GET /api/v1/server/config` | Full server config |
 
 ### Cache-Control Headers
@@ -749,6 +750,7 @@ The per-endpoint Cache-Control policy. See [HTTP_CACHING.md](HTTP_CACHING.md) fo
 |---|---|---|
 | Media item metadata | `private, max-age=300, stale-while-revalidate=600` | 5 min fresh; 10 min stale-serve; per-user due to watch status |
 | Library config | `private, max-age=60, stale-while-revalidate=300` | 1 min fresh; 5 min stale-serve; changes are rare but visible |
+| TV surface feed | `private, max-age=60, stale-while-revalidate=300` | 1 min fresh; 5 min stale-serve; user-scoped launcher/resume feed |
 | Static artwork URLs | `public, max-age=86400, stale-while-revalidate=604800, immutable` | 24 hr fresh; 7 day stale-serve; artwork rarely changes |
 | Server config / config groups | `no-store` | Admin operational data; full config still emits ETag for explicit client revalidation |
 | HLS segments | `no-cache` | Always revalidate for streaming session validity |

@@ -26,12 +26,14 @@ use super::service;
 use super::types::*;
 
 pub async fn get_tv_surface(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
     Query(query): Query<TvSurfaceQuery>,
 ) -> Result<Json<TvSurfaceResponse>, AppError> {
     let query = service::resolve_surface_query(query)?;
-    Ok(Json(service::empty_surface_response(&query)))
+    Ok(Json(
+        service::get_tv_surface(&state.pool, &user, &query).await?,
+    ))
 }
 
 pub async fn resolve_platform_content(
