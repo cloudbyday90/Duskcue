@@ -285,7 +285,7 @@ Implementation:
 - Dashboard, library, search, collection, and notification screens implement pull-to-refresh, empty states, error states, and cursor-style load-more pagination where the server returns a next cursor.
 - Media detail and media list/card widgets load artwork through `cached_network_image` using authenticated `/api/v1/items/{id}/artwork/{type}` URLs and bearer headers from `DuskcueApiClient`.
 - `AppStrings` plus Flutter's localization delegates centralize the new shell surface strings. This avoids spreading a large new English-only surface across widgets and gives mobile a direct migration path to generated ARB/Weblate-backed catalogs when non-web localization is expanded.
-- `/play/{itemId}` is wired as the playback entry point, with actual playback startup, HLS selection, heartbeat, and media-session controls intentionally left for Task 7.
+- `/play/{itemId}` is wired as the playback entry point consumed by the Task 7 mobile playback route.
 
 Navigation and state decisions:
 
@@ -300,6 +300,35 @@ Verification:
 - `dart --version` attempted and failed because Dart is not installed in the current Windows environment.
 
 Flutter/Dart are not installed in the current Windows environment, so `flutter pub get`, `flutter analyze`, `flutter test`, Android build, and iOS build remain first-run checks for an environment with the Flutter SDK.
+
+### Task 7 — Mobile Playback MVP
+
+Implementation:
+
+- `PlaybackService` now wraps the server playback lifecycle endpoints: start, heartbeat, seek, stop, watch-data refresh, subtitles, segments, and media-file audio stream metadata.
+- `/play/{itemId}` now starts real playback through `POST /api/v1/playback/start` and uses the server-returned `stream_url` instead of deriving stream behavior client-side.
+- Relative stream URLs are resolved against the selected `http(s)://<server>:48027` origin, and `VideoPlayerController.networkUrl` receives bearer headers for authenticated HLS manifests, segments, and direct streams.
+- Before starting, mobile refreshes media details and watch data, then seeks to the latest server resume position.
+- Playback sends 15-second heartbeats with position, paused, and buffering state; seek uses the server seek endpoint; stop/exit and near-completion call server stop.
+- App lifecycle changes pause foreground playback and send best-effort heartbeat updates so background/foreground transitions do not silently lose progress.
+- Audio and subtitle selectors are populated from media file `additional_streams` and subtitle APIs. Changing a selection restarts playback at the current position with `audio_stream_index` or `subtitle_stream_index`.
+- Active intro/credit/recap/other segment skip buttons appear while the current position is inside a server segment and seek to `skip_to_ms`.
+- Playback errors surface an in-app retry state. Storyboard seek previews remain feasible future enhancement once the Flutter player surface is validated on device; Task 7 implements segment skip controls and server seek first.
+
+Media-session posture:
+
+- The current implementation uses Flutter's `video_player` plugin as the mobile playback bridge, which maps to native platform video playback backends but does not expose a complete cross-platform lock-screen/media-session control API in this codebase.
+- In-app media controls, lifecycle pause/resume, and server heartbeat/stop reporting are implemented now.
+- If release device testing requires richer Android Media3 or iOS AVPlayer lock-screen behavior, that belongs in a small native adapter or vetted plugin layer without changing the Duskcue playback API contract.
+
+Verification:
+
+- `node scripts/verify-client-contracts.mjs`
+- `git diff --check` with CRLF-aware Git whitespace settings
+- `flutter --version` attempted and failed because Flutter is not installed in the current Windows environment.
+- `dart --version` attempted and failed because Dart is not installed in the current Windows environment.
+
+Flutter/Dart are not installed in the current Windows environment, so `flutter pub get`, `flutter analyze`, `flutter test`, Android build, iOS build, and real HLS playback checks remain first-run verification for an environment with the Flutter SDK and target devices.
 
 ## Relationship to Other Documents
 
@@ -330,6 +359,8 @@ Flutter/Dart are not installed in the current Windows environment, so `flutter p
 - Flutter NavigationBar: https://api.flutter.dev/flutter/material/NavigationBar-class.html
 - cached_network_image package: https://pub.dev/packages/cached_network_image
 - Flutter video playback cookbook: https://docs.flutter.dev/cookbook/plugins/play-video
+- Flutter video_player package: https://pub.dev/packages/video_player
+- Flutter app lifecycle: https://api.flutter.dev/flutter/widgets/WidgetsBindingObserver-class.html
 - Flutter Android release: https://docs.flutter.dev/deployment/android
 - Flutter iOS release: https://docs.flutter.dev/deployment/ios
 - Android Credential Manager: https://developer.android.com/identity/credential-manager

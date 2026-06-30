@@ -888,6 +888,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 6 mobile shell status:** `clients/mobile/lib/navigation/app_router.dart` now uses a Riverpod-backed GoRouter `StatefulShellRoute.indexedStack` for the authenticated mobile app shell. `clients/mobile/lib/services/content_service.dart` is the current Dart browsing API boundary for libraries, media, search, collections, and notifications. Task 6 screen files live under `clients/mobile/lib/screens/`, reusable authenticated artwork/list state widgets live under `clients/mobile/lib/widgets/`, and shell strings are centralized in `clients/mobile/lib/l10n/app_strings.dart` pending a generated mobile localization catalog.
 
+**Task 7 mobile playback status:** `clients/mobile/lib/services/playback_service.dart` is the Dart boundary for playback start, heartbeat, seek, stop, watch-data refresh, subtitles, segments, and media-file stream metadata. `clients/mobile/lib/screens/playback_entry_screen.dart` owns the current Flutter `video_player` route and in-app controls. `clients/mobile/lib/models/playback_models.dart` contains the tolerant response DTOs used until Phase 16d promotes broader generated client schemas.
+
 ## Development Workflow
 
 ### Server Development

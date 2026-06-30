@@ -37,7 +37,16 @@ class AppStrings {
   String get searchEmpty => 'Search your Duskcue libraries.';
   String get searchNoResults => 'No results found.';
   String get playbackEntry => 'Playback entry';
-  String get playbackTaskNotice => 'Playback controls and HLS startup continue in Phase 16a Task 7.';
+  String get playbackTaskNotice => 'Playback is not ready for this item.';
+  String get loadingPlayback => 'Starting playback...';
+  String get audio => 'Audio';
+  String get subtitles => 'Subtitles';
+  String get noSubtitle => 'No subtitle';
+  String get restartPlayback => 'Restart playback';
+  String get stop => 'Stop';
+  String get buffering => 'Buffering';
+  String get playbackFailed => 'Playback failed. Try another quality or stream option.';
+  String skipSegment(String segmentType) => 'Skip $segmentType';
   String get markAllRead => 'Mark all read';
   String get unread => 'Unread';
   String get read => 'Read';
