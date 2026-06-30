@@ -748,8 +748,10 @@ The per-endpoint Cache-Control policy. See [HTTP_CACHING.md](HTTP_CACHING.md) fo
 | Media item metadata | `private, max-age=300, stale-while-revalidate=600` | 5 min fresh; 10 min stale-serve; per-user due to watch status |
 | Library config | `private, max-age=60, stale-while-revalidate=300` | 1 min fresh; 5 min stale-serve; changes are rare but visible |
 | Static artwork URLs | `public, max-age=86400, stale-while-revalidate=604800, immutable` | 24 hr fresh; 7 day stale-serve; artwork rarely changes |
+| Server config / config groups | `no-store` | Admin operational data; full config still emits ETag for explicit client revalidation |
 | HLS segments | `no-cache` | Always revalidate for streaming session validity |
 | Search results | `no-store` | Dynamic, personalized |
+| Health / metrics | `no-store` | Operational data; never cached |
 
 **Safety note:** `stale-while-revalidate` degrades gracefully to `max-age` on unsupported clients (Safari, older Smart TV WebKit) per RFC 9111 §5.2. Supported on Chromium-based Smart TVs (Tizen 6.0+/webOS 5.x+, 2019–2021+) and all desktop browsers except Safari.
 

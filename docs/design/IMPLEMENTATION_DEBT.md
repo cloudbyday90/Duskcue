@@ -32,7 +32,7 @@ No artificial "Phase 8.5" or dedicated "refactoring sprint" is created. The rese
 | 6 | **Multi-channel dispatch pipeline** (fan-out to in-app + SSE + webhook + mobile push) | [MOBILE_PUSH.md](MOBILE_PUSH.md) | 3-5 days | **Phase 13** (notification system is forcing function) | Phase 13 notification delivery; Phase 16 mobile push | ✅ Phase 13b Task 2 (in-app + SSE + webhook + push stub; FCM/APNs client deferred to Phase 16a) |
 | 7 | **`user_push_devices` table + registration API** | [MOBILE_PUSH.md](MOBILE_PUSH.md) | 1-2 days | **Phase 13** (push device management in notifications UI) | Phase 13 push device UI; Phase 16 Flutter registration | ✅ Phase 13b Task 5 |
 | 8 | **Webhook dispatch** (HTTP POST to operator-configured URL; ntfy/Gotify/Discord/Slack/generic formats) | [MOBILE_PUSH.md](MOBILE_PUSH.md) | 2-3 days | **Phase 13** (default push channel; no mobile SDK needed) | Phase 13 notification delivery | ✅ Phase 13b Task 4 |
-| 9 | **Cache-Control + ETag response headers** | [HTTP_CACHING.md](HTTP_CACHING.md) | 1-2 days | **Pre-v1.0 hardening** | Nothing blocks; quality optimization | Spec only |
+| 9 | **Cache-Control + ETag response headers** | [HTTP_CACHING.md](HTTP_CACHING.md) | 1-2 days | **Pre-v1.0 hardening** | Nothing blocks; quality optimization | ✅ Pre-v1.0 Task 1 |
 | 10 | **Paraglide JS adoption** (web client string extraction + initial `en.json`) | [I18N.md](I18N.md) | 3-5 days | **Pre-v1.0 hardening** | Community translation onboarding | Spec only |
 | 11 | **Faceted search UI** (genre/year/rating filter pills on search results page) | [SEARCH.md](SEARCH.md) | 2-3 days | **Pre-v1.0 hardening** | Nothing blocks; quality feature | Not started |
 | 12 | **Prometheus metrics for new infrastructure** (SSE connections, image pipeline, search latency, push delivery) | Cross-cutting (all 8 decisions) | 2-3 days | **Pre-v1.0 hardening** | SEARCH.md trigger threshold is unmeasurable without it | Not started |
@@ -120,7 +120,7 @@ Each strategic design doc includes an "Implementation Status" table. This docume
 
 | Strategic Decision | Implementation Status | First Implementation Phase |
 |---|---|---|
-| [HTTP_CACHING.md](HTTP_CACHING.md) — Cache-Control + ETag | Spec only → **Pre-v1.0 hardening** | Pre-v1.0 |
+| [HTTP_CACHING.md](HTTP_CACHING.md) — Cache-Control + ETag | ✅ Pre-v1.0 Task 1 | Pre-v1.0 |
 | [REAL_TIME_PUSH.md](REAL_TIME_PUSH.md) — SSE + EventBus | Spec only → **Phase 10** | Phase 10 |
 | [IMAGE_FORMATS.md](IMAGE_FORMATS.md) — WebP pipeline + artwork endpoint | Spec only → **Phase 10** | Phase 10 |
 | [I18N.md](I18N.md) — Paraglide + Fluent | ✅ Fluent implemented (Phase 13b Task 1) → **Pre-v1.0** (Paraglide + 7-locale translations + RTL) | Phase 13b |

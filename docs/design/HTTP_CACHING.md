@@ -66,7 +66,7 @@ The `304 Not Modified` response has no body — the client uses its cached copy.
 |---|---|
 | `GET /api/v1/media-items/{id}` | Per-item metadata |
 | `GET /api/v1/libraries/{id}` | Library config |
-| `GET /api/v1/system/config` | Full server config |
+| `GET /api/v1/server/config` | Full server config |
 
 Collection list endpoints do NOT use ETag — paginated responses change frequently (new items shift cursors), so the validation cost exceeds the savings.
 
@@ -204,13 +204,23 @@ The HTTP `Cache-Control` directive + eventual TanStack Query covers the legitima
 
 | Component | Status | Notes |
 |---|---|---|
-| `ETag` / `If-None-Match` / `304` | Spec only | Designed in API_CONVENTIONS.md; not yet emitted by handlers. Web client `core.js` already has `options.ifNoneMatch` plumbing. |
+| `ETag` / `If-None-Match` / `304` | ✅ Implemented | `cache::conditional_etag` computes SHA-256 ETags for JSON single-resource routes and honors existing artwork ETags. Web client `core.js` already has `options.ifNoneMatch` plumbing. |
 | `Cache-Control: no-cache` on subtitle content | ✅ Implemented | `domains/subtitles/handlers.rs::get_subtitle_content` |
-| `Cache-Control` per-endpoint table | Spec only | Deferred from Phase 8; will land as middleware/layer per resource type |
-| `stale-while-revalidate` directives | Spec only | Will land alongside the Cache-Control table implementation |
+| `Cache-Control` per-endpoint table | ✅ Implemented for available routes | `SetResponseHeaderLayer::if_not_present` applies media metadata, library config, artwork, server config/config groups, health, and metrics policies at route level. Search remains pending because the server search route is not implemented yet. |
+| `stale-while-revalidate` directives | ✅ Implemented | Emitted on media metadata, library config, and static artwork routes per the API contract. |
 | TanStack Svelte Query | Not adopted | Deferred to Phase 11+ per decision above |
 
-The next concrete implementation step is wiring `Cache-Control` response headers — most naturally a `SetResponseHeaderLayer` per resource group in `server/src/router.rs` (the existing `build_security_headers()` pattern from Phase 3 middleware is the model).
+### Pre-v1.0 Task 1 Implementation Notes
+
+Pre-v1.0 Hardening Task 1 wires the HTTP caching contract without changing handler response DTOs:
+
+- `server/src/cache.rs` owns the cache policy constants, `SetResponseHeaderLayer::if_not_present` helper, SHA-256 ETag generation, and conditional request handling.
+- `GET /api/v1/media-items/{id}` and `GET /api/v1/libraries/{id}` emit private `Cache-Control` headers with `stale-while-revalidate` and SHA-256 ETags over the serialized JSON body.
+- `GET /api/v1/server/config` emits `Cache-Control: no-store` plus a SHA-256 ETag for explicit client revalidation. `GET /api/v1/server/config/{group}` emits `no-store` without ETag because it is not listed in the ETag contract.
+- `GET /api/v1/items/{id}/artwork/{type}` emits the public immutable artwork cache policy via route middleware and continues using the existing strong artwork variant ETag.
+- `/health` and `/metrics` emit `Cache-Control: no-store`.
+- Cache layers are attached before mutation methods are chained on mixed-method paths, so PATCH/PUT/DELETE handlers are not cacheable.
+- ETag-bearing responses are excluded from the global gzip compression layer so strong validators are computed over the same bytes that are delivered.
 
 ## Key Decisions
 
@@ -242,6 +252,7 @@ The next concrete implementation step is wiring `Cache-Control` response headers
 - **[RFC 9111](https://httpwg.org/spec/rfc9111.html)** — HTTP Caching (successor to RFC 7234); §5.2 defines the "unknown directives MUST be ignored" safety property
 - **[web.dev: Keeping things fresh with stale-while-revalidate](https://web.dev/articles/stale-while-revalidate)** — Chrome 75 / Firefox 68 ship reference; use-case patterns
 - **[MDN: Cache-Control header](https://developer.mozilla.org/en-US/docs/Web/HTTP/Reference/Headers/Cache-Control)** — Directive reference, browser compatibility notes
+- **[tower-http `SetResponseHeaderLayer`](https://docs.rs/tower-http/latest/tower_http/set_header/response/struct.SetResponseHeaderLayer.html)** — Route-layer response header insertion used for Cache-Control policies
 - **[Samsung Tizen Web Engine Specifications](https://developer.samsung.com/smarttv/develop/specifications/web-engine-specifications.html)** — Per-year Tizen / Chromium version mapping (Tizen 6.0 = M76, Tizen 10.0 = M130)
 - **[LG webOS Web API and Web Engine](https://webostv.developer.lge.com/develop/specifications/web-api-and-web-engine)** — webOS TV Chromium version history (webOS 4.x = Chromium 68, webOS 5.x = Chromium 79, webOS 26 = Chromium 132)
 - **[TanStack Query Svelte docs](https://tanstack.com/query/latest/docs/framework/svelte/overview)** — `@tanstack/svelte-query` API and SSR patterns

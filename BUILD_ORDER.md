@@ -3555,7 +3555,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Tasks:**
 
-1. Implement Cache-Control + ETag response headers — `SetResponseHeaderLayer` per resource group in `router.rs`; SHA-256 ETag on single-item metadata endpoints; per-endpoint `max-age` + `stale-while-revalidate` per [HTTP_CACHING.md](docs/design/HTTP_CACHING.md) table
+1. ~~Implement Cache-Control + ETag response headers — `SetResponseHeaderLayer` per resource group in `router.rs`; SHA-256 ETag on single-item metadata endpoints; per-endpoint `max-age` + `stale-while-revalidate` per [HTTP_CACHING.md](docs/design/HTTP_CACHING.md) table~~ **DONE**
 2. Adopt Paraglide JS — `@inlang/paraglide-js` Vite plugin; extract existing web client UI strings to `clients/web/messages/en.json`; configure URL prefix + cookie locale strategy per [I18N.md](docs/design/I18N.md)
 3. Build faceted search UI — genre/year/rating/type filter pills on search results page; uses existing PG FTS with parallel GROUP BY queries per [SEARCH.md](docs/design/SEARCH.md)
 4. Add Prometheus metrics for new infrastructure — SSE connection count, event publish rate, image variant generation throughput + cache hit rate, search query latency p50/p95/p99, push delivery success rate per channel; extends existing `init_metrics()` from Phase 3
@@ -3564,6 +3564,8 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 7. **Locale activation infrastructure** — User settings API to read/write `users.metadata.locale`; language switcher UI in web client (shows only reviewed locales); Weblate project setup (self-hosted or cloud) with Fluent + Inlang JSON components connected to Duskcue repo; import AI-initial translations as suggestions for community refinement; 90% completeness + maintainer sign-off threshold for UI activation per [I18N.md](docs/design/I18N.md).
 
 **Verification:** Metadata endpoints return ETag headers; conditional requests return 304. Web client strings are in `en.json` and wrapped in Paraglide `m.*` calls. Search results page has genre/year/rating filters. Grafana dashboard shows SSE connections and search latency. All 8 locales exist in `AVAILABLE_LOCALES` and can render notifications via `services::i18n::render()`. Arabic layout passes bidirectional review. Language switcher shows reviewed locales only.
+
+**Task 1 implementation note:** `server/src/cache.rs` centralizes HTTP cache constants, `SetResponseHeaderLayer::if_not_present` construction, SHA-256 ETag generation, and `If-None-Match` handling. Route-level cache layers are attached to GET handlers only: media item metadata (`private, max-age=300, stale-while-revalidate=600`), library config (`private, max-age=60, stale-while-revalidate=300`), artwork (`public, max-age=86400, stale-while-revalidate=604800, immutable`), server config/config groups (`no-store`), plus `/health` and `/metrics` (`no-store`). Conditional requests return `304 Not Modified` for SHA-256 JSON ETags and existing artwork ETags. ETag-bearing responses are excluded from gzip compression to preserve strong validator byte semantics. Search `no-store` remains pending because no server `/api/v1/search` route exists yet.
 
 ---
 

@@ -204,10 +204,6 @@ pub async fn get_artwork(
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "image/webp")
-        .header(
-            header::CACHE_CONTROL,
-            "public, max-age=86400, stale-while-revalidate=604800, immutable",
-        )
         .header(header::ETAG, etag)
         .body(Body::from(resolved.bytes))
         .unwrap())

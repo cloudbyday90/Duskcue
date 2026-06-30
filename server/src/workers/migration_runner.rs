@@ -848,6 +848,45 @@ fn import_resume_position_ms(source_is_watched: bool, source_resume_position_ms:
     }
 }
 
+async fn is_source_cancelled(
+    state: &AppState,
+    migration_source_id: Uuid,
+) -> Result<bool, MigrationError> {
+    let status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM migration_sources WHERE id = $1")
+            .bind(migration_source_id)
+            .fetch_optional(&state.pool)
+            .await?;
+
+    Ok(status.as_deref() == Some("cancelled"))
+}
+
+async fn mark_source_failed(
+    state: &AppState,
+    migration_source_id: Uuid,
+    error: &str,
+) -> Result<(), MigrationError> {
+    sqlx::query(
+        r#"
+        UPDATE migration_sources
+        SET status = 'failed'
+        WHERE id = $1
+          AND status = 'importing'
+        "#,
+    )
+    .bind(migration_source_id)
+    .execute(&state.pool)
+    .await?;
+
+    tracing::warn!(
+        migration_source_id = %migration_source_id,
+        error = %error,
+        "Migration runner marked source failed"
+    );
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -910,43 +949,4 @@ mod tests {
         assert!((migration_percent_complete("importing", 10, 3) - 30.0).abs() < 0.001);
         assert_eq!(migration_percent_complete("importing", 10, 20), 100.0);
     }
-}
-
-async fn is_source_cancelled(
-    state: &AppState,
-    migration_source_id: Uuid,
-) -> Result<bool, MigrationError> {
-    let status: Option<String> =
-        sqlx::query_scalar("SELECT status FROM migration_sources WHERE id = $1")
-            .bind(migration_source_id)
-            .fetch_optional(&state.pool)
-            .await?;
-
-    Ok(status.as_deref() == Some("cancelled"))
-}
-
-async fn mark_source_failed(
-    state: &AppState,
-    migration_source_id: Uuid,
-    error: &str,
-) -> Result<(), MigrationError> {
-    sqlx::query(
-        r#"
-        UPDATE migration_sources
-        SET status = 'failed'
-        WHERE id = $1
-          AND status = 'importing'
-        "#,
-    )
-    .bind(migration_source_id)
-    .execute(&state.pool)
-    .await?;
-
-    tracing::warn!(
-        migration_source_id = %migration_source_id,
-        error = %error,
-        "Migration runner marked source failed"
-    );
-
-    Ok(())
 }

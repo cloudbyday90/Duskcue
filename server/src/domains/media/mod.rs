@@ -22,7 +22,7 @@ pub mod types;
 pub use error::MediaError;
 
 use axum::Router;
-use axum::routing::get;
+use axum::routing::{get, patch};
 
 use crate::state::AppState;
 
@@ -31,9 +31,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route("/api/v1/media-items", get(handlers::list_media_items))
         .route(
             "/api/v1/media-items/{id}",
-            get(handlers::get_media_item)
-                .patch(handlers::update_media_item)
-                .delete(handlers::delete_media_item),
+            patch(handlers::update_media_item).delete(handlers::delete_media_item),
         )
         .route(
             "/api/v1/media-items/{id}/files",
@@ -42,10 +40,6 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/media-items/{id}/files/{file_id}",
             get(handlers::get_media_file),
-        )
-        .route(
-            "/api/v1/items/{id}/artwork/{type}",
-            get(handlers::get_artwork),
         )
         .with_state(state)
 }

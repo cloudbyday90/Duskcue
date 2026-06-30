@@ -20,12 +20,13 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use axum::extract::Request;
-use axum::http::{HeaderName, HeaderValue, header};
+use axum::http::{Extensions, HeaderMap, HeaderName, HeaderValue, StatusCode, Version, header};
 use axum::middleware::Next;
 use axum::response::Response;
 use governor::{Quota, RateLimiter, clock::DefaultClock, state::keyed::DefaultKeyedStateStore};
 use metrics::{counter, histogram};
 use tower_http::compression::CompressionLayer;
+use tower_http::compression::predicate::{DefaultPredicate, Predicate};
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::request_id::{MakeRequestId, RequestId, SetRequestIdLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
@@ -202,8 +203,12 @@ pub fn build_security_headers(
     layers
 }
 
-pub fn build_compression_layer() -> CompressionLayer {
-    CompressionLayer::new()
+pub fn build_compression_layer() -> CompressionLayer<impl Predicate> {
+    CompressionLayer::new().compress_when(DefaultPredicate::new().and(
+        |_status: StatusCode, _version: Version, headers: &HeaderMap, _extensions: &Extensions| {
+            !headers.contains_key(header::ETAG)
+        },
+    ))
 }
 
 pub async fn track_http_metrics(request: Request, next: Next) -> Response {

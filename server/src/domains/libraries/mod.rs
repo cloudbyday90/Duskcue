@@ -22,7 +22,7 @@ pub mod types;
 pub use error::LibrariesError;
 
 use axum::Router;
-use axum::routing::{get, post};
+use axum::routing::{get, patch, post};
 
 use crate::state::AppState;
 
@@ -34,9 +34,7 @@ pub fn router(state: AppState) -> Router<AppState> {
         )
         .route(
             "/api/v1/libraries/{id}",
-            get(handlers::get_library)
-                .patch(handlers::update_library)
-                .delete(handlers::delete_library),
+            patch(handlers::update_library).delete(handlers::delete_library),
         )
         .route("/api/v1/libraries/{id}/scan", post(handlers::scan_library))
         .route(

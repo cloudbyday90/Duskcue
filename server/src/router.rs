@@ -27,6 +27,10 @@ use tower_http::request_id::PropagateRequestIdLayer;
 use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
 use tracing::Level;
 
+use crate::cache::{
+    ARTWORK_CACHE_CONTROL, LIBRARY_CONFIG_CACHE_CONTROL, MEDIA_METADATA_CACHE_CONTROL,
+    NO_STORE_CACHE_CONTROL, cache_control_layer, conditional_etag,
+};
 use crate::middleware::{
     REQUEST_ID_HEADER, build_compression_layer, build_cors_layer, build_security_headers,
     build_set_request_id_layer, metrics_subnet_guard, rate_limit_global, track_http_metrics,
@@ -102,13 +106,47 @@ pub fn build_router(state: AppState) -> Router<AppState> {
     drop(config);
 
     let mut router: Router<AppState> = Router::new()
-        .route("/health", get(health_check))
+        .route(
+            "/health",
+            get(health_check).route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL)),
+        )
         .route(
             "/metrics",
-            get(metrics_handler).layer(axum::middleware::from_fn_with_state(
-                state.clone(),
-                metrics_subnet_guard,
-            )),
+            get(metrics_handler)
+                .route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL))
+                .layer(axum::middleware::from_fn_with_state(
+                    state.clone(),
+                    metrics_subnet_guard,
+                )),
+        )
+        .route(
+            "/api/v1/media-items/{id}",
+            get(crate::domains::media::handlers::get_media_item)
+                .route_layer(cache_control_layer(MEDIA_METADATA_CACHE_CONTROL))
+                .route_layer(axum::middleware::from_fn(conditional_etag)),
+        )
+        .route(
+            "/api/v1/items/{id}/artwork/{type}",
+            get(crate::domains::media::handlers::get_artwork)
+                .route_layer(cache_control_layer(ARTWORK_CACHE_CONTROL))
+                .route_layer(axum::middleware::from_fn(conditional_etag)),
+        )
+        .route(
+            "/api/v1/libraries/{id}",
+            get(crate::domains::libraries::handlers::get_library)
+                .route_layer(cache_control_layer(LIBRARY_CONFIG_CACHE_CONTROL))
+                .route_layer(axum::middleware::from_fn(conditional_etag)),
+        )
+        .route(
+            "/api/v1/server/config",
+            get(crate::domains::system::handlers::get_server_config)
+                .route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL))
+                .route_layer(axum::middleware::from_fn(conditional_etag)),
+        )
+        .route(
+            "/api/v1/server/config/{group}",
+            get(crate::domains::system::handlers::get_config_group)
+                .route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL)),
         )
         .route(
             "/api/v1/events",
