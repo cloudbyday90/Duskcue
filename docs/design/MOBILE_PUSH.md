@@ -321,20 +321,24 @@ This ensures that even if Google/Apple/the relay inspects the payload, they lear
 
 ## Flutter Client Integration (Phase 16)
 
-The Flutter mobile app (Phase 16) integrates mobile push via these packages:
+The Flutter mobile app (Phase 16a) integrates mobile push as part of the native client foundation defined in [DESKTOP_MOBILE_CLIENTS.md](DESKTOP_MOBILE_CLIENTS.md). Provider choices remain opt-in and admin-configured, but the mobile app must be able to register and refresh provider tokens when the selected provider is available.
+
+Preferred client integrations:
 
 ```yaml
 # pubspec.yaml
 dependencies:
-  # FCM (default mobile push)
-  firebase_messaging: ^15.0.0  # Handles Android + iOS via FCM
-  
+  # FCM (recommended mobile-native push when opted in)
+  firebase_messaging: latest-compatible
+
   # APNs direct (alternative for iOS-only, no Google)
-  # Use platform channels or flutter_apns for direct APNs
-  
+  # Use platform channels or a maintained APNs plugin if direct APNs registration is required
+
   # UnifiedPush (alternative for Android, no Google)
-  unifiedpush: ^2.0.0  # Android-only; registers with distributor
+  # Use a maintained UnifiedPush plugin or platform channel; Android-only
 ```
+
+The exact package versions are selected during Phase 16a Task 1 so they match the generated Flutter SDK baseline. Task 0 intentionally avoids pinning stale versions before the project is generated.
 
 **App-side push registration flow:**
 
@@ -520,7 +524,8 @@ If an admin switches from FCM to APNs (or vice versa):
 | [SECURITY.md](../security/SECURITY.md) | Three-tier network model; mobile push requires internet egress (tier 3 only); webhook works on tier 1 (LAN) if relay is on LAN. |
 | [MULTI_INSTANCE.md](MULTI_INSTANCE.md) | Single-instance assumption; push state (`user_push_devices`, dispatch queue) is PG-backed. EventBus for SSE is in-memory (acceptable per MULTI_INSTANCE.md). |
 | [API_CONVENTIONS.md](API_CONVENTIONS.md) | `POST /api/v1/user/push-devices` device registration endpoint; standard session auth. |
-| [BUILD_ORDER.md](../../BUILD_ORDER.md) | Phase 13 (notification system) is the forcing function. Phase 16 (Flutter mobile) integrates `firebase_messaging` / UnifiedPush client. |
+| [DESKTOP_MOBILE_CLIENTS.md](DESKTOP_MOBILE_CLIENTS.md) | Phase 16a desktop/mobile client platform decisions, including foreground SSE, mobile-native push, and secure token storage. |
+| [BUILD_ORDER.md](../../BUILD_ORDER.md) | Phase 13 (notification system) is the forcing function. Phase 16a (Flutter mobile) integrates `firebase_messaging` or equivalent provider clients plus UnifiedPush registration. |
 
 ## Research Sources
 

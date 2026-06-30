@@ -77,6 +77,16 @@ if (video.canPlayType('application/vnd.apple.mpegurl')) {
 }
 ```
 
+### Mobile Playback Authority (Phase 16a)
+
+The Flutter mobile app uses Duskcue's same playback contract, but the platform playback engines are authoritative:
+
+- **Android:** HLS/remux/transcode playback must be backed by Android Media3/ExoPlayer. Media3 owns HLS parsing, adaptive track selection, media-session integration, analytics/QoE events, and background playback behavior when active playback is allowed.
+- **iOS:** HLS playback must be backed by AVPlayer/AVFoundation. AVFoundation owns native HLS behavior, audio/subtitle selection, media controls, and background media playback behavior.
+- **Flutter package rule:** A Flutter video package is acceptable only if it exposes the required Duskcue controls: HLS playback, resume/seek, audio and subtitle track selection, media-session or lock-screen controls where available, lifecycle callbacks, playback errors, and QoE telemetry. If a package cannot expose those controls, Phase 16a should add a thin native adapter instead of weakening the playback contract.
+
+See [DESKTOP_MOBILE_CLIENTS.md](DESKTOP_MOBILE_CLIENTS.md) for the official-source Phase 16a research and final recommendation.
+
 ---
 
 ## Streaming Decision Flow

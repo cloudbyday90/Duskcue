@@ -290,6 +290,16 @@ Rules:
 5. Server verifies the signature against the stored public key
 6. Session created
 
+### Native Client Passkeys (Phase 16a)
+
+Desktop and mobile clients still use the server's WebAuthn ceremony endpoints as the source of truth. The client-side ceremony implementation differs by platform:
+
+- **Tauri desktop** may reuse the embedded web UI for passkey ceremonies where the system WebView exposes WebAuthn correctly. If native storage or native login surfaces are added, session persistence must move through Tauri Stronghold or OS-backed secure storage.
+- **Android mobile** uses Android Credential Manager for passkey registration and assertion. Flutter may call it through a maintained plugin or a small platform-channel adapter.
+- **iOS mobile** uses AuthenticationServices passkey APIs for platform public-key credentials. Flutter may call them through a maintained plugin or a small platform-channel adapter.
+
+The mobile app must not treat a WebView-only passkey flow as the Phase 16a baseline because push registration, media-session playback, local-network prompts, and secure storage already require native platform integration. See [DESKTOP_MOBILE_CLIENTS.md](DESKTOP_MOBILE_CLIENTS.md) for the Phase 16a platform decision.
+
 ## Password Authentication
 
 Passwords are a legacy fallback for users who can't or won't use passkeys.

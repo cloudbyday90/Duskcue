@@ -3630,30 +3630,105 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 ## Phase 16a — Desktop & Mobile Clients
 
-**Goal:** Tauri desktop app and Flutter mobile app connecting to the server.
+**Goal:** Production-capable desktop and mobile client foundations: Tauri desktop wraps the web client with native shell features, and Flutter mobile supports secure server connection, auth, browsing, playback, foreground real-time updates, mobile push registration, and client quality reporting.
 
-**Context from Phase 15:** Docker deployment now has a stable public base URL on port `48027`; web, API, health, metrics, SSE, and media-related API routes are same-origin from the client perspective because SvelteKit proxies to the internal Rust API. Desktop and mobile clients should treat `http(s)://<server>:48027` as the server origin, not attempt to reach the internal Docker API port `48028`. Push delivery HTTP clients are still part of Phase 16a; Phase 13b already shipped registration/preferences schema and server-side dispatch stubs.
+**Context from Phase 15:** Docker deployment now has a stable public base URL on port `48027`; web, API, health, metrics, SSE, and media-related API routes are same-origin from the client perspective because SvelteKit proxies to the internal Rust API. Desktop and mobile clients should treat `http(s)://<server>:48027` as the server origin, not attempt to reach the internal Docker API port `48028`.
+
+**Context from earlier phases:**
+
+- `clients/desktop/` and `clients/mobile/` already exist as stubs, not working clients. Desktop has a Tauri manifest and empty Rust entrypoint; mobile has a minimal `pubspec.yaml` and empty `main.dart`.
+- Phase 4 shipped passkeys, device linking, re-auth codes, bearer/session auth, session listing/revocation, and capability-scoped users.
+- Phase 7 shipped playback/session/progress APIs, user item data, bookmarks, playlists, HLS/remux/transcode delivery, and the quality decision engine.
+- Phase 8 shipped the web API-client shape, bearer-token support in `core.js`, and the SvelteKit UI that desktop should reuse.
+- Phase 10 shipped SSE `GET /api/v1/events`, replay, per-user connection limits, and the web event-store pattern.
+- Phase 13b shipped notification CRUD, notification preferences, SSE notification fan-out, webhook dispatch, `user_push_devices`, push-device registration/heartbeat/revoke APIs, and a structured push-dispatch stub. The actual FCM/APNs/UnifiedPush clients and provider-response invalidation land here.
+- Pre-v1.0 hardening shipped Paraglide/i18n activation and metrics. New client UI should either reuse translated web strings or define its own translation workflow before user-visible text grows.
+
+**Scope boundary:** Phase 16a is the online desktop/mobile MVP. Offline downloads are planned separately in Phase 16c because they require new server APIs, local encrypted storage, download-job state, storage quotas, and offline license/revocation policy. Phase 16b TV foundation must not wait for offline downloads.
 
 **Authoritative docs:**
 
 | Doc | What to build from it |
 |---|---|
+| [DESKTOP_MOBILE_CLIENTS.md](docs/design/DESKTOP_MOBILE_CLIENTS.md) | **Primary Phase 16a Task 0 outcome** — desktop/mobile research findings, platform decisions, client layout, native adapter boundaries |
 | [PROJECT_STRUCTURE.md](docs/design/PROJECT_STRUCTURE.md) | Tauri 2 desktop wrapper (imports web client), Flutter mobile project structure |
+| [AUTH.md](docs/design/AUTH.md) | Passkeys, device linking, bearer/session auth, re-auth, session revocation |
+| [STREAMING.md](docs/design/STREAMING.md) | HLS playback, resume, heartbeat, stop/completion, subtitles/audio, stream URL behavior |
 | [QUALITY_MANAGEMENT.md](docs/design/QUALITY_MANAGEMENT.md) | Device capability profiles, network quality assessment |
+| [REAL_TIME_PUSH.md](docs/design/REAL_TIME_PUSH.md) | SSE foreground push, bearer-auth SSE clients, polling fallback, `session_kicked` and notification events |
+| [MOBILE_PUSH.md](docs/design/MOBILE_PUSH.md) | FCM/APNs/UnifiedPush architecture, token registration, token invalidation, minimized payloads |
+| [API_CONVENTIONS.md](docs/design/API_CONVENTIONS.md) | API client conventions, error handling, pagination, auth headers |
+| [API_SECURITY.md](docs/security/API_SECURITY.md) | BOLA prevention, token storage expectations, outbound-provider validation |
+| [SECURITY.md](docs/security/SECURITY.md) | Local/VPN/exposed modes, TLS, signed streaming URLs, mobile IP changes |
 
 **Tasks:**
 
-1. Wire Tauri desktop app — `clients/desktop/src-tauri/` wrapping web client
-2. Implement Tauri-specific features — system tray, file dialogs, deeplinks
-3. Build Flutter mobile client:
-   - API client layer
-   - Auth flow (passkey support)
-   - Library browsing
-   - HLS player integration
-   - Settings screens
-4. Implement mobile-specific quality management — cellular vs WiFi detection, adaptive streaming
+0. ~~Research, design, and phase enrichment — verify current 2026 official guidance for Tauri 2 capabilities/plugins/updater/deep links, Flutter Android/iOS project structure, Android Credential Manager passkeys, iOS AuthenticationServices passkeys, FCM HTTP v1, APNs token auth, UnifiedPush, mobile HLS players, background execution limits, universal/app links, local-network permissions, and store packaging. Update this phase plus affected docs before implementation.~~ **DONE**
 
-**Verification:** Tauri app launches with web client UI. Flutter app connects to server, authenticates, browses library, plays media.
+**Task 0 implementation note:** Added [DESKTOP_MOBILE_CLIENTS.md](docs/design/DESKTOP_MOBILE_CLIENTS.md) as the Phase 16a authoritative research/design outcome. Official-source research confirmed the following implementation posture: desktop remains a minimal Tauri 2 shell around the existing SvelteKit web UI with a strict capability/plugin surface; mobile becomes a generated Flutter Android/iOS app rather than a WebView wrapper; Android passkeys use Credential Manager and iOS passkeys use AuthenticationServices; mobile playback must be backed by Android Media3/ExoPlayer and iOS AVPlayer/AVFoundation even if surfaced through Flutter; foreground SSE is used only while mobile is active, with push and REST refresh covering background/offline states; push provider work completes the existing FCM HTTP v1, APNs token-auth, and UnifiedPush delivery stubs; `duskcue://` is the MVP deep-link scheme while verified HTTPS App/Universal Links remain optional until association-file deployment is designed; local HTTP is acceptable only for local/VPN deployments and exposed mode requires HTTPS. Updated [PROJECT.md](PROJECT.md), [PROJECT_STRUCTURE.md](docs/design/PROJECT_STRUCTURE.md), [AUTH.md](docs/design/AUTH.md), [STREAMING.md](docs/design/STREAMING.md), [REAL_TIME_PUSH.md](docs/design/REAL_TIME_PUSH.md), [MOBILE_PUSH.md](docs/design/MOBILE_PUSH.md), and [SECURITY.md](docs/security/SECURITY.md) to cross-reference the decisions.
+1. Repair and complete client scaffolds:
+   - Fix the Tauri config schema and make `clients/desktop` actually build and run the shared web client.
+   - Implement the Tauri `main.rs`/`lib.rs` entrypoint, command registration, window defaults, capabilities, icons, and development/build scripts.
+   - Generate full Flutter Android/iOS project structure under `clients/mobile/` with app IDs, platform folders, test folders, lint config, app icons placeholder, and CI-friendly build commands.
+   - Add dependency baselines for routing, state management, HTTP, secure storage, HLS/video playback, connectivity, local notifications, push messaging, and test tooling.
+2. Define shared client contracts and drift control:
+   - Inventory the API routes the desktop/mobile clients need from auth, users, libraries, media, search, playback, subtitles, segments/storyboards, collections, quality, notifications, and settings.
+   - Decide whether Flutter DTOs are handwritten, generated from OpenAPI-like schema, or generated from `crates/types`/server contracts. Document the chosen source of truth.
+   - Map RFC 9457 Problem Details into typed client errors, including auth-expired, permission-denied, rate-limited, server-unreachable, transcode-unavailable, and playback-policy cases.
+   - Keep bearer-token handling compatible with web `core.js` semantics while using OS secure storage outside the browser.
+3. Implement server selection and connection onboarding:
+   - Add manual server URL entry, saved-server list, last-used server, and connection test against `/health/ready`.
+   - Treat `http(s)://<server>:48027` as canonical for web/API/SSE/media; never expose `48028` to clients.
+   - Handle Local, Remote VPN, and Exposed network modes with clear HTTPS/certificate behavior; document self-signed/private CA limitations for mobile.
+   - Add optional QR-code/link handoff from web admin UI or docs if server URLs become cumbersome to enter on phones.
+   - Validate local-network behavior on Android and iOS, including permissions and failure states.
+4. Implement secure auth and session lifecycle:
+   - Desktop: reuse the web auth UI where possible, but persist bearer/session state only through OS-backed secure storage or Tauri-supported secure storage; no plaintext tokens.
+   - Mobile: implement passkey login/registration on supported Android/iOS versions, device-linking login, re-auth code login, invite/password fallback where enabled, logout, logout-all, and session deletion.
+   - Register client metadata (`client_name`, `client_platform`, `client_version`, device identifier) consistently for sessions, device linking, analytics, and quality reporting.
+   - Handle `session_kicked` and revoked/expired sessions by clearing credentials and returning to login without leaking stale media URLs.
+5. Build desktop wrapper features:
+   - Import/reuse the SvelteKit web client with Tauri-compatible static build behavior and no SSR-only assumptions.
+   - Add system tray/menu actions for open window, server connection status, recent notifications, pause/resume current playback where feasible, and quit.
+   - Add file/folder dialogs for admin workflows that need local path selection, while preserving server-side path semantics for Docker/NAS deployments.
+   - Register `duskcue://` deep links for playback/settings routes and revalidate auth/access before opening content.
+   - Add native desktop notifications sourced from SSE notification events, respecting per-user notification preferences.
+6. Build Flutter mobile client shell and navigation:
+   - App shell with authenticated/unauthenticated routing, saved-server selection, dashboard, library browsing, media details, search, collections, settings, notifications, and playback entry points.
+   - Implement list/detail pagination, artwork loading/caching, empty/error states, pull-to-refresh, and offline/server-unavailable states for browsing.
+   - Add localized user-facing strings or a documented path to reuse the web/server i18n catalog; do not hardcode a large English-only mobile surface.
+7. Implement mobile playback MVP:
+   - Start playback through the server playback API, choose Direct Play/Direct Stream/Transcode URLs correctly, and use HLS for remux/transcode paths.
+   - Implement resume, play/pause, seek, heartbeat, stop/exit, completion reporting, foreground/background lifecycle recovery, and cross-device resume state refresh before playback.
+   - Support subtitle selection, audio track selection, intro/credit skip buttons, storyboard seek previews where feasible, and playback error reporting.
+   - Add media-session/lock-screen controls on Android/iOS where platform APIs allow it.
+   - Ensure signed streaming URLs remain valid across normal mobile Wi-Fi/cellular IP changes by relying on session-bound signing, not IP-bound assumptions.
+8. Implement foreground real-time updates:
+   - Desktop webview uses the existing web SSE store; native desktop surfaces may bridge selected events from Rust/Tauri if needed.
+   - Flutter maintains SSE only while foregrounded, with bearer-auth-capable streaming HTTP and reconnection/replay support where possible.
+   - Subscribe to `notification`, `session_kicked`, playback-related events, storyboard/scan/admin events where relevant, and future `transcode_progress`.
+   - Implement REST polling fallback for notification unread count and playback/transcode state when SSE is unavailable.
+9. Implement mobile push delivery end-to-end:
+   - Flutter obtains FCM/APNs/UnifiedPush tokens where configured and registers them via `POST /api/v1/user/push-devices` on app launch/login, with heartbeat refresh and metadata updates.
+   - Fill in server push dispatch for FCM HTTP v1, APNs token-auth HTTP/2, and UnifiedPush endpoint delivery according to [MOBILE_PUSH.md](docs/design/MOBILE_PUSH.md).
+   - Invalidate `user_push_devices` rows on provider revoked-token responses (`UNREGISTERED`, `BadDeviceToken`, `Unregistered`, equivalent UnifiedPush failures) without exposing token details.
+   - Keep push payloads minimized: localized title/body plus UUID/link metadata only; no media filenames beyond notification text already generated by the server template.
+   - Handle notification taps by opening the correct mobile route after auth/access revalidation.
+10. Implement mobile/desktop quality management:
+    - Report device capabilities at first login/app launch and after relevant OS/app updates.
+    - Offer the capability wizard for unknown devices where sample playback is feasible; persist results through existing quality APIs.
+    - Run active bandwidth probes at configured cadence, skipping or reducing probes on metered/cellular connections unless the user opts in.
+    - Report HLS segment telemetry and QoE metrics: startup time, rebuffering, average bitrate, quality switches, errors, and selected quality mode.
+    - Implement Auto/Maximum/Manual quality selection and persist per-device/per-item preferences where the server contract supports it.
+11. Implement settings and account management:
+    - Profile/session list, current device/session label, sign out all devices, passkey management where supported, notification preferences, push device status, quality preferences, and server connection settings.
+    - Admin-capable desktop/mobile views may link to or reuse web settings rather than duplicate every admin workflow; document which admin workflows remain web-first.
+12. Add packaging, CI, and release smoke tests:
+    - Desktop: Windows/macOS/Linux Tauri build smoke tests, app icons, protocol registration, updater decision, signing/notarization placeholders, and documented package artifacts.
+    - Mobile: Android debug/release build, iOS simulator/device build where CI allows, app IDs, signing placeholders, permission manifests, privacy disclosures for push/local network/media, and store-readiness notes.
+    - Add automated tests for API client error mapping, auth/session storage abstraction, server URL validation, playback state machine, notification handling, and quality telemetry payloads.
+
+**Verification:** Tauri app launches the shared web UI, connects to a Docker deployment through `:48027`, persists/revokes auth securely, handles `duskcue://` deep links, shows tray/native notification behavior, and runs a playback resume flow. Flutter app connects to the server, authenticates by passkey and device-linking paths where supported, browses libraries, searches, opens media details, plays HLS with resume/heartbeat/stop/completion, reports quality telemetry, receives foreground SSE notifications, registers a push device, receives a test push through the configured provider, invalidates revoked tokens, and survives Wi-Fi/cellular transitions without losing the session.
 
 ---
 
@@ -3661,7 +3736,18 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 **Goal:** Shared server APIs, data contracts, and living-room UX rules that every TV and console client consumes. This phase does not build a platform client.
 
-**Prerequisites:** Phase 7 (playback sessions and progress), Phase 8 (API client conventions), Phase 10 (SSE EventBus for refresh hints), Phase 15 (stable deployment URL/base URL behavior), Phase 16a where shared auth/playback client lessons can be reused.
+**Prerequisites:** Phase 7 (playback sessions and progress), Phase 8 (API client conventions), Phase 10 (SSE EventBus for refresh hints), Phase 12 (collections/recommendation inputs), Phase 13a (server/user settings API), Phase 15 (stable deployment URL/base URL behavior), Phase 16a where shared auth/playback/device-quality client lessons can be reused.
+
+**Context from earlier phases:**
+
+- Playback already persists resume and watched state in `user_item_data` through heartbeat/stop/watch-data updates. TV surfaces must reuse that state rather than inventing platform-local truth.
+- SSE infrastructure already exists, including per-user channels, replay, connection limits, and named events. `tv_surface_changed` should be a normal named event with bounded payloads and debounce/coalescing.
+- Artwork delivery and HTTP caching already exist. TV feed artwork URLs should use those endpoints and inherit their signed/authenticated/cache semantics.
+- Collections, metadata, overlays/posters, and search already produce the inputs used for deterministic recommendations and launcher-quality artwork.
+- Auth already supports device linking, bearer/session auth, session revocation, and user library access. Deep-link and surface APIs must revalidate access on every request.
+- Phase 16a should produce practical lessons for secure token storage, server selection, playback start/resume flows, and quality/device reporting that TV clients can reuse.
+
+**Scope boundary:** Phase 16b builds shared server contracts, reference fixtures, and platform-neutral UX/adapter rules only. It does not create Android TV, Roku, Tizen, webOS, tvOS, Fire TV, or console app projects. Platform clients start in Phase 17+.
 
 **Authoritative docs:**
 
@@ -3672,18 +3758,308 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 | [QUALITY_MANAGEMENT.md](docs/design/QUALITY_MANAGEMENT.md) | Device capability reporting, network quality, adaptive streaming |
 | [REAL_TIME_PUSH.md](docs/design/REAL_TIME_PUSH.md) | SSE `tv_surface_changed` refresh hints |
 | [API_SECURITY.md](docs/security/API_SECURITY.md) | BOLA checks for all TV surface and deep-link playback endpoints |
+| [API_CONVENTIONS.md](docs/design/API_CONVENTIONS.md) | Endpoint naming, typed DTOs, pagination/query validation, cache behavior |
+| [HTTP_CACHING.md](docs/design/HTTP_CACHING.md) | Private user-scoped cache headers, ETag behavior, artwork cache policy |
+| [AUTH.md](docs/design/AUTH.md) | Device linking, user/session validation, library access, profile isolation |
+| [COLLECTIONS.md](docs/design/COLLECTIONS.md) | Deterministic recommendation inputs and collection artwork |
 
 **Tasks:**
 
 0. Research, design, and phase enrichment — use official online sources current to 2026 for TV/console client best practices; update [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md), [BUILD_ORDER.md](BUILD_ORDER.md), and any affected platform-specific docs before implementation.
-1. Add `GET /api/v1/users/me/tv-surface` — platform-neutral feed with `continue`, `next_up`, `new_episodes`, and `recommended` sections; filters by user library access and current watch state; includes deterministic `platform_content_id` values for platform catalog and deep-link mappings.
-2. Add TV surface service logic — continue-watching movies/episodes from `user_item_data`, next episode from series/season/episode order, deterministic v1 recommendations from collections and related metadata.
-3. Emit `tv_surface_changed` SSE events after playback completion, resume-position changes, library scan completion, artwork refresh, and access-control changes.
-4. Add platform-surface settings — per-user opt-out for TV platform publication and admin-visible platform integration status.
-5. Define the shared living-room UX contract — consistent row order, labels, empty states, focus behavior, poster/backdrop usage, profile switching, server selection, device-linking, playback controls, subtitles/audio controls, and error language.
-6. Define the shared platform adapter contract — how each client maps `platform_content_id`, deep links, resume state, device capability reports, playback progress, artwork URLs, and app-local rows.
+1. Create the TV/platform-surface server domain:
+   - Add `server/src/domains/tv/` (or `platform_surfaces/`) using the five-file pattern: `mod.rs`, `handlers.rs`, `service.rs`, `types.rs`, `error.rs`.
+   - Add router wiring and central `AppError` mapping with stable error codes for invalid platform IDs, unavailable content, access denied, and unsupported platform hints.
+   - Add request/response DTOs for feed, section, item, deep-link resolve, settings, diagnostics, and event payloads.
+   - Add validation for `platform`, `limit`, `sections`, and `platform_content_id` query/path values.
+2. Implement platform content ID utilities:
+   - Define canonical IDs such as `duskcue:movie:{media_item_id}` and `duskcue:episode:{media_item_id}`.
+   - Add platform-safe encoders/decoders for stricter targets such as Roku feed IDs, Amazon catalog IDs, and URL path/query contexts.
+   - Implement inverse lookup from `platform_content_id` to media item, media type, and current access status.
+   - Add unit tests proving IDs never expose filesystem/library paths, remain stable across metadata/artwork refresh, and reject malformed or cross-type IDs.
+3. Add `GET /api/v1/users/me/tv-surface`:
+   - Return a platform-neutral feed with `continue`, `next_up`, `new_episodes`, and `recommended` sections.
+   - Support `platform`, `limit`, and `sections` query parameters; platform hints may shape optional metadata but must not change authorization.
+   - Include deterministic `platform_content_id`, `surface_item_id`, `media_item_id`, media type, title/subtitle/description, runtime, progress, resume position, last engagement, artwork URLs, deep link, web URL, and availability state.
+   - Use private user-scoped cache headers and ETag/`generated_at` semantics so clients can refresh cheaply without shared-cache leakage.
+4. Implement shared access/BOLA enforcement:
+   - Reuse or create one helper for user library access checks used by TV feed generation, deep-link resolve, and playback entry.
+   - Exclude revoked/deleted/unavailable items from normal feed sections.
+   - Return BOLA-safe not-found/forbidden behavior for direct resolve requests so clients cannot probe inaccessible media IDs.
+   - Cover admin/profile edge cases, disabled users, soft-deleted users, and library access changes.
+5. Implement TV surface service logic:
+   - Continue Watching: movies/episodes with meaningful progress but not watched; sort by `user_item_data.last_played_at DESC`; include current resume position.
+   - Next Up: at most one episode per series; choose the next unwatched episode after latest completed/played episode; respect season/episode ordering and specials policy.
+   - New Episodes: episodes from series the user has started or follows; avoid multiple entries from the same series on constrained surfaces.
+   - Recommended: deterministic v1 recommendations from collections, related metadata, genres/tags/credits, and recent activity; avoid unstable random ordering.
+   - Empty states: return explicit empty sections and reason hints rather than omitting expected rows silently.
+6. Add availability and diagnostics metadata:
+   - Mark items as `playable`, `needs_transcode`, `library_offline`, `missing_file`, `access_revoked`, `metadata_incomplete`, or equivalent bounded states.
+   - Include enough data for TV clients to show a useful error without exposing paths or internal server details.
+   - Add an admin diagnostics endpoint or structured debug mode showing why a candidate did or did not appear in the surface feed.
+   - Add metrics for feed generation latency, item counts per section, excluded-item counts by reason, and resolve failures by reason.
+7. Add deep-link/platform ID resolution:
+   - Add `GET /api/v1/tv/resolve/{platform_content_id}` (or equivalent) that maps platform/deep-link IDs to current media item state.
+   - Revalidate auth, user library access, item availability, selected Duskcue profile/user, and latest resume position on every resolve.
+   - Return a playback-ready response containing media item summary, latest resume position, preferred playback action, playback API input hints, artwork URLs, and whether device linking/auth is required.
+   - Never start playback from stale platform-local resume state without fetching current server state first.
+8. Define the TV playback-entry contract:
+   - Document the exact flow from platform row/deep link → resolve → playback start → heartbeat/progress → stop/completion.
+   - Define how TV clients pass device profile/capability data into existing playback start requests.
+   - Define progress heartbeat cadence, completion thresholds, pause/exit reporting, playback error reporting, and when to refresh the TV surface.
+   - Specify direct-to-play expectations for Roku/voice-style launches where resume/start-over interstitials are not allowed.
+9. Emit `tv_surface_changed` SSE events:
+   - Publish after playback stop/completion, meaningful resume-position changes, watch-data updates, library scan completion, metadata/artwork refresh, poster/overlay changes, collection changes, and user access-control changes.
+   - Include bounded payload fields: `reason`, `changed_sections`, optional affected media/series/library IDs, and `generated_after` or `debounce_until` hint.
+   - Debounce/coalesce per user so heartbeat-heavy playback does not trigger excessive feed refreshes.
+   - Add tests for event emission, coalescing, and no-event behavior when an update does not affect a user's surface.
+10. Add platform-surface settings:
+    - Add per-user opt-out for TV platform publication and per-platform toggles where useful.
+    - Add admin-visible integration status: enabled platforms, last feed generation, last event, last resolve failure, and diagnostics availability.
+    - Decide and document storage location (`server_config`, user preferences JSONB, or a new table) before implementation.
+    - Ensure settings changes emit `tv_surface_changed` where appropriate and immediately affect feed/resolve behavior.
+11. Define the shared living-room UX contract:
+    - Standardize row order, row labels, empty states, focus behavior, poster/backdrop roles, typography constraints, profile switching, server selection, device-linking, playback controls, subtitles/audio controls, quality/status display, and error language.
+    - Define artwork fallbacks and minimum artwork variants for poster, backdrop, logo, and thumbnail usage.
+    - Define profile/household privacy rules so one user's launcher/Top Shelf/Watch Next content does not leak into another user's TV profile.
+    - Define localization expectations for platform clients and which strings come from the server vs the client.
+12. Define the shared platform adapter contract:
+    - Specify how each client maps `platform_content_id`, deep links, resume state, device capability reports, playback progress, artwork URLs, app-local rows, and platform-owned launcher/search rows.
+    - Document platform differences: row-owned surfaces (Android Watch Next, Top Shelf), event-driven surfaces (Fire TV Watch Activity), catalog/feed-plus-deep-link surfaces (Roku Search), app-local-only surfaces, and partner-gated surfaces.
+    - Define when platform-local mappings may be stored locally and when server-side durable mappings are required.
+    - Document that platform clients must not cache bearer tokens in plaintext and must revalidate access before playback.
+13. Build a reference client harness and fixtures:
+    - Add JSON fixtures for feed responses, resolve responses, empty states, access-revoked items, and unavailable items.
+    - Build a small reference renderer or test harness that renders Continue Watching, Next Up, New Episodes, and Recommendations from the same feed.
+    - Add golden tests for feed ordering, stable IDs, cache/ETag behavior, section limits, and BOLA/access filtering.
+    - Add contract tests that future platform clients can reuse before platform-specific implementation starts.
 
-**Verification:** The server returns a user-scoped TV surface feed, emits refresh events, rejects unauthorized/deauthorized items, and produces stable platform content IDs. A reference client harness can render consistent Continue Watching, Next Up, New Episodes, and Recommendations rows from the same feed.
+**Verification:** The server exposes a user-scoped TV surface feed and deep-link resolve endpoint, rejects unauthorized/deauthorized items, produces stable platform content IDs and platform-safe variants, emits debounced `tv_surface_changed` events for all relevant state changes, returns private cache/ETag headers, surfaces useful availability diagnostics without leaking paths, and ships fixtures plus a reference harness that renders consistent Continue Watching, Next Up, New Episodes, and Recommendations rows from the same feed.
+
+---
+
+## Phase 16c — Offline Downloads
+
+**Goal:** Mobile-first offline downloads for authenticated users, with durable server-side preparation, resumable transfer, protected local storage, and reconnect sync, without blocking TV platform work.
+
+**Prerequisites:** Phase 7 (playback/transcoding), Phase 13a (storage/config/maintenance), Phase 15 (stable deployment paths), Phase 16a mobile client foundation.
+
+**Context from prior phases:**
+
+- Phase 7 built online playback and transient stream/transcode sessions. Offline downloads must reuse compatible direct-copy/remux/transcode decisions, but package generation is durable background work, not a live playback session.
+- Phase 8 and Phase 10 established watch-state, playback heartbeat, user-item data, and SSE event patterns. Offline progress must sync back into those same user-facing resume/completion semantics.
+- Phase 13a introduced storage configuration and disk pressure monitoring. Offline packages need explicit quota, cleanup, and retention rules because user-requested downloads have stronger durability expectations than disposable cache.
+- Phase 13b provides notification delivery and real-time surfaces. Offline job status should reuse SSE/push where available for preparing/ready/failed events.
+- Phase 16a provides authenticated mobile clients, secure local storage patterns, foreground playback, device capability reporting, and mobile quality selection.
+
+**Scope boundary:** Phase 16c adds offline-download server APIs, job preparation, package serving, mobile download management, local offline playback, and reconnect sync. It does not add offline support to TV clients, desktop clients, or web browsers. Download support for those platforms can be evaluated after mobile behavior proves stable.
+
+**Authoritative docs:**
+
+| Doc | What to build from it |
+|---|---|
+| [PROJECT.md](PROJECT.md) | Offline Downloads feature commitment |
+| [STREAMING.md](docs/design/STREAMING.md) | Transcode/remux outputs, HLS/fMP4 constraints, quality ladders |
+| [QUALITY_MANAGEMENT.md](docs/design/QUALITY_MANAGEMENT.md) | Download quality selection from device/network/user preference |
+| [SECURITY.md](docs/security/SECURITY.md) | Auth, signed URLs, local storage risk, revocation expectations |
+| [CACHE_STORAGE.md](docs/operations/CACHE_STORAGE.md) | Storage tiers, disk pressure warnings, cache vs durable-user-data boundaries |
+| `OFFLINE_DOWNLOADS.md` (create in this phase) | Download planning, package format, storage semantics, revocation limits, and reconnect sync contract |
+
+**Tasks:**
+
+0. Research, design, and phase enrichment:
+    - Verify current Android and iOS background download limits, media file protection APIs, encrypted metadata storage, app backup exclusion behavior, cellular/Wi-Fi controls, low-storage behavior, and app-store review constraints.
+    - Create `docs/design/OFFLINE_DOWNLOADS.md` before implementation begins.
+    - Define supported v1 platforms as Android and iOS only, with desktop/web/TV explicitly deferred.
+    - Choose whether v1 packages are HLS/fMP4 directories, single MP4 files, or a hybrid; document tradeoffs for subtitles, audio tracks, trickplay/storyboards, resumability, and player support.
+    - Define what offline revocation can enforce immediately, what requires reconnect, and how the UI explains that limitation.
+1. Add download database schema:
+    - Add migrations for `download_jobs`, `download_packages`, `download_package_files`, `download_device_state`, and download-related audit/event rows as needed.
+    - Store user, session/device, media item, media file/version, selected quality, selected audio/subtitle streams, status, progress, bytes, checksum, expiry, access-policy snapshot, failure reason, retry count, cancellation marker, and cleanup eligibility.
+    - Add indexes for user library views, active worker queues, expiry cleanup, per-device inventory, and admin diagnostics.
+    - Avoid storing bearer tokens, raw signed URLs, or plaintext client secrets in package metadata.
+2. Add `downloads` server domain:
+    - Create `server/src/domains/downloads/` using the five-file pattern: `mod.rs`, `handlers.rs`, `service.rs`, `error.rs`, `types.rs`.
+    - Add router mounts under authenticated API routes.
+    - Define DTOs for planning, job creation, job status, inventory, cancel/delete, package manifest, transfer URLs, and sync submission.
+    - Use explicit error codes for access denied, policy denied, quota exceeded, unsupported media, storage unavailable, package expired, job cancelled, package not ready, checksum mismatch, and stale client state.
+3. Add access, quota, and policy integration:
+    - Reuse library/item BOLA checks, user session validity, and streaming-policy constraints before planning or serving packages.
+    - Add download-specific policy fields for enablement, max quality/resolution, max bytes per user/device, max active jobs, max retained packages, remote/LAN restrictions, and whether transcoded downloads are allowed.
+    - Make denial responses explain the policy reason without leaking filesystem paths or private media details.
+    - Record audit events for job creation, cancellation, package serving, expiry cleanup, quota denial, and revoke/delete actions.
+4. Add download planning APIs:
+    - Return deterministic download plans for a movie or episode: selected source file, direct/remux/transcode path, estimated size, expected duration, quality options, audio tracks, subtitle tracks, artwork inclusion, expiry, and policy constraints.
+    - Integrate Phase 13 quality-management defaults and Phase 16a device capability reports.
+    - Support Auto, Data Saver, Standard, and Maximum quality choices with predictable fallback behavior.
+    - Prefer compatible source versions and direct copy/remux before transcoding; do not always start from the largest source file.
+    - Include server-side validation tokens or plan revisions so stale client plans cannot create inconsistent jobs.
+5. Define durable package format and manifest:
+    - Generate a package manifest with schema version, media identifiers, source version, selected quality, selected streams, segment/file list, byte sizes, hashes, subtitles, artwork, chapters/markers where available, expiry, and sync metadata.
+    - Include selected subtitles in a mobile-playable format, with conversion/OCR use documented where needed.
+    - Include poster/backdrop/thumb assets sized for offline library views without requiring server reachability.
+    - Use checksums for each file/segment and a package-level integrity hash.
+    - Ensure manifests contain no reusable bearer tokens or long-lived signed URLs.
+6. Add offline package job execution:
+    - Implement a durable background worker for prepare/transcode/remux/package jobs with queue ordering, retry, cancellation, timeout, progress reporting, and crash recovery.
+    - Keep offline job concurrency separate from live playback/transcode concurrency so downloads cannot starve active streams.
+    - Use bounded disk work directories and explicit cleanup for failed, cancelled, expired, and superseded packages.
+    - Reuse FFmpeg profiles from streaming where compatible, with offline-specific defaults such as medium preset, fMP4 segments, and stable segment durations.
+    - Emit metrics and events for queued, preparing, ready, failed, cancelled, expired, and cleaned-up states.
+7. Add package serving and resumable transfer:
+    - Serve package manifests and package files only after revalidating user/session/device access.
+    - Support HTTP Range or chunked resumable downloads for interrupted transfers.
+    - Provide client-visible checksums and repair/retry behavior for corrupt or partial files.
+    - Use short-lived signed transfer URLs or authenticated endpoints that do not expose filesystem paths.
+    - Return private cache headers and avoid CDN/public-cache assumptions.
+8. Add job status notifications:
+    - Publish SSE events for download job state changes while the app is foregrounded.
+    - Use mobile push notifications, where available from Phase 13b/16a, for ready/failed states that matter outside the app.
+    - Coalesce noisy progress events and avoid battery-heavy push behavior.
+    - Add unread/admin notification behavior only for actionable failures or quota/storage warnings.
+9. Add mobile download manager:
+    - Implement queue, pause/resume/cancel/delete, Wi-Fi-only, cellular opt-in, charging-only, low-storage handling, app restart recovery, and background transfer integration.
+    - Maintain local inventory per server/user/device so switching servers or users cannot expose another account's downloads.
+    - Show preparing, ready, downloading, paused, failed, expired, and unavailable states consistently.
+    - Support download movie, download episode, delete download, delete all downloads, and retry failed download flows.
+    - Defer "download next episode" and auto-remove-watched behavior unless the base manager is stable.
+10. Add protected local storage:
+    - Store package files in OS-appropriate app storage and exclude downloaded media from cloud backups where platform guidance requires it.
+    - Store download metadata, sync queue, package keys if any, and server/user bindings in encrypted or OS-protected storage.
+    - Never persist bearer tokens in package manifests or media file metadata.
+    - Delete or disable protected data on logout, server removal, user deletion, session invalidation, or user-triggered delete-all.
+    - Document platform differences between Android and iOS file protection.
+11. Add offline playback:
+    - Play downloaded movies and episodes without server reachability.
+    - Support selected audio and subtitle tracks offline.
+    - Preserve local resume position, completion, watched status, and playback events while offline.
+    - Make offline playback entry points work from the mobile library, item detail page, and download inventory.
+    - Clearly separate unavailable-online items from locally playable downloads.
+12. Add reconnect sync:
+    - Submit queued progress, completion, watched-state, and play-event updates when the server becomes reachable.
+    - Reuse `user_item_data` semantics for resume/completion and make sync idempotent.
+    - Define conflict resolution when another device updated progress while the mobile device was offline.
+    - Revalidate access, expiry, and policy during sync before allowing further playback/download refresh.
+    - Handle duplicate sync submissions after app crash or network retry.
+13. Add revocation, expiry, and cleanup behavior:
+    - Prevent new downloads immediately when library access, item availability, policy, or session validity fails.
+    - Disable or delete existing packages at the next online check when access is revoked, package expiry passes, the user logs out, or the server instructs deletion.
+    - Document that fully offline devices cannot receive revocation until reconnect.
+    - Add package refresh/renew flow for valid users before expiry where policy allows it.
+    - Add server cleanup for expired, orphaned, failed, cancelled, and never-downloaded packages.
+14. Add user and admin settings:
+    - Add user-facing download settings: quality preference, Wi-Fi-only, cellular allowance, charging-only, storage cap, auto-delete behavior, and delete-all.
+    - Add admin settings: global enable/disable, per-user/library policy, max quality, max active jobs, max package retention, max per-user/device bytes, and transcode-download allowance.
+    - Surface per-user/device inventory, package status, storage usage, active jobs, and recent failures for admin diagnostics.
+    - Ensure settings changes affect future jobs immediately and existing jobs according to documented policy.
+15. Add observability and tests:
+    - Add metrics for queue depth, active jobs, bytes prepared, bytes downloaded, failures by reason, transcode duration, storage used, cleanup count, and sync conflicts.
+    - Add integration tests for planning, policy denial, quota exceeded, job lifecycle, cancel/delete, package expiry, package serving auth, Range resume, checksum mismatch, and cleanup.
+    - Add mobile tests for Android/iOS download lifecycle, app restart recovery, offline playback, low-storage failure, logout delete-all, and reconnect sync.
+    - Add manual verification cases for server restart during packaging, network loss during transfer, revoked access while offline, and conflict sync with another device.
+
+**Verification:** User downloads a movie and episode on mobile, goes offline, plays both with selected subtitles/audio, accumulates progress locally, reconnects, and Duskcue syncs resume/watch state idempotently. Interrupted transfers resume without corrupting the package, checksums detect bad files, and server restart during package generation recovers or fails cleanly. Revoked access prevents new downloads and removes/invalidates existing packages at the next online check. Storage quota, low-storage handling, admin disablement, package expiry, and delete-all behavior work on Android and iOS.
+
+---
+
+## Phase 16d — Client Platform Readiness & Contract QA
+
+**Goal:** Shared client contracts, conformance tests, diagnostics, release-readiness checklists, and device-lab practices that reduce duplicated work and inconsistent behavior across desktop, mobile, TV, and console clients.
+
+**Prerequisites:** Phase 16a and Phase 16b. Phase 16c is optional input for offline-download conformance but is not required before TV platform work starts.
+
+**Context from prior phases:**
+
+- Phase 16a creates the first non-web clients and establishes practical patterns for server selection, secure token storage, playback, quality reporting, foreground SSE, mobile push, and packaging.
+- Phase 16b defines the shared TV surface feed, platform content IDs, deep-link resolution, living-room UX rules, and adapter contracts consumed by Phases 17-23.
+- Phase 16c adds offline-download behavior that should eventually join the same client conformance suite, but it is a mobile-first branch and should not block TV clients.
+- Earlier server phases already expose auth, playback, subtitles, storyboards, artwork, search, collections, notifications, settings, and metrics. Client contract tests should exercise those existing surfaces instead of each platform rediscovering behavior independently.
+
+**Scope boundary:** Phase 16d does not build another user-facing client and does not add a new product feature. It creates shared SDK/contracts, fixtures, test harnesses, diagnostics, design assets, accessibility baselines, and release checklists that downstream platform phases must reuse.
+
+**Authoritative docs:**
+
+| Doc | What to build from it |
+|---|---|
+| [PROJECT_STRUCTURE.md](docs/design/PROJECT_STRUCTURE.md) | Client repo layout, generated/shared code placement, platform directories |
+| [API_CONVENTIONS.md](docs/design/API_CONVENTIONS.md) | Error shape, pagination, auth headers, cache behavior, route naming |
+| [API_SECURITY.md](docs/security/API_SECURITY.md) | BOLA checks, token handling, client-side secrecy boundaries |
+| [AUTH.md](docs/design/AUTH.md) | Device linking, passkeys, session revocation, user/session lifecycle |
+| [STREAMING.md](docs/design/STREAMING.md) | Playback start/resume/heartbeat/stop, subtitles/audio, HLS behavior |
+| [QUALITY_MANAGEMENT.md](docs/design/QUALITY_MANAGEMENT.md) | Device capability reporting, network probes, QoE metrics |
+| [REAL_TIME_PUSH.md](docs/design/REAL_TIME_PUSH.md) | SSE replay, foreground events, polling fallback |
+| [MOBILE_PUSH.md](docs/design/MOBILE_PUSH.md) | Push-device registration and provider-response handling |
+| [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md) | TV feed contracts, platform content IDs, living-room adapter behavior |
+| [HTTP_CACHING.md](docs/design/HTTP_CACHING.md) | ETag/private-cache expectations for client and platform surfaces |
+
+**Tasks:**
+
+0. Research, design, and phase enrichment:
+    - Review current platform guidance for Android, iOS, Windows, macOS, Linux desktop, Android TV, Fire TV, Roku, Tizen, webOS, tvOS, and Xbox around app identity, signing, accessibility, privacy disclosures, diagnostics, media playback, and store review.
+    - Create `docs/design/CLIENT_PLATFORM_READINESS.md` before implementation begins.
+    - Define which outputs are mandatory gates for Phases 17-23 and which are advisory checklists.
+    - Decide whether shared client contracts are generated from server code, OpenAPI-like descriptions, checked-in JSON schema, or curated fixtures.
+1. Define shared client contract source of truth:
+    - Inventory required routes and DTOs across auth, server health, libraries, media, search, collections, playback, subtitles, storyboards, artwork, quality, notifications, settings, TV surfaces, and offline downloads where available.
+    - Add contract metadata for request methods, auth requirements, query/path validation, response schemas, Problem Details codes, cache headers, pagination, and SSE event payloads.
+    - Ensure contract definitions describe both successful responses and expected denial/error cases.
+    - Add drift checks so changed server DTOs, routes, or error codes fail CI unless fixtures/contracts are updated.
+2. Add shared client SDK or generated bindings strategy:
+    - Produce reusable API bindings or typed fixture contracts for TypeScript/Tauri, Dart/Flutter, Kotlin/Android, Swift/tvOS, and other platforms where generation is practical.
+    - Where generation is not practical, publish canonical JSON fixtures and validation schemas that platform clients can test against.
+    - Standardize bearer-token injection, refresh/re-auth behavior, timeout/retry policy, Problem Details mapping, pagination helpers, and cache/ETag handling.
+    - Keep platform-specific secure storage and networking implementations behind small adapters.
+3. Build contract test fixtures:
+    - Add fixtures for login/device-linking, server selection, library lists, item details, search facets, collection rows, playback start/resume, heartbeat/stop, subtitles/audio tracks, storyboard metadata, artwork variants, notifications, settings, TV feed, deep-link resolve, and access-denied responses.
+    - Include empty states, revoked sessions, missing library access, unavailable media files, expired signed URLs, transcode unavailable, quota/policy denial, and stale client state.
+    - Version fixtures so downstream client branches can pin or update them intentionally.
+    - Add golden validation for stable IDs, row order, date/time formats, enum values, and localized string ownership.
+4. Add cross-client playback conformance tests:
+    - Define a reusable playback state-machine test for start, resume, play, pause, seek, heartbeat, stop, completion, and playback error reporting.
+    - Verify subtitle and audio-track selection behavior, including unavailable or unsupported tracks.
+    - Verify signed media URL handling, HLS/remux/transcode path selection, media-session/remote-control expectations, and cross-device resume refresh.
+    - Verify QoE metrics payloads for startup time, buffering, quality changes, playback failure, and selected quality mode.
+5. Add auth and session conformance tests:
+    - Verify device-linking, passkey-capable login, fallback login, logout, logout-all, session deletion, re-auth, expired session, and `session_kicked` handling.
+    - Validate that clients never persist bearer tokens, signed URLs, push tokens, or package manifests in plaintext stores outside documented exceptions.
+    - Define expected behavior when switching servers, switching users, revoking a session, deleting an account, or failing local-network/TLS validation.
+    - Add negative tests for BOLA-protected item access and stale platform/deep-link IDs.
+6. Add TV surface and deep-link conformance tests:
+    - Validate TV surface feed section order, limits, stable `platform_content_id` values, private cache headers, ETags, access filtering, and empty-state behavior.
+    - Validate deep-link resolve responses for movies, episodes, revoked access, unavailable media, and unsupported platform hints.
+    - Add platform adapter fixtures for Android Watch Next, Fire TV Watch Activity, Roku feed/deep links, Tizen Smart Hub Preview, webOS launch parameters, tvOS Top Shelf/Universal Links, and Xbox URI activation.
+    - Ensure client implementations revalidate auth/access before playback, even when launched from platform-owned surfaces.
+7. Add accessibility and input baselines:
+    - Define minimum accessibility expectations for desktop keyboard navigation, mobile screen readers/dynamic type, TV focus navigation, remote/controller input, captions/subtitles, contrast, reduced motion, and touch target sizing.
+    - Add reusable focus-order and remote-navigation test cases for TV clients.
+    - Add checklist items for platform accessibility review before release.
+    - Ensure localization and right-to-left layout expectations are documented for non-web clients.
+8. Add shared design assets and client UI tokens:
+    - Publish shared app icon, placeholder artwork, poster/backdrop sizing rules, color/type tokens, spacing guidance, focus-ring behavior, and media-state badges.
+    - Define which strings come from server templates, which come from client catalogs, and how clients reuse or translate web/server message keys.
+    - Add artwork loading rules for authenticated URLs, signed URLs, cache busting, fallback images, and offline/unavailable states.
+    - Keep platform clients visually consistent without forcing one UI toolkit abstraction across every platform.
+9. Add diagnostics, logging, and privacy-safe support bundles:
+    - Define a common client log schema with timestamp, client version, platform, route/screen, request ID, event type, severity, and privacy classification.
+    - Add export-diagnostics-bundle guidance for clients: app logs, device capability report, server URL redacted form, playback failure summaries, network state, and recent request IDs.
+    - Ensure bundles omit tokens, passwords, signed media URLs, filenames where unnecessary, private paths, push tokens, and raw watch history unless explicitly consented.
+    - Add server-side correlation guidance using request IDs, playback session IDs, and notification/download job IDs.
+10. Add device lab and compatibility matrix:
+    - Define minimum and representative test devices for Android, iOS, Windows, macOS, Linux, Android TV/Google TV, Fire TV, Roku, Samsung Tizen, LG webOS, Apple TV, and Xbox.
+    - Track OS versions, browser/webview engines, media-codec capabilities, HLS support, HDR/audio/subtitle support, remote/input behavior, storage constraints, and known platform limitations.
+    - Add manual smoke-test scripts for each platform against the Docker deployment on `:48027`.
+    - Define hardware that is required for release validation vs useful for best-effort compatibility.
+11. Add release and store-readiness checklists:
+    - Document app IDs/bundle IDs/package names, signing identities, certificates, provisioning profiles, notarization, store metadata, privacy labels, permission descriptions, age/content rating, and review notes per platform.
+    - Add CI placeholders for build artifacts, signing/notarization hooks, SBOM/provenance where applicable, and release-channel naming.
+    - Define versioning rules across server, web, desktop, mobile, and TV clients.
+    - Add per-platform release-blocking smoke tests and rollback/update expectations.
+12. Add client CI and smoke harness:
+    - Build an end-to-end smoke harness that starts the Docker deployment, seeds representative data, and runs contract tests against the public `:48027` surface.
+    - Add CI jobs for shared contract validation, fixture drift, TypeScript/Dart/Kotlin/Swift binding generation where available, lint, unit tests, and platform build smoke tests.
+    - Make downstream platform client phases consume the same harness before declaring verification complete.
+    - Keep long-running hardware tests documented as manual/release-gate checks when CI cannot run them.
+
+**Verification:** A seeded Docker deployment exposes stable contracts and fixtures that desktop, mobile, and TV/console client tests can consume. Contract drift fails CI, generated or fixture-backed bindings are available to downstream clients, playback/auth/TV-surface conformance tests cover success and denial paths, diagnostics omit secrets, accessibility and release checklists exist per platform, and each future platform phase has a clear reusable harness instead of inventing its own baseline.
 
 ---
 
@@ -3691,7 +4067,7 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 **Goal:** Native Android TV client with Google TV / Android TV Watch Next integration and Sony BRAVIA validation.
 
-**Prerequisites:** Phase 16b.
+**Prerequisites:** Phase 16b and Phase 16d.
 
 **Tasks:**
 
@@ -3711,7 +4087,7 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 **Goal:** Fire TV client/adapter using Amazon-specific Watch Activity, Content Personalization, and catalog/deep-link integration where available.
 
-**Prerequisites:** Phase 16b and preferably Phase 17 where Android client code can be reused on Fire OS.
+**Prerequisites:** Phase 16b and Phase 16d, preferably Phase 17 where Android client code can be reused on Fire OS.
 
 **Tasks:**
 
@@ -3730,7 +4106,7 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 **Goal:** Roku SceneGraph/BrightScript client with certified deep links, Direct to Play, bookmarks, and optional Roku Search feed support.
 
-**Prerequisites:** Phase 16b.
+**Prerequisites:** Phase 16b and Phase 16d.
 
 **Tasks:**
 
@@ -3748,7 +4124,7 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 **Goal:** Samsung packaged Tizen web app with AVPlay playback and Smart Hub Preview integration.
 
-**Prerequisites:** Phase 16b.
+**Prerequisites:** Phase 16b and Phase 16d.
 
 **Tasks:**
 
@@ -3765,7 +4141,7 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 **Goal:** LG packaged webOS TV app with launch/relaunch parameter handling, HLS resume playback, and app-local TV surfaces.
 
-**Prerequisites:** Phase 16b.
+**Prerequisites:** Phase 16b and Phase 16d.
 
 **Tasks:**
 
@@ -3782,7 +4158,7 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 **Goal:** Native tvOS app with AVKit playback, Universal Links, and Top Shelf extension.
 
-**Prerequisites:** Phase 16b.
+**Prerequisites:** Phase 16b and Phase 16d.
 
 **Tasks:**
 
@@ -3800,7 +4176,7 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 **Goal:** Native UWP Xbox console media app with app-local TV surfaces, URI activation, and explicit 4K/HDR capability decisions.
 
-**Prerequisites:** Phase 16b.
+**Prerequisites:** Phase 16b and Phase 16d.
 
 **Tasks:**
 
@@ -3818,7 +4194,7 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 **Goal:** Evaluate and implement partner-gated platform adapters only when platform access confirms self-hosted Duskcue viability.
 
-**Prerequisites:** Phase 16b.
+**Prerequisites:** Phase 16b and Phase 16d.
 
 **Tasks:**
 
@@ -3868,24 +4244,27 @@ Phase 8: Web Client Core (COMPLETE — 6 tasks) ←─── (consumes all above
     └── Phase 15: Docker & Deployment  ←── COMPLETE — single-container image, compose, smoke verification, GHCR workflows
             ↓
         Phase 16a: Desktop & Mobile Clients  ←── mobile push needs 13b
-            ↓
-        Phase 16b: TV Platform Foundation
-            ↓
-        Phase 17: Android TV / Google TV  ←── includes Sony BRAVIA validation
-            ↓
-        Phase 18: Fire TV
-            ↓
-        Phase 19: Roku
-            ↓
-        Phase 20: Samsung Tizen
-            ↓
-        Phase 21: LG webOS
-            ↓
-        Phase 22: Apple TV / tvOS
-            ↓
-        Phase 23: Xbox
-            ↓
-        Phase 24: Partner-Gated Platforms  ←── VIZIO, PlayStation, VIDAA, future set-top platforms
+            ├── Phase 16b: TV Platform Foundation
+            │       ↓
+            │   Phase 16d: Client Platform Readiness & Contract QA
+            │       ↓
+            │   Phase 17: Android TV / Google TV  ←── includes Sony BRAVIA validation
+            │       ↓
+            │   Phase 18: Fire TV
+            │       ↓
+            │   Phase 19: Roku
+            │       ↓
+            │   Phase 20: Samsung Tizen
+            │       ↓
+            │   Phase 21: LG webOS
+            │       ↓
+            │   Phase 22: Apple TV / tvOS
+            │       ↓
+            │   Phase 23: Xbox
+            │       ↓
+            │   Phase 24: Partner-Gated Platforms  ←── VIZIO, PlayStation, VIDAA, future set-top platforms
+            │
+            └── Phase 16c: Offline Downloads  ←── mobile-first, not a TV prerequisite
 ```
 
-Phases 9–13a can be built in any order after Phase 8, since they are independent domains. Phase 13b depends on Phase 10 (SSE EventBus) + Phase 13a (server_config API). Phase 14 depends on Phase 13a only (not 13b). Phase 15 is complete and provides the stable Docker deployment URL/base URL behavior used by Phase 16a and later client phases. Phase 16b follows Phase 16a so TV clients can reuse client-auth, playback, and device-quality lessons from desktop/mobile. Phases 17–23 are platform-specific implementation phases with their own Task 0 research/design/enrichment step. Phase 24 handles partner-gated platforms only after platform access confirms viability. See [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md) for the Phase 13 dependency analysis.
+Phases 9–13a can be built in any order after Phase 8, since they are independent domains. Phase 13b depends on Phase 10 (SSE EventBus) + Phase 13a (server_config API). Phase 14 depends on Phase 13a only (not 13b). Phase 15 is complete and provides the stable Docker deployment URL/base URL behavior used by Phase 16a and later client phases. Phase 16b follows Phase 16a so TV clients can reuse client-auth, playback, and device-quality lessons from desktop/mobile. Phase 16c follows Phase 16a but is not a prerequisite for Phase 16b, Phase 16d, or TV platform work; it can run in parallel with TV/client-readiness work after the mobile client foundation exists. Phase 16d follows Phase 16a and Phase 16b as a shared contract, QA, diagnostics, accessibility, and release-readiness gate for Phases 17–23. Phases 17–23 are platform-specific implementation phases with their own Task 0 research/design/enrichment step. Phase 24 handles partner-gated platforms only after platform access confirms viability. See [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md) for the Phase 13 dependency analysis.

@@ -453,6 +453,8 @@ Bearer tokens (for mobile, desktop, API clients) follow the same tiered approach
 
 Bearer tokens are never stored in URLs, query parameters, or logs. The `Authorization: Bearer mv_...` header is stripped from log output by the tracing middleware.
 
+Phase 16a client storage rules are defined in [DESKTOP_MOBILE_CLIENTS.md](../design/DESKTOP_MOBILE_CLIENTS.md): desktop uses Tauri Stronghold or OS-backed secure storage, and mobile uses Android Keystore/iOS Keychain through a vetted plugin or platform channel. Plaintext app preferences, browser localStorage, logs, diagnostics bundles, and crash reports must not contain bearer tokens, refresh tokens, push tokens, signed media URLs, or future offline-download package secrets.
+
 ---
 
 ## CORS Configuration

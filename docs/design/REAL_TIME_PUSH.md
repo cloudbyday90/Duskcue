@@ -247,8 +247,11 @@ To prevent abuse (a malicious user opening thousands of SSE connections), the se
 
 ### Client (Flutter Mobile)
 
-- Dart's `http` package supports SSE via streaming response bodies
-- Mobile clients ONLY maintain the SSE connection while the app is foregrounded; backgrounded apps drop the connection and rely on FCM/APNs push for offline events (Phase 16)
+- Flutter maintains SSE only while the app is foregrounded and authenticated.
+- The client must use a streaming HTTP implementation that can attach bearer auth headers, reconnect, and preserve `Last-Event-ID` where possible.
+- On app resume, the client reconnects to SSE and refreshes notification unread count plus active playback/transcode state through REST if replay is unavailable.
+- Backgrounded apps do not try to keep SSE alive. They rely on FCM/APNs/UnifiedPush and the in-app notification feed for missed events.
+- Phase 16a implements these behaviors under the broader client decisions in [DESKTOP_MOBILE_CLIENTS.md](DESKTOP_MOBILE_CLIENTS.md).
 
 ## Comparison to Other Duskcue Transports
 

@@ -867,6 +867,17 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 - **Single API client** — both web and desktop use the same `src/lib/api/` layer against the same REST API
 - **One change propagates** — UI fix in `clients/web/` appears in desktop on next build
 
+### Phase 16a Client Structure Update
+
+[DESKTOP_MOBILE_CLIENTS.md](DESKTOP_MOBILE_CLIENTS.md) is the authoritative Phase 16a design document for the desktop/mobile clients. Its Task 0 research confirms these structure rules:
+
+- `clients/desktop/` remains a Tauri 2 shell around the web client, not a separate native desktop UI.
+- Tauri native access is granted through a minimal `src-tauri/capabilities/default.json`; plugins are added only when a Phase 16a task needs them.
+- Desktop token persistence must use Tauri Stronghold or OS-backed secure storage, not browser localStorage.
+- `clients/mobile/` must be a generated Flutter Android/iOS project, including `android/`, `ios/`, `lib/`, `test/`, and `integration_test/` folders.
+- Flutter owns cross-platform UI, routing, and state; native adapters or vetted plugins own passkeys, push tokens, secure storage, and playback controls where platform APIs are required.
+- Android playback is Media3/ExoPlayer-backed and iOS playback is AVPlayer/AVFoundation-backed, even if surfaced through a Flutter plugin.
+
 ## Development Workflow
 
 ### Server Development
