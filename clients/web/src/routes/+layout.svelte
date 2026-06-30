@@ -14,6 +14,7 @@
     import { auth, isAuthenticated, currentUser } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
     import { events } from '$lib/stores/events.js';
+    import { startDesktopBridge, stopDesktopBridge } from '$lib/desktop/tauri.js';
     import NotificationToast from '$lib/components/NotificationToast.svelte';
     import NotificationBell from '$lib/components/NotificationBell.svelte';
     import SearchBar from '$lib/components/SearchBar.svelte';
@@ -33,7 +34,10 @@
 
     onMount(() => {
         auth.init();
+        startDesktopBridge(goto);
         authChecked = true;
+
+        return () => stopDesktopBridge();
     });
 
     $effect(() => {

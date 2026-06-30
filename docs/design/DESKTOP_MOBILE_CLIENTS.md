@@ -245,6 +245,34 @@ Verification:
 
 Flutter and Dart are not installed in the current Windows environment, so `flutter analyze`, `flutter test`, and native passkey channel checks were not run here.
 
+### Task 5 — Desktop Wrapper Features
+
+Implementation:
+
+- `clients/desktop/scripts/build-web-static.mjs` runs the shared web build with `DUSKCUE_WEB_ADAPTER=static`.
+- `clients/web/svelte.config.js` keeps adapter-node as the default web/Docker build and switches to adapter-static with `build/client` plus `index.html` fallback only for desktop.
+- `clients/desktop/src-tauri` now enables Tauri's tray API and the dialog, notification, deep-link, and single-instance plugins.
+- `tauri.conf.json` registers `duskcue://` as the desktop deep-link scheme.
+- The tray menu exposes Open Duskcue, Server Status, Notifications, Play / Pause, and Quit. Left-click opens/focuses the main window.
+- Deep-link handling accepts only known app routes: dashboard, libraries, media details, playback, settings, notifications, and auth-link.
+- `clients/web/src/lib/desktop/tauri.js` is the desktop-only web bridge for native navigation events, playback-toggle events, native notification mirroring, and folder picking.
+- `Player.svelte` listens for the desktop playback-toggle event and toggles the active video element when playback is mounted.
+- The library settings form shows a Tauri-only Browse action for root path entry. The selected folder still populates the normal server-side `root_path` field, so Docker/NAS deployments continue to depend on paths visible to the server.
+- Foreground SSE `notification` events are mirrored into OS native notifications. These events are already scoped to the authenticated user and server notification preferences before reaching the client.
+
+Deep-link access posture:
+
+- Native deep links only route the webview; they do not grant access.
+- The web auth guard still redirects unauthenticated users to login.
+- Media/playback/settings pages continue to load through existing server APIs, so BOLA/auth/access checks remain server-authoritative before content or settings data is shown.
+
+Verification:
+
+- `cargo check -p duskcue-desktop`
+- `npm run build` from `clients/desktop` uses adapter-static and writes `clients/web/build/client`
+- `node --check clients/web/src/lib/desktop/tauri.js`
+- `node --check clients/desktop/scripts/build-web-static.mjs`
+
 ## Relationship to Other Documents
 
 | Document | Relationship |

@@ -12,6 +12,7 @@
     import { hasCapability } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
     import { MEDIA_TYPE_LABELS } from '$lib/utils/constants.js';
+    import { isTauriDesktop, pickLibraryFolder } from '$lib/desktop/tauri.js';
 
     let loading = $state(true);
     let showCreate = $state(false);
@@ -20,6 +21,7 @@
     let newRootPath = $state('');
     let creating = $state(false);
     let canManage = $state(false);
+    let desktopShell = $state(false);
     let expandedPaths = $state({});
 
     $effect(() => {
@@ -28,6 +30,7 @@
     });
 
     onMount(async () => {
+        desktopShell = isTauriDesktop();
         await libraries.fetch();
         loading = false;
     });
@@ -52,6 +55,17 @@
             notifications.error(err.detail || err.message || m.routes_settings_libraries_page_failed_to_create_library());
         } finally {
             creating = false;
+        }
+    }
+
+    async function handlePickRootPath() {
+        try {
+            const folder = await pickLibraryFolder();
+            if (folder) {
+                newRootPath = folder;
+            }
+        } catch (err) {
+            notifications.error(err.message || 'Failed to open folder picker');
         }
     }
 
@@ -126,7 +140,12 @@
                 </label>
                 <label class="field field-wide">
                     <span class="field-label">{m.routes_settings_libraries_page_root_path()}</span>
-                    <input type="text" bind:value={newRootPath} placeholder={m.routes_settings_libraries_page_media_movies()} />
+                    <div class="path-input-row">
+                        <input type="text" bind:value={newRootPath} placeholder={m.routes_settings_libraries_page_media_movies()} />
+                        {#if desktopShell}
+                            <button type="button" class="btn-secondary-sm" onclick={handlePickRootPath}>Browse</button>
+                        {/if}
+                    </div>
                 </label>
             </div>
             <button class="btn-primary" onclick={handleCreate} disabled={creating}>
@@ -216,6 +235,15 @@
         align-items: flex-start;
         justify-content: space-between;
         gap: 1rem;
+    }
+
+    .path-input-row {
+        display: flex;
+        gap: 0.5rem;
+    }
+
+    .path-input-row input {
+        flex: 1;
     }
 
     .back-link {

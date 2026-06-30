@@ -16,13 +16,23 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import adapter from '@sveltejs/adapter-node';
+import adapterNode from '@sveltejs/adapter-node';
+import adapterStatic from '@sveltejs/adapter-static';
 import { vitePreprocess } from '@sveltejs/vite-plugin-svelte';
+
+const isStaticDesktopBuild = process.env.DUSKCUE_WEB_ADAPTER === 'static';
 
 const config = {
     preprocess: vitePreprocess(),
     kit: {
-        adapter: adapter(),
+        adapter: isStaticDesktopBuild
+            ? adapterStatic({
+                    pages: 'build/client',
+                    assets: 'build/client',
+                    fallback: 'index.html',
+                    strict: false,
+                })
+            : adapterNode(),
     },
 };
 

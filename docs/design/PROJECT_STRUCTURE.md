@@ -884,6 +884,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 4 auth status:** `clients/mobile` now contains auth/session models, an `AuthService`, secure device identity generation, a native passkey method-channel adapter, `/auth` routing, saved-session restore, and account/session management in settings. `clients/desktop/src-tauri` stores session tokens in the OS keyring through Tauri commands; only non-secret saved-server metadata remains in app data JSON.
 
+**Task 5 desktop wrapper status:** `clients/desktop` now builds the shared SvelteKit app through a desktop-only static adapter path while normal web/Docker builds keep adapter-node. `clients/desktop/src-tauri` owns tray actions, `duskcue://` deep-link routing, single-instance forwarding, native folder dialogs, and native notification dispatch. `clients/web/src/lib/desktop/tauri.js` is the web-to-native bridge used by the shared web UI when it runs inside Tauri.
+
 ## Development Workflow
 
 ### Server Development

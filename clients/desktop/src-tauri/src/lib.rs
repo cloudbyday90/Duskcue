@@ -18,6 +18,8 @@ mod commands {
     use std::{fs, path::PathBuf, time::Duration};
 
     use tauri::Manager;
+    use tauri_plugin_dialog::DialogExt;
+    use tauri_plugin_notification::NotificationExt;
     use url::Url;
 
     const KEYRING_SERVICE: &str = "com.duskcue.desktop";
@@ -79,6 +81,13 @@ mod commands {
         server_origin: String,
     }
 
+    #[derive(serde::Deserialize)]
+    pub struct NativeNotificationRequest {
+        title: String,
+        body: String,
+        link: Option<String>,
+    }
+
     fn default_network_mode() -> NetworkMode {
         NetworkMode::Local
     }
@@ -132,6 +141,45 @@ mod commands {
             Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
             Err(err) => Err(err.to_string()),
         }
+    }
+
+    #[tauri::command]
+    pub async fn pick_library_folder(app: tauri::AppHandle) -> Result<Option<String>, String> {
+        tauri::async_runtime::spawn_blocking(move || {
+            let selected = app.dialog().file().blocking_pick_folder();
+            selected
+                .map(|path| {
+                    path.into_path()
+                        .map(|path| path.to_string_lossy().to_string())
+                        .map_err(|_| "Selected folder is not a local filesystem path.".to_string())
+                })
+                .transpose()
+        })
+        .await
+        .map_err(|err| err.to_string())?
+    }
+
+    #[tauri::command]
+    pub fn show_native_notification(
+        app: tauri::AppHandle,
+        req: NativeNotificationRequest,
+    ) -> Result<(), String> {
+        let title = req.title.trim();
+        let body = req.body.trim();
+        if title.is_empty() && body.is_empty() {
+            return Ok(());
+        }
+
+        let mut notification = app
+            .notification()
+            .builder()
+            .title(if title.is_empty() { "Duskcue" } else { title })
+            .body(body)
+            .auto_cancel();
+        if let Some(link) = req.link.filter(|link| !link.trim().is_empty()) {
+            notification = notification.extra("link", link);
+        }
+        notification.show().map_err(|err| err.to_string())
     }
 
     #[tauri::command]
@@ -244,9 +292,193 @@ mod commands {
     }
 }
 
+mod shell {
+    use tauri::{
+        AppHandle, Emitter, Manager,
+        menu::{Menu, MenuItem, PredefinedMenuItem},
+        tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    };
+    use tauri_plugin_deep_link::DeepLinkExt;
+    use url::Url;
+
+    #[derive(Clone, serde::Serialize)]
+    struct NavigationPayload {
+        route: String,
+        source: &'static str,
+    }
+
+    #[derive(Clone, serde::Serialize)]
+    struct ShellStatusPayload {
+        status: &'static str,
+    }
+
+    pub fn setup(app: &mut tauri::App) -> Result<(), Box<dyn std::error::Error>> {
+        setup_tray(app.handle())?;
+        setup_deep_links(app.handle());
+        Ok(())
+    }
+
+    pub fn open_main_window(app: &AppHandle) {
+        if let Some(window) = app.get_webview_window("main") {
+            let _ = window.show();
+            let _ = window.unminimize();
+            let _ = window.set_focus();
+        }
+    }
+
+    pub fn handle_possible_deep_links(app: &AppHandle, args: &[String]) {
+        for arg in args {
+            if let Some(route) = route_from_deep_link(arg) {
+                open_main_window(app);
+                emit_navigation(app, route, "deep_link");
+            }
+        }
+    }
+
+    fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
+        let open = MenuItem::with_id(app, "open", "Open Duskcue", true, None::<&str>)?;
+        let server_status =
+            MenuItem::with_id(app, "server_status", "Server Status", true, None::<&str>)?;
+        let notifications =
+            MenuItem::with_id(app, "notifications", "Notifications", true, None::<&str>)?;
+        let playback =
+            MenuItem::with_id(app, "playback_toggle", "Play / Pause", true, None::<&str>)?;
+        let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+        let separator = PredefinedMenuItem::separator(app)?;
+        let menu = Menu::with_items(
+            app,
+            &[
+                &open,
+                &server_status,
+                &notifications,
+                &playback,
+                &separator,
+                &quit,
+            ],
+        )?;
+
+        let mut builder = TrayIconBuilder::with_id("main")
+            .tooltip("Duskcue")
+            .menu(&menu)
+            .show_menu_on_left_click(false)
+            .on_menu_event(|app, event| match event.id().as_ref() {
+                "open" => open_main_window(app),
+                "server_status" => {
+                    open_main_window(app);
+                    emit_navigation(app, "/settings".to_string(), "tray");
+                    let _ = app.emit(
+                        "duskcue://server-status",
+                        ShellStatusPayload { status: "open" },
+                    );
+                }
+                "notifications" => {
+                    open_main_window(app);
+                    emit_navigation(app, "/settings/notifications".to_string(), "tray");
+                }
+                "playback_toggle" => {
+                    let _ = app.emit("duskcue://playback-toggle", ());
+                }
+                "quit" => app.exit(0),
+                _ => {}
+            })
+            .on_tray_icon_event(|tray, event| {
+                if let TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
+                } = event
+                {
+                    open_main_window(&tray.app_handle());
+                }
+            });
+
+        if let Some(icon) = app.default_window_icon() {
+            builder = builder.icon(icon.clone());
+        }
+
+        builder.build(app)?;
+        Ok(())
+    }
+
+    fn setup_deep_links(app: &AppHandle) {
+        let handle = app.clone();
+        app.deep_link().on_open_url(move |event| {
+            for url in event.urls() {
+                if let Some(route) = route_from_url(&url) {
+                    open_main_window(&handle);
+                    emit_navigation(&handle, route, "deep_link");
+                }
+            }
+        });
+    }
+
+    fn emit_navigation(app: &AppHandle, route: String, source: &'static str) {
+        let _ = app.emit("duskcue://navigate", NavigationPayload { route, source });
+    }
+
+    fn route_from_deep_link(raw: &str) -> Option<String> {
+        Url::parse(raw).ok().and_then(|url| route_from_url(&url))
+    }
+
+    fn route_from_url(url: &Url) -> Option<String> {
+        if url.scheme() != "duskcue" {
+            return None;
+        }
+
+        let host = url.host_str().unwrap_or_default();
+        let mut segments = url
+            .path_segments()
+            .map(|segments| {
+                segments
+                    .filter(|segment| !segment.is_empty())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+
+        match host {
+            "play" => segments
+                .first()
+                .map(|id| format!("/play/{}", sanitize_segment(id))),
+            "media" => segments
+                .first()
+                .map(|id| format!("/media/{}", sanitize_segment(id))),
+            "library" | "libraries" => segments
+                .first()
+                .map(|id| format!("/libraries/{}", sanitize_segment(id)))
+                .or_else(|| Some("/libraries".to_string())),
+            "notifications" => Some("/settings/notifications".to_string()),
+            "settings" => {
+                if let Some(section) = segments.pop() {
+                    Some(format!("/settings/{}", sanitize_segment(section)))
+                } else {
+                    Some("/settings".to_string())
+                }
+            }
+            "dashboard" | "home" => Some("/dashboard".to_string()),
+            "auth" if segments.first() == Some(&"link") => Some("/auth/link".to_string()),
+            _ => None,
+        }
+    }
+
+    fn sanitize_segment(segment: &str) -> String {
+        segment
+            .chars()
+            .filter(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_' | '.'))
+            .collect()
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
+            shell::open_main_window(app);
+            shell::handle_possible_deep_links(app, &args);
+        }))
+        .setup(shell::setup)
         .invoke_handler(tauri::generate_handler![
             commands::app_info,
             commands::normalize_server_origin,
@@ -255,7 +487,9 @@ pub fn run() {
             commands::test_server_connection,
             commands::write_session_token,
             commands::read_session_token,
-            commands::clear_session_token
+            commands::clear_session_token,
+            commands::pick_library_folder,
+            commands::show_native_notification
         ])
         .run(tauri::generate_context!())
         .expect("failed to run Duskcue desktop app");

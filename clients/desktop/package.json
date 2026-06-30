@@ -5,7 +5,7 @@
     "private": true,
     "scripts": {
         "dev": "npm --prefix ../web run dev -- --host 127.0.0.1 --port 5173",
-        "build": "npm --prefix ../web run build",
+        "build": "node ./scripts/build-web-static.mjs",
         "tauri": "tauri",
         "tauri:dev": "tauri dev",
         "tauri:build": "tauri build"

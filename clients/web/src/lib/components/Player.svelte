@@ -74,6 +74,7 @@
 
     onMount(async () => {
         isMounted = true;
+        window.addEventListener('duskcue:desktop-playback-toggle', handleDesktopPlaybackToggle);
 
         try {
             if (sessionId) {
@@ -106,6 +107,7 @@
     });
 
     onDestroy(() => {
+        window.removeEventListener('duskcue:desktop-playback-toggle', handleDesktopPlaybackToggle);
         destroyHls();
         clearHideControlsTimer();
         stopQoeReporting();
@@ -258,6 +260,10 @@
         } else {
             videoEl.pause();
         }
+    }
+
+    function handleDesktopPlaybackToggle() {
+        togglePlayPause();
     }
 
     function handleSeekInput(event) {
