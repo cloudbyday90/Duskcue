@@ -16,4 +16,13 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { defineConfig } from 'vite';
 
+export default defineConfig({
+    clearScreen: false,
+    server: {
+        host: '127.0.0.1',
+        port: 5174,
+        strictPort: true,
+    },
+});

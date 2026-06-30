@@ -10,6 +10,7 @@ node_modules/
 .svelte-kit/
 /build
 clients/web/build/
+clients/desktop/src-tauri/gen/
 .cache/
 *.db
 *.db-journal

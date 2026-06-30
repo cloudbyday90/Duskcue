@@ -550,7 +550,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 14: Platform Migration | **In progress** (Tasks 0-13 complete: scaffold, hardening, API foundation, source security, preflight, async runner, Jellyfin/Emby + Plex extraction, user mapping, matching, manual review, import merge, rollback, progress events/metrics/notifications) | — |
 | Pre-v1.0 Hardening | **Complete** (Tasks 1-7 complete: Cache-Control + ETag response headers; Paraglide JS adoption + English web message catalog; faceted search API/UI; Prometheus metrics for SSE/search/images/notifications; AI-initial preview translations for 7 non-English locales; Arabic RTL layout review; locale preferences API + reviewed-locale language switcher + Weblate activation runbook) | — |
 | Phase 15 | **Complete** (Docker image, single-container topology, entrypoint, compose, health/smoke verification, hardening, backup runbook, GHCR workflows) | `e77d78b` |
-| Phase 16a | **In progress** (Task 0 complete: desktop/mobile official-source research and design enrichment) | — |
+| Phase 16a | **In progress** (Tasks 0-1 complete: official-source research/design enrichment; Tauri desktop scaffold repaired; Flutter Android/iOS scaffold created) | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
 

@@ -117,6 +117,36 @@ Task 2 must produce:
 
 Tasks 3-12 must follow the decisions above and update this document with implementation notes as each task completes.
 
+## Implementation Notes
+
+### Task 1 — Client Scaffolds
+
+Desktop scaffold:
+
+- `clients/desktop/package.json` now provides `dev`, `build`, `tauri`, `tauri:dev`, and `tauri:build` scripts. The desktop dev/build commands delegate to `clients/web` so the shared SvelteKit app remains the source UI.
+- `clients/desktop/src-tauri/tauri.conf.json` uses the Tauri 2 schema, a labeled `main` window, stable default dimensions, and `frontendDist = "../../web/build/client"`.
+- `clients/desktop/src-tauri/build.rs` runs `tauri_build::build()`, and `src/lib.rs` exposes the Tauri builder plus an `app_info` command.
+- `clients/desktop/src-tauri/capabilities/default.json` grants only `core:default` to the `main` window for the initial scaffold.
+- `clients/desktop/src-tauri/icons/icon.ico` is a minimal placeholder required by Tauri's Windows resource generation. Final branded icons remain part of the packaging/release smoke-test task.
+
+Mobile scaffold:
+
+- `clients/mobile/pubspec.yaml` now has dependency baselines for GoRouter, Riverpod, Dio, secure storage, video playback, connectivity, local notifications, FCM, serialization, lints, codegen, and tests.
+- `clients/mobile/lib/` now contains a minimal app shell, router, session state, server profile model, and baseline services for API, secure storage, connectivity, playback, and push token registration.
+- `clients/mobile/android/` now contains package `com.duskcue.mobile`, Android manifest permissions, `duskcue://` scheme handling, a local-network development cleartext placeholder, Kotlin `MainActivity`, styles, and placeholder icon/launch resources.
+- `clients/mobile/ios/` now contains initial Runner metadata, `duskcue://` scheme handling, local-network usage text, Swift app delegate, launch screen, and app-icon placeholder metadata.
+- `clients/mobile/README.md` documents the first-run Flutter commands.
+
+Verification:
+
+- `cargo check -p duskcue-desktop`
+- `cargo fmt --package duskcue-desktop --check`
+- `npm run build` from `clients/desktop`
+- XML/plist parse checks for Android and iOS platform files
+- `git diff --check`
+
+Flutter and Dart are not installed in the current Windows environment, so `flutter pub get`, `flutter analyze`, `flutter test`, `flutter build apk --debug`, and `flutter build ios --simulator` are documented first-run checks for a Flutter SDK environment.
+
 ## Relationship to Other Documents
 
 | Document | Relationship |

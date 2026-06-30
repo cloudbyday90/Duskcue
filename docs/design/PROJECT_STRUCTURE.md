@@ -878,6 +878,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 - Flutter owns cross-platform UI, routing, and state; native adapters or vetted plugins own passkeys, push tokens, secure storage, and playback controls where platform APIs are required.
 - Android playback is Media3/ExoPlayer-backed and iOS playback is AVPlayer/AVFoundation-backed, even if surfaced through a Flutter plugin.
 
+**Task 1 scaffold status:** `clients/desktop` now has a valid Tauri 2 Rust entrypoint/config/capability set and delegates dev/build to the shared web client. `clients/mobile` now has the Flutter app shell, dependency baseline, Android package scaffold, iOS Runner metadata, tests, lint config, and first-run commands documented in [DESKTOP_MOBILE_CLIENTS.md](DESKTOP_MOBILE_CLIENTS.md).
+
 ## Development Workflow
 
 ### Server Development

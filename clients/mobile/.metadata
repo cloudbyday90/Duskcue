@@ -1,0 +1,21 @@
+version:
+  revision: "manual-phase-16a-scaffold"
+  channel: "stable"
+
+project_type: app
+
+migration:
+  platforms:
+    - platform: root
+      create_revision: manual-phase-16a-scaffold
+      base_revision: manual-phase-16a-scaffold
+    - platform: android
+      create_revision: manual-phase-16a-scaffold
+      base_revision: manual-phase-16a-scaffold
+    - platform: ios
+      create_revision: manual-phase-16a-scaffold
+      base_revision: manual-phase-16a-scaffold
+
+unmanaged_files:
+  - "lib/main.dart"
+  - "ios/Runner.xcodeproj/project.pbxproj"

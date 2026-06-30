@@ -1,0 +1,17 @@
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+coverage/
+android/.gradle/
+android/app/debug/
+android/app/profile/
+android/app/release/
+android/local.properties
+ios/Flutter/flutter_export_environment.sh
+ios/Flutter/ephemeral/
+ios/Pods/
+ios/.symlinks/
+ios/Runner.xcworkspace/xcuserdata/
+ios/Runner.xcodeproj/xcuserdata/

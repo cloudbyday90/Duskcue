@@ -1,0 +1,92 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 54;
+	objects = {
+		97C146ED1CF9000F007C117D = {
+			isa = PBXFileReference;
+			lastKnownFileType = wrapper.application;
+			path = Runner.app;
+			sourceTree = BUILT_PRODUCTS_DIR;
+		};
+		9740EEB11CF90186004384FC = {
+			isa = PBXGroup;
+			children = (
+				97C146ED1CF9000F007C117D,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		9740EEB21CF90195004384FC = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.xcconfig;
+			name = Debug.xcconfig;
+			path = Flutter/Debug.xcconfig;
+			sourceTree = "<group>";
+		};
+		9740EEB31CF90195004384FC = {
+			isa = PBXFileReference;
+			lastKnownFileType = text.xcconfig;
+			name = Release.xcconfig;
+			path = Flutter/Release.xcconfig;
+			sourceTree = "<group>";
+		};
+		97C146E51CF9000F007C117D = {
+			isa = PBXGroup;
+			children = (
+				9740EEB21CF90195004384FC,
+				9740EEB31CF90195004384FC,
+				9740EEB11CF90186004384FC,
+			);
+			sourceTree = "<group>";
+		};
+		97C146E61CF9000F007C117D = {
+			isa = PBXProject;
+			attributes = {
+				LastUpgradeCheck = 1510;
+			};
+			buildConfigurationList = 97C146E91CF9000F007C117D;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 97C146E51CF9000F007C117D;
+			productRefGroup = 9740EEB11CF90186004384FC;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+			);
+		};
+		97C146E91CF9000F007C117D = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				97C147031CF9000F007C117D,
+				97C147041CF9000F007C117D,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		97C147031CF9000F007C117D = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB21CF90195004384FC;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = com.duskcue.mobile;
+			};
+			name = Debug;
+		};
+		97C147041CF9000F007C117D = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC;
+			buildSettings = {
+				PRODUCT_BUNDLE_IDENTIFIER = com.duskcue.mobile;
+			};
+			name = Release;
+		};
+	};
+	rootObject = 97C146E61CF9000F007C117D;
+}

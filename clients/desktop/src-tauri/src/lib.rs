@@ -13,3 +13,27 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+mod commands {
+    #[derive(serde::Serialize)]
+    pub struct AppInfo {
+        name: &'static str,
+        version: &'static str,
+    }
+
+    #[tauri::command]
+    pub fn app_info() -> AppInfo {
+        AppInfo {
+            name: "Duskcue",
+            version: env!("CARGO_PKG_VERSION"),
+        }
+    }
+}
+
+#[cfg_attr(mobile, tauri::mobile_entry_point)]
+pub fn run() {
+    tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![commands::app_info])
+        .run(tauri::generate_context!())
+        .expect("failed to run Duskcue desktop app");
+}
