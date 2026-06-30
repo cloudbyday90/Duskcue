@@ -3791,7 +3791,9 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 **Tasks:**
 
-0. Research, design, and phase enrichment — use official online sources current to 2026 for TV/console client best practices; update [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md), [BUILD_ORDER.md](BUILD_ORDER.md), and any affected platform-specific docs before implementation.
+0. ~~Research, design, and phase enrichment — use official online sources current to 2026 for TV/console client best practices; update [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md), [BUILD_ORDER.md](BUILD_ORDER.md), and any affected platform-specific docs before implementation.~~ **DONE**
+
+**Task 0 implementation note:** Refreshed [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md) against current official platform documentation for Android TV / Google TV, Fire TV, Roku, Samsung Tizen, LG webOS, Apple TV / tvOS, Xbox/UWP, and partner-gated ecosystems. The selected Phase 16b approach remains a server-owned, user-scoped TV surface feed plus deep-link resolver and platform adapter contract: the server owns resume/access/recommendation truth, stable `platform_content_id` values, private cache/ETag behavior, diagnostics, settings, fixtures, and `tv_surface_changed` refresh hints; native platform clients translate that contract into row-owned launcher surfaces, event-driven activity reporting, catalog/feed deep links, packaged TV web apps, console media apps, or app-local rows as each platform allows. Platform certification, signing, partner feeds, store visibility, and physical hardware validation remain platform-phase/release-gate work.
 1. Create the TV/platform-surface server domain:
    - Add `server/src/domains/tv/` (or `platform_surfaces/`) using the five-file pattern: `mod.rs`, `handlers.rs`, `service.rs`, `types.rs`, `error.rs`.
    - Add router wiring and central `AppError` mapping with stable error codes for invalid platform IDs, unavailable content, access denied, and unsupported platform hints.

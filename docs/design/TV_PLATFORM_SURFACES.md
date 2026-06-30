@@ -8,6 +8,38 @@ This document defines the cross-platform design. Each TV platform is an adapter 
 
 ## Research Summary
 
+### Phase 16b Task 0 Refresh — June 30, 2026
+
+The Phase 16b research refresh rechecked current official platform documentation for Android TV / Google TV, Fire TV, Roku, Samsung Tizen, LG webOS, Apple TV / tvOS, Xbox/UWP, and partner-gated ecosystems before implementation starts.
+
+The core finding is unchanged: Duskcue needs a platform-neutral, user-scoped TV surface feed and deep-link resolver owned by the server, with adapters translating that feed into platform-specific launcher, search, catalog, or app-local surfaces.
+
+Updated platform posture:
+
+| Platform class | Official-source signal | Duskcue decision |
+|---|---|---|
+| Row-owned launcher surfaces | Android TV Watch Next and tvOS Top Shelf expose app-owned publication surfaces. | Build stable server feed IDs, fresh resume data, artwork URLs, and small curated sections; clients publish only useful continue/next-up rows and remove stale entries. |
+| Event-driven activity surfaces | Fire TV Watch Activity and Content Personalization depend on app-reported playback events, with catalog integration gated by partner access. | Treat Fire TV as playback-event reporting first, not as a direct list-publishing surface. Server feed still powers app-local rows and playback resume. |
+| Feed plus deep-link surfaces | Roku Search and Direct to Play require stable content IDs, correct deep-link handling, and bookmark/resume behavior for certification. | Make `platform_content_id` reversible and platform-safe; direct-to-play resolve must fetch current Duskcue resume before playback. |
+| Packaged web TV apps | Samsung Tizen and LG webOS provide packaged app models, native media APIs/lifecycle hooks, and model-year/web-engine constraints. | Do not reuse the generic browser UI as-is. Build platform packages with TV focus behavior, native playback wrappers, app-local rows, and launch/relaunch handling. |
+| Console media apps | Xbox UWP media-app docs provide native media APIs, URI activation, SMTC, and explicit 4K/HDR tradeoffs. | Treat Xbox as a console adapter over the same TV feed, with native playback and capability reporting rather than a web wrapper by default. |
+| Partner-gated platforms | VIZIO and PlayStation public materials route developers through partner portals. | Prepare stable IDs and app-local contracts now; implement only after portal access confirms self-hosted media-app viability. |
+
+Pros and cons of the selected server-feed approach:
+
+| Option | Pros | Cons | Decision |
+|---|---|---|---|
+| Server-owned TV surface feed plus adapter contracts | Keeps resume/access/recommendation truth in one place; supports every platform class; lets future clients share fixtures and contract tests. | Requires careful shaping for platform-specific IDs, cache headers, and privacy. | Selected for Phase 16b. |
+| Platform-by-platform bespoke APIs | Each client could exactly match its vendor API. | Duplicates logic, risks inconsistent resume state, and makes BOLA/cache/test coverage harder. | Rejected. |
+| Client-only launcher state | Fast to prototype on Android TV or tvOS. | Cannot reliably reflect web/mobile playback, access revocation, metadata refreshes, or cross-device completion. | Rejected except for platform-local ID mappings. |
+
+Final Phase 16b recommendation:
+
+1. Build the server domain, stable platform IDs, user-scoped feed, deep-link resolver, cache/private ETag behavior, diagnostics, settings, and `tv_surface_changed` events before any platform app.
+2. Add fixtures and a reference harness so Android TV, Fire TV, Roku, Tizen, webOS, tvOS, Xbox, and partner-gated clients consume the same contract.
+3. Keep launcher publication local to native clients. The Rust server emits facts and refresh hints; it does not call TV operating-system APIs directly.
+4. Treat certification, store visibility, partner feeds, signing, and physical hardware validation as platform-phase and release-gate work, not Phase 16b server prerequisites.
+
 ### Official Sources
 
 | Source | Finding |
