@@ -73,6 +73,13 @@ async fn health_check(State(state): State<AppState>) -> Json<Value> {
     }))
 }
 
+async fn live_check() -> Json<Value> {
+    Json(json!({
+        "status": "alive",
+        "version": env!("CARGO_PKG_VERSION")
+    }))
+}
+
 async fn metrics_handler(State(state): State<AppState>) -> String {
     state.metrics_handle.render()
 }
@@ -108,6 +115,14 @@ pub fn build_router(state: AppState) -> Router<AppState> {
     let mut router: Router<AppState> = Router::new()
         .route(
             "/health",
+            get(health_check).route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL)),
+        )
+        .route(
+            "/health/live",
+            get(live_check).route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL)),
+        )
+        .route(
+            "/health/ready",
             get(health_check).route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL)),
         )
         .route(

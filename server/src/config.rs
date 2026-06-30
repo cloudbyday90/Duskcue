@@ -28,6 +28,12 @@ pub struct CliArgs {
     #[arg(long, env = "DUSKCUE_DATABASE_URL")]
     pub database_url: Option<String>,
 
+    #[arg(long, env = "DUSKCUE_BIND_ADDRESS", default_value = "0.0.0.0")]
+    pub bind_address: String,
+
+    #[arg(long, env = "DUSKCUE_PORT", default_value_t = 48027)]
+    pub port: u16,
+
     #[arg(long, env = "DUSKCUE_DATA_DIR")]
     pub data_dir: Option<PathBuf>,
 
@@ -53,6 +59,8 @@ pub struct CliArgs {
 #[derive(Deserialize, Debug, Clone)]
 pub struct BootstrapConfig {
     pub database_url: Option<String>,
+    pub bind_address: String,
+    pub port: u16,
     pub data_dir: PathBuf,
     pub cache_dir: PathBuf,
     pub log_level: String,
@@ -87,6 +95,8 @@ pub fn build_bootstrap_config(cli: CliArgs) -> Result<BootstrapConfig, Box<dyn s
     let mut builder = config::Config::builder()
         .set_default("log_level", cli.log_level.as_str())?
         .set_default("environment", cli.environment.as_str())?
+        .set_default("bind_address", cli.bind_address.as_str())?
+        .set_default("port", i64::from(cli.port))?
         .set_default("data_dir", data_dir.to_str().unwrap_or(""))?
         .set_default("cache_dir", cache_dir.to_str().unwrap_or(""))?
         .add_source(config::File::from(config_path).required(false))
@@ -99,6 +109,8 @@ pub fn build_bootstrap_config(cli: CliArgs) -> Result<BootstrapConfig, Box<dyn s
     builder = builder.set_override_option("database_url", cli.database_url)?;
     builder = builder.set_override_option("encryption_key", cli.encryption_key)?;
     builder = builder.set_override_option("geoip_license_key", cli.geoip_license_key)?;
+    builder = builder.set_override("bind_address", cli.bind_address)?;
+    builder = builder.set_override("port", i64::from(cli.port))?;
 
     let settings = builder.build()?;
 
@@ -109,6 +121,13 @@ pub fn build_bootstrap_config(cli: CliArgs) -> Result<BootstrapConfig, Box<dyn s
     }
     if bootstrap.cache_dir.as_os_str().is_empty() {
         bootstrap.cache_dir = cache_dir;
+    }
+
+    if bootstrap.bind_address.trim().is_empty() {
+        return Err("bind_address cannot be empty".into());
+    }
+    if bootstrap.port == 0 {
+        return Err("port must be between 1 and 65535".into());
     }
 
     let valid_environments = ["development", "staging", "production"];

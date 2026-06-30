@@ -1,0 +1,56 @@
+services:
+  duskcue:
+    image: ${DUSKCUE_IMAGE:-ghcr.io/duskcue/duskcue:latest}
+    container_name: duskcue
+    environment:
+      DUSKCUE_DATA_DIR: /data
+      DUSKCUE_CACHE_DIR: /cache
+      DUSKCUE_BIND_ADDRESS: ${DUSKCUE_BIND_ADDRESS:-0.0.0.0}
+      DUSKCUE_PORT: ${DUSKCUE_PORT:-48027}
+      DUSKCUE_LOG_LEVEL: ${DUSKCUE_LOG_LEVEL:-info}
+      DUSKCUE_ENVIRONMENT: ${DUSKCUE_ENVIRONMENT:-production}
+      DUSKCUE_INTERNAL_BIND_ADDRESS: 127.0.0.1
+      DUSKCUE_INTERNAL_API_PORT: 48028
+      DUSKCUE_PUBLIC_URL: ${DUSKCUE_PUBLIC_URL:-}
+      DUSKCUE_DATABASE_URL: ${DUSKCUE_DATABASE_URL:-}
+      PUID: ${PUID:-1000}
+      PGID: ${PGID:-1000}
+      TZ: ${TZ:-Etc/UTC}
+    ports:
+      - "${DUSKCUE_HOST_BIND:-0.0.0.0}:${DUSKCUE_PORT:-48027}:48027"
+      # - "[::]:${DUSKCUE_PORT:-48027}:48027"
+    volumes:
+      - duskcue-data:/data
+      - duskcue-cache:/cache
+      - ${TV_PATH:-./media/tv}:/media/tv:ro
+      - ${MOVIES_PATH:-./media/movies}:/media/movies:ro
+      # - ${MUSIC_PATH:-./media/music}:/media/music:ro
+      # - /dev/dri:/dev/dri
+    tmpfs:
+      - /data/transcode:size=${TRANSCODE_TMPFS_SIZE:-2G},mode=1777
+      - /var/run/postgresql:uid=${PUID:-1000},gid=${PGID:-1000},mode=770
+      - /tmp:size=64m,mode=1777
+    stop_signal: SIGTERM
+    stop_grace_period: 120s
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "--max-time", "5", "http://127.0.0.1:48027/health/ready"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETUID
+      - SETGID
+
+volumes:
+  duskcue-data:
+    name: duskcue-data
+  duskcue-cache:
+    name: duskcue-cache

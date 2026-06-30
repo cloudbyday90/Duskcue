@@ -53,6 +53,7 @@ RUN apk add --no-cache \
         libgcc \
         libstdc++ \
         nodejs \
+        nss_wrapper \
         postgresql18 \
         postgresql18-client \
         postgresql18-contrib \
@@ -87,8 +88,13 @@ RUN chmod 0755 /usr/local/bin/duskcue /usr/local/bin/duskcue-entrypoint \
 ENV DUSKCUE_DATA_DIR=/data \
     DUSKCUE_CACHE_DIR=/cache \
     DUSKCUE_ENVIRONMENT=production \
+    DUSKCUE_INTERNAL_BIND_ADDRESS=127.0.0.1 \
+    DUSKCUE_INTERNAL_API_PORT=48028 \
     NODE_ENV=production
 EXPOSE 48027
-VOLUME ["/data", "/cache", "/media"]
+VOLUME ["/data", "/cache"]
 STOPSIGNAL SIGTERM
-CMD ["duskcue"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl --fail --silent --max-time 5 http://127.0.0.1:48027/health/ready >/dev/null || exit 1
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/duskcue-entrypoint"]
+CMD ["start"]

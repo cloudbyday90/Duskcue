@@ -41,6 +41,10 @@ export default defineConfig({
                 target: BACKEND_URL,
                 changeOrigin: true,
             },
+            '/metrics': {
+                target: BACKEND_URL,
+                changeOrigin: true,
+            },
         },
     },
 });

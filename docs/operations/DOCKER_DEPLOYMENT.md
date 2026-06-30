@@ -15,15 +15,21 @@ Build and publication mechanics are documented separately in [DOCKER_BUILD_RELEA
 │  Docker Host                                             │
 │                                                          │
 │  ┌────────────────────────────────────────────────────┐  │
-│  │  duskcue (single container)                     │  │
+│  │  duskcue (single container)                       │  │
 │  │                                                     │  │
-│  │  ┌─────────────┐  ┌──────────────────────────────┐ │  │
-│  │  │ Rust server  │  │ PostgreSQL 18 (embedded)     │ │  │
-│  │  │  :48027       │←│  localhost + Unix socket only │ │  │
-│  │  └─────────────┘  └──────────────────────────────┘ │  │
+│  │  ┌─────────────────────┐                          │  │
+│  │  │ SvelteKit node app   │  public :48027           │  │
+│  │  │ /, /api, /health,    │                          │  │
+│  │  │ /health/*, /metrics  │                          │  │
+│  │  └──────────┬──────────┘                          │  │
+│  │             │ loopback HTTP proxy                  │  │
+│  │  ┌──────────▼──────────┐  ┌──────────────────────┐ │  │
+│  │  │ Rust API server      │  │ PostgreSQL 18         │ │  │
+│  │  │ 127.0.0.1:48028      │←│ Unix socket only       │ │  │
+│  │  └─────────────────────┘  └──────────────────────┘ │  │
 │  │                                                     │  │
 │  │  /data ← volume (config, metadata, logs, PG data)  │  │
-  │  │  /cache ← volume (HLS, images, storyboards)              │  │
+│  │  /cache ← volume (HLS, images, storyboards)        │  │
 │  │  /media/tv ← bind:ro                                │  │
 │  │  /media/movies ← bind:ro                            │  │
 │  │                                                     │  │
@@ -33,7 +39,9 @@ Build and publication mechanics are documented separately in [DOCKER_BUILD_RELEA
 └──────────────────────────────────────────────────────────┘
 ```
 
-PostgreSQL runs inside the same container as the duskcue, managed by the entrypoint script. It listens only on localhost and a Unix socket — never exposed to the network. The server connects via Unix socket for maximum performance.
+The canonical Docker topology is a single container with three cooperating processes. SvelteKit adapter-node owns the public HTTP surface on port `48027`. It serves the web app directly and proxies `/api`, `/health`, `/health/*`, and `/metrics` to the internal Rust API process. The Rust API binds to loopback only in Docker (`127.0.0.1:48028` by default). Embedded PostgreSQL runs inside the same container when `DUSKCUE_DATABASE_URL` is unset, listens only on a Unix socket, and is never exposed to the Docker network.
+
+Streaming and real-time routes stay on the same public origin. The SvelteKit proxy forwards request headers, preserves client IP context, and streams request and response bodies so SSE and media-related API responses do not buffer through memory.
 
 ### Optional: External Database
 
@@ -161,69 +169,18 @@ Following Classifarr's pattern, the image can ship both the current and previous
 
 ### Production Compose File (Embedded Database)
 
+The repository root `docker-compose.yml` is the canonical production compose file. It runs a single `duskcue` service with embedded PostgreSQL by default, named `duskcue-data` and `duskcue-cache` volumes, tmpfs mounts for `/data/transcode`, `/var/run/postgresql`, and `/tmp`, optional media bind mounts, and hardware-acceleration examples.
+
+The compose file publishes only the public SvelteKit surface:
+
 ```yaml
-# docker-compose.yml
-#
-# Production deployment for duskcue with embedded PostgreSQL.
-# Copy .env.example to .env and customize before running:
-#   cp .env.example .env
-#   docker compose up -d
-
-services:
-  duskcue:
-    image: duskcue:latest
-    container_name: duskcue
-    init: true
-    environment:
-      # Leave DATABASE_URL unset to use embedded PostgreSQL.
-      # Set it to connect to an external database instead:
-      # DUSKCUE_DATABASE_URL: "postgresql://user:pass@db-host:5432/duskcue"
-      DUSKCUE_DATA_DIR: "/data"
-      DUSKCUE_CACHE_DIR: "/cache"
-      DUSKCUE_LOG_LEVEL: "${LOG_LEVEL:-info}"
-      DUSKCUE_ENVIRONMENT: "production"
-      PUID: "${PUID:-1000}"
-      PGID: "${PGID:-1000}"
-      TZ: "${TZ:-Etc/UTC}"
-    ports:
-      - "${HTTP_PORT:-48027}:48027"
-    volumes:
-      - media-data:/data
-      - media-cache:/cache
-      - ${TV_PATH:-/dev/null}:/media/tv:ro
-      - ${MOVIES_PATH:-/dev/null}:/media/movies:ro
-      # - ${MUSIC_PATH:-/dev/null}:/media/music:ro
-      # Hardware acceleration — uncomment for Intel/AMD GPU
-      # - /dev/dri:/dev/dri
-    tmpfs:
-      - /data/transcode:size=${TRANSCODE_TMPFS_SIZE:-2G},mode=1777
-      - /var/run/postgresql:uid=${PUID:-1000},gid=${PGID:-1000},mode=770
-      - /tmp:size=64m,mode=1777
-    stop_signal: SIGTERM
-    stop_grace_period: 120s
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:48027/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    restart: unless-stopped
-    read_only: true
-    security_opt:
-      - no-new-privileges:true
-    cap_drop:
-      - ALL
-    cap_add:
-      - CHOWN
-      - SETUID
-      - SETGID
-
-volumes:
-  media-data:
-    name: duskcue-data
-  media-cache:
-    name: duskcue-cache
+ports:
+  - "${DUSKCUE_HOST_BIND:-0.0.0.0}:${DUSKCUE_PORT:-48027}:48027"
+  # Optional explicit IPv6 host binding when Docker IPv6 is enabled:
+  # - "[::]:${DUSKCUE_PORT:-48027}:48027"
 ```
+
+The Rust API process and PostgreSQL socket are internal to the container. The healthcheck calls `http://127.0.0.1:48027/health/ready`, which only succeeds after the public web process can proxy to the Rust API and the API has completed startup and database readiness.
 
 ### Environment File
 
@@ -246,9 +203,12 @@ MOVIES_PATH=/path/to/your/movies
 # MUSIC_PATH=/path/to/your/music
 
 # ── Server ────────────────────────────────────────
-HTTP_PORT=48027
+DUSKCUE_PORT=48027
+DUSKCUE_HOST_BIND=0.0.0.0
 # Bind address defaults to IPv4 all-interfaces. Use :: for native dual-stack
 # where the host OS and Docker networking support IPv6.
+# In Docker, this controls the public SvelteKit listener. The Rust API binds
+# internally to DUSKCUE_INTERNAL_BIND_ADDRESS:DUSKCUE_INTERNAL_API_PORT.
 DUSKCUE_BIND_ADDRESS=0.0.0.0
 LOG_LEVEL=info
 TZ=Etc/UTC
@@ -310,25 +270,23 @@ When `DUSKCUE_DATABASE_URL` is set, the entrypoint **skips** embedded PostgreSQL
 
 ## Native IPv6 Support
 
-Duskcue should support IPv6 as a first-class deployment mode, not only as a reverse-proxy side effect.
+Duskcue supports IPv6 as a first-class deployment mode, not only as a reverse-proxy side effect.
 
-Planned Phase 15 behavior:
-
-- Default bind remains IPv4 `0.0.0.0:48027` for maximum compatibility with older Docker/NAS setups.
-- Operators can set `DUSKCUE_BIND_ADDRESS=::` to request an IPv6 listener. On platforms where dual-stack sockets are available, this serves IPv4 and IPv6 from one listener. Where the OS or Docker Engine uses IPv6-only sockets, documentation should show explicit IPv4 and IPv6 bindings.
-- URL generation must format IPv6 literals with brackets, for example `http://[fd00::10]:48027`, including WebAuthn origins, redirects, and generated server URLs.
-- Docker Compose examples should include an optional IPv6 binding:
+- The standalone Rust server defaults to `DUSKCUE_BIND_ADDRESS=0.0.0.0` and `DUSKCUE_PORT=48027`.
+- Operators can set `DUSKCUE_BIND_ADDRESS=::` to request an IPv6 listener. On platforms where dual-stack sockets are available, this serves IPv4 and IPv6 from one listener. Where the OS or Docker Engine uses IPv6-only sockets, use explicit IPv4 and IPv6 Docker port bindings.
+- Startup logging formats IPv6 listener URLs with brackets, for example `http://[::]:48027`.
+- Docker Compose includes an optional IPv6 binding:
 
 ```yaml
 ports:
-  - "${HTTP_PORT:-48027}:48027"
+  - "${DUSKCUE_HOST_BIND:-0.0.0.0}:${DUSKCUE_PORT:-48027}:48027"
   # Optional explicit IPv6 host binding when Docker IPv6 is enabled:
-  # - "[::]:${HTTP_PORT:-48027}:48027"
+  # - "[::]:${DUSKCUE_PORT:-48027}:48027"
 ```
 
 - Reverse proxy examples must keep IPv6 client IPs intact through `X-Forwarded-For` / `Forwarded`, and Duskcue must only trust those headers from configured trusted proxy CIDRs.
 - Metrics allowlists and trusted proxy lists must accept IPv6 CIDR ranges such as `::1/128`, `fd00::/8`, and `2001:db8::/32`.
-- Health checks should continue to use loopback. IPv6-only deployments can use `http://[::1]:48027/health` when the container image includes tooling that supports bracketed IPv6 literals.
+- Health checks continue to use loopback. IPv6-only deployments can use `http://[::1]:48027/health/ready` when the container image includes tooling that supports bracketed IPv6 literals.
 
 Security requirements:
 
@@ -347,97 +305,25 @@ Container lifecycle hooks are an optimization, not a durability guarantee.
 
 ## Entrypoint Script
 
-The entrypoint handles PUID/PGID user creation, embedded PostgreSQL lifecycle, and privilege dropping:
+`docker/entrypoint.sh` is the runtime process supervisor. The Dockerfile runs it through `tini`:
 
-```bash
-#!/bin/sh
-set -e
-
-PUID=${PUID:-1000}
-PGID=${PGID:-1000}
-DATA_DIR="/data"
-PG_DATA="$DATA_DIR/postgres"
-PG_RUN="/var/run/postgresql"
-
-# ── User/Group Setup ──────────────────────────────
-if [ "$(id -u)" -eq 0 ]; then
-    EXISTING_GROUP=$(getent group "$PGID" | cut -d: -f1)
-    if [ -z "$EXISTING_GROUP" ]; then
-        addgroup -g "$PGID" duskcue
-        TARGET_GROUP="duskcue"
-    else
-        TARGET_GROUP="$EXISTING_GROUP"
-    fi
-
-    if ! id duskcue >/dev/null 2>&1; then
-        adduser -D -u "$PUID" -G "$TARGET_GROUP" -h /data duskcue
-    fi
-
-    mkdir -p "$DATA_DIR"/{config,metadata,logs,transcode,backups}
-    mkdir -p "$DATA_DIR"/metadata/{artwork,thumbnails}
-    mkdir -p /cache/{hls,images,storyboards,search}
-    chown -R "$PUID:$PGID" "$DATA_DIR" /cache
-fi
-
-run_as_user() {
-    if [ "$(id -u)" -eq 0 ]; then
-        su-exec duskcue "$@"
-    else
-        "$@"
-    fi
-}
-
-# ── Database Setup ────────────────────────────────
-if [ -n "$DUSKCUE_DATABASE_URL" ]; then
-    echo "Using external PostgreSQL: $DUSKCUE_DATABASE_URL"
-else
-    echo "Starting embedded PostgreSQL..."
-
-    if [ ! -f "$PG_DATA/PG_VERSION" ]; then
-        echo "Initializing new PostgreSQL database..."
-        mkdir -p "$PG_DATA"
-        run_as_user initdb -D "$PG_DATA" --auth=trust --encoding=UTF8 --data-checksums
-        echo "listen_addresses = ''" >> "$PG_DATA/postgresql.conf"
-        echo "unix_socket_directories = '$PG_RUN'" >> "$PG_DATA/postgresql.conf"
-        echo "log_destination = 'stderr'" >> "$PG_DATA/postgresql.conf"
-        echo "logging_collector = on" >> "$PG_DATA/postgresql.conf"
-        echo "log_directory = '$DATA_DIR/logs'" >> "$PG_DATA/postgresql.conf"
-        echo "log_filename = 'postgres.log'" >> "$PG_DATA/postgresql.conf"
-    fi
-
-    rm -f "$PG_DATA/postmaster.pid"
-    run_as_user pg_ctl -D "$PG_DATA" -l "$DATA_DIR/logs/postgres.log" start
-
-    echo "Waiting for PostgreSQL..."
-    ATTEMPTS=0
-    until run_as_user pg_isready -q; do
-        ATTEMPTS=$((ATTEMPTS + 1))
-        if [ "$ATTEMPTS" -ge 60 ]; then
-            echo "ERROR: PostgreSQL did not start within 60 seconds."
-            tail -n 50 "$DATA_DIR/logs/postgres.log"
-            exit 1
-        fi
-        sleep 1
-    done
-
-    run_as_user createdb duskcue 2>/dev/null || true
-
-    export DUSKCUE_DATABASE_URL="postgresql:///duskcue?host=$PG_RUN"
-    echo "Embedded PostgreSQL ready."
-fi
-
-# ── Start Server ──────────────────────────────────
-echo "Starting duskcue..."
-
-# Graceful shutdown handler — stops embedded PG before exit.
-# Without this, Docker's SIGKILL after stop_grace_period would
-# leave PG without a checkpoint, forcing WAL replay on next start.
-if [ -z "$DUSKCUE_DATABASE_URL" ] || [ -z "${DUSKCUE_DATABASE_URL##*host=$PG_RUN*}" ]; then
-    trap 'echo "Stopping embedded PostgreSQL..."; run_as_user pg_ctl -D "$PG_DATA" -m fast stop 2>/dev/null; exit 0' TERM INT
-fi
-
-exec run_as_user /usr/local/bin/duskcue
+```dockerfile
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/duskcue-entrypoint"]
+CMD ["start"]
 ```
+
+The `start` command performs these responsibilities:
+
+- Creates `/data` and `/cache` roots as root, then creates runtime subdirectories as the target UID/GID so the container continues to work with `cap_drop: ALL`.
+- Drops privileges using numeric `su-exec "$PUID:$PGID"` instead of writing permanent users to `/etc/passwd`.
+- Uses `nss_wrapper` during PostgreSQL initialization so `initdb` can resolve the numeric runtime UID/GID even with a read-only root filesystem.
+- Starts embedded PostgreSQL only when `DUSKCUE_DATABASE_URL` is unset. External database mode skips `/data/postgres` and `/var/run/postgresql` lifecycle entirely.
+- Initializes embedded PostgreSQL with `initdb --data-checksums --auth=trust --encoding=UTF8 --username=duskcue`.
+- Configures embedded PostgreSQL with `listen_addresses=''` and a tmpfs Unix socket at `/var/run/postgresql`.
+- Starts the Rust API on `DUSKCUE_INTERNAL_BIND_ADDRESS:DUSKCUE_INTERNAL_API_PORT` (`127.0.0.1:48028` by default), waits for `/health/ready`, then starts SvelteKit on the public `HOST:PORT`.
+- Handles `SIGTERM` and `SIGINT` by stopping SvelteKit, the Rust API, and embedded PostgreSQL in order.
+
+If `PUID` or `PGID` changes on an existing installation, the operator must ensure the existing `/data` and `/cache` contents are writable by the new IDs. PostgreSQL data directories commonly use mode `0700`, so a one-time maintenance `chown` may be required before restarting with a different runtime UID/GID.
 
 ### Startup Sequence (Embedded Mode)
 
@@ -454,14 +340,15 @@ exec run_as_user /usr/local/bin/duskcue
 6. Wait for pg_isready (up to 60s)
 7. Export DUSKCUE_DATABASE_URL (Unix socket connection)
 8. Drop privileges (su-exec duskcue)
-9. Server binary starts:
+9. Rust API binary starts:
    a. Parse CLI/env → BootstrapConfig
    b. Connect to PostgreSQL
    c. Run pending migrations (sqlx embedded)
    d. Load server_config → RuntimeConfig (or seed defaults → setup wizard)
    e. Start scheduled tasks
-   f. Bind HTTP listener on :48027
+   f. Bind internal HTTP listener on 127.0.0.1:48028
    g. Ready
+10. Entrypoint starts SvelteKit adapter-node on public :48027 with DUSKCUE_INTERNAL_API_URL pointing to the internal API
 ```
 
 ## Security
@@ -513,9 +400,9 @@ cap_add:
 
 ### Dockerfile Baseline
 
-The root `Dockerfile` is the Phase 15 runtime image definition. It uses Alpine `3.24` as the current stable baseline with tag-plus-digest pinned Docker Official Image inputs, builds the SvelteKit adapter-node client and Rust server in separate named stages, and copies both artifacts into the runtime image. Runtime packages include PostgreSQL 18, PostgreSQL client/contrib utilities, FFmpeg, Node.js, `tini`, `su-exec`, Bash, CA certificates, and timezone data.
+The root `Dockerfile` is the Phase 15 runtime image definition. It uses Alpine `3.24` as the current stable baseline with tag-plus-digest pinned Docker Official Image inputs, builds the SvelteKit adapter-node client and Rust server in separate named stages, and copies both artifacts into the runtime image. Runtime packages include PostgreSQL 18, PostgreSQL client/contrib utilities, FFmpeg, Node.js, `tini`, `su-exec`, `nss_wrapper`, Bash, CA certificates, and timezone data.
 
-The active Docker command remains `duskcue` until `docker/entrypoint.sh` is finalized. The Phase 15 entrypoint work owns embedded PostgreSQL initialization, external database bypass, PUID/PGID user remapping, and multi-process startup behavior for PostgreSQL plus the web/server surface.
+The runtime image exposes `48027`, declares `/data` and `/cache` volumes, includes a Docker `HEALTHCHECK` against `/health/ready`, and starts through `/usr/local/bin/duskcue-entrypoint start`.
 
 ### Hardware Acceleration
 
@@ -596,16 +483,37 @@ docker compose logs -f duskcue
 # Browser: http://<host-ip>:48027
 ```
 
-### Backup
+### Backup And Restore
 
 ```bash
-# Full backup (all data including embedded PostgreSQL)
-docker run --rm -v duskcue-data:/data -v $(pwd):/backup \
-  alpine tar czf /backup/duskcue-data.tar.gz /data
+# Database-only logical backup, written inside the persistent data volume.
+docker compose exec duskcue mkdir -p /data/backups
+docker compose exec duskcue pg_dump -U duskcue -Fc -f /data/backups/duskcue.dump duskcue
 
-# Database-only backup
-docker compose exec duskcue pg_dump -U duskcue duskcue > backup.sql
+# Inspect a custom-format dump before restoring it.
+docker compose exec duskcue pg_restore --list /data/backups/duskcue.dump
+
+# Full stopped-volume backup. This captures config, metadata, logs, backups,
+# and embedded PostgreSQL data in one consistent filesystem snapshot.
+docker compose stop duskcue
+docker run --rm -v duskcue-data:/data:ro -v "${PWD}:/backup" alpine \
+  tar czf /backup/duskcue-data.tar.gz -C / data
+docker compose up -d duskcue
 ```
+
+Restore sequence for embedded PostgreSQL:
+
+```bash
+docker compose stop duskcue
+docker run --rm -v duskcue-data:/data alpine sh -c 'rm -rf /data/postgres'
+docker compose up -d duskcue
+docker compose exec duskcue pg_restore -U duskcue -d duskcue --clean --if-exists /data/backups/duskcue.dump
+docker compose restart duskcue
+```
+
+For external PostgreSQL mode, use the external database service's native backup policy and run `pg_dump` / `pg_restore` against that service. The Duskcue container intentionally skips embedded PostgreSQL socket and data-path setup when `DUSKCUE_DATABASE_URL` is set.
+
+The Phase 13a backup/recovery domain remains the product-level backup scheduler and recovery drill owner. This Docker runbook is the operator-level procedure for ad hoc volume snapshots, emergency logical dumps, and manual restores.
 
 ### Update
 
@@ -621,6 +529,19 @@ docker compose logs -f duskcue
 # Transcode cache (tmpfs — purged on restart)
 docker compose restart duskcue
 ```
+
+### Smoke Verification
+
+Local container verification is implemented in `scripts/verify-docker.ps1`. It builds or reuses an image, starts a disposable container with temporary Docker volumes, `read_only: true`, tmpfs mounts, `cap_drop: ALL`, and `PUID=1000` / `PGID=1000`, then verifies:
+
+- Public `/health/ready` and `/health/live`
+- API reachability through the public SvelteKit proxy
+- Embedded PostgreSQL socket availability and runtime-writable paths
+- Stop/start restart behavior with the same persistent volumes
+
+An external PostgreSQL smoke test was also run with a disposable `postgres:18-alpine` container. In that mode Duskcue reached readiness through `DUSKCUE_DATABASE_URL` and did not create or use the embedded PostgreSQL socket.
+
+Docker Buildx static checks passed for `linux/amd64,linux/arm64`. A full local multi-platform runtime build was attempted twice and timed out under local emulation; release production of the final manifest list is therefore delegated to the protected GitHub Actions release workflow.
 
 ## Disk Space Monitoring
 

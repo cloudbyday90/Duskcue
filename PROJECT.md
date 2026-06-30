@@ -343,12 +343,13 @@ Docker deployment strategy is documented in [DOCKER_DEPLOYMENT.md](docs/operatio
 
 **Key decisions:**
 - **Hybrid database strategy** — embedded PostgreSQL by default (single container); external PostgreSQL optional (set `DUSKCUE_DATABASE_URL`); same binary works both ways
+- **Single public surface** — SvelteKit adapter-node owns public port `48027` and proxies `/api`, `/health`, `/health/*`, and `/metrics` to the internal Rust API on `127.0.0.1:48028`
 - **Embedded PostgreSQL** — PG18 Alpine packages inside the container; entrypoint manages init/start/stop; listens on Unix socket only (no network exposure); trust auth (local only); `data_checksums=on`; influenced by Classifarr's production-proven all-in-one pattern
 - **Non-Docker embedded PG** — `postgresql_embedded` crate (theseus-rs) manages PG binaries at runtime for native Windows/macOS/Linux; zero external dependencies
 - **Single container, single volume** — `/data` holds config, metadata, logs, AND PostgreSQL data; backup one volume = backup everything
 - **PG Unix socket on tmpfs** — `/var/run/postgresql` as tmpfs; 3-5x faster than TCP; uid/gid/mode match runtime user
 - **`read_only: true` + `no-new-privileges`** — enabled by default; all writable paths are volumes or tmpfs
-- **PUID/PGID user mapping** — container runs as non-root user with configurable UID/GID
+- **PUID/PGID user mapping** — container runs as non-root user with configurable UID/GID; `nss_wrapper` supports numeric runtime users without mutating `/etc/passwd` on a read-only root filesystem
 - **`cap_drop: ALL`** — only CHOWN, SETUID, SETGID added
 - **`stop_grace_period: 120s`** — gives PostgreSQL time to perform shutdown checkpoint before Docker sends SIGKILL
 - **tmpfs for transcode + PG socket + /tmp** — RAM-backed; no disk wear; auto-cleaned
@@ -548,8 +549,8 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 13b: Notification System | **Complete** (All 6 tasks — Fluent i18n infrastructure + template migration, multi-channel dispatch pipeline with SSE/webhook/push fan-out + DB-write-first guarantee, in-app notification center CRUD with cursor pagination + preferences + admin test dispatch, webhook format-specific dispatch [generic/ntfy/gotify/discord/slack] + HMAC signing for all formats + exponential-backoff retry with full jitter + retryable/non-retryable status classification, `user_push_devices` table + registration/heartbeat/revoke API + 30-day stale-device deactivation, notifications UI — navbar bell + dropdown + persistent notification center store with SSE + polling + full-page Feed/Preferences/Push-Devices/Admin-Test hub) | — |
 | Phase 14: Platform Migration | **In progress** (Tasks 0-13 complete: scaffold, hardening, API foundation, source security, preflight, async runner, Jellyfin/Emby + Plex extraction, user mapping, matching, manual review, import merge, rollback, progress events/metrics/notifications) | — |
 | Pre-v1.0 Hardening | **Complete** (Tasks 1-7 complete: Cache-Control + ETag response headers; Paraglide JS adoption + English web message catalog; faceted search API/UI; Prometheus metrics for SSE/search/images/notifications; AI-initial preview translations for 7 non-English locales; Arabic RTL layout review; locale preferences API + reviewed-locale language switcher + Weblate activation runbook) | — |
-| Phase 15 | **In progress** (Task 1 complete: multi-stage Alpine Dockerfile + root `.dockerignore`) | — |
-| Phase 16 | Not started | — |
+| Phase 15 | **Complete** (Docker image, single-container topology, entrypoint, compose, health/smoke verification, hardening, backup runbook, GHCR workflows) | `bd3adb4` |
+| Phase 16a | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
 
@@ -835,13 +836,15 @@ CI and testing strategy are documented in [CI_TESTING.md](docs/ci/CI_TESTING.md)
 Docker build and release strategy are documented in [DOCKER_BUILD_RELEASE.md](docs/operations/DOCKER_BUILD_RELEASE.md). Covers: BuildKit/buildx usage, multi-stage Dockerfile rules, multi-architecture publication, GitHub Actions publication design, cache strategy, secret handling, OCI metadata, and image attestations.
 
 **Key decisions:**
-- **Native IPv6 support planned for Phase 15** — configurable bind address, dual-stack listener support, bracketed IPv6 URL generation, IPv6 CIDR trust boundaries, and Docker/Compose IPv6 examples
+- **Native IPv6 support implemented** — configurable bind address and port, dual-stack listener support where the host allows it, bracketed IPv6 startup URLs, IPv6 CIDR trust-boundary design, and Docker/Compose IPv6 examples
 - **BuildKit/buildx is the Linux default** — legacy builder is not the design center; release publication uses Buildx and protected GitHub Actions workflows
 - **GHCR is the source of truth** — release images publish to GHCR first with optional future Docker Hub mirroring
 - **Multi-arch manifest publication** — one operator-facing image name publishes `linux/amd64` and `linux/arm64`
 - **Explicit supply-chain evidence** — published images ship with SBOMs, provenance, and GitHub artifact attestations
 - **Secret-safe builds** — build credentials use BuildKit secret and SSH mounts, never plain build args
-- **Phase 15 Task 1 Dockerfile exists** — root `Dockerfile` builds SvelteKit web output and the Rust server in named Alpine-based stages, pins all external base images by digest, and emits a runtime target with PostgreSQL 18 runtime packages, FFmpeg, Node.js, `tini`, `su-exec`, and the documented `/data`/`/cache`/`/media` volume paths. Root `.dockerignore` keeps local build outputs, dependencies, docs, scripts, VCS metadata, and secrets out of the default context. The active command remains `duskcue` until the Phase 15 entrypoint work replaces the current stub with embedded-PostgreSQL startup orchestration.
+- **Phase 15 Docker packaging complete** — root `Dockerfile` builds SvelteKit web output and the Rust server in named Alpine-based stages, pins external base images by digest, and emits a runtime target with PostgreSQL 18, FFmpeg, Node.js, `tini`, `su-exec`, `nss_wrapper`, the finalized entrypoint, and `/health/ready` image healthcheck. The canonical container surface is SvelteKit on public `48027`; it proxies API, health, and metrics routes to the Rust API on internal loopback `48028`.
+- **Single-container default with external-DB escape hatch** — if `DUSKCUE_DATABASE_URL` is unset, the entrypoint initializes and supervises embedded PostgreSQL on a Unix socket. If it is set, embedded PostgreSQL lifecycle is skipped entirely.
+- **Release workflows implemented** — Docker validation builds a runtime image and runs the local smoke verifier; release publication builds a GHCR `linux/amd64,linux/arm64` image with OCI metadata, SBOM, max-detail provenance, and GitHub build attestation.
 
 ## Base-Image Refresh Policy
 
@@ -958,13 +961,13 @@ Release artifact retention and rollback evidence are documented in [RELEASE_ARTI
 Configuration strategy is documented in [CONFIGURATION.md](docs/operations/CONFIGURATION.md). Covers: two-tier architecture (bootstrap pre-DB + runtime post-DB), config-rs + clap library selection, TOML format, layered merge (CLI > ENV > TOML > defaults), file discovery per platform, first-run setup wizard, Docker/Synology integration, hot-reload policy.
 
 **Key decisions:**
-- **Two-tier config** — bootstrap (TOML + ENV + CLI, 8 planned fields including bind address) to reach the database and listener; runtime (`server_config` table) for everything else
+- **Two-tier config** — bootstrap (TOML + ENV + CLI, 9 fields including bind address and port) to reach the database and listener; runtime (`server_config` table) for everything else
 - **Single source of truth** — the database is the source of truth for all server behavior; no file/DB sync issues
 - **TOML format** — human-readable, commentable, Rust-native, no YAML type coercion surprises
 - **Layered merge** — CLI args override ENV vars override TOML file override built-in defaults (via config-rs 0.15)
-- **Bootstrap fields** — `database_url`, `data_dir`, `cache_dir`, `log_level`, `environment`, `encryption_key`; everything else is in `server_config`
+- **Bootstrap fields** — `database_url`, `data_dir`, `cache_dir`, `bind_address`, `port`, `log_level`, `environment`, `encryption_key`, `geoip_license_key`; everything else is in `server_config`
 - **First-run setup wizard** — fresh DB seeds defaults, launches browser-based setup for admin account, server name, networking, first library
-- **Docker-friendly** — single env var `DUSKCUE_DATABASE_URL` is all that's required; setup wizard handles the rest
+- **Docker-friendly** — embedded PostgreSQL is the default when `DUSKCUE_DATABASE_URL` is unset; external database mode is activated by setting that one env var
 
 ## Logging & Observability
 

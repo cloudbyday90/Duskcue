@@ -66,19 +66,28 @@ database_url = "postgresql://duskcue:password@localhost:5432/duskcue"
 data_dir = "/var/lib/duskcue"
 cache_dir = "/var/cache/duskcue"
 bind_address = "0.0.0.0"
+port = 48027
 log_level = "info"
 environment = "production"
 encryption_key = "auto-generated-hex-encoded-256-bit-key"
 geoip_license_key = ""
 ```
 
-Eight fields. Everything else is in `server_config` after the database is reachable.
+Nine fields. Everything else is in `server_config` after the database is reachable.
 
 ### Field Reference
 
 | Field | Type | Default | ENV Override | CLI Override | Required |
 |---|---|---|---|---|---|
 | `database_url` | String | — | `DUSKCUE_DATABASE_URL` | `--database-url` | Conditional |
+| `data_dir` | Path | Platform default | `DUSKCUE_DATA_DIR` | `--data-dir` | No |
+| `cache_dir` | Path | `{data_dir}/cache` | `DUSKCUE_CACHE_DIR` | `--cache-dir` | No |
+| `bind_address` | String | `0.0.0.0` | `DUSKCUE_BIND_ADDRESS` | `--bind-address` | No |
+| `port` | u16 | `48027` | `DUSKCUE_PORT` | `--port` | No |
+| `log_level` | String | `info` | `DUSKCUE_LOG_LEVEL` | `--log-level` | No |
+| `environment` | String | `production` | `DUSKCUE_ENVIRONMENT` | `--environment` | No |
+| `encryption_key` | String | Auto-generated | `DUSKCUE_ENCRYPTION_KEY` | `--encryption-key` | No |
+| `geoip_license_key` | String | — | `DUSKCUE_GEOIP_LICENSE_KEY` | `--geoip-license-key` | No |
 
 `database_url` is **conditional**: it is required in external database mode, but **not required** in embedded database mode. When `database_url` is absent from all sources (CLI, ENV, TOML):
 
@@ -87,13 +96,6 @@ Eight fields. Everything else is in `server_config` after the database is reacha
 - **External mode:** Set `database_url` explicitly to connect to any existing PostgreSQL instance (Docker sidecar, managed cloud DB, shared NAS database)
 
 See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for the full embedded/external database strategy.
-| `data_dir` | Path | Platform default | `DUSKCUE_DATA_DIR` | `--data-dir` | No |
-| `cache_dir` | Path | `{data_dir}/cache` | `DUSKCUE_CACHE_DIR` | `--cache-dir` | No |
-| `bind_address` | String | `0.0.0.0` | `DUSKCUE_BIND_ADDRESS` | `--bind-address` | No |
-| `log_level` | String | `info` | `DUSKCUE_LOG_LEVEL` | `--log-level` | No |
-| `environment` | String | `production` | `DUSKCUE_ENVIRONMENT` | `--environment` | No |
-| `encryption_key` | String | Auto-generated | `DUSKCUE_ENCRYPTION_KEY` | `--encryption-key` | No |
-| `geoip_license_key` | String | — | `DUSKCUE_GEOIP_LICENSE_KEY` | `--geoip-license-key` | No |
 
 `environment` must be one of: `development`, `staging`, `production`. This controls error response verbosity as documented in ERROR_HANDLING.md.
 
@@ -144,6 +146,7 @@ All bootstrap fields are overridable via environment variables with the `DUSKCUE
 DUSKCUE_DATABASE_URL="postgresql://user:pass@db:5432/duskcue"
 DUSKCUE_DATA_DIR="/data"
 DUSKCUE_BIND_ADDRESS="::"
+DUSKCUE_PORT="48027"
 DUSKCUE_LOG_LEVEL="debug"
 DUSKCUE_ENVIRONMENT="production"
 ```
@@ -159,6 +162,8 @@ Options:
       --database-url <URL>       PostgreSQL connection string
       --data-dir <PATH>          Server data directory
       --cache-dir <PATH>         Transcode/cache directory
+      --bind-address <ADDR>      HTTP bind address
+      --port <PORT>              HTTP port
       --log-level <LEVEL>        Log level (trace|debug|info|warn|error)
       --environment <ENV>        Runtime environment (development|staging|production)
       --config <PATH>            Path to config.toml (overrides default discovery)
@@ -216,6 +221,9 @@ pub struct CliArgs {
     #[arg(long, env = "DUSKCUE_BIND_ADDRESS", default_value = "0.0.0.0")]
     pub bind_address: String,
 
+    #[arg(long, env = "DUSKCUE_PORT", default_value_t = 48027)]
+    pub port: u16,
+
     #[arg(long, env = "DUSKCUE_LOG_LEVEL", default_value = "info")]
     pub log_level: String,
 
@@ -238,6 +246,7 @@ pub struct BootstrapConfig {
     pub data_dir: PathBuf,
     pub cache_dir: PathBuf,
     pub bind_address: String,
+    pub port: u16,
     pub log_level: String,
     pub environment: String,
     pub encryption_key: Option<String>,
@@ -247,7 +256,9 @@ pub struct BootstrapConfig {
 
 `database_url` is `Option<String>` in both `CliArgs` and `BootstrapConfig`. When `None` after layering, the server attempts to start embedded PostgreSQL (Docker entrypoint provides it, or `postgresql_embedded` crate handles it for native deployments).
 
-`bind_address` is planned for Phase 15 native IPv6 support. It should accept IPv4 literals, IPv6 literals such as `::` and `::1`, and DNS names only when explicit resolution behavior is implemented. Generated URLs that use IPv6 literals must use bracket notation.
+`bind_address` and `port` are implemented by the Phase 15 listener changes. They accept IPv4 and IPv6 bind literals such as `0.0.0.0`, `127.0.0.1`, `::`, and `::1`. Startup logging formats IPv6 listener URLs with bracket notation, for example `http://[::]:48027`.
+
+In Docker, the public SvelteKit listener uses `HOST`/`PORT` derived from `DUSKCUE_BIND_ADDRESS` and `DUSKCUE_PORT`. The Rust API process is intentionally separate and internal, using `DUSKCUE_INTERNAL_BIND_ADDRESS` and `DUSKCUE_INTERNAL_API_PORT` (`127.0.0.1:48028` by default). SvelteKit proxies `/api`, `/health`, `/health/*`, and `/metrics` to `DUSKCUE_INTERNAL_API_URL`.
 
 `geoip_license_key` is `Option<String>` — when `None` or empty, GeoIP enrichment runs in degraded mode (no geolocation lookups) and the weekly `geoip_database_update` scheduled task is a no-op. To enable, obtain a free MaxMind license key and set it via `DUSKCUE_GEOIP_LICENSE_KEY` env var or `geoip_license_key` in `config.toml`. See [ANALYTICS_SECURITY.md](../security/ANALYTICS_SECURITY.md) for the full GeoIP pipeline design.
 
@@ -733,7 +744,7 @@ When `server_config` has no rows (fresh database):
 
 This means a fresh Docker container only needs:
 ```bash
-docker run -e DUSKCUE_DATABASE_URL="postgresql://..." -p 48027:48027 duskcue
+docker run -v /path/to/movies:/media/movies:ro -p 48027:48027 duskcue
 ```
 
 The setup wizard handles everything else through the browser.
@@ -756,7 +767,7 @@ The entrypoint automatically initializes PostgreSQL, creates the database, and p
 docker run -e DUSKCUE_DATABASE_URL="postgresql://user:pass@db-host:5432/duskcue" -p 48027:48027 duskcue
 ```
 
-The production `docker-compose.yml` includes PostgreSQL, healthchecks, named volumes, PUID/PGID user mapping, and hardware acceleration options. See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for the full compose file and `.env.example`.
+The production `docker-compose.yml` includes embedded PostgreSQL lifecycle management, healthchecks, named volumes, PUID/PGID user mapping, read-only-root hardening, and hardware acceleration examples. See [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md) for the full compose file and `.env.example`.
 
 ### Synology NAS
 
@@ -867,14 +878,15 @@ Common alternatives considered:
 
 ## Implementation Status
 
-**Phase 1 (complete):** The bootstrap config layer is fully implemented in `server/src/config.rs`:
+**Phase 1 + Phase 15 (complete):** The bootstrap config layer is fully implemented in `server/src/config.rs`:
 
-- `CliArgs` struct with clap derive, all six fields with `DUSKCUE_` env var support
+- `CliArgs` struct with clap derive and `DUSKCUE_` env var support
 - `BootstrapConfig` struct with serde Deserialize
 - `build_bootstrap_config()` function with config-rs layered merge
 - Platform-aware `data_dir` defaults (Windows/macOS/Linux)
 - Environment validation (`development`/`staging`/`production`)
 - `set_override_option` for optional `database_url` field
+- Phase 15 listener fields: `bind_address` / `DUSKCUE_BIND_ADDRESS` / `--bind-address` and `port` / `DUSKCUE_PORT` / `--port`
 
 **Phase 3 (in progress):** The runtime config layer and `AppState` are partially implemented in `server/src/state.rs`:
 

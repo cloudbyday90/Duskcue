@@ -136,6 +136,30 @@ Purpose: produce the operator-facing image.
 - Publish durable release evidence manifests and checksums according to [RELEASE_ARTIFACT_RETENTION.md](../ci/RELEASE_ARTIFACT_RETENTION.md), not only as workflow artifacts.
 - Optionally mirror to Docker Hub only after the GHCR publish and attestation steps succeed.
 
+## Implemented GitHub Actions
+
+### Docker validation
+
+`.github/workflows/docker-validation.yml` validates container packaging on pull requests and protected-branch pushes that touch Docker, compose, workflow, web, or server paths.
+
+- Uses official Docker actions pinned by full commit SHA.
+- Builds the `runtime` target for `linux/amd64` and loads it as `duskcue:ci`.
+- Runs `scripts/verify-docker.ps1 -SkipBuild -Image duskcue:ci`, which exercises embedded PostgreSQL, public health/readiness, proxied API reachability, read-only-root hardening, PUID/PGID writability, and restart behavior.
+- Keeps permissions at `contents: read` only.
+
+### Docker release
+
+`.github/workflows/docker-release.yml` publishes GHCR images from SemVer tags (`v*.*.*`, including prereleases) and manual dispatch.
+
+- Uses QEMU plus Buildx to publish `linux/amd64` and `linux/arm64`.
+- Authenticates to GHCR with `GITHUB_TOKEN`.
+- Publishes OCI metadata and SemVer-derived tags through `docker/metadata-action`.
+- Uses trusted registry cache refs under the image package namespace.
+- Enables BuildKit SBOM and `provenance=mode=max`.
+- Requests GitHub build-provenance attestation for the pushed subject digest.
+
+Local verification covered a successful `linux/amd64` runtime image build and Docker Buildx static checks for `linux/amd64,linux/arm64`. Two full local `linux/amd64,linux/arm64` runtime builds timed out on the workstation, so the protected release workflow is the canonical full manifest producer.
+
 ## Dockerfile and Build Rules
 
 ### Multi-stage contract
@@ -148,16 +172,18 @@ Purpose: produce the operator-facing image.
 
 ### Current Dockerfile implementation
 
-The Phase 15 Task 1 Dockerfile uses these release-stage boundaries:
+The Phase 15 Dockerfile uses these release-stage boundaries:
 
 | Stage | Purpose |
 |---|---|
 | `web-deps` | Installs SvelteKit dependencies from `clients/web/package-lock.json` with an npm cache mount. |
 | `web-builder` | Produces the adapter-node web artifact under `clients/web/build`. |
 | `rust-builder` | Builds the `duskcue` server binary on Alpine for `linux/amd64` and `linux/arm64` Buildx targets. |
-| `runtime` | Publishes the Alpine runtime image with Duskcue, web output, PostgreSQL 18 packages, FFmpeg, Node.js, `tini`, `su-exec`, and documented volume paths. |
+| `runtime` | Publishes the Alpine runtime image with Duskcue, web output, PostgreSQL 18 packages, FFmpeg, Node.js, `tini`, `su-exec`, `nss_wrapper`, the entrypoint, healthcheck, and documented volume paths. |
 
 All external base images in the Dockerfile use Docker Official Images with `tag@sha256:digest` references. The current baseline is Alpine `3.24` per [BASE_IMAGE_REFRESH_POLICY.md](../ci/BASE_IMAGE_REFRESH_POLICY.md).
+
+The runtime target starts through `/usr/local/bin/duskcue-entrypoint start`. The public HTTP surface is SvelteKit adapter-node on `48027`; the Rust API is internal on `127.0.0.1:48028` by default and is reached through SvelteKit proxy routes.
 
 ### Context hygiene
 
@@ -178,17 +204,17 @@ All external base images in the Dockerfile use Docker Official Images with `tag@
 
 ### Decision
 
-Publish `linux/amd64` and `linux/arm64` from one Buildx manifest list, using Rust cross-compilation-friendly stages where possible and avoiding QEMU as the default compilation path.
+Publish `linux/amd64` and `linux/arm64` from one Buildx manifest list. The initial release workflow uses Buildx with QEMU enabled for the non-native platform; Rust-friendly cross-compilation and native multi-node builders remain the preferred optimization if release duration becomes material.
 
 ### Why this fits the project
 
 - The project already targets x86_64 and ARM64 in [PROJECT.md](../../PROJECT.md) and uses Rust as the primary backend.
-- Rust cross-compilation is more predictable than emulated full-system compilation for recurring release builds.
+- Buildx produces one operator-facing manifest while keeping cross-compilation, QEMU fallback, and future native builders behind the same workflow boundary.
 - The runtime image stays single-name for operators, which matches the simplicity goal already established in [DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md).
 
 ### Guardrails
 
-1. QEMU remains acceptable for fallback validation or rare dependency edge cases.
+1. QEMU is acceptable for the first protected release workflow but should not become a blocker to adopting faster native or cross-compiled builds later.
 2. If release duration or cache churn becomes material, native multi-node builders or Docker Build Cloud can be revisited.
 3. The release workflow should verify the produced manifest list, not just one platform image.
 

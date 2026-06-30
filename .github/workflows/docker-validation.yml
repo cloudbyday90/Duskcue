@@ -1,0 +1,62 @@
+name: Docker Validation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - docker/**
+      - docker-compose.yml
+      - scripts/verify-docker.ps1
+      - .github/workflows/docker-validation.yml
+      - Cargo.toml
+      - Cargo.lock
+      - server/**
+      - crates/**
+      - clients/web/**
+  push:
+    branches: [main]
+    paths:
+      - Dockerfile
+      - .dockerignore
+      - docker/**
+      - docker-compose.yml
+      - scripts/verify-docker.ps1
+      - .github/workflows/docker-validation.yml
+      - Cargo.toml
+      - Cargo.lock
+      - server/**
+      - crates/**
+      - clients/web/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime-image:
+    name: Build and Smoke Test Runtime Image
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f
+
+      - name: Build runtime image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8
+        with:
+          context: .
+          target: runtime
+          platforms: linux/amd64
+          tags: duskcue:ci
+          load: true
+          cache-from: type=gha,scope=duskcue-runtime-validation
+          cache-to: type=gha,scope=duskcue-runtime-validation,mode=max
+
+      - name: Smoke test runtime image
+        shell: pwsh
+        run: ./scripts/verify-docker.ps1 -SkipBuild -Image duskcue:ci

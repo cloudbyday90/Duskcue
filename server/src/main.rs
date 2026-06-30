@@ -41,6 +41,14 @@ use tokio_util::task::TaskTracker;
 
 static SHUTDOWN_STARTED: AtomicBool = AtomicBool::new(false);
 
+fn format_listen_url(bind_address: &str, port: u16) -> String {
+    if bind_address.contains(':') && !bind_address.starts_with('[') {
+        format!("http://[{bind_address}]:{port}")
+    } else {
+        format!("http://{bind_address}:{port}")
+    }
+}
+
 async fn wait_for_signal(shutdown: CancellationToken) {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
@@ -276,6 +284,9 @@ async fn main() {
             std::process::exit(1);
         });
 
+    let bind_address = bootstrap.bind_address.clone();
+    let port = bootstrap.port;
+
     let state = AppState::new_with_config(
         pool,
         bootstrap,
@@ -301,11 +312,20 @@ async fn main() {
     }
 
     let app = build_router(state.clone()).with_state(state.clone());
-    let listener = tokio::net::TcpListener::bind(("0.0.0.0", 48027))
+    let listener = tokio::net::TcpListener::bind((bind_address.as_str(), port))
         .await
-        .expect("failed to bind to port 48027");
+        .unwrap_or_else(|e| {
+            tracing::error!(
+                bind_address = %bind_address,
+                port,
+                error = %e,
+                "Failed to bind HTTP listener"
+            );
+            eprintln!("Failed to bind {bind_address}:{port}: {e}");
+            std::process::exit(1);
+        });
 
-    tracing::info!("Listening on http://0.0.0.0:48027");
+    tracing::info!(url = %format_listen_url(&bind_address, port), "Listening");
     tracing::info!("Duskcue ready");
 
     let tracker = TaskTracker::new();

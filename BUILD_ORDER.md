@@ -3583,6 +3583,8 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 ## Phase 15 — Docker & Deployment
 
+**Committed:** `bd3adb4` on `main`
+
 **Goal:** Production-ready Docker image with embedded PostgreSQL.
 
 **Authoritative docs:**
@@ -3600,58 +3602,37 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 **Tasks:**
 
 1. ~~Finalize `Dockerfile` — multi-stage Alpine build for x86_64 + ARM64~~ **DONE**
-2. Define production web/API/container process topology:
-   - Choose the canonical single-container public surface for the SvelteKit adapter-node web app and Rust API
-   - Decide whether Rust serves the web app/static output, SvelteKit fronts the API, or an internal reverse proxy/process supervisor owns the public port
-   - Document how `/`, `/api`, `/health`, streaming routes, SSE, cookies, and reverse-proxy headers flow in production
-3. Implement configurable bind/listen behavior:
-   - `DUSKCUE_BIND_ADDRESS` for IPv4/IPv6 address selection
-   - `DUSKCUE_PORT` or equivalent runtime port configuration if the topology needs separate internal API/web ports
-   - Dual-stack `::` listener support where the host/Docker engine allows it
-   - Bracketed IPv6 URL generation for `base_url`, WebAuthn origins, redirects, and generated server URLs
-   - IPv6 CIDR parsing for metrics/trusted proxies
-4. Finalize `docker/entrypoint.sh`:
-   - Embedded PG mode: `initdb` → `pg_ctl start` → `pg_isready` → `createdb` → start server
-   - External PG mode: skip PG lifecycle, use `DUSKCUE_DATABASE_URL`
-   - PUID/PGID user creation and privilege drop via `su-exec`
-   - Signal handling for every long-running child process owned by the container
-   - Explicit embedded PostgreSQL layout (`PGDATA`, socket path, log path, `initdb --data-checksums`, stale `postmaster.pid` handling)
-5. Create `docker-compose.yml` — single-container with embedded PG, volumes, tmpfs, optional IPv6 bindings, hardware-acceleration examples, and external-PG override guidance
-6. Add container health/readiness and smoke verification:
-   - Health check distinguishes process-up from ready-after-migrations
-   - Verify embedded PostgreSQL accepts connections, migrations completed, public web surface responds, API responds, and streaming/SSE routes are reachable
-   - Add `scripts/verify-docker.ps1` or equivalent local smoke script using temporary Docker volumes and cleanup
-7. Test multi-arch build: `docker buildx build --platform linux/amd64,linux/arm64`
-8. Test PUID/PGID mapping on Linux:
-   - Media bind mounts remain read-only
-   - `/data`, `/cache`, `/data/transcode`, and PostgreSQL socket/data paths remain writable by the runtime UID/GID
-   - External database mode does not require embedded PG writable paths
-9. Test embedded PG lifecycle — first startup, restart, graceful shutdown checkpoint, crash recovery, stale PID cleanup, and external-PG bypass
-10. Verify security hardening:
-   - `read_only: true`, `no-new-privileges`, `cap_drop: ALL`
-   - Minimal `cap_add` only where PUID/PGID requires it
-   - Writable paths isolated to volumes/tmpfs
-   - No secrets in Dockerfile history, image labels, or default environment
-   - Runtime image contains no build toolchain
-11. Add Docker operator backup/restore runbook:
-   - `docker exec` examples for `pg_dump`, `pg_restore`, and database health inspection
-   - Filesystem backup guidance for `/data`, `/cache`, and media bind mounts
-   - Safe stop/start procedure for volume snapshots
-   - Relationship to Phase 13a backup/recovery drill evidence
-12. Add release workflow:
-   - GHCR publish workflow with Buildx, multi-arch manifest, protected tags, OCI labels, SBOM, max-detail provenance, and GitHub artifact attestations
-   - PR/runtime-image validation workflow for Dockerfile, entrypoint, compose, and smoke-script changes
-   - Base-image freshness checks per [BASE_IMAGE_REFRESH_POLICY.md](docs/ci/BASE_IMAGE_REFRESH_POLICY.md)
+2. ~~Define production web/API/container process topology~~ **DONE**
+3. ~~Implement configurable bind/listen behavior~~ **DONE**
+4. ~~Finalize `docker/entrypoint.sh`~~ **DONE**
+5. ~~Create `docker-compose.yml`~~ **DONE**
+6. ~~Add container health/readiness and smoke verification~~ **DONE**
+7. ~~Test multi-arch build: `docker buildx build --platform linux/amd64,linux/arm64`~~ **DONE with CI handoff**
+8. ~~Test PUID/PGID mapping on Linux~~ **DONE**
+9. ~~Test embedded PG lifecycle~~ **DONE**
+10. ~~Verify security hardening~~ **DONE**
+11. ~~Add Docker operator backup/restore runbook~~ **DONE**
+12. ~~Add release workflow~~ **DONE**
 
 **Verification:** `docker compose up` starts a single container with embedded PG, serves the web UI and API from the documented public surface, listens on 48027 over IPv4 by default and can be configured for IPv6/dual-stack binding, health/readiness checks pass only after migrations complete, graceful shutdown preserves data, restart/crash recovery works, external-PG mode skips embedded PG cleanly, and the release workflow can produce a signed/attested `linux/amd64,linux/arm64` image.
 
-**Task 1 implementation note:** Root `Dockerfile` now uses named BuildKit stages (`web-deps`, `web-builder`, `rust-builder`, `runtime`) with digest-pinned Docker Official Image bases: `alpine:3.24`, `node:24-alpine3.24`, and `rust:alpine3.24`. The runtime target installs PostgreSQL 18 runtime/client/contrib packages, FFmpeg, Node.js for the adapter-node web artifact, `tini`, `su-exec`, CA certificates, timezone data, and Bash for the Phase 15 entrypoint. It creates the documented `/data`, `/cache`, `/media`, `/var/run/postgresql`, and `/data/transcode` paths, strips setuid/setgid bits, exposes 48027, and defaults to `CMD ["duskcue"]` until the entrypoint task replaces the current `docker/entrypoint.sh` stub with embedded-PostgreSQL orchestration. Root `.dockerignore` now excludes local build state, web build artifacts, docs, scripts, VCS metadata, and secrets from the default build context. The first real Alpine release build surfaced Linux-only sandbox compile issues that Windows `cargo check` could not see; fixed by importing Landlock's `Access` trait, mapping `seccompiler` BPF conversion errors through `std::io::Error`, and wrapping `tokio::process::Command::pre_exec` registrations in explicit `unsafe` blocks on Linux. Verified with Docker Buildx static checks and a successful `linux/amd64` runtime image build loaded as `duskcue:phase15-task1`; full `linux/amd64,linux/arm64` manifest verification remains Task 7.
+**Phase 15 implementation note:** Root `Dockerfile` now uses named BuildKit stages (`web-deps`, `web-builder`, `rust-builder`, `runtime`) with digest-pinned Docker Official Image bases. The runtime target installs PostgreSQL 18 runtime/client/contrib packages, FFmpeg, Node.js for the adapter-node web artifact, `tini`, `su-exec`, `nss_wrapper`, CA certificates, timezone data, and Bash; strips setuid/setgid bits; exposes `48027`; declares `/data` and `/cache`; runs `/usr/local/bin/duskcue-entrypoint start`; and includes a Docker `HEALTHCHECK` against `/health/ready`. Root `.dockerignore` keeps local build state, web build artifacts, docs, scripts, VCS metadata, and secrets out of the default build context.
+
+The canonical container topology is one public SvelteKit adapter-node process on `48027`, one internal Rust API process on `127.0.0.1:48028`, and embedded PostgreSQL on a Unix socket when `DUSKCUE_DATABASE_URL` is unset. SvelteKit proxies `/api`, `/health`, `/health/*`, and `/metrics` to the internal API with streaming request/response handling for SSE and media-related API routes. Standalone Rust listener configuration now supports `DUSKCUE_BIND_ADDRESS` / `--bind-address` and `DUSKCUE_PORT` / `--port`, including IPv6 bind literals and bracketed IPv6 startup URLs.
+
+`docker/entrypoint.sh` now owns embedded PostgreSQL init/start/stop, external PostgreSQL bypass, numeric PUID/PGID privilege drop, read-only-root-compatible `nss_wrapper` identity mapping, stale Duskcue lockfile cleanup before the single API process starts, and orderly signal handling for SvelteKit, Rust API, and PostgreSQL. The root `docker-compose.yml` runs the image with named `duskcue-data` / `duskcue-cache` volumes, tmpfs mounts for transcode, PostgreSQL socket, and `/tmp`, `read_only: true`, `no-new-privileges`, `cap_drop: ALL`, minimal CHOWN/SETUID/SETGID capabilities, optional IPv6 binding, and hardware-acceleration examples. `.env.example` documents the embedded-default environment and external database override.
+
+Container verification is implemented in `scripts/verify-docker.ps1`. Local verification passed for the `linux/amd64` runtime image, embedded PostgreSQL startup, public `/health/ready` and `/health/live`, proxied API reachability, PUID/PGID writable paths under read-only-root hardening, stop/start restart behavior, and external PostgreSQL mode against a disposable `postgres:18-alpine` container. `docker buildx build --check --platform linux/amd64,linux/arm64 --target runtime .` passed; two full local multi-platform runtime builds timed out under workstation emulation, so protected GitHub Actions remains the canonical full manifest-list producer.
+
+Docker release automation now exists in `.github/workflows/docker-validation.yml` and `.github/workflows/docker-release.yml`. Validation builds and smoke-tests the runtime image without publish credentials. Release publication runs from protected SemVer tags or manual dispatch, publishes `linux/amd64,linux/arm64` to GHCR, applies OCI metadata, uses registry cache, emits SBOM plus max-detail provenance, and requests GitHub build-provenance attestation.
 
 ---
 
 ## Phase 16a — Desktop & Mobile Clients
 
 **Goal:** Tauri desktop app and Flutter mobile app connecting to the server.
+
+**Context from Phase 15:** Docker deployment now has a stable public base URL on port `48027`; web, API, health, metrics, SSE, and media-related API routes are same-origin from the client perspective because SvelteKit proxies to the internal Rust API. Desktop and mobile clients should treat `http(s)://<server>:48027` as the server origin, not attempt to reach the internal Docker API port `48028`. Push delivery HTTP clients are still part of Phase 16a; Phase 13b already shipped registration/preferences schema and server-side dispatch stubs.
 
 **Authoritative docs:**
 
@@ -3884,7 +3865,7 @@ Phase 8: Web Client Core (COMPLETE — 6 tasks) ←─── (consumes all above
     │       │
     ├── Pre-v1.0 Hardening (Cache-Control/ETag + Paraglide + faceted search + metrics + 7-locale translations + RTL review + locale activation)
     │       │
-    └── Phase 15: Docker & Deployment  ←── needs 13a + 13b + 14 for complete v1.0 image
+    └── Phase 15: Docker & Deployment  ←── COMPLETE — single-container image, compose, smoke verification, GHCR workflows
             ↓
         Phase 16a: Desktop & Mobile Clients  ←── mobile push needs 13b
             ↓
@@ -3907,4 +3888,4 @@ Phase 8: Web Client Core (COMPLETE — 6 tasks) ←─── (consumes all above
         Phase 24: Partner-Gated Platforms  ←── VIZIO, PlayStation, VIDAA, future set-top platforms
 ```
 
-Phases 9–13a can be built in any order after Phase 8, since they are independent domains. Phase 13b depends on Phase 10 (SSE EventBus) + Phase 13a (server_config API). Phase 14 depends on Phase 13a only (not 13b). Phase 15 needs all prior phases for a complete v1.0 image. Phase 16b follows Phase 16a so TV clients can reuse client-auth, playback, and device-quality lessons from desktop/mobile. Phases 17–23 are platform-specific implementation phases with their own Task 0 research/design/enrichment step. Phase 24 handles partner-gated platforms only after platform access confirms viability. See [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md) for the Phase 13 dependency analysis.
+Phases 9–13a can be built in any order after Phase 8, since they are independent domains. Phase 13b depends on Phase 10 (SSE EventBus) + Phase 13a (server_config API). Phase 14 depends on Phase 13a only (not 13b). Phase 15 is complete and provides the stable Docker deployment URL/base URL behavior used by Phase 16a and later client phases. Phase 16b follows Phase 16a so TV clients can reuse client-auth, playback, and device-quality lessons from desktop/mobile. Phases 17–23 are platform-specific implementation phases with their own Task 0 research/design/enrichment step. Phase 24 handles partner-gated platforms only after platform access confirms viability. See [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md) for the Phase 13 dependency analysis.
