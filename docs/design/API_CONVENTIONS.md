@@ -816,21 +816,23 @@ Unauthenticated. Returns 200 with JSON:
 
 This endpoint is NOT under `/api/v1/` — it's at the root level for load balancer and Docker HEALTHCHECK use (see Dockerfile in PROJECT_STRUCTURE.md).
 
-## OpenAPI Documentation
+## Client Contract Documentation
 
-The server exposes OpenAPI 3.1 specification at:
-
-```
-GET /api/v1/docs
-```
-
-This serves a Scalar (or Swagger UI) documentation page. The raw OpenAPI JSON is at:
+Phase 16a uses a checked-in curated client manifest rather than generated OpenAPI:
 
 ```
-GET /api/v1/openapi.json
+docs/api/client-contracts.v1.json
 ```
 
-OpenAPI spec is generated from Axum route definitions at build time. Each domain module's `types.rs` request/response DTOs have `#[derive(ToJsonSchema, ...)]` annotations.
+The manifest is documented in [CLIENT_CONTRACTS.md](../api/CLIENT_CONTRACTS.md) and verified with:
+
+```
+node scripts/verify-client-contracts.mjs
+```
+
+It is the Phase 16a source of truth for desktop/mobile route inventory, auth expectations, response DTO names, and RFC 9457 client-error mapping. It is intentionally narrower than the full server route surface and covers the online desktop/mobile MVP.
+
+Generated OpenAPI 3.1 or JSON Schema remains the Phase 16d direction for broad conformance tests, fixtures, and multi-platform SDK generation. The server does not currently expose `/api/v1/docs` or `/api/v1/openapi.json`.
 
 ## Error Response Integration
 

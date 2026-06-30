@@ -28,11 +28,19 @@ export function clearBearerToken() {
     bearerToken = null;
 }
 
-export function buildApiUrl(path, params = {}) {
+function buildUrl(base, path, params = {}) {
     const search = new URLSearchParams();
     appendParams(search, params);
     const query = search.toString();
-    return query ? `${API_BASE}${path}?${query}` : `${API_BASE}${path}`;
+    return query ? `${base}${path}?${query}` : `${base}${path}`;
+}
+
+export function buildApiUrl(path, params = {}) {
+    return buildUrl(API_BASE, path, params);
+}
+
+export function buildRootUrl(path, params = {}) {
+    return buildUrl('', path, params);
 }
 
 export class ApiError extends Error {
@@ -114,12 +122,7 @@ function buildHeaders(options) {
 }
 
 export async function request(method, path, options = {}) {
-    const search = new URLSearchParams();
-    if (options.params) {
-        appendParams(search, options.params);
-    }
-    const query = search.toString();
-    const url = query ? `${API_BASE}${path}?${query}` : `${API_BASE}${path}`;
+    const url = options.root ? buildRootUrl(path, options.params) : buildApiUrl(path, options.params);
 
     const headers = buildHeaders(options);
 
@@ -192,6 +195,10 @@ export async function request(method, path, options = {}) {
 
 export function get(path, params = {}, options = {}) {
     return request('GET', path, { ...options, params });
+}
+
+export function rootGet(path, params = {}, options = {}) {
+    return request('GET', path, { ...options, params, root: true });
 }
 
 export function post(path, body = undefined, options = {}) {

@@ -1,0 +1,198 @@
+{
+  "version": 1,
+  "updated": "2026-06-30",
+  "base_origin": "http(s)://<server>:48027",
+  "base_api_path": "/api/v1",
+  "source_of_truth": {
+    "phase16a": "curated_manifest",
+    "future": "generated_openapi_or_json_schema",
+    "rationale": "The Rust server does not yet emit OpenAPI or JSON Schema. Phase 16a uses this curated manifest as the checked-in route/DTO/error contract and validates it against server routes plus existing web helpers. Full schema generation is deferred to Phase 16d."
+  },
+  "http_semantics": {
+    "auth": ["cookie", "bearer"],
+    "bearer_header": "Authorization: Bearer <token>",
+    "credentials": "same-origin for web and Tauri webview; explicit bearer header for mobile",
+    "success_empty_statuses": [204, 304],
+    "problem_details": "RFC 9457 with Duskcue trace_id and optional errors array"
+  },
+  "problem_detail": {
+    "fields": {
+      "type": "string",
+      "title": "string",
+      "status": "integer",
+      "detail": "string",
+      "instance": "string",
+      "trace_id": "string",
+      "errors": "array<FieldError> | null"
+    },
+    "field_error": {
+      "field": "string",
+      "code": "string",
+      "message": "string"
+    },
+    "client_error_kinds": [
+      "network",
+      "authExpired",
+      "permissionDenied",
+      "rateLimited",
+      "notFound",
+      "conflict",
+      "validation",
+      "serverUnavailable",
+      "transcodeUnavailable",
+      "playbackPolicy",
+      "unknown"
+    ]
+  },
+  "domains": [
+    {
+      "name": "health",
+      "phase16a_priority": "required",
+      "routes": [
+        { "method": "GET", "path": "/health/ready", "auth": "none", "response": "HealthResponse", "web_helpers": ["getHealth"] }
+      ]
+    },
+    {
+      "name": "auth",
+      "phase16a_priority": "required",
+      "routes": [
+        { "method": "POST", "path": "/api/v1/setup", "auth": "none", "request": "SetupRequest", "response": "AuthResponse", "web_helpers": ["setup"] },
+        { "method": "POST", "path": "/api/v1/auth/invite", "auth": "none", "request": "InviteAuthRequest", "response": "AuthResponse", "web_helpers": ["loginWithInvite"] },
+        { "method": "POST", "path": "/api/v1/auth/login", "auth": "none", "request": "PasswordAuthRequest", "response": "AuthResponse", "web_helpers": ["loginWithPassword"] },
+        { "method": "POST", "path": "/api/v1/auth/logout", "auth": "user", "response": "Empty", "web_helpers": ["logout"] },
+        { "method": "POST", "path": "/api/v1/auth/logout-all", "auth": "user", "response": "Empty", "web_helpers": ["logoutAll"] },
+        { "method": "POST", "path": "/api/v1/auth/webauthn/start", "auth": "none", "request": "WebauthnStartRequest", "response": "WebauthnChallengeResponse", "web_helpers": ["startWebauthnAuth"] },
+        { "method": "POST", "path": "/api/v1/auth/webauthn/finish", "auth": "none", "request": "WebauthnFinishRequest", "response": "AuthResponse", "web_helpers": ["finishWebauthnAuth"] },
+        { "method": "POST", "path": "/api/v1/auth/reauth", "auth": "none", "request": "ReauthRequest", "response": "AuthResponse", "web_helpers": ["authenticateWithReauthCode"] },
+        { "method": "POST", "path": "/api/v1/auth/reauth/request", "auth": "user", "response": "ReauthCodeResponse", "web_helpers": ["requestReauthCode"] },
+        { "method": "POST", "path": "/api/v1/user/request-reauth", "auth": "user", "response": "ReauthCodeResponse", "web_helpers": ["requestUserReauth"] },
+        { "method": "POST", "path": "/api/v1/device/code", "auth": "none", "request": "DeviceCodeRequest", "response": "DeviceCodeResponse", "web_helpers": ["createDeviceCode"] },
+        { "method": "POST", "path": "/api/v1/device/token", "auth": "none", "request": "DeviceTokenRequest", "response": "AuthResponse", "web_helpers": ["pollDeviceToken"] },
+        { "method": "POST", "path": "/api/v1/device/verify", "auth": "user", "request": "DeviceVerifyRequest", "response": "DeviceVerifyResponse", "web_helpers": ["verifyDeviceCode"] },
+        { "method": "GET", "path": "/api/v1/user/sessions", "auth": "user", "response": "SessionListResponse", "web_helpers": ["listSessions"] },
+        { "method": "DELETE", "path": "/api/v1/user/sessions/{id}", "auth": "user", "response": "Empty", "web_helpers": ["deleteSession"] },
+        { "method": "GET", "path": "/api/v1/user/passkeys", "auth": "user", "response": "PasskeyListResponse", "web_helpers": ["listPasskeys"] },
+        { "method": "POST", "path": "/api/v1/user/passkeys/register/start", "auth": "user", "request": "PasskeyRegistrationStartRequest", "response": "WebauthnChallengeResponse", "web_helpers": ["startPasskeyRegistration"] },
+        { "method": "POST", "path": "/api/v1/user/passkeys/register/finish", "auth": "user", "request": "PasskeyRegistrationFinishRequest", "response": "PasskeyResponse", "web_helpers": ["finishPasskeyRegistration"] },
+        { "method": "DELETE", "path": "/api/v1/user/passkeys/{id}", "auth": "user", "response": "Empty", "web_helpers": ["deletePasskey"] }
+      ]
+    },
+    {
+      "name": "users",
+      "phase16a_priority": "required",
+      "routes": [
+        { "method": "GET", "path": "/api/v1/user/preferences", "auth": "user", "response": "UserPreferencesResponse", "web_helpers": ["getUserPreferences"] },
+        { "method": "PUT", "path": "/api/v1/user/preferences", "auth": "user", "request": "UpdateUserPreferencesRequest", "response": "UserPreferencesResponse", "web_helpers": ["updateUserPreferences"] },
+        { "method": "GET", "path": "/api/v1/users/{id}", "auth": "admin_or_self", "response": "UserResponse", "web_helpers": ["getUser"] },
+        { "method": "PATCH", "path": "/api/v1/users/{id}", "auth": "admin_or_self", "request": "UpdateUserRequest", "response": "UserResponse", "web_helpers": ["updateUser"] }
+      ]
+    },
+    {
+      "name": "libraries",
+      "phase16a_priority": "required",
+      "routes": [
+        { "method": "GET", "path": "/api/v1/libraries", "auth": "user", "response": "LibraryListResponse", "web_helpers": ["listLibraries"] },
+        { "method": "GET", "path": "/api/v1/libraries/{id}", "auth": "user", "response": "LibraryResponse", "web_helpers": ["getLibrary"] },
+        { "method": "GET", "path": "/api/v1/libraries/{id}/items", "auth": "user", "response": "MediaItemPageResponse", "web_helpers": ["listLibraryItems"] }
+      ]
+    },
+    {
+      "name": "media",
+      "phase16a_priority": "required",
+      "routes": [
+        { "method": "GET", "path": "/api/v1/media-items", "auth": "user", "response": "MediaItemPageResponse", "web_helpers": ["listMediaItems"] },
+        { "method": "GET", "path": "/api/v1/media-items/{id}", "auth": "user", "response": "MediaItemResponse", "web_helpers": ["getMediaItem"] },
+        { "method": "GET", "path": "/api/v1/media-items/{id}/files", "auth": "user", "response": "MediaFileListResponse", "web_helpers": ["listMediaFiles"] },
+        { "method": "GET", "path": "/api/v1/items/{id}/artwork/{type}", "auth": "user", "response": "BinaryArtwork", "web_helpers": [] }
+      ]
+    },
+    {
+      "name": "search",
+      "phase16a_priority": "required",
+      "routes": [
+        { "method": "GET", "path": "/api/v1/search", "auth": "user", "response": "SearchResponse", "web_helpers": ["search"] }
+      ]
+    },
+    {
+      "name": "playback",
+      "phase16a_priority": "required",
+      "routes": [
+        { "method": "POST", "path": "/api/v1/playback/start", "auth": "user", "request": "StartPlaybackRequest", "response": "StartPlaybackResponse", "web_helpers": ["startPlayback"] },
+        { "method": "POST", "path": "/api/v1/playback/heartbeat", "auth": "user", "request": "HeartbeatRequest", "response": "HeartbeatResponse", "web_helpers": ["heartbeat"] },
+        { "method": "POST", "path": "/api/v1/playback/stop", "auth": "user", "request": "StopPlaybackRequest", "response": "StopPlaybackResponse", "web_helpers": ["stopPlayback"] },
+        { "method": "POST", "path": "/api/v1/playback/seek", "auth": "user", "request": "SeekRequest", "response": "SeekResponse", "web_helpers": ["seek"] },
+        { "method": "GET", "path": "/api/v1/playback/info/{session_id}", "auth": "user", "response": "PlaybackInfoResponse", "web_helpers": ["getPlaybackInfo"] },
+        { "method": "GET", "path": "/api/v1/stream/{media_file_id}", "auth": "signed_or_user", "response": "BinaryStream", "web_helpers": ["streamFileUrl"] },
+        { "method": "GET", "path": "/api/v1/transcode/{session_id}/manifest.m3u8", "auth": "signed_or_user", "response": "HlsManifest", "web_helpers": ["transcodeManifestUrl"] },
+        { "method": "GET", "path": "/api/v1/items/{item_id}/watch-data", "auth": "user", "response": "UserItemDataResponse", "web_helpers": ["getWatchData"] },
+        { "method": "PUT", "path": "/api/v1/items/{item_id}/watch-data", "auth": "user", "request": "UpdateWatchDataRequest", "response": "UserItemDataResponse", "web_helpers": ["updateWatchData"] },
+        { "method": "GET", "path": "/api/v1/playlists", "auth": "user", "response": "PlaylistPageResponse", "web_helpers": ["listPlaylists"] },
+        { "method": "GET", "path": "/api/v1/playlists/{playlist_id}", "auth": "user", "response": "PlaylistResponse", "web_helpers": ["getPlaylist"] }
+      ]
+    },
+    {
+      "name": "subtitles",
+      "phase16a_priority": "required",
+      "routes": [
+        { "method": "GET", "path": "/api/v1/items/{item_id}/subtitles", "auth": "user", "response": "SubtitleListResponse", "web_helpers": ["listSubtitles"] },
+        { "method": "GET", "path": "/api/v1/items/{item_id}/subtitles/{subtitle_id}", "auth": "user", "response": "SubtitleResponse", "web_helpers": ["getSubtitle"] },
+        { "method": "GET", "path": "/api/v1/items/{item_id}/subtitles/{subtitle_id}/content", "auth": "signed_or_user", "response": "TextSubtitle", "web_helpers": ["getSubtitleContentUrl"] }
+      ]
+    },
+    {
+      "name": "segments_storyboards",
+      "phase16a_priority": "required",
+      "routes": [
+        { "method": "GET", "path": "/api/v1/items/{item_id}/segments", "auth": "user", "response": "SegmentListResponse", "web_helpers": ["listSegments"] },
+        { "method": "GET", "path": "/api/v1/items/{item_id}/storyboard", "auth": "user", "response": "StoryboardResponse", "web_helpers": ["getStoryboard"] },
+        { "method": "GET", "path": "/api/v1/items/{item_id}/storyboard/index.vtt", "auth": "signed_or_user", "response": "WebVtt", "web_helpers": ["storyboardIndexUrl"] }
+      ]
+    },
+    {
+      "name": "collections",
+      "phase16a_priority": "required",
+      "routes": [
+        { "method": "GET", "path": "/api/v1/collections", "auth": "user", "response": "CollectionPageResponse", "web_helpers": ["listCollections"] },
+        { "method": "GET", "path": "/api/v1/collections/{id}", "auth": "user", "response": "CollectionResponse", "web_helpers": ["getCollection"] },
+        { "method": "GET", "path": "/api/v1/collections/{id}/items", "auth": "user", "response": "CollectionItemPageResponse", "web_helpers": ["listCollectionItems"] }
+      ]
+    },
+    {
+      "name": "quality",
+      "phase16a_priority": "required",
+      "routes": [
+        { "method": "POST", "path": "/api/v1/device/capabilities", "auth": "user", "request": "ReportCapabilitiesRequest", "response": "DeviceProfileResponse", "web_helpers": ["reportCapabilities"] },
+        { "method": "GET", "path": "/api/v1/device/capabilities", "auth": "user", "response": "DeviceProfileListResponse", "web_helpers": ["getCapabilities"] },
+        { "method": "POST", "path": "/api/v1/probe/bandwidth/result", "auth": "user", "request": "BandwidthProbeResultRequest", "response": "NetworkReportResponse", "web_helpers": ["submitBandwidthProbeResult"] },
+        { "method": "POST", "path": "/api/v1/playback/telemetry", "auth": "user", "request": "SegmentTelemetryRequest", "response": "TelemetryResponse", "web_helpers": ["submitTelemetry"] },
+        { "method": "POST", "path": "/api/v1/playback/qoe", "auth": "user", "request": "QoeReportRequest", "response": "QoeReportResponse", "web_helpers": ["submitQoeReport"] }
+      ]
+    },
+    {
+      "name": "notifications",
+      "phase16a_priority": "required",
+      "routes": [
+        { "method": "GET", "path": "/api/v1/events", "auth": "user", "response": "SseStream", "web_helpers": [] },
+        { "method": "GET", "path": "/api/v1/notifications", "auth": "user", "response": "NotificationPageResponse", "web_helpers": ["listNotifications"] },
+        { "method": "GET", "path": "/api/v1/notifications/unread-count", "auth": "user", "response": "UnreadCountResponse", "web_helpers": ["getUnreadCount"] },
+        { "method": "POST", "path": "/api/v1/notifications/{notification_id}/read", "auth": "user", "response": "NotificationResponse", "web_helpers": ["markNotificationRead"] },
+        { "method": "POST", "path": "/api/v1/notifications/read-all", "auth": "user", "response": "BulkNotificationResponse", "web_helpers": ["markAllRead"] },
+        { "method": "GET", "path": "/api/v1/user/notification-preferences", "auth": "user", "response": "NotificationPreferenceListResponse", "web_helpers": ["listNotificationPreferences"] },
+        { "method": "PUT", "path": "/api/v1/user/notification-preferences/{type_id}", "auth": "user", "request": "UpdateNotificationPreferenceRequest", "response": "NotificationPreferenceResponse", "web_helpers": ["updateNotificationPreference"] },
+        { "method": "GET", "path": "/api/v1/user/push-devices", "auth": "user", "response": "PushDeviceListResponse", "web_helpers": ["listPushDevices"] },
+        { "method": "POST", "path": "/api/v1/user/push-devices", "auth": "user", "request": "RegisterPushDeviceRequest", "response": "PushDeviceResponse", "web_helpers": ["registerPushDevice"] },
+        { "method": "PUT", "path": "/api/v1/user/push-devices/{device_id}", "auth": "user", "request": "UpdatePushDeviceRequest", "response": "PushDeviceResponse", "web_helpers": ["updatePushDevice"] },
+        { "method": "DELETE", "path": "/api/v1/user/push-devices/{device_id}", "auth": "user", "response": "Empty", "web_helpers": ["deletePushDevice"] }
+      ]
+    },
+    {
+      "name": "settings",
+      "phase16a_priority": "required",
+      "routes": [
+        { "method": "GET", "path": "/api/v1/server/config", "auth": "admin", "response": "ServerConfigResponse", "web_helpers": ["getServerConfig"] },
+        { "method": "GET", "path": "/api/v1/server/config/{group}", "auth": "admin", "response": "ConfigGroupResponse", "web_helpers": ["getConfigGroup"] },
+        { "method": "PUT", "path": "/api/v1/server/config/{group}", "auth": "admin", "request": "UpdateConfigGroupRequest", "response": "ConfigGroupResponse", "web_helpers": ["updateConfigGroup"] }
+      ]
+    }
+  ]
+}

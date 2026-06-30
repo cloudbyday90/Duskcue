@@ -147,6 +147,28 @@ Verification:
 
 Flutter and Dart are not installed in the current Windows environment, so `flutter pub get`, `flutter analyze`, `flutter test`, `flutter build apk --debug`, and `flutter build ios --simulator` are documented first-run checks for a Flutter SDK environment.
 
+### Task 2 — Client Contracts and Drift Control
+
+Contract source of truth:
+
+- `docs/api/client-contracts.v1.json` is the Phase 16a curated contract manifest.
+- [CLIENT_CONTRACTS.md](../api/CLIENT_CONTRACTS.md) documents the decision, route scope, RFC 9457 error mapping, bearer-token semantics, and future OpenAPI/JSON Schema migration path.
+- `scripts/verify-client-contracts.mjs` validates that every manifest route exists in `server/src` and that every declared web helper exists under `clients/web/src/lib/api`.
+
+Implementation:
+
+- The manifest covers 71 desktop/mobile online-client routes across the required Phase 16a domains.
+- Flutter DTO generation from OpenAPI/JSON Schema is deferred to Phase 16d. Phase 16a uses handwritten Dart models backed by the manifest and later route-specific tests.
+- `clients/mobile/lib/api/problem_detail.dart` defines `ProblemDetail` and `FieldError`.
+- `clients/mobile/lib/api/client_error.dart` maps Problem Details into `network`, `authExpired`, `permissionDenied`, `rateLimited`, `notFound`, `conflict`, `validation`, `serverUnavailable`, `transcodeUnavailable`, `playbackPolicy`, and `unknown`.
+- `DuskcueApiClient` now converts Dio failures into typed `ClientError` instances and preserves `Retry-After` when present.
+
+Verification:
+
+- `node scripts/verify-client-contracts.mjs` reports `Verified 71 client contract routes.`
+- `node --check scripts/verify-client-contracts.mjs`
+- `git diff --check`
+
 ## Relationship to Other Documents
 
 | Document | Relationship |
@@ -157,6 +179,7 @@ Flutter and Dart are not installed in the current Windows environment, so `flutt
 | [REAL_TIME_PUSH.md](REAL_TIME_PUSH.md) | Defines SSE foreground events. This document defines mobile foreground-only SSE behavior and polling fallback expectations. |
 | [MOBILE_PUSH.md](MOBILE_PUSH.md) | Defines push channels and token lifecycle. This document binds Phase 16a client/provider implementation to that design. |
 | [SECURITY.md](../security/SECURITY.md) | Defines network modes, TLS, and token expectations. This document applies them to desktop/mobile clients. |
+| [CLIENT_CONTRACTS.md](../api/CLIENT_CONTRACTS.md) | Phase 16a route/DTO inventory, client error mapping, and drift-control manifest. |
 | [API_SECURITY.md](../security/API_SECURITY.md) | Defines validation, BOLA, and secret-handling constraints that client deep links and stored credentials must respect. |
 | [BUILD_ORDER.md](../../BUILD_ORDER.md) | Phase 16a task list and completion criteria. |
 
