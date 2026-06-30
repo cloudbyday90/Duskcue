@@ -28,6 +28,10 @@ class DashboardScreen extends ConsumerWidget {
               session.server?.origin.toString() ?? 'No server selected',
               style: Theme.of(context).textTheme.titleMedium,
             ),
+            if (session.server != null) ...[
+              const SizedBox(height: 8),
+              Text(session.server!.networkMode.label),
+            ],
             const SizedBox(height: 16),
             const Text('Library browsing, search, playback, notifications, and quality reporting land in later Phase 16a tasks.'),
           ],

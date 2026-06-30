@@ -169,6 +169,44 @@ Verification:
 - `node --check scripts/verify-client-contracts.mjs`
 - `git diff --check`
 
+### Task 3 — Server Selection and Connection Onboarding
+
+Implementation:
+
+- `ServerProfile` now carries a canonical origin, network mode, display name, and last-connected timestamp.
+- Mobile canonicalizes manual input to `http(s)://<server>:48027`, defaults missing schemes by network mode, rejects `48028`, and rejects non-48027 ports.
+- Mobile exposes Local, Remote VPN, and Exposed modes. Local/VPN allow HTTP; Exposed requires HTTPS.
+- The onboarding screen tests `/health/ready` before continuing, reports URL/network/certificate/readiness failures, saves successful server profiles, remembers the last-used server, and lists saved servers.
+- Saved mobile server profiles live in `flutter_secure_storage` alongside later token storage. Server origins are not secrets, but this keeps storage behavior consistent and avoids plaintext app-preference drift before auth lands.
+- Android cleartext is enabled for the mobile app so Local/VPN HTTP server URLs work; app-level validation prevents Exposed mode from using HTTP.
+- iOS declares `NSLocalNetworkUsageDescription` and `NSAllowsArbitraryLoadsInLocalNetworking` so local-network HTTP can work without broadly allowing arbitrary internet HTTP.
+- `clients/web/src/lib/api/core.js` now supports an optional explicit server origin. Browser-served web keeps same-origin behavior by default; Tauri can set a selected origin for static desktop builds.
+- `clients/desktop/src-tauri` now exposes commands to normalize server origins, read/save saved-server state in the app data directory, and test `/health/ready` with a 10-second timeout.
+
+Network-mode behavior:
+
+| Mode | URL behavior | Certificate posture |
+|---|---|---|
+| Local | `http://host-or-ip:48027` or `https://host-or-ip:48027` | HTTP allowed on LAN; HTTPS must chain to OS trust |
+| Remote VPN | `http://vpn-host-or-ip:48027` or `https://vpn-host-or-ip:48027` | HTTP allowed when the VPN provides transport security |
+| Exposed | `https://public-host:48027` only | OS-trusted public or installed private CA required |
+
+Deferred:
+
+- QR-code and setup-link handoff remains optional. It should be added after the web admin UI can create a short-lived `duskcue://server?...` or HTTPS setup link that contains only the server origin and no bearer/session token.
+- Automated mobile platform validation is still a first-run check for a Flutter SDK environment.
+
+Verification:
+
+- `cargo check -p duskcue-desktop`
+- `cargo fmt --package duskcue-desktop --check`
+- `npm run build` from `clients/desktop`
+- `node --check clients/web/src/lib/api/core.js`
+- XML/plist parse checks for Android and iOS platform files
+- `git diff --check`
+
+Flutter and Dart are not installed in the current Windows environment, so `flutter analyze`, `flutter test`, and device-level Android/iOS local-network prompts were not run here.
+
 ## Relationship to Other Documents
 
 | Document | Relationship |
@@ -208,7 +246,9 @@ Verification:
 - Apple HTTP Live Streaming: https://developer.apple.com/streaming/
 - Android App Links: https://developer.android.com/training/app-links
 - Apple Universal Links: https://developer.apple.com/documentation/xcode/supporting-universal-links-in-your-app
-- Android network security config: https://developer.android.com/privacy-and-security/security-config
-- Apple local network privacy key: https://developer.apple.com/documentation/bundleresources/information-property-list/nslocalnetworkusagedescription
+- Android Network Security Configuration: https://developer.android.com/privacy-and-security/security-config
+- Apple local-network privacy: https://developer.apple.com/documentation/bundleresources/information-property-list/nslocalnetworkusagedescription
+- Apple ATS local-network exception: https://developer.apple.com/documentation/bundleresources/information-property-list/nsapptransportsecurity/nsallowsarbitraryloadsinlocalnetworking
+- flutter_secure_storage package: https://pub.dev/packages/flutter_secure_storage
 - Google Play Data safety: https://support.google.com/googleplay/android-developer/answer/10787469
 - Apple App Privacy details: https://developer.apple.com/help/app-store-connect/manage-app-privacy/app-privacy-details/

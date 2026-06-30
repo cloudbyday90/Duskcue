@@ -37,6 +37,11 @@
     <true/>
     <key>NSLocalNetworkUsageDescription</key>
     <string>Duskcue connects to your self-hosted media server on your local network.</string>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsArbitraryLoadsInLocalNetworking</key>
+        <true/>
+    </dict>
     <key>UIApplicationSupportsIndirectInputEvents</key>
     <true/>
     <key>UILaunchStoryboardName</key>

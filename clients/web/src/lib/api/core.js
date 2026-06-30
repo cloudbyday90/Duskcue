@@ -19,6 +19,7 @@
 const API_BASE = '/api/v1';
 
 let bearerToken = null;
+let serverOrigin = null;
 
 export function setBearerToken(token) {
     bearerToken = token;
@@ -28,11 +29,24 @@ export function clearBearerToken() {
     bearerToken = null;
 }
 
+export function setServerOrigin(origin) {
+    serverOrigin = origin ? new URL(origin).origin : null;
+}
+
+export function clearServerOrigin() {
+    serverOrigin = null;
+}
+
+export function getServerOrigin() {
+    return serverOrigin;
+}
+
 function buildUrl(base, path, params = {}) {
     const search = new URLSearchParams();
     appendParams(search, params);
     const query = search.toString();
-    return query ? `${base}${path}?${query}` : `${base}${path}`;
+    const prefix = serverOrigin ? `${serverOrigin}${base}` : base;
+    return query ? `${prefix}${path}?${query}` : `${prefix}${path}`;
 }
 
 export function buildApiUrl(path, params = {}) {

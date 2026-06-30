@@ -15,10 +15,59 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 mod commands {
+    use std::{fs, path::PathBuf, time::Duration};
+
+    use tauri::Manager;
+    use url::Url;
+
     #[derive(serde::Serialize)]
     pub struct AppInfo {
         name: &'static str,
         version: &'static str,
+    }
+
+    #[derive(Clone, serde::Deserialize, serde::Serialize)]
+    #[serde(rename_all = "snake_case")]
+    pub enum NetworkMode {
+        Local,
+        RemoteVpn,
+        Exposed,
+    }
+
+    impl NetworkMode {
+        fn default_scheme(&self) -> &'static str {
+            match self {
+                Self::Exposed => "https",
+                Self::Local | Self::RemoteVpn => "http",
+            }
+        }
+    }
+
+    #[derive(Clone, serde::Deserialize, serde::Serialize)]
+    pub struct ServerProfile {
+        origin: String,
+        #[serde(default = "default_network_mode")]
+        network_mode: NetworkMode,
+        display_name: Option<String>,
+        last_connected_at: Option<String>,
+    }
+
+    #[derive(Default, serde::Deserialize, serde::Serialize)]
+    pub struct ServerConnectionState {
+        saved_servers: Vec<ServerProfile>,
+        last_server: Option<ServerProfile>,
+    }
+
+    #[derive(serde::Serialize)]
+    pub struct ConnectionTestResult {
+        origin: String,
+        status: u16,
+        healthy: bool,
+        body: Option<serde_json::Value>,
+    }
+
+    fn default_network_mode() -> NetworkMode {
+        NetworkMode::Local
     }
 
     #[tauri::command]
@@ -28,12 +77,140 @@ mod commands {
             version: env!("CARGO_PKG_VERSION"),
         }
     }
+
+    #[tauri::command]
+    pub fn normalize_server_origin(
+        input: String,
+        network_mode: NetworkMode,
+    ) -> Result<String, String> {
+        normalize_origin(&input, &network_mode)
+    }
+
+    #[tauri::command]
+    pub fn read_server_connections(app: tauri::AppHandle) -> Result<ServerConnectionState, String> {
+        read_state(&app)
+    }
+
+    #[tauri::command]
+    pub fn save_server_connection(
+        app: tauri::AppHandle,
+        mut profile: ServerProfile,
+    ) -> Result<ServerConnectionState, String> {
+        profile.origin = normalize_origin(&profile.origin, &profile.network_mode)?;
+        let mut state = read_state(&app)?;
+        state
+            .saved_servers
+            .retain(|server| server.origin != profile.origin);
+        state.saved_servers.insert(0, profile.clone());
+        state.last_server = Some(profile);
+        write_state(&app, &state)?;
+        Ok(state)
+    }
+
+    #[tauri::command]
+    pub async fn test_server_connection(
+        input: String,
+        network_mode: NetworkMode,
+    ) -> Result<ConnectionTestResult, String> {
+        let origin = normalize_origin(&input, &network_mode)?;
+        let client = reqwest::Client::builder()
+            .timeout(Duration::from_secs(10))
+            .build()
+            .map_err(|err| err.to_string())?;
+        let response = client
+            .get(format!("{origin}/health/ready"))
+            .send()
+            .await
+            .map_err(|err| err.to_string())?;
+        let status = response.status();
+        let body = response.json::<serde_json::Value>().await.ok();
+
+        Ok(ConnectionTestResult {
+            origin,
+            status: status.as_u16(),
+            healthy: status.is_success(),
+            body,
+        })
+    }
+
+    fn normalize_origin(input: &str, network_mode: &NetworkMode) -> Result<String, String> {
+        let trimmed = input.trim();
+        if trimmed.is_empty() {
+            return Err("Enter a server URL.".to_string());
+        }
+
+        let candidate = if trimmed.contains("://") {
+            trimmed.to_string()
+        } else {
+            format!("{}://{trimmed}", network_mode.default_scheme())
+        };
+        let parsed =
+            Url::parse(&candidate).map_err(|_| "Enter a valid http(s) server URL.".to_string())?;
+        let scheme = parsed.scheme();
+        if scheme != "http" && scheme != "https" {
+            return Err("Duskcue server URLs must use http or https.".to_string());
+        }
+        if matches!(network_mode, NetworkMode::Exposed) && scheme != "https" {
+            return Err("Exposed servers require HTTPS.".to_string());
+        }
+
+        let host = parsed
+            .host_str()
+            .ok_or_else(|| "Enter a valid server host.".to_string())?;
+        if parsed.port() == Some(48028) {
+            return Err(
+                "Use the public Duskcue port 48027, not the internal API port 48028.".to_string(),
+            );
+        }
+        if let Some(port) = parsed.port() {
+            if port != 48027 {
+                return Err("Duskcue clients connect through port 48027.".to_string());
+            }
+        }
+
+        let mut origin =
+            Url::parse(&format!("{scheme}://duskcue.invalid")).map_err(|err| err.to_string())?;
+        origin
+            .set_host(Some(host))
+            .map_err(|_| "Enter a valid server host.".to_string())?;
+        origin
+            .set_port(Some(48027))
+            .map_err(|_| "Enter a valid server port.".to_string())?;
+        Ok(origin.as_str().trim_end_matches('/').to_string())
+    }
+
+    fn state_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+        let dir = app.path().app_data_dir().map_err(|err| err.to_string())?;
+        fs::create_dir_all(&dir).map_err(|err| err.to_string())?;
+        Ok(dir.join("server-connections.json"))
+    }
+
+    fn read_state(app: &tauri::AppHandle) -> Result<ServerConnectionState, String> {
+        let path = state_path(app)?;
+        if !path.exists() {
+            return Ok(ServerConnectionState::default());
+        }
+        let value = fs::read_to_string(path).map_err(|err| err.to_string())?;
+        serde_json::from_str(&value).map_err(|err| err.to_string())
+    }
+
+    fn write_state(app: &tauri::AppHandle, state: &ServerConnectionState) -> Result<(), String> {
+        let path = state_path(app)?;
+        let value = serde_json::to_string_pretty(state).map_err(|err| err.to_string())?;
+        fs::write(path, value).map_err(|err| err.to_string())
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![commands::app_info])
+        .invoke_handler(tauri::generate_handler![
+            commands::app_info,
+            commands::normalize_server_origin,
+            commands::read_server_connections,
+            commands::save_server_connection,
+            commands::test_server_connection
+        ])
         .run(tauri::generate_context!())
         .expect("failed to run Duskcue desktop app");
 }

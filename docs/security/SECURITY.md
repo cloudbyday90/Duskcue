@@ -455,6 +455,8 @@ Bearer tokens are never stored in URLs, query parameters, or logs. The `Authoriz
 
 Phase 16a client storage rules are defined in [DESKTOP_MOBILE_CLIENTS.md](../design/DESKTOP_MOBILE_CLIENTS.md): desktop uses Tauri Stronghold or OS-backed secure storage, and mobile uses Android Keystore/iOS Keychain through a vetted plugin or platform channel. Plaintext app preferences, browser localStorage, logs, diagnostics bundles, and crash reports must not contain bearer tokens, refresh tokens, push tokens, signed media URLs, or future offline-download package secrets.
 
+Phase 16a server selection stores only non-secret server origins and labels in the client saved-server list. Clients canonicalize origins to `http(s)://<server>:48027`, reject Docker's internal `48028` API port, and test `/health/ready` before selecting a server. Local and Remote VPN modes may use HTTP because the deployment is LAN/VPN-scoped; Exposed mode requires HTTPS with a certificate trusted by the client OS. Self-signed and private-CA certificates are not silently trusted by mobile clients and must be installed/trusted through Android or iOS device management before connection.
+
 ---
 
 ## CORS Configuration

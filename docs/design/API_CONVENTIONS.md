@@ -638,6 +638,8 @@ CORS is configured in `server_config.network` JSONB:
 
 CORS configuration is part of the security domain. Full CORS policy by network tier documented in [SECURITY.md](../security/SECURITY.md). Rate limiting documented below.
 
+Phase 16a desktop/mobile clients select a public server origin before authenticated API use. The canonical origin is `http(s)://<server>:48027`; `48028` is Docker-internal and must never be shown to or stored by clients. Browser-served web remains same-origin by default. Tauri static builds may set an explicit selected origin in the shared web API core, and Flutter mobile configures Dio with the selected origin directly before calling `/health/ready` and `/api/v1/*`.
+
 ### Implementation
 
 Uses `tower-http` `CorsLayer`:

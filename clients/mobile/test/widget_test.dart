@@ -7,6 +7,7 @@ void main() {
     await tester.pumpWidget(const ProviderScope(child: DuskcueApp()));
 
     expect(find.text('Server URL'), findsOneWidget);
-    expect(find.text('Continue'), findsOneWidget);
+    expect(find.text('Network mode'), findsOneWidget);
+    expect(find.text('Test and continue'), findsOneWidget);
   });
 }

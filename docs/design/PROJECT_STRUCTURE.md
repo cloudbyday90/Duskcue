@@ -880,6 +880,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 1 scaffold status:** `clients/desktop` now has a valid Tauri 2 Rust entrypoint/config/capability set and delegates dev/build to the shared web client. `clients/mobile` now has the Flutter app shell, dependency baseline, Android package scaffold, iOS Runner metadata, tests, lint config, and first-run commands documented in [DESKTOP_MOBILE_CLIENTS.md](DESKTOP_MOBILE_CLIENTS.md).
 
+**Task 3 connection status:** `clients/mobile` now owns the visible server-selection/onboarding flow, saved-server list, last-used server, and `/health/ready` connection test. `clients/desktop/src-tauri` now owns native commands for canonical server-origin validation, saved-server persistence, and readiness testing, while the shared web API core can target an explicit selected origin for Tauri static builds. Both clients canonicalize server URLs to `http(s)://<server>:48027` and reject the internal Docker API port `48028`.
+
 ## Development Workflow
 
 ### Server Development
