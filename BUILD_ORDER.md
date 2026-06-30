@@ -3583,7 +3583,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 ## Phase 15 — Docker & Deployment
 
-**Committed:** `bd3adb4` on `main`
+**Committed:** `e77d78b` on `main`
 
 **Goal:** Production-ready Docker image with embedded PostgreSQL.
 
