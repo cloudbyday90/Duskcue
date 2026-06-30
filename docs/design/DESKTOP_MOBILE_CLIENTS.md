@@ -97,7 +97,7 @@ Cons:
 4. **Passkey binding:** Android passkey work targets Credential Manager. iOS passkey work targets AuthenticationServices. The server's WebAuthn ceremonies remain the source of truth.
 5. **Playback:** Use HLS for remux/transcode paths and direct file URLs only when the server decision engine returns Direct Play. Android playback must be Media3/ExoPlayer-backed; iOS playback must be AVPlayer/AVFoundation-backed. A Flutter package is acceptable only if it exposes required track, lifecycle, and telemetry controls.
 6. **Foreground real time:** SSE is foreground-only on mobile. On resume, mobile clients reconnect with replay where possible and refresh notification/playback state through REST if replay is unavailable.
-7. **Push:** FCM, APNs, and UnifiedPush provider clients are server-side Phase 16a work that completes the existing structured push stub. Client registration calls `POST /api/v1/user/push-devices` on login and app launch, with heartbeat refresh and re-registration after invalidation.
+7. **Push:** FCM, APNs, and UnifiedPush provider clients are implemented as server-side Phase 16a work. Client registration calls `POST /api/v1/user/push-devices` on login and app launch, with heartbeat refresh and re-registration after invalidation.
 8. **Deep links:** `duskcue://` is the MVP protocol for desktop/mobile. Verified HTTPS links need `.well-known/assetlinks.json` and `apple-app-site-association`, so they are optional until server/operator support exists.
 9. **Local network:** Manual server URL entry is required. Discovery/QR/link handoff is optional. Local HTTP is allowed only for local/VPN deployments; exposed mode requires HTTPS.
 10. **Store readiness:** Phase 16a adds package IDs, permissions, signing placeholders, app icons placeholder, privacy declarations, and CI smoke builds. Actual public-store publication is not required for Phase 16a completion.
@@ -360,6 +360,27 @@ Verification:
 
 Flutter/Dart are not installed in the current Windows environment, so `flutter pub get`, `flutter analyze`, `flutter test`, Android build, iOS build, and live SSE reconnect testing remain first-run verification for an environment with the Flutter SDK and target devices.
 
+### Task 9 — Mobile Push Delivery
+
+Implementation:
+
+- `PushRegistrationService` now starts from the authenticated mobile shell, registers the Firebase background handler, obtains FCM tokens, obtains APNs tokens on iOS via `firebase_messaging`, and supports an optional Android `duskcue/mobile_push` platform-channel endpoint for UnifiedPush distributors.
+- Available tokens are registered through `POST /api/v1/user/push-devices` with device name, platform, and app version metadata. Returned device IDs are stored in secure storage for 24-hour heartbeat refresh through `PUT /api/v1/user/push-devices/{device_id}`.
+- FCM token rotation re-registers immediately. Heartbeat failures fall back to full re-registration so provider invalidation or user/device changes recover on next foreground launch.
+- Notification taps accept only safe relative internal routes from `link`/`action_url`; otherwise they fall back to known UUID metadata. The authenticated shell routes only after session state is present, leaving server route/API access checks to revalidate content.
+- Server push dispatch is now active for FCM HTTP v1, APNs token-auth HTTP/2, and UnifiedPush endpoint delivery. Payloads carry localized title/body plus `notification_id`, type, link, and related UUID metadata only.
+- Provider revoked-token responses deactivate the matching `user_push_devices` row without logging the token value.
+
+Verification:
+
+- `cargo check -p duskcue`
+- `node scripts/verify-client-contracts.mjs`
+- `git diff --check` with CRLF-aware Git whitespace settings
+- `flutter --version` attempted and failed because Flutter is not installed in the current Windows environment.
+- `dart --version` attempted and failed because Dart is not installed in the current Windows environment.
+
+Flutter/Dart are not installed in the current Windows environment, so `flutter pub get`, `flutter analyze`, `flutter test`, Android build, iOS build, Firebase project initialization, APNs entitlement/device receipt, and UnifiedPush distributor receipt remain first-run verification for an environment with the Flutter SDK, platform SDKs, and provider credentials.
+
 ## Relationship to Other Documents
 
 | Document | Relationship |
@@ -400,7 +421,9 @@ Flutter/Dart are not installed in the current Windows environment, so `flutter p
 - FCM HTTP v1: https://firebase.google.com/docs/cloud-messaging/send/v1-api
 - FCM token management: https://firebase.google.com/docs/cloud-messaging/manage-tokens
 - FCM Flutter setup: https://firebase.google.com/docs/cloud-messaging/flutter/get-started
+- FCM Flutter receive/tap handling: https://firebase.google.com/docs/cloud-messaging/flutter/receive
 - APNs token auth: https://developer.apple.com/documentation/usernotifications/establishing-a-token-based-connection-to-apns
+- APNs send requests: https://developer.apple.com/documentation/usernotifications/sending-notification-requests-to-apns
 - UnifiedPush intro/specs: https://unifiedpush.org/developers/intro/
 - UnifiedPush ntfy distributor: https://unifiedpush.org/users/distributors/ntfy/
 - Android Media3 HLS: https://developer.android.com/media/media3/exoplayer/hls

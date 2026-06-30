@@ -118,7 +118,7 @@ The split boundary is determined by the inter-task dependency graph. Tasks group
 **Tasks:**
 
 1. ~~Set up Fluent server-side i18n — `fluent-i18n` crate, `server/locales/en/notifications.ftl`, migrate `notification_types.in_app_template` from English strings to Fluent message IDs (debt item #5 from [IMPLEMENTATION_DEBT.md](IMPLEMENTATION_DEBT.md))~~ **DONE** — crate switched to `fluent-templates` (async-safe explicit per-call locale); see BUILD_ORDER.md Phase 13b Task 1 notes and I18N.md "Crate Selection Rationale"
-2. Implement multi-channel dispatch pipeline — notification record always in DB; fan-out to in-app + SSE + webhook simultaneously; mobile push channel included in fan-out but client implementation deferred to Phase 16a (debt item #6)
+2. Implement multi-channel dispatch pipeline — notification record always in DB; fan-out to in-app + SSE + webhook simultaneously; mobile push channel included in fan-out. Phase 13b shipped the push lifecycle/API boundary; Phase 16a Task 9 later completed FCM/APNs/UnifiedPush provider delivery.
 3. Implement notification CRUD — create, list, mark-as-read, delete; notification types and user preferences from Phase 2 tables
 4. Implement webhook dispatch — HTTP POST to operator-configured URL with ntfy/Gotify/Discord/Slack/generic formats; HMAC signing; retry with backoff (debt item #8)
 5. ~~Create `user_push_devices` table + `POST /api/v1/user/push-devices` API — device registration for FCM/APNs/UnifiedPush tokens; token lifecycle (heartbeat, auto-invalidation, manual revoke) (debt item #7)~~ **DONE** — see BUILD_ORDER.md Phase 13b Task 5 notes
@@ -126,7 +126,7 @@ The split boundary is determined by the inter-task dependency graph. Tasks group
 
 **Verification:** Admin triggers a test notification. Notification appears in-app (notification center), via SSE (live update if web client is open), and via webhook (operator-configured endpoint). Notification templates render in the user's preferred locale via Fluent. Push devices register and display in user settings.
 
-**Phase 13b status:** All 6 tasks complete (Fluent i18n infrastructure + template migration; multi-channel dispatch pipeline with DB-write-first + SSE fan-out + webhook with HMAC signing + push stub; in-app notification center CRUD with cursor pagination + preferences + admin test dispatch; webhook format-specific dispatch [generic/ntfy/gotify/discord/slack] + HMAC signing for all formats + exponential-backoff retry with full jitter + retryable/non-retryable status classification + `Retry-After` honored; `user_push_devices` table + registration/heartbeat/revoke API + 30-day stale-device deactivation wired into `notification_cleanup`; notifications UI — navbar bell + dropdown + persistent notification center store with SSE + polling + full-page Feed/Preferences/Push-Devices/Admin-Test hub). 0 svelte-check warnings, 0 build errors. See [MOBILE_PUSH.md](MOBILE_PUSH.md) "Phase 13b Task 5 implementation notes" for the push device registration design and BUILD_ORDER.md Phase 13b Task 6 notes for the notifications UI.
+**Phase 13b status:** All 6 tasks complete (Fluent i18n infrastructure + template migration; multi-channel dispatch pipeline with DB-write-first + SSE fan-out + webhook with HMAC signing + Phase 13b push placeholder later completed by Phase 16a Task 9; in-app notification center CRUD with cursor pagination + preferences + admin test dispatch; webhook format-specific dispatch [generic/ntfy/gotify/discord/slack] + HMAC signing for all formats + exponential-backoff retry with full jitter + retryable/non-retryable status classification + `Retry-After` honored; `user_push_devices` table + registration/heartbeat/revoke API + 30-day stale-device deactivation wired into `notification_cleanup`; notifications UI — navbar bell + dropdown + persistent notification center store with SSE + polling + full-page Feed/Preferences/Push-Devices/Admin-Test hub). 0 svelte-check warnings, 0 build errors. See [MOBILE_PUSH.md](MOBILE_PUSH.md) "Phase 13b Task 5 implementation notes" for the push device registration design and BUILD_ORDER.md Phase 13b Task 6 notes for the notifications UI.
 
 ### Minimal Viable Notification System (Fallback)
 
@@ -143,7 +143,7 @@ If Phase 13b takes longer than estimated, the notification system can ship in a 
 | APNs client implementation | ❌ Defer to Phase 16a | ✅ |
 | UnifiedPush integration | ❌ Defer to Phase 16a | ✅ |
 
-The MVP delivers all in-app + SSE + webhook notifications. Mobile push (FCM/APNs/UnifiedPush client implementations) is deferred to Phase 16a where the Flutter mobile app provides the consumer. The `user_push_devices` table and registration API still ship in the MVP so Phase 16a doesn't need a schema migration.
+The Phase 13b MVP delivered all in-app + SSE + webhook notifications plus the push-device schema/API. Phase 16a Task 9 later completed mobile push provider delivery (FCM/APNs/UnifiedPush) where the Flutter mobile app provides the consumer.
 
 ## Edge Cases
 

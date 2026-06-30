@@ -30,8 +30,9 @@
 //!    to the operator-configured webhook URL in one of five formats
 //!    (`generic`/`ntfy`/`gotify`/`discord`/`slack`) with HMAC-SHA256 signing
 //!    and exponential-backoff retry (1s, 5s, 30s, 2m, 10m with full jitter).
-//! 4. **Push fan-out (stub)** — Resolves push config + preferences but the
-//!    actual FCM/APNs/UnifiedPush client is deferred to Phase 16a.
+//! 4. **Push fan-out (fire-and-forget)** — Spawns a background task to deliver
+//!    minimized FCM/APNs/UnifiedPush payloads to active registered devices and
+//!    deactivates provider-revoked tokens.
 //!
 //! ## Locale rendering
 //!
@@ -56,6 +57,9 @@
 
 use std::collections::HashMap;
 
+use chrono::Utc;
+use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
+use reqwest::StatusCode;
 use ring::hmac::{HMAC_SHA256, Key};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -96,6 +100,21 @@ const INSERT_NOTIFICATION_SQL: &str = r#"
 
 const UPDATE_DELIVERY_STATUS_SQL: &str = r#"
     UPDATE notifications SET delivery_status = $2 WHERE id = $1
+"#;
+
+const FETCH_ACTIVE_PUSH_DEVICES_SQL: &str = r#"
+    SELECT id, provider, token
+    FROM user_push_devices
+    WHERE user_id = $1 AND provider = $2 AND is_active = true
+    ORDER BY last_seen_at DESC NULLS LAST, created_at DESC
+"#;
+
+const INVALIDATE_PUSH_DEVICE_SQL: &str = r#"
+    UPDATE user_push_devices
+    SET is_active = false,
+        invalidated_at = COALESCE(invalidated_at, now()),
+        updated_at = now()
+    WHERE id = $1
 "#;
 
 /// Input for dispatching a notification.
@@ -140,7 +159,6 @@ pub enum ChannelStatus {
     Pending,
     Skipped,
     Failed,
-    NotImplemented,
 }
 
 impl ChannelStatus {
@@ -150,7 +168,6 @@ impl ChannelStatus {
             ChannelStatus::Pending => "pending",
             ChannelStatus::Skipped => "skipped",
             ChannelStatus::Failed => "failed",
-            ChannelStatus::NotImplemented => "not_implemented",
         }
     }
 }
@@ -192,7 +209,7 @@ pub enum DispatchError {
 /// 4. INSERTs the notification record to the DB (in-app channel)
 /// 5. Publishes a `notification` SSE event via the EventBus
 /// 6. Spawns a background task for webhook delivery (if configured + enabled)
-/// 7. Resolves push config (stub — actual push deferred to Phase 16a)
+/// 7. Spawns a background task for mobile push delivery (if configured + enabled)
 /// 8. Returns a [`DispatchResult`] with per-channel status
 pub async fn dispatch(
     state: &AppState,
@@ -259,7 +276,16 @@ pub async fn dispatch(
 
     let in_app_status = ChannelStatus::Delivered;
 
-    let push_status = dispatch_push(state, input.user_id, &nt, &prefs);
+    let push_status = dispatch_push(
+        state,
+        input.user_id,
+        notification_id,
+        &nt,
+        &prefs,
+        &rendered_title,
+        &rendered_body,
+        input,
+    );
 
     let webhook_status = if prefs.webhook_enabled
         && state
@@ -386,9 +412,13 @@ fn publish_sse(
 
 fn dispatch_push(
     state: &AppState,
-    _user_id: Uuid,
+    user_id: Uuid,
+    notification_id: Uuid,
     nt: &NotificationTypeInfo,
     prefs: &UserPrefs,
+    title: &str,
+    body: &str,
+    input: &NotificationInput,
 ) -> ChannelStatus {
     let config = state.runtime_config.load();
     if !prefs.push_enabled {
@@ -398,11 +428,484 @@ fn dispatch_push(
         return ChannelStatus::Skipped;
     }
 
-    tracing::info!(
-        notification_type = %nt.category,
-        "Push dispatch: provider configured but FCM/APNs/UnifiedPush client not yet implemented (Phase 16a)"
+    let push_config = config.notifications.push.clone();
+    drop(config);
+
+    spawn_push_delivery(
+        state.pool.clone(),
+        user_id,
+        notification_id,
+        push_config,
+        PushNotificationPayload::new(notification_id, nt, title, body, input),
     );
-    ChannelStatus::NotImplemented
+    ChannelStatus::Pending
+}
+
+#[derive(Debug, Clone)]
+struct PushNotificationPayload {
+    notification_id: Uuid,
+    notification_type: String,
+    title: String,
+    body: String,
+    link: Option<String>,
+    related_item_id: Option<Uuid>,
+}
+
+impl PushNotificationPayload {
+    fn new(
+        notification_id: Uuid,
+        _nt: &NotificationTypeInfo,
+        title: &str,
+        body: &str,
+        input: &NotificationInput,
+    ) -> Self {
+        Self {
+            notification_id,
+            notification_type: input.notification_type.clone(),
+            title: title.to_string(),
+            body: body.to_string(),
+            link: input.link.clone(),
+            related_item_id: input.related_item_id,
+        }
+    }
+
+    fn data(&self) -> serde_json::Map<String, Value> {
+        let mut data = serde_json::Map::new();
+        data.insert(
+            "notification_id".to_string(),
+            Value::String(self.notification_id.to_string()),
+        );
+        data.insert(
+            "type".to_string(),
+            Value::String(self.notification_type.clone()),
+        );
+        if let Some(link) = &self.link {
+            data.insert("link".to_string(), Value::String(link.clone()));
+        }
+        if let Some(id) = self.related_item_id {
+            data.insert("related_item_id".to_string(), Value::String(id.to_string()));
+        }
+        data
+    }
+}
+
+#[derive(Debug)]
+struct PushDeviceTarget {
+    id: Uuid,
+    token: String,
+}
+
+fn spawn_push_delivery(
+    pool: PgPool,
+    user_id: Uuid,
+    notification_id: Uuid,
+    config: crate::state::PushDispatchConfig,
+    payload: PushNotificationPayload,
+) {
+    tokio::spawn(async move {
+        let provider = match config.provider.as_deref() {
+            Some(provider) => provider.to_string(),
+            None => {
+                update_notification_channel_status(&pool, notification_id, "push", "skipped").await;
+                return;
+            }
+        };
+
+        let devices = match fetch_active_push_devices(&pool, user_id, &provider).await {
+            Ok(devices) => devices,
+            Err(error) => {
+                tracing::warn!(
+                    notification_id = %notification_id,
+                    provider = %provider,
+                    error = %error,
+                    "Failed to fetch push devices"
+                );
+                update_notification_channel_status(&pool, notification_id, "push", "failed").await;
+                record_notification_delivery_status("push", "failed");
+                return;
+            }
+        };
+
+        if devices.is_empty() {
+            update_notification_channel_status(&pool, notification_id, "push", "skipped").await;
+            record_notification_delivery_status("push", "skipped");
+            return;
+        }
+
+        let mut delivered = 0usize;
+        let mut failed = 0usize;
+        let mut invalidated = 0usize;
+
+        for device in devices {
+            let result = send_push_to_device(&config, &provider, &device.token, &payload).await;
+            match result {
+                Ok(()) => delivered += 1,
+                Err(PushDeliveryError::Revoked(reason)) => {
+                    invalidated += 1;
+                    failed += 1;
+                    let _ = sqlx::query(INVALIDATE_PUSH_DEVICE_SQL)
+                        .bind(device.id)
+                        .execute(&pool)
+                        .await;
+                    tracing::info!(
+                        notification_id = %notification_id,
+                        provider = %provider,
+                        reason = %reason,
+                        "Push provider revoked a device token; device row invalidated"
+                    );
+                }
+                Err(error) => {
+                    failed += 1;
+                    tracing::warn!(
+                        notification_id = %notification_id,
+                        provider = %provider,
+                        error = %error,
+                        "Push delivery failed for a registered device"
+                    );
+                }
+            }
+        }
+
+        let status = if delivered > 0 {
+            "delivered"
+        } else if failed > 0 {
+            "failed"
+        } else {
+            "skipped"
+        };
+
+        tracing::debug!(
+            notification_id = %notification_id,
+            provider = %provider,
+            delivered,
+            failed,
+            invalidated,
+            "Push delivery batch completed"
+        );
+
+        update_notification_channel_status(&pool, notification_id, "push", status).await;
+        record_notification_delivery_status("push", status);
+    });
+}
+
+async fn fetch_active_push_devices(
+    pool: &PgPool,
+    user_id: Uuid,
+    provider: &str,
+) -> Result<Vec<PushDeviceTarget>, sqlx::Error> {
+    let rows = sqlx::query(FETCH_ACTIVE_PUSH_DEVICES_SQL)
+        .bind(user_id)
+        .bind(provider)
+        .fetch_all(pool)
+        .await?;
+
+    Ok(rows
+        .into_iter()
+        .map(|row| PushDeviceTarget {
+            id: row.try_get("id").unwrap_or_else(|_| Uuid::nil()),
+            token: row.try_get("token").unwrap_or_default(),
+        })
+        .collect())
+}
+
+async fn send_push_to_device(
+    config: &crate::state::PushDispatchConfig,
+    provider: &str,
+    token: &str,
+    payload: &PushNotificationPayload,
+) -> Result<(), PushDeliveryError> {
+    match provider {
+        "fcm" => send_fcm_push(&config.fcm, token, payload).await,
+        "apns" => send_apns_push(&config.apns, token, payload).await,
+        "unifiedpush" => send_unifiedpush(token, payload).await,
+        _ => Err(PushDeliveryError::Config(format!(
+            "unsupported provider '{provider}'"
+        ))),
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+enum PushDeliveryError {
+    #[error("Push configuration error: {0}")]
+    Config(String),
+    #[error("Push token revoked: {0}")]
+    Revoked(String),
+    #[error("Push request failed: {0}")]
+    Request(String),
+    #[error("Push provider returned status {status}: {reason}")]
+    Provider { status: u16, reason: String },
+}
+
+#[derive(Debug, Serialize)]
+struct OAuthJwtClaims<'a> {
+    iss: &'a str,
+    scope: &'a str,
+    aud: &'a str,
+    iat: usize,
+    exp: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct OAuthTokenResponse {
+    access_token: String,
+}
+
+async fn send_fcm_push(
+    config: &crate::state::FcmPushConfig,
+    token: &str,
+    payload: &PushNotificationPayload,
+) -> Result<(), PushDeliveryError> {
+    let project_id = required_config(config.project_id.as_deref(), "fcm.project_id")?;
+    let client_email = required_config(config.client_email.as_deref(), "fcm.client_email")?;
+    let private_key = required_config(config.private_key.as_deref(), "fcm.private_key")?;
+    let access_token = fetch_fcm_access_token(client_email, private_key).await?;
+
+    let data = payload
+        .data()
+        .into_iter()
+        .filter_map(|(key, value)| value.as_str().map(|s| (key, Value::String(s.to_string()))))
+        .collect::<serde_json::Map<String, Value>>();
+
+    let request_body = serde_json::json!({
+        "message": {
+            "token": token,
+            "notification": {
+                "title": payload.title,
+                "body": payload.body,
+            },
+            "data": data,
+        }
+    });
+
+    let url = format!("https://fcm.googleapis.com/v1/projects/{project_id}/messages:send");
+    let client = push_http_client()?;
+    let response = client
+        .post(url)
+        .bearer_auth(access_token)
+        .header("User-Agent", "Duskcue-Push/1.0")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| PushDeliveryError::Request(e.to_string()))?;
+
+    if response.status().is_success() {
+        return Ok(());
+    }
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if is_fcm_revoked(status, &body) {
+        return Err(PushDeliveryError::Revoked("UNREGISTERED".to_string()));
+    }
+    Err(PushDeliveryError::Provider {
+        status: status.as_u16(),
+        reason: sanitized_provider_reason(&body),
+    })
+}
+
+async fn fetch_fcm_access_token(
+    client_email: &str,
+    private_key: &str,
+) -> Result<String, PushDeliveryError> {
+    let now = Utc::now().timestamp() as usize;
+    let claims = OAuthJwtClaims {
+        iss: client_email,
+        scope: "https://www.googleapis.com/auth/firebase.messaging",
+        aud: "https://oauth2.googleapis.com/token",
+        iat: now,
+        exp: now + 3600,
+    };
+    let jwt = encode(
+        &Header::new(Algorithm::RS256),
+        &claims,
+        &EncodingKey::from_rsa_pem(&normalize_pem(private_key))
+            .map_err(|e| PushDeliveryError::Config(e.to_string()))?,
+    )
+    .map_err(|e| PushDeliveryError::Config(e.to_string()))?;
+
+    let client = push_http_client()?;
+    let response = client
+        .post("https://oauth2.googleapis.com/token")
+        .header("User-Agent", "Duskcue-Push/1.0")
+        .form(&[
+            ("grant_type", "urn:ietf:params:oauth:grant-type:jwt-bearer"),
+            ("assertion", jwt.as_str()),
+        ])
+        .send()
+        .await
+        .map_err(|e| PushDeliveryError::Request(e.to_string()))?;
+
+    if !response.status().is_success() {
+        let status = response.status().as_u16();
+        let body = response.text().await.unwrap_or_default();
+        return Err(PushDeliveryError::Provider {
+            status,
+            reason: sanitized_provider_reason(&body),
+        });
+    }
+
+    let body: OAuthTokenResponse = response
+        .json()
+        .await
+        .map_err(|e| PushDeliveryError::Request(e.to_string()))?;
+    Ok(body.access_token)
+}
+
+#[derive(Debug, Serialize)]
+struct ApnsJwtClaims<'a> {
+    iss: &'a str,
+    iat: usize,
+}
+
+async fn send_apns_push(
+    config: &crate::state::ApnsPushConfig,
+    token: &str,
+    payload: &PushNotificationPayload,
+) -> Result<(), PushDeliveryError> {
+    let team_id = required_config(config.team_id.as_deref(), "apns.team_id")?;
+    let key_id = required_config(config.key_id.as_deref(), "apns.key_id")?;
+    let private_key = required_config(config.private_key.as_deref(), "apns.private_key")?;
+    let bundle_id = required_config(config.bundle_id.as_deref(), "apns.bundle_id")?;
+    let now = Utc::now().timestamp() as usize;
+    let mut header = Header::new(Algorithm::ES256);
+    header.kid = Some(key_id.to_string());
+    let jwt = encode(
+        &header,
+        &ApnsJwtClaims {
+            iss: team_id,
+            iat: now,
+        },
+        &EncodingKey::from_ec_pem(&normalize_pem(private_key))
+            .map_err(|e| PushDeliveryError::Config(e.to_string()))?,
+    )
+    .map_err(|e| PushDeliveryError::Config(e.to_string()))?;
+
+    let host = if config.sandbox {
+        "api.sandbox.push.apple.com"
+    } else {
+        "api.push.apple.com"
+    };
+    let url = format!("https://{host}/3/device/{token}");
+    let request_body = serde_json::json!({
+        "aps": {
+            "alert": {
+                "title": payload.title,
+                "body": payload.body,
+            },
+            "sound": "default",
+            "thread-id": payload.notification_type,
+        },
+        "notification_id": payload.notification_id.to_string(),
+        "type": payload.notification_type,
+        "link": payload.link,
+        "related_item_id": payload.related_item_id.map(|id| id.to_string()),
+    });
+
+    let client = push_http_client()?;
+    let response = client
+        .post(url)
+        .bearer_auth(jwt)
+        .header("User-Agent", "Duskcue-Push/1.0")
+        .header("apns-topic", bundle_id)
+        .header("apns-push-type", "alert")
+        .header("apns-priority", "10")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| PushDeliveryError::Request(e.to_string()))?;
+
+    if response.status().is_success() {
+        return Ok(());
+    }
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    let reason = apns_reason(&body);
+    if status == StatusCode::GONE
+        || matches!(reason.as_deref(), Some("BadDeviceToken" | "Unregistered"))
+    {
+        return Err(PushDeliveryError::Revoked(
+            reason.unwrap_or_else(|| status.as_str().to_string()),
+        ));
+    }
+    Err(PushDeliveryError::Provider {
+        status: status.as_u16(),
+        reason: sanitized_provider_reason(&body),
+    })
+}
+
+async fn send_unifiedpush(
+    endpoint: &str,
+    payload: &PushNotificationPayload,
+) -> Result<(), PushDeliveryError> {
+    let request_body = serde_json::json!({
+        "notification_id": payload.notification_id,
+        "type": payload.notification_type,
+        "title": payload.title,
+        "body": payload.body,
+        "link": payload.link,
+        "related_item_id": payload.related_item_id,
+    });
+    let client = push_http_client()?;
+    let response = client
+        .post(endpoint)
+        .header("Content-Type", "application/json")
+        .header("User-Agent", "Duskcue-Push/1.0")
+        .json(&request_body)
+        .send()
+        .await
+        .map_err(|e| PushDeliveryError::Request(e.to_string()))?;
+
+    if response.status().is_success() {
+        return Ok(());
+    }
+
+    let status = response.status();
+    let body = response.text().await.unwrap_or_default();
+    if matches!(status, StatusCode::NOT_FOUND | StatusCode::GONE) {
+        return Err(PushDeliveryError::Revoked(status.as_str().to_string()));
+    }
+    Err(PushDeliveryError::Provider {
+        status: status.as_u16(),
+        reason: sanitized_provider_reason(&body),
+    })
+}
+
+fn push_http_client() -> Result<reqwest::Client, PushDeliveryError> {
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(15))
+        .connect_timeout(std::time::Duration::from_secs(10))
+        .no_proxy()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|e| PushDeliveryError::Config(e.to_string()))
+}
+
+fn required_config<'a>(value: Option<&'a str>, field: &str) -> Result<&'a str, PushDeliveryError> {
+    value
+        .filter(|v| !v.trim().is_empty())
+        .ok_or_else(|| PushDeliveryError::Config(format!("{field} is required")))
+}
+
+fn normalize_pem(value: &str) -> Vec<u8> {
+    value.replace("\\n", "\n").into_bytes()
+}
+
+fn is_fcm_revoked(status: StatusCode, body: &str) -> bool {
+    status == StatusCode::NOT_FOUND && body.contains("UNREGISTERED")
+}
+
+fn apns_reason(body: &str) -> Option<String> {
+    let parsed = serde_json::from_str::<Value>(body).ok()?;
+    parsed
+        .get("reason")
+        .and_then(Value::as_str)
+        .map(ToString::to_string)
+}
+
+fn sanitized_provider_reason(body: &str) -> String {
+    let compact = body.split_whitespace().collect::<Vec<_>>().join(" ");
+    compact.chars().take(200).collect()
 }
 
 fn spawn_webhook_delivery(
@@ -444,28 +947,37 @@ fn spawn_webhook_delivery(
         };
         record_notification_delivery_status("webhook", status_str);
 
-        let current_status: Value =
-            match sqlx::query("SELECT delivery_status FROM notifications WHERE id = $1")
-                .bind(notification_id)
-                .fetch_one(&pool)
-                .await
-            {
-                Ok(row) => row.try_get("delivery_status").unwrap_or(Value::Null),
-                Err(_) => Value::Null,
-            };
-
-        let mut status_map = match current_status {
-            Value::Object(map) => map,
-            _ => serde_json::Map::new(),
-        };
-        status_map.insert("webhook".to_string(), Value::String(status_str.to_string()));
-
-        let _ = sqlx::query("UPDATE notifications SET delivery_status = $2 WHERE id = $1")
-            .bind(notification_id)
-            .bind(Value::Object(status_map))
-            .execute(&pool)
-            .await;
+        update_notification_channel_status(&pool, notification_id, "webhook", status_str).await;
     });
+}
+
+async fn update_notification_channel_status(
+    pool: &PgPool,
+    notification_id: Uuid,
+    channel: &str,
+    status: &str,
+) {
+    let current_status: Value =
+        match sqlx::query("SELECT delivery_status FROM notifications WHERE id = $1")
+            .bind(notification_id)
+            .fetch_one(pool)
+            .await
+        {
+            Ok(row) => row.try_get("delivery_status").unwrap_or(Value::Null),
+            Err(_) => Value::Null,
+        };
+
+    let mut status_map = match current_status {
+        Value::Object(map) => map,
+        _ => serde_json::Map::new(),
+    };
+    status_map.insert(channel.to_string(), Value::String(status.to_string()));
+
+    let _ = sqlx::query("UPDATE notifications SET delivery_status = $2 WHERE id = $1")
+        .bind(notification_id)
+        .bind(Value::Object(status_map))
+        .execute(pool)
+        .await;
 }
 
 fn record_notification_delivery(channel: &str, status: &ChannelStatus) {
@@ -1075,7 +1587,79 @@ mod tests {
         assert_eq!(ChannelStatus::Pending.as_str(), "pending");
         assert_eq!(ChannelStatus::Skipped.as_str(), "skipped");
         assert_eq!(ChannelStatus::Failed.as_str(), "failed");
-        assert_eq!(ChannelStatus::NotImplemented.as_str(), "not_implemented");
+    }
+
+    #[test]
+    fn push_payload_data_is_minimized() {
+        let notification_id = Uuid::now_v7();
+        let related_item_id = Uuid::now_v7();
+        let nt = NotificationTypeInfo {
+            id: Uuid::now_v7(),
+            category: "media".to_string(),
+            priority: "medium".to_string(),
+            in_app_template: "new-media-added".to_string(),
+            is_enabled_by_default: true,
+        };
+        let mut input =
+            NotificationInput::new(Uuid::now_v7(), "new_media_added", serde_json::json!({}));
+        input.link = Some(format!("/media/{related_item_id}"));
+        input.related_item_id = Some(related_item_id);
+
+        let payload = PushNotificationPayload::new(notification_id, &nt, "Title", "Body", &input);
+        let data = payload.data();
+
+        assert_eq!(
+            data.get("notification_id"),
+            Some(&Value::String(notification_id.to_string()))
+        );
+        assert_eq!(
+            data.get("type").and_then(Value::as_str),
+            Some("new_media_added")
+        );
+        assert_eq!(
+            data.get("link"),
+            Some(&Value::String(format!("/media/{related_item_id}")))
+        );
+        assert_eq!(
+            data.get("related_item_id"),
+            Some(&Value::String(related_item_id.to_string()))
+        );
+        assert!(!data.contains_key("title"));
+        assert!(!data.contains_key("body"));
+        assert!(!data.contains_key("metadata"));
+    }
+
+    #[test]
+    fn fcm_revocation_detection_requires_unregistered_404() {
+        assert!(is_fcm_revoked(
+            StatusCode::NOT_FOUND,
+            r#"{"error":{"details":[{"errorCode":"UNREGISTERED"}]}}"#
+        ));
+        assert!(!is_fcm_revoked(
+            StatusCode::BAD_REQUEST,
+            r#"{"error":{"details":[{"errorCode":"UNREGISTERED"}]}}"#
+        ));
+        assert!(!is_fcm_revoked(
+            StatusCode::NOT_FOUND,
+            r#"{"error":{"status":"NOT_FOUND"}}"#
+        ));
+    }
+
+    #[test]
+    fn apns_reason_extracts_provider_reason() {
+        assert_eq!(
+            apns_reason(r#"{"reason":"BadDeviceToken"}"#).as_deref(),
+            Some("BadDeviceToken")
+        );
+        assert_eq!(apns_reason("not-json"), None);
+    }
+
+    #[test]
+    fn normalize_pem_converts_json_escaped_newlines() {
+        assert_eq!(
+            normalize_pem("-----BEGIN-----\\nabc\\n-----END-----"),
+            b"-----BEGIN-----\nabc\n-----END-----".to_vec()
+        );
     }
 
     #[test]

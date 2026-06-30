@@ -54,6 +54,18 @@ class SecureStorageService {
     return _storage.read(key: 'last_server_origin');
   }
 
+  Future<void> writePushDeviceIds(String value) {
+    return _storage.write(key: 'push_device_ids', value: value);
+  }
+
+  Future<String?> readPushDeviceIds() {
+    return _storage.read(key: 'push_device_ids');
+  }
+
+  Future<void> clearPushDeviceIds() {
+    return _storage.delete(key: 'push_device_ids');
+  }
+
   Future<void> clearSession() async {
     await clearToken();
     await clearUser();

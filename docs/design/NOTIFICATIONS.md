@@ -140,7 +140,7 @@ The preferences list endpoint returns all notification types with the user's per
 
 - Requires `Require<CanManageServer>` (admin-only)
 - Accepts `{ "notification_type": "server_alert", "title": "Optional override", "body": "Optional override" }`
-- Dispatches via the standard pipeline (DB-write-first + SSE + webhook + push stub)
+- Dispatches via the standard pipeline (DB-write-first + SSE + webhook + mobile push when configured)
 - Returns the `DispatchResult` so the admin can verify per-channel status
 
 ### Migration Notifications

@@ -236,6 +236,8 @@ pub fn decrypt_notification_config(
     key: &EncryptionKey,
 ) {
     config.webhook.secret = key.decrypt_optional(&config.webhook.secret);
+    config.push.fcm.private_key = key.decrypt_optional(&config.push.fcm.private_key);
+    config.push.apns.private_key = key.decrypt_optional(&config.push.apns.private_key);
 }
 
 pub fn encrypt_notification_config(
@@ -249,6 +251,24 @@ pub fn encrypt_notification_config(
         match key.encrypt(secret) {
             Ok(encrypted) => config.webhook.secret = Some(encrypted),
             Err(e) => tracing::error!(error = %e, "Failed to encrypt webhook secret"),
+        }
+    }
+    if let Some(ref private_key) = config.push.fcm.private_key
+        && !private_key.is_empty()
+        && !private_key.starts_with(ENCRYPTED_PREFIX)
+    {
+        match key.encrypt(private_key) {
+            Ok(encrypted) => config.push.fcm.private_key = Some(encrypted),
+            Err(e) => tracing::error!(error = %e, "Failed to encrypt FCM private_key"),
+        }
+    }
+    if let Some(ref private_key) = config.push.apns.private_key
+        && !private_key.is_empty()
+        && !private_key.starts_with(ENCRYPTED_PREFIX)
+    {
+        match key.encrypt(private_key) {
+            Ok(encrypted) => config.push.apns.private_key = Some(encrypted),
+            Err(e) => tracing::error!(error = %e, "Failed to encrypt APNs private_key"),
         }
     }
 }

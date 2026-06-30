@@ -892,6 +892,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 8 mobile realtime status:** `clients/mobile/lib/services/realtime_service.dart` owns foreground SSE transport, parsing, reconnect, and `Last-Event-ID` replay. `clients/mobile/lib/stores/realtime_store.dart` stores connection status, unread notification count, and the latest event metadata for shell/screens. `clients/mobile/lib/widgets/app_shell.dart` is responsible for tying the SSE lifecycle to authenticated foreground app state.
 
+**Task 9 mobile push status:** `clients/mobile/lib/services/push_registration_service.dart` owns FCM/APNs/optional UnifiedPush token registration, secure storage of returned push-device IDs, 24-hour heartbeat refresh, token-rotation handling, and safe notification tap routing into the authenticated shell. Server-side provider dispatch remains in `server/src/services/notification_dispatch.rs`, backed by nested push config structs in `server/src/state.rs` and encrypted provider private-key handling in `server/src/services/encryption.rs`.
+
 ## Development Workflow
 
 ### Server Development

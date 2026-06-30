@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:duskcue_mobile/l10n/app_strings.dart';
 import 'package:duskcue_mobile/models/realtime_models.dart';
+import 'package:duskcue_mobile/services/push_registration_service.dart';
 import 'package:duskcue_mobile/services/service_providers.dart';
 import 'package:duskcue_mobile/stores/realtime_store.dart';
 import 'package:duskcue_mobile/stores/session_store.dart';
@@ -23,6 +24,7 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
 
   StreamSubscription<RealtimeEvent>? _eventSubscription;
   StreamSubscription<RealtimeConnectionStatus>? _statusSubscription;
+  StreamSubscription<PushNotificationTap>? _pushTapSubscription;
   Timer? _fallbackTimer;
   AppLifecycleState _lifecycleState = AppLifecycleState.resumed;
 
@@ -35,6 +37,7 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
     _statusSubscription = realtime.status.listen((status) {
       ref.read(realtimeProvider.notifier).setStatus(status);
     });
+    _pushTapSubscription = ref.read(pushRegistrationServiceProvider).notificationTaps.listen(_handlePushTap);
     _fallbackTimer = Timer.periodic(_fallbackPollInterval, (_) => unawaited(_pollFallback()));
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncRealtime(refresh: true));
   }
@@ -45,7 +48,9 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
     _fallbackTimer?.cancel();
     _eventSubscription?.cancel();
     _statusSubscription?.cancel();
+    _pushTapSubscription?.cancel();
     unawaited(ref.read(realtimeServiceProvider).disconnect());
+    unawaited(ref.read(pushRegistrationServiceProvider).stop());
     super.dispose();
   }
 
@@ -62,12 +67,23 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
     final realtime = ref.read(realtimeServiceProvider);
     if (session.isAuthenticated && foreground) {
       unawaited(realtime.connect());
+      unawaited(ref.read(pushRegistrationServiceProvider).startOrRefresh());
       if (refresh) {
         unawaited(_pollFallback(force: true));
       }
     } else {
       unawaited(realtime.disconnect());
     }
+  }
+
+  void _handlePushTap(PushNotificationTap tap) {
+    final session = ref.read(sessionProvider);
+    if (!mounted) return;
+    if (!session.isAuthenticated) {
+      context.go('/auth');
+      return;
+    }
+    context.go(tap.route);
   }
 
   Future<void> _pollFallback({bool force = false}) async {

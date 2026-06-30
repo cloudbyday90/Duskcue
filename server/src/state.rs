@@ -579,16 +579,72 @@ impl WebhookDispatchConfig {
 pub struct PushDispatchConfig {
     pub enabled: bool,
     pub provider: Option<String>,
+    pub fcm: FcmPushConfig,
+    pub apns: ApnsPushConfig,
+    pub unifiedpush: UnifiedPushConfig,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct FcmPushConfig {
+    pub project_id: Option<String>,
+    pub client_email: Option<String>,
+    pub private_key: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ApnsPushConfig {
+    pub team_id: Option<String>,
+    pub key_id: Option<String>,
+    pub private_key: Option<String>,
+    pub bundle_id: Option<String>,
+    pub sandbox: bool,
+}
+
+impl Default for ApnsPushConfig {
+    fn default() -> Self {
+        Self {
+            team_id: None,
+            key_id: None,
+            private_key: None,
+            bundle_id: None,
+            sandbox: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct UnifiedPushConfig {
+    pub enabled: bool,
 }
 
 impl PushDispatchConfig {
     pub fn is_configured(&self) -> bool {
-        self.enabled
-            && self
-                .provider
-                .as_ref()
-                .is_some_and(|p| matches!(p.as_str(), "fcm" | "apns" | "unifiedpush"))
+        if !self.enabled {
+            return false;
+        }
+        match self.provider.as_deref() {
+            Some("fcm") => {
+                non_empty(self.fcm.project_id.as_deref())
+                    && non_empty(self.fcm.client_email.as_deref())
+                    && non_empty(self.fcm.private_key.as_deref())
+            }
+            Some("apns") => {
+                non_empty(self.apns.team_id.as_deref())
+                    && non_empty(self.apns.key_id.as_deref())
+                    && non_empty(self.apns.private_key.as_deref())
+                    && non_empty(self.apns.bundle_id.as_deref())
+            }
+            Some("unifiedpush") => self.unifiedpush.enabled,
+            _ => false,
+        }
     }
+}
+
+fn non_empty(value: Option<&str>) -> bool {
+    value.is_some_and(|v| !v.trim().is_empty())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
