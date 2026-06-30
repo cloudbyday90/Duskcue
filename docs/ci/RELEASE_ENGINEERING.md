@@ -13,6 +13,7 @@ This document complements:
 - [TRUSTED_AUTOMATION_RELEASE_BLOCKERS.md](TRUSTED_AUTOMATION_RELEASE_BLOCKERS.md) — which trusted-automation changes stop release work until the advanced doc set is re-reviewed
 - [TRUSTED_AUTOMATION_MANUAL_VALIDATION.md](TRUSTED_AUTOMATION_MANUAL_VALIDATION.md) — when release-blocking trusted-automation changes require a dedicated manual validation step before protected publication
 - [RELEASE_ARTIFACT_RETENTION.md](RELEASE_ARTIFACT_RETENTION.md) — durable release evidence, retention windows, and rollback-proof artifact rules
+- [CLIENT_PACKAGING.md](CLIENT_PACKAGING.md) — desktop/mobile package smoke, signing placeholders, privacy notes, and client release-gate checks
 
 ## Goals
 
@@ -100,6 +101,10 @@ Pre-release identifiers follow SemVer, e.g. `1.2.0-beta.1`, `1.2.0-rc.2`.
 - The web client and Tauri desktop shell are released with the server and therefore always match the server version.
 - Mobile and TV apps target the same API major version as the server.
 - The server may reject clients from a different API major version with a forced-upgrade response.
+
+### Desktop and mobile package smoke
+
+Phase 16a adds a dedicated client packaging smoke workflow for the Tauri desktop shell and Flutter mobile app. These builds prove that platform package assembly still works, but debug CI artifacts are not durable release payloads. Public distribution still requires protected signing, notarization, store metadata, and privacy declarations as documented in [CLIENT_PACKAGING.md](CLIENT_PACKAGING.md).
 
 ### Database compatibility
 

@@ -20,6 +20,7 @@ This document complements:
 - [TRUSTED_RUNNER_COMPROMISE_RESPONSE.md](TRUSTED_RUNNER_COMPROMISE_RESPONSE.md) - containment and rebuild flow when a trusted runner is suspected compromised
 - [PROJECT_STRUCTURE.md](../design/PROJECT_STRUCTURE.md) - repository layout for server and clients
 - [API_SECURITY.md](../security/API_SECURITY.md) - dependency auditing, SBOM generation, and API-layer safeguards
+- [CLIENT_PACKAGING.md](CLIENT_PACKAGING.md) - desktop/mobile packaging smoke workflow, signing placeholders, and store-readiness notes
 
 ## Goals
 
@@ -137,6 +138,8 @@ Tauri should inherit almost all behavioral coverage from the web client. The des
 
 The desktop wrapper should not fork a second full UI test suite unless a platform-specific bug class proves it necessary.
 
+Phase 16a adds `client-packaging.yml`, which runs Tauri debug package smoke builds on Linux, Windows, and macOS after building the shared web UI through the desktop static adapter path. Linux prerequisite installation follows Tauri's official WebKitGTK dependency guidance.
+
 ### 4. Flutter mobile client
 
 Required layers:
@@ -156,6 +159,8 @@ Device-matrix rule:
 
 - Pull requests run unit and widget tests.
 - Nightly and release lanes run selected integration suites on emulators and, when mobile parity matters, Firebase Test Lab.
+
+Phase 16a adds pure Flutter tests for API error mapping, server URL validation, auth/session state, playback DTO/state helpers, notification handling, and quality payloads. The Android packaging lane runs `flutter analyze`, `flutter test`, the integration smoke test, and debug/release APK builds. The iOS lane validates plist/app-icon metadata, runs Flutter tests on macOS, and attempts a simulator build when the generated Xcode target exists.
 
 ## CI Workflow Security Posture
 
@@ -228,6 +233,8 @@ Additional jobs beyond PR:
 - wider browser matrix when useful
 - packaging smoke for Tauri and mobile builds
 - SBOM generation
+
+The desktop/mobile packaging smoke implementation is `client-packaging.yml`; detailed artifact, signing, and privacy placeholders are documented in [CLIENT_PACKAGING.md](CLIENT_PACKAGING.md).
 
 ### 3. `restore-drill.yml`
 

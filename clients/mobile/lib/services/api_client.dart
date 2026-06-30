@@ -120,36 +120,36 @@ class DuskcueApiClient {
     try {
       return await send();
     } on DioException catch (error) {
-      throw _toClientError(error);
+      throw clientErrorFromDioException(error);
     }
   }
+}
 
-  ClientError _toClientError(DioException error) {
-    final response = error.response;
-    if (response == null) {
-      return ClientError(
-        problem: ProblemDetail.network(error.message ?? 'Network request failed'),
-      );
-    }
-
-    final data = response.data;
-    final problem = data is Map
-        ? ProblemDetail.fromJson(Map<String, Object?>.from(data))
-        : ProblemDetail(
-            type: '/errors/http_${response.statusCode ?? 0}',
-            title: 'HTTP_${response.statusCode ?? 0}',
-            status: response.statusCode ?? 0,
-            detail: response.statusMessage ?? 'Request failed',
-            instance: response.requestOptions.path,
-            traceId: '',
-            errors: null,
-          );
-    final retryAfterHeader = response.headers.value('retry-after');
-    final retryAfterSeconds = retryAfterHeader == null ? null : int.tryParse(retryAfterHeader);
-
+ClientError clientErrorFromDioException(DioException error) {
+  final response = error.response;
+  if (response == null) {
     return ClientError(
-      problem: problem,
-      retryAfter: retryAfterSeconds == null ? null : Duration(seconds: retryAfterSeconds),
+      problem: ProblemDetail.network(error.message ?? 'Network request failed'),
     );
   }
+
+  final data = response.data;
+  final problem = data is Map
+      ? ProblemDetail.fromJson(Map<String, Object?>.from(data))
+      : ProblemDetail(
+          type: '/errors/http_${response.statusCode ?? 0}',
+          title: 'HTTP_${response.statusCode ?? 0}',
+          status: response.statusCode ?? 0,
+          detail: response.statusMessage ?? 'Request failed',
+          instance: response.requestOptions.path,
+          traceId: '',
+          errors: null,
+        );
+  final retryAfterHeader = response.headers.value('retry-after');
+  final retryAfterSeconds = retryAfterHeader == null ? null : int.tryParse(retryAfterHeader);
+
+  return ClientError(
+    problem: problem,
+    retryAfter: retryAfterSeconds == null ? null : Duration(seconds: retryAfterSeconds),
+  );
 }

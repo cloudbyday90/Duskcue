@@ -429,6 +429,39 @@ Verification:
 
 Flutter/Dart are not installed in the current Windows environment, so `flutter analyze`, `flutter test`, mobile passkey registration on Android/iOS, and push preference/device UI checks remain first-run verification for an environment with the Flutter SDK and target devices.
 
+### Task 12 — Packaging, CI, and Release Smoke
+
+Implementation:
+
+- Added `.github/workflows/client-packaging.yml` as the desktop/mobile package smoke workflow with pinned checkout action and least-privilege `contents: read` permissions.
+- The desktop job runs on Linux, Windows, and macOS, installs Linux Tauri WebKitGTK prerequisites where needed, installs web/desktop npm dependencies, builds the shared SvelteKit UI through the Tauri static adapter path, and runs `tauri build --debug`.
+- The Android job installs Flutter from Flutter's official release manifest, runs `flutter pub get`, `flutter analyze`, `flutter test`, the integration smoke test, `flutter build apk --debug`, and `flutter build apk --release`.
+- The iOS job installs Flutter from Flutter's official macOS release manifest, validates `Info.plist` and app-icon metadata with `plutil`, runs Flutter analysis/tests on macOS, and attempts `flutter build ios --simulator --no-codesign` when the generated Runner native target exists.
+- Added [CLIENT_PACKAGING.md](../ci/CLIENT_PACKAGING.md) with desktop package identity, mobile package identity, protocol registration, artifact expectations, signing/notarization placeholders, updater decision, permission/privacy disclosures, and release-gate checks.
+- Desktop keeps the current placeholder icon asset for CI smoke. Final branded `.ico`, `.icns`, and PNG assets remain release-asset work before public distribution.
+- The updater remains intentionally disabled for the MVP until signing material and release-channel policy exist.
+- Added Flutter tests for API error mapping, server URL validation, auth/session state clearing, playback DTO/state helpers, notification/SSE/push-device handling, and quality payloads. `DuskcueApiClient` now uses a package-level `clientErrorFromDioException()` helper so the tested error conversion path is the production path.
+
+Store and signing posture:
+
+- Android release APK assembly is smoke-tested, but production keystores and Play signing credentials are protected release secrets and are not committed.
+- iOS metadata and testability are covered in CI; production archive/signing requires a generated Xcode target, Apple Team/bundle registration, provisioning profiles, and push entitlement setup in a macOS/Xcode environment.
+- Store privacy declarations must cover local-network access, push tokens, server URL storage, account/session data, media playback/watch progress, diagnostics, and notification metadata.
+
+Verification:
+
+- `cargo fmt --all -- --check`
+- `cargo check -p duskcue`
+- `cargo check -p duskcue-desktop`
+- `node scripts/verify-client-contracts.mjs`
+- `npm --prefix clients/desktop run build`
+- `npm --prefix clients/desktop run tauri -- build --debug`
+- `git diff --check`
+- `flutter --version` attempted and failed because Flutter is not installed in the current Windows environment.
+- `dart --version` attempted and failed because Dart is not installed in the current Windows environment.
+
+Flutter/Dart are not installed in the current Windows environment, so `flutter analyze`, `flutter test`, Android debug/release builds, and iOS simulator/device builds remain CI/SDK-environment verification.
+
 ## Relationship to Other Documents
 
 | Document | Relationship |
@@ -440,6 +473,7 @@ Flutter/Dart are not installed in the current Windows environment, so `flutter a
 | [MOBILE_PUSH.md](MOBILE_PUSH.md) | Defines push channels and token lifecycle. This document binds Phase 16a client/provider implementation to that design. |
 | [SECURITY.md](../security/SECURITY.md) | Defines network modes, TLS, and token expectations. This document applies them to desktop/mobile clients. |
 | [CLIENT_CONTRACTS.md](../api/CLIENT_CONTRACTS.md) | Phase 16a route/DTO inventory, client error mapping, and drift-control manifest. |
+| [CLIENT_PACKAGING.md](../ci/CLIENT_PACKAGING.md) | Phase 16a desktop/mobile packaging smoke workflow, signing placeholders, app IDs, and store-readiness notes. |
 | [API_SECURITY.md](../security/API_SECURITY.md) | Defines validation, BOLA, and secret-handling constraints that client deep links and stored credentials must respect. |
 | [BUILD_ORDER.md](../../BUILD_ORDER.md) | Phase 16a task list and completion criteria. |
 
@@ -493,3 +527,7 @@ Flutter/Dart are not installed in the current Windows environment, so `flutter a
 - flutter_secure_storage package: https://pub.dev/packages/flutter_secure_storage
 - Google Play Data safety: https://support.google.com/googleplay/android-developer/answer/10787469
 - Apple App Privacy details: https://developer.apple.com/help/app-store-connect/manage-app-privacy/app-privacy-details/
+- Tauri Linux prerequisites: https://v2.tauri.app/start/prerequisites/#linux
+- Tauri building: https://v2.tauri.app/distribute/
+- Tauri icons: https://v2.tauri.app/learn/icons/
+- Flutter continuous delivery: https://docs.flutter.dev/deployment/cd
