@@ -630,5 +630,12 @@
     "routes_settings_users_page_active": "نشط",
     "routes_settings_users_page_disabled": "معطل",
     "routes_settings_users_page_no_pending_invitations": "لا توجد دعوات معلقة.",
-    "__translator_note": "### AI-GENERATED INITIAL TRANSLATION — needs native-speaker review before activation."
+    "__translator_note": "### AI-GENERATED INITIAL TRANSLATION — needs native-speaker review before activation.",
+    "routes_settings_page_preferences": "التفضيلات",
+    "routes_settings_page_language": "اللغة",
+    "routes_settings_page_language_selector_reviewed_locales_only": "تظهر هنا اللغات التي تمت مراجعتها فقط.",
+    "routes_settings_page_loading_preferences": "جارٍ تحميل التفضيلات…",
+    "routes_settings_page_failed_to_load_preferences": "تعذر تحميل التفضيلات",
+    "routes_settings_page_failed_to_save_language": "تعذر حفظ اللغة",
+    "routes_settings_page_retry": "إعادة المحاولة"
 }

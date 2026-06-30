@@ -630,5 +630,12 @@
     "routes_settings_users_page_active": "Aktiv",
     "routes_settings_users_page_disabled": "Deaktiviert",
     "routes_settings_users_page_no_pending_invitations": "Keine ausstehenden Einladungen.",
-    "__translator_note": "### AI-GENERATED INITIAL TRANSLATION — needs native-speaker review before activation."
+    "__translator_note": "### AI-GENERATED INITIAL TRANSLATION — needs native-speaker review before activation.",
+    "routes_settings_page_preferences": "Einstellungen",
+    "routes_settings_page_language": "Sprache",
+    "routes_settings_page_language_selector_reviewed_locales_only": "Hier erscheinen nur geprüfte Sprachen.",
+    "routes_settings_page_loading_preferences": "Einstellungen werden geladen…",
+    "routes_settings_page_failed_to_load_preferences": "Einstellungen konnten nicht geladen werden",
+    "routes_settings_page_failed_to_save_language": "Sprache konnte nicht gespeichert werden",
+    "routes_settings_page_retry": "Erneut versuchen"
 }

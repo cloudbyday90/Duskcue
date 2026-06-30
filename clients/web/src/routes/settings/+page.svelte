@@ -7,14 +7,23 @@
 -->
 <script>
     import { m } from '$lib/paraglide/messages.js';
+    import { setLocale } from '$lib/paraglide/runtime.js';
     import { onMount } from 'svelte';
     import { getHealth } from '$lib/api/settings.js';
+    import { getUserPreferences, updateUserPreferences } from '$lib/api/users.js';
+    import { auth, currentUser } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
 
     let loading = $state(true);
     let health = $state(null);
+    let preferencesLoading = $state(true);
+    let preferences = $state(null);
+    let selectedLocale = $state('en');
+    let savingLocale = $state(false);
+    let preferencesError = $state('');
 
     onMount(async () => {
+        loadPreferences();
         try {
             health = await getHealth();
         } catch {
@@ -22,6 +31,42 @@
             loading = false;
         }
     });
+
+    async function loadPreferences() {
+        preferencesLoading = true;
+        preferencesError = '';
+        try {
+            preferences = await getUserPreferences();
+            selectedLocale = preferences.locale || 'en';
+        } catch {
+            preferencesError = m.routes_settings_page_failed_to_load_preferences();
+        } finally {
+            preferencesLoading = false;
+        }
+    }
+
+    async function handleLocaleChange(event) {
+        const locale = event.currentTarget.value;
+        const previousLocale = preferences?.locale || selectedLocale;
+        selectedLocale = locale;
+        savingLocale = true;
+        preferencesError = '';
+
+        try {
+            preferences = await updateUserPreferences({ locale });
+            selectedLocale = preferences.locale;
+            if ($currentUser) {
+                auth.setUser({ ...$currentUser, locale: preferences.locale });
+            }
+            setLocale(preferences.locale);
+        } catch {
+            selectedLocale = previousLocale;
+            preferencesError = m.routes_settings_page_failed_to_save_language();
+            notifications.error(preferencesError);
+        } finally {
+            savingLocale = false;
+        }
+    }
 
     const settingsLinks = [
         { href: '/settings/system', label: m.routes_settings_page_system(), icon: 'M4 7h16M4 12h16M4 17h16', desc: m.routes_settings_page_server_configuration_and_operations() },
@@ -81,6 +126,40 @@
                 {/if}
             {:else}
                 <div class="status-error">{m.routes_settings_page_unable_to_fetch_server_status()}</div>
+            {/if}
+        </section>
+
+        <section class="settings-section">
+            <h2 class="section-title">{m.routes_settings_page_preferences()}</h2>
+            <div class="preference-row">
+                <div class="preference-copy">
+                    <span class="preference-label">{m.routes_settings_page_language()}</span>
+                    <span class="preference-desc">{m.routes_settings_page_language_selector_reviewed_locales_only()}</span>
+                </div>
+                {#if preferencesLoading}
+                    <div class="status-loading">{m.routes_settings_page_loading_preferences()}</div>
+                {:else if preferences}
+                    <select
+                        class="language-select"
+                        value={selectedLocale}
+                        onchange={handleLocaleChange}
+                        disabled={savingLocale || preferences.available_locales.length <= 1}
+                        aria-label={m.routes_settings_page_language()}
+                    >
+                        {#each preferences.available_locales as locale}
+                            <option value={locale.tag}>
+                                {locale.name}
+                            </option>
+                        {/each}
+                    </select>
+                {:else}
+                    <button class="retry-button" onclick={loadPreferences}>
+                        {m.routes_settings_page_retry()}
+                    </button>
+                {/if}
+            </div>
+            {#if preferencesError}
+                <div class="status-error">{preferencesError}</div>
             {/if}
         </section>
 
@@ -216,6 +295,56 @@
         border-radius: var(--radius-sm);
     }
 
+    .preference-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 0.875rem 1rem;
+        background-color: var(--color-bg-surface);
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-sm);
+    }
+
+    .preference-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 0.125rem;
+        min-width: 0;
+    }
+
+    .preference-label {
+        font-size: 0.875rem;
+        font-weight: 600;
+        color: var(--color-text-primary);
+    }
+
+    .preference-desc {
+        font-size: 0.75rem;
+        color: var(--color-text-muted);
+    }
+
+    .language-select {
+        min-width: 180px;
+        padding: 0.5rem 0.75rem;
+        color: var(--color-text-primary);
+        background-color: var(--color-bg-elevated);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+    }
+
+    .language-select:disabled {
+        opacity: 0.65;
+    }
+
+    .retry-button {
+        padding: 0.5rem 0.875rem;
+        color: var(--color-text-primary);
+        background-color: var(--color-bg-elevated);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+    }
+
     .links-grid {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
@@ -294,6 +423,16 @@
     @media (max-width: 768px) {
         .page-title {
             font-size: 1.25rem;
+        }
+
+        .preference-row {
+            align-items: stretch;
+            flex-direction: column;
+        }
+
+        .language-select,
+        .retry-button {
+            width: 100%;
         }
 
         .links-grid {

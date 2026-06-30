@@ -21,7 +21,7 @@ use uuid::Uuid;
 use validator::Validate;
 
 use crate::error::AppError;
-use crate::extractors::{CanManageUsers, Require};
+use crate::extractors::{AuthenticatedUser, CanManageUsers, Require};
 use crate::state::AppState;
 
 use super::service;
@@ -61,6 +61,44 @@ pub async fn get_user(
     axum::extract::Path(target_user_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<UserResponse>, AppError> {
     let response = service::get_user(&state.pool, target_user_id).await?;
+
+    Ok(Json(response))
+}
+
+pub async fn get_user_preferences(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+) -> Result<Json<UserPreferencesResponse>, AppError> {
+    let response = service::get_user_preferences(&state.pool, user.user_id).await?;
+
+    Ok(Json(response))
+}
+
+pub async fn update_user_preferences(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<UpdateUserPreferencesRequest>,
+) -> Result<Json<UserPreferencesResponse>, AppError> {
+    req.validate().map_err(|e| AppError::Validation {
+        errors: e
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |err| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: err.code.to_string(),
+                    message: err
+                        .message
+                        .as_ref()
+                        .map(|m| m.to_string())
+                        .unwrap_or_default(),
+                })
+            })
+            .collect(),
+        instance: Some("/api/v1/user/preferences".to_string()),
+    })?;
+
+    let response = service::update_user_preferences(&state.pool, user.user_id, req.locale).await?;
 
     Ok(Json(response))
 }

@@ -39,6 +39,9 @@ pub enum UsersError {
     #[error("invalid status: {0}")]
     InvalidStatus(String),
 
+    #[error("invalid locale: {0}")]
+    InvalidLocale(String),
+
     #[error("cannot modify own account role or status")]
     CannotModifySelf,
 

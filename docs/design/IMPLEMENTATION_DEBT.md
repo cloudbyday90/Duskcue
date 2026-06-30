@@ -123,7 +123,7 @@ Each strategic design doc includes an "Implementation Status" table. This docume
 | [HTTP_CACHING.md](HTTP_CACHING.md) — Cache-Control + ETag | ✅ Pre-v1.0 Task 1 | Pre-v1.0 |
 | [REAL_TIME_PUSH.md](REAL_TIME_PUSH.md) — SSE + EventBus | Spec only → **Phase 10** | Phase 10 |
 | [IMAGE_FORMATS.md](IMAGE_FORMATS.md) — WebP pipeline + artwork endpoint | Spec only → **Phase 10** | Phase 10 |
-| [I18N.md](I18N.md) — Paraglide + Fluent | ✅ Fluent implemented (Phase 13b Task 1); ✅ Paraglide web integration (Pre-v1.0 Task 2); ✅ 7-locale preview translations (Pre-v1.0 Task 5); ✅ Arabic RTL layout review (Pre-v1.0 Task 6); locale activation remains | Phase 13b + Pre-v1.0 |
+| [I18N.md](I18N.md) — Paraglide + Fluent | ✅ Fluent implemented (Phase 13b Task 1); ✅ Paraglide web integration (Pre-v1.0 Task 2); ✅ 7-locale preview translations (Pre-v1.0 Task 5); ✅ Arabic RTL layout review (Pre-v1.0 Task 6); ✅ locale activation infrastructure (Pre-v1.0 Task 7) | Phase 13b + Pre-v1.0 |
 | [SEARCH.md](SEARCH.md) — PG FTS (default) + Meilisearch (post-v1.0) | ✅ PG FTS implemented (Phase 2); ✅ faceted search API/UI implemented (Pre-v1.0 Task 3) | Done |
 | [MULTI_INSTANCE.md](MULTI_INSTANCE.md) — Single-instance via lockfile | ✅ Implemented (Phase 3) | Done |
 | [REVERSE_PROXY.md](REVERSE_PROXY.md) — Built-in TLS + trusted proxies | ✅ Implemented (Phase 3) | Done |
@@ -136,7 +136,7 @@ Each strategic design doc includes an "Implementation Status" table. This docume
 2. **No dedicated "refactoring phase"** — One-shot infrastructure phases feel like detours, produce untestable code (no consumer), and disrupt feature momentum. Infrastructure lands where it's consumed.
 3. **Phase 10 absorbs SSE + image pipeline + artwork endpoint + events store (4 items, ~10-13 days)** — Storyboards are WebP images (needs `image_pipeline.rs`), their generation is a background task (needs SSE for progress), and the player needs real-time updates (needs `events.js`). Natural fit.
 4. **Phase 13 absorbs Fluent + dispatch pipeline + push devices + webhook (4 items, ~8-13 days)** — Already the convergence point for i18n + push + notifications. Makes the convergence explicit rather than implicit.
-5. **Pre-v1.0 hardening handles quality items (4 items, ~8-13 days)** — ETag/Cache-Control, Paraglide migration, faceted search UI, and cross-cutting Prometheus metrics are complete. None block features; all improve v1.0 quality.
+5. **Pre-v1.0 hardening handles quality items (4 items, ~8-13 days)** — ETag/Cache-Control, Paraglide migration, faceted search UI, cross-cutting Prometheus metrics, preview translations, RTL review, and reviewed-locale activation infrastructure are complete. None block features; all improve v1.0 quality.
 6. **Database partition management is immediate** — Operational time bomb: Phase 2 partitions through June/July 2026; `partition_management` executor not wired up. ~1 day of work; do before Phase 10.
 7. **Phase 13 split contingency pre-documented** — If 15 tasks make Phase 13 a bottleneck, split into 13a (system/backup/maintenance) + 13b (notifications/i18n/push). Phase 14+ can proceed after 13a without waiting for 13b.
 8. **Debt is Deliberate + Prudent per Fowler's quadrant** — Every deferral was a conscious design decision with a documented exit plan (the strategic MD). This is the most desirable debt category. The risk is letting it drift to Reckless by never implementing — this document prevents that by assigning every item to a specific phase.

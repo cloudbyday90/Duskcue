@@ -630,5 +630,12 @@
     "routes_settings_users_page_active": "Actif",
     "routes_settings_users_page_disabled": "Désactivé",
     "routes_settings_users_page_no_pending_invitations": "Aucune invitation en attente.",
-    "__translator_note": "### AI-GENERATED INITIAL TRANSLATION — needs native-speaker review before activation."
+    "__translator_note": "### AI-GENERATED INITIAL TRANSLATION — needs native-speaker review before activation.",
+    "routes_settings_page_preferences": "Préférences",
+    "routes_settings_page_language": "Langue",
+    "routes_settings_page_language_selector_reviewed_locales_only": "Seules les langues révisées apparaissent ici.",
+    "routes_settings_page_loading_preferences": "Chargement des préférences…",
+    "routes_settings_page_failed_to_load_preferences": "Échec du chargement des préférences",
+    "routes_settings_page_failed_to_save_language": "Échec de l’enregistrement de la langue",
+    "routes_settings_page_retry": "Réessayer"
 }

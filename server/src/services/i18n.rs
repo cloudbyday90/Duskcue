@@ -77,6 +77,15 @@ pub const AVAILABLE_LOCALES: &[LanguageIdentifier] = &[
     LOCALE_ZH_HANT,
 ];
 
+pub const REVIEWED_UI_LOCALES: &[LanguageIdentifier] = &[DEFAULT_LOCALE];
+
+pub fn is_reviewed_ui_locale(locale: &str) -> bool {
+    let Ok(locale) = locale.trim().parse::<LanguageIdentifier>() else {
+        return false;
+    };
+    REVIEWED_UI_LOCALES.contains(&locale)
+}
+
 pub fn negotiate_locale(
     user_preference: Option<&str>,
     accept_language: Option<&str>,
@@ -371,6 +380,19 @@ mod tests {
     #[test]
     fn available_locales_includes_default() {
         assert!(AVAILABLE_LOCALES.contains(&DEFAULT_LOCALE));
+    }
+
+    #[test]
+    fn reviewed_ui_locales_include_default() {
+        assert!(REVIEWED_UI_LOCALES.contains(&DEFAULT_LOCALE));
+    }
+
+    #[test]
+    fn reviewed_ui_locales_exclude_preview_translations() {
+        assert!(is_reviewed_ui_locale("en"));
+        assert!(!is_reviewed_ui_locale("fr"));
+        assert!(!is_reviewed_ui_locale("ar"));
+        assert!(!is_reviewed_ui_locale("not-a-locale"));
     }
 
     #[test]

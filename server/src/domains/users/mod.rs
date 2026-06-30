@@ -28,6 +28,10 @@ use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
+        .route(
+            "/api/v1/user/preferences",
+            get(handlers::get_user_preferences).put(handlers::update_user_preferences),
+        )
         .route("/api/v1/users", get(handlers::list_users))
         .route(
             "/api/v1/users/{id}",

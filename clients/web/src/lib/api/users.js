@@ -34,6 +34,14 @@ export async function deleteUser(userId) {
     return del(`/users/${userId}`);
 }
 
+export async function getUserPreferences() {
+    return get('/user/preferences');
+}
+
+export async function updateUserPreferences(data) {
+    return put('/user/preferences', data);
+}
+
 export async function getUserCapabilities(userId) {
     return get(`/users/${userId}/capabilities`);
 }
@@ -41,4 +49,3 @@ export async function getUserCapabilities(userId) {
 export async function updateUserCapabilities(userId, data) {
     return put(`/users/${userId}/capabilities`, data);
 }
-

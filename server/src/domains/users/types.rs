@@ -48,6 +48,26 @@ pub struct UserListResponse {
     pub total_pages: u32,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct LocaleOptionResponse {
+    pub tag: String,
+    pub name: String,
+    pub text_direction: String,
+    pub is_default: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct UserPreferencesResponse {
+    pub locale: String,
+    pub available_locales: Vec<LocaleOptionResponse>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct UpdateUserPreferencesRequest {
+    #[validate(length(min = 1, max = 35))]
+    pub locale: String,
+}
+
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct UpdateUserRequest {
     #[validate(length(min = 1, max = 200))]

@@ -629,5 +629,12 @@
     "routes_settings_users_page_status": "Status",
     "routes_settings_users_page_active": "Active",
     "routes_settings_users_page_disabled": "Disabled",
-    "routes_settings_users_page_no_pending_invitations": "No pending invitations."
+    "routes_settings_users_page_no_pending_invitations": "No pending invitations.",
+    "routes_settings_page_preferences": "Preferences",
+    "routes_settings_page_language": "Language",
+    "routes_settings_page_language_selector_reviewed_locales_only": "Only reviewed languages appear here.",
+    "routes_settings_page_loading_preferences": "Loading preferences...",
+    "routes_settings_page_failed_to_load_preferences": "Failed to load preferences",
+    "routes_settings_page_failed_to_save_language": "Failed to save language",
+    "routes_settings_page_retry": "Retry"
 }

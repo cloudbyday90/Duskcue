@@ -677,6 +677,11 @@ fn users_error_to_http(
             "USER_007",
             format!("Invalid status: {}", s),
         ),
+        UsersError::InvalidLocale(locale) => (
+            StatusCode::BAD_REQUEST,
+            "USER_009",
+            format!("Invalid locale: {}", locale),
+        ),
         UsersError::CannotModifySelf => (
             StatusCode::FORBIDDEN,
             "USER_008",

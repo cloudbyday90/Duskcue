@@ -17,8 +17,13 @@
 use sqlx::Row;
 use uuid::Uuid;
 
+use crate::services::i18n::{DEFAULT_LOCALE, REVIEWED_UI_LOCALES, is_reviewed_ui_locale};
+
 use super::error::UsersError;
-use super::types::{UserListResponse, UserResponse, UserRow, VALID_ROLES, VALID_STATUSES};
+use super::types::{
+    LocaleOptionResponse, UserListResponse, UserPreferencesResponse, UserResponse, UserRow,
+    VALID_ROLES, VALID_STATUSES,
+};
 
 pub async fn list_users(
     pool: &sqlx::PgPool,
@@ -95,6 +100,113 @@ pub async fn get_user(pool: &sqlx::PgPool, user_id: Uuid) -> Result<UserResponse
     .ok_or(UsersError::NotFound)?;
 
     Ok(row_to_response(&row))
+}
+
+pub async fn get_user_preferences(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+) -> Result<UserPreferencesResponse, UsersError> {
+    let row = sqlx::query(
+        r#"
+        SELECT metadata ->> 'locale' AS locale
+        FROM users
+        WHERE id = $1 AND deleted_at IS NULL
+        "#,
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(UsersError::NotFound)?;
+
+    let locale = row
+        .try_get::<Option<String>, _>("locale")
+        .ok()
+        .flatten()
+        .filter(|locale| is_reviewed_ui_locale(locale))
+        .unwrap_or_else(|| DEFAULT_LOCALE.to_string());
+
+    Ok(UserPreferencesResponse {
+        locale,
+        available_locales: reviewed_locale_options(),
+    })
+}
+
+pub async fn update_user_preferences(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    locale: String,
+) -> Result<UserPreferencesResponse, UsersError> {
+    let locale = locale.trim();
+    if !is_reviewed_ui_locale(locale) {
+        return Err(UsersError::InvalidLocale(locale.to_string()));
+    }
+
+    let row = sqlx::query(
+        r#"
+        UPDATE users
+        SET metadata = jsonb_set(
+                COALESCE(metadata, '{}'::jsonb),
+                '{locale}',
+                to_jsonb($2::text),
+                true
+            ),
+            updated_at = now()
+        WHERE id = $1 AND deleted_at IS NULL
+        RETURNING metadata ->> 'locale' AS locale
+        "#,
+    )
+    .bind(user_id)
+    .bind(locale)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(UsersError::NotFound)?;
+
+    let locale = row
+        .try_get::<Option<String>, _>("locale")
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| DEFAULT_LOCALE.to_string());
+
+    Ok(UserPreferencesResponse {
+        locale,
+        available_locales: reviewed_locale_options(),
+    })
+}
+
+fn reviewed_locale_options() -> Vec<LocaleOptionResponse> {
+    REVIEWED_UI_LOCALES
+        .iter()
+        .map(|locale| {
+            let tag = locale.to_string();
+            LocaleOptionResponse {
+                name: locale_display_name(&tag),
+                text_direction: locale_text_direction(&tag).to_string(),
+                is_default: *locale == DEFAULT_LOCALE,
+                tag,
+            }
+        })
+        .collect()
+}
+
+fn locale_display_name(tag: &str) -> String {
+    match tag {
+        "en" => "English".to_string(),
+        "fr" => "French".to_string(),
+        "de" => "Deutsch".to_string(),
+        "es" => "Spanish".to_string(),
+        "it" => "Italiano".to_string(),
+        "ar" => "Arabic".to_string(),
+        "zh-Hans" => "Simplified Chinese".to_string(),
+        "zh-Hant" => "Traditional Chinese".to_string(),
+        _ => tag.to_string(),
+    }
+}
+
+fn locale_text_direction(tag: &str) -> &'static str {
+    match tag {
+        "ar" => "rtl",
+        _ => "ltr",
+    }
 }
 
 pub struct UpdateUserParams {

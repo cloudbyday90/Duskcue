@@ -630,5 +630,12 @@
     "routes_settings_users_page_active": "启用",
     "routes_settings_users_page_disabled": "已禁用",
     "routes_settings_users_page_no_pending_invitations": "没有待处理邀请。",
-    "__translator_note": "### AI-GENERATED INITIAL TRANSLATION — needs native-speaker review before activation."
+    "__translator_note": "### AI-GENERATED INITIAL TRANSLATION — needs native-speaker review before activation.",
+    "routes_settings_page_preferences": "偏好设置",
+    "routes_settings_page_language": "语言",
+    "routes_settings_page_language_selector_reviewed_locales_only": "这里只显示已审校的语言。",
+    "routes_settings_page_loading_preferences": "正在加载偏好设置…",
+    "routes_settings_page_failed_to_load_preferences": "无法加载偏好设置",
+    "routes_settings_page_failed_to_save_language": "无法保存语言",
+    "routes_settings_page_retry": "重试"
 }
