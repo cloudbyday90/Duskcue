@@ -332,6 +332,7 @@ Access control: the `/metrics` endpoint is **not** behind auth (Prometheus scrap
 | **Image variants** | `image_variant_requests_total`, `image_variant_generations_total`, `image_variant_generation_duration_seconds` | Counter + Histogram |
 | **Search** | `search_queries_total`, `search_query_duration_seconds` | Counter + Histogram |
 | **Notifications** | `notification_delivery_total` | Counter |
+| **TV surfaces** | `tv_surface_feed_generation_duration_seconds`, `tv_surface_section_items`, `tv_surface_excluded_items_total`, `tv_resolve_failures_total` | Histogram + Counter |
 
 ### Standard Labels
 
@@ -630,6 +631,18 @@ The server exposes the data (metrics endpoint, JSON logs, optional OTel traces).
 - Search metrics: `search_queries_total{status,has_filters}` and `search_query_duration_seconds{status,has_filters}`. Admins can calculate p50/p95/p99 with Prometheus `histogram_quantile()` and compare p95 against SEARCH.md's 200ms soft and 500ms hard migration triggers.
 - Notification delivery metrics: `notification_delivery_total{channel,status}` for in-app, SSE, webhook, and push channels. Webhook dispatch records both scheduled `pending` and background terminal `delivered`/`failed` statuses.
 - Labels intentionally exclude user IDs, query strings, media IDs, notification IDs, webhook URLs, and other unbounded or sensitive values.
+
+### Phase 16b Task 6 — TV Surface Metrics
+
+**Module:** `server/src/domains/tv/service.rs`, `server/src/logging.rs`
+
+**What was implemented:**
+
+- `tv_surface_feed_generation_duration_seconds{platform,status}` records feed generation latency with dedicated buckets in `init_metrics()`.
+- `tv_surface_section_items{section}` records item counts for Continue Watching, Next Up, New Episodes, and Recommendations sections.
+- `tv_surface_excluded_items_total{reason}` records admin diagnostics exclusion counts for bounded reasons such as `library_offline`, `access_revoked`, `missing_file`, `metadata_incomplete`, and `not_selected`.
+- `tv_resolve_failures_total{reason}` records direct resolve failures by bounded reason while the HTTP response remains BOLA-safe.
+- Labels intentionally avoid user IDs, media IDs, library IDs, paths, platform content IDs, titles, query strings, and token-bearing URLs.
 
 **Deferred:**
 

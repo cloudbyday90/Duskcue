@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::time::Instant;
+
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use sqlx::Row;
 use uuid::Uuid;
@@ -376,6 +378,57 @@ ORDER BY COALESCE(cand.recommendation_score, 0) DESC,
 LIMIT $4
 "#;
 
+const DIAGNOSTIC_CANDIDATE_COUNT_SQL: &str = r#"
+SELECT COUNT(*) AS candidate_count
+FROM media_items mi
+WHERE mi.type IN ('movie', 'episode')
+"#;
+
+const DIAGNOSTIC_REASON_COUNTS_SQL: &str = r#"
+WITH classified AS (
+    SELECT CASE
+        WHEN l.id IS NULL OR l.deleted_at IS NOT NULL THEN 'library_offline'
+        WHEN NOT ($1::bool OR mi.library_id = ANY($2::uuid[])) THEN 'access_revoked'
+        WHEN NOT EXISTS (
+            SELECT 1
+            FROM media_files mf
+            WHERE mf.media_item_id = mi.id AND mf.is_healthy = true
+        ) THEN 'missing_file'
+        WHEN mi.runtime_seconds IS NULL OR NULLIF(BTRIM(mi.title), '') IS NULL THEN 'metadata_incomplete'
+        ELSE 'not_selected'
+    END AS reason
+    FROM media_items mi
+    LEFT JOIN libraries l ON l.id = mi.library_id
+    WHERE mi.type IN ('movie', 'episode')
+      AND NOT (mi.id = ANY($3::uuid[]))
+)
+SELECT reason, COUNT(*) AS count
+FROM classified
+GROUP BY reason
+ORDER BY reason
+"#;
+
+const DIAGNOSTIC_EXCLUSIONS_SQL: &str = r#"
+SELECT mi.id,
+       CASE
+           WHEN l.id IS NULL OR l.deleted_at IS NOT NULL THEN 'library_offline'
+           WHEN NOT ($1::bool OR mi.library_id = ANY($2::uuid[])) THEN 'access_revoked'
+           WHEN NOT EXISTS (
+               SELECT 1
+               FROM media_files mf
+               WHERE mf.media_item_id = mi.id AND mf.is_healthy = true
+           ) THEN 'missing_file'
+           WHEN mi.runtime_seconds IS NULL OR NULLIF(BTRIM(mi.title), '') IS NULL THEN 'metadata_incomplete'
+           ELSE 'not_selected'
+       END AS reason
+FROM media_items mi
+LEFT JOIN libraries l ON l.id = mi.library_id
+WHERE mi.type IN ('movie', 'episode')
+  AND NOT (mi.id = ANY($3::uuid[]))
+ORDER BY mi.sort_title ASC, mi.id ASC
+LIMIT $4
+"#;
+
 pub fn resolve_surface_query(query: TvSurfaceQuery) -> Result<ResolvedTvSurfaceQuery, TvError> {
     let platform = query.platform.as_deref().map(parse_platform).transpose()?;
     let limit = query.limit.unwrap_or(DEFAULT_LIMIT);
@@ -411,6 +464,17 @@ pub fn empty_surface_response(query: &ResolvedTvSurfaceQuery) -> TvSurfaceRespon
 }
 
 pub async fn get_tv_surface(
+    pool: &sqlx::PgPool,
+    user: &AuthenticatedUser,
+    query: &ResolvedTvSurfaceQuery,
+) -> Result<TvSurfaceResponse, TvError> {
+    let started = Instant::now();
+    let result = build_tv_surface(pool, user, query).await;
+    record_tv_feed_metrics(started, query.platform, result.as_ref().ok());
+    result
+}
+
+async fn build_tv_surface(
     pool: &sqlx::PgPool,
     user: &AuthenticatedUser,
     query: &ResolvedTvSurfaceQuery,
@@ -529,6 +593,8 @@ fn row_to_surface_item(
         .filter(|duration| *duration > 0)
         .map(|duration| ((f64::from(resume_position_ms) / duration as f64) * 100.0).min(100.0))
         .unwrap_or(0.0);
+    let availability = availability_for(file_count, &title, runtime_seconds);
+    let availability_detail = availability_detail(availability).map(str::to_string);
 
     Ok(TvSurfaceItemResponse {
         surface_item_id: format!(
@@ -569,11 +635,8 @@ fn row_to_surface_item(
             media_item_id
         ),
         web_url: format!("/media/{media_item_id}"),
-        availability: if file_count > 0 {
-            TvAvailabilityState::Playable
-        } else {
-            TvAvailabilityState::MissingFile
-        },
+        availability,
+        availability_detail,
     })
 }
 
@@ -614,14 +677,110 @@ fn surface_generated_at(sections: &[TvSurfaceSectionResponse]) -> DateTime<Utc> 
         .unwrap_or_else(|| DateTime::<Utc>::from_timestamp(0, 0).expect("valid Unix epoch"))
 }
 
-pub fn empty_diagnostics(platform: Option<TvPlatform>) -> TvDiagnosticsResponse {
-    TvDiagnosticsResponse {
-        generated_at: Utc::now(),
-        platform,
-        candidate_count: 0,
-        included_count: 0,
-        excluded: Vec::new(),
+pub async fn get_tv_diagnostics(
+    pool: &sqlx::PgPool,
+    user: &AuthenticatedUser,
+    query: &ResolvedTvSurfaceQuery,
+) -> Result<TvDiagnosticsResponse, TvError> {
+    let access_scope = load_tv_access_scope(pool, user).await?;
+    let surface = build_tv_surface(pool, user, query).await?;
+    let included_ids = surface
+        .sections
+        .iter()
+        .flat_map(|section| section.items.iter().map(|item| item.media_item_id))
+        .collect::<Vec<_>>();
+    let section_counts = surface
+        .sections
+        .iter()
+        .map(|section| TvDiagnosticSectionCount {
+            section_type: section.section_type,
+            item_count: section.items.len() as u32,
+        })
+        .collect::<Vec<_>>();
+    let included_count = included_ids.len() as u32;
+    let candidate_count = count_diagnostic_candidates(pool).await?;
+    let reason_counts = fetch_diagnostic_reason_counts(pool, &access_scope, &included_ids).await?;
+    let excluded = fetch_diagnostic_exclusions(pool, &access_scope, &included_ids, 100).await?;
+
+    for reason in &reason_counts {
+        metrics::counter!("tv_surface_excluded_items_total", "reason" => reason.reason.clone())
+            .increment(u64::from(reason.count));
     }
+
+    Ok(TvDiagnosticsResponse {
+        generated_at: Utc::now(),
+        platform: query.platform,
+        candidate_count,
+        included_count,
+        section_counts,
+        reason_counts,
+        excluded,
+    })
+}
+
+async fn count_diagnostic_candidates(pool: &sqlx::PgPool) -> Result<u32, TvError> {
+    let row = sqlx::query(DIAGNOSTIC_CANDIDATE_COUNT_SQL)
+        .fetch_one(pool)
+        .await?;
+    let count: i64 = row.try_get("candidate_count")?;
+
+    Ok(count.max(0) as u32)
+}
+
+async fn fetch_diagnostic_reason_counts(
+    pool: &sqlx::PgPool,
+    access_scope: &TvAccessScope,
+    included_ids: &[Uuid],
+) -> Result<Vec<TvDiagnosticReasonCount>, TvError> {
+    let rows = sqlx::query(DIAGNOSTIC_REASON_COUNTS_SQL)
+        .bind(access_scope.has_all_library_access)
+        .bind(&access_scope.library_ids)
+        .bind(included_ids)
+        .fetch_all(pool)
+        .await?;
+
+    rows.iter()
+        .map(|row| {
+            let reason: String = row.try_get("reason")?;
+            let count: i64 = row.try_get("count")?;
+            Ok(TvDiagnosticReasonCount {
+                reason,
+                count: count.max(0) as u32,
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()
+        .map_err(TvError::from)
+}
+
+async fn fetch_diagnostic_exclusions(
+    pool: &sqlx::PgPool,
+    access_scope: &TvAccessScope,
+    included_ids: &[Uuid],
+    limit: i64,
+) -> Result<Vec<TvDiagnosticExclusion>, TvError> {
+    let rows = sqlx::query(DIAGNOSTIC_EXCLUSIONS_SQL)
+        .bind(access_scope.has_all_library_access)
+        .bind(&access_scope.library_ids)
+        .bind(included_ids)
+        .bind(limit)
+        .fetch_all(pool)
+        .await?;
+
+    rows.iter()
+        .map(|row| {
+            let media_item_id: Uuid = row.try_get("id")?;
+            let reason: String = row.try_get("reason")?;
+            let availability = diagnostic_availability_for_reason(&reason);
+
+            Ok(TvDiagnosticExclusion {
+                media_item_id: Some(media_item_id),
+                detail: diagnostic_detail_for_reason(&reason).to_string(),
+                reason,
+                availability,
+            })
+        })
+        .collect::<Result<Vec<_>, sqlx::Error>>()
+        .map_err(TvError::from)
 }
 
 pub async fn lookup_platform_content(
@@ -661,6 +820,11 @@ pub async fn lookup_platform_content(
 
 pub fn build_platform_content_id(media_type: TvMediaType, media_item_id: Uuid) -> String {
     format!("duskcue:{}:{media_item_id}", media_type_slug(media_type))
+}
+
+pub fn record_tv_resolve_failure(err: &TvError) {
+    metrics::counter!("tv_resolve_failures_total", "reason" => resolve_failure_reason(err))
+        .increment(1);
 }
 
 pub fn encode_platform_content_id(id: &PlatformContentId, target: TvPlatformIdTarget) -> String {
@@ -795,6 +959,127 @@ fn media_type_slug(media_type: TvMediaType) -> &'static str {
     match media_type {
         TvMediaType::Movie => "movie",
         TvMediaType::Episode => "episode",
+    }
+}
+
+fn availability_for(
+    healthy_file_count: i64,
+    title: &str,
+    runtime_seconds: Option<i32>,
+) -> TvAvailabilityState {
+    if healthy_file_count <= 0 {
+        TvAvailabilityState::MissingFile
+    } else if runtime_seconds.is_none() || title.trim().is_empty() {
+        TvAvailabilityState::MetadataIncomplete
+    } else {
+        TvAvailabilityState::Playable
+    }
+}
+
+fn availability_detail(state: TvAvailabilityState) -> Option<&'static str> {
+    match state {
+        TvAvailabilityState::Playable => None,
+        TvAvailabilityState::NeedsTranscode => {
+            Some("A compatible transcode may be required for this TV client.")
+        }
+        TvAvailabilityState::LibraryOffline => Some("The source library is currently unavailable."),
+        TvAvailabilityState::MissingFile => {
+            Some("No healthy media file is available for playback.")
+        }
+        TvAvailabilityState::AccessRevoked => {
+            Some("The current user no longer has access to this library.")
+        }
+        TvAvailabilityState::MetadataIncomplete => {
+            Some("Required runtime or title metadata is incomplete.")
+        }
+    }
+}
+
+fn diagnostic_availability_for_reason(reason: &str) -> TvAvailabilityState {
+    match reason {
+        "library_offline" => TvAvailabilityState::LibraryOffline,
+        "access_revoked" => TvAvailabilityState::AccessRevoked,
+        "missing_file" => TvAvailabilityState::MissingFile,
+        "metadata_incomplete" => TvAvailabilityState::MetadataIncomplete,
+        _ => TvAvailabilityState::Playable,
+    }
+}
+
+fn diagnostic_detail_for_reason(reason: &str) -> &'static str {
+    match reason {
+        "library_offline" => "The item belongs to a library that is unavailable or removed.",
+        "access_revoked" => "The diagnosed user does not currently have library access.",
+        "missing_file" => "No healthy media file is available for playback.",
+        "metadata_incomplete" => "The item is missing required TV-surface metadata.",
+        "not_selected" => {
+            "The item did not match requested sections or fell outside section limits."
+        }
+        _ => "The item was not included in the TV surface feed.",
+    }
+}
+
+fn record_tv_feed_metrics(
+    started: Instant,
+    platform: Option<TvPlatform>,
+    response: Option<&TvSurfaceResponse>,
+) {
+    let status = if response.is_some() {
+        "success"
+    } else {
+        "error"
+    };
+    metrics::histogram!(
+        "tv_surface_feed_generation_duration_seconds",
+        "platform" => platform_metric_label(platform),
+        "status" => status
+    )
+    .record(started.elapsed().as_secs_f64());
+
+    if let Some(response) = response {
+        for section in &response.sections {
+            metrics::histogram!(
+                "tv_surface_section_items",
+                "section" => section_metric_label(section.section_type)
+            )
+            .record(section.items.len() as f64);
+        }
+    }
+}
+
+fn resolve_failure_reason(err: &TvError) -> &'static str {
+    match err {
+        TvError::InvalidPlatformContentId(_) => "invalid_platform_content_id",
+        TvError::UnavailableContent => "unavailable_content",
+        TvError::AccessDenied => "access_denied",
+        TvError::Database(_) => "database",
+        TvError::InvalidPlatform(_) => "invalid_platform",
+        TvError::InvalidSection(_) => "invalid_section",
+        TvError::InvalidLimit(_) => "invalid_limit",
+        TvError::UnsupportedPlatformHint(_) => "unsupported_platform_hint",
+        TvError::DiagnosticsUnavailable => "diagnostics_unavailable",
+    }
+}
+
+fn platform_metric_label(platform: Option<TvPlatform>) -> &'static str {
+    match platform {
+        Some(TvPlatform::AndroidTv) => "android_tv",
+        Some(TvPlatform::GoogleTv) => "google_tv",
+        Some(TvPlatform::FireTv) => "fire_tv",
+        Some(TvPlatform::Roku) => "roku",
+        Some(TvPlatform::Tizen) => "tizen",
+        Some(TvPlatform::Webos) => "webos",
+        Some(TvPlatform::Tvos) => "tvos",
+        Some(TvPlatform::Xbox) => "xbox",
+        None => "unspecified",
+    }
+}
+
+fn section_metric_label(section_type: TvSurfaceSectionType) -> &'static str {
+    match section_type {
+        TvSurfaceSectionType::Continue => "continue",
+        TvSurfaceSectionType::NextUp => "next_up",
+        TvSurfaceSectionType::NewEpisodes => "new_episodes",
+        TvSurfaceSectionType::Recommended => "recommended",
     }
 }
 
@@ -978,5 +1263,63 @@ mod tests {
         assert!(restricted.can_access_library(allowed));
         assert!(!restricted.can_access_library(denied));
         assert!(unrestricted.can_access_library(denied));
+    }
+
+    #[test]
+    fn availability_states_are_bounded_and_privacy_safe() {
+        assert_eq!(
+            availability_for(1, "Movie", Some(7200)),
+            TvAvailabilityState::Playable
+        );
+        assert_eq!(
+            availability_for(0, "Movie", Some(7200)),
+            TvAvailabilityState::MissingFile
+        );
+        assert_eq!(
+            availability_for(1, "Movie", None),
+            TvAvailabilityState::MetadataIncomplete
+        );
+
+        let detail = availability_detail(TvAvailabilityState::MissingFile).unwrap();
+        assert!(!detail.contains('/'));
+        assert!(!detail.contains('\\'));
+        assert!(!detail.contains("C:"));
+    }
+
+    #[test]
+    fn diagnostics_reason_mapping_is_bounded() {
+        assert_eq!(
+            diagnostic_availability_for_reason("access_revoked"),
+            TvAvailabilityState::AccessRevoked
+        );
+        assert_eq!(
+            diagnostic_availability_for_reason("library_offline"),
+            TvAvailabilityState::LibraryOffline
+        );
+        assert_eq!(
+            diagnostic_availability_for_reason("not_selected"),
+            TvAvailabilityState::Playable
+        );
+
+        let detail = diagnostic_detail_for_reason("access_revoked");
+        assert!(!detail.contains('/'));
+        assert!(!detail.contains('\\'));
+    }
+
+    #[test]
+    fn tv_metric_labels_are_stable() {
+        assert_eq!(
+            platform_metric_label(Some(TvPlatform::AndroidTv)),
+            "android_tv"
+        );
+        assert_eq!(platform_metric_label(None), "unspecified");
+        assert_eq!(
+            section_metric_label(TvSurfaceSectionType::NewEpisodes),
+            "new_episodes"
+        );
+        assert_eq!(
+            resolve_failure_reason(&TvError::InvalidPlatformContentId("bad".to_string())),
+            "invalid_platform_content_id"
+        );
     }
 }

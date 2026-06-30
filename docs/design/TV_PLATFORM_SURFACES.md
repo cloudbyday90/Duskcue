@@ -186,10 +186,10 @@ Phase 16b Task 1 added the initial authenticated TV domain shell under `server/s
 
 | Route | Current Phase 16b behavior | Later task |
 |---|---|---|
-| `GET /api/v1/users/me/tv-surface` | Validates `platform`, `limit`, and `sections`; returns accessible, healthy user-scoped Continue Watching, Next Up, New Episodes, and deterministic Recommendation sections with private cache headers and ETags. | Task 5 expands feed ranking and section logic. |
+| `GET /api/v1/users/me/tv-surface` | Validates `platform`, `limit`, and `sections`; returns accessible, healthy user-scoped Continue Watching, Next Up, New Episodes, and deterministic Recommendation sections with private cache headers, ETags, bounded availability states, and privacy-safe availability details. | Task 9 adds event-driven refresh hints. |
 | `GET /api/v1/tv/resolve/{platform_content_id}` | Validates canonical `duskcue:{movie|episode}:{uuid}` IDs, performs inverse lookup through the shared TV access scope, and returns BOLA-safe unavailable content for inaccessible, missing, or cross-type items. | Task 7 implements playback-ready resolve responses. |
 | `GET /api/v1/tv/settings` | Returns default enabled TV publication settings for the supported platform enum. | Task 8+ define settings persistence and playback-entry policy. |
-| `GET /api/v1/tv/diagnostics` | Validates feed query parameters and returns an empty diagnostics payload. | Task 6 adds exclusion reasons, counts, and metrics. |
+| `GET /api/v1/tv/diagnostics` | Requires `can_manage_server`; validates feed query parameters and returns candidate counts, included section counts, aggregate exclusion reasons, and a bounded privacy-safe exclusion sample. | Task 10 adds integration-status settings. |
 
 The registered TV error codes are `TV_001` invalid platform, `TV_002` unavailable content, `TV_003` access denied, `TV_004` unsupported platform hint, `TV_005` invalid platform content ID, `TV_006` invalid section, `TV_007` invalid limit, and `TV_008` diagnostics unavailable.
 
@@ -241,7 +241,8 @@ Response shape:
           "backdrop_url": "/api/v1/items/019.../artwork/backdrop",
           "deep_link": "duskcue://play/episode/019...",
           "web_url": "/media/019...",
-          "availability": "playable"
+          "availability": "playable",
+          "availability_detail": null
         }
       ]
     }
@@ -257,6 +258,13 @@ Task 3 implementation details:
 - Recommended is deterministic and scores enabled collection membership, recent genre/tag/person overlap, rating, date, and title.
 - Normal feed sections exclude inaccessible libraries, deleted libraries, and items without a healthy media file.
 - `generated_at` is derived from feed data rather than wall-clock time so unchanged responses can reuse ETags.
+
+Task 6 implementation details:
+
+- Feed items expose bounded availability states and optional user-facing detail strings; these strings never include file paths, library paths, tokens, signed URLs, SQL errors, or server internals.
+- Admin diagnostics classify non-included candidates as `library_offline`, `access_revoked`, `missing_file`, `metadata_incomplete`, or `not_selected`.
+- Diagnostics return `candidate_count`, `included_count`, `section_counts`, `reason_counts`, and a bounded `excluded` sample so support tooling can explain feed composition without exporting private filesystem data.
+- TV surface observability uses bounded Prometheus labels only: platform, status, section, and reason.
 
 ### Selection Rules
 

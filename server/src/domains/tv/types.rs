@@ -127,6 +127,7 @@ pub struct TvSurfaceItemResponse {
     pub deep_link: String,
     pub web_url: String,
     pub availability: TvAvailabilityState,
+    pub availability_detail: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -138,6 +139,7 @@ pub struct TvResolveResponse {
     pub subtitle: Option<String>,
     pub resume_position_ms: i64,
     pub availability: TvAvailabilityState,
+    pub availability_detail: Option<String>,
     pub playback_action: String,
     pub playback_start_path: String,
     pub deep_link: String,
@@ -180,7 +182,21 @@ pub struct TvDiagnosticsResponse {
     pub platform: Option<TvPlatform>,
     pub candidate_count: u32,
     pub included_count: u32,
+    pub section_counts: Vec<TvDiagnosticSectionCount>,
+    pub reason_counts: Vec<TvDiagnosticReasonCount>,
     pub excluded: Vec<TvDiagnosticExclusion>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TvDiagnosticSectionCount {
+    pub section_type: TvSurfaceSectionType,
+    pub item_count: u32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TvDiagnosticReasonCount {
+    pub reason: String,
+    pub count: u32,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -188,6 +204,7 @@ pub struct TvDiagnosticExclusion {
     pub media_item_id: Option<Uuid>,
     pub reason: String,
     pub detail: String,
+    pub availability: TvAvailabilityState,
 }
 
 #[derive(Debug, Clone, Serialize)]

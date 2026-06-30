@@ -18,7 +18,7 @@ use axum::Json;
 use axum::extract::{Path, Query, State};
 
 use crate::error::AppError;
-use crate::extractors::AuthenticatedUser;
+use crate::extractors::{AuthenticatedUser, CanManageServer, Require};
 use crate::state::AppState;
 
 use super::error::TvError;
@@ -41,11 +41,20 @@ pub async fn resolve_platform_content(
     user: AuthenticatedUser,
     Path(platform_content_id): Path<String>,
 ) -> Result<Json<TvResolveResponse>, AppError> {
-    let lookup = service::lookup_platform_content(&state.pool, &user, &platform_content_id).await?;
+    let lookup =
+        match service::lookup_platform_content(&state.pool, &user, &platform_content_id).await {
+            Ok(lookup) => lookup,
+            Err(err) => {
+                service::record_tv_resolve_failure(&err);
+                return Err(err.into());
+            }
+        };
     if lookup.access_status == TvContentAccessStatus::AccessDenied {
+        service::record_tv_resolve_failure(&TvError::AccessDenied);
         return Err(TvError::UnavailableContent.into());
     }
 
+    service::record_tv_resolve_failure(&TvError::UnavailableContent);
     Err(TvError::UnavailableContent.into())
 }
 
@@ -57,10 +66,12 @@ pub async fn get_tv_settings(
 }
 
 pub async fn get_tv_diagnostics(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
+    State(state): State<AppState>,
+    auth: Require<CanManageServer>,
     Query(query): Query<TvSurfaceQuery>,
 ) -> Result<Json<TvDiagnosticsResponse>, AppError> {
     let query = service::resolve_surface_query(query)?;
-    Ok(Json(service::empty_diagnostics(query.platform)))
+    Ok(Json(
+        service::get_tv_diagnostics(&state.pool, &auth.user, &query).await?,
+    ))
 }
