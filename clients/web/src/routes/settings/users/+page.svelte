@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount } from 'svelte';
     import { listUsers, deleteUser } from '$lib/api/users.js';
     import { listInvitations, createInvitation as apiCreateInvitation, revokeInvitation as apiRevokeInvitation } from '$lib/api/auth.js';
@@ -41,7 +42,7 @@
             users = usersResp.items || usersResp || [];
             invitations = invitesResp.items || invitesResp || [];
         } catch (err) {
-            notifications.error(err.detail || 'Failed to load users');
+            notifications.error(err.detail || m.routes_settings_users_page_failed_to_load_users());
         }
     }
 
@@ -56,7 +57,7 @@
             showInviteForm = false;
             inviteEmail = '';
         } catch (err) {
-            notifications.error(err.detail || err.message || 'Failed to create invitation');
+            notifications.error(err.detail || err.message || m.routes_settings_users_page_failed_to_create_invitation());
         } finally {
             creatingInvite = false;
         }
@@ -65,10 +66,10 @@
     async function handleRevoke(invitationId) {
         try {
             await apiRevokeInvitation(invitationId);
-            notifications.success('Invitation revoked');
+            notifications.success(m.routes_settings_users_page_invitation_revoked());
             invitations = invitations.filter((i) => i.id !== invitationId);
         } catch (err) {
-            notifications.error(err.detail || 'Failed to revoke invitation');
+            notifications.error(err.detail || m.routes_settings_users_page_failed_to_revoke_invitation());
         }
     }
 
@@ -76,10 +77,10 @@
         if (!confirm(`Delete user "${displayName}"? This action cannot be undone.`)) return;
         try {
             await deleteUser(userId);
-            notifications.success('User deleted');
+            notifications.success(m.routes_settings_users_page_user_deleted());
             users = users.filter((u) => u.id !== userId);
         } catch (err) {
-            notifications.error(err.detail || 'Failed to delete user');
+            notifications.error(err.detail || m.routes_settings_users_page_failed_to_delete_user());
         }
     }
 </script>
@@ -87,8 +88,8 @@
 <div class="users-page">
     <div class="page-header">
         <div>
-            <a href="/settings" class="back-link">← Settings</a>
-            <h1 class="page-title">User Management</h1>
+            <a href="/settings" class="back-link">{m.routes_settings_users_page_settings()}</a>
+            <h1 class="page-title">{m.routes_settings_users_page_user_management()}</h1>
         </div>
         {#if canManage}
             <button class="btn-primary" onclick={() => (showInviteForm = !showInviteForm)}>
@@ -99,21 +100,21 @@
 
     {#if showInviteForm}
         <div class="invite-form">
-            <h3 class="form-title">Create Invitation</h3>
+            <h3 class="form-title">{m.routes_settings_users_page_create_invitation()}</h3>
             <div class="form-row">
                 <label class="field">
-                    <span class="field-label">Email <span class="opt">(optional)</span></span>
-                    <input type="email" bind:value={inviteEmail} placeholder="user@example.com" />
+                    <span class="field-label">{m.routes_settings_users_page_email()} <span class="opt">{m.routes_settings_users_page_optional()}</span></span>
+                    <input type="email" bind:value={inviteEmail} placeholder={m.routes_settings_users_page_user_example_com()} />
                 </label>
                 <label class="field">
-                    <span class="field-label">Role</span>
+                    <span class="field-label">{m.routes_settings_users_page_role()}</span>
                     <select bind:value={inviteRole}>
-                        <option value="member">Member</option>
-                        <option value="admin">Admin</option>
+                        <option value="member">{m.routes_settings_users_page_member()}</option>
+                        <option value="admin">{m.routes_settings_users_page_admin()}</option>
                     </select>
                 </label>
                 <label class="field">
-                    <span class="field-label">Max Uses</span>
+                    <span class="field-label">{m.routes_settings_users_page_max_uses()}</span>
                     <input type="number" bind:value={inviteMaxUses} min="1" max="100" />
                 </label>
             </div>
@@ -132,10 +133,10 @@
             <h2 class="section-title">Users ({users.length})</h2>
             <div class="users-table">
                 <div class="table-header">
-                    <div class="col-name">Name</div>
-                    <div class="col-username">Username</div>
-                    <div class="col-role">Role</div>
-                    <div class="col-status">Status</div>
+                    <div class="col-name">{m.routes_settings_users_page_name()}</div>
+                    <div class="col-username">{m.routes_settings_users_page_username()}</div>
+                    <div class="col-role">{m.routes_settings_users_page_role()}</div>
+                    <div class="col-status">{m.routes_settings_users_page_status()}</div>
                     <div class="col-actions"></div>
                 </div>
                 {#each users as user (user.id)}
@@ -152,9 +153,9 @@
                         </div>
                         <div class="col-status">
                             {#if user.is_active !== false}
-                                <span class="status-active">Active</span>
+                                <span class="status-active">{m.routes_settings_users_page_active()}</span>
                             {:else}
-                                <span class="status-inactive">Disabled</span>
+                                <span class="status-inactive">{m.routes_settings_users_page_disabled()}</span>
                             {/if}
                         </div>
                         <div class="col-actions">
@@ -194,7 +195,7 @@
                         {/each}
                     </div>
                 {:else}
-                    <p class="empty-text">No pending invitations.</p>
+                    <p class="empty-text">{m.routes_settings_users_page_no_pending_invitations()}</p>
                 {/if}
             </section>
         {/if}

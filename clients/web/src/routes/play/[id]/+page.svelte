@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount, onDestroy } from 'svelte';
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
@@ -31,7 +32,7 @@
             item = itemData;
             const files = filesData.items || filesData || [];
             if (!files.length) {
-                notifications.error('No playable files found');
+                notifications.error(m.routes_play_id_page_no_playable_files_found());
                 goto(`/media/${itemId}`);
                 return;
             }
@@ -45,7 +46,7 @@
             } catch {
             }
         } catch (err) {
-            notifications.error(err.detail || err.message || 'Failed to load media');
+            notifications.error(err.detail || err.message || m.routes_play_id_page_failed_to_load_media());
             goto(`/media/${itemId}`);
         } finally {
             loading = false;
@@ -65,7 +66,7 @@
     {#if loading}
         <div class="loading-state">
             <div class="loading-spinner"></div>
-            <p>Loading player…</p>
+            <p>{m.routes_play_id_page_loading_player()}</p>
         </div>
     {:else if item && mediaFileId}
         <Player

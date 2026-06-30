@@ -5,11 +5,15 @@
   This program is free software: licensed under AGPL-3.0
   See LICENSE file for details.
 -->
+<script>
+    import { m } from '$lib/paraglide/messages.js';
+</script>
+
 <div class="coming-soon">
-    <a href="/settings" class="back-link">← Settings</a>
-    <h1>Security</h1>
-    <p>Network modes, TLS, and security headers configuration.</p>
-    <span class="phase-badge">Coming in Phase 13</span>
+    <a href="/settings" class="back-link">{m.routes_settings_security_page_settings()}</a>
+    <h1>{m.routes_settings_security_page_security()}</h1>
+    <p>{m.routes_settings_security_page_network_modes_tls_and_security_headers_configura()}</p>
+    <span class="phase-badge">{m.routes_settings_security_page_coming_in_phase_13()}</span>
 </div>
 
 <style>

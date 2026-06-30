@@ -5,11 +5,15 @@
   This program is free software: licensed under AGPL-3.0
   See LICENSE file for details.
 -->
+<script>
+    import { m } from '$lib/paraglide/messages.js';
+</script>
+
 <div class="coming-soon">
-    <a href="/settings" class="back-link">← Settings</a>
-    <h1>Storage & Cache</h1>
-    <p>Three-tier storage, cache limits, and disk monitoring.</p>
-    <span class="phase-badge">Coming in Phase 13</span>
+    <a href="/settings" class="back-link">{m.routes_settings_storage_page_settings()}</a>
+    <h1>{m.routes_settings_storage_page_storage_and_cache()}</h1>
+    <p>{m.routes_settings_storage_page_three_tier_storage_cache_limits_and_disk_monitor()}</p>
+    <span class="phase-badge">{m.routes_settings_storage_page_coming_in_phase_13()}</span>
 </div>
 
 <style>

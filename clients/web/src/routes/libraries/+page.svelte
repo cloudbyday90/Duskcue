@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount } from 'svelte';
     import { libraries, libraryList, librariesLoading } from '$lib/stores/libraries.js';
     import { MEDIA_TYPE_LABELS } from '$lib/utils/constants.js';
@@ -30,22 +31,22 @@
 
 <div class="libraries-page">
     <div class="page-header">
-        <h1 class="page-title">Libraries</h1>
+        <h1 class="page-title">{m.routes_libraries_page_libraries()}</h1>
     </div>
 
     {#if $librariesLoading}
         <div class="loading-state">
             <div class="loading-spinner"></div>
-            <p>Loading libraries…</p>
+            <p>{m.routes_libraries_page_loading_libraries()}</p>
         </div>
     {:else if $libraryList.length === 0}
         <div class="empty-state">
             <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M2 3h20v18H2zM2 8h20M8 3v18" />
             </svg>
-            <p class="empty-title">No libraries yet</p>
-            <p class="empty-subtitle">Create a library to start organizing your media collection.</p>
-            <a href="/settings/libraries" class="btn-primary">Create a Library</a>
+            <p class="empty-title">{m.routes_libraries_page_no_libraries_yet()}</p>
+            <p class="empty-subtitle">{m.routes_libraries_page_create_a_library_to_start_organizing_your_media_()}</p>
+            <a href="/settings/libraries" class="btn-primary">{m.routes_libraries_page_create_a_library()}</a>
         </div>
     {:else}
         <div class="library-grid">

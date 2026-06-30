@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount } from 'svelte';
     import { listMediaItems } from '$lib/api/media.js';
     import { notifications } from '$lib/stores/notifications.js';
@@ -33,7 +34,7 @@
             cursor = response.cursor || null;
             hasMore = response.has_more || false;
         } catch (err) {
-            notifications.error(err.detail || 'Failed to load media');
+            notifications.error(err.detail || m.routes_media_page_failed_to_load_media());
             items = [];
         } finally {
             loading = false;
@@ -53,7 +54,7 @@
             cursor = response.cursor || null;
             hasMore = response.has_more || false;
         } catch {
-            notifications.error('Failed to load more');
+            notifications.error(m.routes_media_page_failed_to_load_more());
         } finally {
             loadingMore = false;
         }
@@ -67,7 +68,7 @@
 
 <div class="media-page">
     <div class="page-header">
-        <h1 class="page-title">All Media</h1>
+        <h1 class="page-title">{m.routes_media_page_all_media()}</h1>
     </div>
 
     <div class="filter-bar">
@@ -102,8 +103,8 @@
         {/if}
     {:else}
         <div class="empty-state">
-            <p class="empty-title">No media found</p>
-            <p class="empty-subtitle">Your library is empty or no items match the filter.</p>
+            <p class="empty-title">{m.routes_media_page_no_media_found()}</p>
+            <p class="empty-subtitle">{m.routes_media_page_your_library_is_empty_or_no_items_match_the_filt()}</p>
         </div>
     {/if}
 </div>

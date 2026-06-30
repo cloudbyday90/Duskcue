@@ -5,10 +5,14 @@
   This program is free software: licensed under AGPL-3.0
   See LICENSE file for details.
 -->
+<script>
+    import { m } from '$lib/paraglide/messages.js';
+</script>
+
 <div class="coming-soon">
-    <h1>Collections</h1>
-    <p>Dynamic collections, curated lists, and media groupings.</p>
-    <span class="phase-badge">Coming in Phase 12</span>
+    <h1>{m.routes_collections_page_collections()}</h1>
+    <p>{m.routes_collections_page_dynamic_collections_curated_lists_and_media_grou()}</p>
+    <span class="phase-badge">{m.routes_collections_page_coming_in_phase_12()}</span>
 </div>
 
 <style>

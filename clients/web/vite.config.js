@@ -17,12 +17,20 @@
  */
 
 import { sveltekit } from '@sveltejs/kit/vite';
+import { paraglideVitePlugin } from '@inlang/paraglide-js';
 import { defineConfig } from 'vite';
 
 const BACKEND_URL = process.env.DUSKCUE_BACKEND_URL || 'http://localhost:48027';
 
 export default defineConfig({
-    plugins: [sveltekit()],
+    plugins: [
+        paraglideVitePlugin({
+            project: './project.inlang',
+            outdir: './src/lib/paraglide',
+            strategy: ['url', 'cookie', 'preferredLanguage', 'baseLocale'],
+        }),
+        sveltekit(),
+    ],
     server: {
         proxy: {
             '/api': {

@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
     import { verifyDeviceCode } from '$lib/api/auth.js';
@@ -34,16 +35,16 @@
         e.preventDefault();
         const clean = code.toUpperCase().replace(/[^A-Z0-9]/g, '');
         if (clean.length < 6) {
-            notifications.error('Please enter a valid device code');
+            notifications.error(m.routes_auth_link_page_please_enter_a_valid_device_code());
             return;
         }
         loading = true;
         try {
             await verifyDeviceCode({ user_code: clean });
-            notifications.success('Device authorized successfully');
+            notifications.success(m.routes_auth_link_page_device_authorized_successfully());
             goto('/dashboard');
         } catch (err) {
-            notifications.error(err.detail || err.message || 'Device verification failed');
+            notifications.error(err.detail || err.message || m.routes_auth_link_page_device_verification_failed());
         } finally {
             loading = false;
         }
@@ -57,7 +58,7 @@
                 <rect x="3" y="4" width="18" height="12" rx="2" />
                 <line x1="2" y1="20" x2="22" y2="20" />
             </svg>
-            <h1 class="auth-title">Link a Device</h1>
+            <h1 class="auth-title">{m.routes_auth_link_page_link_a_device()}</h1>
             <p class="auth-subtitle">
                 Enter the code displayed on your device to authorize it.
             </p>
@@ -65,12 +66,12 @@
 
         <form onsubmit={handleVerify} class="auth-form">
             <label class="field">
-                <span class="field-label">Device Code</span>
+                <span class="field-label">{m.routes_auth_link_page_device_code()}</span>
                 <input
                     type="text"
                     value={formattedCode}
                     oninput={(e) => (code = e.currentTarget.value)}
-                    placeholder="ABCD-EFGH"
+                    placeholder={m.routes_auth_link_page_abcd_efgh()}
                     autocomplete="off"
                     class="code-input"
                     required

@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount } from 'svelte';
     import { getBackupStatus, checkWalGStatus, triggerPgDump, verifyBackups } from '$lib/api/backups.js';
     import { listScheduledTasks, triggerScheduledTask, listScheduledTaskRuns } from '$lib/api/settings.js';
@@ -50,7 +51,7 @@
             scheduledTasks = tasks.items || [];
             await loadRecoveryDrillRuns();
         } catch (err) {
-            loadError = err.detail || err.message || 'Failed to load backup status';
+            loadError = err.detail || err.message || m.routes_settings_backups_page_failed_to_load_backup_status();
         } finally {
             loading = false;
         }
@@ -82,7 +83,7 @@
             notifications.success(success);
             await load();
         } catch (err) {
-            notifications.error(err.detail || err.message || 'Backup operation failed');
+            notifications.error(err.detail || err.message || m.routes_settings_backups_page_backup_operation_failed());
         } finally {
             action = null;
         }
@@ -95,7 +96,7 @@
     async function triggerTask(type) {
         const task = backupTask(type) || scheduledTasks.find((item) => item.task_type === type);
         if (!task) {
-            notifications.error('Scheduled task is not registered');
+            notifications.error(m.routes_settings_backups_page_scheduled_task_is_not_registered());
             return;
         }
         await runAction(type, () => triggerScheduledTask(task.id), 'Scheduled task triggered');
@@ -139,27 +140,27 @@
 <div class="backup-settings">
     <div class="page-header">
         <div>
-            <a href="/settings" class="back-link">← Settings</a>
-            <h1 class="page-title">Backup & Recovery</h1>
+            <a href="/settings" class="back-link">{m.routes_settings_backups_page_settings()}</a>
+            <h1 class="page-title">{m.routes_settings_backups_page_backup_and_recovery()}</h1>
         </div>
         {#if !loading && canManage}
-            <button class="btn-secondary" onclick={load} disabled={!!action}>Refresh</button>
+            <button class="btn-secondary" onclick={load} disabled={!!action}>{m.routes_settings_backups_page_refresh()}</button>
         {/if}
     </div>
 
     {#if loading}
         <div class="loading-state"><div class="loading-spinner"></div></div>
     {:else if !canManage}
-        <div class="empty-state">You do not have permission to manage backups.</div>
+        <div class="empty-state">{m.routes_settings_backups_page_you_do_not_have_permission_to_manage_backups()}</div>
     {:else if loadError}
         <div class="empty-state">
             <p class="error-text">{loadError}</p>
-            <button class="btn-secondary" onclick={load}>Retry</button>
+            <button class="btn-secondary" onclick={load}>{m.routes_settings_backups_page_retry()}</button>
         </div>
     {:else if status}
         <section class="summary-grid">
             <div class="summary-card">
-                <span class="summary-label">Readiness</span>
+                <span class="summary-label">{m.routes_settings_backups_page_readiness()}</span>
                 <strong class={status.readiness.status === 'ready' ? 'status-ok' : 'status-warn'}>
                     {status.readiness.status}
                 </strong>
@@ -172,17 +173,17 @@
                 {/if}
             </div>
             <div class="summary-card">
-                <span class="summary-label">Last Backup</span>
+                <span class="summary-label">{m.routes_settings_backups_page_last_backup()}</span>
                 <strong>{formatDate(lastBackupRun?.completed_at || lastBackupRun?.started_at)}</strong>
                 <span class={resultClass(lastBackupRun?.result)}>{lastBackupRun?.result || 'not run'}</span>
             </div>
             <div class="summary-card">
-                <span class="summary-label">Last Verification</span>
+                <span class="summary-label">{m.routes_settings_backups_page_last_verification()}</span>
                 <strong>{formatDate(lastVerificationRun?.completed_at || lastVerificationRun?.started_at)}</strong>
                 <span class={resultClass(lastVerificationRun?.result)}>{lastVerificationRun?.result || 'not run'}</span>
             </div>
             <div class="summary-card">
-                <span class="summary-label">Recovery Drill</span>
+                <span class="summary-label">{m.routes_settings_backups_page_recovery_drill()}</span>
                 <strong>{formatDate(lastRecoveryDrill?.completed_at || lastRecoveryDrill?.started_at)}</strong>
                 <span class={resultClass(lastRecoveryDrill?.result)}>{lastRecoveryDrill?.result || 'not registered'}</span>
             </div>
@@ -190,26 +191,26 @@
 
         <section class="settings-card">
             <div class="card-header">
-                <h2 class="card-title">Backup Configuration</h2>
-                <a class="inline-link" href="/settings/system">Edit server_config.backup</a>
+                <h2 class="card-title">{m.routes_settings_backups_page_backup_configuration()}</h2>
+                <a class="inline-link" href="/settings/system">{m.routes_settings_backups_page_edit_server_config_backup()}</a>
             </div>
             <div class="card-body">
                 <div class="config-grid">
-                    <div><span>WAL-G</span><strong>{status.config.wal_g_enabled ? 'Enabled' : 'Disabled'}</strong></div>
-                    <div><span>WAL-G Storage</span><strong>{status.config.wal_g_storage_type}</strong></div>
-                    <div><span>pg_dump</span><strong>{status.config.pg_dump_enabled ? 'Enabled' : 'Disabled'}</strong></div>
-                    <div><span>Verification</span><strong>{status.config.verification_enabled ? 'Enabled' : 'Disabled'}</strong></div>
-                    <div><span>Full Retention</span><strong>{status.config.wal_g_retention_full} full backups</strong></div>
-                    <div><span>Weekly Retention</span><strong>{status.config.wal_g_retention_weekly} weeks</strong></div>
-                    <div><span>Monthly Retention</span><strong>{status.config.wal_g_retention_monthly} months</strong></div>
-                    <div><span>Dump Retention</span><strong>{status.config.pg_dump_retention_daily} days / {status.config.pg_dump_retention_monthly} months</strong></div>
+                    <div><span>{m.routes_settings_backups_page_wal_g()}</span><strong>{status.config.wal_g_enabled ? 'Enabled' : 'Disabled'}</strong></div>
+                    <div><span>{m.routes_settings_backups_page_wal_g_storage()}</span><strong>{status.config.wal_g_storage_type}</strong></div>
+                    <div><span>{m.routes_settings_backups_page_pg_dump()}</span><strong>{status.config.pg_dump_enabled ? 'Enabled' : 'Disabled'}</strong></div>
+                    <div><span>{m.routes_settings_backups_page_verification()}</span><strong>{status.config.verification_enabled ? 'Enabled' : 'Disabled'}</strong></div>
+                    <div><span>{m.routes_settings_backups_page_full_retention()}</span><strong>{status.config.wal_g_retention_full} full backups</strong></div>
+                    <div><span>{m.routes_settings_backups_page_weekly_retention()}</span><strong>{status.config.wal_g_retention_weekly} weeks</strong></div>
+                    <div><span>{m.routes_settings_backups_page_monthly_retention()}</span><strong>{status.config.wal_g_retention_monthly} months</strong></div>
+                    <div><span>{m.routes_settings_backups_page_dump_retention()}</span><strong>{status.config.pg_dump_retention_daily} days / {status.config.pg_dump_retention_monthly} months</strong></div>
                 </div>
             </div>
         </section>
 
         <section class="settings-card">
             <div class="card-header">
-                <h2 class="card-title">Operations</h2>
+                <h2 class="card-title">{m.routes_settings_backups_page_operations()}</h2>
             </div>
             <div class="card-body action-grid">
                 <button class="btn-secondary" onclick={() => runAction('wal-g-check', checkWalGStatus, 'WAL-G status check completed')} disabled={!!action}>
@@ -238,17 +239,17 @@
 
         <section class="settings-card">
             <div class="card-header">
-                <h2 class="card-title">Scheduled Tasks</h2>
+                <h2 class="card-title">{m.routes_settings_backups_page_scheduled_tasks()}</h2>
             </div>
             <div class="table-wrap">
                 <table>
                     <thead>
                         <tr>
-                            <th>Task</th>
-                            <th>State</th>
-                            <th>Last Run</th>
-                            <th>Result</th>
-                            <th>Next Run</th>
+                            <th>{m.routes_settings_backups_page_task()}</th>
+                            <th>{m.routes_settings_backups_page_state()}</th>
+                            <th>{m.routes_settings_backups_page_last_run()}</th>
+                            <th>{m.routes_settings_backups_page_result()}</th>
+                            <th>{m.routes_settings_backups_page_next_run()}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -271,17 +272,17 @@
 
         <section class="settings-card">
             <div class="card-header">
-                <h2 class="card-title">Recent Backup Evidence</h2>
+                <h2 class="card-title">{m.routes_settings_backups_page_recent_backup_evidence()}</h2>
             </div>
             <div class="table-wrap">
                 <table>
                     <thead>
                         <tr>
-                            <th>Run</th>
-                            <th>Started</th>
-                            <th>Duration</th>
-                            <th>Result</th>
-                            <th>Evidence</th>
+                            <th>{m.routes_settings_backups_page_run()}</th>
+                            <th>{m.routes_settings_backups_page_started()}</th>
+                            <th>{m.routes_settings_backups_page_duration()}</th>
+                            <th>{m.routes_settings_backups_page_result()}</th>
+                            <th>{m.routes_settings_backups_page_evidence()}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -312,16 +313,16 @@
 
         <section class="settings-card">
             <div class="card-header">
-                <h2 class="card-title">Recovery Drill Evidence</h2>
-                {#if !recoveryDrillTask}<span class="phase-badge">Worker pending</span>{/if}
+                <h2 class="card-title">{m.routes_settings_backups_page_recovery_drill_evidence()}</h2>
+                {#if !recoveryDrillTask}<span class="phase-badge">{m.routes_settings_backups_page_worker_pending()}</span>{/if}
             </div>
             <div class="card-body">
                 {#if lastRecoveryDrill}
                     <div class="evidence-grid">
-                        <div><span>Started</span><strong>{formatDate(lastRecoveryDrill.started_at)}</strong></div>
-                        <div><span>Completed</span><strong>{formatDate(lastRecoveryDrill.completed_at)}</strong></div>
-                        <div><span>Duration</span><strong>{formatDuration(lastRecoveryDrill.duration_ms)}</strong></div>
-                        <div><span>Result</span><strong class={resultClass(lastRecoveryDrill.result)}>{lastRecoveryDrill.result || lastRecoveryDrill.state}</strong></div>
+                        <div><span>{m.routes_settings_backups_page_started()}</span><strong>{formatDate(lastRecoveryDrill.started_at)}</strong></div>
+                        <div><span>{m.routes_settings_backups_page_completed()}</span><strong>{formatDate(lastRecoveryDrill.completed_at)}</strong></div>
+                        <div><span>{m.routes_settings_backups_page_duration()}</span><strong>{formatDuration(lastRecoveryDrill.duration_ms)}</strong></div>
+                        <div><span>{m.routes_settings_backups_page_result()}</span><strong class={resultClass(lastRecoveryDrill.result)}>{lastRecoveryDrill.result || lastRecoveryDrill.state}</strong></div>
                     </div>
                     <pre>{JSON.stringify(lastRecoveryDrill.stats || {}, null, 2)}</pre>
                 {:else}

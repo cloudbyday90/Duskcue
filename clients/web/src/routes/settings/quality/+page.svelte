@@ -5,11 +5,15 @@
   This program is free software: licensed under AGPL-3.0
   See LICENSE file for details.
 -->
+<script>
+    import { m } from '$lib/paraglide/messages.js';
+</script>
+
 <div class="coming-soon">
-    <a href="/settings" class="back-link">← Settings</a>
-    <h1>Quality & Transcoding</h1>
-    <p>Streaming quality management, device profiles, and transcode settings.</p>
-    <span class="phase-badge">Coming in Phase 7</span>
+    <a href="/settings" class="back-link">{m.routes_settings_quality_page_settings()}</a>
+    <h1>{m.routes_settings_quality_page_quality_and_transcoding()}</h1>
+    <p>{m.routes_settings_quality_page_streaming_quality_management_device_profiles_and()}</p>
+    <span class="phase-badge">{m.routes_settings_quality_page_coming_in_phase_7()}</span>
 </div>
 
 <style>

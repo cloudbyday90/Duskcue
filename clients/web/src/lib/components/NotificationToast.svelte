@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { fly, fade } from 'svelte/transition';
     import { flip } from 'svelte/animate';
     import { notifications } from '../stores/notifications.js';
@@ -19,7 +20,7 @@
     };
 </script>
 
-<div class="toast-container" role="region" aria-label="Notifications" aria-live="polite">
+<div class="toast-container" role="region" aria-label={m.lib_components_notificationtoast_notifications()} aria-live="polite">
     {#each $notifications as notification (notification.id)}
         <div
             class="toast toast-{notification.type}"
@@ -43,7 +44,7 @@
                 <button
                     class="toast-dismiss"
                     onclick={() => notifications.dismiss(notification.id)}
-                    aria-label="Dismiss notification"
+                    aria-label={m.lib_components_notificationtoast_dismiss_notification()}
                 >
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                         <path d="M18 6L6 18M6 6l12 12" />

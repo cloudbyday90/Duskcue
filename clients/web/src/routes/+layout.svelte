@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import '../app.css';
     import { onMount } from 'svelte';
     import { page } from '$app/stores';
@@ -26,8 +27,8 @@
     const AUTH_ROUTES = ['/auth/login', '/auth/setup'];
 
     const navLinks = [
-        { href: '/dashboard', label: 'Home' },
-        { href: '/libraries', label: 'Libraries' },
+        { href: '/dashboard', label: m.routes_layout_home() },
+        { href: '/libraries', label: m.routes_layout_libraries() },
     ];
 
     onMount(() => {
@@ -89,7 +90,7 @@
     <div class="app-shell">
         <header class="nav-bar">
             <nav class="nav-content">
-                <a href="/dashboard" class="nav-logo">Duskcue</a>
+                <a href="/dashboard" class="nav-logo">{m.routes_layout_duskcue()}</a>
 
                 {#if $isAuthenticated}
                     <ul class="nav-links">
@@ -116,7 +117,7 @@
                         <button
                             class="user-button"
                             onclick={toggleUserMenu}
-                            aria-label="User menu"
+                            aria-label={m.routes_layout_user_menu()}
                             aria-expanded={userMenuOpen}
                         >
                             <span class="user-avatar">
@@ -132,7 +133,7 @@
                                 tabindex="0"
                                 onclick={closeUserMenu}
                                 onkeydown={(e) => e.key === 'Escape' && closeUserMenu()}
-                                aria-label="Close menu"
+                                aria-label={m.routes_layout_close_menu()}
                             ></div>
                             <div class="user-dropdown">
                                 <a href="/settings" class="dropdown-item" onclick={closeUserMenu}>
@@ -148,7 +149,7 @@
                     <button
                         class="menu-toggle"
                         onclick={toggleMobileMenu}
-                        aria-label="Open menu"
+                        aria-label={m.routes_layout_open_menu()}
                         aria-expanded={mobileMenuOpen}
                     >
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
@@ -170,9 +171,9 @@
                 tabindex="0"
                 onclick={closeMobileMenu}
                 onkeydown={(e) => e.key === 'Escape' && closeMobileMenu()}
-                aria-label="Close menu"
+                aria-label={m.routes_layout_close_menu()}
             ></div>
-            <div class="mobile-drawer" role="navigation" aria-label="Mobile navigation">
+            <div class="mobile-drawer" role="navigation" aria-label={m.routes_layout_mobile_navigation()}>
                 <div class="drawer-search">
                     <SearchBar onsearch={handleSearch} navigate={false} />
                 </div>

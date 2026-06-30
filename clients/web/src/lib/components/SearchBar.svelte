@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { goto } from '$app/navigation';
     import { SEARCH_DEBOUNCE_MS } from '../utils/constants.js';
 
@@ -83,7 +84,7 @@
             {placeholder}
             value
             oninput={handleInput}
-            aria-label="Search"
+            aria-label={m.lib_components_searchbar_search()}
             autocomplete="off"
             spellcheck="false"
         />

@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { fade, fly } from 'svelte/transition';
 
     const SKIP_LABELS = {

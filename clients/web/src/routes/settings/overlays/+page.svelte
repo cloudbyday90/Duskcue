@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount } from 'svelte';
     import {
         listOverlays,
@@ -110,7 +111,7 @@
             overlays = list.items || [];
             templates = tpls || [];
         } catch (err) {
-            notifications.error(err.detail || 'Failed to load overlays');
+            notifications.error(err.detail || m.routes_settings_overlays_page_failed_to_load_overlays());
         }
     }
 
@@ -264,7 +265,7 @@
 
     async function handleSave() {
         if (!form.name.trim()) {
-            notifications.error('Name is required');
+            notifications.error(m.routes_settings_overlays_page_name_is_required());
             return;
         }
         saving = true;
@@ -272,15 +273,15 @@
             const req = buildRequest();
             if (editing) {
                 await updateOverlay(editing, req);
-                notifications.success('Overlay updated');
+                notifications.success(m.routes_settings_overlays_page_overlay_updated());
             } else {
                 await createOverlay(req);
-                notifications.success('Overlay created');
+                notifications.success(m.routes_settings_overlays_page_overlay_created());
             }
             await refresh();
             view = 'list';
         } catch (err) {
-            notifications.error(err.detail || 'Save failed');
+            notifications.error(err.detail || m.routes_settings_overlays_page_save_failed());
         } finally {
             saving = false;
         }
@@ -288,16 +289,16 @@
 
     async function handleDelete(o) {
         if (o.is_system) {
-            notifications.warning('System overlays cannot be deleted — disable them instead');
+            notifications.warning(m.routes_settings_overlays_page_system_overlays_cannot_be_deleted_disable_them_i());
             return;
         }
         if (!confirm(`Delete overlay "${o.name}"?`)) return;
         try {
             await deleteOverlay(o.id);
-            notifications.success('Overlay deleted');
+            notifications.success(m.routes_settings_overlays_page_overlay_deleted());
             await refresh();
         } catch (err) {
-            notifications.error(err.detail || 'Delete failed');
+            notifications.error(err.detail || m.routes_settings_overlays_page_delete_failed());
         }
     }
 
@@ -306,7 +307,7 @@
             await updateOverlay(o.id, { is_enabled: !o.is_enabled });
             o.is_enabled = !o.is_enabled;
         } catch (err) {
-            notifications.error(err.detail || 'Toggle failed');
+            notifications.error(err.detail || m.routes_settings_overlays_page_toggle_failed());
         }
     }
 
@@ -320,7 +321,7 @@
             notifications.success(`Overlay application queued for ${result.queued_items || 0} items`);
             await refresh();
         } catch (err) {
-            notifications.error(err.detail || 'Apply failed');
+            notifications.error(err.detail || m.routes_settings_overlays_page_apply_failed());
         } finally {
             applying = false;
         }
@@ -328,7 +329,7 @@
 
     async function handlePreview() {
         if (!previewMediaId.trim()) {
-            notifications.warning('Enter a media item ID to preview against');
+            notifications.warning(m.routes_settings_overlays_page_enter_a_media_item_id_to_preview_against());
             return;
         }
         previewing = true;
@@ -342,7 +343,7 @@
             const result = await previewOverlay(req);
             previewUrl = result.preview_url + '?t=' + Date.now();
         } catch (err) {
-            notifications.error(err.detail || 'Preview failed');
+            notifications.error(err.detail || m.routes_settings_overlays_page_preview_failed());
         } finally {
             previewing = false;
         }
@@ -370,11 +371,11 @@
         try {
             parsed = JSON.parse(templateJson);
         } catch {
-            notifications.error('Invalid JSON');
+            notifications.error(m.routes_settings_overlays_page_invalid_json());
             return;
         }
         if (!parsed.name || !Array.isArray(parsed.overlays) || parsed.overlays.length === 0) {
-            notifications.error('Template must have a name and an overlays array');
+            notifications.error(m.routes_settings_overlays_page_template_must_have_a_name_and_an_overlays_array());
             return;
         }
         importing = true;
@@ -385,7 +386,7 @@
             await refresh();
             view = 'list';
         } catch (err) {
-            notifications.error(err.detail || 'Import failed');
+            notifications.error(err.detail || m.routes_settings_overlays_page_import_failed());
         } finally {
             importing = false;
         }
@@ -404,17 +405,17 @@
 <div class="overlays-page">
     <div class="page-header">
         <div>
-            <a href="/settings" class="back-link">← Settings</a>
-            <h1 class="page-title">Overlays</h1>
-            <p class="page-subtitle">Artwork overlay compositing engine and poster management</p>
+            <a href="/settings" class="back-link">{m.routes_settings_overlays_page_settings()}</a>
+            <h1 class="page-title">{m.routes_settings_overlays_page_overlays()}</h1>
+            <p class="page-subtitle">{m.routes_settings_overlays_page_artwork_overlay_compositing_engine_and_poster_ma()}</p>
         </div>
         {#if canManage && view === 'list'}
             <div class="header-actions">
-                <button class="btn-secondary" onclick={() => (view = 'templates')}>Templates</button>
+                <button class="btn-secondary" onclick={() => (view = 'templates')}>{m.routes_settings_overlays_page_templates()}</button>
                 <button class="btn-secondary" onclick={() => handleApply(false)} disabled={applying}>
                     {applying ? 'Applying…' : 'Apply Now'}
                 </button>
-                <button class="btn-primary" onclick={startCreate}>New Overlay</button>
+                <button class="btn-primary" onclick={startCreate}>{m.routes_settings_overlays_page_new_overlay()}</button>
             </div>
         {/if}
     </div>
@@ -424,182 +425,182 @@
     {:else if view === 'editor'}
         <div class="editor-pane">
             <div class="editor-toolbar">
-                <button class="btn-ghost" onclick={() => (view = 'list')}>← Back to list</button>
+                <button class="btn-ghost" onclick={() => (view = 'list')}>{m.routes_settings_overlays_page_back_to_list()}</button>
                 <span class="editor-mode">{editing ? 'Edit overlay' : 'New overlay'}</span>
             </div>
 
             <div class="editor-grid">
                 <div class="editor-form">
-                    <h3 class="form-section">Basics</h3>
+                    <h3 class="form-section">{m.routes_settings_overlays_page_basics()}</h3>
                     <div class="form-grid">
                         <label class="field field-wide">
-                            <span class="field-label">Name</span>
-                            <input type="text" bind:value={form.name} placeholder="Resolution Badge" />
+                            <span class="field-label">{m.routes_settings_overlays_page_name()}</span>
+                            <input type="text" bind:value={form.name} placeholder={m.routes_settings_overlays_page_resolution_badge()} />
                         </label>
                         <label class="field">
-                            <span class="field-label">Type</span>
+                            <span class="field-label">{m.routes_settings_overlays_page_type()}</span>
                             <select bind:value={form.overlay_type}>
                                 {#each OVERLAY_TYPES as t}<option value={t}>{t}</option>{/each}
                             </select>
                         </label>
                         <label class="field">
-                            <span class="field-label">Applies To</span>
+                            <span class="field-label">{m.routes_settings_overlays_page_applies_to()}</span>
                             <select bind:value={form.applies_to}>
                                 {#each APPLIES_TO as a}<option value={a}>{APPLIES_LABELS[a]}</option>{/each}
                             </select>
                         </label>
                         <label class="field">
-                            <span class="field-label">Library (blank = all)</span>
-                            <input type="text" bind:value={form.library_id} placeholder="UUID or blank" />
+                            <span class="field-label">{m.routes_settings_overlays_page_library_blank_all()}</span>
+                            <input type="text" bind:value={form.library_id} placeholder={m.routes_settings_overlays_page_uuid_or_blank()} />
                         </label>
                         <label class="field-check">
                             <input type="checkbox" bind:checked={form.is_enabled} />
-                            <span class="field-label">Enabled</span>
+                            <span class="field-label">{m.routes_settings_overlays_page_enabled()}</span>
                         </label>
                     </div>
 
                     {#if form.overlay_type === 'image'}
-                        <h3 class="form-section">Image</h3>
+                        <h3 class="form-section">{m.routes_settings_overlays_page_image()}</h3>
                         <div class="form-grid">
                             <label class="field field-wide">
-                                <span class="field-label">Image Path</span>
-                                <input type="text" bind:value={form.image_path} placeholder="/data/overlays/4k.png" />
+                                <span class="field-label">{m.routes_settings_overlays_page_image_path()}</span>
+                                <input type="text" bind:value={form.image_path} placeholder={m.routes_settings_overlays_page_data_overlays_4k_png()} />
                             </label>
                             <label class="field">
-                                <span class="field-label">Scale Width</span>
-                                <input type="number" bind:value={form.scale_width} placeholder="auto" />
+                                <span class="field-label">{m.routes_settings_overlays_page_scale_width()}</span>
+                                <input type="number" bind:value={form.scale_width} placeholder={m.routes_settings_overlays_page_auto()} />
                             </label>
                             <label class="field">
-                                <span class="field-label">Scale Height</span>
-                                <input type="number" bind:value={form.scale_height} placeholder="auto" />
+                                <span class="field-label">{m.routes_settings_overlays_page_scale_height()}</span>
+                                <input type="number" bind:value={form.scale_height} placeholder={m.routes_settings_overlays_page_auto()} />
                             </label>
                         </div>
                     {:else if form.overlay_type === 'text'}
-                        <h3 class="form-section">Text</h3>
+                        <h3 class="form-section">{m.routes_settings_overlays_page_text()}</h3>
                         <div class="form-grid">
                             <label class="field field-wide">
-                                <span class="field-label">Template</span>
+                                <span class="field-label">{m.routes_settings_overlays_page_template()}</span>
                                 <textarea
                                     bind:this={textTemplateEl}
                                     bind:value={form.text_template}
-                                    placeholder="<<critic_rating>>/10"
+                                    placeholder={m.routes_settings_overlays_page_critic_rating_10()}
                                     rows="2"
                                 ></textarea>
                             </label>
                             <div class="var-inserter field-wide">
-                                <span class="field-label">Insert variable:</span>
+                                <span class="field-label">{m.routes_settings_overlays_page_insert_variable()}</span>
                                 <select onchange={(e) => { if (e.currentTarget.value) insertVariable(e.currentTarget.value); e.currentTarget.value=''; }}>
-                                    <option value="">Choose…</option>
+                                    <option value="">{m.routes_settings_overlays_page_choose()}</option>
                                     {#each TEXT_VARIABLES as v}<option value={v}>{v}</option>{/each}
                                 </select>
                             </div>
                             <label class="field">
-                                <span class="field-label">Font Family</span>
-                                <input type="text" bind:value={form.font_family} placeholder="Inter" />
+                                <span class="field-label">{m.routes_settings_overlays_page_font_family()}</span>
+                                <input type="text" bind:value={form.font_family} placeholder={m.routes_settings_overlays_page_inter()} />
                             </label>
                             <label class="field">
-                                <span class="field-label">Font Size</span>
+                                <span class="field-label">{m.routes_settings_overlays_page_font_size()}</span>
                                 <input type="number" min="1" max="500" bind:value={form.font_size} />
                             </label>
                             <label class="field">
-                                <span class="field-label">Font Color</span>
+                                <span class="field-label">{m.routes_settings_overlays_page_font_color()}</span>
                                 <div class="color-field">
                                     <input type="color" value={form.font_color.slice(0, 7)} oninput={(e) => (form.font_color = e.currentTarget.value)} />
                                     <input type="text" class="color-text" bind:value={form.font_color} />
                                 </div>
                             </label>
                             <label class="field">
-                                <span class="field-label">Stroke Color</span>
+                                <span class="field-label">{m.routes_settings_overlays_page_stroke_color()}</span>
                                 <div class="color-field">
                                     <input type="color" value={(form.stroke_color || '#000000').slice(0, 7)} oninput={(e) => (form.stroke_color = e.currentTarget.value)} />
-                                    <input type="text" class="color-text" bind:value={form.stroke_color} placeholder="none" />
+                                    <input type="text" class="color-text" bind:value={form.stroke_color} placeholder={m.routes_settings_overlays_page_none()} />
                                 </div>
                             </label>
                             <label class="field">
-                                <span class="field-label">Stroke Width</span>
+                                <span class="field-label">{m.routes_settings_overlays_page_stroke_width()}</span>
                                 <input type="number" min="0" max="50" bind:value={form.stroke_width} />
                             </label>
                         </div>
                     {/if}
 
                     {#if form.overlay_type !== 'image'}
-                        <h3 class="form-section">Backdrop (optional)</h3>
+                        <h3 class="form-section">{m.routes_settings_overlays_page_backdrop_optional()}</h3>
                         <div class="form-grid">
                             <label class="field">
-                                <span class="field-label">Back Color</span>
+                                <span class="field-label">{m.routes_settings_overlays_page_back_color()}</span>
                                 <div class="color-field">
                                     <input type="color" value={(form.back_color || '#000000').slice(0, 7)} oninput={(e) => (form.back_color = e.currentTarget.value)} />
                                     <input type="text" class="color-text" bind:value={form.back_color} placeholder="#00000099" />
                                 </div>
                             </label>
                             <label class="field">
-                                <span class="field-label">Back Width</span>
-                                <input type="number" bind:value={form.back_width} placeholder="auto" />
+                                <span class="field-label">{m.routes_settings_overlays_page_back_width()}</span>
+                                <input type="number" bind:value={form.back_width} placeholder={m.routes_settings_overlays_page_auto()} />
                             </label>
                             <label class="field">
-                                <span class="field-label">Back Height</span>
-                                <input type="number" bind:value={form.back_height} placeholder="auto" />
+                                <span class="field-label">{m.routes_settings_overlays_page_back_height()}</span>
+                                <input type="number" bind:value={form.back_height} placeholder={m.routes_settings_overlays_page_auto()} />
                             </label>
                             <label class="field">
-                                <span class="field-label">Corner Radius</span>
+                                <span class="field-label">{m.routes_settings_overlays_page_corner_radius()}</span>
                                 <input type="number" min="0" bind:value={form.back_radius} />
                             </label>
                             <label class="field">
-                                <span class="field-label">Padding</span>
+                                <span class="field-label">{m.routes_settings_overlays_page_padding()}</span>
                                 <input type="number" min="0" bind:value={form.back_padding} />
                             </label>
                         </div>
                     {/if}
 
-                    <h3 class="form-section">Positioning</h3>
+                    <h3 class="form-section">{m.routes_settings_overlays_page_positioning()}</h3>
                     <div class="form-grid">
                         <label class="field">
-                            <span class="field-label">Horizontal Align</span>
+                            <span class="field-label">{m.routes_settings_overlays_page_horizontal_align()}</span>
                             <select bind:value={form.horizontal_align}>
                                 {#each ALIGNS_H as a}<option value={a}>{a}</option>{/each}
                             </select>
                         </label>
                         <label class="field">
-                            <span class="field-label">Horizontal Offset</span>
+                            <span class="field-label">{m.routes_settings_overlays_page_horizontal_offset()}</span>
                             <input type="number" min="0" max="1500" bind:value={form.horizontal_offset} />
                         </label>
                         <label class="field">
-                            <span class="field-label">Vertical Align</span>
+                            <span class="field-label">{m.routes_settings_overlays_page_vertical_align()}</span>
                             <select bind:value={form.vertical_align}>
                                 {#each ALIGNS_V as a}<option value={a}>{a}</option>{/each}
                             </select>
                         </label>
                         <label class="field">
-                            <span class="field-label">Vertical Offset</span>
+                            <span class="field-label">{m.routes_settings_overlays_page_vertical_offset()}</span>
                             <input type="number" min="0" max="1500" bind:value={form.vertical_offset} />
                         </label>
                     </div>
 
-                    <h3 class="form-section">Group, Queue & Suppression</h3>
+                    <h3 class="form-section">{m.routes_settings_overlays_page_group_queue_and_suppression()}</h3>
                     <div class="form-grid">
                         <label class="field">
-                            <span class="field-label">Group</span>
-                            <input type="text" bind:value={form.group_name} placeholder="resolution" />
+                            <span class="field-label">{m.routes_settings_overlays_page_group()}</span>
+                            <input type="text" bind:value={form.group_name} placeholder={m.routes_settings_overlays_page_resolution()} />
                         </label>
                         <label class="field">
-                            <span class="field-label">Weight</span>
+                            <span class="field-label">{m.routes_settings_overlays_page_weight()}</span>
                             <input type="number" min="0" bind:value={form.weight} />
                         </label>
                         <label class="field">
-                            <span class="field-label">Queue</span>
-                            <input type="text" bind:value={form.queue_name} placeholder="bottom_right" />
+                            <span class="field-label">{m.routes_settings_overlays_page_queue()}</span>
+                            <input type="text" bind:value={form.queue_name} placeholder={m.routes_settings_overlays_page_bottom_right()} />
                         </label>
                         <label class="field field-wide">
-                            <span class="field-label">Suppresses (comma-separated slugs)</span>
-                            <input type="text" bind:value={form.suppresses} placeholder="4k_badge, hdr_badge" />
+                            <span class="field-label">{m.routes_settings_overlays_page_suppresses_comma_separated_slugs()}</span>
+                            <input type="text" bind:value={form.suppresses} placeholder={m.routes_settings_overlays_page_4k_badge_hdr_badge()} />
                         </label>
                     </div>
 
-                    <h3 class="form-section">Conditions</h3>
-                    <p class="field-hint">When this overlay applies. Empty = all items.</p>
+                    <h3 class="form-section">{m.routes_settings_overlays_page_conditions()}</h3>
+                    <p class="field-hint">{m.routes_settings_overlays_page_when_this_overlay_applies_empty_all_items()}</p>
                     <ConditionBuilder node={conditions} onchange={(n) => (conditions = n)} />
                     <details class="raw-json">
-                        <summary>Raw JSON</summary>
+                        <summary>{m.routes_settings_overlays_page_raw_json()}</summary>
                         <pre>{JSON.stringify(normalizeConditions(conditions), null, 2)}</pre>
                     </details>
 
@@ -607,25 +608,25 @@
                         <button class="btn-primary" onclick={handleSave} disabled={saving}>
                             {saving ? 'Saving…' : editing ? 'Save Changes' : 'Create Overlay'}
                         </button>
-                        <button class="btn-ghost" onclick={() => (view = 'list')}>Cancel</button>
+                        <button class="btn-ghost" onclick={() => (view = 'list')}>{m.routes_settings_overlays_page_cancel()}</button>
                     </div>
                 </div>
 
                 <div class="preview-pane">
-                    <h3 class="form-section">Live Preview</h3>
+                    <h3 class="form-section">{m.routes_settings_overlays_page_live_preview()}</h3>
                     <label class="field">
-                        <span class="field-label">Media Item ID</span>
-                        <input type="text" bind:value={previewMediaId} placeholder="paste a media item UUID" />
+                        <span class="field-label">{m.routes_settings_overlays_page_media_item_id()}</span>
+                        <input type="text" bind:value={previewMediaId} placeholder={m.routes_settings_overlays_page_paste_a_media_item_uuid()} />
                     </label>
                     <button class="btn-secondary" onclick={handlePreview} disabled={previewing}>
                         {previewing ? 'Rendering…' : 'Render Preview'}
                     </button>
                     {#if previewUrl}
                         <div class="preview-image-wrap">
-                            <img src={previewUrl} alt="Overlay preview" />
+                            <img src={previewUrl} alt={m.routes_settings_overlays_page_overlay_preview()} />
                         </div>
                     {:else}
-                        <div class="preview-empty">Enter a media item ID and render to see the composited result.</div>
+                        <div class="preview-empty">{m.routes_settings_overlays_page_enter_a_media_item_id_and_render_to_see_the_comp()}</div>
                     {/if}
                 </div>
             </div>
@@ -633,14 +634,14 @@
     {:else if view === 'templates'}
         <div class="templates-pane">
             <div class="editor-toolbar">
-                <button class="btn-ghost" onclick={() => (view = 'list')}>← Back to list</button>
-                <span class="editor-mode">Templates</span>
+                <button class="btn-ghost" onclick={() => (view = 'list')}>{m.routes_settings_overlays_page_back_to_list()}</button>
+                <span class="editor-mode">{m.routes_settings_overlays_page_templates()}</span>
             </div>
 
             <section class="card">
-                <h3 class="form-section">Installed Templates</h3>
+                <h3 class="form-section">{m.routes_settings_overlays_page_installed_templates()}</h3>
                 {#if templates.length === 0}
-                    <p class="empty-inline">No imported templates yet.</p>
+                    <p class="empty-inline">{m.routes_settings_overlays_page_no_imported_templates_yet()}</p>
                 {:else}
                     <div class="template-list">
                         {#each templates as t}
@@ -655,7 +656,7 @@
             </section>
 
             <section class="card">
-                <h3 class="form-section">Import Community Template</h3>
+                <h3 class="form-section">{m.routes_settings_overlays_page_import_community_template()}</h3>
                 <p class="field-hint">Paste a template JSON ({'{"name":"…","overlays":[…]}'}) to import a set of overlay definitions.</p>
                 <textarea
                     class="json-input"
@@ -671,15 +672,15 @@
     {:else}
         <div class="filters">
             <label class="field">
-                <span class="field-label">Library</span>
-                <input type="text" bind:value={libraryFilter} placeholder="UUID or blank" />
+                <span class="field-label">{m.routes_settings_overlays_page_library()}</span>
+                <input type="text" bind:value={libraryFilter} placeholder={m.routes_settings_overlays_page_uuid_or_blank()} />
             </label>
             <label class="field">
-                <span class="field-label">State</span>
+                <span class="field-label">{m.routes_settings_overlays_page_state()}</span>
                 <select bind:value={enabledFilter}>
-                    <option value="">All</option>
-                    <option value="enabled">Enabled</option>
-                    <option value="disabled">Disabled</option>
+                    <option value="">{m.routes_settings_overlays_page_all()}</option>
+                    <option value="enabled">{m.routes_settings_overlays_page_enabled()}</option>
+                    <option value="disabled">{m.routes_settings_overlays_page_disabled()}</option>
                 </select>
             </label>
             {#if canManage}
@@ -691,9 +692,9 @@
 
         {#if filteredOverlays.length === 0}
             <div class="empty-state">
-                <p>No overlay definitions configured.</p>
+                <p>{m.routes_settings_overlays_page_no_overlay_definitions_configured()}</p>
                 {#if canManage}
-                    <button class="btn-primary" onclick={startCreate}>Create your first overlay</button>
+                    <button class="btn-primary" onclick={startCreate}>{m.routes_settings_overlays_page_create_your_first_overlay()}</button>
                 {/if}
             </div>
         {:else}
@@ -712,7 +713,7 @@
                                             {#if o.group_name}<span class="meta-tag">group: {o.group_name}</span>{/if}
                                             {#if o.queue_name}<span class="meta-tag">queue: {o.queue_name}</span>{/if}
                                             <span class="meta-tag">weight: {o.weight}</span>
-                                            {#if o.is_system}<span class="system-badge">system</span>{/if}
+                                            {#if o.is_system}<span class="system-badge">{m.routes_settings_overlays_page_system()}</span>{/if}
                                         </div>
                                     </div>
                                     {#if canManage}
@@ -721,8 +722,8 @@
                                                 <input type="checkbox" checked={o.is_enabled} onchange={() => handleToggle(o)} />
                                                 <span>{o.is_enabled ? 'on' : 'off'}</span>
                                             </label>
-                                            <button class="btn-secondary-sm" onclick={() => startEdit(o)}>Edit</button>
-                                            <button class="btn-danger-sm" onclick={() => handleDelete(o)} disabled={o.is_system}>Delete</button>
+                                            <button class="btn-secondary-sm" onclick={() => startEdit(o)}>{m.routes_settings_overlays_page_edit()}</button>
+                                            <button class="btn-danger-sm" onclick={() => handleDelete(o)} disabled={o.is_system}>{m.routes_settings_overlays_page_delete()}</button>
                                         </div>
                                     {/if}
                                 </div>

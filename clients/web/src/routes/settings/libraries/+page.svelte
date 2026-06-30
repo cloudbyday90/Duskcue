@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount } from 'svelte';
     import { libraries, libraryList } from '$lib/stores/libraries.js';
     import { hasCapability } from '$lib/stores/auth.js';
@@ -33,7 +34,7 @@
 
     async function handleCreate() {
         if (!newName.trim() || !newRootPath.trim()) {
-            notifications.error('Name and root path are required');
+            notifications.error(m.routes_settings_libraries_page_name_and_root_path_are_required());
             return;
         }
         creating = true;
@@ -48,7 +49,7 @@
             newName = '';
             newRootPath = '';
         } catch (err) {
-            notifications.error(err.detail || err.message || 'Failed to create library');
+            notifications.error(err.detail || err.message || m.routes_settings_libraries_page_failed_to_create_library());
         } finally {
             creating = false;
         }
@@ -57,9 +58,9 @@
     async function handleScan(libraryId) {
         try {
             await libraries.scan(libraryId, 'full');
-            notifications.success('Scan complete');
+            notifications.success(m.routes_settings_libraries_page_scan_complete());
         } catch (err) {
-            notifications.error(err.detail || err.message || 'Scan failed');
+            notifications.error(err.detail || err.message || m.routes_settings_libraries_page_scan_failed());
         }
     }
 
@@ -67,9 +68,9 @@
         if (!confirm(`Delete library "${name}"? This will soft-delete the library.`)) return;
         try {
             await libraries.remove(libraryId);
-            notifications.success('Library deleted');
+            notifications.success(m.routes_settings_libraries_page_library_deleted());
         } catch (err) {
-            notifications.error(err.detail || 'Failed to delete library');
+            notifications.error(err.detail || m.routes_settings_libraries_page_failed_to_delete_library());
         }
     }
 
@@ -97,8 +98,8 @@
 <div class="lib-settings">
     <div class="page-header">
         <div>
-            <a href="/settings" class="back-link">← Settings</a>
-            <h1 class="page-title">Library Management</h1>
+            <a href="/settings" class="back-link">{m.routes_settings_libraries_page_settings()}</a>
+            <h1 class="page-title">{m.routes_settings_libraries_page_library_management()}</h1>
         </div>
         {#if canManage}
             <button class="btn-primary" onclick={() => (showCreate = !showCreate)}>
@@ -109,23 +110,23 @@
 
     {#if showCreate}
         <div class="create-form">
-            <h3 class="form-title">Create Library</h3>
+            <h3 class="form-title">{m.routes_settings_libraries_page_create_library()}</h3>
             <div class="form-grid">
                 <label class="field">
-                    <span class="field-label">Library Name</span>
-                    <input type="text" bind:value={newName} placeholder="My Movies" />
+                    <span class="field-label">{m.routes_settings_libraries_page_library_name()}</span>
+                    <input type="text" bind:value={newName} placeholder={m.routes_settings_libraries_page_my_movies()} />
                 </label>
                 <label class="field">
-                    <span class="field-label">Media Type</span>
+                    <span class="field-label">{m.routes_settings_libraries_page_media_type()}</span>
                     <select bind:value={newType}>
-                        <option value="movie">Movies</option>
-                        <option value="series">TV Shows</option>
-                        <option value="music">Music</option>
+                        <option value="movie">{m.routes_settings_libraries_page_movies()}</option>
+                        <option value="series">{m.routes_settings_libraries_page_tv_shows()}</option>
+                        <option value="music">{m.routes_settings_libraries_page_music()}</option>
                     </select>
                 </label>
                 <label class="field field-wide">
-                    <span class="field-label">Root Path</span>
-                    <input type="text" bind:value={newRootPath} placeholder="/media/movies" />
+                    <span class="field-label">{m.routes_settings_libraries_page_root_path()}</span>
+                    <input type="text" bind:value={newRootPath} placeholder={m.routes_settings_libraries_page_media_movies()} />
                 </label>
             </div>
             <button class="btn-primary" onclick={handleCreate} disabled={creating}>
@@ -140,9 +141,9 @@
         </div>
     {:else if $libraryList.length === 0}
         <div class="empty-state">
-            <p>No libraries configured.</p>
+            <p>{m.routes_settings_libraries_page_no_libraries_configured()}</p>
             {#if canManage}
-                <button class="btn-primary" onclick={() => (showCreate = true)}>Create your first library</button>
+                <button class="btn-primary" onclick={() => (showCreate = true)}>{m.routes_settings_libraries_page_create_your_first_library()}</button>
             {/if}
         </div>
     {:else}
@@ -156,7 +157,7 @@
                                 <span class="badge">{MEDIA_TYPE_LABELS[lib.media_type] || lib.media_type}</span>
                                 <span class="item-count">{lib.item_count || 0} items</span>
                                 {#if lib.scan_enabled === false}
-                                    <span class="badge-inactive">Scanning disabled</span>
+                                    <span class="badge-inactive">{m.routes_settings_libraries_page_scanning_disabled()}</span>
                                 {/if}
                             </div>
                         </div>
@@ -186,13 +187,13 @@
                                     <div class="path-row">
                                         <span class="path-text">{path.root_path}</span>
                                         <div class="path-flags">
-                                            {#if path.is_default}<span class="flag-badge">Default</span>{/if}
-                                            {#if path.scan_enabled}<span class="flag-badge flag-on">Scan On</span>{:else}<span class="flag-badge flag-off">Scan Off</span>{/if}
+                                            {#if path.is_default}<span class="flag-badge">{m.routes_settings_libraries_page_default()}</span>{/if}
+                                            {#if path.scan_enabled}<span class="flag-badge flag-on">{m.routes_settings_libraries_page_scan_on()}</span>{:else}<span class="flag-badge flag-off">{m.routes_settings_libraries_page_scan_off()}</span>{/if}
                                         </div>
                                     </div>
                                 {/each}
                             {:else}
-                                <p class="paths-loading">Loading paths…</p>
+                                <p class="paths-loading">{m.routes_settings_libraries_page_loading_paths()}</p>
                             {/if}
                         </div>
                     {/if}

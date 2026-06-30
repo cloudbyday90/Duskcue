@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount } from 'svelte';
     import { listMediaItems } from '$lib/api/media.js';
     import { getWatchData } from '$lib/api/playback.js';
@@ -78,12 +79,12 @@
     {#if loading}
         <div class="loading-state">
             <div class="loading-spinner"></div>
-            <p>Loading your library…</p>
+            <p>{m.routes_dashboard_page_loading_your_library()}</p>
         </div>
     {:else}
         {#if continueWatching.length > 0}
             <section class="content-row">
-                <h2 class="row-title">Continue Watching</h2>
+                <h2 class="row-title">{m.routes_dashboard_page_continue_watching()}</h2>
                 <div class="card-row">
                     {#each continueWatching as item (item.id)}
                         <div class="card-wrapper">
@@ -95,7 +96,7 @@
         {/if}
 
         <section class="content-row">
-            <h2 class="row-title">Recently Added</h2>
+            <h2 class="row-title">{m.routes_dashboard_page_recently_added()}</h2>
             {#if recentlyAdded.length > 0}
                 <div class="card-row">
                     {#each recentlyAdded as item (item.id)}
@@ -110,11 +111,11 @@
                         <path d="M2 3h20v18H2z" />
                         <path d="M2 8h20M8 3v18" />
                     </svg>
-                    <p class="empty-title">No media found</p>
+                    <p class="empty-title">{m.routes_dashboard_page_no_media_found()}</p>
                     <p class="empty-subtitle">
                         Create a library and run a scan to populate your catalog.
                     </p>
-                    <a href="/settings/libraries" class="btn-link">Configure Libraries</a>
+                    <a href="/settings/libraries" class="btn-link">{m.routes_dashboard_page_configure_libraries()}</a>
                 </div>
             {/if}
         </section>

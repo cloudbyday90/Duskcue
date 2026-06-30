@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount } from 'svelte';
     import { subtitleSettings } from '$lib/stores/subtitles.js';
     import { hasCapability } from '$lib/stores/auth.js';
@@ -41,7 +42,7 @@
             const settings = await subtitleSettings.fetch();
             hydrateForm(settings);
         } catch (err) {
-            loadError = err.detail || err.message || 'Failed to load subtitle settings';
+            loadError = err.detail || err.message || m.routes_settings_subtitles_page_failed_to_load_subtitle_settings();
         } finally {
             loading = false;
         }
@@ -159,9 +160,9 @@
                 auto_fetch_languages: parseLanguages(form.auto_fetch_languages),
             });
             hydrateForm(settings);
-            notifications.success('Subtitle settings saved');
+            notifications.success(m.routes_settings_subtitles_page_subtitle_settings_saved());
         } catch (err) {
-            notifications.error(err.detail || err.message || 'Failed to save subtitle settings');
+            notifications.error(err.detail || err.message || m.routes_settings_subtitles_page_failed_to_save_subtitle_settings());
         } finally {
             savingBehavior = false;
         }
@@ -189,9 +190,9 @@
             };
             const settings = await subtitleSettings.saveProviders(payload);
             hydrateForm(settings);
-            notifications.success('Subtitle provider settings saved');
+            notifications.success(m.routes_settings_subtitles_page_subtitle_provider_settings_saved());
         } catch (err) {
-            notifications.error(err.detail || err.message || 'Failed to save provider settings');
+            notifications.error(err.detail || err.message || m.routes_settings_subtitles_page_failed_to_save_provider_settings());
         } finally {
             savingProviders = false;
         }
@@ -201,8 +202,8 @@
 <div class="sub-settings">
     <div class="page-header">
         <div>
-            <a href="/settings" class="back-link">← Settings</a>
-            <h1 class="page-title">Subtitles</h1>
+            <a href="/settings" class="back-link">{m.routes_settings_subtitles_page_settings()}</a>
+            <h1 class="page-title">{m.routes_settings_subtitles_page_subtitles()}</h1>
         </div>
     </div>
 
@@ -212,17 +213,17 @@
         </div>
     {:else if !canManage}
         <div class="empty-state">
-            <p>You do not have permission to manage subtitle settings.</p>
+            <p>{m.routes_settings_subtitles_page_you_do_not_have_permission_to_manage_subtitle_se()}</p>
         </div>
     {:else if loadError}
         <div class="empty-state">
             <p class="error-text">{loadError}</p>
-            <button class="btn-secondary" onclick={load}>Retry</button>
+            <button class="btn-secondary" onclick={load}>{m.routes_settings_subtitles_page_retry()}</button>
         </div>
     {:else}
         <section class="settings-card">
             <div class="card-header">
-                <h2 class="card-title">Subtitle Behavior</h2>
+                <h2 class="card-title">{m.routes_settings_subtitles_page_subtitle_behavior()}</h2>
                 <button
                     class="btn-primary"
                     onclick={saveBehavior}
@@ -235,24 +236,24 @@
             <div class="card-body">
                 <div class="form-grid">
                     <label class="field">
-                        <span class="field-label">Default Subtitle Mode</span>
+                        <span class="field-label">{m.routes_settings_subtitles_page_default_subtitle_mode()}</span>
                         <select bind:value={form.default_subtitle_mode}>
-                            <option value="default">Auto (only if audio differs)</option>
-                            <option value="always">Always on</option>
-                            <option value="forced_only">Forced only</option>
-                            <option value="none">Off</option>
+                            <option value="default">{m.routes_settings_subtitles_page_auto_only_if_audio_differs()}</option>
+                            <option value="always">{m.routes_settings_subtitles_page_always_on()}</option>
+                            <option value="forced_only">{m.routes_settings_subtitles_page_forced_only()}</option>
+                            <option value="none">{m.routes_settings_subtitles_page_off()}</option>
                         </select>
                     </label>
                     <label class="field">
-                        <span class="field-label">Default Language</span>
-                        <input type="text" bind:value={form.default_subtitle_language} placeholder="en" />
+                        <span class="field-label">{m.routes_settings_subtitles_page_default_language()}</span>
+                        <input type="text" bind:value={form.default_subtitle_language} placeholder={m.routes_settings_subtitles_page_en()} />
                     </label>
                     <label class="field field-wide">
-                        <span class="field-label">Auto-Fetch Languages</span>
+                        <span class="field-label">{m.routes_settings_subtitles_page_auto_fetch_languages()}</span>
                         <input
                             type="text"
                             bind:value={form.auto_fetch_languages}
-                            placeholder="en, es"
+                            placeholder={m.routes_settings_subtitles_page_en_es()}
                         />
                         <span class="field-hint">
                             Comma-separated language codes. Subtitles are fetched for these languages
@@ -264,7 +265,7 @@
                 <label class="toggle-row">
                     <input type="checkbox" bind:checked={form.auto_fetch_enabled} />
                     <span class="toggle-text">
-                        <span class="toggle-title">Auto-Fetch Subtitles</span>
+                        <span class="toggle-title">{m.routes_settings_subtitles_page_auto_fetch_subtitles()}</span>
                         <span class="toggle-desc">
                             Automatically download missing subtitles during scan.
                         </span>
@@ -275,13 +276,13 @@
 
         <section class="settings-card">
             <div class="card-header">
-                <h2 class="card-title">OCR (Image Subtitles)</h2>
+                <h2 class="card-title">{m.routes_settings_subtitles_page_ocr_image_subtitles()}</h2>
             </div>
             <div class="card-body">
                 <label class="toggle-row">
                     <input type="checkbox" bind:checked={form.ocr_enabled} />
                     <span class="toggle-text">
-                        <span class="toggle-title">Enable OCR</span>
+                        <span class="toggle-title">{m.routes_settings_subtitles_page_enable_ocr()}</span>
                         <span class="toggle-desc">
                             Convert PGS/VobSub image subtitles to text (SRT) during scan.
                             Requires PaddleOCR or Tesseract installed on the server.
@@ -291,10 +292,10 @@
 
                 <div class="form-grid">
                     <label class="field">
-                        <span class="field-label">OCR Engine</span>
+                        <span class="field-label">{m.routes_settings_subtitles_page_ocr_engine()}</span>
                         <select bind:value={form.ocr_engine} disabled={!form.ocr_enabled}>
-                            <option value="paddleocr">PaddleOCR</option>
-                            <option value="tesseract">Tesseract</option>
+                            <option value="paddleocr">{m.routes_settings_subtitles_page_paddleocr()}</option>
+                            <option value="tesseract">{m.routes_settings_subtitles_page_tesseract()}</option>
                         </select>
                     </label>
                     <label class="field">
@@ -307,14 +308,14 @@
                             bind:value={form.ocr_confidence_threshold}
                             disabled={!form.ocr_enabled}
                         />
-                        <span class="field-hint">Below this confidence, results are flagged for review.</span>
+                        <span class="field-hint">{m.routes_settings_subtitles_page_below_this_confidence_results_are_flagged_for_re()}</span>
                     </label>
                 </div>
 
                 <label class="toggle-row">
                     <input type="checkbox" bind:checked={form.voice_activity_analysis} />
                     <span class="toggle-text">
-                        <span class="toggle-title">Voice Activity Sync</span>
+                        <span class="toggle-title">{m.routes_settings_subtitles_page_voice_activity_sync()}</span>
                         <span class="toggle-desc">
                             Align external subtitles to audio via voice activity detection. CPU-intensive
                             background task.
@@ -322,7 +323,7 @@
                     </span>
                 </label>
                 <label class="field">
-                    <span class="field-label">Voice Activity Schedule (cron)</span>
+                    <span class="field-label">{m.routes_settings_subtitles_page_voice_activity_schedule_cron()}</span>
                     <input
                         type="text"
                         bind:value={form.voice_activity_schedule}
@@ -335,7 +336,7 @@
 
         <section class="settings-card">
             <div class="card-header">
-                <h2 class="card-title">Subtitle Providers</h2>
+                <h2 class="card-title">{m.routes_settings_subtitles_page_subtitle_providers()}</h2>
                 <button
                     class="btn-primary"
                     onclick={saveProviders}
@@ -354,17 +355,17 @@
                         <div class="provider-head">
                             <label class="toggle-inline">
                                 <input type="checkbox" bind:checked={form.subdl.enabled} />
-                                <span class="provider-name">SubDL</span>
+                                <span class="provider-name">{m.routes_settings_subtitles_page_subdl()}</span>
                             </label>
                             {#if form.subdl.has_api_key}
-                                <span class="badge badge-on">Key set</span>
+                                <span class="badge badge-on">{m.routes_settings_subtitles_page_key_set()}</span>
                             {/if}
                         </div>
                         <p class="provider-desc">
                             Primary provider. Free tier: 2,000 requests/day, 300 downloads/day.
                         </p>
                         <label class="field">
-                            <span class="field-label">API Key</span>
+                            <span class="field-label">{m.routes_settings_subtitles_page_api_key()}</span>
                             <input
                                 type="password"
                                 bind:value={form.subdl.api_key}
@@ -372,24 +373,24 @@
                             />
                         </label>
                         <label class="field">
-                            <span class="field-label">Auto-Fetch Languages</span>
+                            <span class="field-label">{m.routes_settings_subtitles_page_auto_fetch_languages()}</span>
                             <input
                                 type="text"
                                 bind:value={form.subdl.auto_fetch_languages}
-                                placeholder="en"
+                                placeholder={m.routes_settings_subtitles_page_en()}
                                 disabled={!form.subdl.enabled}
                             />
                         </label>
                         <label class="toggle-row">
                             <input type="checkbox" bind:checked={form.subdl.auto_fetch_enabled} disabled={!form.subdl.enabled} />
                             <span class="toggle-text">
-                                <span class="toggle-title">Auto-fetch enabled</span>
+                                <span class="toggle-title">{m.routes_settings_subtitles_page_auto_fetch_enabled()}</span>
                             </span>
                         </label>
                         <label class="toggle-row">
                             <input type="checkbox" bind:checked={form.subdl.prefer_hearing_impaired} disabled={!form.subdl.enabled} />
                             <span class="toggle-text">
-                                <span class="toggle-title">Prefer hearing-impaired</span>
+                                <span class="toggle-title">{m.routes_settings_subtitles_page_prefer_hearing_impaired()}</span>
                             </span>
                         </label>
                     </div>
@@ -398,17 +399,17 @@
                         <div class="provider-head">
                             <label class="toggle-inline">
                                 <input type="checkbox" bind:checked={form.opensubtitles.enabled} />
-                                <span class="provider-name">OpenSubtitles</span>
+                                <span class="provider-name">{m.routes_settings_subtitles_page_opensubtitles()}</span>
                             </label>
                             {#if form.opensubtitles.has_api_key}
-                                <span class="badge badge-on">Key set</span>
+                                <span class="badge badge-on">{m.routes_settings_subtitles_page_key_set()}</span>
                             {/if}
                         </div>
                         <p class="provider-desc">
                             Secondary provider. Largest library, hash-based matching. VIP for meaningful downloads.
                         </p>
                         <label class="field">
-                            <span class="field-label">API Key</span>
+                            <span class="field-label">{m.routes_settings_subtitles_page_api_key()}</span>
                             <input
                                 type="password"
                                 bind:value={form.opensubtitles.api_key}
@@ -416,7 +417,7 @@
                             />
                         </label>
                         <label class="field">
-                            <span class="field-label">API Token</span>
+                            <span class="field-label">{m.routes_settings_subtitles_page_api_token()}</span>
                             <input
                                 type="password"
                                 bind:value={form.opensubtitles.api_token}
@@ -424,24 +425,24 @@
                             />
                         </label>
                         <label class="field">
-                            <span class="field-label">Auto-Fetch Languages</span>
+                            <span class="field-label">{m.routes_settings_subtitles_page_auto_fetch_languages()}</span>
                             <input
                                 type="text"
                                 bind:value={form.opensubtitles.auto_fetch_languages}
-                                placeholder="en"
+                                placeholder={m.routes_settings_subtitles_page_en()}
                                 disabled={!form.opensubtitles.enabled}
                             />
                         </label>
                         <label class="toggle-row">
                             <input type="checkbox" bind:checked={form.opensubtitles.auto_fetch_enabled} disabled={!form.opensubtitles.enabled} />
                             <span class="toggle-text">
-                                <span class="toggle-title">Auto-fetch enabled</span>
+                                <span class="toggle-title">{m.routes_settings_subtitles_page_auto_fetch_enabled()}</span>
                             </span>
                         </label>
                         <label class="toggle-row">
                             <input type="checkbox" bind:checked={form.opensubtitles.prefer_hearing_impaired} disabled={!form.opensubtitles.enabled} />
                             <span class="toggle-text">
-                                <span class="toggle-title">Prefer hearing-impaired</span>
+                                <span class="toggle-title">{m.routes_settings_subtitles_page_prefer_hearing_impaired()}</span>
                             </span>
                         </label>
                     </div>

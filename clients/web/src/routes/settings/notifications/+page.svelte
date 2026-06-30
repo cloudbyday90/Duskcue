@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount } from 'svelte';
     import { flip } from 'svelte/animate';
     import { fade } from 'svelte/transition';
@@ -26,11 +27,11 @@
     import { notifications as toastStore } from '$lib/stores/notifications.js';
 
     const CATEGORY_META = {
-        security: { label: 'Security', color: 'var(--color-error)' },
-        system: { label: 'System', color: 'var(--color-accent)' },
-        media: { label: 'Media', color: 'var(--color-success)' },
-        task: { label: 'Task', color: 'var(--color-text-secondary)' },
-        user: { label: 'User', color: 'var(--color-text-secondary)' },
+        security: { label: m.routes_settings_notifications_page_security(), color: 'var(--color-error)' },
+        system: { label: m.routes_settings_notifications_page_system(), color: 'var(--color-accent)' },
+        media: { label: m.routes_settings_notifications_page_media(), color: 'var(--color-success)' },
+        task: { label: m.routes_settings_notifications_page_task(), color: 'var(--color-text-secondary)' },
+        user: { label: m.routes_settings_notifications_page_user(), color: 'var(--color-text-secondary)' },
     };
 
     let tab = $state('feed');
@@ -72,7 +73,7 @@
         try {
             await notificationCenter.refresh();
         } catch (err) {
-            feedError = err.detail || err.message || 'Failed to load notifications';
+            feedError = err.detail || err.message || m.routes_settings_notifications_page_failed_to_load_notifications();
         } finally {
             loadingFeed = false;
         }
@@ -93,7 +94,7 @@
                 };
             }
         } catch (err) {
-            prefsError = err.detail || err.message || 'Failed to load preferences';
+            prefsError = err.detail || err.message || m.routes_settings_notifications_page_failed_to_load_preferences();
         } finally {
             loadingPrefs = false;
         }
@@ -106,7 +107,7 @@
             const resp = await listPushDevices();
             devices = resp?.devices || [];
         } catch (err) {
-            devicesError = err.detail || err.message || 'Failed to load push devices';
+            devicesError = err.detail || err.message || m.routes_settings_notifications_page_failed_to_load_push_devices();
         } finally {
             loadingDevices = false;
         }
@@ -277,8 +278,8 @@
 <div class="page">
     <div class="page-header">
         <div>
-            <a href="/settings" class="back-link">← Settings</a>
-            <h1 class="page-title">Notifications</h1>
+            <a href="/settings" class="back-link">{m.routes_settings_notifications_page_settings()}</a>
+            <h1 class="page-title">{m.routes_settings_notifications_page_notifications()}</h1>
         </div>
     </div>
 
@@ -330,12 +331,12 @@
                 </div>
                 <div class="action-group">
                     {#if $unreadCount > 0}
-                        <button class="btn-ghost" onclick={handleMarkAllRead}>Mark all read</button>
+                        <button class="btn-ghost" onclick={handleMarkAllRead}>{m.routes_settings_notifications_page_mark_all_read()}</button>
                     {/if}
                     {#if hasRead}
-                        <button class="btn-ghost danger" onclick={handleDeleteRead}>Delete read</button>
+                        <button class="btn-ghost danger" onclick={handleDeleteRead}>{m.routes_settings_notifications_page_delete_read()}</button>
                     {/if}
-                    <button class="btn-ghost" onclick={loadFeed} aria-label="Refresh">
+                    <button class="btn-ghost" onclick={loadFeed} aria-label={m.routes_settings_notifications_page_refresh()}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M23 4v6h-6M1 20v-6h6" />
                             <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
@@ -348,12 +349,12 @@
                 {#if loadingFeed && $notificationItems.length === 0}
                     <div class="state-block">
                         <div class="mini-spinner"></div>
-                        <p>Loading notifications…</p>
+                        <p>{m.routes_settings_notifications_page_loading_notifications()}</p>
                     </div>
                 {:else if feedError}
                     <div class="state-block error">
                         <p>{feedError}</p>
-                        <button class="btn-secondary" onclick={loadFeed}>Retry</button>
+                        <button class="btn-secondary" onclick={loadFeed}>{m.routes_settings_notifications_page_retry()}</button>
                     </div>
                 {:else if filteredFeed.length === 0}
                     <div class="state-block">
@@ -381,7 +382,7 @@
                                             <p class="feed-title">{n.title}</p>
                                         {/if}
                                         {#if !n.is_read}
-                                            <span class="unread-dot" title="Unread"></span>
+                                            <span class="unread-dot" title={m.routes_settings_notifications_page_unread()}></span>
                                         {/if}
                                     </div>
                                     <p class="feed-text">{n.body}</p>
@@ -389,7 +390,7 @@
                                         <span>{formatRelative(n.created_at)}</span>
                                         {#if n.priority === 'high'}
                                             <span class="meta-sep">·</span>
-                                            <span class="feed-priority">High priority</span>
+                                            <span class="feed-priority">{m.routes_settings_notifications_page_high_priority()}</span>
                                         {/if}
                                         {#if n.is_read && n.read_at}
                                             <span class="meta-sep">·</span>
@@ -400,7 +401,7 @@
                                 <button
                                     class="feed-delete"
                                     onclick={(e) => handleDeleteOne(e, n)}
-                                    aria-label="Delete notification"
+                                    aria-label={m.routes_settings_notifications_page_delete_notification()}
                                 >
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                                         <path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
@@ -423,8 +424,8 @@
         <section class="card">
             <div class="card-head">
                 <div>
-                    <h2 class="card-title">Notification Preferences</h2>
-                    <p class="card-sub">Choose how you want to be notified for each type.</p>
+                    <h2 class="card-title">{m.routes_settings_notifications_page_notification_preferences()}</h2>
+                    <p class="card-sub">{m.routes_settings_notifications_page_choose_how_you_want_to_be_notified_for_each_type()}</p>
                 </div>
             </div>
 
@@ -432,24 +433,24 @@
                 {#if loadingPrefs}
                     <div class="state-block">
                         <div class="mini-spinner"></div>
-                        <p>Loading preferences…</p>
+                        <p>{m.routes_settings_notifications_page_loading_preferences()}</p>
                     </div>
                 {:else if prefsError}
                     <div class="state-block error">
                         <p>{prefsError}</p>
-                        <button class="btn-secondary" onclick={loadPreferences}>Retry</button>
+                        <button class="btn-secondary" onclick={loadPreferences}>{m.routes_settings_notifications_page_retry()}</button>
                     </div>
                 {:else if preferences.length === 0}
                     <div class="state-block">
-                        <p>No notification types configured.</p>
+                        <p>{m.routes_settings_notifications_page_no_notification_types_configured()}</p>
                     </div>
                 {:else}
                     <div class="prefs-table">
                         <div class="prefs-row prefs-head">
-                            <div class="prefs-type">Type</div>
-                            <div class="prefs-channel">In-App</div>
-                            <div class="prefs-channel">Webhook</div>
-                            <div class="prefs-channel">Push</div>
+                            <div class="prefs-type">{m.routes_settings_notifications_page_type()}</div>
+                            <div class="prefs-channel">{m.routes_settings_notifications_page_in_app()}</div>
+                            <div class="prefs-channel">{m.routes_settings_notifications_page_webhook()}</div>
+                            <div class="prefs-channel">{m.routes_settings_notifications_page_push()}</div>
                             <div class="prefs-action"></div>
                         </div>
                         {#each preferences as p (p.notification_type_id)}
@@ -457,7 +458,7 @@
                                 <div class="prefs-type">
                                     <div class="prefs-name">
                                         {p.name.replace(/_/g, ' ')}
-                                        {#if p.is_using_defaults}<span class="default-tag">default</span>{/if}
+                                        {#if p.is_using_defaults}<span class="default-tag">{m.routes_settings_notifications_page_default()}</span>{/if}
                                     </div>
                                     <div class="prefs-cat" style="--cat-color: {(CATEGORY_META[p.category] || CATEGORY_META.user).color}">
                                         {(CATEGORY_META[p.category] || CATEGORY_META.user).label} · {p.priority}
@@ -523,12 +524,12 @@
         <section class="card">
             <div class="card-head">
                 <div>
-                    <h2 class="card-title">Push Devices</h2>
+                    <h2 class="card-title">{m.routes_settings_notifications_page_push_devices()}</h2>
                     <p class="card-sub">
                         Devices registered for mobile push. New devices register automatically from the mobile app.
                     </p>
                 </div>
-                <button class="btn-ghost" onclick={loadDevices} aria-label="Refresh">
+                <button class="btn-ghost" onclick={loadDevices} aria-label={m.routes_settings_notifications_page_refresh()}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M23 4v6h-6M1 20v-6h6" />
                         <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />
@@ -540,12 +541,12 @@
                 {#if loadingDevices}
                     <div class="state-block">
                         <div class="mini-spinner"></div>
-                        <p>Loading devices…</p>
+                        <p>{m.routes_settings_notifications_page_loading_devices()}</p>
                     </div>
                 {:else if devicesError}
                     <div class="state-block error">
                         <p>{devicesError}</p>
-                        <button class="btn-secondary" onclick={loadDevices}>Retry</button>
+                        <button class="btn-secondary" onclick={loadDevices}>{m.routes_settings_notifications_page_retry()}</button>
                     </div>
                 {:else if devices.length === 0}
                     <div class="state-block empty-devices">
@@ -553,8 +554,8 @@
                             <rect x="5" y="2" width="14" height="20" rx="2" />
                             <path d="M12 18h.01" />
                         </svg>
-                        <p>No push devices registered.</p>
-                        <p class="muted">Install the Duskcue mobile app and sign in to register a device for push notifications.</p>
+                        <p>{m.routes_settings_notifications_page_no_push_devices_registered()}</p>
+                        <p class="muted">{m.routes_settings_notifications_page_install_the_duskcue_mobile_app_and_sign_in_to_re()}</p>
                     </div>
                 {:else}
                     <ul class="device-list">
@@ -569,7 +570,7 @@
                                 <div class="device-main">
                                     <div class="device-name">
                                         {d.device_name || 'Unnamed device'}
-                                        {#if !d.is_active}<span class="inactive-tag">inactive</span>{/if}
+                                        {#if !d.is_active}<span class="inactive-tag">{m.routes_settings_notifications_page_inactive()}</span>{/if}
                                     </div>
                                     <div class="device-meta">
                                         <span>{providerLabel(d.provider)}</span>
@@ -606,13 +607,13 @@
             <section class="card admin-card">
                 <div class="card-head">
                     <div>
-                        <h2 class="card-title">Test Notification</h2>
-                        <p class="card-sub">Send a test notification to yourself to verify the dispatch pipeline.</p>
+                        <h2 class="card-title">{m.routes_settings_notifications_page_test_notification()}</h2>
+                        <p class="card-sub">{m.routes_settings_notifications_page_send_a_test_notification_to_yourself_to_verify_t()}</p>
                     </div>
                 </div>
                 <div class="test-body">
                     <p class="test-desc">
-                        Dispatches a <code>server_alert</code> notification through the standard pipeline
+                        Dispatches a <code>{m.routes_settings_notifications_page_server_alert()}</code> notification through the standard pipeline
                         (in-app + SSE + webhook + push). Check the Feed tab and your configured webhook/push destination.
                     </p>
                     <button class="btn-primary" onclick={sendTest} disabled={sendingTest}>

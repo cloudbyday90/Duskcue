@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount } from 'svelte';
     import { getHealth } from '$lib/api/settings.js';
     import { notifications } from '$lib/stores/notifications.js';
@@ -23,47 +24,47 @@
     });
 
     const settingsLinks = [
-        { href: '/settings/system', label: 'System', icon: 'M4 7h16M4 12h16M4 17h16', desc: 'Server configuration and operations' },
-        { href: '/settings/users', label: 'Users', icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01', desc: 'Manage user accounts and invitations' },
-        { href: '/settings/libraries', label: 'Libraries', icon: 'M2 3h20v18H2zM2 8h20', desc: 'Configure media libraries and scan paths' },
-        { href: '/settings/quality', label: 'Quality', icon: 'M3 3v18h18', desc: 'Streaming quality and transcoding', soon: true },
-        { href: '/settings/subtitles', label: 'Subtitles', icon: 'M4 4h16v16H4z', desc: 'Subtitle preferences and providers' },
-        { href: '/settings/overlays', label: 'Overlays', icon: 'M3 3h18v18H3z', desc: 'Artwork overlays and posters' },
-        { href: '/settings/collections', label: 'Collections', icon: 'M3 3h18v18H3z', desc: 'Collection management' },
-        { href: '/settings/notifications', label: 'Notifications', icon: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0', desc: 'Notification feed, preferences, and push devices' },
-        { href: '/settings/backups', label: 'Backups', icon: 'M21 8v13H3V8M1 3h22v5H1z', desc: 'Backup and recovery' },
-        { href: '/settings/migration', label: 'Migration', icon: 'M3 12h18M3 6h18M3 18h18', desc: 'Import from other platforms' },
-        { href: '/settings/security', label: 'Security', icon: 'M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z', desc: 'Security settings', soon: true },
-        { href: '/settings/storage', label: 'Storage', icon: 'M3 3h18v18H3z', desc: 'Cache and storage management', soon: true },
+        { href: '/settings/system', label: m.routes_settings_page_system(), icon: 'M4 7h16M4 12h16M4 17h16', desc: m.routes_settings_page_server_configuration_and_operations() },
+        { href: '/settings/users', label: m.routes_settings_page_users(), icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01', desc: m.routes_settings_page_manage_user_accounts_and_invitations() },
+        { href: '/settings/libraries', label: m.routes_settings_page_libraries(), icon: 'M2 3h20v18H2zM2 8h20', desc: m.routes_settings_page_configure_media_libraries_and_scan_paths() },
+        { href: '/settings/quality', label: m.routes_settings_page_quality(), icon: 'M3 3v18h18', desc: m.routes_settings_page_streaming_quality_and_transcoding(), soon: true },
+        { href: '/settings/subtitles', label: m.routes_settings_page_subtitles(), icon: 'M4 4h16v16H4z', desc: m.routes_settings_page_subtitle_preferences_and_providers() },
+        { href: '/settings/overlays', label: m.routes_settings_page_overlays(), icon: 'M3 3h18v18H3z', desc: m.routes_settings_page_artwork_overlays_and_posters() },
+        { href: '/settings/collections', label: m.routes_settings_page_collections(), icon: 'M3 3h18v18H3z', desc: m.routes_settings_page_collection_management() },
+        { href: '/settings/notifications', label: m.routes_settings_page_notifications(), icon: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0', desc: m.routes_settings_page_notification_feed_preferences_and_push_devices() },
+        { href: '/settings/backups', label: m.routes_settings_page_backups(), icon: 'M21 8v13H3V8M1 3h22v5H1z', desc: m.routes_settings_page_backup_and_recovery() },
+        { href: '/settings/migration', label: m.routes_settings_page_migration(), icon: 'M3 12h18M3 6h18M3 18h18', desc: m.routes_settings_page_import_from_other_platforms() },
+        { href: '/settings/security', label: m.routes_settings_page_security(), icon: 'M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z', desc: m.routes_settings_page_security_settings(), soon: true },
+        { href: '/settings/storage', label: m.routes_settings_page_storage(), icon: 'M3 3h18v18H3z', desc: m.routes_settings_page_cache_and_storage_management(), soon: true },
     ];
 </script>
 
 <div class="settings-page">
-    <h1 class="page-title">Settings</h1>
+    <h1 class="page-title">{m.routes_settings_page_settings()}</h1>
 
     <div class="settings-grid">
         <section class="settings-section">
-            <h2 class="section-title">Server Status</h2>
+            <h2 class="section-title">{m.routes_settings_page_server_status()}</h2>
             {#if loading}
-                <div class="status-loading">Checking server health…</div>
+                <div class="status-loading">{m.routes_settings_page_checking_server_health()}</div>
             {:else if health}
                 <div class="status-grid">
                     <div class="status-item">
-                        <span class="status-label">Status</span>
+                        <span class="status-label">{m.routes_settings_page_status()}</span>
                         <span class="status-value status-{$health.status || 'unknown'}">
                             {$health.status || 'Unknown'}
                         </span>
                     </div>
                     <div class="status-item">
-                        <span class="status-label">Version</span>
+                        <span class="status-label">{m.routes_settings_page_version()}</span>
                         <span class="status-value">{$health.version || '—'}</span>
                     </div>
                     <div class="status-item">
-                        <span class="status-label">Database</span>
+                        <span class="status-label">{m.routes_settings_page_database()}</span>
                         <span class="status-value">{$health.database || '—'}</span>
                     </div>
                     <div class="status-item">
-                        <span class="status-label">Uptime</span>
+                        <span class="status-label">{m.routes_settings_page_uptime()}</span>
                         <span class="status-value">
                             {$health.uptime_seconds
                                 ? Math.floor($health.uptime_seconds / 3600) + 'h ' +
@@ -74,17 +75,17 @@
                 </div>
                 {#if health.hardware_acceleration}
                     <div class="hw-accel">
-                        <span class="status-label">Hardware Acceleration</span>
+                        <span class="status-label">{m.routes_settings_page_hardware_acceleration()}</span>
                         <div class="hw-badge">{$health.hardware_acceleration.method}</div>
                     </div>
                 {/if}
             {:else}
-                <div class="status-error">Unable to fetch server status</div>
+                <div class="status-error">{m.routes_settings_page_unable_to_fetch_server_status()}</div>
             {/if}
         </section>
 
         <section class="settings-section">
-            <h2 class="section-title">Management</h2>
+            <h2 class="section-title">{m.routes_settings_page_management()}</h2>
             <div class="links-grid">
                 {#each settingsLinks as link}
                     <a
@@ -100,7 +101,7 @@
                         <div class="link-text">
                             <span class="link-label">
                                 {link.label}
-                                {#if link.soon}<span class="soon-tag">Soon</span>{/if}
+                                {#if link.soon}<span class="soon-tag">{m.routes_settings_page_soon()}</span>{/if}
                             </span>
                             <span class="link-desc">{link.desc}</span>
                         </div>

@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount } from 'svelte';
     import { page } from '$app/stores';
     import { listLibraryItems } from '$lib/api/libraries.js';
@@ -46,7 +47,7 @@
             cursor = response.cursor || null;
             hasMore = response.has_more || false;
         } catch (err) {
-            notifications.error(err.detail || err.message || 'Failed to load library');
+            notifications.error(err.detail || err.message || m.routes_libraries_id_page_failed_to_load_library());
             items = [];
         } finally {
             loading = false;
@@ -66,7 +67,7 @@
             cursor = response.cursor || null;
             hasMore = response.has_more || false;
         } catch (err) {
-            notifications.error(err.detail || 'Failed to load more items');
+            notifications.error(err.detail || m.routes_libraries_id_page_failed_to_load_more_items());
         } finally {
             loadingMore = false;
         }
@@ -80,10 +81,10 @@
     async function handleScan() {
         try {
             await libraries.scan(libraryId, 'full');
-            notifications.success('Library scan complete');
+            notifications.success(m.routes_libraries_id_page_library_scan_complete());
             await loadItems();
         } catch (err) {
-            notifications.error(err.detail || err.message || 'Scan failed');
+            notifications.error(err.detail || err.message || m.routes_libraries_id_page_scan_failed());
         }
     }
 
@@ -94,12 +95,12 @@
     {#if loading}
         <div class="loading-state">
             <div class="loading-spinner"></div>
-            <p>Loading library…</p>
+            <p>{m.routes_libraries_id_page_loading_library()}</p>
         </div>
     {:else}
         <div class="library-header">
             <div class="header-left">
-                <a href="/libraries" class="back-link">← Libraries</a>
+                <a href="/libraries" class="back-link">{m.routes_libraries_id_page_libraries()}</a>
                 <h1 class="library-title">{currentLib?.name || 'Library'}</h1>
                 {#if currentLib}
                     <span class="type-badge">
@@ -144,7 +145,7 @@
             {/if}
         {:else}
             <div class="empty-state">
-                <p class="empty-title">No media in this library</p>
+                <p class="empty-title">{m.routes_libraries_id_page_no_media_in_this_library()}</p>
                 <p class="empty-subtitle">
                     {#if canManage}
                         Run a scan to discover media files.

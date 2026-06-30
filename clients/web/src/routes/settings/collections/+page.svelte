@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount } from 'svelte';
     import {
         listCollections,
@@ -108,7 +109,7 @@
             collections = list.items || [];
             templates = tpls || [];
         } catch (err) {
-            notifications.error(err.detail || 'Failed to load collections');
+            notifications.error(err.detail || m.routes_settings_collections_page_failed_to_load_collections());
         }
     }
 
@@ -251,7 +252,7 @@
 
     async function handleSave() {
         if (!form.name.trim()) {
-            notifications.error('Name is required');
+            notifications.error(m.routes_settings_collections_page_name_is_required());
             return;
         }
         saving = true;
@@ -259,15 +260,15 @@
             const req = buildRequest();
             if (editing) {
                 await updateCollection(editing, req);
-                notifications.success('Collection updated');
+                notifications.success(m.routes_settings_collections_page_collection_updated());
             } else {
                 await createCollection(req);
-                notifications.success('Collection created');
+                notifications.success(m.routes_settings_collections_page_collection_created());
             }
             await refresh();
             view = 'list';
         } catch (err) {
-            notifications.error(err.detail || 'Save failed');
+            notifications.error(err.detail || m.routes_settings_collections_page_save_failed());
         } finally {
             saving = false;
         }
@@ -275,16 +276,16 @@
 
     async function handleDelete(c) {
         if (c.is_system) {
-            notifications.warning('System collections cannot be deleted — disable them instead');
+            notifications.warning(m.routes_settings_collections_page_system_collections_cannot_be_deleted_disable_the());
             return;
         }
         if (!confirm(`Delete collection "${c.name}"?`)) return;
         try {
             await deleteCollection(c.id);
-            notifications.success('Collection deleted');
+            notifications.success(m.routes_settings_collections_page_collection_deleted());
             await refresh();
         } catch (err) {
-            notifications.error(err.detail || 'Delete failed');
+            notifications.error(err.detail || m.routes_settings_collections_page_delete_failed());
         }
     }
 
@@ -293,7 +294,7 @@
             await updateCollection(c.id, { is_enabled: !c.is_enabled });
             c.is_enabled = !c.is_enabled;
         } catch (err) {
-            notifications.error(err.detail || 'Toggle failed');
+            notifications.error(err.detail || m.routes_settings_collections_page_toggle_failed());
         }
     }
 
@@ -304,7 +305,7 @@
             notifications.success(`Synced ${result.queued_collections} collection(s)`);
             await refresh();
         } catch (err) {
-            notifications.error(err.detail || 'Sync failed');
+            notifications.error(err.detail || m.routes_settings_collections_page_sync_failed());
         } finally {
             syncing = false;
         }
@@ -317,7 +318,7 @@
             notifications.success(`Synced ${result.queued_collections} collection(s)`);
             await refresh();
         } catch (err) {
-            notifications.error(err.detail || 'Sync failed');
+            notifications.error(err.detail || m.routes_settings_collections_page_sync_failed());
         } finally {
             syncing = false;
         }
@@ -328,22 +329,22 @@
         try {
             parsed = JSON.parse(templateJson);
         } catch {
-            notifications.error('Invalid JSON');
+            notifications.error(m.routes_settings_collections_page_invalid_json());
             return;
         }
         if (!parsed.name || !parsed.template_type) {
-            notifications.error('Template must have a name and template_type');
+            notifications.error(m.routes_settings_collections_page_template_must_have_a_name_and_template_type());
             return;
         }
         importing = true;
         try {
             await importTemplate(parsed);
-            notifications.success('Template imported');
+            notifications.success(m.routes_settings_collections_page_template_imported());
             templateJson = '';
             await refresh();
             view = 'list';
         } catch (err) {
-            notifications.error(err.detail || 'Import failed');
+            notifications.error(err.detail || m.routes_settings_collections_page_import_failed());
         } finally {
             importing = false;
         }
@@ -373,17 +374,17 @@
 <div class="collections-page">
     <div class="page-header">
         <div>
-            <a href="/settings" class="back-link">← Settings</a>
-            <h1 class="page-title">Collections</h1>
-            <p class="page-subtitle">Static, dynamic, and smart media collections</p>
+            <a href="/settings" class="back-link">{m.routes_settings_collections_page_settings()}</a>
+            <h1 class="page-title">{m.routes_settings_collections_page_collections()}</h1>
+            <p class="page-subtitle">{m.routes_settings_collections_page_static_dynamic_and_smart_media_collections()}</p>
         </div>
         {#if canManage && view === 'list'}
             <div class="header-actions">
-                <button class="btn-secondary" onclick={() => (view = 'templates')}>Templates</button>
+                <button class="btn-secondary" onclick={() => (view = 'templates')}>{m.routes_settings_collections_page_templates()}</button>
                 <button class="btn-secondary" onclick={handleSyncAll} disabled={syncing}>
                     {syncing ? 'Syncing…' : 'Sync All'}
                 </button>
-                <button class="btn-primary" onclick={startCreate}>New Collection</button>
+                <button class="btn-primary" onclick={startCreate}>{m.routes_settings_collections_page_new_collection()}</button>
             </div>
         {/if}
     </div>
@@ -393,48 +394,48 @@
     {:else if view === 'editor'}
         <div class="editor-pane">
             <div class="editor-toolbar">
-                <button class="btn-ghost" onclick={() => (view = 'list')}>← Back to list</button>
+                <button class="btn-ghost" onclick={() => (view = 'list')}>{m.routes_settings_collections_page_back_to_list()}</button>
                 <span class="editor-mode">{editing ? 'Edit collection' : 'New collection'}</span>
             </div>
 
             <div class="editor-form">
-                <h3 class="form-section">Basics</h3>
+                <h3 class="form-section">{m.routes_settings_collections_page_basics()}</h3>
                 <div class="form-grid">
                     <label class="field field-wide">
-                        <span class="field-label">Name</span>
-                        <input type="text" bind:value={form.name} placeholder="Christmas Movies" />
+                        <span class="field-label">{m.routes_settings_collections_page_name()}</span>
+                        <input type="text" bind:value={form.name} placeholder={m.routes_settings_collections_page_christmas_movies()} />
                     </label>
                     <label class="field field-wide">
-                        <span class="field-label">Description</span>
-                        <input type="text" bind:value={form.description} placeholder="Optional description" />
+                        <span class="field-label">{m.routes_settings_collections_page_description()}</span>
+                        <input type="text" bind:value={form.description} placeholder={m.routes_settings_collections_page_optional_description()} />
                     </label>
                     <label class="field">
-                        <span class="field-label">Type</span>
+                        <span class="field-label">{m.routes_settings_collections_page_type()}</span>
                         <select bind:value={form.collection_type}>
                             {#each COLLECTION_TYPES as t}<option value={t}>{TYPE_LABELS[t]}</option>{/each}
                         </select>
                     </label>
                     <label class="field">
-                        <span class="field-label">Visibility</span>
+                        <span class="field-label">{m.routes_settings_collections_page_visibility()}</span>
                         <select bind:value={form.visibility}>
                             {#each VISIBILITIES as v}<option value={v}>{v}</option>{/each}
                         </select>
                     </label>
                     <label class="field">
-                        <span class="field-label">Library (blank = all)</span>
-                        <input type="text" bind:value={form.library_id} placeholder="UUID or blank" />
+                        <span class="field-label">{m.routes_settings_collections_page_library_blank_all()}</span>
+                        <input type="text" bind:value={form.library_id} placeholder={m.routes_settings_collections_page_uuid_or_blank()} />
                     </label>
                     <label class="field-check">
                         <input type="checkbox" bind:checked={form.is_enabled} />
-                        <span class="field-label">Enabled</span>
+                        <span class="field-label">{m.routes_settings_collections_page_enabled()}</span>
                     </label>
                 </div>
 
                 {#if form.collection_type === 'dynamic'}
-                    <h3 class="form-section">Builder Configuration</h3>
+                    <h3 class="form-section">{m.routes_settings_collections_page_builder_configuration()}</h3>
                     <div class="form-grid">
                         <label class="field field-wide">
-                            <span class="field-label">Builder</span>
+                            <span class="field-label">{m.routes_settings_collections_page_builder()}</span>
                             <select bind:value={form.builder_type}>
                                 <optgroup label="Internal (library metadata)">
                                     {#each INTERNAL_BUILDERS as b}<option value={b}>{b}</option>{/each}
@@ -445,60 +446,60 @@
                             </select>
                         </label>
                         <label class="field">
-                            <span class="field-label">Max Items</span>
+                            <span class="field-label">{m.routes_settings_collections_page_max_items()}</span>
                             <input type="number" min="1" max="500" bind:value={form.limit} />
                         </label>
                         <label class="field">
-                            <span class="field-label">Minimum Items</span>
+                            <span class="field-label">{m.routes_settings_collections_page_minimum_items()}</span>
                             <input type="number" min="1" max="500" bind:value={form.minimum_items} />
                         </label>
                         <label class="field">
-                            <span class="field-label">Sync Mode</span>
+                            <span class="field-label">{m.routes_settings_collections_page_sync_mode()}</span>
                             <select bind:value={form.sync_mode}>
                                 {#each SYNC_MODES as m}<option value={m}>{m}</option>{/each}
                             </select>
                         </label>
                         <label class="field">
-                            <span class="field-label">Schedule (cron)</span>
+                            <span class="field-label">{m.routes_settings_collections_page_schedule_cron()}</span>
                             <input type="text" bind:value={form.schedule} placeholder="0 6 * * *" />
                         </label>
                         <label class="field field-wide">
-                            <span class="field-label">Title Format (optional)</span>
-                            <input type="text" bind:value={form.title_format} placeholder="Top &lt;&lt;key_name&gt;&gt; <<library_type>>s" />
+                            <span class="field-label">{m.routes_settings_collections_page_title_format_optional()}</span>
+                            <input type="text" bind:value={form.title_format} placeholder={m.routes_settings_collections_page_top_andlt_andlt_key_nameandgt_andgt_library_type()} />
                         </label>
                         <label class="field">
-                            <span class="field-label">Include (comma-separated keys)</span>
-                            <input type="text" bind:value={form.include} placeholder="Action, Comedy" />
+                            <span class="field-label">{m.routes_settings_collections_page_include_comma_separated_keys()}</span>
+                            <input type="text" bind:value={form.include} placeholder={m.routes_settings_collections_page_action_comedy()} />
                         </label>
                         <label class="field">
-                            <span class="field-label">Exclude (comma-separated keys)</span>
-                            <input type="text" bind:value={form.exclude} placeholder="Talk Show" />
+                            <span class="field-label">{m.routes_settings_collections_page_exclude_comma_separated_keys()}</span>
+                            <input type="text" bind:value={form.exclude} placeholder={m.routes_settings_collections_page_talk_show()} />
                         </label>
                     </div>
                     <p class="field-hint">
-                        Template variables: <code>&lt;&lt;key_name&gt;&gt;</code>, <code>&lt;&lt;library_type&gt;&gt;</code>, <code>&lt;&lt;limit&gt;&gt;</code>.
+                        Template variables: <code>{m.routes_settings_collections_page_andlt_andlt_key_nameandgt_andgt()}</code>, <code>{m.routes_settings_collections_page_andlt_andlt_library_typeandgt_andgt()}</code>, <code>{m.routes_settings_collections_page_andlt_andlt_limitandgt_andgt()}</code>.
                         External builders require the provider to be configured in system settings.
                     </p>
                 {/if}
 
                 {#if form.collection_type === 'smart'}
-                    <h3 class="form-section">Smart Filter</h3>
-                    <p class="field-hint">Items matching these rules are included at query time (no stored items).</p>
+                    <h3 class="form-section">{m.routes_settings_collections_page_smart_filter()}</h3>
+                    <p class="field-hint">{m.routes_settings_collections_page_items_matching_these_rules_are_included_at_query()}</p>
                     <ConditionBuilder node={conditions} onchange={(n) => (conditions = n)} />
                     <details class="raw-json">
-                        <summary>Raw JSON</summary>
+                        <summary>{m.routes_settings_collections_page_raw_json()}</summary>
                         <pre>{JSON.stringify(normalizeConditions(conditions), null, 2)}</pre>
                     </details>
                 {/if}
 
-                <h3 class="form-section">Display</h3>
+                <h3 class="form-section">{m.routes_settings_collections_page_display()}</h3>
                 <div class="form-grid">
                     <label class="field">
-                        <span class="field-label">Sort Order</span>
+                        <span class="field-label">{m.routes_settings_collections_page_sort_order()}</span>
                         <input type="number" bind:value={form.sort_order} />
                     </label>
                     <label class="field">
-                        <span class="field-label">Sort Items By</span>
+                        <span class="field-label">{m.routes_settings_collections_page_sort_items_by()}</span>
                         <select bind:value={form.sort_by}>
                             {#each SORT_OPTIONS as s}<option value={s}>{s}</option>{/each}
                         </select>
@@ -509,21 +510,21 @@
                     <button class="btn-primary" onclick={handleSave} disabled={saving}>
                         {saving ? 'Saving…' : editing ? 'Save Changes' : 'Create Collection'}
                     </button>
-                    <button class="btn-ghost" onclick={() => (view = 'list')}>Cancel</button>
+                    <button class="btn-ghost" onclick={() => (view = 'list')}>{m.routes_settings_collections_page_cancel()}</button>
                 </div>
             </div>
         </div>
     {:else if view === 'templates'}
         <div class="templates-pane">
             <div class="editor-toolbar">
-                <button class="btn-ghost" onclick={() => (view = 'list')}>← Back to list</button>
-                <span class="editor-mode">Templates</span>
+                <button class="btn-ghost" onclick={() => (view = 'list')}>{m.routes_settings_collections_page_back_to_list()}</button>
+                <span class="editor-mode">{m.routes_settings_collections_page_templates()}</span>
             </div>
 
             <section class="card">
-                <h3 class="form-section">Installed Templates</h3>
+                <h3 class="form-section">{m.routes_settings_collections_page_installed_templates()}</h3>
                 {#if templates.length === 0}
-                    <p class="empty-inline">No imported templates yet.</p>
+                    <p class="empty-inline">{m.routes_settings_collections_page_no_imported_templates_yet()}</p>
                 {:else}
                     <div class="template-list">
                         {#each templates as t}
@@ -531,7 +532,7 @@
                                 <span class="template-name">{t.name}</span>
                                 <span class="badge">{t.template_type}</span>
                                 {#if t.author}<span class="item-count">by {t.author}</span>{/if}
-                                {#if t.is_system}<span class="system-badge">system</span>{/if}
+                                {#if t.is_system}<span class="system-badge">{m.routes_settings_collections_page_system()}</span>{/if}
                             </div>
                         {/each}
                     </div>
@@ -539,8 +540,8 @@
             </section>
 
             <section class="card">
-                <h3 class="form-section">Import Template</h3>
-                <p class="field-hint">Paste a template JSON to save a reusable collection definition.</p>
+                <h3 class="form-section">{m.routes_settings_collections_page_import_template()}</h3>
+                <p class="field-hint">{m.routes_settings_collections_page_paste_a_template_json_to_save_a_reusable_collect()}</p>
                 <textarea
                     class="json-input"
                     bind:value={templateJson}
@@ -555,31 +556,31 @@
     {:else}
         <div class="filters">
             <label class="field">
-                <span class="field-label">Type</span>
+                <span class="field-label">{m.routes_settings_collections_page_type()}</span>
                 <select bind:value={typeFilter}>
-                    <option value="">All</option>
+                    <option value="">{m.routes_settings_collections_page_all()}</option>
                     {#each COLLECTION_TYPES as t}<option value={t}>{TYPE_LABELS[t]}</option>{/each}
                 </select>
             </label>
             <label class="field">
-                <span class="field-label">State</span>
+                <span class="field-label">{m.routes_settings_collections_page_state()}</span>
                 <select bind:value={enabledFilter}>
-                    <option value="">All</option>
-                    <option value="enabled">Enabled</option>
-                    <option value="disabled">Disabled</option>
+                    <option value="">{m.routes_settings_collections_page_all()}</option>
+                    <option value="enabled">{m.routes_settings_collections_page_enabled()}</option>
+                    <option value="disabled">{m.routes_settings_collections_page_disabled()}</option>
                 </select>
             </label>
             <label class="field">
-                <span class="field-label">Library</span>
-                <input type="text" bind:value={libraryFilter} placeholder="UUID or blank" />
+                <span class="field-label">{m.routes_settings_collections_page_library()}</span>
+                <input type="text" bind:value={libraryFilter} placeholder={m.routes_settings_collections_page_uuid_or_blank()} />
             </label>
         </div>
 
         {#if filteredCollections.length === 0}
             <div class="empty-state">
-                <p>No collections configured.</p>
+                <p>{m.routes_settings_collections_page_no_collections_configured()}</p>
                 {#if canManage}
-                    <button class="btn-primary" onclick={startCreate}>Create your first collection</button>
+                    <button class="btn-primary" onclick={startCreate}>{m.routes_settings_collections_page_create_your_first_collection()}</button>
                 {/if}
             </div>
         {:else}
@@ -600,12 +601,12 @@
                                                 <span class="meta-tag">{c.item_count} items</span>
                                                 <span class="meta-tag">last sync: {formatSyncResult(c)}</span>
                                             {:else if c.is_smart}
-                                                <span class="type-badge type-smart">smart filter</span>
+                                                <span class="type-badge type-smart">{m.routes_settings_collections_page_smart_filter_25sh18()}</span>
                                             {:else}
                                                 <span class="type-badge type-static">{c.item_count} items</span>
                                             {/if}
                                             <span class="meta-tag">{c.visibility}</span>
-                                            {#if c.is_system}<span class="system-badge">system</span>{/if}
+                                            {#if c.is_system}<span class="system-badge">{m.routes_settings_collections_page_system()}</span>{/if}
                                         </div>
                                     </div>
                                     {#if canManage}
@@ -615,10 +616,10 @@
                                                 <span>{c.is_enabled ? 'on' : 'off'}</span>
                                             </label>
                                             {#if c.is_dynamic}
-                                                <button class="btn-secondary-sm" onclick={() => handleSyncOne(c)} disabled={syncing}>Sync</button>
+                                                <button class="btn-secondary-sm" onclick={() => handleSyncOne(c)} disabled={syncing}>{m.routes_settings_collections_page_sync()}</button>
                                             {/if}
-                                            <button class="btn-secondary-sm" onclick={() => startEdit(c)}>Edit</button>
-                                            <button class="btn-danger-sm" onclick={() => handleDelete(c)} disabled={c.is_system}>Delete</button>
+                                            <button class="btn-secondary-sm" onclick={() => startEdit(c)}>{m.routes_settings_collections_page_edit()}</button>
+                                            <button class="btn-danger-sm" onclick={() => handleDelete(c)} disabled={c.is_system}>{m.routes_settings_collections_page_delete()}</button>
                                         </div>
                                     {/if}
                                 </div>

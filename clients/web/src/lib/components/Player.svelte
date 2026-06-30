@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount, onDestroy } from 'svelte';
     import {
         player,
@@ -158,7 +159,7 @@
                                 break;
                             default:
                                 destroyHls();
-                                notifications.error('Playback error. The stream may be unavailable.');
+                                notifications.error(m.lib_components_player_playback_error_the_stream_may_be_unavailable());
                                 break;
                         }
                     }
@@ -481,7 +482,7 @@
     class="player-container"
     class:controls-hidden={!controlsVisible}
     role="region"
-    aria-label="Media player"
+    aria-label={m.lib_components_player_media_player()}
     onmousemove={handleMouseMove}
     onmouseleave={handleMouseLeave}
 >
@@ -501,22 +502,22 @@
 
     {#if $playerLoading}
         <div class="player-overlay-center">
-            <div class="loading-spinner" aria-label="Loading"></div>
+            <div class="loading-spinner" aria-label={m.lib_components_player_loading()}></div>
         </div>
     {/if}
 
     {#if $isBuffering && !$playerLoading}
         <div class="player-overlay-center">
-            <div class="loading-spinner" aria-label="Buffering"></div>
+            <div class="loading-spinner" aria-label={m.lib_components_player_buffering()}></div>
         </div>
     {/if}
 
     {#if $playerError}
         <div class="player-overlay-center">
             <div class="error-display">
-                <p class="error-title">Playback error</p>
+                <p class="error-title">{m.lib_components_player_playback_error()}</p>
                 <p class="error-message">{$playerError.message || 'An error occurred during playback.'}</p>
-                <button class="error-retry" onclick={handleRetry}>Retry</button>
+                <button class="error-retry" onclick={handleRetry}>{m.lib_components_player_retry()}</button>
             </div>
         </div>
     {/if}
@@ -564,7 +565,7 @@
                 ontouchstart={handleSeekStart}
                 onmouseup={handleSeekEnd}
                 ontouchend={handleSeekEnd}
-                aria-label="Seek"
+                aria-label={m.lib_components_player_seek()}
                 aria-valuetext="{positionDisplay} of {durationDisplay}"
             />
         </div>
@@ -604,7 +605,7 @@
                         step="0.05"
                         value={$playerVolume}
                         oninput={handleVolumeChange}
-                        aria-label="Volume"
+                        aria-label={m.lib_components_player_volume()}
                     />
                 </div>
 
@@ -623,17 +624,17 @@
                     class="speed-select"
                     value={$player?.playbackRate ?? 1}
                     onchange={handlePlaybackRateChange}
-                    aria-label="Playback speed"
+                    aria-label={m.lib_components_player_playback_speed()}
                 >
-                    <option value="0.5">0.5x</option>
-                    <option value="0.75">0.75x</option>
-                    <option value="1">1x</option>
-                    <option value="1.25">1.25x</option>
-                    <option value="1.5">1.5x</option>
-                    <option value="2">2x</option>
+                    <option value="0.5">{m.lib_components_player_0_5x()}</option>
+                    <option value="0.75">{m.lib_components_player_0_75x()}</option>
+                    <option value="1">{m.lib_components_player_1x()}</option>
+                    <option value="1.25">{m.lib_components_player_1_25x()}</option>
+                    <option value="1.5">{m.lib_components_player_1_5x()}</option>
+                    <option value="2">{m.lib_components_player_2x()}</option>
                 </select>
 
-                <button class="control-btn" onclick={toggleFullscreen} aria-label="Fullscreen">
+                <button class="control-btn" onclick={toggleFullscreen} aria-label={m.lib_components_player_fullscreen()}>
                     {#if $player?.isFullscreen}
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z" />
@@ -645,7 +646,7 @@
                     {/if}
                 </button>
 
-                <button class="control-btn close-btn" onclick={handleClose} aria-label="Close player">
+                <button class="control-btn close-btn" onclick={handleClose} aria-label={m.lib_components_player_close_player()}>
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                         <path d="M18 6L6 18M6 6l12 12" />
                     </svg>

@@ -6,36 +6,37 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import ConditionBuilder from './ConditionBuilder.svelte';
 
     export const CONDITION_FIELDS = [
-        { field: 'video_resolution', label: 'Video Resolution', type: 'text', placeholder: '4K, 1080P' },
-        { field: 'video_codec', label: 'Video Codec', type: 'text', placeholder: 'HEVC, H.264' },
-        { field: 'video_dynamic_range', label: 'Dynamic Range', type: 'text', placeholder: 'hdr10, dolby_vision_p5' },
-        { field: 'audio_codec', label: 'Audio Codec', type: 'text', placeholder: 'TrueHD, DTS-HD MA' },
-        { field: 'audio_channels', label: 'Audio Channels', type: 'number', placeholder: '6' },
-        { field: 'container_format', label: 'Container', type: 'text', placeholder: 'MKV, MP4' },
-        { field: 'content_rating', label: 'Content Rating', type: 'text', placeholder: 'R, PG' },
-        { field: 'media_type', label: 'Media Type', type: 'text', placeholder: 'movie, episode' },
-        { field: 'genre', label: 'Genre', type: 'text', placeholder: 'Action' },
-        { field: 'critic_rating_above', label: 'Critic Rating', type: 'number', placeholder: '8.0' },
-        { field: 'has_dolby_vision', label: 'Has Dolby Vision', type: 'boolean' },
-        { field: 'has_multiple_versions', label: 'Multiple Versions', type: 'boolean' },
-        { field: 'edition', label: 'Edition', type: 'text', placeholder: 'extended, remux' },
-        { field: 'original_language', label: 'Original Language', type: 'text', placeholder: 'en, ja' },
-        { field: 'streaming_on', label: 'Streaming On', type: 'text', placeholder: 'netflix' },
+        { field: 'video_resolution', label: m.lib_components_conditionbuilder_video_resolution(), type: 'text', placeholder: '4K, 1080P' },
+        { field: 'video_codec', label: m.lib_components_conditionbuilder_video_codec(), type: 'text', placeholder: 'HEVC, H.264' },
+        { field: 'video_dynamic_range', label: m.lib_components_conditionbuilder_dynamic_range(), type: 'text', placeholder: 'hdr10, dolby_vision_p5' },
+        { field: 'audio_codec', label: m.lib_components_conditionbuilder_audio_codec(), type: 'text', placeholder: 'TrueHD, DTS-HD MA' },
+        { field: 'audio_channels', label: m.lib_components_conditionbuilder_audio_channels(), type: 'number', placeholder: '6' },
+        { field: 'container_format', label: m.lib_components_conditionbuilder_container(), type: 'text', placeholder: 'MKV, MP4' },
+        { field: 'content_rating', label: m.lib_components_conditionbuilder_content_rating(), type: 'text', placeholder: 'R, PG' },
+        { field: 'media_type', label: m.lib_components_conditionbuilder_media_type(), type: 'text', placeholder: 'movie, episode' },
+        { field: 'genre', label: m.lib_components_conditionbuilder_genre(), type: 'text', placeholder: 'Action' },
+        { field: 'critic_rating_above', label: m.lib_components_conditionbuilder_critic_rating(), type: 'number', placeholder: '8.0' },
+        { field: 'has_dolby_vision', label: m.lib_components_conditionbuilder_has_dolby_vision(), type: 'boolean' },
+        { field: 'has_multiple_versions', label: m.lib_components_conditionbuilder_multiple_versions(), type: 'boolean' },
+        { field: 'edition', label: m.lib_components_conditionbuilder_edition(), type: 'text', placeholder: 'extended, remux' },
+        { field: 'original_language', label: m.lib_components_conditionbuilder_original_language(), type: 'text', placeholder: 'en, ja' },
+        { field: 'streaming_on', label: m.lib_components_conditionbuilder_streaming_on(), type: 'text', placeholder: 'netflix' },
     ];
 
     export const OPERATORS = [
-        { op: 'eq', label: 'equals', valueTypes: ['text', 'number', 'boolean'] },
-        { op: 'neq', label: 'not equals', valueTypes: ['text', 'number', 'boolean'] },
-        { op: 'in', label: 'in list', valueTypes: ['text'] },
-        { op: 'gt', label: 'greater than', valueTypes: ['number'] },
-        { op: 'gte', label: 'greater or equal', valueTypes: ['number'] },
-        { op: 'lt', label: 'less than', valueTypes: ['number'] },
-        { op: 'lte', label: 'less or equal', valueTypes: ['number'] },
-        { op: 'exists', label: 'exists', valueTypes: ['boolean'] },
-        { op: 'matches', label: 'matches regex', valueTypes: ['text'] },
+        { op: 'eq', label: m.lib_components_conditionbuilder_equals(), valueTypes: ['text', 'number', 'boolean'] },
+        { op: 'neq', label: m.lib_components_conditionbuilder_not_equals(), valueTypes: ['text', 'number', 'boolean'] },
+        { op: 'in', label: m.lib_components_conditionbuilder_in_list(), valueTypes: ['text'] },
+        { op: 'gt', label: m.lib_components_conditionbuilder_greater_than(), valueTypes: ['number'] },
+        { op: 'gte', label: m.lib_components_conditionbuilder_greater_or_equal(), valueTypes: ['number'] },
+        { op: 'lt', label: m.lib_components_conditionbuilder_less_than(), valueTypes: ['number'] },
+        { op: 'lte', label: m.lib_components_conditionbuilder_less_or_equal(), valueTypes: ['number'] },
+        { op: 'exists', label: m.lib_components_conditionbuilder_exists(), valueTypes: ['boolean'] },
+        { op: 'matches', label: m.lib_components_conditionbuilder_matches_regex(), valueTypes: ['text'] },
     ];
 
     let {
@@ -95,23 +96,23 @@
 <div class="cond-group" style="--group-depth: {depth}">
     <div class="cond-group-header">
         <div class="match-toggle">
-            <span class="match-label">Match</span>
+            <span class="match-label">{m.lib_components_conditionbuilder_match()}</span>
             <button
                 type="button"
                 class="seg-btn"
                 class:active={node.operator === 'and'}
                 onclick={() => setOperator('and')}
-            >all</button>
+            >{m.lib_components_conditionbuilder_all()}</button>
             <button
                 type="button"
                 class="seg-btn"
                 class:active={node.operator === 'or'}
                 onclick={() => setOperator('or')}
-            >any</button>
-            <span class="match-label">of the following:</span>
+            >{m.lib_components_conditionbuilder_any()}</button>
+            <span class="match-label">{m.lib_components_conditionbuilder_of_the_following()}</span>
         </div>
         {#if onremove}
-            <button type="button" class="cond-remove-group" title="Remove group" onclick={onremove}>✕</button>
+            <button type="button" class="cond-remove-group" title={m.lib_components_conditionbuilder_remove_group()} onclick={onremove}>✕</button>
         {/if}
     </div>
 
@@ -144,7 +145,7 @@
                         <input
                             type="text"
                             class="cond-value"
-                            placeholder="comma, separated, values"
+                            placeholder={m.lib_components_conditionbuilder_comma_separated_values()}
                             value={Array.isArray(rule.value) ? rule.value.join(', ') : rule.value}
                             oninput={(e) => updateRule(idx, { value: e.currentTarget.value })}
                         />
@@ -169,8 +170,8 @@
                             </label>
                         {:else}
                             <select class="cond-value" value={String(rule.value)} onchange={(e) => updateRule(idx, { value: e.currentTarget.value === 'true' })}>
-                                <option value="true">true</option>
-                                <option value="false">false</option>
+                                <option value="true">{m.lib_components_conditionbuilder_true()}</option>
+                                <option value="false">{m.lib_components_conditionbuilder_false()}</option>
                             </select>
                         {/if}
                     {:else}
@@ -182,16 +183,16 @@
                             oninput={(e) => updateRule(idx, { value: e.currentTarget.value })}
                         />
                     {/if}
-                    <button type="button" class="cond-remove" title="Remove rule" onclick={() => removeRule(idx)}>✕</button>
+                    <button type="button" class="cond-remove" title={m.lib_components_conditionbuilder_remove_rule()} onclick={() => removeRule(idx)}>✕</button>
                 {/if}
             </div>
         {/each}
     </div>
 
     <div class="cond-add-row">
-        <button type="button" class="cond-add" onclick={addLeaf}>+ Add condition</button>
+        <button type="button" class="cond-add" onclick={addLeaf}>{m.lib_components_conditionbuilder_add_condition()}</button>
         {#if depth < 2}
-            <button type="button" class="cond-add" onclick={addGroup}>+ Add group</button>
+            <button type="button" class="cond-add" onclick={addGroup}>{m.lib_components_conditionbuilder_add_group()}</button>
         {/if}
     </div>
 </div>

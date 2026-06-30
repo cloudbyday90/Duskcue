@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount } from 'svelte';
     import { getServerConfig, updateConfigGroup } from '$lib/api/settings.js';
     import { hasCapability } from '$lib/stores/auth.js';
@@ -27,8 +28,8 @@
     const groupSchemas = [
         {
             key: 'auth',
-            title: 'Authentication',
-            desc: 'Login, sessions, device linking, and rate limits.',
+            title: m.routes_settings_system_page_authentication(),
+            desc: m.routes_settings_system_page_login_sessions_device_linking_and_rate_limits(),
             fields: [
                 select('network_mode', 'Network Mode', ['local', 'exposed']),
                 toggle('auth_required', 'Require authentication'),
@@ -64,8 +65,8 @@
         },
         {
             key: 'security',
-            title: 'Security',
-            desc: 'CORS, TLS, signed streams, and VPN interface detection.',
+            title: m.routes_settings_system_page_security(),
+            desc: m.routes_settings_system_page_cors_tls_signed_streams_and_vpn_interface_detect(),
             fields: [
                 list('allowed_origins', 'Allowed Origins'),
                 toggle('tls.enabled', 'Enable TLS'),
@@ -87,8 +88,8 @@
         },
         {
             key: 'quality',
-            title: 'Quality',
-            desc: 'Device capability, network probing, and playback quality defaults.',
+            title: m.routes_settings_system_page_quality(),
+            desc: m.routes_settings_system_page_device_capability_network_probing_and_playback_q(),
             fields: [
                 toggle('capability_wizard_enabled', 'Capability Wizard'),
                 number('network_probe_interval_minutes', 'Probe Interval', 1, 120, 1, 'minutes'),
@@ -111,8 +112,8 @@
         },
         {
             key: 'transcoding',
-            title: 'Transcoding',
-            desc: 'FFmpeg, HLS, segments, and storyboard generation.',
+            title: m.routes_settings_system_page_transcoding(),
+            desc: m.routes_settings_system_page_ffmpeg_hls_segments_and_storyboard_generation(),
             fields: [
                 select('hardware_accel', 'Hardware Acceleration', ['auto', 'none', 'vaapi', 'qsv', 'nvenc', 'videotoolbox']),
                 text('transcode_path', 'Transcode Path'),
@@ -149,8 +150,8 @@
         },
         {
             key: 'metadata',
-            title: 'Metadata',
-            desc: 'Artwork, overlays, collections, and metadata providers.',
+            title: m.routes_settings_system_page_metadata(),
+            desc: m.routes_settings_system_page_artwork_overlays_collections_and_metadata_provid(),
             fields: [
                 list('artwork_language_priority', 'Artwork Language Priority'),
                 toggle('artwork_auto_download', 'Auto-download Artwork'),
@@ -188,8 +189,8 @@
         },
         {
             key: 'backup',
-            title: 'Backup',
-            desc: 'WAL-G, pg_dump, retention, and verification settings.',
+            title: m.routes_settings_system_page_backup(),
+            desc: m.routes_settings_system_page_wal_g_pg_dump_retention_and_verification_setting(),
             fields: [
                 toggle('wal_g_enabled', 'Enable WAL-G Backups'),
                 select('wal_g_storage_type', 'WAL-G Storage Type', ['local', 's3']),
@@ -215,8 +216,8 @@
         },
         {
             key: 'storage',
-            title: 'Storage',
-            desc: 'Cache locations, cache limits, and disk warning thresholds.',
+            title: m.routes_settings_system_page_storage(),
+            desc: m.routes_settings_system_page_cache_locations_cache_limits_and_disk_warning_th(),
             fields: [
                 text('storyboard_path', 'Storyboard Cache Path'),
                 text('image_cache_path', 'Image Cache Path'),
@@ -235,8 +236,8 @@
         },
         {
             key: 'maintenance',
-            title: 'Maintenance',
-            desc: 'Autovacuum, index bloat, partition retention, and ANALYZE scheduling.',
+            title: m.routes_settings_system_page_maintenance(),
+            desc: m.routes_settings_system_page_autovacuum_index_bloat_partition_retention_and_a(),
             fields: [
                 toggle('autovacuum_tuning_enabled', 'Autovacuum Tuning'),
                 toggle('reindex_enabled', 'Reindex Maintenance'),
@@ -252,8 +253,8 @@
         },
         {
             key: 'resource_limits',
-            title: 'Resource Limits',
-            desc: 'Memory, stale-session, and FFmpeg process limits.',
+            title: m.routes_settings_system_page_resource_limits(),
+            desc: m.routes_settings_system_page_memory_stale_session_and_ffmpeg_process_limits(),
             fields: [
                 number('max_concurrent_transcodes', 'Max Concurrent Transcodes', 1, 16, 1),
                 number('transcode_mem_threshold_percent', 'Transcode Memory Threshold', 1, 99, 1, '%'),
@@ -267,8 +268,8 @@
         },
         {
             key: 'cpu',
-            title: 'CPU',
-            desc: 'FFmpeg scheduling, CPU thresholds, and thermal guardrails.',
+            title: m.routes_settings_system_page_cpu(),
+            desc: m.routes_settings_system_page_ffmpeg_scheduling_cpu_thresholds_and_thermal_gua(),
             fields: [
                 number('transcode_cpu_threshold_percent', 'Transcode CPU Threshold', 1, 99, 1, '%'),
                 number('cpu_warning_percent', 'CPU Warning', 1, 99, 1, '%'),
@@ -286,14 +287,14 @@
         },
         {
             key: 'network',
-            title: 'Network',
-            desc: 'Operational network allowlists.',
+            title: m.routes_settings_system_page_network(),
+            desc: m.routes_settings_system_page_operational_network_allowlists(),
             fields: [list('allowed_metrics_subnets', 'Allowed Metrics Subnets')],
         },
         {
             key: 'subtitles',
-            title: 'Subtitles',
-            desc: 'Global subtitle defaults. Provider credentials are also available under Integrations.',
+            title: m.routes_settings_system_page_subtitles(),
+            desc: m.routes_settings_system_page_global_subtitle_defaults_provider_credentials_ar(),
             fields: [
                 toggle('ocr_enabled', 'Enable OCR'),
                 select('ocr_engine', 'OCR Engine', ['paddleocr', 'tesseract']),
@@ -308,8 +309,8 @@
         },
         {
             key: 'integrations',
-            title: 'Integrations',
-            desc: 'Trakt and subtitle provider credentials.',
+            title: m.routes_settings_system_page_integrations(),
+            desc: m.routes_settings_system_page_trakt_and_subtitle_provider_credentials(),
             fields: [
                 text('trakt.client_id', 'Trakt Client ID'),
                 password('trakt.client_secret', 'Trakt Client Secret'),
@@ -329,8 +330,8 @@
         },
         {
             key: 'analytics',
-            title: 'Analytics',
-            desc: 'GeoIP and impossible-travel trust event thresholds.',
+            title: m.routes_settings_system_page_analytics(),
+            desc: m.routes_settings_system_page_geoip_and_impossible_travel_trust_event_threshol(),
             fields: [
                 toggle('geoip_enabled', 'GeoIP Enrichment'),
                 toggle('impossible_travel_enabled', 'Impossible Travel Detection'),
@@ -344,8 +345,8 @@
         },
         {
             key: 'logging',
-            title: 'Logging',
-            desc: 'Log level, rotation, and output format.',
+            title: m.routes_settings_system_page_logging(),
+            desc: m.routes_settings_system_page_log_level_rotation_and_output_format(),
             fields: [
                 select('level', 'Log Level', ['trace', 'debug', 'info', 'warn', 'error']),
                 number('max_file_size_mb', 'Max File Size', 1, 1024, 1, 'MB'),
@@ -355,8 +356,8 @@
         },
         {
             key: 'notifications',
-            title: 'Notifications',
-            desc: 'Notification dispatch (webhook active), cleanup, and mobile push configuration.',
+            title: m.routes_settings_system_page_notifications(),
+            desc: m.routes_settings_system_page_notification_dispatch_webhook_active_cleanup_and(),
             fields: [
                 number('cleanup_max_age_days', 'Cleanup Max Age', 1, 3650, 1, 'days'),
                 toggle('push_enabled', 'Enable Push Notifications', 'Mobile push client (FCM/APNs/UnifiedPush) ships in Phase 16a'),
@@ -418,7 +419,7 @@
             config = next;
             original = clone(next);
         } catch (err) {
-            loadError = err.detail || err.message || 'Failed to load server configuration';
+            loadError = err.detail || err.message || m.routes_settings_system_page_failed_to_load_server_configuration();
         } finally {
             loading = false;
         }
@@ -470,7 +471,7 @@
             original[activeGroup] = clone(config[activeGroup]);
             notifications.success(`${group.title} settings saved`);
         } catch (err) {
-            notifications.error(err.detail || err.message || 'Failed to save settings');
+            notifications.error(err.detail || err.message || m.routes_settings_system_page_failed_to_save_settings());
         } finally {
             savingGroup = null;
         }
@@ -530,8 +531,8 @@
 <div class="system-settings">
     <div class="page-header">
         <div>
-            <a href="/settings" class="back-link">← Settings</a>
-            <h1 class="page-title">System Configuration</h1>
+            <a href="/settings" class="back-link">{m.routes_settings_system_page_settings()}</a>
+            <h1 class="page-title">{m.routes_settings_system_page_system_configuration()}</h1>
         </div>
         {#if !loading && canManage && !loadError}
             <button class="btn-primary" onclick={saveActiveGroup} disabled={!activeDirty || savingGroup}>
@@ -543,15 +544,15 @@
     {#if loading}
         <div class="loading-state"><div class="loading-spinner"></div></div>
     {:else if !canManage}
-        <div class="empty-state">You do not have permission to manage server configuration.</div>
+        <div class="empty-state">{m.routes_settings_system_page_you_do_not_have_permission_to_manage_server_conf()}</div>
     {:else if loadError}
         <div class="empty-state">
             <p class="error-text">{loadError}</p>
-            <button class="btn-secondary" onclick={load}>Retry</button>
+            <button class="btn-secondary" onclick={load}>{m.routes_settings_system_page_retry()}</button>
         </div>
     {:else}
         <div class="settings-layout">
-            <nav class="group-nav" aria-label="Configuration groups">
+            <nav class="group-nav" aria-label={m.routes_settings_system_page_configuration_groups()}>
                 {#each groupSchemas as group}
                     <button
                         class:active={activeGroup === group.key}

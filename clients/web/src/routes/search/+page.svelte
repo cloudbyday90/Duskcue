@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount } from 'svelte';
     import { page } from '$app/stores';
     import { search } from '$lib/api/search.js';
@@ -31,7 +32,7 @@
             const response = await search(query, params);
             results = response.items || response || [];
         } catch (err) {
-            error = err.detail || err.message || 'Search failed';
+            error = err.detail || err.message || m.routes_search_page_search_failed();
             results = [];
         } finally {
             loading = false;
@@ -80,7 +81,7 @@
     {#if loading}
         <div class="loading-state">
             <div class="loading-spinner"></div>
-            <p>Searching…</p>
+            <p>{m.routes_search_page_searching()}</p>
         </div>
     {:else if error}
         <div class="error-state">{error}</div>
@@ -96,8 +97,8 @@
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-            <p class="empty-title">No results found</p>
-            <p class="empty-subtitle">Try different keywords or remove filters.</p>
+            <p class="empty-title">{m.routes_search_page_no_results_found()}</p>
+            <p class="empty-subtitle">{m.routes_search_page_try_different_keywords_or_remove_filters()}</p>
         </div>
     {:else}
         <div class="empty-state">
@@ -105,8 +106,8 @@
                 <circle cx="11" cy="11" r="8" />
                 <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-            <p class="empty-title">Search your media library</p>
-            <p class="empty-subtitle">Find movies, TV shows, and more.</p>
+            <p class="empty-title">{m.routes_search_page_search_your_media_library()}</p>
+            <p class="empty-subtitle">{m.routes_search_page_find_movies_tv_shows_and_more()}</p>
         </div>
     {/if}
 </div>

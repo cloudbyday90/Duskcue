@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { goto } from '$app/navigation';
     import { auth, authLoading, authError } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
@@ -18,7 +19,7 @@
     async function handleSubmit(e) {
         e.preventDefault();
         if (!username.trim() || !password) {
-            notifications.error('Username and password are required');
+            notifications.error(m.routes_auth_setup_page_username_and_password_are_required());
             return;
         }
         try {
@@ -28,10 +29,10 @@
                 display_name: displayName.trim() || username.trim(),
                 server_name: serverName.trim() || null,
             });
-            notifications.success('Server configured successfully');
+            notifications.success(m.routes_auth_setup_page_server_configured_successfully());
             goto('/dashboard');
         } catch (err) {
-            notifications.error(err.detail || err.message || 'Setup failed');
+            notifications.error(err.detail || err.message || m.routes_auth_setup_page_setup_failed());
         }
     }
 </script>
@@ -39,7 +40,7 @@
 <div class="auth-page">
     <div class="auth-card">
         <div class="auth-header">
-            <h1 class="auth-title">Welcome to Duskcue</h1>
+            <h1 class="auth-title">{m.routes_auth_setup_page_welcome_to_duskcue()}</h1>
             <p class="auth-subtitle">
                 Create your owner account to get started. This will be the primary administrator
                 for your media server.
@@ -48,18 +49,18 @@
 
         <form onsubmit={handleSubmit} class="auth-form">
             <label class="field">
-                <span class="field-label">Username</span>
+                <span class="field-label">{m.routes_auth_setup_page_username()}</span>
                 <input
                     type="text"
                     bind:value={username}
-                    placeholder="admin"
+                    placeholder={m.routes_auth_setup_page_admin()}
                     autocomplete="username"
                     required
                 />
             </label>
 
             <label class="field">
-                <span class="field-label">Password</span>
+                <span class="field-label">{m.routes_auth_setup_page_password()}</span>
                 <input
                     type="password"
                     bind:value={password}
@@ -70,21 +71,21 @@
             </label>
 
             <label class="field">
-                <span class="field-label">Display Name <span class="field-optional">(optional)</span></span>
+                <span class="field-label">{m.routes_auth_setup_page_display_name()} <span class="field-optional">{m.routes_auth_setup_page_optional()}</span></span>
                 <input
                     type="text"
                     bind:value={displayName}
-                    placeholder="Your Name"
+                    placeholder={m.routes_auth_setup_page_your_name()}
                     autocomplete="name"
                 />
             </label>
 
             <label class="field">
-                <span class="field-label">Server Name <span class="field-optional">(optional)</span></span>
+                <span class="field-label">{m.routes_auth_setup_page_server_name()} <span class="field-optional">{m.routes_auth_setup_page_optional()}</span></span>
                 <input
                     type="text"
                     bind:value={serverName}
-                    placeholder="My Media Server"
+                    placeholder={m.routes_auth_setup_page_my_media_server()}
                 />
             </label>
 

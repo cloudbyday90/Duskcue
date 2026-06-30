@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount } from 'svelte';
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
@@ -46,13 +47,13 @@
             } catch {
             }
         } catch (err) {
-            notifications.error(err.detail || err.message || 'Failed to load media item');
+            notifications.error(err.detail || err.message || m.routes_media_id_page_failed_to_load_media_item());
         }
     }
 
     function handlePlay() {
         if (!files.length) {
-            notifications.warning('No playable files available');
+            notifications.warning(m.routes_media_id_page_no_playable_files_available());
             return;
         }
         const file = files[0];
@@ -66,7 +67,7 @@
             await updateWatchData(itemId, { is_favorite: newVal });
         } catch {
             isFavorite = !newVal;
-            notifications.error('Failed to update favorite status');
+            notifications.error(m.routes_media_id_page_failed_to_update_favorite_status());
         }
     }
 
@@ -77,7 +78,7 @@
             await updateWatchData(itemId, { user_rating: newRating || null });
         } catch {
             userRating = userRating === 0 ? rating : 0;
-            notifications.error('Failed to update rating');
+            notifications.error(m.routes_media_id_page_failed_to_update_rating());
         }
     }
 
@@ -149,7 +150,7 @@
                     {/if}
                     {#if runtimeLabel}<span class="meta-item">{runtimeLabel}</span>{/if}
                     {#if item.file_count}
-                        <span class="meta-item">{item.file_count} {item.file_count === 1 ? 'file' : 'files'}</span>
+                        <span class="meta-item">{item.file_count} {item.file_count === 1 ? m.routes_media_id_page_file() : m.routes_media_id_page_files_count()}</span>
                     {/if}
                 </div>
 
@@ -162,14 +163,14 @@
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                             <path d="M5 3l14 9-14 9V3z" />
                         </svg>
-                        {progressPct > 0 ? 'Resume' : 'Play'}
+                        {progressPct > 0 ? m.routes_media_id_page_resume() : m.routes_media_id_page_play()}
                     </button>
 
                     <button
                         class="btn-icon"
                         class:active={isFavorite}
                         onclick={toggleFavorite}
-                        aria-label={isFavorite ? 'Remove from favorites' : 'Add to favorites'}
+                        aria-label={isFavorite ? m.routes_media_id_page_remove_from_favorites() : m.routes_media_id_page_add_to_favorites()}
                     >
                         {#if isFavorite}
                             <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--color-error)" stroke="var(--color-error)" stroke-width="2">
@@ -188,7 +189,7 @@
                                 class="star-btn"
                                 class:filled={userRating >= (i + 1) * 2}
                                 onclick={() => setRating((i + 1) * 2)}
-                                aria-label="Rate {(i + 1) * 2}/10"
+                                aria-label={`${m.routes_media_id_page_rate()} ${(i + 1) * 2}/10`}
                             >
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill={userRating >= (i + 1) * 2 ? 'var(--color-accent)' : 'none'} stroke="currentColor" stroke-width="2">
                                     <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
@@ -201,7 +202,7 @@
                 {#if progressPct > 0}
                     <div class="resume-bar">
                         <div class="resume-info">
-                            <span class="resume-label">Resume from</span>
+                            <span class="resume-label">{m.routes_media_id_page_resume_from()}</span>
                             <span class="resume-position">{Math.floor(resumeMs / 60000)}m</span>
                         </div>
                         <div class="progress-track">
@@ -214,12 +215,12 @@
 
         {#if files.length > 0}
             <section class="files-section">
-                <h2 class="section-title">Files</h2>
+                <h2 class="section-title">{m.routes_media_id_page_files()}</h2>
                 <div class="files-list">
                     {#each files as file (file.id)}
                         <div class="file-row">
                             <div class="file-info">
-                                <span class="file-name">{file.file_name || file.relative_path || 'Unknown'}</span>
+                                <span class="file-name">{file.file_name || file.relative_path || m.routes_media_id_page_unknown()}</span>
                                 <div class="file-meta">
                                     {#if file.video_codec}<span>{file.video_codec}</span>{/if}
                                     {#if file.video_resolution}<span>{file.video_resolution}</span>{/if}
@@ -229,11 +230,11 @@
                             </div>
                             <div class="file-actions">
                                 {#if file.is_healthy === false}
-                                    <span class="health-badge unhealthy">Unhealthy</span>
+                                    <span class="health-badge unhealthy">{m.routes_media_id_page_unhealthy()}</span>
                                 {:else}
-                                    <span class="health-badge healthy">Healthy</span>
+                                    <span class="health-badge healthy">{m.routes_media_id_page_healthy()}</span>
                                 {/if}
-                                <button class="btn-icon-small" onclick={() => goto(`/play/${itemId}?file=${file.id}`)} aria-label="Play this file">
+                                <button class="btn-icon-small" onclick={() => goto(`/play/${itemId}?file=${file.id}`)} aria-label={m.routes_media_id_page_play_this_file()}>
                                     <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
                                         <path d="M5 3l14 9-14 9V3z" />
                                     </svg>

@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount, onDestroy } from 'svelte';
     import { fly, fade } from 'svelte/transition';
     import { flip } from 'svelte/animate';
@@ -17,17 +18,17 @@
     import { notifications as toastStore } from '$lib/stores/notifications.js';
 
     const CATEGORY_META = {
-        security: { label: 'Security', color: 'var(--color-error)', icon: 'M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z' },
-        system: { label: 'System', color: 'var(--color-accent)', icon: 'M4 7h16M4 12h16M4 17h16' },
-        media: { label: 'Media', color: 'var(--color-success)', icon: 'M4 4h16v16H4zM2 8h20' },
-        task: { label: 'Task', color: 'var(--color-text-secondary)', icon: 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11' },
-        user: { label: 'User', color: 'var(--color-text-secondary)', icon: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 7a4 4 0 100 8 4 4 0 000-8' },
+        security: { label: m.lib_components_notificationbell_security(), color: 'var(--color-error)', icon: 'M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z' },
+        system: { label: m.lib_components_notificationbell_system(), color: 'var(--color-accent)', icon: 'M4 7h16M4 12h16M4 17h16' },
+        media: { label: m.lib_components_notificationbell_media(), color: 'var(--color-success)', icon: 'M4 4h16v16H4zM2 8h20' },
+        task: { label: m.lib_components_notificationbell_task(), color: 'var(--color-text-secondary)', icon: 'M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11' },
+        user: { label: m.lib_components_notificationbell_user(), color: 'var(--color-text-secondary)', icon: 'M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2M9 7a4 4 0 100 8 4 4 0 000-8' },
     };
 
     const PRIORITY_META = {
-        high: { label: 'High', color: 'var(--color-error)' },
-        medium: { label: 'Medium', color: 'var(--color-warning)' },
-        low: { label: 'Low', color: 'var(--color-text-muted)' },
+        high: { label: m.lib_components_notificationbell_high(), color: 'var(--color-error)' },
+        medium: { label: m.lib_components_notificationbell_medium(), color: 'var(--color-warning)' },
+        low: { label: m.lib_components_notificationbell_low(), color: 'var(--color-text-muted)' },
     };
 
     let open = $state(false);
@@ -120,9 +121,9 @@
         class="bell-button"
         class:active={open}
         onclick={toggle}
-        aria-label="Notifications"
+        aria-label={m.lib_components_notificationbell_notifications()}
         aria-expanded={open}
-        title="Notifications"
+        title={m.lib_components_notificationbell_notifications()}
     >
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
@@ -140,11 +141,11 @@
             tabindex="0"
             onclick={close}
             onkeydown={(e) => e.key === 'Escape' && close()}
-            aria-label="Close notifications"
+            aria-label={m.lib_components_notificationbell_close_notifications()}
         ></div>
         <div class="bell-dropdown" transition:fly={{ y: -8, duration: 180 }}>
             <div class="dropdown-header">
-                <span class="dropdown-title">Notifications</span>
+                <span class="dropdown-title">{m.lib_components_notificationbell_notifications()}</span>
                 <div class="header-actions">
                     {#if hasUnread}
                         <button class="header-action" onclick={handleMarkAllRead}>
@@ -158,7 +159,7 @@
                 {#if loading}
                     <div class="dropdown-state">
                         <div class="mini-spinner"></div>
-                        <span>Loading…</span>
+                        <span>{m.lib_components_notificationbell_loading()}</span>
                     </div>
                 {:else if recent.length === 0}
                     <div class="dropdown-state empty">
@@ -166,7 +167,7 @@
                             <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
                             <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                         </svg>
-                        <span>You're all caught up</span>
+                        <span>{m.lib_components_notificationbell_you_re_all_caught_up()}</span>
                     </div>
                 {:else}
                     <div class="notif-list">
@@ -207,8 +208,8 @@
                                 <button
                                     class="notif-delete"
                                     onclick={(e) => handleDelete(e, n)}
-                                    aria-label="Delete notification"
-                                    title="Delete"
+                                    aria-label={m.lib_components_notificationbell_delete_notification()}
+                                    title={m.lib_components_notificationbell_delete()}
                                 >
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
                                         <path d="M18 6L6 18M6 6l12 12" />

@@ -5,10 +5,14 @@
   This program is free software: licensed under AGPL-3.0
   See LICENSE file for details.
 -->
+<script>
+    import { m } from '$lib/paraglide/messages.js';
+</script>
+
 <div class="coming-soon">
-    <h1>Analytics</h1>
-    <p>Play history, concurrent streams, and bandwidth analytics.</p>
-    <span class="phase-badge">Coming in Phase 11</span>
+    <h1>{m.routes_analytics_page_analytics()}</h1>
+    <p>{m.routes_analytics_page_play_history_concurrent_streams_and_bandwidth_an()}</p>
+    <span class="phase-badge">{m.routes_analytics_page_coming_in_phase_11()}</span>
 </div>
 
 <style>

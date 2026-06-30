@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { goto } from '$app/navigation';
     import { auth, authLoading, authError } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
@@ -24,7 +25,7 @@
     async function handleInviteLogin(e) {
         e.preventDefault();
         if (!inviteCode.trim()) {
-            notifications.error('Invite code is required');
+            notifications.error(m.routes_auth_login_page_invite_code_is_required());
             return;
         }
         try {
@@ -32,17 +33,17 @@
                 code: inviteCode.trim(),
                 device_name: deviceName.trim() || 'Web Browser',
             });
-            notifications.success('Welcome to Duskcue');
+            notifications.success(m.routes_auth_login_page_welcome_to_duskcue());
             goto('/dashboard');
         } catch (err) {
-            notifications.error(err.detail || err.message || 'Login failed');
+            notifications.error(err.detail || err.message || m.routes_auth_login_page_login_failed());
         }
     }
 
     async function handlePasswordLogin(e) {
         e.preventDefault();
         if (!username.trim() || !password) {
-            notifications.error('Username and password are required');
+            notifications.error(m.routes_auth_login_page_username_and_password_are_required());
             return;
         }
         try {
@@ -51,10 +52,10 @@
                 password,
                 device_name: deviceName.trim() || 'Web Browser',
             });
-            notifications.success('Welcome back');
+            notifications.success(m.routes_auth_login_page_welcome_back());
             goto('/dashboard');
         } catch (err) {
-            notifications.error(err.detail || err.message || 'Login failed');
+            notifications.error(err.detail || err.message || m.routes_auth_login_page_login_failed());
         }
     }
 
@@ -66,11 +67,11 @@
                 }
                 return await navigator.credentials.get({ publicKey: options });
             });
-            notifications.success('Welcome back');
+            notifications.success(m.routes_auth_login_page_welcome_back());
             goto('/dashboard');
         } catch (err) {
             if (err.name === 'NotAllowedError') return;
-            notifications.error(err.detail || err.message || 'Passkey authentication failed');
+            notifications.error(err.detail || err.message || m.routes_auth_login_page_passkey_authentication_failed());
         }
     }
 </script>
@@ -78,8 +79,8 @@
 <div class="auth-page">
     <div class="auth-card">
         <div class="auth-header">
-            <h1 class="auth-title">Sign In</h1>
-            <p class="auth-subtitle">Access your Duskcue media server</p>
+            <h1 class="auth-title">{m.routes_auth_login_page_sign_in()}</h1>
+            <p class="auth-subtitle">{m.routes_auth_login_page_access_your_duskcue_media_server()}</p>
         </div>
 
         <div class="mode-tabs">
@@ -102,21 +103,21 @@
         {#if mode === 'invite'}
             <form onsubmit={handleInviteLogin} class="auth-form">
                 <label class="field">
-                    <span class="field-label">Invite Code</span>
+                    <span class="field-label">{m.routes_auth_login_page_invite_code()}</span>
                     <input
                         type="text"
                         bind:value={inviteCode}
-                        placeholder="mv_invite-XXXX-XXXX-XXXX-XXXX-XXXX-XXXX"
+                        placeholder={m.routes_auth_login_page_mv_invite_xxxx_xxxx_xxxx_xxxx_xxxx_xxxx()}
                         autocomplete="off"
                         required
                     />
                 </label>
                 <label class="field">
-                    <span class="field-label">Device Name <span class="field-optional">(optional)</span></span>
+                    <span class="field-label">{m.routes_auth_login_page_device_name()} <span class="field-optional">{m.routes_auth_login_page_optional()}</span></span>
                     <input
                         type="text"
                         bind:value={deviceName}
-                        placeholder="Web Browser"
+                        placeholder={m.routes_auth_login_page_web_browser()}
                     />
                 </label>
                 <button type="submit" class="btn-primary" disabled={$authLoading}>
@@ -126,17 +127,17 @@
         {:else}
             <form onsubmit={handlePasswordLogin} class="auth-form">
                 <label class="field">
-                    <span class="field-label">Username</span>
+                    <span class="field-label">{m.routes_auth_login_page_username_52zi1f()}</span>
                     <input
                         type="text"
                         bind:value={username}
-                        placeholder="username"
+                        placeholder={m.routes_auth_login_page_username()}
                         autocomplete="username"
                         required
                     />
                 </label>
                 <label class="field">
-                    <span class="field-label">Password</span>
+                    <span class="field-label">{m.routes_auth_login_page_password()}</span>
                     <input
                         type="password"
                         bind:value={password}
@@ -146,11 +147,11 @@
                     />
                 </label>
                 <label class="field">
-                    <span class="field-label">Device Name <span class="field-optional">(optional)</span></span>
+                    <span class="field-label">{m.routes_auth_login_page_device_name()} <span class="field-optional">{m.routes_auth_login_page_optional()}</span></span>
                     <input
                         type="text"
                         bind:value={deviceName}
-                        placeholder="Web Browser"
+                        placeholder={m.routes_auth_login_page_web_browser()}
                     />
                 </label>
                 <button type="submit" class="btn-primary" disabled={$authLoading}>
@@ -160,7 +161,7 @@
         {/if}
 
         <div class="divider">
-            <span>or</span>
+            <span>{m.routes_auth_login_page_or()}</span>
         </div>
 
         <button class="btn-secondary" onclick={handlePasskeyLogin} disabled={$authLoading}>

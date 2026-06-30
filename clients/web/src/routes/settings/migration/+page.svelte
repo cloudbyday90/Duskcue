@@ -6,6 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
+    import { m } from '$lib/paraglide/messages.js';
     import { onMount } from 'svelte';
     import {
         cancelMigration,
@@ -69,26 +70,26 @@
     let resolvingIds = $state({});
 
     const sources = [
-        { id: 'jellyfin', label: 'Jellyfin', detail: 'REST API' },
-        { id: 'emby', label: 'Emby', detail: 'REST API' },
-        { id: 'plex', label: 'Plex', detail: 'SQLite upload' },
+        { id: 'jellyfin', label: m.routes_settings_migration_page_jellyfin(), detail: 'REST API' },
+        { id: 'emby', label: m.routes_settings_migration_page_emby(), detail: 'REST API' },
+        { id: 'plex', label: m.routes_settings_migration_page_plex(), detail: 'SQLite upload' },
     ];
 
     const steps = [
-        { id: 'source', label: 'Source' },
-        { id: 'connect', label: 'Connect' },
-        { id: 'preflight', label: 'Preflight' },
-        { id: 'users', label: 'Users' },
-        { id: 'review', label: 'Review' },
-        { id: 'import', label: 'Import' },
-        { id: 'results', label: 'Results' },
+        { id: 'source', label: m.routes_settings_migration_page_source() },
+        { id: 'connect', label: m.routes_settings_migration_page_connect() },
+        { id: 'preflight', label: m.routes_settings_migration_page_preflight() },
+        { id: 'users', label: m.routes_settings_migration_page_users() },
+        { id: 'review', label: m.routes_settings_migration_page_review() },
+        { id: 'import', label: m.routes_settings_migration_page_import() },
+        { id: 'results', label: m.routes_settings_migration_page_results() },
     ];
 
     const reviewFilters = [
-        { id: 'needs_review', label: 'Needs Review' },
-        { id: 'unmatched', label: 'Unmatched' },
-        { id: 'low_confidence', label: 'Low Confidence' },
-        { id: 'all', label: 'All Decisions' },
+        { id: 'needs_review', label: m.routes_settings_migration_page_needs_review() },
+        { id: 'unmatched', label: m.routes_settings_migration_page_unmatched() },
+        { id: 'low_confidence', label: m.routes_settings_migration_page_low_confidence() },
+        { id: 'all', label: m.routes_settings_migration_page_all_decisions() },
     ];
 
     let selectedMigration = $derived(
@@ -618,7 +619,7 @@
         actionError = null;
         try {
             await deleteMigrationSource(selectedMigrationId);
-            notifications.success('Migration source deleted');
+            notifications.success(m.routes_settings_migration_page_migration_source_deleted());
             selectedMigrationId = '';
             preflightReport = null;
             progress = null;
@@ -769,22 +770,22 @@
 <div class="migration-settings">
     <div class="page-header">
         <div>
-            <a href="/settings" class="back-link">← Settings</a>
-            <h1 class="page-title">Platform Migration</h1>
+            <a href="/settings" class="back-link">{m.routes_settings_migration_page_settings()}</a>
+            <h1 class="page-title">{m.routes_settings_migration_page_platform_migration()}</h1>
         </div>
         {#if !loading && canManage}
-            <button class="btn-secondary" onclick={() => load()} disabled={!!operation}>Refresh</button>
+            <button class="btn-secondary" onclick={() => load()} disabled={!!operation}>{m.routes_settings_migration_page_refresh()}</button>
         {/if}
     </div>
 
     {#if loading}
         <div class="loading-state"><div class="loading-spinner"></div></div>
     {:else if !canManage}
-        <div class="empty-state">You do not have permission to manage users.</div>
+        <div class="empty-state">{m.routes_settings_migration_page_you_do_not_have_permission_to_manage_users()}</div>
     {:else if loadError}
         <div class="empty-state stacked">
             <p class="error-text">{loadError}</p>
-            <button class="btn-secondary" onclick={() => load()}>Retry</button>
+            <button class="btn-secondary" onclick={() => load()}>{m.routes_settings_migration_page_retry()}</button>
         </div>
     {:else}
         {#if actionMessage}
@@ -826,7 +827,7 @@
 
                     <div class="form-grid">
                         <label>
-                            <span>Name</span>
+                            <span>{m.routes_settings_migration_page_name()}</span>
                             <input
                                 type="text"
                                 value={sourceForm.name}
@@ -836,7 +837,7 @@
                         </label>
                         {#if selectedSource === 'plex'}
                             <label>
-                                <span>Plex Database</span>
+                                <span>{m.routes_settings_migration_page_plex_database()}</span>
                                 <input
                                     type="file"
                                     accept=".db,.sqlite,application/vnd.sqlite3,application/octet-stream"
@@ -846,17 +847,17 @@
                             </label>
                         {:else}
                             <label>
-                                <span>Base URL</span>
+                                <span>{m.routes_settings_migration_page_base_url()}</span>
                                 <input
                                     type="url"
                                     value={sourceForm.base_url}
                                     oninput={(event) =>
                                         (sourceForm.base_url = event.currentTarget.value)}
-                                    placeholder="https://media.example.test"
+                                    placeholder={m.routes_settings_migration_page_https_media_example_test()}
                                 />
                             </label>
                             <label>
-                                <span>API Key</span>
+                                <span>{m.routes_settings_migration_page_api_key()}</span>
                                 <input
                                     type="password"
                                     value={sourceForm.api_key}
@@ -882,15 +883,15 @@
                 <div class="wizard-panel">
                     <div class="selected-summary">
                         <div>
-                            <span>Selected</span>
+                            <span>{m.routes_settings_migration_page_selected()}</span>
                             <strong>{selectedMigration?.name || 'No source selected'}</strong>
                         </div>
                         <div>
-                            <span>Platform</span>
+                            <span>{m.routes_settings_migration_page_platform()}</span>
                             <strong>{activeSourceLabel()}</strong>
                         </div>
                         <div>
-                            <span>Status</span>
+                            <span>{m.routes_settings_migration_page_status()}</span>
                             <strong class={statusClass(displayProgress?.status)}>
                                 {displayProgress?.status || 'pending'}
                             </strong>
@@ -900,7 +901,7 @@
                     {#if selectedPlatform === 'plex'}
                         <div class="form-grid">
                             <label>
-                                <span>Plex Database</span>
+                                <span>{m.routes_settings_migration_page_plex_database()}</span>
                                 <input
                                     type="file"
                                     accept=".db,.sqlite,application/vnd.sqlite3,application/octet-stream"
@@ -928,7 +929,7 @@
                     {:else}
                         <div class="form-grid">
                             <label>
-                                <span>Session API Key</span>
+                                <span>{m.routes_settings_migration_page_session_api_key()}</span>
                                 <input
                                     type="password"
                                     value={credentialApiKey}
@@ -974,21 +975,21 @@
                     {#if preflightReport}
                         <div class="preflight-grid">
                             <div class="summary-card">
-                                <span>Readiness</span>
+                                <span>{m.routes_settings_migration_page_readiness()}</span>
                                 <strong class={preflightReport.is_ready ? 'ok' : 'bad'}>
                                     {preflightReport.is_ready ? 'Ready' : 'Blocked'}
                                 </strong>
                             </div>
                             <div class="summary-card">
-                                <span>Mappings</span>
+                                <span>{m.routes_settings_migration_page_mappings()}</span>
                                 <strong>{preflightReport.user_mapping_readiness.valid_mappings}</strong>
                             </div>
                             <div class="summary-card">
-                                <span>Estimated Matches</span>
+                                <span>{m.routes_settings_migration_page_estimated_matches()}</span>
                                 <strong>{preflightReport.estimated_counts.estimated_matches}</strong>
                             </div>
                             <div class="summary-card">
-                                <span>Match Rate</span>
+                                <span>{m.routes_settings_migration_page_match_rate()}</span>
                                 <strong>
                                     {formatPercent(preflightReport.estimated_counts.estimated_match_rate_percent)}
                                 </strong>
@@ -1020,14 +1021,14 @@
                             </div>
                         {/if}
                     {:else}
-                        <div class="empty-state">No preflight report has been run.</div>
+                        <div class="empty-state">{m.routes_settings_migration_page_no_preflight_report_has_been_run()}</div>
                     {/if}
                 </div>
             {:else if wizardStep === 'users'}
                 <div class="wizard-panel">
                     <div class="section-header compact">
                         <div>
-                            <h2>User Mapping</h2>
+                            <h2>{m.routes_settings_migration_page_user_mapping()}</h2>
                             <p>{mappingRows.length} source user{mappingRows.length === 1 ? '' : 's'}</p>
                         </div>
                         <button
@@ -1040,7 +1041,7 @@
                     </div>
 
                     {#if mappingRows.length === 0}
-                        <div class="empty-state">No source users discovered.</div>
+                        <div class="empty-state">{m.routes_settings_migration_page_no_source_users_discovered()}</div>
                     {:else}
                         <div class="mapping-list">
                             {#each mappingRows as row}
@@ -1057,7 +1058,7 @@
                                                 platform_user_id: event.currentTarget.value,
                                             })}
                                     >
-                                        <option value="">Choose Duskcue user</option>
+                                        <option value="">{m.routes_settings_migration_page_choose_duskcue_user()}</option>
                                         {#each platformUsers() as user}
                                             <option value={user.platform_user_id}>{user.label}</option>
                                         {/each}
@@ -1071,7 +1072,7 @@
                                                     skip: event.currentTarget.checked,
                                                 })}
                                         />
-                                        <span>Skip</span>
+                                        <span>{m.routes_settings_migration_page_skip()}</span>
                                     </label>
                                 </div>
                             {/each}
@@ -1099,7 +1100,7 @@
                 <div class="wizard-panel">
                     <div class="section-header compact">
                         <div>
-                            <h2>Match Review</h2>
+                            <h2>{m.routes_settings_migration_page_match_review()}</h2>
                             <p>{selectedMigration?.name || 'Select a migration source'}</p>
                         </div>
                         <div class="review-actions">
@@ -1135,9 +1136,9 @@
                     {#if reviewLoading}
                         <div class="loading-state small"><div class="loading-spinner"></div></div>
                     {:else if !selectedMigrationId}
-                        <div class="empty-state">Select a migration source to review matches.</div>
+                        <div class="empty-state">{m.routes_settings_migration_page_select_a_migration_source_to_review_matches()}</div>
                     {:else if reviewItems.length === 0}
-                        <div class="empty-state">No review items match this filter.</div>
+                        <div class="empty-state">{m.routes_settings_migration_page_no_review_items_match_this_filter()}</div>
                     {:else}
                         <div class="review-list">
                             {#each reviewItems as item}
@@ -1185,7 +1186,7 @@
                                         </select>
                                         <input
                                             type="text"
-                                            placeholder="media_item_id"
+                                            placeholder={m.routes_settings_migration_page_media_item_id()}
                                             value={manualMediaIds[item.id] || item.matched_media_item_id || ''}
                                             oninput={(event) =>
                                                 setManualMediaId(item.id, event.currentTarget.value)}
@@ -1225,7 +1226,7 @@
                     <div class="progress-panel">
                         <div class="progress-head">
                             <div>
-                                <span>Status</span>
+                                <span>{m.routes_settings_migration_page_status()}</span>
                                 <strong class={statusClass(displayProgress?.status)}>
                                     {displayProgress?.status || 'pending'}
                                 </strong>
@@ -1236,11 +1237,11 @@
                             <div style={`width: ${displayProgress?.percent_complete || 0}%`}></div>
                         </div>
                         <div class="progress-grid">
-                            <div><span>Discovered</span><strong>{displayProgress?.items_discovered || 0}</strong></div>
-                            <div><span>Matched</span><strong>{displayProgress?.items_matched || 0}</strong></div>
-                            <div><span>Unmatched</span><strong>{displayProgress?.items_unmatched || 0}</strong></div>
-                            <div><span>Imported</span><strong>{displayProgress?.items_imported || 0}</strong></div>
-                            <div><span>Skipped</span><strong>{displayProgress?.items_skipped || 0}</strong></div>
+                            <div><span>{m.routes_settings_migration_page_discovered()}</span><strong>{displayProgress?.items_discovered || 0}</strong></div>
+                            <div><span>{m.routes_settings_migration_page_matched()}</span><strong>{displayProgress?.items_matched || 0}</strong></div>
+                            <div><span>{m.routes_settings_migration_page_unmatched()}</span><strong>{displayProgress?.items_unmatched || 0}</strong></div>
+                            <div><span>{m.routes_settings_migration_page_imported()}</span><strong>{displayProgress?.items_imported || 0}</strong></div>
+                            <div><span>{m.routes_settings_migration_page_skipped()}</span><strong>{displayProgress?.items_skipped || 0}</strong></div>
                         </div>
                     </div>
 
@@ -1272,40 +1273,40 @@
                 <div class="wizard-panel">
                     <div class="result-grid">
                         <div class="summary-card">
-                            <span>Status</span>
+                            <span>{m.routes_settings_migration_page_status()}</span>
                             <strong class={statusClass(displayProgress?.status)}>
                                 {displayProgress?.status || 'pending'}
                             </strong>
                         </div>
                         <div class="summary-card">
-                            <span>Imported</span>
+                            <span>{m.routes_settings_migration_page_imported()}</span>
                             <strong>{displayProgress?.items_imported || 0}</strong>
                         </div>
                         <div class="summary-card">
-                            <span>Unmatched</span>
+                            <span>{m.routes_settings_migration_page_unmatched()}</span>
                             <strong>{displayProgress?.items_unmatched || 0}</strong>
                         </div>
                         <div class="summary-card">
-                            <span>Last Run</span>
+                            <span>{m.routes_settings_migration_page_last_run()}</span>
                             <strong>{formatDate(selectedMigration?.last_run_at)}</strong>
                         </div>
                     </div>
 
                     <div class="rollback-grid">
                         <div>
-                            <span>Rollback</span>
+                            <span>{m.routes_settings_migration_page_rollback()}</span>
                             <strong>{formatRollbackStatus(rollbackStatus?.status)}</strong>
                         </div>
                         <div>
-                            <span>Imported</span>
+                            <span>{m.routes_settings_migration_page_imported()}</span>
                             <strong>{rollbackStatus?.imported_count || 0}</strong>
                         </div>
                         <div>
-                            <span>Available</span>
+                            <span>{m.routes_settings_migration_page_available()}</span>
                             <strong>{rollbackStatus?.rollback_available_count || 0}</strong>
                         </div>
                         <div>
-                            <span>Rolled Back</span>
+                            <span>{m.routes_settings_migration_page_rolled_back()}</span>
                             <strong>{rollbackStatus?.rolled_back_count || 0}</strong>
                         </div>
                     </div>
@@ -1347,19 +1348,19 @@
 
         <section class="migration-list">
             <div class="section-header">
-                <h2>Migration Sources</h2>
+                <h2>{m.routes_settings_migration_page_migration_sources()}</h2>
                 <span>{migrations.length}</span>
             </div>
 
             {#if migrations.length === 0}
-                <div class="empty-state">No migration sources have been created.</div>
+                <div class="empty-state">{m.routes_settings_migration_page_no_migration_sources_have_been_created()}</div>
             {:else}
                 <div class="table">
                     <div class="table-row table-head">
-                        <span>Name</span>
-                        <span>Platform</span>
-                        <span>Status</span>
-                        <span>Last Run</span>
+                        <span>{m.routes_settings_migration_page_name()}</span>
+                        <span>{m.routes_settings_migration_page_platform()}</span>
+                        <span>{m.routes_settings_migration_page_status()}</span>
+                        <span>{m.routes_settings_migration_page_last_run()}</span>
                     </div>
                     {#each migrations as migration}
                         <button
