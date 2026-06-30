@@ -79,6 +79,26 @@ class DuskcueApiClient {
     return _request(() => _dio.delete<T>(path, options: _options(headers)));
   }
 
+  Future<Response<ResponseBody>> stream(
+    String path, {
+    Map<String, Object?>? query,
+    Map<String, Object?>? headers,
+  }) {
+    return _request(
+      () => _dio.get<ResponseBody>(
+        path,
+        queryParameters: query,
+        options: Options(
+          responseType: ResponseType.stream,
+          headers: {
+            'Accept': 'text/event-stream',
+            if (headers != null) ...Map<String, dynamic>.from(headers),
+          },
+        ),
+      ),
+    );
+  }
+
   Options? _options(Map<String, Object?>? headers) {
     return headers == null ? null : Options(headers: Map<String, dynamic>.from(headers));
   }

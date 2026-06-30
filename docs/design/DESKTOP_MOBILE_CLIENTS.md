@@ -330,6 +330,36 @@ Verification:
 
 Flutter/Dart are not installed in the current Windows environment, so `flutter pub get`, `flutter analyze`, `flutter test`, Android build, iOS build, and real HLS playback checks remain first-run verification for an environment with the Flutter SDK and target devices.
 
+### Task 8 — Foreground Real-Time Updates
+
+Implementation:
+
+- `DuskcueApiClient.stream()` opens bearer-auth streaming HTTP responses for `text/event-stream`.
+- `RealtimeService` parses SSE `event`, `id`, and multi-line `data` fields, exposes broadcast event/status streams, tracks `Last-Event-ID`, and reconnects with replay headers after transient disconnects.
+- The mobile app shell connects SSE only when the session is authenticated and the Flutter lifecycle is foreground/resumed.
+- Background, inactive, detached, and signed-out states disconnect the SSE stream instead of trying to keep mobile background networking alive.
+- The subscribed event filter covers `notification`, `session_kicked`, `playback_updated`, `transcode_progress`, `storyboard_progress`, `scan_progress`, and `admin_task`.
+- `session_kicked` clears the local secure session and routes back to auth.
+- Foreground `notification` events update a Riverpod unread badge, show an in-app snackbar, and force a REST unread-count refresh.
+- A 60-second REST unread-count fallback runs only while authenticated and disconnected from SSE, plus once when the shell enters the foreground.
+- The Notifications screen refreshes the same shared unread badge after list/read operations.
+
+Scope decisions:
+
+- Task 8 keeps mobile SSE foreground-only, matching Android/iOS background execution limits documented in Task 0.
+- Playback/transcode/storyboard/scan/admin events are parsed and recorded as the latest real-time event for downstream screens. They do not create new server contracts.
+- Desktop remains on the existing web SSE store; Task 5 already bridges desktop foreground notification events to native desktop notifications.
+
+Verification:
+
+- `node scripts/verify-client-contracts.mjs`
+- `cargo check -p duskcue`
+- `git diff --check` with CRLF-aware Git whitespace settings
+- `flutter --version` attempted and failed because Flutter is not installed in the current Windows environment.
+- `dart --version` attempted and failed because Dart is not installed in the current Windows environment.
+
+Flutter/Dart are not installed in the current Windows environment, so `flutter pub get`, `flutter analyze`, `flutter test`, Android build, iOS build, and live SSE reconnect testing remain first-run verification for an environment with the Flutter SDK and target devices.
+
 ## Relationship to Other Documents
 
 | Document | Relationship |
@@ -361,6 +391,8 @@ Flutter/Dart are not installed in the current Windows environment, so `flutter p
 - Flutter video playback cookbook: https://docs.flutter.dev/cookbook/plugins/play-video
 - Flutter video_player package: https://pub.dev/packages/video_player
 - Flutter app lifecycle: https://api.flutter.dev/flutter/widgets/WidgetsBindingObserver-class.html
+- MDN server-sent events: https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events
+- MDN EventSource Last-Event-ID behavior: https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events
 - Flutter Android release: https://docs.flutter.dev/deployment/android
 - Flutter iOS release: https://docs.flutter.dev/deployment/ios
 - Android Credential Manager: https://developer.android.com/identity/credential-manager

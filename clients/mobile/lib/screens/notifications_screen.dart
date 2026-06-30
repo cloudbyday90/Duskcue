@@ -1,6 +1,7 @@
 import 'package:duskcue_mobile/l10n/app_strings.dart';
 import 'package:duskcue_mobile/models/content_models.dart';
 import 'package:duskcue_mobile/services/service_providers.dart';
+import 'package:duskcue_mobile/stores/realtime_store.dart';
 import 'package:duskcue_mobile/widgets/mobile_state_views.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -32,13 +33,16 @@ class _NotificationsScreenState extends ConsumerState<NotificationsScreen> {
       _nextCursor = null;
     });
     try {
-      final page = await ref.read(contentServiceProvider).listNotifications();
+      final service = ref.read(contentServiceProvider);
+      final page = await service.listNotifications();
+      final unread = await service.unreadNotificationCount();
       if (!mounted) return;
       setState(() {
         _items = page.items;
         _nextCursor = page.nextCursor;
         _loading = false;
       });
+      ref.read(realtimeProvider.notifier).setUnreadCount(unread);
     } catch (error) {
       if (!mounted) return;
       setState(() {

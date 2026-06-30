@@ -890,6 +890,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 7 mobile playback status:** `clients/mobile/lib/services/playback_service.dart` is the Dart boundary for playback start, heartbeat, seek, stop, watch-data refresh, subtitles, segments, and media-file stream metadata. `clients/mobile/lib/screens/playback_entry_screen.dart` owns the current Flutter `video_player` route and in-app controls. `clients/mobile/lib/models/playback_models.dart` contains the tolerant response DTOs used until Phase 16d promotes broader generated client schemas.
 
+**Task 8 mobile realtime status:** `clients/mobile/lib/services/realtime_service.dart` owns foreground SSE transport, parsing, reconnect, and `Last-Event-ID` replay. `clients/mobile/lib/stores/realtime_store.dart` stores connection status, unread notification count, and the latest event metadata for shell/screens. `clients/mobile/lib/widgets/app_shell.dart` is responsible for tying the SSE lifecycle to authenticated foreground app state.
+
 ## Development Workflow
 
 ### Server Development
