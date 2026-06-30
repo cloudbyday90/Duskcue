@@ -311,6 +311,72 @@ Task 7 implementation details:
 - Inaccessible, deleted-library, missing, malformed, and cross-type IDs remain BOLA-safe and return unavailable content rather than revealing library membership.
 - Accessible items with no healthy file return a bounded unavailable action and availability detail instead of a filesystem path or internal error.
 
+## Playback Entry Contract
+
+Every TV and console client must treat the Duskcue server as the authority for playback entry. A platform row, launcher tile, voice result, Top Shelf item, URI activation, or app-local row may carry a cached `platform_content_id`, but it must not carry authoritative resume position, access state, or media-file selection.
+
+Required flow:
+
+1. Ensure the local app has a valid Duskcue session. If not, route through device linking or sign-in, then retry the original platform entry.
+2. Call `GET /api/v1/tv/resolve/{platform_content_id}` with the current session token.
+3. If resolve returns `TV_002`, `TV_005`, or an availability/action other than `start_playback`, show a platform-native unavailable message and refresh the local TV surface feed.
+4. Call `POST /api/v1/playback/start` with the resolved `media_item_id`, preferred `media_file_id`, `force_transcode`, `quality_mode`, `max_streaming_bitrate`, and the platform's current `device_profile`.
+5. If the resolved `start_position_ms` is greater than 0, seek to that position before visible playback where the platform API allows it. For direct play, native player seek/range behavior is acceptable. For remux/transcode sessions, call `POST /api/v1/playback/seek` when the returned stream URL needs a server-side seeked manifest.
+6. Attach the returned `stream_url` to the platform player and begin playback.
+7. Send an immediate heartbeat after the first successful seek/start, then send heartbeats every 15 seconds while playback is active.
+8. Send an immediate heartbeat on pause, resume, buffering start, buffering end, and large seek.
+9. On user back/exit, app background without platform media continuation, player error, or natural completion, call `POST /api/v1/playback/stop` with the best known position.
+10. Refresh the TV surface after stop/completion, after a playback error, and after receiving a future `tv_surface_changed` event.
+
+Playback start request shape for TV clients:
+
+```json
+{
+  "media_item_id": "019...",
+  "media_file_id": "019...",
+  "force_transcode": false,
+  "quality_mode": "auto",
+  "max_streaming_bitrate": 25000000,
+  "device_profile": {
+    "platform": "roku",
+    "app_version": "1.0.0",
+    "model": "4802X",
+    "supported_containers": ["mp4", "mkv"],
+    "supported_video_codecs": ["h264", "hevc"],
+    "supported_audio_codecs": ["aac", "ac3", "eac3"],
+    "supported_subtitle_formats": ["webvtt", "srt"],
+    "max_video_resolution": "3840x2160",
+    "supports_hdr": true,
+    "supports_dolby_vision": false
+  }
+}
+```
+
+TV heartbeat contract:
+
+| Event | Endpoint | Required fields | Notes |
+|---|---|---|---|
+| Start confirmed | `POST /api/v1/playback/heartbeat` | `session_id`, `position_ms`, `state: "playing"` | Send after player starts and after any startup seek. |
+| Cadence update | `POST /api/v1/playback/heartbeat` | `session_id`, `position_ms`, `state` | Every 15 seconds during active playback; this fits STREAMING.md's 10-30 second range. |
+| Pause | `POST /api/v1/playback/heartbeat` | `session_id`, `position_ms`, `state: "paused"`, `is_paused: true` | Send immediately, not at the next cadence tick. |
+| Buffering | `POST /api/v1/playback/heartbeat` | `session_id`, `position_ms`, `state: "buffering"`, `is_buffering: true` | Send start and end transitions when the platform exposes them. |
+| Seek | `POST /api/v1/playback/seek` then heartbeat | `session_id`, `position_ms` | Use server seek when transcode/remux manifests must restart at the new position. |
+| Exit or completion | `POST /api/v1/playback/stop` | `session_id`, `position_ms` | Server applies the existing 90% watched threshold and clears resume when watched. |
+
+Playback error reporting:
+
+- If the player fails before a session starts, show the resolve availability detail where present and refresh the TV surface.
+- If the player fails after a session starts, send `POST /api/v1/playback/stop` with the best known position and submit a QoE report through `POST /api/v1/playback/qoe` when the platform has useful error/buffering context.
+- TV clients should not include filenames, local paths, bearer tokens, signed URLs, or raw server URLs in user-visible errors or diagnostic bundles.
+- Repeated codec or subtitle failures should update the platform's device profile or prompt capability testing rather than forcing every future item through platform-specific special cases.
+
+Direct-to-play requirements:
+
+- Roku Search/voice, Fire TV catalog/deep links, webOS launch parameters, tvOS Universal Links, Xbox URI activation, and similar direct entries must call resolve and then start playback directly.
+- These paths must not show a resume/start-over interstitial when the platform certification path expects Direct to Play. The resolved `start_position_ms` is the bookmark.
+- If `start_position_ms` is 0, start from the beginning without asking.
+- If auth is missing, route to sign-in/device-linking and resume the original direct entry after auth succeeds.
+
 ### Selection Rules
 
 Platform content IDs:

@@ -612,6 +612,8 @@ When a multi-channel audio track must be transcoded for a stereo-only client:
 
 > **Implemented** in Phase 7 Task 10 — `start_playback()` in `playback/service.rs`, `start_remux_session()` in `transcoding.rs`. See [BUILD_ORDER.md](../../BUILD_ORDER.md) Task 10 for details.
 
+For TV and console clients, playback start is preceded by the Phase 16b TV resolve contract in [TV_PLATFORM_SURFACES.md](TV_PLATFORM_SURFACES.md): platform rows/deep links carry `platform_content_id`, clients call `GET /api/v1/tv/resolve/{platform_content_id}` to fetch the current resume position and preferred media file, then call `POST /api/v1/playback/start` with the resolved IDs and current TV device profile.
+
 ### During Playback
 
 - Client requests HLS segments via standard HTTP GET
@@ -624,6 +626,8 @@ When a multi-channel audio track must be transcoded for a stereo-only client:
 - FFmpeg writes segments ahead of client position
 
 > **Implemented** in Phase 7 Task 12 — `heartbeat()` in `playback/service.rs` updates `play_sessions` metadata via JSONB `||` merge, detects state transitions (playing↔paused↔buffering) and emits corresponding `play_events`, upserts `user_item_data.resume_position_ms` with HOT-update friendly pattern. See [BUILD_ORDER.md](../../BUILD_ORDER.md) Task 12 for details.
+
+TV and console clients use a 15-second heartbeat cadence, with immediate heartbeats on pause, resume, buffering transitions, and large seeks. This stays inside the general 10-30 second client range while keeping launcher resume state fresh.
 
 ### Seeking
 
