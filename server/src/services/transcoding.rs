@@ -820,20 +820,24 @@ fn spawn_ffmpeg(
     let transcode = segment_dir.to_path_buf();
     #[cfg(target_os = "linux")]
     {
-        command.pre_exec(move || {
-            use crate::services::sandbox::{SandboxConfig, apply_sandbox};
-            let config = SandboxConfig {
-                media_path: &media,
-                transcode_dir: &transcode,
-            };
-            match apply_sandbox(&config) {
-                Ok(()) => Ok(()),
-                Err(e) => {
-                    tracing::warn!("FFmpeg sandbox setup failed (continuing without sandbox): {e}");
-                    Ok(())
+        unsafe {
+            command.pre_exec(move || {
+                use crate::services::sandbox::{SandboxConfig, apply_sandbox};
+                let config = SandboxConfig {
+                    media_path: &media,
+                    transcode_dir: &transcode,
+                };
+                match apply_sandbox(&config) {
+                    Ok(()) => Ok(()),
+                    Err(e) => {
+                        tracing::warn!(
+                            "FFmpeg sandbox setup failed (continuing without sandbox): {e}"
+                        );
+                        Ok(())
+                    }
                 }
-            }
-        });
+            });
+        }
     }
     #[cfg(not(target_os = "linux"))]
     {

@@ -473,7 +473,7 @@ The platform detects the host OS and Docker Engine version at startup and every 
 | Component | Minimum | Recommended |
 |---|---|---|
 | **Docker Engine** | v28.0.0 | v29.4.3+ (CVE-2026-31431 mitigation) |
-| **Alpine base image** | 3.22 | 3.22 (pin minor, track patches) |
+| **Alpine base image** | 3.24 | 3.24 with tag-plus-digest pinning |
 | **Linux host** | Debian 12 / Ubuntu 22.04 / AlmaLinux 9 / Rocky Linux 9 | Current stable of each |
 | **Windows host** | Windows 11 23H2 (build 22631) | Windows 11 24H2 |
 
@@ -510,6 +510,12 @@ cap_add:
 | Setuid/setgid stripped | Enabled | `find / -perm /6000 -exec chmod a-s {} \;` in Dockerfile |
 | OS version detection | Enabled | Startup + 24h periodic; warns admin on outdated host |
 | Docker Engine detection | Enabled | Warns if below v28.0.0; recommends v29.4.3+ |
+
+### Dockerfile Baseline
+
+The root `Dockerfile` is the Phase 15 runtime image definition. It uses Alpine `3.24` as the current stable baseline with tag-plus-digest pinned Docker Official Image inputs, builds the SvelteKit adapter-node client and Rust server in separate named stages, and copies both artifacts into the runtime image. Runtime packages include PostgreSQL 18, PostgreSQL client/contrib utilities, FFmpeg, Node.js, `tini`, `su-exec`, Bash, CA certificates, and timezone data.
+
+The active Docker command remains `duskcue` until `docker/entrypoint.sh` is finalized. The Phase 15 entrypoint work owns embedded PostgreSQL initialization, external database bypass, PUID/PGID user remapping, and multi-process startup behavior for PostgreSQL plus the web/server surface.
 
 ### Hardware Acceleration
 

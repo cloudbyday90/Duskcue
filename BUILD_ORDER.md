@@ -3590,7 +3590,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 | Doc | What to build from it |
 |---|---|
 | [DOCKER_DEPLOYMENT.md](docs/operations/DOCKER_DEPLOYMENT.md) | **Primary** — hybrid embedded/external PG, volume strategy, security hardening |
-| [OS_HARDENING.md](docs/operations/OS_HARDENING.md) | Docker Engine version minimums, Alpine 3.22 pinning |
+| [OS_HARDENING.md](docs/operations/OS_HARDENING.md) | Docker Engine version minimums, Alpine current-stable pinning |
 | [CACHE_STORAGE.md](docs/operations/CACHE_STORAGE.md) | Docker volumes: `duskcue-data`, `duskcue-cache`, tmpfs for transcode |
 | [SEARCH.md](docs/design/SEARCH.md) | **Post-v1.0 follow-up** — optional Meilisearch sidecar (loopback, same container) for libraries exceeding 50k items; default v1.0 ships PG FTS only, no sidecar |
 | [MULTI_INSTANCE.md](docs/design/MULTI_INSTANCE.md) | **Deployment topology constraint** — Duskcue is single-instance by design. Phase 15 must ship single-container as the canonical topology (`replicas: 1` for any Kubernetes examples). No load-balancer-multi-instance pattern; HA via container `restart: unless-stopped` + embedded PG crash recovery. |
@@ -3599,19 +3599,53 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Tasks:**
 
-1. Finalize `Dockerfile` — multi-stage Alpine build for x86_64 + ARM64
-2. Finalize `docker/entrypoint.sh`:
+1. ~~Finalize `Dockerfile` — multi-stage Alpine build for x86_64 + ARM64~~ **DONE**
+2. Define production web/API/container process topology:
+   - Choose the canonical single-container public surface for the SvelteKit adapter-node web app and Rust API
+   - Decide whether Rust serves the web app/static output, SvelteKit fronts the API, or an internal reverse proxy/process supervisor owns the public port
+   - Document how `/`, `/api`, `/health`, streaming routes, SSE, cookies, and reverse-proxy headers flow in production
+3. Implement configurable bind/listen behavior:
+   - `DUSKCUE_BIND_ADDRESS` for IPv4/IPv6 address selection
+   - `DUSKCUE_PORT` or equivalent runtime port configuration if the topology needs separate internal API/web ports
+   - Dual-stack `::` listener support where the host/Docker engine allows it
+   - Bracketed IPv6 URL generation for `base_url`, WebAuthn origins, redirects, and generated server URLs
+   - IPv6 CIDR parsing for metrics/trusted proxies
+4. Finalize `docker/entrypoint.sh`:
    - Embedded PG mode: `initdb` → `pg_ctl start` → `pg_isready` → `createdb` → start server
    - External PG mode: skip PG lifecycle, use `DUSKCUE_DATABASE_URL`
    - PUID/PGID user creation and privilege drop via `su-exec`
-3. Create `docker-compose.yml` — single-container with embedded PG, volumes, tmpfs
-4. Implement native IPv6 support — configurable `DUSKCUE_BIND_ADDRESS`/runtime bind address, dual-stack `::` listener support, bracketed IPv6 URL generation for `base_url`/WebAuthn/proxy redirects, IPv6 CIDR parsing for metrics/trusted proxies, and Docker/Compose IPv6 examples
-5. Test multi-arch build: `docker buildx build --platform linux/amd64,linux/arm64`
-6. Test PUID/PGID mapping on Linux
-7. Test embedded PG lifecycle — startup, shutdown checkpoint, crash recovery
-8. Verify security: `read_only: true`, `no-new-privileges`, `cap_drop: ALL`
+   - Signal handling for every long-running child process owned by the container
+   - Explicit embedded PostgreSQL layout (`PGDATA`, socket path, log path, `initdb --data-checksums`, stale `postmaster.pid` handling)
+5. Create `docker-compose.yml` — single-container with embedded PG, volumes, tmpfs, optional IPv6 bindings, hardware-acceleration examples, and external-PG override guidance
+6. Add container health/readiness and smoke verification:
+   - Health check distinguishes process-up from ready-after-migrations
+   - Verify embedded PostgreSQL accepts connections, migrations completed, public web surface responds, API responds, and streaming/SSE routes are reachable
+   - Add `scripts/verify-docker.ps1` or equivalent local smoke script using temporary Docker volumes and cleanup
+7. Test multi-arch build: `docker buildx build --platform linux/amd64,linux/arm64`
+8. Test PUID/PGID mapping on Linux:
+   - Media bind mounts remain read-only
+   - `/data`, `/cache`, `/data/transcode`, and PostgreSQL socket/data paths remain writable by the runtime UID/GID
+   - External database mode does not require embedded PG writable paths
+9. Test embedded PG lifecycle — first startup, restart, graceful shutdown checkpoint, crash recovery, stale PID cleanup, and external-PG bypass
+10. Verify security hardening:
+   - `read_only: true`, `no-new-privileges`, `cap_drop: ALL`
+   - Minimal `cap_add` only where PUID/PGID requires it
+   - Writable paths isolated to volumes/tmpfs
+   - No secrets in Dockerfile history, image labels, or default environment
+   - Runtime image contains no build toolchain
+11. Add Docker operator backup/restore runbook:
+   - `docker exec` examples for `pg_dump`, `pg_restore`, and database health inspection
+   - Filesystem backup guidance for `/data`, `/cache`, and media bind mounts
+   - Safe stop/start procedure for volume snapshots
+   - Relationship to Phase 13a backup/recovery drill evidence
+12. Add release workflow:
+   - GHCR publish workflow with Buildx, multi-arch manifest, protected tags, OCI labels, SBOM, max-detail provenance, and GitHub artifact attestations
+   - PR/runtime-image validation workflow for Dockerfile, entrypoint, compose, and smoke-script changes
+   - Base-image freshness checks per [BASE_IMAGE_REFRESH_POLICY.md](docs/ci/BASE_IMAGE_REFRESH_POLICY.md)
 
-**Verification:** `docker compose up` starts a single container with embedded PG, server listens on 48027 over IPv4 by default and can be configured for IPv6/dual-stack binding, health check passes, graceful shutdown preserves data.
+**Verification:** `docker compose up` starts a single container with embedded PG, serves the web UI and API from the documented public surface, listens on 48027 over IPv4 by default and can be configured for IPv6/dual-stack binding, health/readiness checks pass only after migrations complete, graceful shutdown preserves data, restart/crash recovery works, external-PG mode skips embedded PG cleanly, and the release workflow can produce a signed/attested `linux/amd64,linux/arm64` image.
+
+**Task 1 implementation note:** Root `Dockerfile` now uses named BuildKit stages (`web-deps`, `web-builder`, `rust-builder`, `runtime`) with digest-pinned Docker Official Image bases: `alpine:3.24`, `node:24-alpine3.24`, and `rust:alpine3.24`. The runtime target installs PostgreSQL 18 runtime/client/contrib packages, FFmpeg, Node.js for the adapter-node web artifact, `tini`, `su-exec`, CA certificates, timezone data, and Bash for the Phase 15 entrypoint. It creates the documented `/data`, `/cache`, `/media`, `/var/run/postgresql`, and `/data/transcode` paths, strips setuid/setgid bits, exposes 48027, and defaults to `CMD ["duskcue"]` until the entrypoint task replaces the current `docker/entrypoint.sh` stub with embedded-PostgreSQL orchestration. Root `.dockerignore` now excludes local build state, web build artifacts, docs, scripts, VCS metadata, and secrets from the default build context. The first real Alpine release build surfaced Linux-only sandbox compile issues that Windows `cargo check` could not see; fixed by importing Landlock's `Access` trait, mapping `seccompiler` BPF conversion errors through `std::io::Error`, and wrapping `tokio::process::Command::pre_exec` registrations in explicit `unsafe` blocks on Linux. Verified with Docker Buildx static checks and a successful `linux/amd64` runtime image build loaded as `duskcue:phase15-task1`; full `linux/amd64,linux/arm64` manifest verification remains Task 7.
 
 ---
 

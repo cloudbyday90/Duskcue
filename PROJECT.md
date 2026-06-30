@@ -316,7 +316,7 @@ CPU management strategy is documented in [CPU.md](docs/design/CPU.md). Covers: F
 - **Docker CPU management** — per-architecture examples: `cpuset-cpus` for ARM SBCs, `cpu-shares` for multi-container hosts, `cpus` hard cap for VPS
 - **Crate selection** — `sysinfo` 0.34 (cross-platform per-core CPU metrics) + `nix` 0.31 (Unix `sched_setaffinity` for CPU pinning)
 - **Security & remote access** — Three-tier opt-in model (local/VPN/exposed); rustls for TLS; HMAC-SHA256 signed streaming URLs; BREACH mitigation (compression disabled on sensitive endpoints); timing attack resistance via ring; Cloudflare cannot be used for video (CDN TOS); documented alternatives (Tailscale/Pangolin/Rathole); security event monitoring with admin quick actions; full design in SECURITY.md
-- **OS hardening** — Docker Engine >= v28.0.0 (recommended v29.4.3+ for CVE-2026-31431 mitigation); Alpine 3.22 base image; Debian 12+/Ubuntu 22.04+/AlmaLinux 9+/Rocky Linux 9+/Windows 11 23H2+ minimums; read-only OS detection at startup + 24h; full design in OS_HARDENING.md
+- **OS hardening** — Docker Engine >= v28.0.0 (recommended v29.4.3+ for CVE-2026-31431 mitigation); Alpine current-stable base image; Debian 12+/Ubuntu 22.04+/AlmaLinux 9+/Rocky Linux 9+/Windows 11 23H2+ minimums; read-only OS detection at startup + 24h; full design in OS_HARDENING.md
 - **API security** — OWASP API Top 10 (2023) coverage; `validator` crate input validation; BOLA prevention via service-layer ownership checks; three-type DTO pattern (Row/Request/Response); SSRF URL allowlisting; request body size limits; admin endpoint isolation; outbound API response validation; `cargo audit` + `cargo deny` + `cargo vet` + `cargo cyclonedx` in CI; SBOM per release; full design in API_SECURITY.md
 
 ## Quality Management
@@ -417,11 +417,11 @@ API design conventions — URL structure, versioning, pagination, rate limiting,
 
 ## OS Hardening & Platform Requirements
 
-Operating system hardening and platform compatibility requirements are documented in [OS_HARDENING.md](docs/operations/OS_HARDENING.md). Covers: minimum OS versions (Linux/Windows/macOS), Docker Engine minimum version (v28.0.0, recommended v29.4.3+), Alpine Linux base image strategy (pin `alpine:3.22`), OS update detection at startup and every 24h, container hardening measures, Docker Hardened Images guidance.
+Operating system hardening and platform compatibility requirements are documented in [OS_HARDENING.md](docs/operations/OS_HARDENING.md). Covers: minimum OS versions (Linux/Windows/macOS), Docker Engine minimum version (v28.0.0, recommended v29.4.3+), Alpine Linux base image strategy (current stable branch with tag-plus-digest pinning), OS update detection at startup and every 24h, container hardening measures, Docker Hardened Images guidance.
 
 **Key decisions:**
 - **Docker Engine minimum v28.0.0, recommended v29.4.3+** — v29.4.3 mitigates CVE-2026-31431 ("Copy Fail" kernel privilege escalation); v28+ includes 2024 runc/BuildKit fixes
-- **Alpine 3.22 base image** — pin minor version (`alpine:3.22`), not patch — auto-tracks security patches; 14 default packages vs 89+ for Ubuntu
+- **Alpine current-stable base image** — pin the stable branch with a digest (`alpine:3.24@sha256:...` as of June 30, 2026); 14 default packages vs 89+ for Ubuntu
 - **Linux minimums** — Debian 12+, Ubuntu 22.04 LTS+, AlmaLinux/Rocky Linux 9+, Synology DSM 7.1+
 - **Windows minimums** — Windows 11 23H2 (build 22631) minimum; Windows 10 Home/Pro EOL October 2025
 - **Read-only OS detection** — startup + 24h periodic; parse `/etc/os-release`, `uname -r`, Docker version; never auto-update
@@ -548,7 +548,8 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 13b: Notification System | **Complete** (All 6 tasks — Fluent i18n infrastructure + template migration, multi-channel dispatch pipeline with SSE/webhook/push fan-out + DB-write-first guarantee, in-app notification center CRUD with cursor pagination + preferences + admin test dispatch, webhook format-specific dispatch [generic/ntfy/gotify/discord/slack] + HMAC signing for all formats + exponential-backoff retry with full jitter + retryable/non-retryable status classification, `user_push_devices` table + registration/heartbeat/revoke API + 30-day stale-device deactivation, notifications UI — navbar bell + dropdown + persistent notification center store with SSE + polling + full-page Feed/Preferences/Push-Devices/Admin-Test hub) | — |
 | Phase 14: Platform Migration | **In progress** (Tasks 0-13 complete: scaffold, hardening, API foundation, source security, preflight, async runner, Jellyfin/Emby + Plex extraction, user mapping, matching, manual review, import merge, rollback, progress events/metrics/notifications) | — |
 | Pre-v1.0 Hardening | **Complete** (Tasks 1-7 complete: Cache-Control + ETag response headers; Paraglide JS adoption + English web message catalog; faceted search API/UI; Prometheus metrics for SSE/search/images/notifications; AI-initial preview translations for 7 non-English locales; Arabic RTL layout review; locale preferences API + reviewed-locale language switcher + Weblate activation runbook) | — |
-| Phase 15–16 | Not started | — |
+| Phase 15 | **In progress** (Task 1 complete: multi-stage Alpine Dockerfile + root `.dockerignore`) | — |
+| Phase 16 | Not started | — |
 
 **Phase 1 delivered:** Bootable `duskcue` binary on port 48027 with `/health` endpoint, clap CLI with `DUSKCUE_` env vars, config-rs layered merge (defaults → TOML → env → CLI), mimalloc allocator, tracing-subscriber, graceful shutdown with double-signal protection, `ring` TLS backend. See [BUILD_ORDER.md](BUILD_ORDER.md) for details.
 
@@ -840,6 +841,7 @@ Docker build and release strategy are documented in [DOCKER_BUILD_RELEASE.md](do
 - **Multi-arch manifest publication** — one operator-facing image name publishes `linux/amd64` and `linux/arm64`
 - **Explicit supply-chain evidence** — published images ship with SBOMs, provenance, and GitHub artifact attestations
 - **Secret-safe builds** — build credentials use BuildKit secret and SSH mounts, never plain build args
+- **Phase 15 Task 1 Dockerfile exists** — root `Dockerfile` builds SvelteKit web output and the Rust server in named Alpine-based stages, pins all external base images by digest, and emits a runtime target with PostgreSQL 18 runtime packages, FFmpeg, Node.js, `tini`, `su-exec`, and the documented `/data`/`/cache`/`/media` volume paths. Root `.dockerignore` keeps local build outputs, dependencies, docs, scripts, VCS metadata, and secrets out of the default context. The active command remains `duskcue` until the Phase 15 entrypoint work replaces the current stub with embedded-PostgreSQL startup orchestration.
 
 ## Base-Image Refresh Policy
 

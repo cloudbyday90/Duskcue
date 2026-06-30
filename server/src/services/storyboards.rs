@@ -587,23 +587,25 @@ async fn invoke_ffmpeg_for_sheet(
             .parent()
             .map(|p| p.to_path_buf())
             .unwrap_or_else(|| std::path::PathBuf::from("."));
-        cmd.pre_exec(move || {
-            use crate::services::sandbox::{SandboxConfig, apply_sandbox};
-            let config = SandboxConfig {
-                media_path: &media,
-                transcode_dir: &out_dir,
-            };
-            match apply_sandbox(&config) {
-                Ok(()) => Ok(()),
-                Err(e) => {
-                    tracing::warn!(
-                        error = %e,
-                        "storyboard ffmpeg sandbox setup failed (continuing without sandbox)"
-                    );
-                    Ok(())
+        unsafe {
+            cmd.pre_exec(move || {
+                use crate::services::sandbox::{SandboxConfig, apply_sandbox};
+                let config = SandboxConfig {
+                    media_path: &media,
+                    transcode_dir: &out_dir,
+                };
+                match apply_sandbox(&config) {
+                    Ok(()) => Ok(()),
+                    Err(e) => {
+                        tracing::warn!(
+                            error = %e,
+                            "storyboard ffmpeg sandbox setup failed (continuing without sandbox)"
+                        );
+                        Ok(())
+                    }
                 }
-            }
-        });
+            });
+        }
     }
 
     cmd.stdout(std::process::Stdio::null())

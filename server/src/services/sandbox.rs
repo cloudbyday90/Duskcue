@@ -36,7 +36,8 @@ pub fn apply_sandbox(_config: &SandboxConfig<'_>) -> Result<(), std::io::Error> 
 #[cfg(target_os = "linux")]
 fn apply_landlock(config: &SandboxConfig<'_>) -> Result<(), std::io::Error> {
     use landlock::{
-        ABI, AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr, RulesetStatus,
+        ABI, Access, AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr,
+        RulesetStatus,
     };
 
     let abi = ABI::V3;
@@ -123,16 +124,14 @@ fn apply_landlock(config: &SandboxConfig<'_>) -> Result<(), std::io::Error> {
 
 #[cfg(target_os = "linux")]
 fn apply_seccomp() -> Result<(), std::io::Error> {
-    let filter = build_ffmpeg_filter().map_err(|e| {
-        std::io::Error::new(std::io::ErrorKind::Other, format!("seccomp build: {e}"))
-    })?;
+    let filter = build_ffmpeg_filter()?;
 
     seccompiler::apply_filter(&filter)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("seccomp apply: {e}")))
 }
 
 #[cfg(target_os = "linux")]
-fn build_ffmpeg_filter() -> Result<seccompiler::BpfProgram, seccompiler::Error> {
+fn build_ffmpeg_filter() -> Result<seccompiler::BpfProgram, std::io::Error> {
     use seccompiler::{SeccompAction, SeccompFilter, SeccompRule};
     use std::collections::BTreeMap;
 
@@ -214,8 +213,10 @@ fn build_ffmpeg_filter() -> Result<seccompiler::BpfProgram, seccompiler::Error> 
         SeccompAction::KillProcess,
         SeccompAction::Allow,
         arch,
-    )?
+    )
+    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("seccomp filter: {e}")))?
     .try_into()
+    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, format!("seccomp bpf: {e}")))
 }
 
 #[cfg(target_os = "linux")]

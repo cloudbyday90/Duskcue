@@ -87,7 +87,7 @@ Authoritative lifecycle rules for the container base image now live in [BASE_IMA
 ### Decision: use the current Alpine stable branch with digest pinning
 
 - Release Dockerfiles use Alpine's current stable branch, pinned as `tag@sha256:digest`, not a tag-only reference.
-- As of the May 2026 research snapshot, Alpine `3.23` is the current stable branch.
+- As of the June 30, 2026 research snapshot, Alpine `3.24` is the current stable branch.
 - Alpine `edge` is not allowed for production or deterministic containerized builds.
 - Remaining on a previous stable branch requires a documented exception and a time-bounded migration plan.
 - Refresh cadence, branch adoption timing, and CVE-response SLAs are defined in [BASE_IMAGE_REFRESH_POLICY.md](../ci/BASE_IMAGE_REFRESH_POLICY.md).
@@ -157,7 +157,7 @@ Docker released Hardened Images (DHI) in 2026 — free, Apache 2.0:
 - Distroless runtime (no shell, no package manager)
 - 7-day critical CVE fix guarantee
 
-**Our position:** We continue using `alpine:3.22` as our base image. DHI is documented as an advanced option for users who want maximum hardening. Users can swap `FROM alpine:3.22` to a DHI variant in their own builds if needed. We do not ship a DHI-based image because:
+**Our position:** We continue using Alpine's current stable branch as our base image. DHI is documented as an advanced option for users who want maximum hardening. Users can swap the runtime `FROM` line to a DHI variant in their own builds if needed. We do not ship a DHI-based image because:
 - DHI is distroless — no shell for debugging (`docker exec -it ... sh` does not work)
 - Alpine is well-understood by the self-hosting community
 - DHI is newer and less proven for complex workloads (embedded PostgreSQL, FFmpeg subprocess)

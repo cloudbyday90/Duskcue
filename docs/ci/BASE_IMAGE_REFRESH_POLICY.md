@@ -44,14 +44,14 @@ The design goal is to keep the runtime image small and predictable without relyi
 - Alpine Linux documents that stable release branches are created every May and November.
 - Alpine Linux documents that the `main` repository is typically supported for two years and the `community` repository is supported until the next stable release.
 - Alpine Linux documents that `edge` is a development branch and explicitly warns against using it for production or deterministic containerized environments.
-- Alpine Linux's releases page shows that the current stable branch as of May 2026 is `v3.23`.
+- Alpine Linux's releases page shows that the current stable branch as of June 30, 2026 is `v3.24`.
 - Alpine Linux documents that support status is branch-specific, which means staying on an older branch is an explicit support decision rather than a neutral default.
 
 ## Design Options
 
 | Option | Pros | Cons | Verdict |
 |---|---|---|---|
-| Minor tag only, such as `alpine:3.23` | Simple, automatically picks up upstream patch refreshes on rebuild | Mutable input, weak audit trail, no deterministic reproduction, tag can move unexpectedly | Reject for release builds |
+| Minor tag only, such as `alpine:3.24` | Simple, automatically picks up upstream patch refreshes on rebuild | Mutable input, weak audit trail, no deterministic reproduction, tag can move unexpectedly | Reject for release builds |
 | Tag plus digest with manual updates | Deterministic, auditable, compatible with Docker guidance | Manual lookup and rotation work, easy to fall behind on fixes | Acceptable fallback, not preferred |
 | Tag plus digest with Docker Scout remediation and CI enforcement | Deterministic, reviewable, auditable, aligns with Docker Scout policy model, keeps human approval in the loop | Requires Scout integration and workflow ownership | Preferred |
 | Distroless or Docker Hardened Images track | Smaller attack surface, stronger upstream hardening story | Harder debugging, operational change for self-hosters, not all workflows need it | Optional future hardening track |
@@ -62,7 +62,7 @@ The design goal is to keep the runtime image small and predictable without relyi
 
 1. Release Dockerfiles may only use runtime and builder base images from trusted sources: Docker Official Images, Verified Publisher images, Docker Hardened Images, or an internal mirror of those images.
 2. The default runtime base remains Alpine Linux because it is small, well-understood by self-hosters, and compatible with the existing musl-oriented build target.
-3. The runtime base must use the current Alpine stable branch after the defined soak window. As of May 2026, that baseline branch is `3.23`.
+3. The runtime base must use the current Alpine stable branch after the defined soak window. As of June 30, 2026, that baseline branch is `3.24`.
 4. `edge` is prohibited for release images.
 5. Remaining on the previous Alpine stable branch is only allowed by documented exception, and only while compatibility blockers are being removed.
 
@@ -70,7 +70,7 @@ The design goal is to keep the runtime image small and predictable without relyi
 
 1. Every external base image in a release Dockerfile must use the `name:tag@sha256:digest` form.
 2. The tag communicates the intended upstream release line; the digest makes the actual content immutable.
-3. Tag-only references are not allowed in release Dockerfiles, even when the tag is a stable minor line such as `alpine:3.23`.
+3. Tag-only references are not allowed in release Dockerfiles, even when the tag is a stable minor line such as `alpine:3.24`.
 4. CI should reject non-allowlisted registries and tag-only external base images.
 5. Where Docker build policies are enabled, the policy should require canonical image references or checksum matches for all external images.
 
@@ -119,7 +119,7 @@ If the current branch no longer receives the necessary fix but the newer support
 
 ## Final Recommendation Stack
 
-1. Use Alpine's current stable branch for the runtime image, not `edge`, and treat `3.23` as the baseline branch at the time of this May 2026 research.
+1. Use Alpine's current stable branch for the runtime image, not `edge`, and treat `3.24` as the baseline branch at the time of this June 30, 2026 research.
 2. Pin every release base image as `tag@sha256:digest`, never tag-only.
 3. Enforce trusted registries and digest usage in CI, with Docker build policies where practical.
 4. Use Docker Scout Up-to-Date Base Images plus GitHub remediation pull requests as the primary refresh mechanism.

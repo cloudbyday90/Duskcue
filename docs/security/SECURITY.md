@@ -678,7 +678,7 @@ Process lifecycle management (spawn, graceful shutdown, zombie prevention, bound
 
 **Crate**: `landlock` (actively maintained, unprivileged, Rust-first API)
 
-**Kernel requirement**: Linux 5.13+ with `CONFIG_SECURITY_LANDLOCK=y`. Our Alpine 3.22 target ships kernel 6.x — satisfied.
+**Kernel requirement**: Linux 5.13+ with `CONFIG_SECURITY_LANDLOCK=y`. The Alpine container baseline runs on the host kernel; supported Docker hosts in [OS_HARDENING.md](../operations/OS_HARDENING.md) satisfy this requirement.
 
 **Graceful degradation**: If the kernel does not support Landlock, enforcement is silently skipped with a `tracing::warn!` log. Protection falls back to DAC (file ownership and permissions) only.
 
@@ -913,6 +913,7 @@ FFmpeg processes are protected by multiple independent layers. Compromise of one
 - Graceful degradation: sandbox failure logs warning but returns `Ok(())` so FFmpeg still starts
 - `apply_landlock()` silently skips non-existent paths (e.g., `/dev/dri` on headless systems)
 - `target_arch()` returns `seccompiler::TargetArch` based on compile-time `cfg`; `arch_prctl` gated to `x86_64`
+- Phase 15 container-build verification fixed Linux-only compile requirements: Landlock `Access` trait import for `AccessFs::from_all()`, `seccompiler` BPF conversion errors mapped to `std::io::Error`, and `pre_exec` registration wrapped in explicit Linux-only `unsafe` blocks
 
 ### Self-Hosted Security Monitoring
 - Reddit r/selfhosted — Minimum Security Steps (February 2026): https://www.reddit.com/r/selfhosted/comments/1r4lpld/

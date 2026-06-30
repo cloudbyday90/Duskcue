@@ -141,10 +141,23 @@ Purpose: produce the operator-facing image.
 ### Multi-stage contract
 
 1. Build dependencies live only in builder stages.
-2. Final runtime stage contains only the application, embedded PostgreSQL runtime components, and the minimum runtime utilities required by the entrypoint.
+2. Final runtime stage contains only the application, adapter-node web runtime, embedded PostgreSQL runtime components, and the minimum runtime utilities required by the entrypoint.
 3. Every important stage is named explicitly.
 4. Release workflows build the explicit runtime stage, not the first unnamed stage.
 5. Debug or smoke-test stages may exist, but they are not publish targets.
+
+### Current Dockerfile implementation
+
+The Phase 15 Task 1 Dockerfile uses these release-stage boundaries:
+
+| Stage | Purpose |
+|---|---|
+| `web-deps` | Installs SvelteKit dependencies from `clients/web/package-lock.json` with an npm cache mount. |
+| `web-builder` | Produces the adapter-node web artifact under `clients/web/build`. |
+| `rust-builder` | Builds the `duskcue` server binary on Alpine for `linux/amd64` and `linux/arm64` Buildx targets. |
+| `runtime` | Publishes the Alpine runtime image with Duskcue, web output, PostgreSQL 18 packages, FFmpeg, Node.js, `tini`, `su-exec`, and documented volume paths. |
+
+All external base images in the Dockerfile use Docker Official Images with `tag@sha256:digest` references. The current baseline is Alpine `3.24` per [BASE_IMAGE_REFRESH_POLICY.md](../ci/BASE_IMAGE_REFRESH_POLICY.md).
 
 ### Context hygiene
 
