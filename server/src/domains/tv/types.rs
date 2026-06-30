@@ -59,6 +59,23 @@ pub enum TvAvailabilityState {
     MetadataIncomplete,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TvPlatformIdTarget {
+    Canonical,
+    RokuFeed,
+    AmazonCatalog,
+    UrlPath,
+    UrlQuery,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TvContentAccessStatus {
+    Accessible,
+    AccessDenied,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct TvSurfaceQuery {
     pub platform: Option<String>,
@@ -188,4 +205,13 @@ pub struct TvSurfaceChangedEventPayload {
 pub struct PlatformContentId {
     pub media_type: TvMediaType,
     pub media_item_id: Uuid,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TvPlatformContentLookup {
+    pub platform_content_id: String,
+    pub media_item_id: Uuid,
+    pub media_type: TvMediaType,
+    pub library_id: Uuid,
+    pub access_status: TvContentAccessStatus,
 }

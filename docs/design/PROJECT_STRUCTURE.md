@@ -904,7 +904,7 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 [TV_PLATFORM_SURFACES.md](TV_PLATFORM_SURFACES.md) is the authoritative Phase 16b design document for TV and console surface contracts.
 
-**Task 1 server-domain status:** `server/src/domains/tv/` now follows the five-file domain pattern with authenticated surface, resolve, settings, and diagnostics routes. `server/src/domains/tv/types.rs` owns the TV feed, section, item, resolve, settings, diagnostics, availability, and SSE event DTOs; `service.rs` owns initial `platform`, `limit`, `sections`, and `platform_content_id` validation; `error.rs` maps through central `AppError` as `TV_001`-`TV_008`. Feed population, inverse content-ID lookup, access enforcement, cache/ETag behavior, diagnostics data, and event emission remain later Phase 16b tasks.
+**Task 1-2 server-domain status:** `server/src/domains/tv/` now follows the five-file domain pattern with authenticated surface, resolve, settings, and diagnostics routes. `server/src/domains/tv/types.rs` owns the TV feed, section, item, resolve, settings, diagnostics, availability, platform-ID target, access-status, lookup, and SSE event DTOs; `service.rs` owns initial `platform`, `limit`, `sections`, canonical/strict/URL `platform_content_id` validation, ID encoding/decoding, media-type matching, and inverse lookup with current user library access; `error.rs` maps through central `AppError` as `TV_001`-`TV_008`. Feed population, full BOLA response policy, cache/ETag behavior, diagnostics data, and event emission remain later Phase 16b tasks.
 
 ## Development Workflow
 

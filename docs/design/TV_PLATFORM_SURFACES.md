@@ -184,14 +184,22 @@ Add a platform-neutral TV surface endpoint:
 
 Phase 16b Task 1 added the initial authenticated TV domain shell under `server/src/domains/tv/` and registered the first contract routes:
 
-| Route | Current Phase 16b Task 1 behavior | Later task |
+| Route | Current Phase 16b behavior | Later task |
 |---|---|---|
 | `GET /api/v1/users/me/tv-surface` | Validates `platform`, `limit`, and `sections`; returns explicit empty sections with `tv_surface_service_not_populated`. | Task 3 and Task 5 populate user-scoped feed data and cache validators. |
-| `GET /api/v1/tv/resolve/{platform_content_id}` | Validates canonical `duskcue:{movie|episode}:{uuid}` IDs; returns unavailable content until lookup/access logic exists. | Task 2 and Task 7 implement inverse lookup and playback-ready resolve responses. |
+| `GET /api/v1/tv/resolve/{platform_content_id}` | Validates canonical `duskcue:{movie|episode}:{uuid}` IDs, performs inverse lookup, validates movie/episode type matches, and reports denied content before returning the Task 7 unavailable-content placeholder. | Task 7 implements playback-ready resolve responses. |
 | `GET /api/v1/tv/settings` | Returns default enabled TV publication settings for the supported platform enum. | Task 8+ define settings persistence and playback-entry policy. |
 | `GET /api/v1/tv/diagnostics` | Validates feed query parameters and returns an empty diagnostics payload. | Task 6 adds exclusion reasons, counts, and metrics. |
 
 The registered TV error codes are `TV_001` invalid platform, `TV_002` unavailable content, `TV_003` access denied, `TV_004` unsupported platform hint, `TV_005` invalid platform content ID, `TV_006` invalid section, `TV_007` invalid limit, and `TV_008` diagnostics unavailable.
+
+Phase 16b Task 2 added platform content ID utility targets:
+
+| Target | Shape |
+|---|---|
+| Canonical | `duskcue:{movie|episode}:{uuid}` |
+| Roku/Amazon-style strict IDs | `duskcue_{movie|episode}_{uuid_without_dashes}` |
+| URL path/query IDs | Percent-encoded canonical IDs |
 
 Optional query parameters:
 

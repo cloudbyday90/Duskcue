@@ -35,11 +35,15 @@ pub async fn get_tv_surface(
 }
 
 pub async fn resolve_platform_content(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
     Path(platform_content_id): Path<String>,
 ) -> Result<Json<TvResolveResponse>, AppError> {
-    let _parsed = service::parse_platform_content_id(&platform_content_id)?;
+    let lookup = service::lookup_platform_content(&state.pool, &user, &platform_content_id).await?;
+    if lookup.access_status == TvContentAccessStatus::AccessDenied {
+        return Err(TvError::AccessDenied.into());
+    }
+
     Err(TvError::UnavailableContent.into())
 }
 
