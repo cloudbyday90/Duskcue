@@ -492,7 +492,7 @@
     td {
         padding: 0.75rem 1rem;
         border-bottom: 1px solid var(--color-border-subtle);
-        text-align: left;
+        text-align: start;
         font-size: 0.8125rem;
         vertical-align: top;
     }
@@ -529,7 +529,8 @@
     }
 
     .issue-list {
-        margin: 0.25rem 0 0 1rem;
+        margin-block: 0.25rem 0;
+        margin-inline: 1rem 0;
         color: var(--color-warning);
         font-size: 0.6875rem;
     }

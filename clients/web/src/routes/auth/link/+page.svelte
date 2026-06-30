@@ -102,8 +102,8 @@
     }
 
     .auth-card {
-        width: 100%;
-        max-width: 420px;
+        width: min(100%, 420px);
+        min-width: 0;
         background-color: var(--color-bg-surface);
         border: 1px solid var(--color-border-subtle);
         border-radius: var(--radius-lg);

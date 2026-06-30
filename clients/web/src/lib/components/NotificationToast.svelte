@@ -59,7 +59,7 @@
     .toast-container {
         position: fixed;
         top: 1rem;
-        right: 1rem;
+        inset-inline-end: 1rem;
         z-index: 9999;
         display: flex;
         flex-direction: column;
@@ -75,7 +75,7 @@
         padding: 0.875rem 1rem;
         background-color: var(--color-bg-elevated);
         border: 1px solid var(--color-border);
-        border-left: 3px solid var(--toast-accent);
+        border-inline-start: 3px solid var(--toast-accent);
         border-radius: var(--radius-md);
         box-shadow: var(--shadow-elevated);
         pointer-events: auto;
@@ -122,8 +122,7 @@
     @media (max-width: 480px) {
         .toast-container {
             top: 0.5rem;
-            right: 0.5rem;
-            left: 0.5rem;
+            inset-inline: 0.5rem;
             max-width: none;
         }
 

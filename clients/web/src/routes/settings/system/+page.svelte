@@ -696,7 +696,7 @@
         border: 1px solid transparent;
         border-radius: var(--radius-sm);
         font-size: 0.8125rem;
-        text-align: left;
+        text-align: start;
     }
 
     .group-nav button:hover,
@@ -797,7 +797,7 @@
 
     .field-unit {
         color: var(--color-text-muted);
-        margin-left: 0.25rem;
+        margin-inline-start: 0.25rem;
     }
 
     .field-hint {

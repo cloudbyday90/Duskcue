@@ -279,7 +279,7 @@
     }
 
     .nav-search {
-        margin-left: auto;
+        margin-inline-start: auto;
     }
 
     .nav-user {
@@ -332,7 +332,7 @@
     .user-dropdown {
         position: absolute;
         top: calc(100% + 4px);
-        right: 0;
+        inset-inline-end: 0;
         min-width: 180px;
         background-color: var(--color-bg-elevated);
         border: 1px solid var(--color-border);
@@ -345,7 +345,7 @@
     .dropdown-item {
         display: block;
         width: 100%;
-        text-align: left;
+        text-align: start;
         padding: 0.625rem 1rem;
         font-size: 0.875rem;
         color: var(--color-text-secondary);
@@ -397,13 +397,13 @@
     .mobile-drawer {
         position: fixed;
         top: 0;
-        right: 0;
+        inset-inline-end: 0;
         bottom: 0;
         width: 300px;
         max-width: 85vw;
         z-index: 150;
         background-color: var(--color-bg-surface);
-        border-left: 1px solid var(--color-border);
+        border-inline-start: 1px solid var(--color-border);
         box-shadow: var(--shadow-elevated);
         display: flex;
         flex-direction: column;
@@ -415,11 +415,15 @@
 
     @keyframes drawer-slide-in {
         from {
-            transform: translateX(100%);
+            transform: translateX(var(--drawer-closed-offset, 100%));
         }
         to {
             transform: translateX(0);
         }
+    }
+
+    :global([dir='rtl']) .mobile-drawer {
+        --drawer-closed-offset: -100%;
     }
 
     .drawer-search {
@@ -441,7 +445,7 @@
         color: var(--color-text-secondary);
         border-radius: var(--radius-sm);
         transition: color var(--transition-fast), background-color var(--transition-fast);
-        text-align: left;
+        text-align: start;
         width: 100%;
     }
 

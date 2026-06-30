@@ -260,7 +260,7 @@
     .bell-badge {
         position: absolute;
         top: 2px;
-        right: 2px;
+        inset-inline-end: 2px;
         min-width: 16px;
         height: 16px;
         padding: 0 4px;
@@ -285,7 +285,7 @@
     .bell-dropdown {
         position: absolute;
         top: calc(100% + 6px);
-        right: 0;
+        inset-inline-end: 0;
         width: 380px;
         max-width: calc(100vw - 2rem);
         background-color: var(--color-bg-elevated);
@@ -375,7 +375,8 @@
         display: flex;
         align-items: flex-start;
         gap: 0.625rem;
-        padding: 0.75rem 1rem 0.75rem 0.875rem;
+        padding-block: 0.75rem;
+        padding-inline: 0.875rem 1rem;
         border-bottom: 1px solid var(--color-border-subtle);
         cursor: pointer;
         transition: background-color var(--transition-fast);
@@ -404,7 +405,7 @@
 
     .notif-dot {
         position: absolute;
-        left: 0.25rem;
+        inset-inline-start: 0.25rem;
         top: 1.125rem;
         width: 6px;
         height: 6px;
@@ -517,7 +518,7 @@
     @media (max-width: 768px) {
         .bell-dropdown {
             width: calc(100vw - 1.5rem);
-            right: -0.5rem;
+            inset-inline-end: -0.5rem;
         }
     }
 </style>

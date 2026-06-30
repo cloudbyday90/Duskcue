@@ -105,7 +105,7 @@
 
     .search-icon {
         position: absolute;
-        left: 0.75rem;
+        inset-inline-start: 0.75rem;
         color: var(--color-text-muted);
         pointer-events: none;
         z-index: 1;
@@ -113,7 +113,8 @@
 
     .search-input {
         width: 100%;
-        padding: 0.625rem 1rem 0.625rem 2.5rem;
+        padding-block: 0.625rem;
+        padding-inline: 2.5rem 1rem;
         font-size: 0.9375rem;
         color: var(--color-text-primary);
         background-color: var(--color-bg-surface);
@@ -145,12 +146,13 @@
     }
 
     .compact .search-input {
-        padding: 0.5rem 0.875rem 0.5rem 2.25rem;
+        padding-block: 0.5rem;
+        padding-inline: 2.25rem 0.875rem;
         font-size: 0.875rem;
     }
 
     .compact .search-icon {
-        left: 0.625rem;
+        inset-inline-start: 0.625rem;
         width: 16px;
         height: 16px;
     }

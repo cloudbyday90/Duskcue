@@ -172,14 +172,14 @@
 
     .badge-rating {
         top: 0.5rem;
-        right: 0.5rem;
+        inset-inline-end: 0.5rem;
         color: var(--color-text-primary);
         background-color: rgba(0, 0, 0, 0.7);
     }
 
     .badge-type {
         bottom: 0.5rem;
-        left: 0.5rem;
+        inset-inline-start: 0.5rem;
         color: var(--color-text-primary);
         background-color: rgba(0, 0, 0, 0.7);
         text-transform: capitalize;
@@ -188,8 +188,7 @@
     .progress-bar {
         position: absolute;
         bottom: 0;
-        left: 0;
-        right: 0;
+        inset-inline: 0;
         height: 3px;
         background-color: rgba(0, 0, 0, 0.5);
     }

@@ -91,6 +91,17 @@ a {
     text-decoration: none;
 }
 
+.back-link::before,
+.back-action::before {
+    content: '←';
+    margin-inline-end: 0.35em;
+}
+
+[dir='rtl'] .back-link::before,
+[dir='rtl'] .back-action::before {
+    content: '→';
+}
+
 button {
     font-family: inherit;
     cursor: pointer;

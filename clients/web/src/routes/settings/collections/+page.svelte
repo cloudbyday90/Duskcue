@@ -394,7 +394,7 @@
     {:else if view === 'editor'}
         <div class="editor-pane">
             <div class="editor-toolbar">
-                <button class="btn-ghost" onclick={() => (view = 'list')}>{m.routes_settings_collections_page_back_to_list()}</button>
+                <button class="btn-ghost back-action" onclick={() => (view = 'list')}>{m.routes_settings_collections_page_back_to_list()}</button>
                 <span class="editor-mode">{editing ? 'Edit collection' : 'New collection'}</span>
             </div>
 
@@ -517,7 +517,7 @@
     {:else if view === 'templates'}
         <div class="templates-pane">
             <div class="editor-toolbar">
-                <button class="btn-ghost" onclick={() => (view = 'list')}>{m.routes_settings_collections_page_back_to_list()}</button>
+                <button class="btn-ghost back-action" onclick={() => (view = 'list')}>{m.routes_settings_collections_page_back_to_list()}</button>
                 <span class="editor-mode">{m.routes_settings_collections_page_templates()}</span>
             </div>
 

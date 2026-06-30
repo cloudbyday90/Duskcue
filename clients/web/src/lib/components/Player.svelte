@@ -739,8 +739,7 @@
     .player-controls {
         position: absolute;
         bottom: 0;
-        left: 0;
-        right: 0;
+        inset-inline: 0;
         padding: 0.75rem 1rem 0.625rem;
         background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 60%, transparent 100%);
         opacity: 0;
@@ -765,8 +764,7 @@
     .seek-bar-track {
         position: absolute;
         top: 50%;
-        left: 0;
-        right: 0;
+        inset-inline: 0;
         height: 4px;
         transform: translateY(-50%);
         background-color: rgba(255, 255, 255, 0.2);
@@ -830,7 +828,7 @@
     .player-runtime {
         font-size: 0.6875rem;
         color: var(--color-text-secondary);
-        margin-left: 0.5rem;
+        margin-inline-start: 0.5rem;
     }
 
     .control-btn {

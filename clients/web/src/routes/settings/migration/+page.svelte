@@ -1449,7 +1449,7 @@
         background: transparent;
         color: var(--color-text-muted);
         font-size: 0.8125rem;
-        text-align: left;
+        text-align: start;
         cursor: pointer;
     }
 
@@ -1654,7 +1654,7 @@
         background: var(--color-background);
         color: var(--color-text-secondary);
         font-size: 0.875rem;
-        text-align: left;
+        text-align: start;
     }
 
     .source-row {

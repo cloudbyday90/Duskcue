@@ -257,8 +257,7 @@
     .detail-backdrop {
         position: absolute;
         top: -1.5rem;
-        left: -1.5rem;
-        right: -1.5rem;
+        inset-inline: -1.5rem;
         height: 400px;
         overflow: hidden;
         z-index: 0;
@@ -624,7 +623,7 @@
         }
 
         .info-area {
-            text-align: left;
+            text-align: start;
         }
 
         .media-title {

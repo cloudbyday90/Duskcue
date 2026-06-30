@@ -188,8 +188,8 @@
     }
 
     .auth-card {
-        width: 100%;
-        max-width: 420px;
+        width: min(100%, 420px);
+        min-width: 0;
         background-color: var(--color-bg-surface);
         border: 1px solid var(--color-border-subtle);
         border-radius: var(--radius-lg);
@@ -224,12 +224,14 @@
 
     .mode-tab {
         flex: 1;
+        min-width: 0;
         padding: 0.5rem;
         font-size: 0.8125rem;
         font-weight: 500;
         color: var(--color-text-secondary);
         border-radius: var(--radius-sm);
         transition: color var(--transition-fast), background-color var(--transition-fast);
+        white-space: nowrap;
     }
 
     .mode-tab.active {

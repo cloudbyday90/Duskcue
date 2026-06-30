@@ -1036,7 +1036,7 @@
     }
 
     .prefs-action {
-        text-align: right;
+        text-align: end;
     }
 
     .prefs-name {
@@ -1096,7 +1096,7 @@
         content: '';
         position: absolute;
         top: 2px;
-        left: 2px;
+        inset-inline-start: 2px;
         width: 14px;
         height: 14px;
         background-color: var(--color-text-primary);
@@ -1109,8 +1109,12 @@
     }
 
     .toggle input:checked + .toggle-track::after {
-        transform: translateX(16px);
+        transform: translateX(var(--toggle-checked-offset, 16px));
         background-color: var(--color-bg-deep);
+    }
+
+    :global([dir='rtl']) .toggle {
+        --toggle-checked-offset: -16px;
     }
 
     .toggle input:focus-visible + .toggle-track {
@@ -1228,7 +1232,7 @@
         }
 
         .prefs-channel {
-            text-align: left;
+            text-align: start;
             display: flex;
             align-items: center;
             gap: 0.625rem;
@@ -1244,7 +1248,7 @@
         }
 
         .prefs-action {
-            text-align: left;
+            text-align: start;
         }
 
         .feed-cat {

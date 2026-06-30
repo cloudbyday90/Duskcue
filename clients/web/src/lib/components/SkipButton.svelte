@@ -116,7 +116,7 @@
 <style>
     .skip-button {
         position: absolute;
-        right: 1.25rem;
+        inset-inline-end: 1.25rem;
         bottom: 5.5rem;
         z-index: 10;
         display: inline-flex;
@@ -166,7 +166,7 @@
 
     @media (max-width: 640px) {
         .skip-button {
-            right: 0.75rem;
+            inset-inline-end: 0.75rem;
             bottom: 4.75rem;
             padding: 0.5rem 0.875rem;
             font-size: 0.8125rem;
