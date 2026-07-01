@@ -1,0 +1,42 @@
+{
+  "fixture": "surface-access-revoked",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/users/me/tv-surface?platform=tvos&limit=4"
+  },
+  "headers": {
+    "cache-control": "private, max-age=60, stale-while-revalidate=300",
+    "etag": "\"fixture-tv-surface-access-revoked\""
+  },
+  "body": {
+    "generated_at": "2026-06-30T18:10:00Z",
+    "platform": "tvos",
+    "limit": 4,
+    "sections": [
+      {
+        "section_type": "continue",
+        "title": "Continue Watching",
+        "empty_reason": "no_matching_items",
+        "items": []
+      },
+      {
+        "section_type": "next_up",
+        "title": "Next Up",
+        "empty_reason": "no_matching_items",
+        "items": []
+      },
+      {
+        "section_type": "new_episodes",
+        "title": "New Episodes",
+        "empty_reason": "no_matching_items",
+        "items": []
+      },
+      {
+        "section_type": "recommended",
+        "title": "Recommended",
+        "empty_reason": "no_matching_items",
+        "items": []
+      }
+    ]
+  }
+}

@@ -597,6 +597,28 @@ Before a platform adapter is considered complete, it must prove:
 - Logout/profile/server switching clears local platform mappings and private cached rows.
 - The platform's secure storage story is documented and tested.
 
+## Reference Fixtures and Harness
+
+Reusable TV contract fixtures live under `docs/api/fixtures/tv/`:
+
+| Fixture | Purpose |
+|---|---|
+| `surface-full.json` | Full feed with Continue Watching, Next Up, New Episodes, and Recommendations items plus private cache/ETag fixture headers. |
+| `surface-empty.json` | Empty feed with bounded `empty_reason` values for all sections. |
+| `surface-access-revoked.json` | User-facing feed after a previously visible item is removed by access revocation. |
+| `diagnostics-access-revoked.json` | Admin diagnostic sample showing `access_revoked` without paths or internal details. |
+| `resolve-playable.json` | Playback-ready resolve response with `POST /api/v1/playback/start` hints. |
+| `resolve-unavailable.json` | BOLA-safe unavailable Problem Details response. |
+| `golden-render.json` | Expected reference row render generated from `surface-full.json`. |
+
+Run the reusable verifier before starting or changing a platform adapter:
+
+```bash
+node scripts/verify-tv-surface-fixtures.mjs
+```
+
+The verifier checks section order, row labels, total limits, stable canonical `platform_content_id` values, private cache headers, quoted ETags, unavailable/diagnostic BOLA behavior, privacy-safe fixture content, and the golden renderer output. Platform clients should port the same expectations into their native test suites before implementing platform-specific launcher APIs.
+
 ## Android TV / Google TV Adapter
 
 Android TV / Google TV is the first target because it provides a documented Watch Next API through AndroidX TV Provider.

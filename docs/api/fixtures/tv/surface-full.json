@@ -1,0 +1,134 @@
+{
+  "fixture": "surface-full",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/users/me/tv-surface?platform=android_tv&limit=8"
+  },
+  "headers": {
+    "cache-control": "private, max-age=60, stale-while-revalidate=300",
+    "etag": "\"fixture-tv-surface-full\""
+  },
+  "body": {
+    "generated_at": "2026-06-30T18:00:00Z",
+    "platform": "android_tv",
+    "limit": 8,
+    "sections": [
+      {
+        "section_type": "continue",
+        "title": "Continue Watching",
+        "empty_reason": null,
+        "items": [
+          {
+            "surface_item_id": "continue:11111111-1111-4111-8111-111111111111",
+            "platform_content_id": "duskcue:movie:11111111-1111-4111-8111-111111111111",
+            "media_item_id": "11111111-1111-4111-8111-111111111111",
+            "media_type": "movie",
+            "section_type": "continue",
+            "title": "Moonlit Harbor",
+            "subtitle": "Movie",
+            "description": "A quiet mystery in a coastal town.",
+            "season_number": null,
+            "episode_number": null,
+            "duration_ms": 7200000,
+            "resume_position_ms": 1800000,
+            "progress_percent": 25.0,
+            "last_engaged_at": "2026-06-30T17:30:00Z",
+            "poster_url": "/api/v1/items/11111111-1111-4111-8111-111111111111/artwork/poster",
+            "backdrop_url": "/api/v1/items/11111111-1111-4111-8111-111111111111/artwork/backdrop",
+            "deep_link": "duskcue://play/movie/11111111-1111-4111-8111-111111111111",
+            "web_url": "/media/11111111-1111-4111-8111-111111111111",
+            "availability": "playable",
+            "availability_detail": null
+          }
+        ]
+      },
+      {
+        "section_type": "next_up",
+        "title": "Next Up",
+        "empty_reason": null,
+        "items": [
+          {
+            "surface_item_id": "next_up:22222222-2222-4222-8222-222222222222",
+            "platform_content_id": "duskcue:episode:22222222-2222-4222-8222-222222222222",
+            "media_item_id": "22222222-2222-4222-8222-222222222222",
+            "media_type": "episode",
+            "section_type": "next_up",
+            "title": "Signal Fire",
+            "subtitle": "Northern Lights S01E03",
+            "description": "The crew follows a strange broadcast.",
+            "season_number": 1,
+            "episode_number": 3,
+            "duration_ms": 2640000,
+            "resume_position_ms": 0,
+            "progress_percent": 0.0,
+            "last_engaged_at": "2026-06-29T23:10:00Z",
+            "poster_url": "/api/v1/items/22222222-2222-4222-8222-222222222222/artwork/poster",
+            "backdrop_url": "/api/v1/items/22222222-2222-4222-8222-222222222222/artwork/backdrop",
+            "deep_link": "duskcue://play/episode/22222222-2222-4222-8222-222222222222",
+            "web_url": "/media/22222222-2222-4222-8222-222222222222",
+            "availability": "playable",
+            "availability_detail": null
+          }
+        ]
+      },
+      {
+        "section_type": "new_episodes",
+        "title": "New Episodes",
+        "empty_reason": null,
+        "items": [
+          {
+            "surface_item_id": "new_episodes:33333333-3333-4333-8333-333333333333",
+            "platform_content_id": "duskcue:episode:33333333-3333-4333-8333-333333333333",
+            "media_item_id": "33333333-3333-4333-8333-333333333333",
+            "media_type": "episode",
+            "section_type": "new_episodes",
+            "title": "Afterimage",
+            "subtitle": "City Below S02E01",
+            "description": "A new lead changes the case.",
+            "season_number": 2,
+            "episode_number": 1,
+            "duration_ms": 2520000,
+            "resume_position_ms": 0,
+            "progress_percent": 0.0,
+            "last_engaged_at": null,
+            "poster_url": "/api/v1/items/33333333-3333-4333-8333-333333333333/artwork/poster",
+            "backdrop_url": "/api/v1/items/33333333-3333-4333-8333-333333333333/artwork/backdrop",
+            "deep_link": "duskcue://play/episode/33333333-3333-4333-8333-333333333333",
+            "web_url": "/media/33333333-3333-4333-8333-333333333333",
+            "availability": "playable",
+            "availability_detail": null
+          }
+        ]
+      },
+      {
+        "section_type": "recommended",
+        "title": "Recommended",
+        "empty_reason": null,
+        "items": [
+          {
+            "surface_item_id": "recommended:44444444-4444-4444-8444-444444444444",
+            "platform_content_id": "duskcue:movie:44444444-4444-4444-8444-444444444444",
+            "media_item_id": "44444444-4444-4444-8444-444444444444",
+            "media_type": "movie",
+            "section_type": "recommended",
+            "title": "The Glass Observatory",
+            "subtitle": "Movie",
+            "description": "A scientist finds a pattern in the storm.",
+            "season_number": null,
+            "episode_number": null,
+            "duration_ms": 6420000,
+            "resume_position_ms": 0,
+            "progress_percent": 0.0,
+            "last_engaged_at": null,
+            "poster_url": "/api/v1/items/44444444-4444-4444-8444-444444444444/artwork/poster",
+            "backdrop_url": "/api/v1/items/44444444-4444-4444-8444-444444444444/artwork/backdrop",
+            "deep_link": "duskcue://play/movie/44444444-4444-4444-8444-444444444444",
+            "web_url": "/media/44444444-4444-4444-8444-444444444444",
+            "availability": "playable",
+            "availability_detail": null
+          }
+        ]
+      }
+    ]
+  }
+}

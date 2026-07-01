@@ -1,0 +1,39 @@
+{
+  "fixture": "resolve-playable",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/tv/resolve/duskcue%3Amovie%3A11111111-1111-4111-8111-111111111111"
+  },
+  "body": {
+    "platform_content_id": "duskcue:movie:11111111-1111-4111-8111-111111111111",
+    "media_item_id": "11111111-1111-4111-8111-111111111111",
+    "media_type": "movie",
+    "title": "Moonlit Harbor",
+    "subtitle": "Movie",
+    "description": "A quiet mystery in a coastal town.",
+    "duration_ms": 7200000,
+    "resume_position_ms": 1800000,
+    "availability": "playable",
+    "availability_detail": null,
+    "playback_action": "start_playback",
+    "playback_start_path": "/api/v1/playback/start",
+    "playback_start": {
+      "method": "POST",
+      "path": "/api/v1/playback/start",
+      "media_item_id": "11111111-1111-4111-8111-111111111111",
+      "media_file_id": "66666666-6666-4666-8666-666666666666",
+      "start_position_ms": 1800000,
+      "force_transcode": false,
+      "device_profile_required": false
+    },
+    "deep_link": "duskcue://play/movie/11111111-1111-4111-8111-111111111111",
+    "web_url": "/media/11111111-1111-4111-8111-111111111111",
+    "artwork": {
+      "poster_url": "/api/v1/items/11111111-1111-4111-8111-111111111111/artwork/poster",
+      "backdrop_url": "/api/v1/items/11111111-1111-4111-8111-111111111111/artwork/backdrop",
+      "logo_url": "/api/v1/items/11111111-1111-4111-8111-111111111111/artwork/logo",
+      "thumbnail_url": "/api/v1/items/11111111-1111-4111-8111-111111111111/artwork/thumbnail"
+    },
+    "requires_auth": true
+  }
+}

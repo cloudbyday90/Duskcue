@@ -1,0 +1,30 @@
+{
+  "fixture": "diagnostics-access-revoked",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/tv/diagnostics?platform=tvos&limit=4"
+  },
+  "body": {
+    "generated_at": "2026-06-30T18:10:00Z",
+    "platform": "tvos",
+    "candidate_count": 1,
+    "included_count": 0,
+    "section_counts": [
+      { "section_type": "continue", "item_count": 0 },
+      { "section_type": "next_up", "item_count": 0 },
+      { "section_type": "new_episodes", "item_count": 0 },
+      { "section_type": "recommended", "item_count": 0 }
+    ],
+    "reason_counts": [
+      { "reason": "access_revoked", "count": 1 }
+    ],
+    "excluded": [
+      {
+        "media_item_id": "55555555-5555-4555-8555-555555555555",
+        "reason": "access_revoked",
+        "detail": "User no longer has access to this library",
+        "availability": "access_revoked"
+      }
+    ]
+  }
+}

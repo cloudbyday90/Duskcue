@@ -1,0 +1,17 @@
+{
+  "fixture": "resolve-unavailable",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/tv/resolve/duskcue%3Amovie%3A55555555-5555-4555-8555-555555555555"
+  },
+  "status": 404,
+  "body": {
+    "type": "/errors/tv_002",
+    "title": "TV_002",
+    "status": 404,
+    "detail": "Platform content is unavailable",
+    "trace_id": "fixture-tv-unavailable",
+    "instance": "/api/v1/tv/resolve/duskcue:movie:55555555-5555-4555-8555-555555555555",
+    "errors": null
+  }
+}

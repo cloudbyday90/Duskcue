@@ -118,6 +118,14 @@ The verifier currently checks:
 
 Phase 16d extends this into response fixtures, generated bindings, and CI conformance tests.
 
+Phase 16b added reusable TV surface fixtures ahead of full Phase 16d generation:
+
+```bash
+node scripts/verify-tv-surface-fixtures.mjs
+```
+
+The TV verifier checks `docs/api/fixtures/tv` feed, resolve, diagnostics, unavailable, and golden-render fixtures for section order, stable IDs, cache/ETag expectations, access-revoked behavior, and privacy-safe content.
+
 ## Relationship to Other Docs
 
 | Document | Relationship |

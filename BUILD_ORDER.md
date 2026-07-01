@@ -3879,11 +3879,13 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
     - Document that platform clients must not cache bearer tokens in plaintext and must revalidate access before playback.~~ **DONE**
 
 **Task 12 implementation note:** Added the shared platform adapter contract to [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md). The contract defines required inputs, identifier/deep-link mapping, surface classes, refresh/removal rules, playback progress and device capability reporting, platform-local versus server-side storage rules, token/secret handling, and an acceptance checklist for future platform phases. It distinguishes row-owned launcher surfaces, event-driven activity surfaces, catalog/feed-plus-deep-link surfaces, app-local-only surfaces, and partner-gated surfaces while preserving the rule that every playback launch revalidates through Duskcue resolve.
-13. Build a reference client harness and fixtures:
+13. ~~Build a reference client harness and fixtures:
     - Add JSON fixtures for feed responses, resolve responses, empty states, access-revoked items, and unavailable items.
     - Build a small reference renderer or test harness that renders Continue Watching, Next Up, New Episodes, and Recommendations from the same feed.
     - Add golden tests for feed ordering, stable IDs, cache/ETag behavior, section limits, and BOLA/access filtering.
-    - Add contract tests that future platform clients can reuse before platform-specific implementation starts.
+    - Add contract tests that future platform clients can reuse before platform-specific implementation starts.~~ **DONE**
+
+**Task 13 implementation note:** Added reusable TV surface fixtures under [docs/api/fixtures/tv](docs/api/fixtures/tv): full feed, empty feed, access-revoked feed, admin diagnostics for access revocation, playable resolve, unavailable resolve, and a golden reference render. Added [verify-tv-surface-fixtures.mjs](scripts/verify-tv-surface-fixtures.mjs), a small Node harness that renders feed rows and verifies section order, labels, stable `platform_content_id` values, total limits, private cache/ETag fixture headers, BOLA/access-revoked behavior, unavailable resolve Problem Details, and absence of private paths/tokens/signed URLs. This gives future TV platform clients a reusable pre-implementation contract test before platform-specific code begins.
 
 **Verification:** The server exposes a user-scoped TV surface feed and deep-link resolve endpoint, rejects unauthorized/deauthorized items, produces stable platform content IDs and platform-safe variants, emits debounced `tv_surface_changed` events for all relevant state changes, returns private cache/ETag headers, surfaces useful availability diagnostics without leaking paths, and ships fixtures plus a reference harness that renders consistent Continue Watching, Next Up, New Episodes, and Recommendations rows from the same feed.
 

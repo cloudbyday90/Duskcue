@@ -130,6 +130,7 @@ TV launcher integration is documented in [TV_PLATFORM_SURFACES.md](docs/design/T
 - **TV publication settings are per profile** — users can opt out of TV publication, narrow enabled platforms, and disable individual TV rows; settings live in `users.metadata.tv_surface_settings`.
 - **Living-room UX is shared** — TV and console clients share row order, focus/back behavior, artwork fallback rules, playback control expectations, profile privacy, and localization boundaries from `TV_PLATFORM_SURFACES.md`.
 - **TV adapters share one contract** — platform clients map stable Duskcue IDs, deep links, playback progress, capability reports, artwork, and local/platform rows through the shared adapter contract before adding platform-specific APIs.
+- **TV fixtures are reusable** — `docs/api/fixtures/tv` plus `scripts/verify-tv-surface-fixtures.mjs` provide feed/resolve/diagnostics golden inputs for future platform clients.
 
 ## Product Identity & Client UI
 
