@@ -108,7 +108,7 @@ class _DownloadSettingsPanel extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             DropdownButtonFormField<DownloadQualityMode>(
-              value: settings.defaultQualityMode,
+              initialValue: settings.defaultQualityMode,
               decoration: InputDecoration(labelText: strings.quality),
               items: DownloadQualityMode.values
                   .map(
@@ -148,7 +148,7 @@ class _DownloadSettingsPanel extends StatelessWidget {
               title: Text(strings.pauseOnLowStorage),
             ),
             DropdownButtonFormField<int?>(
-              value: _storageCapValue(settings.storageCapBytes),
+              initialValue: _storageCapValue(settings.storageCapBytes),
               decoration: const InputDecoration(labelText: 'Storage cap'),
               items: const [
                 DropdownMenuItem<int?>(value: null, child: Text('No cap')),

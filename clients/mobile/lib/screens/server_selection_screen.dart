@@ -141,7 +141,7 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
               ),
               const SizedBox(height: 16),
               DropdownButtonFormField<NetworkMode>(
-                value: _networkMode,
+                initialValue: _networkMode,
                 decoration: const InputDecoration(
                   labelText: 'Network mode',
                   border: OutlineInputBorder(),

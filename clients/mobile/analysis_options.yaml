@@ -4,3 +4,4 @@ linter:
   rules:
     avoid_print: true
     prefer_const_constructors: true
+    use_null_aware_elements: false

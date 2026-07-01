@@ -477,7 +477,7 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
                                 const SizedBox(height: 16),
                                 if (!widget.offline) ...[
                                   DropdownButtonFormField<QualityMode>(
-                                    value: _qualityMode,
+                                    initialValue: _qualityMode,
                                     decoration: InputDecoration(labelText: strings.quality, border: const OutlineInputBorder()),
                                     items: QualityMode.values
                                         .map((mode) => DropdownMenuItem<QualityMode>(value: mode, child: Text(mode.label)))
@@ -489,7 +489,7 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
                                   const SizedBox(height: 12),
                                 ],
                                 DropdownButtonFormField<int?>(
-                                  value: _selectedAudioStreamIndex,
+                                  initialValue: _selectedAudioStreamIndex,
                                   decoration: InputDecoration(labelText: strings.audio, border: const OutlineInputBorder()),
                                   items: [
                                     const DropdownMenuItem<int?>(value: null, child: Text('Default')),
@@ -504,7 +504,7 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
                                 ),
                                 const SizedBox(height: 12),
                                 DropdownButtonFormField<int?>(
-                                  value: _selectedSubtitleStreamIndex,
+                                  initialValue: _selectedSubtitleStreamIndex,
                                   decoration: InputDecoration(labelText: strings.subtitles, border: const OutlineInputBorder()),
                                   items: [
                                     DropdownMenuItem<int?>(value: null, child: Text(strings.noSubtitle)),
@@ -547,7 +547,7 @@ class _PlaybackControls extends StatelessWidget {
     final value = controller.value;
     final durationMs = value.duration.inMilliseconds.toDouble();
     final maxMs = durationMs <= 0 ? 1.0 : durationMs;
-    final positionMs = value.position.inMilliseconds.toDouble().clamp(0.0, maxMs) as double;
+    final positionMs = value.position.inMilliseconds.toDouble().clamp(0.0, maxMs);
 
     return Column(
       children: [

@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:duskcue_mobile/services/api_client.dart';
 import 'package:duskcue_mobile/services/device_identity_service.dart';
 import 'package:duskcue_mobile/services/secure_storage_service.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/services.dart';
 

@@ -46,7 +46,7 @@ class RealtimeService {
       if (body == null) {
         throw StateError('SSE stream did not return a response body.');
       }
-      _lineSubscription = body.stream.transform(utf8.decoder).transform(const LineSplitter()).listen(
+      _lineSubscription = body.stream.cast<List<int>>().transform(utf8.decoder).transform(const LineSplitter()).listen(
         _handleLine,
         onError: (_) => _handleDisconnect(reconnect: true),
         onDone: () => _handleDisconnect(reconnect: true),

@@ -269,7 +269,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                       ),
                     );
                   }),
-                  ButtonBar(
+                  OverflowBar(
                     children: [
                       OutlinedButton.icon(
                         onPressed: session.isAuthenticated ? _logout : null,
@@ -490,7 +490,7 @@ class _QualitySettingsCard extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(16),
         child: DropdownButtonFormField<QualityMode>(
-          value: value,
+          initialValue: value,
           decoration: const InputDecoration(
             labelText: 'Default playback quality',
             border: OutlineInputBorder(),
@@ -510,11 +510,11 @@ class _AdminWorkflowNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Card(
+    return const Card(
       child: ListTile(
-        leading: const Icon(Icons.admin_panel_settings_outlined),
-        title: const Text('Admin settings'),
-        subtitle: const Text('Server, library, backup, migration, storage, and full quality policy administration remain web-first.'),
+        leading: Icon(Icons.admin_panel_settings_outlined),
+        title: Text('Admin settings'),
+        subtitle: Text('Server, library, backup, migration, storage, and full quality policy administration remain web-first.'),
       ),
     );
   }
