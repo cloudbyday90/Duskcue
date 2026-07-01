@@ -171,6 +171,15 @@ Phase 16c Task 8 added job status notifications:
 - `download_ready` and `download_failed` notification types are seeded by `20260701040000_seed_download_notifications.sql` with Fluent templates in every configured server locale.
 - Non-actionable progress, retry, and cancellation updates remain foreground SSE only. Quota/storage warning notifications remain reserved for the settings/quota work that can produce actionable remediation.
 
+Phase 16c Task 9 added the mobile download manager shell:
+
+- `clients/mobile/lib/models/download_models.dart` defines download quality modes, local item states, scoped inventory keys, settings, server plans/jobs, and realtime status-event DTOs.
+- `clients/mobile/lib/services/download_service.dart` wraps the server plan/job/status/cancel/delete package endpoints using the current mobile device identity, client platform, and selected default download quality.
+- `clients/mobile/lib/stores/download_manager_store.dart` persists download inventory and settings metadata under a `(server_origin, user_id, device_identifier)` scope so account/server/device switching cannot show another account's downloads. It loads on authenticated foreground, refreshes jobs after restart, merges `download_job_status` SSE events, and exposes queue, pause, resume, cancel, delete, delete-all, and retry actions.
+- `clients/mobile/lib/screens/downloads_screen.dart` adds the authenticated Downloads tab with preparing, ready, downloading, paused, failed, expired, unavailable, and cancelled state display plus Wi-Fi-only, cellular allowance, charging-only, low-storage pause, and default quality controls.
+- Media detail screens can queue the current movie/episode for offline preparation. Download-next-episode and auto-remove-watched behavior remain deferred until the base manager is stable.
+- Actual protected package-file placement and native OS background transfer execution remain Task 10 responsibilities; Task 9 establishes the durable lifecycle/inventory/control surface those adapters will drive.
+
 ## Mobile Contract
 
 The mobile clients own these responsibilities:
@@ -254,4 +263,4 @@ Download quality reuses the Phase 7 quality-management model but is not identica
 
 ## Implementation Status
 
-Phase 16c Tasks 0-7 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, manifest response format, durable job creation/status/cancel, scheduled package worker, authenticated package serving, and resumable transfer are in place. Notifications, mobile download manager, protected local storage, offline playback, reconnect sync, settings, observability, and broader integration tests are pending Phase 16c Tasks 8-15.
+Phase 16c Tasks 0-9 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, manifest response format, durable job creation/status/cancel, scheduled package worker, authenticated package serving, resumable transfer, foreground/push notifications, and Flutter mobile download manager shell are in place. Protected local storage, offline playback, reconnect sync, revocation cleanup, settings completion, observability, and broader integration tests are pending Phase 16c Tasks 10-15.

@@ -462,6 +462,33 @@ Verification:
 
 Flutter/Dart are not installed in the current Windows environment, so `flutter analyze`, `flutter test`, Android debug/release builds, and iOS simulator/device builds remain CI/SDK-environment verification.
 
+### Phase 16c Task 9 — Mobile Download Manager
+
+Implementation:
+
+- Added mobile download DTOs in `clients/mobile/lib/models/download_models.dart` for quality modes, local states, scoped inventory keys, download settings, server plans/jobs, realtime status events, and local inventory rows.
+- Added `DownloadService` for the Phase 16c server planning, job create/status/cancel, and package-delete endpoints. Requests include the current mobile device identifier, platform, client version, selected default quality mode, plan revision, and plan hash.
+- Added `DownloadManagerNotifier` as the Riverpod state boundary for scoped inventory and settings. Inventory/settings are persisted by `(server_origin, user_id, device_identifier)` so switching server, user, or device cannot expose another scope's downloads.
+- Added a Downloads tab and screen for queue state, status refresh, pause/resume, cancel, retry, delete, delete-all, and the base network/storage controls. Media detail screens can queue a movie or episode for offline preparation.
+- Wired `download_job_status` SSE events into the manager store from `AppShell`, alongside app-foreground refresh for restart recovery.
+
+Scope notes:
+
+- Task 9 establishes the manager lifecycle, inventory, settings, controls, and realtime state surface.
+- Protected package-file storage, backup exclusion, native Android/iOS background transfer execution, checksum verification into local files, and local package deletion semantics remain Phase 16c Task 10.
+
+Verification:
+
+- `node scripts/verify-client-contracts.mjs`
+- `node scripts/verify-tv-surface-fixtures.mjs`
+- `cargo fmt --all -- --check`
+- `cargo check -p duskcue`
+- `git diff --check`
+- `flutter --version` attempted and failed because Flutter is not installed in the current Windows environment.
+- `dart --version` attempted and failed because Dart is not installed in the current Windows environment.
+
+Flutter/Dart are not installed in the current Windows environment, so `flutter analyze`, `flutter test`, Android/iOS builds, and device background-transfer checks remain CI/SDK-environment verification.
+
 ## Relationship to Other Documents
 
 | Document | Relationship |

@@ -2,6 +2,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:duskcue_mobile/l10n/app_strings.dart';
 import 'package:duskcue_mobile/models/content_models.dart';
 import 'package:duskcue_mobile/services/service_providers.dart';
+import 'package:duskcue_mobile/stores/download_manager_store.dart';
 import 'package:duskcue_mobile/widgets/mobile_state_views.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -91,6 +92,19 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                           onPressed: () => context.go('/play/${item.id}'),
                           icon: const Icon(Icons.play_arrow),
                           label: Text(strings.play),
+                        ),
+                        const SizedBox(height: 12),
+                        OutlinedButton.icon(
+                          onPressed: () async {
+                            await ref.read(downloadManagerProvider.notifier).queueDownload(item);
+                            if (!context.mounted) return;
+                            final downloadError = ref.read(downloadManagerProvider).error;
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(content: Text(downloadError ?? strings.downloadQueued)),
+                            );
+                          },
+                          icon: const Icon(Icons.download),
+                          label: Text(strings.download),
                         ),
                       ],
                     ),

@@ -4,6 +4,7 @@ import 'package:duskcue_mobile/l10n/app_strings.dart';
 import 'package:duskcue_mobile/models/realtime_models.dart';
 import 'package:duskcue_mobile/services/push_registration_service.dart';
 import 'package:duskcue_mobile/services/service_providers.dart';
+import 'package:duskcue_mobile/stores/download_manager_store.dart';
 import 'package:duskcue_mobile/stores/realtime_store.dart';
 import 'package:duskcue_mobile/stores/session_store.dart';
 import 'package:flutter/material.dart';
@@ -69,6 +70,7 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
       unawaited(realtime.connect());
       unawaited(ref.read(pushRegistrationServiceProvider).startOrRefresh());
       unawaited(ref.read(qualityServiceProvider).reportCapabilities());
+      unawaited(ref.read(downloadManagerProvider.notifier).loadForCurrentSession());
       if (refresh) {
         unawaited(_pollFallback(force: true));
       }
@@ -118,6 +120,9 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
       case 'scan_progress':
       case 'admin_task':
         break;
+      case 'download_job_status':
+        unawaited(ref.read(downloadManagerProvider.notifier).handleRealtimeEvent(event));
+        break;
     }
   }
 
@@ -149,6 +154,7 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
           NavigationDestination(icon: const Icon(Icons.video_library_outlined), selectedIcon: const Icon(Icons.video_library), label: strings.libraries),
           NavigationDestination(icon: const Icon(Icons.search), selectedIcon: const Icon(Icons.manage_search), label: strings.search),
           NavigationDestination(icon: const Icon(Icons.collections_bookmark_outlined), selectedIcon: const Icon(Icons.collections_bookmark), label: strings.collections),
+          NavigationDestination(icon: const Icon(Icons.download_outlined), selectedIcon: const Icon(Icons.download), label: strings.downloads),
           NavigationDestination(
             icon: _NotificationIcon(count: session.isAuthenticated ? realtime.unreadCount : 0, selected: false),
             selectedIcon: _NotificationIcon(count: session.isAuthenticated ? realtime.unreadCount : 0, selected: true),

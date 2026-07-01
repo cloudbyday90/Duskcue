@@ -78,6 +78,10 @@ Mobile maps Problem Details into typed client error kinds:
 
 The initial Dart implementation lives in `clients/mobile/lib/api/problem_detail.dart` and `clients/mobile/lib/api/client_error.dart`.
 
+## Phase 16c Offline Downloads
+
+Phase 16c Task 9 extends the curated manifest with the mobile-only `/api/v1/downloads/*` route set. These routes are not Phase 16a online-client requirements, but they are now consumed by `clients/mobile/lib/services/download_service.dart` for the offline download manager shell and are verified by `scripts/verify-client-contracts.mjs` against the Rust server route table.
+
 ## Auth Session Metadata
 
 Phase 16a mobile/desktop auth requests include stable client metadata where the server DTO supports it:

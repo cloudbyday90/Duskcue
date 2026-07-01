@@ -2,6 +2,7 @@ import 'package:duskcue_mobile/screens/collection_detail_screen.dart';
 import 'package:duskcue_mobile/screens/collections_screen.dart';
 import 'package:duskcue_mobile/screens/auth_screen.dart';
 import 'package:duskcue_mobile/screens/dashboard_screen.dart';
+import 'package:duskcue_mobile/screens/downloads_screen.dart';
 import 'package:duskcue_mobile/screens/libraries_screen.dart';
 import 'package:duskcue_mobile/screens/library_detail_screen.dart';
 import 'package:duskcue_mobile/screens/media_detail_screen.dart';
@@ -76,6 +77,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/collections',
                 builder: (context, state) => const CollectionsScreen(),
+              ),
+            ],
+          ),
+          StatefulShellBranch(
+            routes: [
+              GoRoute(
+                path: '/downloads',
+                builder: (context, state) => const DownloadsScreen(),
               ),
             ],
           ),

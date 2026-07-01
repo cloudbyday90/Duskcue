@@ -180,6 +180,22 @@
       ]
     },
     {
+      "name": "downloads",
+      "phase16a_priority": "phase16c_mobile",
+      "routes": [
+        { "method": "GET", "path": "/api/v1/downloads/plan/{media_item_id}", "auth": "download", "response": "DownloadPlanResponse", "web_helpers": [] },
+        { "method": "POST", "path": "/api/v1/downloads/jobs", "auth": "download", "request": "CreateDownloadJobRequest", "response": "DownloadJobResponse", "web_helpers": [] },
+        { "method": "GET", "path": "/api/v1/downloads/jobs/{id}", "auth": "user", "response": "DownloadJobResponse", "web_helpers": [] },
+        { "method": "POST", "path": "/api/v1/downloads/jobs/{id}/cancel", "auth": "user", "request": "CancelDownloadJobRequest", "response": "DownloadActionResponse", "web_helpers": [] },
+        { "method": "GET", "path": "/api/v1/downloads/inventory", "auth": "user", "response": "DownloadInventoryResponse", "web_helpers": [] },
+        { "method": "DELETE", "path": "/api/v1/downloads/packages/{id}", "auth": "user", "request": "DeleteDownloadPackageRequest", "response": "DownloadActionResponse", "web_helpers": [] },
+        { "method": "GET", "path": "/api/v1/downloads/packages/{id}/manifest", "auth": "user", "response": "DownloadPackageManifestResponse", "web_helpers": [] },
+        { "method": "POST", "path": "/api/v1/downloads/packages/{id}/transfer-urls", "auth": "user", "request": "PackageTransferUrlsRequest", "response": "PackageTransferUrlsResponse", "web_helpers": [] },
+        { "method": "GET", "path": "/api/v1/downloads/packages/{id}/files/{*file_path}", "auth": "user", "response": "DownloadPackageFile", "web_helpers": [] },
+        { "method": "POST", "path": "/api/v1/downloads/sync", "auth": "user", "request": "DownloadSyncRequest", "response": "DownloadSyncResponse", "web_helpers": [] }
+      ]
+    },
+    {
       "name": "notifications",
       "phase16a_priority": "required",
       "routes": [

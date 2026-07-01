@@ -17,6 +17,7 @@ class AppStrings {
   String get libraries => 'Libraries';
   String get search => 'Search';
   String get collections => 'Collections';
+  String get downloads => 'Downloads';
   String get notifications => 'Notifications';
   String get settings => 'Settings';
   String get mediaDetails => 'Details';
@@ -27,6 +28,7 @@ class AppStrings {
   String get emptyLibraries => 'No libraries are available for this account.';
   String get emptyItems => 'No media items found.';
   String get emptyCollections => 'No collections found.';
+  String get emptyDownloads => 'No downloads on this device.';
   String get emptyNotifications => 'No notifications found.';
   String get pullToRefresh => 'Pull to refresh';
   String get loadMore => 'Load more';
@@ -45,12 +47,24 @@ class AppStrings {
   String get noSubtitle => 'No subtitle';
   String get restartPlayback => 'Restart playback';
   String get stop => 'Stop';
+  String get pause => 'Pause';
+  String get resume => 'Resume';
+  String get cancel => 'Cancel';
+  String get delete => 'Delete';
+  String get deleteAll => 'Delete all';
   String get buffering => 'Buffering';
   String get playbackFailed => 'Playback failed. Try another quality or stream option.';
   String skipSegment(String segmentType) => 'Skip $segmentType';
   String get markAllRead => 'Mark all read';
   String get unread => 'Unread';
   String get read => 'Read';
+  String get download => 'Download';
+  String get downloadQueued => 'Download queued.';
+  String get downloadSettings => 'Download settings';
+  String get wifiOnly => 'Wi-Fi only';
+  String get allowCellular => 'Allow cellular';
+  String get chargingOnly => 'Charging only';
+  String get pauseOnLowStorage => 'Pause on low storage';
 }
 
 class AppStringsDelegate extends LocalizationsDelegate<AppStrings> {

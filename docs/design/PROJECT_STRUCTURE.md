@@ -934,6 +934,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 8 notification status:** `server/src/domains/downloads/service.rs` owns `download_job_status` SSE payload publishing for job creation/cancellation, and `server/src/workers/download_package_worker.rs` publishes coalesced worker milestones for preparing/staged/ready/retry/failed states. Ready and final failed jobs call `services/notification_dispatch.rs` through seeded `download_ready` and `download_failed` notification types, so in-app unread records and opt-in mobile push are limited to actionable terminal states.
 
+**Task 9 mobile manager status:** `clients/mobile/lib/models/download_models.dart`, `services/download_service.dart`, `stores/download_manager_store.dart`, and `screens/downloads_screen.dart` now define the mobile offline-download manager surface. The authenticated shell includes a Downloads branch, media detail can queue the current item, secure-storage metadata keeps inventory/settings scoped by server/user/device, and `AppShell` routes `download_job_status` SSE events into the manager store. Package-file storage and native transfer adapters remain Task 10.
+
 ## Development Workflow
 
 ### Server Development

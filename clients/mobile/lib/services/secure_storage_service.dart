@@ -66,6 +66,22 @@ class SecureStorageService {
     return _storage.delete(key: 'push_device_ids');
   }
 
+  Future<void> writeDownloadInventory(String value) {
+    return _storage.write(key: 'download_inventory', value: value);
+  }
+
+  Future<String?> readDownloadInventory() {
+    return _storage.read(key: 'download_inventory');
+  }
+
+  Future<void> writeDownloadSettings(String value) {
+    return _storage.write(key: 'download_settings', value: value);
+  }
+
+  Future<String?> readDownloadSettings() {
+    return _storage.read(key: 'download_settings');
+  }
+
   Future<void> writeQualityPreferences(String value) {
     return _storage.write(key: 'quality_preferences', value: value);
   }
