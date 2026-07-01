@@ -113,9 +113,9 @@ Phase 16c Task 2 added the `server/src/domains/downloads/` five-file domain shel
 | Route | Purpose | Current Task 2 behavior |
 |---|---|---|
 | `GET /api/v1/downloads/plan/{media_item_id}` | Planning contract for a movie or episode | Implemented in Task 4 |
-| `POST /api/v1/downloads/jobs` | Create durable package job | Validates body and returns `DOWNLOAD_015` until Tasks 3-6 |
-| `GET /api/v1/downloads/jobs/{id}` | Read job status | Returns `DOWNLOAD_015` until Task 6 |
-| `POST /api/v1/downloads/jobs/{id}/cancel` | Cancel job | Validates body and returns `DOWNLOAD_015` until Task 6 |
+| `POST /api/v1/downloads/jobs` | Create durable package job | Implemented in Task 6 |
+| `GET /api/v1/downloads/jobs/{id}` | Read job status | Implemented in Task 6 |
+| `POST /api/v1/downloads/jobs/{id}/cancel` | Cancel job | Implemented in Task 6 |
 | `GET /api/v1/downloads/inventory` | List user/device inventory | Validates query and returns `DOWNLOAD_015` until Tasks 7 and 10 |
 | `DELETE /api/v1/downloads/packages/{id}` | Delete package/local state | Validates body and returns `DOWNLOAD_015` until Tasks 7, 10, and 13 |
 | `GET /api/v1/downloads/packages/{id}/manifest` | Fetch package manifest | Implemented for ready/serving package rows in Task 5 |
@@ -128,7 +128,7 @@ Phase 16c Task 2 added the `server/src/domains/downloads/` five-file domain shel
 Phase 16c Task 3 added policy enforcement foundations:
 
 - `server_config.downloads` stores global enablement, max quality/resolution, max bytes per user/device, max active jobs per user/device, max retained packages per user/device, LAN/remote restrictions, transcode-download allowance, default expiry, ready-package retention, and per-user/library override maps.
-- Planning and job creation now check the authenticated user's library access, verify that the item has at least one healthy media file, enforce Android/iOS route payloads, enforce global enablement and LAN/remote restrictions, and enforce active-job, retained-package, and retained-byte quotas before returning later-task not-implemented responses.
+- Planning and job creation check the authenticated user's library access, verify that the item has at least one healthy media file, enforce Android/iOS route payloads, enforce global enablement and LAN/remote restrictions, and enforce active-job, retained-package, and retained-byte quotas before planning or queueing durable jobs.
 - Job/package/manifest/transfer/file/sync routes verify job/package ownership before returning later-task not-implemented responses so future implementation starts from BOLA-safe boundaries.
 - Policy and quota denials create `download_events` rows with bounded reasons and no filesystem paths, tokens, signed URLs, or private package internals.
 
@@ -146,6 +146,14 @@ Phase 16c Task 5 defined and wired the package manifest format:
 - The manifest response is schema version 1 and includes package ID, job ID, manifest version, package format, package strategy, media item/file IDs, source-version metadata, selected quality, total bytes, package hash, ordered file list with per-file SHA-256 checksums, selected audio/subtitles, included artwork/storyboards, expiry, sync metadata, and access-policy snapshot.
 - File entries are package-relative paths only. The manifest does not include bearer tokens, refresh tokens, signed URLs, source filesystem paths, or reusable client secrets.
 - Subtitle/artwork/storyboard fields are represented as manifest JSON now; package-generation tasks are responsible for populating mobile-playable subtitle files, poster/backdrop/thumb assets, storyboard sprites, chapters, and checksum rows.
+
+Phase 16c Task 6 added durable package execution:
+
+- `POST /api/v1/downloads/jobs` now recomputes the server-authoritative plan, rejects stale `plan_revision`/`plan_hash`, snapshots the download policy, records `job_created`, and enqueues a durable `download_jobs` row. `GET /jobs/{id}` returns real progress/status, and `POST /jobs/{id}/cancel` marks non-terminal jobs cancelled and cleanup-eligible.
+- `download_package_worker` is a scheduled task seeded by `20260701030000_seed_download_package_worker_task.sql`. It claims queued jobs in creation order with row-level locking, recovers stale `preparing` jobs after worker interruption, retries bounded failures, and cleans expired/revoked/failed package directories after their cleanup window.
+- Package work directories live under `{data_dir}/downloads/{job_id}`. The worker refuses writes outside that root, removes superseded/failed/cancelled directories, and stores package inventory by logical `storage_key` rather than exposing filesystem paths.
+- Direct-compatible jobs produce `media.mp4`. Remux/transcode jobs produce HLS/fMP4 output via FFmpeg using the streaming segment duration, fMP4 segments, and a medium x264 preset for offline transcodes. Offline work runs through the scheduled worker path, separate from the live playback `TranscodeManager`, so downloads do not consume live transcode slots.
+- The worker writes `manifest.json`, stores `download_packages` and `download_package_files` rows, calculates per-file SHA-256 checksums and a package-level integrity hash, updates progress/bytes/status, and emits download events plus Prometheus metrics for queued/started/ready/failed/retried/cancelled/recovered/cleaned states.
 
 ## Mobile Contract
 
@@ -230,4 +238,4 @@ Download quality reuses the Phase 7 quality-management model but is not identica
 
 ## Implementation Status
 
-Phase 16c Tasks 0-5 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, and manifest response format are in place. Package workers, package serving, notifications, mobile download manager, protected local storage, offline playback, reconnect sync, settings, observability, and broader integration tests are pending Phase 16c Tasks 6-15.
+Phase 16c Tasks 0-6 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, manifest response format, durable job creation/status/cancel, and scheduled package worker are in place. Package serving, resumable transfer, notifications, mobile download manager, protected local storage, offline playback, reconnect sync, settings, observability, and broader integration tests are pending Phase 16c Tasks 7-15.

@@ -338,6 +338,15 @@ pub struct DownloadsConfig {
 - `ready_package_retention_days` — cleanup window for ready packages that were never downloaded.
 - `user_overrides` / `library_overrides` — forward-compatible per-user and per-library policy override maps.
 
+### Download Package Worker Task Config
+
+Migration `20260701030000_seed_download_package_worker_task.sql` seeds the `Download Package Worker` scheduled task with a 60-second interval. Its `scheduled_tasks.config` JSON supports:
+
+- `max_jobs_per_run` — queued offline package jobs to claim per scheduler run. Defaults to `1` to keep offline work separate from live playback capacity.
+- `max_retries` — package execution retries before a job becomes `failed`. Defaults to `2`.
+- `stale_preparing_minutes` — age after which an interrupted `preparing` job is returned to `queued`. Defaults to `120`.
+- `failed_cleanup_hours` — delay before failed package work directories become cleanup-eligible. Defaults to `24`.
+
 ### QualityConfig Rust Struct
 
 ```rust

@@ -1013,6 +1013,12 @@ pub async fn seed_default_tasks(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> 
             Some("0 3 * * *"),
             None::<i32>,
         ),
+        (
+            "Download Package Worker",
+            "download_package_worker",
+            None,
+            Some(60),
+        ),
     ];
 
     for (name, task_type, cron_expr, interval_secs) in &defaults {

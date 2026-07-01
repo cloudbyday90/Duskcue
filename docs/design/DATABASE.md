@@ -1359,6 +1359,7 @@ Stores durable mobile download jobs, server-prepared package manifests/files, pe
 - `download_device_state` is unique on `(user_id, device_identifier, download_package_id)` so switching users or servers cannot merge package inventory.
 - Table-level audit triggers cover `download_jobs`, `download_packages`, and `download_device_state`; `download_events` stores explicit domain events such as quota denial or checksum mismatch.
 - `server_config.downloads` is added by migration `20260701020000_add_download_policy_config.sql`; Rust deserializes missing/partial JSON through `DownloadsConfig::default()` for upgrade safety.
+- `20260701030000_seed_download_package_worker_task.sql` extends the scheduled-task type constraint with `download_package_worker` and seeds the durable package worker for existing deployments. The worker populates `download_packages` and `download_package_files` from completed jobs and records cleanup/job-state events in `download_events`.
 
 ### Indexing
 

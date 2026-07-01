@@ -47,7 +47,16 @@ struct DownloadSourceCandidate {
 
 pub async fn get_download_plan(
     state: &AppState,
-    _user: &AuthenticatedUser,
+    user: &AuthenticatedUser,
+    media_item_id: Uuid,
+    query: DownloadPlanQuery,
+) -> Result<DownloadPlanResponse, DownloadError> {
+    build_download_plan(state, user, media_item_id, query).await
+}
+
+async fn build_download_plan(
+    state: &AppState,
+    user: &AuthenticatedUser,
     media_item_id: Uuid,
     query: DownloadPlanQuery,
 ) -> Result<DownloadPlanResponse, DownloadError> {
@@ -58,7 +67,7 @@ pub async fn get_download_plan(
     let platform = query
         .client_platform
         .ok_or_else(|| DownloadError::InvalidRequest("client_platform is required".into()))?;
-    authorize_download_request(state, _user, media_item_id, device_identifier, platform).await?;
+    authorize_download_request(state, user, media_item_id, device_identifier, platform).await?;
 
     let config = state.runtime_config.load();
     let downloads = config.downloads.clone();
@@ -79,7 +88,7 @@ pub async fn get_download_plan(
     if package_strategy == "transcode" && !downloads.allow_transcoded_downloads {
         record_download_event(
             &state.pool,
-            _user,
+            user,
             Some(media_item_id),
             Some(device_identifier),
             "policy_denied",
@@ -154,15 +163,104 @@ pub async fn create_download_job(
     user: &AuthenticatedUser,
     req: CreateDownloadJobRequest,
 ) -> Result<DownloadJobResponse, DownloadError> {
-    authorize_download_request(
+    let plan = build_download_plan(
         state,
         user,
         req.media_item_id,
-        &req.device_identifier,
-        req.client_platform,
+        DownloadPlanQuery {
+            device_identifier: Some(req.device_identifier.clone()),
+            client_platform: Some(req.client_platform),
+            quality_mode: Some(req.quality_mode),
+            media_file_id: req.media_file_id,
+            include_storyboards: Some(req.include_storyboards),
+            include_artwork: Some(req.include_artwork),
+        },
     )
     .await?;
-    Err(DownloadError::NotImplemented("download job creation"))
+
+    if req.plan_revision != plan.plan_revision || req.plan_hash != plan.plan_hash {
+        return Err(DownloadError::StaleClientState(
+            "download plan is stale; refresh the plan and try again".into(),
+        ));
+    }
+
+    let library_id: Uuid = sqlx::query_scalar("SELECT library_id FROM media_items WHERE id = $1")
+        .bind(req.media_item_id)
+        .fetch_optional(&state.pool)
+        .await?
+        .ok_or_else(|| DownloadError::UnsupportedMedia("media item is unavailable".into()))?;
+
+    let selected_subtitles = serde_json::to_value(&req.selected_subtitles)
+        .map_err(|_| DownloadError::InvalidRequest("selected_subtitles is invalid".into()))?;
+    let selected_artwork = json!({
+        "included": req.include_artwork
+    });
+    let included_storyboards = json!({
+        "included": req.include_storyboards
+    });
+    let metadata = json!({
+        "target_resolution": plan.target_resolution,
+        "target_bitrate_bps": plan.target_bitrate_bps,
+        "estimated_duration_seconds": plan.estimated_duration_seconds,
+        "included_storyboards": included_storyboards
+    });
+    let quality_label = plan
+        .quality_options
+        .iter()
+        .find(|option| option.quality_mode == req.quality_mode)
+        .map(|option| option.label.clone());
+
+    let row = sqlx::query(
+        "INSERT INTO download_jobs \
+         (user_id, user_session_id, device_identifier, device_name, client_platform, \
+          client_version, library_id, media_item_id, media_file_id, status, package_format, \
+          package_strategy, quality_mode, quality_label, selected_audio, selected_subtitles, \
+          selected_artwork, bytes_expected, plan_revision, plan_hash, access_policy_snapshot, \
+          expires_at, cleanup_after_at, metadata) \
+         VALUES \
+         ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'queued', $10, $11, $12, $13, $14, $15, \
+          $16, $17, $18, $19, $20, $21, $21 + INTERVAL '7 days', $22) \
+         RETURNING id, media_item_id, media_file_id, device_identifier, status, package_format, \
+                   quality_mode, progress_percent::REAL AS progress_percent, bytes_expected, \
+                   bytes_prepared, failure_reason, expires_at",
+    )
+    .bind(user.user_id)
+    .bind(user.session_id)
+    .bind(&req.device_identifier)
+    .bind(&req.device_name)
+    .bind(client_platform_to_db(req.client_platform))
+    .bind(&req.client_version)
+    .bind(library_id)
+    .bind(req.media_item_id)
+    .bind(plan.media_file_id)
+    .bind(package_format_to_db(plan.package_format))
+    .bind(&plan.package_strategy)
+    .bind(quality_mode_to_db(req.quality_mode))
+    .bind(quality_label)
+    .bind(&req.selected_audio)
+    .bind(selected_subtitles)
+    .bind(selected_artwork)
+    .bind(plan.estimated_bytes)
+    .bind(&plan.plan_revision)
+    .bind(&plan.plan_hash)
+    .bind(&plan.policy)
+    .bind(plan.expires_at)
+    .bind(metadata)
+    .fetch_one(&state.pool)
+    .await?;
+
+    record_download_event(
+        &state.pool,
+        user,
+        Some(req.media_item_id),
+        Some(&req.device_identifier),
+        "job_created",
+        None,
+    )
+    .await?;
+    metrics::counter!("download_jobs_queued_total").increment(1);
+
+    job_response_from_row(&row)
 }
 
 pub async fn get_download_job(
@@ -170,18 +268,76 @@ pub async fn get_download_job(
     user: &AuthenticatedUser,
     id: Uuid,
 ) -> Result<DownloadJobResponse, DownloadError> {
-    ensure_job_owner(&state.pool, user, id).await?;
-    Err(DownloadError::NotImplemented("download job status"))
+    let row = sqlx::query(
+        "SELECT id, media_item_id, media_file_id, device_identifier, status, package_format, \
+                quality_mode, progress_percent::REAL AS progress_percent, bytes_expected, \
+                bytes_prepared, failure_reason, expires_at \
+         FROM download_jobs \
+         WHERE id = $1 AND user_id = $2",
+    )
+    .bind(id)
+    .bind(user.user_id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let Some(row) = row else {
+        return Err(DownloadError::JobNotFound(id));
+    };
+
+    job_response_from_row(&row)
 }
 
 pub async fn cancel_download_job(
     state: &AppState,
     user: &AuthenticatedUser,
     id: Uuid,
-    _req: CancelDownloadJobRequest,
+    req: CancelDownloadJobRequest,
 ) -> Result<DownloadActionResponse, DownloadError> {
     ensure_job_owner(&state.pool, user, id).await?;
-    Err(DownloadError::NotImplemented("download job cancellation"))
+    let reason = req
+        .reason
+        .unwrap_or_else(|| "cancelled by user".to_string());
+    let row = sqlx::query(
+        "UPDATE download_jobs \
+         SET status = CASE WHEN status IN ('ready', 'failed', 'cancelled', 'expired', 'revoked') \
+                           THEN status ELSE 'cancelled' END, \
+             cancellation_requested = true, \
+             failure_reason = CASE WHEN status IN ('ready', 'failed', 'cancelled', 'expired', 'revoked') \
+                                   THEN failure_reason ELSE $3 END, \
+             completed_at = CASE WHEN status IN ('ready', 'failed', 'cancelled', 'expired', 'revoked') \
+                                 THEN completed_at ELSE now() END, \
+             cleanup_after_at = now(), \
+             updated_at = now() \
+         WHERE id = $1 AND user_id = $2 \
+         RETURNING status",
+    )
+    .bind(id)
+    .bind(user.user_id)
+    .bind(&reason)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let Some(row) = row else {
+        return Err(DownloadError::JobNotFound(id));
+    };
+    let status: String = row.get("status");
+
+    record_download_event(
+        &state.pool,
+        user,
+        None,
+        None,
+        "job_cancelled",
+        Some(&reason),
+    )
+    .await?;
+    metrics::counter!("download_jobs_cancelled_total").increment(1);
+
+    Ok(DownloadActionResponse {
+        ok: true,
+        id,
+        status,
+    })
 }
 
 pub async fn list_download_inventory(
@@ -602,8 +758,83 @@ fn package_format_from_db(value: &str) -> Result<DownloadPackageFormat, Download
     }
 }
 
+fn package_format_to_db(value: DownloadPackageFormat) -> &'static str {
+    match value {
+        DownloadPackageFormat::HlsFmp4 => "hls_fmp4",
+        DownloadPackageFormat::Mp4 => "mp4",
+    }
+}
+
+fn quality_mode_from_db(value: &str) -> Result<DownloadQualityMode, DownloadError> {
+    match value {
+        "auto" => Ok(DownloadQualityMode::Auto),
+        "data_saver" => Ok(DownloadQualityMode::DataSaver),
+        "standard" => Ok(DownloadQualityMode::Standard),
+        "maximum" => Ok(DownloadQualityMode::Maximum),
+        "manual" => Ok(DownloadQualityMode::Manual),
+        other => Err(DownloadError::InvalidRequest(format!(
+            "unknown quality mode in job: {other}"
+        ))),
+    }
+}
+
+fn quality_mode_to_db(value: DownloadQualityMode) -> &'static str {
+    match value {
+        DownloadQualityMode::Auto => "auto",
+        DownloadQualityMode::DataSaver => "data_saver",
+        DownloadQualityMode::Standard => "standard",
+        DownloadQualityMode::Maximum => "maximum",
+        DownloadQualityMode::Manual => "manual",
+    }
+}
+
+fn job_status_from_db(value: &str) -> Result<DownloadJobStatus, DownloadError> {
+    match value {
+        "queued" => Ok(DownloadJobStatus::Queued),
+        "preparing" => Ok(DownloadJobStatus::Preparing),
+        "ready" => Ok(DownloadJobStatus::Ready),
+        "failed" => Ok(DownloadJobStatus::Failed),
+        "cancelled" => Ok(DownloadJobStatus::Cancelled),
+        "expired" => Ok(DownloadJobStatus::Expired),
+        "revoked" => Ok(DownloadJobStatus::Revoked),
+        other => Err(DownloadError::InvalidRequest(format!(
+            "unknown download job status: {other}"
+        ))),
+    }
+}
+
+fn client_platform_to_db(value: DownloadClientPlatform) -> &'static str {
+    match value {
+        DownloadClientPlatform::Android => "android",
+        DownloadClientPlatform::Ios => "ios",
+    }
+}
+
 fn json_array_to_vec(value: Value) -> Vec<Value> {
     value.as_array().cloned().unwrap_or_default()
+}
+
+fn job_response_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> Result<DownloadJobResponse, DownloadError> {
+    let status: String = row.get("status");
+    let package_format: String = row.get("package_format");
+    let quality_mode: String = row.get("quality_mode");
+
+    Ok(DownloadJobResponse {
+        id: row.get("id"),
+        media_item_id: row.get("media_item_id"),
+        media_file_id: row.try_get("media_file_id").ok().flatten(),
+        device_identifier: row.get("device_identifier"),
+        status: job_status_from_db(&status)?,
+        package_format: package_format_from_db(&package_format)?,
+        quality_mode: quality_mode_from_db(&quality_mode)?,
+        progress_percent: row.get("progress_percent"),
+        bytes_expected: row.try_get("bytes_expected").ok().flatten(),
+        bytes_prepared: row.get("bytes_prepared"),
+        failure_reason: row.try_get("failure_reason").ok().flatten(),
+        expires_at: row.try_get("expires_at").ok().flatten(),
+    })
 }
 
 fn source_file_response(source: &DownloadSourceCandidate) -> DownloadSourceFileResponse {

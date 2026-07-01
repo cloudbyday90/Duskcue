@@ -90,14 +90,14 @@ pub struct DownloadDeviceStateRow {
     pub pending_sync: Value,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DownloadClientPlatform {
     Android,
     Ios,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DownloadQualityMode {
     Auto,
@@ -107,7 +107,7 @@ pub enum DownloadQualityMode {
     Manual,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum DownloadPackageFormat {
     HlsFmp4,

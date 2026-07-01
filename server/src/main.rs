@@ -362,6 +362,7 @@ async fn main() {
     let disk_space_check_state = state.clone();
     let recovery_drill_state = state.clone();
     let migration_cleanup_state = state.clone();
+    let download_package_state = state.clone();
     let scheduler = Arc::new(
         Scheduler::new(state.pool.clone())
             .register_executor("library_scan", move |pool, task_id, config| {
@@ -590,6 +591,15 @@ async fn main() {
                 let state = recovery_drill_state.clone();
                 async move {
                     duskcue::workers::recovery_drill_runner::run_recovery_drill(
+                        &state, task_id, config,
+                    )
+                    .await
+                }
+            })
+            .register_fallible_executor("download_package_worker", move |_pool, task_id, config| {
+                let state = download_package_state.clone();
+                async move {
+                    duskcue::workers::download_package_worker::run_download_package_worker(
                         &state, task_id, config,
                     )
                     .await
