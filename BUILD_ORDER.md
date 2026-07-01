@@ -3872,11 +3872,13 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
     - Define localization expectations for platform clients and which strings come from the server vs the client.~~ **DONE**
 
 **Task 11 implementation note:** Expanded the shared living-room UX contract in [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md). The contract now fixes row priority order, client-localized row labels, bounded empty-state handling, D-pad/focus/back behavior, TV typography and artwork roles, poster/backdrop/thumbnail/logo fallback rules, playback controls and status requirements, audio/subtitle/quality expectations, profile/server/device-linking behavior, household privacy rules for platform launcher surfaces, and localization boundaries between API keys/content data and client display strings.
-12. Define the shared platform adapter contract:
+12. ~~Define the shared platform adapter contract:
     - Specify how each client maps `platform_content_id`, deep links, resume state, device capability reports, playback progress, artwork URLs, app-local rows, and platform-owned launcher/search rows.
     - Document platform differences: row-owned surfaces (Android Watch Next, Top Shelf), event-driven surfaces (Fire TV Watch Activity), catalog/feed-plus-deep-link surfaces (Roku Search), app-local-only surfaces, and partner-gated surfaces.
     - Define when platform-local mappings may be stored locally and when server-side durable mappings are required.
-    - Document that platform clients must not cache bearer tokens in plaintext and must revalidate access before playback.
+    - Document that platform clients must not cache bearer tokens in plaintext and must revalidate access before playback.~~ **DONE**
+
+**Task 12 implementation note:** Added the shared platform adapter contract to [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md). The contract defines required inputs, identifier/deep-link mapping, surface classes, refresh/removal rules, playback progress and device capability reporting, platform-local versus server-side storage rules, token/secret handling, and an acceptance checklist for future platform phases. It distinguishes row-owned launcher surfaces, event-driven activity surfaces, catalog/feed-plus-deep-link surfaces, app-local-only surfaces, and partner-gated surfaces while preserving the rule that every playback launch revalidates through Duskcue resolve.
 13. Build a reference client harness and fixtures:
     - Add JSON fixtures for feed responses, resolve responses, empty states, access-revoked items, and unavailable items.
     - Build a small reference renderer or test harness that renders Continue Watching, Next Up, New Episodes, and Recommendations from the same feed.

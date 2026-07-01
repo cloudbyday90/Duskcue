@@ -524,6 +524,79 @@ Server producers:
 
 Native TV clients can subscribe while running and schedule a refresh after receiving the event. If `debounce_until` is present, clients should avoid immediately refetching more than once for the same user/reason/item window; the server also coalesces heartbeat-heavy resume updates per user so TV launchers do not thrash during active playback.
 
+## Shared Platform Adapter Contract
+
+Every platform adapter translates the same server-owned facts into the platform's native launcher/search/deep-link model. Adapter code must keep platform-specific persistence and API calls at the edge; Duskcue server state remains authoritative.
+
+### Required Inputs
+
+All adapters consume:
+
+- `GET /api/v1/users/me/tv-surface` for app-local rows and row-owned platform surfaces
+- `GET /api/v1/tv/resolve/{platform_content_id}` before playback from any row, search result, voice result, URI, Universal Link, launch parameter, or platform tile
+- `GET /api/v1/tv/settings` to decide whether the authenticated user has enabled publication for the current platform and sections
+- `tv_surface_changed` SSE events while the app is foregrounded, with REST refresh on app resume
+- existing playback start/heartbeat/seek/stop/QoE APIs for playback state and telemetry
+
+### Identifier Mapping
+
+- `platform_content_id` is the only portable content identity crossing Duskcue and platform surfaces.
+- Platform-owned IDs must be deterministic transforms or local mappings back to `platform_content_id` or `media_item_id`.
+- Deep links must include only stable IDs and action hints, not bearer tokens, signed stream URLs, local file paths, or resume positions.
+- If a platform requires separate movie/episode/series/feed IDs, derive them from Duskcue media IDs and document the mapping in that platform phase.
+- If a platform exposes opaque row IDs, program IDs, or tile IDs, store those locally unless the same mapping must be shared across multiple devices for the same Duskcue user.
+
+### Surface Classes
+
+| Surface class | Platforms | Adapter behavior |
+|---|---|---|
+| Row-owned launcher surfaces | Android TV Watch Next, Apple tvOS Top Shelf | Client publishes, updates, and removes a small curated set from the Duskcue TV feed. Continue Watching and Next Up take priority over broad recommendations. |
+| Event-driven activity surfaces | Fire TV Watch Activity / Content Personalization | Client reports playback activity and completion accurately. The server feed still powers app-local rows; platform home behavior may lag or depend on catalog eligibility. |
+| Catalog/feed plus deep-link surfaces | Roku Search, Fire TV EMBER/catalog, optional Apple TV app/Universal Search, partner-gated feeds | Client or release tooling exports stable metadata IDs and deep links. Every launch still resolves through Duskcue before playback. |
+| App-local-only surfaces | LG webOS v1, Xbox, PlayStation/VIZIO before partner surface access, fallback paths on any platform | Client renders rows inside the app from the TV surface feed and does not promise home-screen publication. |
+| Partner-gated surfaces | VIZIO, PlayStation, some Fire TV/Apple/Roku discovery features | Prepare stable IDs and app-local behavior now; implement platform publication only after portal specs confirm a self-hosted/private-library app is allowed. |
+
+### Refresh and Removal Rules
+
+- On `tv_surface_changed`, refetch the TV surface after `debounce_until` when present, then update app-local rows and platform rows from the fresh feed.
+- Remove platform-local rows when the refreshed feed no longer contains the item, when the item resolves unavailable, when the user disables publication/settings for that platform, or when the active Duskcue user/server changes.
+- Completion events should remove finished continue-watching entries and allow next-up entries to appear after the next feed refresh.
+- Metadata/artwork changes should update titles, subtitles, artwork URLs, and platform metadata without changing stable IDs.
+- Access-control changes must be treated as high priority: remove inaccessible platform tiles before adding new ones.
+
+### Playback Progress and Capability Reporting
+
+- All adapters send playback start, heartbeat, seek, stop, and QoE reports through Duskcue APIs even when the platform also receives native watch-activity events.
+- Device capability reports should include platform name, app version, model where available, container/codecs, subtitle support, HDR/Dolby Vision support, max resolution, and audio capabilities.
+- Platform playback events must never replace Duskcue heartbeat/stop calls; they are platform integration outputs, not the source of truth.
+- If a platform activity API requires completion or resume percentages, derive them from the current player position and Duskcue playback lifecycle state, not from stale launcher cache.
+
+### Storage Rules
+
+- Local storage is allowed for server list, selected server, active user summary, device ID, last fetched TV feed, artwork cache, platform row/program/tile IDs, and platform-specific content ID mappings.
+- Durable server-side adapter tables are required only when a mapping must be shared across devices, reconciled by background server jobs, audited centrally, or used by a server-hosted metadata feed.
+- Platform-local caches must be cleared on logout, server switch, user/profile switch, publication opt-out, or access revocation.
+- Cached TV feed data must be treated as private per Duskcue user and platform profile.
+
+### Token and Secret Handling
+
+- TV clients must use device linking or normal auth to obtain credentials; platform deep links must never contain bearer tokens.
+- Bearer/session tokens must be stored only in platform secure storage where available.
+- If a platform lacks secure token storage, prefer short-lived device sessions and require re-linking over plaintext persistent tokens.
+- Logs, crash reports, platform analytics, catalog feeds, and launcher metadata must not include bearer tokens, signed URLs, local network credentials, media paths, or server-internal diagnostics.
+
+### Acceptance Checklist for Each Platform Phase
+
+Before a platform adapter is considered complete, it must prove:
+
+- App-local rows render from the same feed fixtures as other TV clients.
+- Deep links call TV resolve and start playback without stale resume state.
+- Publication settings disable feed rows and platform publication for that user/platform.
+- Playback progress updates Duskcue resume/completion state.
+- `tv_surface_changed` or foreground refresh updates/removes stale rows.
+- Logout/profile/server switching clears local platform mappings and private cached rows.
+- The platform's secure storage story is documented and tested.
+
 ## Android TV / Google TV Adapter
 
 Android TV / Google TV is the first target because it provides a documented Watch Next API through AndroidX TV Provider.
