@@ -15,10 +15,14 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use axum::Json;
+use axum::body::Body;
 use axum::extract::{Path, Query, State};
+use axum::http::{HeaderMap, StatusCode, header};
+use axum::response::Response;
 use uuid::Uuid;
 use validator::Validate;
 
+use super::error::DownloadError;
 use crate::error::AppError;
 use crate::extractors::{AuthenticatedUser, CanDownload, Require};
 use crate::state::AppState;
@@ -104,9 +108,13 @@ pub async fn get_package_manifest(
     State(state): State<AppState>,
     user: AuthenticatedUser,
     Path(id): Path<Uuid>,
+    Query(query): Query<DownloadPackageAccessQuery>,
 ) -> Result<Json<DownloadPackageManifestResponse>, AppError> {
+    query
+        .validate()
+        .map_err(|e| validation_error(e, format!("/api/v1/downloads/packages/{id}/manifest")))?;
     Ok(Json(
-        service::get_package_manifest(&state, &user, id).await?,
+        service::get_package_manifest(&state, &user, id, query).await?,
     ))
 }
 
@@ -128,9 +136,61 @@ pub async fn serve_package_file(
     State(state): State<AppState>,
     user: AuthenticatedUser,
     Path((id, file_path)): Path<(Uuid, String)>,
-) -> Result<(), AppError> {
-    service::serve_package_file(&state, &user, id, file_path).await?;
-    Ok(())
+    Query(query): Query<DownloadPackageAccessQuery>,
+    headers: HeaderMap,
+) -> Result<Response, AppError> {
+    query
+        .validate()
+        .map_err(|e| validation_error(e, format!("/api/v1/downloads/packages/{id}/files")))?;
+    let file = service::serve_package_file(&state, &user, id, file_path, query).await?;
+    let file_size = file.byte_size as u64;
+    let range_header = headers
+        .get(header::RANGE)
+        .and_then(|value| value.to_str().ok());
+    let range = service::DownloadRangeSpec::parse(range_header, file_size)?;
+
+    match range {
+        Some(range) => {
+            let length = range.content_length() as usize;
+            let mut opened = tokio::fs::File::open(&file.path).await.map_err(|_| {
+                DownloadError::StorageUnavailable("package file is unavailable".into())
+            })?;
+
+            use tokio::io::{AsyncReadExt, AsyncSeekExt};
+            opened
+                .seek(std::io::SeekFrom::Start(range.start))
+                .await
+                .map_err(|_| {
+                    DownloadError::StorageUnavailable("package file is unavailable".into())
+                })?;
+
+            let mut buffer = vec![0u8; length];
+            opened.read_exact(&mut buffer).await.map_err(|_| {
+                DownloadError::StorageUnavailable("package file is unavailable".into())
+            })?;
+
+            Ok(download_file_response(
+                StatusCode::PARTIAL_CONTENT,
+                &file,
+                Body::from(buffer),
+                Some(range.content_range_header()),
+                Some(length as u64),
+            ))
+        }
+        None => {
+            let data = tokio::fs::read(&file.path).await.map_err(|_| {
+                DownloadError::StorageUnavailable("package file is unavailable".into())
+            })?;
+
+            Ok(download_file_response(
+                StatusCode::OK,
+                &file,
+                Body::from(data),
+                None,
+                Some(file_size),
+            ))
+        }
+    }
 }
 
 pub async fn sync_download_state(
@@ -164,4 +224,41 @@ fn validation_error(e: validator::ValidationErrors, instance: impl Into<String>)
             .collect(),
         instance: Some(instance.into()),
     }
+}
+
+fn download_file_response(
+    status: StatusCode,
+    file: &service::DownloadPackageFileServe,
+    body: Body,
+    content_range: Option<String>,
+    content_length: Option<u64>,
+) -> Response {
+    let mut builder = Response::builder()
+        .status(status)
+        .header(
+            header::CONTENT_TYPE,
+            file.content_type
+                .as_deref()
+                .unwrap_or("application/octet-stream"),
+        )
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CACHE_CONTROL, "private, no-store, max-age=0")
+        .header("x-duskcue-checksum-sha256", &file.checksum_sha256)
+        .header("x-duskcue-file-role", &file.file_role)
+        .header(
+            "x-duskcue-package-file",
+            urlencoding::encode(&file.relative_path).to_string(),
+        );
+
+    if let Some(segment_index) = file.segment_index {
+        builder = builder.header("x-duskcue-segment-index", segment_index.to_string());
+    }
+    if let Some(content_length) = content_length {
+        builder = builder.header(header::CONTENT_LENGTH, content_length.to_string());
+    }
+    if let Some(content_range) = content_range {
+        builder = builder.header(header::CONTENT_RANGE, content_range);
+    }
+
+    builder.body(body).unwrap()
 }

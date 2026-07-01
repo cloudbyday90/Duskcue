@@ -1308,6 +1308,11 @@ fn downloads_error_to_http(
             "DOWNLOAD_014",
             format!("Invalid download request: {reason}"),
         ),
+        DownloadError::InvalidByteRange(reason) => (
+            StatusCode::RANGE_NOT_SATISFIABLE,
+            "DOWNLOAD_016",
+            format!("Invalid download byte range: {reason}"),
+        ),
         DownloadError::NotImplemented(feature) => (
             StatusCode::NOT_IMPLEMENTED,
             "DOWNLOAD_015",

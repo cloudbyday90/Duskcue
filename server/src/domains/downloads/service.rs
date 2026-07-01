@@ -14,6 +14,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::path::{Path, PathBuf};
+
 use chrono::{DateTime, Duration, Utc};
 use ring::digest::{SHA256, digest};
 use serde::Serialize;
@@ -43,6 +45,96 @@ struct DownloadSourceCandidate {
     audio_bitrate: Option<i32>,
     runtime_seconds: i32,
     additional_streams: Value,
+}
+
+pub struct DownloadPackageFileServe {
+    pub path: PathBuf,
+    pub relative_path: String,
+    pub file_role: String,
+    pub content_type: Option<String>,
+    pub byte_size: i64,
+    pub checksum_sha256: String,
+    pub segment_index: Option<i32>,
+}
+
+pub struct DownloadRangeSpec {
+    pub start: u64,
+    pub end: u64,
+    pub total: u64,
+}
+
+impl DownloadRangeSpec {
+    pub fn parse(header: Option<&str>, file_size: u64) -> Result<Option<Self>, DownloadError> {
+        let header = match header {
+            Some(header) => header,
+            None => return Ok(None),
+        };
+        if file_size == 0 {
+            return Err(DownloadError::InvalidByteRange(
+                "cannot range over an empty package file".into(),
+            ));
+        }
+
+        let bytes_spec = header
+            .strip_prefix("bytes=")
+            .ok_or_else(|| DownloadError::InvalidByteRange("expected bytes= prefix".into()))?;
+        if bytes_spec.contains(',') {
+            return Err(DownloadError::InvalidByteRange(
+                "multiple byte ranges are not supported".into(),
+            ));
+        }
+
+        let (start, end) = if let Some(rest) = bytes_spec.strip_suffix('-') {
+            let start: u64 = rest.parse().map_err(|_| {
+                DownloadError::InvalidByteRange(format!("invalid start byte: {rest}"))
+            })?;
+            (start, file_size - 1)
+        } else if let Some(rest) = bytes_spec.strip_prefix('-') {
+            let suffix_len: u64 = rest.parse().map_err(|_| {
+                DownloadError::InvalidByteRange(format!("invalid suffix length: {rest}"))
+            })?;
+            let start = file_size.saturating_sub(suffix_len);
+            (start, file_size - 1)
+        } else {
+            let parts: Vec<&str> = bytes_spec.split('-').collect();
+            if parts.len() != 2 {
+                return Err(DownloadError::InvalidByteRange(format!(
+                    "invalid range format: {bytes_spec}"
+                )));
+            }
+            let start: u64 = parts[0].parse().map_err(|_| {
+                DownloadError::InvalidByteRange(format!("invalid start: {}", parts[0]))
+            })?;
+            let end: u64 = if parts[1].is_empty() {
+                file_size - 1
+            } else {
+                parts[1].parse().map_err(|_| {
+                    DownloadError::InvalidByteRange(format!("invalid end: {}", parts[1]))
+                })?
+            };
+            (start, end)
+        };
+
+        if start > end || start >= file_size {
+            return Err(DownloadError::InvalidByteRange(format!(
+                "range {start}-{end} out of bounds for file size {file_size}"
+            )));
+        }
+
+        Ok(Some(Self {
+            start,
+            end: end.min(file_size - 1),
+            total: file_size,
+        }))
+    }
+
+    pub fn content_length(&self) -> u64 {
+        self.end - self.start + 1
+    }
+
+    pub fn content_range_header(&self) -> String {
+        format!("bytes {}-{}/{}", self.start, self.end, self.total)
+    }
 }
 
 pub async fn get_download_plan(
@@ -362,10 +454,13 @@ pub async fn get_package_manifest(
     state: &AppState,
     user: &AuthenticatedUser,
     id: Uuid,
+    query: DownloadPackageAccessQuery,
 ) -> Result<DownloadPackageManifestResponse, DownloadError> {
+    let device_identifier = require_device_identifier(query.device_identifier.as_deref())?;
     let row = sqlx::query(
-        "SELECT dp.id, dp.download_job_id, dp.media_item_id, dp.media_file_id, \
-                dp.status, dp.package_format, dp.manifest_version, dp.total_bytes, \
+        "SELECT dp.id, dp.download_job_id, dp.user_session_id, dp.device_identifier, \
+                dp.media_item_id, dp.media_file_id, dp.status, dp.package_format, \
+                dp.manifest_version, dp.total_bytes, \
                 dp.package_hash_sha256, dp.selected_audio, dp.selected_subtitles, \
                 dp.included_artwork, dp.included_storyboards, dp.sync_metadata, \
                 dp.access_policy_snapshot, dp.expires_at, dp.revoked_at, \
@@ -387,13 +482,7 @@ pub async fn get_package_manifest(
         return Err(DownloadError::PackageNotFound(id));
     };
 
-    let status: String = row.get("status");
-    match status.as_str() {
-        "ready" | "serving" => {}
-        "expired" => return Err(DownloadError::PackageExpired(id)),
-        "revoked" => return Err(DownloadError::AccessDenied),
-        _ => return Err(DownloadError::PackageNotReady(id)),
-    }
+    revalidate_package_access_from_row(state, user, &row, id, device_identifier).await?;
 
     let files = load_package_manifest_files(&state.pool, id).await?;
     let source_version = json!({
@@ -442,24 +531,115 @@ pub async fn create_package_transfer_urls(
     state: &AppState,
     user: &AuthenticatedUser,
     id: Uuid,
-    _req: PackageTransferUrlsRequest,
+    req: PackageTransferUrlsRequest,
 ) -> Result<PackageTransferUrlsResponse, DownloadError> {
-    ensure_package_owner(&state.pool, user, id).await?;
-    Err(DownloadError::NotImplemented(
-        "download package transfer URLs",
-    ))
+    let device_identifier = require_device_identifier(Some(&req.device_identifier))?;
+    let _package = revalidate_package_access(state, user, id, device_identifier).await?;
+    let expires_at = Utc::now() + Duration::minutes(15);
+    let mut files = Vec::with_capacity(req.file_paths.len());
+
+    for requested in req.file_paths {
+        let relative_path = normalize_package_relative_path(&requested)?;
+        let file = load_package_file_record(&state.pool, id, &relative_path)
+            .await?
+            .ok_or_else(|| {
+                DownloadError::InvalidRequest(format!(
+                    "package file is not in the manifest: {relative_path}"
+                ))
+            })?;
+        files.push(PackageTransferUrlResponse {
+            relative_path: file.relative_path.clone(),
+            url: authenticated_package_file_url(id, &file.relative_path, device_identifier),
+            method: "GET".to_string(),
+            headers: json!({
+                "Accept-Ranges": "bytes",
+                "X-Duskcue-Checksum-Sha256": file.checksum_sha256,
+                "X-Duskcue-Byte-Size": file.byte_size
+            }),
+        });
+    }
+
+    Ok(PackageTransferUrlsResponse {
+        package_id: id,
+        expires_at,
+        files,
+    })
 }
 
 pub async fn serve_package_file(
     state: &AppState,
     user: &AuthenticatedUser,
     id: Uuid,
-    _file_path: String,
-) -> Result<(), DownloadError> {
-    ensure_package_owner(&state.pool, user, id).await?;
-    Err(DownloadError::NotImplemented(
-        "download package file serving",
-    ))
+    file_path: String,
+    query: DownloadPackageAccessQuery,
+) -> Result<DownloadPackageFileServe, DownloadError> {
+    let device_identifier = require_device_identifier(query.device_identifier.as_deref())?;
+    let package = revalidate_package_access(state, user, id, device_identifier).await?;
+    let relative_path = normalize_package_relative_path(&file_path)?;
+    let file = load_package_file_record(&state.pool, id, &relative_path)
+        .await?
+        .ok_or_else(|| DownloadError::PackageNotFound(id))?;
+
+    let package_root = state.bootstrap.data_dir.join("downloads");
+    let package_dir = package_dir_from_storage_key(&package_root, &package.storage_key)?;
+    let package_dir = tokio::fs::canonicalize(&package_dir).await.map_err(|_| {
+        DownloadError::StorageUnavailable("download package directory is unavailable".into())
+    })?;
+    let physical_path = resolve_package_file_path(&package_dir, &file.relative_path)?;
+    let physical_path = tokio::fs::canonicalize(&physical_path).await.map_err(|_| {
+        DownloadError::StorageUnavailable("download package file is unavailable".into())
+    })?;
+    if !physical_path.starts_with(&package_dir) {
+        return Err(DownloadError::InvalidRequest(
+            "package file path is invalid".into(),
+        ));
+    }
+    let metadata = tokio::fs::metadata(&physical_path).await.map_err(|_| {
+        DownloadError::StorageUnavailable("download package file is unavailable".into())
+    })?;
+    if !metadata.is_file() {
+        return Err(DownloadError::StorageUnavailable(
+            "download package file is unavailable".into(),
+        ));
+    }
+    if metadata.len() as i64 != file.byte_size {
+        return Err(DownloadError::ChecksumMismatch(file.relative_path));
+    }
+
+    sqlx::query(
+        "UPDATE download_packages \
+         SET status = CASE WHEN status = 'ready' THEN 'serving' ELSE status END, \
+             first_served_at = COALESCE(first_served_at, now()), \
+             last_served_at = now(), \
+             updated_at = now() \
+         WHERE id = $1",
+    )
+    .bind(id)
+    .execute(&state.pool)
+    .await?;
+    record_download_event_for_package(
+        &state.pool,
+        user,
+        Some(package.download_job_id),
+        Some(id),
+        Some(package.media_item_id),
+        Some(device_identifier),
+        "package_served",
+        Some(&file.relative_path),
+    )
+    .await?;
+    metrics::counter!("download_package_files_served_total", "role" => file.file_role.clone())
+        .increment(1);
+
+    Ok(DownloadPackageFileServe {
+        path: physical_path,
+        relative_path: file.relative_path,
+        file_role: file.file_role,
+        content_type: file.content_type,
+        byte_size: file.byte_size,
+        checksum_sha256: file.checksum_sha256,
+        segment_index: file.segment_index,
+    })
 }
 
 pub async fn sync_download_state(
@@ -719,6 +899,143 @@ fn extract_subtitle_options(source: &DownloadSourceCandidate) -> Vec<Value> {
         .unwrap_or_default()
 }
 
+struct DownloadPackageAccess {
+    download_job_id: Uuid,
+    media_item_id: Uuid,
+    storage_key: String,
+}
+
+struct DownloadPackageFileRecord {
+    relative_path: String,
+    file_role: String,
+    content_type: Option<String>,
+    byte_size: i64,
+    checksum_sha256: String,
+    segment_index: Option<i32>,
+}
+
+async fn revalidate_package_access(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    package_id: Uuid,
+    device_identifier: &str,
+) -> Result<DownloadPackageAccess, DownloadError> {
+    let row = sqlx::query(
+        "SELECT id, download_job_id, user_session_id, device_identifier, media_item_id, \
+                status, storage_key, expires_at, revoked_at \
+         FROM download_packages \
+         WHERE id = $1 AND user_id = $2",
+    )
+    .bind(package_id)
+    .bind(user.user_id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let Some(row) = row else {
+        return Err(DownloadError::PackageNotFound(package_id));
+    };
+
+    revalidate_package_access_from_row(state, user, &row, package_id, device_identifier).await?;
+
+    Ok(DownloadPackageAccess {
+        download_job_id: row.get("download_job_id"),
+        media_item_id: row.get("media_item_id"),
+        storage_key: row.get("storage_key"),
+    })
+}
+
+async fn revalidate_package_access_from_row(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    row: &sqlx::postgres::PgRow,
+    package_id: Uuid,
+    device_identifier: &str,
+) -> Result<(), DownloadError> {
+    let package_device_identifier: String = row.get("device_identifier");
+    if package_device_identifier != device_identifier {
+        return Err(DownloadError::AccessDenied);
+    }
+
+    let package_session_id: Option<Uuid> = row.try_get("user_session_id").ok().flatten();
+    if package_session_id.is_some() && package_session_id != Some(user.session_id) {
+        return Err(DownloadError::AccessDenied);
+    }
+
+    let status: String = row.get("status");
+    match status.as_str() {
+        "ready" | "serving" => {}
+        "expired" => return Err(DownloadError::PackageExpired(package_id)),
+        "revoked" => return Err(DownloadError::AccessDenied),
+        _ => return Err(DownloadError::PackageNotReady(package_id)),
+    }
+
+    let expires_at: Option<DateTime<Utc>> = row.try_get("expires_at").ok().flatten();
+    if expires_at.is_some_and(|expires_at| expires_at <= Utc::now()) {
+        sqlx::query(
+            "UPDATE download_packages \
+             SET status = 'expired', cleanup_after_at = COALESCE(cleanup_after_at, now()), \
+                 updated_at = now() \
+             WHERE id = $1 AND status IN ('ready', 'serving')",
+        )
+        .bind(package_id)
+        .execute(&state.pool)
+        .await?;
+        record_download_event_for_package(
+            &state.pool,
+            user,
+            row.try_get("download_job_id").ok(),
+            Some(package_id),
+            row.try_get("media_item_id").ok(),
+            Some(device_identifier),
+            "package_expired",
+            Some("package expiry reached"),
+        )
+        .await?;
+        return Err(DownloadError::PackageExpired(package_id));
+    }
+
+    let revoked_at: Option<DateTime<Utc>> = row.try_get("revoked_at").ok().flatten();
+    if revoked_at.is_some() {
+        return Err(DownloadError::AccessDenied);
+    }
+
+    let config = state.runtime_config.load();
+    let downloads = config.downloads.clone();
+    let network_mode = config.auth.network_mode.clone();
+    drop(config);
+    validate_network_policy(&downloads, &network_mode)?;
+
+    let media_item_id: Uuid = row.get("media_item_id");
+    resolve_media_access(&state.pool, user, media_item_id).await?;
+    enforce_streaming_policy(&state.pool, user, media_item_id, device_identifier).await?;
+    Ok(())
+}
+
+async fn load_package_file_record(
+    pool: &sqlx::PgPool,
+    package_id: Uuid,
+    relative_path: &str,
+) -> Result<Option<DownloadPackageFileRecord>, DownloadError> {
+    let row = sqlx::query(
+        "SELECT relative_path, file_role, content_type, byte_size, checksum_sha256, segment_index \
+         FROM download_package_files \
+         WHERE download_package_id = $1 AND relative_path = $2",
+    )
+    .bind(package_id)
+    .bind(relative_path)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(row.map(|row| DownloadPackageFileRecord {
+        relative_path: row.get("relative_path"),
+        file_role: row.get("file_role"),
+        content_type: row.try_get("content_type").ok().flatten(),
+        byte_size: row.get("byte_size"),
+        checksum_sha256: row.get("checksum_sha256"),
+        segment_index: row.try_get("segment_index").ok().flatten(),
+    }))
+}
+
 async fn load_package_manifest_files(
     pool: &sqlx::PgPool,
     package_id: Uuid,
@@ -812,6 +1129,101 @@ fn client_platform_to_db(value: DownloadClientPlatform) -> &'static str {
 
 fn json_array_to_vec(value: Value) -> Vec<Value> {
     value.as_array().cloned().unwrap_or_default()
+}
+
+fn require_device_identifier(value: Option<&str>) -> Result<&str, DownloadError> {
+    let value = value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| DownloadError::InvalidRequest("device_identifier is required".into()))?;
+    if value.len() > 128 {
+        return Err(DownloadError::InvalidRequest(
+            "device_identifier is too long".into(),
+        ));
+    }
+    Ok(value)
+}
+
+fn normalize_package_relative_path(value: &str) -> Result<String, DownloadError> {
+    let decoded = urlencoding::decode(value)
+        .map_err(|_| DownloadError::InvalidRequest("package file path is invalid".into()))?;
+    let normalized = decoded.trim().replace('\\', "/");
+    if normalized.is_empty()
+        || normalized.len() > 512
+        || normalized.starts_with('/')
+        || normalized.contains('\0')
+    {
+        return Err(DownloadError::InvalidRequest(
+            "package file path is invalid".into(),
+        ));
+    }
+
+    let mut segments = Vec::new();
+    for segment in normalized.split('/') {
+        if segment.is_empty() || segment == "." || segment == ".." {
+            return Err(DownloadError::InvalidRequest(
+                "package file path is invalid".into(),
+            ));
+        }
+        segments.push(segment);
+    }
+
+    Ok(segments.join("/"))
+}
+
+fn package_dir_from_storage_key(
+    package_root: &Path,
+    storage_key: &str,
+) -> Result<PathBuf, DownloadError> {
+    let id = storage_key
+        .strip_prefix("downloads/")
+        .ok_or_else(|| DownloadError::StorageUnavailable("invalid package storage key".into()))?;
+    Uuid::parse_str(id)
+        .map_err(|_| DownloadError::StorageUnavailable("invalid package storage key".into()))?;
+    let package_dir = package_root.join(id);
+    if !package_dir.starts_with(package_root) {
+        return Err(DownloadError::StorageUnavailable(
+            "invalid package storage key".into(),
+        ));
+    }
+    Ok(package_dir)
+}
+
+fn resolve_package_file_path(
+    package_dir: &Path,
+    relative_path: &str,
+) -> Result<PathBuf, DownloadError> {
+    let relative_path = normalize_package_relative_path(relative_path)?;
+    let mut path = package_dir.to_path_buf();
+    for segment in relative_path.split('/') {
+        path.push(segment);
+    }
+    if !path.starts_with(package_dir) {
+        return Err(DownloadError::InvalidRequest(
+            "package file path is invalid".into(),
+        ));
+    }
+    Ok(path)
+}
+
+fn authenticated_package_file_url(
+    package_id: Uuid,
+    relative_path: &str,
+    device_identifier: &str,
+) -> String {
+    format!(
+        "/api/v1/downloads/packages/{package_id}/files/{}?device_identifier={}",
+        encode_relative_package_url_path(relative_path),
+        urlencoding::encode(device_identifier)
+    )
+}
+
+fn encode_relative_package_url_path(relative_path: &str) -> String {
+    relative_path
+        .split('/')
+        .map(urlencoding::encode)
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 fn job_response_from_row(
@@ -1258,6 +1670,37 @@ async fn record_download_event(
     Ok(())
 }
 
+async fn record_download_event_for_package(
+    pool: &sqlx::PgPool,
+    user: &AuthenticatedUser,
+    download_job_id: Option<Uuid>,
+    download_package_id: Option<Uuid>,
+    media_item_id: Option<Uuid>,
+    device_identifier: Option<&str>,
+    event_type: &str,
+    reason: Option<&str>,
+) -> Result<(), DownloadError> {
+    sqlx::query(
+        "INSERT INTO download_events \
+         (user_id, user_session_id, download_job_id, download_package_id, media_item_id, \
+          device_identifier, event_type, reason, details) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)",
+    )
+    .bind(user.user_id)
+    .bind(user.session_id)
+    .bind(download_job_id)
+    .bind(download_package_id)
+    .bind(media_item_id)
+    .bind(device_identifier)
+    .bind(event_type)
+    .bind(reason)
+    .bind(json!({ "source": "downloads_serving" }))
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1363,5 +1806,54 @@ mod tests {
             DownloadPackageFormat::Mp4
         ));
         assert!(package_format_from_db("zip").is_err());
+    }
+
+    #[test]
+    fn download_range_spec_parses_prefix_and_suffix_ranges() {
+        let range = DownloadRangeSpec::parse(Some("bytes=10-19"), 100)
+            .unwrap()
+            .unwrap();
+        assert_eq!(range.start, 10);
+        assert_eq!(range.end, 19);
+        assert_eq!(range.content_length(), 10);
+        assert_eq!(range.content_range_header(), "bytes 10-19/100");
+
+        let suffix = DownloadRangeSpec::parse(Some("bytes=-25"), 100)
+            .unwrap()
+            .unwrap();
+        assert_eq!(suffix.start, 75);
+        assert_eq!(suffix.end, 99);
+    }
+
+    #[test]
+    fn download_range_spec_rejects_multi_ranges_and_bounds() {
+        assert!(matches!(
+            DownloadRangeSpec::parse(Some("bytes=0-1,4-5"), 100),
+            Err(DownloadError::InvalidByteRange(_))
+        ));
+        assert!(matches!(
+            DownloadRangeSpec::parse(Some("bytes=120-130"), 100),
+            Err(DownloadError::InvalidByteRange(_))
+        ));
+    }
+
+    #[test]
+    fn package_relative_paths_reject_traversal() {
+        assert_eq!(
+            normalize_package_relative_path("subtitles/en.vtt").unwrap(),
+            "subtitles/en.vtt"
+        );
+        assert!(matches!(
+            normalize_package_relative_path("../media.mp4"),
+            Err(DownloadError::InvalidRequest(_))
+        ));
+        assert!(matches!(
+            normalize_package_relative_path("segments/..%2Fmedia.mp4"),
+            Err(DownloadError::InvalidRequest(_))
+        ));
+        assert!(matches!(
+            normalize_package_relative_path("/absolute.mp4"),
+            Err(DownloadError::InvalidRequest(_))
+        ));
     }
 }

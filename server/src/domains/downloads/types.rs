@@ -193,8 +193,16 @@ pub struct DeleteDownloadPackageRequest {
 
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct PackageTransferUrlsRequest {
+    #[validate(length(min = 1, max = 128))]
+    pub device_identifier: String,
     #[validate(length(min = 1, max = 512))]
     pub file_paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct DownloadPackageAccessQuery {
+    #[validate(length(min = 1, max = 128))]
+    pub device_identifier: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]

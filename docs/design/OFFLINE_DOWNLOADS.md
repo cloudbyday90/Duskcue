@@ -116,14 +116,14 @@ Phase 16c Task 2 added the `server/src/domains/downloads/` five-file domain shel
 | `POST /api/v1/downloads/jobs` | Create durable package job | Implemented in Task 6 |
 | `GET /api/v1/downloads/jobs/{id}` | Read job status | Implemented in Task 6 |
 | `POST /api/v1/downloads/jobs/{id}/cancel` | Cancel job | Implemented in Task 6 |
-| `GET /api/v1/downloads/inventory` | List user/device inventory | Validates query and returns `DOWNLOAD_015` until Tasks 7 and 10 |
-| `DELETE /api/v1/downloads/packages/{id}` | Delete package/local state | Validates body and returns `DOWNLOAD_015` until Tasks 7, 10, and 13 |
-| `GET /api/v1/downloads/packages/{id}/manifest` | Fetch package manifest | Implemented for ready/serving package rows in Task 5 |
-| `POST /api/v1/downloads/packages/{id}/transfer-urls` | Create short-lived transfer URLs | Validates body and returns `DOWNLOAD_015` until Task 7 |
-| `GET /api/v1/downloads/packages/{id}/files/{*file_path}` | Serve package file/range | Returns `DOWNLOAD_015` until Task 7 |
+| `GET /api/v1/downloads/inventory` | List user/device inventory | Validates query and returns `DOWNLOAD_015` until Task 10 |
+| `DELETE /api/v1/downloads/packages/{id}` | Delete package/local state | Validates body and returns `DOWNLOAD_015` until Tasks 10 and 13 |
+| `GET /api/v1/downloads/packages/{id}/manifest` | Fetch package manifest | Implemented for ready/serving package rows in Task 5; device/session revalidation added in Task 7 |
+| `POST /api/v1/downloads/packages/{id}/transfer-urls` | Create short-lived transfer URLs | Implemented in Task 7 as authenticated endpoint URLs |
+| `GET /api/v1/downloads/packages/{id}/files/{*file_path}` | Serve package file/range | Implemented in Task 7 |
 | `POST /api/v1/downloads/sync` | Submit reconnect sync state | Validates body and returns `DOWNLOAD_015` until Task 12 |
 
-`DOWNLOAD_001`-`DOWNLOAD_015` are registered in [ERROR_HANDLING.md](ERROR_HANDLING.md). Planning and job creation require the `can_download` capability; read/delete/manifest/sync routes are authenticated user-scoped and will enforce BOLA/policy checks in the service layer as implementation lands.
+`DOWNLOAD_001`-`DOWNLOAD_016` are registered in [ERROR_HANDLING.md](ERROR_HANDLING.md). Planning and job creation require the `can_download` capability; read/delete/manifest/sync routes are authenticated user-scoped and enforce BOLA/policy checks in the service layer as implementation lands.
 
 Phase 16c Task 3 added policy enforcement foundations:
 
@@ -154,6 +154,14 @@ Phase 16c Task 6 added durable package execution:
 - Package work directories live under `{data_dir}/downloads/{job_id}`. The worker refuses writes outside that root, removes superseded/failed/cancelled directories, and stores package inventory by logical `storage_key` rather than exposing filesystem paths.
 - Direct-compatible jobs produce `media.mp4`. Remux/transcode jobs produce HLS/fMP4 output via FFmpeg using the streaming segment duration, fMP4 segments, and a medium x264 preset for offline transcodes. Offline work runs through the scheduled worker path, separate from the live playback `TranscodeManager`, so downloads do not consume live transcode slots.
 - The worker writes `manifest.json`, stores `download_packages` and `download_package_files` rows, calculates per-file SHA-256 checksums and a package-level integrity hash, updates progress/bytes/status, and emits download events plus Prometheus metrics for queued/started/ready/failed/retried/cancelled/recovered/cleaned states.
+
+Phase 16c Task 7 added authenticated package serving and resumable transfer:
+
+- Manifest, transfer URL, and file-serving endpoints require the package's `device_identifier`. They revalidate authenticated user ownership, originating session, device binding, package status, expiry/revocation, global download/network policy, current library access, and streaming policy before serving package metadata or bytes.
+- Transfer URLs are authenticated endpoint URLs, not bearer-bearing signed URLs. `POST /api/v1/downloads/packages/{id}/transfer-urls` returns package-relative file URLs under `/api/v1/downloads/packages/{id}/files/{relative_path}?device_identifier=...`, method `GET`, checksum headers, and byte-size hints for client repair/retry.
+- `GET /api/v1/downloads/packages/{id}/files/{*file_path}` serves only manifest-listed relative paths from `{data_dir}/downloads/{job_id}`. Absolute paths, traversal segments, backslash traversal, and files outside the package directory are rejected.
+- Package files support single HTTP byte-range requests for resumable mobile transfers. Responses include `Accept-Ranges: bytes`, `Content-Range` for partial responses, private/no-store cache headers, and checksum/file-role/segment headers. Invalid ranges return `DOWNLOAD_016`.
+- Serving updates package first/last served timestamps, transitions ready packages to `serving`, records `package_served` and expiry events, and emits served-file metrics.
 
 ## Mobile Contract
 
@@ -238,4 +246,4 @@ Download quality reuses the Phase 7 quality-management model but is not identica
 
 ## Implementation Status
 
-Phase 16c Tasks 0-6 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, manifest response format, durable job creation/status/cancel, and scheduled package worker are in place. Package serving, resumable transfer, notifications, mobile download manager, protected local storage, offline playback, reconnect sync, settings, observability, and broader integration tests are pending Phase 16c Tasks 7-15.
+Phase 16c Tasks 0-7 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, manifest response format, durable job creation/status/cancel, scheduled package worker, authenticated package serving, and resumable transfer are in place. Notifications, mobile download manager, protected local storage, offline playback, reconnect sync, settings, observability, and broader integration tests are pending Phase 16c Tasks 8-15.

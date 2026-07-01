@@ -504,6 +504,7 @@ All API errors return [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) Problem
 | `DOWNLOAD_013` | 400 | Invalid download platform |
 | `DOWNLOAD_014` | 400 | Invalid download request |
 | `DOWNLOAD_015` | 501 | Download feature not implemented yet |
+| `DOWNLOAD_016` | 416 | Invalid download byte range |
 
 ### TRAKT — Trakt.tv Integration
 

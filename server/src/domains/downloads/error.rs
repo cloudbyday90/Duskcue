@@ -61,6 +61,9 @@ pub enum DownloadError {
     #[error("invalid download request: {0}")]
     InvalidRequest(String),
 
+    #[error("invalid download byte range: {0}")]
+    InvalidByteRange(String),
+
     #[error("download feature not implemented yet: {0}")]
     NotImplemented(&'static str),
 
