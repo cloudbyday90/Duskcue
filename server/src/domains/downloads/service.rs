@@ -578,10 +578,152 @@ pub async fn delete_download_package(
     state: &AppState,
     user: &AuthenticatedUser,
     id: Uuid,
-    _req: DeleteDownloadPackageRequest,
+    req: DeleteDownloadPackageRequest,
 ) -> Result<DownloadActionResponse, DownloadError> {
-    ensure_package_owner(&state.pool, user, id).await?;
-    Err(DownloadError::NotImplemented("download package deletion"))
+    let row = sqlx::query(
+        "SELECT id, download_job_id, media_item_id, device_identifier, status \
+         FROM download_packages \
+         WHERE id = $1 AND user_id = $2",
+    )
+    .bind(id)
+    .bind(user.user_id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let Some(row) = row else {
+        return Err(DownloadError::PackageNotFound(id));
+    };
+
+    let download_job_id: Uuid = row.get("download_job_id");
+    let media_item_id: Uuid = row.get("media_item_id");
+    let device_identifier: String = row.get("device_identifier");
+    let status: String = row.get("status");
+    let reason = req.reason.as_deref().unwrap_or("package deleted by user");
+    if status == "cleaned" {
+        return Ok(DownloadActionResponse {
+            ok: true,
+            id,
+            status,
+        });
+    }
+
+    let mut tx = state.pool.begin().await?;
+    sqlx::query(
+        "UPDATE download_packages \
+         SET status = 'cleanup_pending', cleanup_after_at = now(), updated_at = now(), \
+             metadata = jsonb_set(metadata, '{delete_local_state}', to_jsonb($2::BOOLEAN), true) \
+         WHERE id = $1 AND status <> 'cleaned'",
+    )
+    .bind(id)
+    .bind(req.delete_local_state)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "UPDATE download_device_state \
+         SET local_status = 'deleted', deletion_requested = true, deleted_at = now(), \
+             pending_sync = '[]'::jsonb, updated_at = now() \
+         WHERE user_id = $1 AND download_package_id = $2",
+    )
+    .bind(user.user_id)
+    .bind(id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "UPDATE download_jobs \
+         SET cleanup_after_at = now(), updated_at = now() \
+         WHERE id = $1",
+    )
+    .bind(download_job_id)
+    .execute(&mut *tx)
+    .await?;
+
+    sqlx::query(
+        "INSERT INTO download_events \
+         (user_id, user_session_id, download_job_id, download_package_id, media_item_id, \
+          device_identifier, event_type, reason, details) \
+         VALUES ($1, $2, $3, $4, $5, $6, 'package_deleted', $7, $8)",
+    )
+    .bind(user.user_id)
+    .bind(user.session_id)
+    .bind(download_job_id)
+    .bind(id)
+    .bind(media_item_id)
+    .bind(&device_identifier)
+    .bind(reason)
+    .bind(json!({
+        "source": "downloads_delete",
+        "delete_local_state": req.delete_local_state
+    }))
+    .execute(&mut *tx)
+    .await?;
+    tx.commit().await?;
+
+    Ok(DownloadActionResponse {
+        ok: true,
+        id,
+        status: "cleanup_pending".to_string(),
+    })
+}
+
+pub async fn renew_download_package(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    id: Uuid,
+    req: RenewDownloadPackageRequest,
+) -> Result<RenewDownloadPackageResponse, DownloadError> {
+    let device_identifier = require_device_identifier(Some(&req.device_identifier))?;
+    let package = revalidate_package_access(state, user, id, device_identifier).await?;
+    let config = state.runtime_config.load();
+    let expiry_days = config.downloads.default_package_expiry_days.max(1);
+    let retention_days = config.downloads.ready_package_retention_days.max(1);
+    drop(config);
+
+    let expires_at = Utc::now() + Duration::days(i64::from(expiry_days));
+    let cleanup_after_at = expires_at + Duration::days(i64::from(retention_days));
+
+    sqlx::query(
+        "UPDATE download_packages \
+         SET expires_at = $2, cleanup_after_at = $3, updated_at = now(), \
+             sync_metadata = jsonb_set(sync_metadata, '{renewed_at}', to_jsonb(now()), true) \
+         WHERE id = $1 AND status IN ('ready', 'serving')",
+    )
+    .bind(id)
+    .bind(expires_at)
+    .bind(cleanup_after_at)
+    .execute(&state.pool)
+    .await?;
+
+    sqlx::query(
+        "UPDATE download_jobs \
+         SET expires_at = $2, cleanup_after_at = $3, updated_at = now() \
+         WHERE id = $1",
+    )
+    .bind(package.download_job_id)
+    .bind(expires_at)
+    .bind(cleanup_after_at)
+    .execute(&state.pool)
+    .await?;
+
+    record_download_event_for_package(
+        &state.pool,
+        user,
+        Some(package.download_job_id),
+        Some(id),
+        Some(package.media_item_id),
+        Some(device_identifier),
+        "package_renewed",
+        Some("package renewed"),
+    )
+    .await?;
+
+    Ok(RenewDownloadPackageResponse {
+        ok: true,
+        package_id: id,
+        expires_at,
+        cleanup_after_at,
+    })
 }
 
 pub async fn get_package_manifest(
@@ -793,6 +935,7 @@ pub async fn sync_download_state(
     let mut contexts = HashMap::new();
     let mut revoked_package_ids = Vec::new();
     let mut expired_package_ids = Vec::new();
+    let mut deleted_package_ids = Vec::new();
     for package_id in package_ids {
         let mut context =
             load_sync_package_context(state, user, package_id, &device_identifier).await?;
@@ -802,6 +945,9 @@ pub async fn sync_download_state(
         }
         if context.is_revoked && !revoked_package_ids.contains(&package_id) {
             revoked_package_ids.push(package_id);
+        }
+        if context.is_deleted && !deleted_package_ids.contains(&package_id) {
+            deleted_package_ids.push(package_id);
         }
         contexts.insert(package_id, context);
     }
@@ -900,6 +1046,7 @@ pub async fn sync_download_state(
         accepted_playback_events,
         &revoked_package_ids,
         &expired_package_ids,
+        &deleted_package_ids,
     )
     .await?;
 
@@ -909,6 +1056,7 @@ pub async fn sync_download_state(
         accepted_playback_event_ids,
         revoked_package_ids,
         expired_package_ids,
+        deleted_package_ids,
         server_time: Utc::now(),
     })
 }
@@ -1175,11 +1323,14 @@ struct DownloadSyncPackageContext {
     revoked_at: Option<DateTime<Utc>>,
     is_expired: bool,
     is_revoked: bool,
+    is_deleted: bool,
 }
 
 impl DownloadSyncPackageContext {
     fn effective_local_status(&self, requested: DownloadLocalStatus) -> DownloadLocalStatus {
-        if self.is_expired {
+        if self.is_deleted {
+            DownloadLocalStatus::Deleted
+        } else if self.is_expired {
             DownloadLocalStatus::Expired
         } else if self.is_revoked {
             DownloadLocalStatus::Revoked
@@ -1228,6 +1379,7 @@ async fn load_sync_package_context(
         revoked_at: row.try_get("revoked_at").ok().flatten(),
         is_expired: false,
         is_revoked: false,
+        is_deleted: false,
     })
 }
 
@@ -1239,6 +1391,8 @@ async fn classify_sync_package(
 ) -> Result<(), DownloadError> {
     if context.user_session_id.is_some() && context.user_session_id != Some(user.session_id) {
         context.is_revoked = true;
+        mark_sync_package_revoked(state, user, context, device_identifier, "session changed")
+            .await?;
         return Ok(());
     }
     if context.status == "expired"
@@ -1256,6 +1410,10 @@ async fn classify_sync_package(
         .bind(context.package_id)
         .execute(&state.pool)
         .await?;
+        return Ok(());
+    }
+    if matches!(context.status.as_str(), "cleanup_pending" | "cleaned") {
+        context.is_deleted = true;
         return Ok(());
     }
     if context.status == "revoked" || context.revoked_at.is_some() {
@@ -1280,6 +1438,58 @@ async fn classify_sync_package(
             .is_err()
     {
         context.is_revoked = true;
+        mark_sync_package_revoked(
+            state,
+            user,
+            context,
+            device_identifier,
+            "access or policy changed",
+        )
+        .await?;
+    }
+
+    Ok(())
+}
+
+async fn mark_sync_package_revoked(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    context: &DownloadSyncPackageContext,
+    device_identifier: &str,
+    reason: &str,
+) -> Result<(), DownloadError> {
+    let result = sqlx::query(
+        "UPDATE download_packages \
+         SET status = 'revoked', revoked_at = COALESCE(revoked_at, now()), \
+             cleanup_after_at = COALESCE(cleanup_after_at, now()), updated_at = now() \
+         WHERE id = $1 AND status IN ('ready', 'serving')",
+    )
+    .bind(context.package_id)
+    .execute(&state.pool)
+    .await?;
+
+    if result.rows_affected() > 0 {
+        sqlx::query(
+            "UPDATE download_jobs \
+             SET status = 'revoked', cleanup_after_at = COALESCE(cleanup_after_at, now()), \
+                 updated_at = now() \
+             WHERE id = (SELECT download_job_id FROM download_packages WHERE id = $1) \
+               AND status = 'ready'",
+        )
+        .bind(context.package_id)
+        .execute(&state.pool)
+        .await?;
+        record_download_event_for_package(
+            &state.pool,
+            user,
+            None,
+            Some(context.package_id),
+            Some(context.media_item_id),
+            Some(device_identifier),
+            "package_revoked",
+            Some(reason),
+        )
+        .await?;
     }
 
     Ok(())
@@ -1526,6 +1736,15 @@ async fn revalidate_package_access_from_row(
 
     let package_session_id: Option<Uuid> = row.try_get("user_session_id").ok().flatten();
     if package_session_id.is_some() && package_session_id != Some(user.session_id) {
+        mark_package_revoked_from_row(
+            state,
+            user,
+            row,
+            package_id,
+            device_identifier,
+            "session changed",
+        )
+        .await?;
         return Err(DownloadError::AccessDenied);
     }
 
@@ -1571,11 +1790,93 @@ async fn revalidate_package_access_from_row(
     let downloads = config.downloads.clone();
     let network_mode = config.auth.network_mode.clone();
     drop(config);
-    validate_network_policy(&downloads, &network_mode)?;
+    if let Err(err) = validate_network_policy(&downloads, &network_mode) {
+        mark_package_revoked_from_row(
+            state,
+            user,
+            row,
+            package_id,
+            device_identifier,
+            "network policy changed",
+        )
+        .await?;
+        return Err(err);
+    }
 
     let media_item_id: Uuid = row.get("media_item_id");
-    resolve_media_access(&state.pool, user, media_item_id).await?;
-    enforce_streaming_policy(&state.pool, user, media_item_id, device_identifier).await?;
+    if let Err(err) = resolve_media_access(&state.pool, user, media_item_id).await {
+        mark_package_revoked_from_row(
+            state,
+            user,
+            row,
+            package_id,
+            device_identifier,
+            "media access changed",
+        )
+        .await?;
+        return Err(err);
+    }
+    if let Err(err) =
+        enforce_streaming_policy(&state.pool, user, media_item_id, device_identifier).await
+    {
+        mark_package_revoked_from_row(
+            state,
+            user,
+            row,
+            package_id,
+            device_identifier,
+            "streaming policy changed",
+        )
+        .await?;
+        return Err(err);
+    }
+    Ok(())
+}
+
+async fn mark_package_revoked_from_row(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    row: &sqlx::postgres::PgRow,
+    package_id: Uuid,
+    device_identifier: &str,
+    reason: &str,
+) -> Result<(), DownloadError> {
+    let result = sqlx::query(
+        "UPDATE download_packages \
+         SET status = 'revoked', revoked_at = COALESCE(revoked_at, now()), \
+             cleanup_after_at = COALESCE(cleanup_after_at, now()), updated_at = now() \
+         WHERE id = $1 AND status IN ('ready', 'serving')",
+    )
+    .bind(package_id)
+    .execute(&state.pool)
+    .await?;
+
+    if result.rows_affected() > 0 {
+        let download_job_id: Option<Uuid> = row.try_get("download_job_id").ok();
+        if let Some(download_job_id) = download_job_id {
+            sqlx::query(
+                "UPDATE download_jobs \
+                 SET status = 'revoked', cleanup_after_at = COALESCE(cleanup_after_at, now()), \
+                     updated_at = now() \
+                 WHERE id = $1 AND status = 'ready'",
+            )
+            .bind(download_job_id)
+            .execute(&state.pool)
+            .await?;
+        }
+        record_download_event_for_package(
+            &state.pool,
+            user,
+            download_job_id,
+            Some(package_id),
+            row.try_get("media_item_id").ok(),
+            Some(device_identifier),
+            "package_revoked",
+            Some(reason),
+        )
+        .await?;
+    }
+
     Ok(())
 }
 
@@ -2220,23 +2521,6 @@ async fn ensure_job_owner(
     }
 }
 
-async fn ensure_package_owner(
-    pool: &sqlx::PgPool,
-    user: &AuthenticatedUser,
-    id: Uuid,
-) -> Result<(), DownloadError> {
-    let owner_id: Option<Uuid> =
-        sqlx::query_scalar("SELECT user_id FROM download_packages WHERE id = $1")
-            .bind(id)
-            .fetch_optional(pool)
-            .await?;
-
-    match owner_id {
-        Some(owner_id) if owner_id == user.user_id => Ok(()),
-        _ => Err(DownloadError::PackageNotFound(id)),
-    }
-}
-
 async fn record_download_event(
     pool: &sqlx::PgPool,
     user: &AuthenticatedUser,
@@ -2302,6 +2586,7 @@ async fn record_download_sync_event(
     accepted_playback_events: usize,
     revoked_package_ids: &[Uuid],
     expired_package_ids: &[Uuid],
+    deleted_package_ids: &[Uuid],
 ) -> Result<(), DownloadError> {
     sqlx::query(
         "INSERT INTO download_events \
@@ -2316,7 +2601,8 @@ async fn record_download_sync_event(
         "accepted_package_states": accepted_package_states,
         "accepted_playback_events": accepted_playback_events,
         "revoked_package_ids": revoked_package_ids,
-        "expired_package_ids": expired_package_ids
+        "expired_package_ids": expired_package_ids,
+        "deleted_package_ids": deleted_package_ids
     }))
     .execute(pool)
     .await?;

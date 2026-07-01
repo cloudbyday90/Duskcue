@@ -184,13 +184,15 @@ class ProtectedDownloadStorageService {
   }
 
   Future<void> deletePackage(DownloadInventoryScope scope, DownloadItem item) async {
-    await _channel.invokeMethod<void>(
-      'deleteDownloadPackage',
-      {
-        'scope_key': scope.key,
-        'package_key': _packageKey(item),
-      },
-    );
+    for (final packageKey in _packageKeys(item)) {
+      await _channel.invokeMethod<void>(
+        'deleteDownloadPackage',
+        {
+          'scope_key': scope.key,
+          'package_key': packageKey,
+        },
+      );
+    }
   }
 
   Future<void> deleteScope(DownloadInventoryScope scope) async {
@@ -232,6 +234,14 @@ class ProtectedDownloadStorageService {
 
   String _packageKey(DownloadItem item) {
     return item.packageId ?? item.jobId ?? item.mediaItemId;
+  }
+
+  List<String> _packageKeys(DownloadItem item) {
+    return {
+      if (item.packageId != null && item.packageId!.isNotEmpty) item.packageId!,
+      if (item.jobId != null && item.jobId!.isNotEmpty) item.jobId!,
+      if (item.mediaItemId.isNotEmpty) item.mediaItemId,
+    }.toList(growable: false);
   }
 
   Object? _sanitize(Object? value) {

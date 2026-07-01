@@ -104,6 +104,19 @@ pub async fn delete_download_package(
     ))
 }
 
+pub async fn renew_download_package(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Json(req): Json<RenewDownloadPackageRequest>,
+) -> Result<Json<RenewDownloadPackageResponse>, AppError> {
+    req.validate()
+        .map_err(|e| validation_error(e, format!("/api/v1/downloads/packages/{id}/renew")))?;
+    Ok(Json(
+        service::renew_download_package(&state, &user, id, req).await?,
+    ))
+}
+
 pub async fn get_package_manifest(
     State(state): State<AppState>,
     user: AuthenticatedUser,

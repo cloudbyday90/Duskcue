@@ -756,7 +756,7 @@ All database design is documented in [DATABASE.md](docs/design/DATABASE.md). Sum
 | Activity & Analytics | Complete | `play_sessions` (partitioned), `play_session_streams`, `play_events` (partitioned), `user_trust_events`, `user_trust_scores` | [DATABASE.md](docs/design/DATABASE.md) |
 | Classifarr Integration | Complete | No dedicated tables — passive read-only API | [DATABASE.md](docs/design/DATABASE.md) |
 | Playback | Complete | `user_item_data`, `bookmarks`, `playlists`, `playlist_items` | [DATABASE.md](docs/design/DATABASE.md) |
-| Offline Downloads | In progress (schema and policy foundation complete) | `download_jobs`, `download_packages`, `download_package_files`, `download_device_state`, `download_events`; `server_config.downloads` JSONB | [OFFLINE_DOWNLOADS.md](docs/design/OFFLINE_DOWNLOADS.md), [DATABASE.md](docs/design/DATABASE.md) |
+| Offline Downloads | In progress (mobile package lifecycle through revocation, expiry, renewal, cleanup, and reconnect sync complete) | `download_jobs`, `download_packages`, `download_package_files`, `download_device_state`, `download_events`; `server_config.downloads` JSONB | [OFFLINE_DOWNLOADS.md](docs/design/OFFLINE_DOWNLOADS.md), [DATABASE.md](docs/design/DATABASE.md) |
 | User & Authentication | Complete | `users`, `user_passkeys`, `user_totp`, `user_capabilities`, `user_library_access`, `user_sessions`, `api_keys`, `invitations`, `device_linking_codes`, `reauth_codes`, `streaming_policies` | [AUTH.md](docs/design/AUTH.md) |
 | Segment Detection | Complete | `media_segments`, `media_fingerprints` | [SEGMENT_DETECTION.md](docs/design/SEGMENT_DETECTION.md) |
 | Storyboards | Complete | `storyboards` | [STORYBOARDS.md](docs/design/STORYBOARDS.md) |

@@ -219,7 +219,18 @@ pub async fn run_download_package_worker(
         }
     }
 
-    stats.cleaned += cleanup_due_packages(&state.pool, &package_root).await?;
+    let ready_package_retention_days = {
+        let config = state.runtime_config.load();
+        config.downloads.ready_package_retention_days.max(1)
+    };
+    stats.cleaned += cleanup_due_packages(
+        &state.pool,
+        &package_root,
+        i64::from(ready_package_retention_days),
+    )
+    .await?;
+    stats.cleaned += cleanup_due_job_dirs(&state.pool, &package_root).await?;
+    stats.cleaned += cleanup_orphaned_package_dirs(&state.pool, &package_root).await?;
     metrics::gauge!("download_worker_last_claimed_jobs").set(stats.claimed as f64);
     metrics::gauge!("download_worker_last_cleaned_packages").set(stats.cleaned as f64);
 
@@ -777,7 +788,41 @@ async fn recover_stale_preparing(pool: &PgPool, stale_minutes: i64) -> anyhow::R
     Ok(())
 }
 
-async fn cleanup_due_packages(pool: &PgPool, package_root: &Path) -> anyhow::Result<u64> {
+async fn cleanup_due_packages(
+    pool: &PgPool,
+    package_root: &Path,
+    ready_package_retention_days: i64,
+) -> anyhow::Result<u64> {
+    let expired = sqlx::query(
+        "UPDATE download_packages \
+         SET status = 'expired', cleanup_after_at = COALESCE(cleanup_after_at, now()), \
+             updated_at = now() \
+         WHERE status IN ('ready', 'serving') \
+           AND expires_at IS NOT NULL \
+           AND expires_at <= now()",
+    )
+    .execute(pool)
+    .await?;
+    if expired.rows_affected() > 0 {
+        metrics::counter!("download_packages_expired_total").increment(expired.rows_affected());
+    }
+
+    let never_downloaded = sqlx::query(
+        "UPDATE download_packages \
+         SET status = 'cleanup_pending', cleanup_after_at = COALESCE(cleanup_after_at, now()), \
+             updated_at = now() \
+         WHERE status = 'ready' \
+           AND first_served_at IS NULL \
+           AND created_at < now() - ($1::TEXT || ' days')::INTERVAL",
+    )
+    .bind(ready_package_retention_days)
+    .execute(pool)
+    .await?;
+    if never_downloaded.rows_affected() > 0 {
+        metrics::counter!("download_packages_never_downloaded_cleanup_total")
+            .increment(never_downloaded.rows_affected());
+    }
+
     let rows = sqlx::query(
         "SELECT id, download_job_id, user_id, user_session_id, device_identifier, media_item_id, storage_key \
          FROM download_packages \
@@ -821,6 +866,112 @@ async fn cleanup_due_packages(pool: &PgPool, package_root: &Path) -> anyhow::Res
     }
     if cleaned > 0 {
         metrics::counter!("download_packages_cleaned_total").increment(cleaned);
+    }
+    Ok(cleaned)
+}
+
+async fn cleanup_due_job_dirs(pool: &PgPool, package_root: &Path) -> anyhow::Result<u64> {
+    let rows = sqlx::query(
+        "SELECT dj.id, dj.user_id, dj.user_session_id, dj.device_identifier, dj.media_item_id, dj.status \
+         FROM download_jobs dj \
+         LEFT JOIN download_packages dp ON dp.download_job_id = dj.id \
+         WHERE dj.status IN ('failed', 'cancelled') \
+           AND dj.cleanup_after_at IS NOT NULL \
+           AND dj.cleanup_after_at <= now() \
+           AND dp.id IS NULL \
+         LIMIT 25",
+    )
+    .fetch_all(pool)
+    .await?;
+
+    let mut cleaned = 0u64;
+    for row in rows {
+        let job_id: Uuid = row.get("id");
+        let dir = package_root.join(job_id.to_string());
+        if dir.starts_with(package_root) {
+            let _ = tokio::fs::remove_dir_all(&dir).await;
+        }
+        sqlx::query(
+            "UPDATE download_jobs SET cleanup_after_at = NULL, updated_at = now() WHERE id = $1",
+        )
+        .bind(job_id)
+        .execute(pool)
+        .await?;
+        record_event(
+            pool,
+            row.try_get("user_id").ok(),
+            row.try_get("user_session_id").ok().flatten(),
+            Some(job_id),
+            None,
+            row.try_get("media_item_id").ok(),
+            row.try_get::<String, _>("device_identifier")
+                .ok()
+                .as_deref(),
+            "cleanup",
+            Some("job work directory cleanup completed"),
+            json!({ "job_status": row.get::<String, _>("status") }),
+        )
+        .await?;
+        cleaned += 1;
+    }
+
+    if cleaned > 0 {
+        metrics::counter!("download_job_dirs_cleaned_total").increment(cleaned);
+    }
+    Ok(cleaned)
+}
+
+async fn cleanup_orphaned_package_dirs(pool: &PgPool, package_root: &Path) -> anyhow::Result<u64> {
+    let mut entries = tokio::fs::read_dir(package_root).await?;
+    let mut cleaned = 0u64;
+    while let Some(entry) = entries.next_entry().await? {
+        if cleaned >= 25 {
+            break;
+        }
+        let file_type = entry.file_type().await?;
+        if !file_type.is_dir() {
+            continue;
+        }
+        let name = entry.file_name().to_string_lossy().to_string();
+        let Ok(job_id) = Uuid::parse_str(&name) else {
+            continue;
+        };
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (
+                SELECT 1 FROM download_jobs WHERE id = $1
+                UNION ALL
+                SELECT 1 FROM download_packages WHERE storage_key = $2
+             )",
+        )
+        .bind(job_id)
+        .bind(format!("{DOWNLOADS_SUBDIR}/{job_id}"))
+        .fetch_one(pool)
+        .await?;
+        if exists {
+            continue;
+        }
+        let dir = entry.path();
+        if dir.starts_with(package_root) {
+            let _ = tokio::fs::remove_dir_all(&dir).await;
+            record_event(
+                pool,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                "cleanup",
+                Some("orphaned package directory cleanup completed"),
+                json!({ "job_id": job_id }),
+            )
+            .await?;
+            cleaned += 1;
+        }
+    }
+
+    if cleaned > 0 {
+        metrics::counter!("download_orphaned_dirs_cleaned_total").increment(cleaned);
     }
     Ok(cleaned)
 }

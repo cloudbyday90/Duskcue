@@ -54,6 +54,10 @@ pub fn router(state: AppState) -> Router<AppState> {
             delete(handlers::delete_download_package),
         )
         .route(
+            "/api/v1/downloads/packages/{id}/renew",
+            post(handlers::renew_download_package),
+        )
+        .route(
             "/api/v1/downloads/packages/{id}/manifest",
             get(handlers::get_package_manifest),
         )

@@ -1347,7 +1347,7 @@ Stores durable mobile download jobs, server-prepared package manifests/files, pe
 | `download_packages` | Server package record created from a ready job. Stores user/device/media ownership, package format, manifest version, logical storage key, relative manifest path, byte/file counts, hashes, selected streams, included artwork/storyboards, sync metadata, policy snapshot, serve timestamps, expiry, revocation, and cleanup eligibility. |
 | `download_package_files` | Per-file manifest for package integrity and resumable repair. Stores relative package path, role, content type, byte size, SHA-256 checksum, segment index, track type/identifier, and required/optional status. |
 | `download_device_state` | Per-user, per-device local inventory and sync state. Stores local status, bytes downloaded, verified file count, local manifest hash, last online/download/play timestamps, local resume position, pending sync queue, deletion marker, and local failure details. |
-| `download_events` | Explicit operational event stream for create/start/ready/fail/cancel/serve/delete/expire/revoke/quota/policy/checksum/sync/cleanup actions. |
+| `download_events` | Explicit operational event stream for create/start/ready/fail/cancel/serve/delete/expire/revoke/renew/quota/policy/checksum/sync/cleanup actions. |
 | `server_config.downloads` | Runtime policy JSONB group for global enablement, quality ceiling, byte quotas, active job limits, retained package limits, LAN/remote restrictions, transcode-download allowance, package expiry, retention, and per-user/library override maps. |
 
 ### Key Constraints
@@ -1361,6 +1361,7 @@ Stores durable mobile download jobs, server-prepared package manifests/files, pe
 - `server_config.downloads` is added by migration `20260701020000_add_download_policy_config.sql`; Rust deserializes missing/partial JSON through `DownloadsConfig::default()` for upgrade safety.
 - `20260701030000_seed_download_package_worker_task.sql` extends the scheduled-task type constraint with `download_package_worker` and seeds the durable package worker for existing deployments. The worker populates `download_packages` and `download_package_files` from completed jobs and records cleanup/job-state events in `download_events`.
 - `20260701040000_seed_download_notifications.sql` seeds `download_ready` and `download_failed` notification types for actionable offline-download terminal states; high-frequency progress remains in the process-local SSE EventBus, not persisted as notifications.
+- `20260701050000_add_download_package_renewed_event.sql` extends the `download_events.event_type` constraint with `package_renewed` for package-expiry renewal audit rows.
 
 ### Indexing
 

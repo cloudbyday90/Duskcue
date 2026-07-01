@@ -119,8 +119,9 @@ Phase 16c Task 2 added the `server/src/domains/downloads/` five-file domain shel
 | `POST /api/v1/downloads/jobs` | Create durable package job | Implemented in Task 6 |
 | `GET /api/v1/downloads/jobs/{id}` | Read job status | Implemented in Task 6 |
 | `POST /api/v1/downloads/jobs/{id}/cancel` | Cancel job | Implemented in Task 6 |
-| `GET /api/v1/downloads/inventory` | List user/device inventory | Validates query and returns `DOWNLOAD_015` until Task 10 |
-| `DELETE /api/v1/downloads/packages/{id}` | Delete package/local state | Validates body and returns `DOWNLOAD_015` until Tasks 10 and 13 |
+| `GET /api/v1/downloads/inventory` | List user/device inventory | Validates query and returns `DOWNLOAD_015` until Task 14 inventory diagnostics |
+| `DELETE /api/v1/downloads/packages/{id}` | Delete package/local state | Implemented in Task 13 as cleanup-pending package deletion plus device-state tombstoning |
+| `POST /api/v1/downloads/packages/{id}/renew` | Renew package expiry | Implemented in Task 13 with device/session/access/policy revalidation |
 | `GET /api/v1/downloads/packages/{id}/manifest` | Fetch package manifest | Implemented for ready/serving package rows in Task 5; device/session revalidation added in Task 7 |
 | `POST /api/v1/downloads/packages/{id}/transfer-urls` | Create short-lived transfer URLs | Implemented in Task 7 as authenticated endpoint URLs |
 | `GET /api/v1/downloads/packages/{id}/files/{*file_path}` | Serve package file/range | Implemented in Task 7 |
@@ -210,6 +211,15 @@ Phase 16c Task 12 added reconnect sync:
 - The Flutter download manager submits scoped package states plus protected queued events on authenticated foreground load, manual/job refresh, and after recording offline playback progress. Accepted events are removed from `sync_queue.json`, pending counts are refreshed, and expired/revoked package IDs mark local items expired or unavailable.
 - Android WorkManager/iOS BGTaskScheduler native background scheduling remains a later enhancement; Task 12 establishes the foreground reconnect path and retry-safe server contract those schedulers can invoke.
 
+Phase 16c Task 13 added revocation, expiry, renewal, and cleanup behavior:
+
+- `DELETE /api/v1/downloads/packages/{id}` now marks owned packages `cleanup_pending`, tombstones related `download_device_state` rows as `deleted`, clears pending device sync, sets package/job cleanup eligibility, and records `package_deleted`.
+- `POST /api/v1/downloads/packages/{id}/renew` renews ready/serving packages only after device, session, package status, expiry, network policy, media access, and streaming policy revalidation. Valid renewals extend `expires_at` by the current download expiry policy and set cleanup to expiry plus ready-package retention.
+- Manifest, transfer URL, file serving, and reconnect sync now mark packages/jobs `revoked` when an online check detects a changed session, media access, network/download policy, or streaming policy. Sync responses distinguish `revoked_package_ids`, `expired_package_ids`, and `deleted_package_ids`.
+- The mobile download manager deletes protected package directories on the next successful online sync for expired, revoked, or server-deleted packages. Expired/revoked items remain visible as disabled inventory rows; server-deleted packages are removed from local inventory.
+- Mobile refresh-time renewal attempts run for ready/playable packages within three days of expiry. Renewal failures leave the item unchanged; the next sync or manifest/file request still enforces revocation/expiry.
+- `download_package_worker` now proactively expires due packages, moves never-served ready packages to cleanup after the retention window, cleans expired/revoked/cleanup-pending/failed package directories, cleans failed/cancelled job directories without package rows, and removes orphaned `{data_dir}/downloads/{job_id}` directories with no database owner.
+
 ## Mobile Contract
 
 The mobile clients own these responsibilities:
@@ -293,4 +303,4 @@ Download quality reuses the Phase 7 quality-management model but is not identica
 
 ## Implementation Status
 
-Phase 16c Tasks 0-12 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, manifest response format, durable job creation/status/cancel, scheduled package worker, authenticated package serving, resumable transfer, foreground/push notifications, Flutter mobile download manager shell, protected Android/iOS local storage foundations, foreground package materialization, local MP4/HLS offline playback, and idempotent reconnect sync are in place. Revocation cleanup, settings completion, observability, and broader integration tests are pending Phase 16c Tasks 13-15.
+Phase 16c Tasks 0-13 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, manifest response format, durable job creation/status/cancel, scheduled package worker, authenticated package serving, resumable transfer, foreground/push notifications, Flutter mobile download manager shell, protected Android/iOS local storage foundations, foreground package materialization, local MP4/HLS offline playback, idempotent reconnect sync, revocation/expiry invalidation, package renewal, and server cleanup are in place. User/admin settings completion, observability, and broader integration tests are pending Phase 16c Tasks 14-15.

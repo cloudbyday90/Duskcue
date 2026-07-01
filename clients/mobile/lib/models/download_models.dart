@@ -316,6 +316,7 @@ class DownloadSyncResponse {
     required this.acceptedPlaybackEventIds,
     required this.revokedPackageIds,
     required this.expiredPackageIds,
+    required this.deletedPackageIds,
     required this.serverTime,
   });
 
@@ -324,6 +325,7 @@ class DownloadSyncResponse {
   final List<String> acceptedPlaybackEventIds;
   final List<String> revokedPackageIds;
   final List<String> expiredPackageIds;
+  final List<String> deletedPackageIds;
   final DateTime? serverTime;
 
   static DownloadSyncResponse fromJson(Map<String, Object?> json) {
@@ -333,7 +335,28 @@ class DownloadSyncResponse {
       acceptedPlaybackEventIds: _stringList(json['accepted_playback_event_ids']),
       revokedPackageIds: _stringList(json['revoked_package_ids']),
       expiredPackageIds: _stringList(json['expired_package_ids']),
+      deletedPackageIds: _stringList(json['deleted_package_ids']),
       serverTime: _date(json['server_time']),
+    );
+  }
+}
+
+class DownloadPackageRenewal {
+  const DownloadPackageRenewal({
+    required this.packageId,
+    required this.expiresAt,
+    required this.cleanupAfterAt,
+  });
+
+  final String packageId;
+  final DateTime expiresAt;
+  final DateTime cleanupAfterAt;
+
+  static DownloadPackageRenewal fromJson(Map<String, Object?> json) {
+    return DownloadPackageRenewal(
+      packageId: _string(json, const ['package_id']),
+      expiresAt: _date(json['expires_at']) ?? DateTime.now(),
+      cleanupAfterAt: _date(json['cleanup_after_at']) ?? DateTime.now(),
     );
   }
 }
@@ -645,9 +668,12 @@ class DownloadItem {
     String? waitingReason,
     bool clearWaitingReason = false,
     String? localPlaybackPath,
+    bool clearLocalPlaybackPath = false,
     String? localManifestHashSha256,
+    bool clearLocalManifestHashSha256 = false,
     DateTime? expiresAt,
     DateTime? localPlaybackUpdatedAt,
+    bool clearLocalPlaybackUpdatedAt = false,
     bool? localCompleted,
     bool? localWatched,
     DateTime? updatedAt,
@@ -669,10 +695,12 @@ class DownloadItem {
       pendingPlaybackEventCount: pendingPlaybackEventCount ?? this.pendingPlaybackEventCount,
       failureReason: failureReason,
       waitingReason: clearWaitingReason ? null : waitingReason ?? this.waitingReason,
-      localPlaybackPath: localPlaybackPath ?? this.localPlaybackPath,
-      localManifestHashSha256: localManifestHashSha256 ?? this.localManifestHashSha256,
+      localPlaybackPath: clearLocalPlaybackPath ? null : localPlaybackPath ?? this.localPlaybackPath,
+      localManifestHashSha256:
+          clearLocalManifestHashSha256 ? null : localManifestHashSha256 ?? this.localManifestHashSha256,
       expiresAt: expiresAt ?? this.expiresAt,
-      localPlaybackUpdatedAt: localPlaybackUpdatedAt ?? this.localPlaybackUpdatedAt,
+      localPlaybackUpdatedAt:
+          clearLocalPlaybackUpdatedAt ? null : localPlaybackUpdatedAt ?? this.localPlaybackUpdatedAt,
       localCompleted: localCompleted ?? this.localCompleted,
       localWatched: localWatched ?? this.localWatched,
       updatedAt: updatedAt ?? this.updatedAt,

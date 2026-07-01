@@ -58,6 +58,8 @@ class DownloadManagerState {
 }
 
 class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
+  static const _renewBeforeExpiry = Duration(days: 3);
+
   @override
   DownloadManagerState build() {
     return const DownloadManagerState();
@@ -387,16 +389,34 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
       for (final item in state.items) {
         var updated = item;
         final packageId = item.packageId;
+        if (packageId != null && response.deletedPackageIds.contains(packageId)) {
+          await protectedStorage.deletePackage(scope, item);
+          continue;
+        }
         if (packageId != null && response.expiredPackageIds.contains(packageId)) {
+          await protectedStorage.deletePackage(scope, item);
           updated = updated.copyWith(
             status: DownloadItemStatus.expired,
             waitingReason: 'Expired',
+            bytesPrepared: 0,
+            localFilesVerified: 0,
+            pendingPlaybackEventCount: 0,
+            clearLocalPlaybackPath: true,
+            clearLocalManifestHashSha256: true,
+            clearLocalPlaybackUpdatedAt: true,
             updatedAt: DateTime.now(),
           );
         } else if (packageId != null && response.revokedPackageIds.contains(packageId)) {
+          await protectedStorage.deletePackage(scope, item);
           updated = updated.copyWith(
             status: DownloadItemStatus.unavailable,
             waitingReason: 'Access changed',
+            bytesPrepared: 0,
+            localFilesVerified: 0,
+            pendingPlaybackEventCount: 0,
+            clearLocalPlaybackPath: true,
+            clearLocalManifestHashSha256: true,
+            clearLocalPlaybackUpdatedAt: true,
             updatedAt: DateTime.now(),
           );
         }
@@ -407,9 +427,44 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
         }
         next.add(updated);
       }
-      await _persistItems(scope, next);
-      state = state.copyWith(items: _sortItems(next), clearError: true);
+      final renewed = await _renewExpiringPackages(next);
+      await _persistItems(scope, renewed);
+      state = state.copyWith(items: _sortItems(renewed), clearError: true);
     } catch (_) {}
+  }
+
+  Future<List<DownloadItem>> _renewExpiringPackages(
+    List<DownloadItem> items,
+  ) async {
+    final now = DateTime.now();
+    final service = ref.read(downloadServiceProvider);
+    final renewed = <DownloadItem>[];
+    for (final item in items) {
+      final packageId = item.packageId;
+      final expiresAt = item.expiresAt;
+      if (packageId == null ||
+          packageId.isEmpty ||
+          expiresAt == null ||
+          !expiresAt.isAfter(now) ||
+          expiresAt.difference(now) > _renewBeforeExpiry ||
+          (item.status != DownloadItemStatus.ready && item.status != DownloadItemStatus.playableOffline)) {
+        renewed.add(item);
+        continue;
+      }
+      try {
+        final renewal = await service.renewPackage(packageId);
+        renewed.add(
+          item.copyWith(
+            expiresAt: renewal.expiresAt,
+            waitingReason: item.status == DownloadItemStatus.playableOffline ? 'Playable offline' : item.waitingReason,
+            updatedAt: DateTime.now(),
+          ),
+        );
+      } catch (_) {
+        renewed.add(item);
+      }
+    }
+    return renewed;
   }
 
   List<Map<String, Object?>> _packageStatesForSync(

@@ -192,6 +192,12 @@ pub struct DeleteDownloadPackageRequest {
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
+pub struct RenewDownloadPackageRequest {
+    #[validate(length(min = 1, max = 128))]
+    pub device_identifier: String,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
 pub struct PackageTransferUrlsRequest {
     #[validate(length(min = 1, max = 128))]
     pub device_identifier: String,
@@ -399,6 +405,7 @@ pub struct DownloadSyncResponse {
     pub accepted_playback_event_ids: Vec<String>,
     pub revoked_package_ids: Vec<Uuid>,
     pub expired_package_ids: Vec<Uuid>,
+    pub deleted_package_ids: Vec<Uuid>,
     pub server_time: DateTime<Utc>,
 }
 
@@ -407,6 +414,14 @@ pub struct DownloadActionResponse {
     pub ok: bool,
     pub id: Uuid,
     pub status: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RenewDownloadPackageResponse {
+    pub ok: bool,
+    pub package_id: Uuid,
+    pub expires_at: DateTime<Utc>,
+    pub cleanup_after_at: DateTime<Utc>,
 }
 
 fn default_true() -> bool {

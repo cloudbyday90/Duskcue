@@ -74,6 +74,15 @@ class DownloadService {
     await _apiClient.delete<Map<String, Object?>>('/api/v1/downloads/packages/$packageId');
   }
 
+  Future<DownloadPackageRenewal> renewPackage(String packageId) async {
+    final identity = await _deviceIdentity.current();
+    final response = await _apiClient.post<Map<String, Object?>>(
+      '/api/v1/downloads/packages/$packageId/renew',
+      body: {'device_identifier': identity.deviceId},
+    );
+    return DownloadPackageRenewal.fromJson(_payload(response.data));
+  }
+
   Future<DownloadPackageManifest> getPackageManifest(String packageId) async {
     final identity = await _deviceIdentity.current();
     final response = await _apiClient.get<Map<String, Object?>>(
