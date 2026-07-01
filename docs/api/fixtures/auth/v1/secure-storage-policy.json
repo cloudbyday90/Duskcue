@@ -1,0 +1,100 @@
+{
+  "fixture": "secure-storage-policy",
+  "items": [
+    {
+      "id": "bearer_token",
+      "classification": "secret",
+      "allowed_storage": [
+        "android_keystore_backed_secure_storage",
+        "ios_keychain",
+        "desktop_os_credential_store"
+      ],
+      "forbidden_storage": [
+        "query_string",
+        "local_storage",
+        "plaintext_preferences",
+        "logs",
+        "crash_reports",
+        "diagnostics_bundle"
+      ],
+      "redaction": "omit"
+    },
+    {
+      "id": "signed_media_url",
+      "classification": "secret",
+      "allowed_storage": [
+        "memory_only_while_playing"
+      ],
+      "forbidden_storage": [
+        "download_manifest",
+        "offline_metadata",
+        "logs",
+        "diagnostics_bundle"
+      ],
+      "redaction": "strip_query"
+    },
+    {
+      "id": "push_token",
+      "classification": "secret",
+      "allowed_storage": [
+        "provider_sdk_storage",
+        "platform_secure_storage_for_returned_device_ids"
+      ],
+      "forbidden_storage": [
+        "logs",
+        "notification_payload",
+        "diagnostics_bundle"
+      ],
+      "redaction": "preview_only"
+    },
+    {
+      "id": "download_package_manifest",
+      "classification": "protected_metadata",
+      "allowed_storage": [
+        "android_app_private_no_backup",
+        "ios_application_support_first_unlock",
+        "encrypted_sync_queue"
+      ],
+      "forbidden_storage": [
+        "public_downloads",
+        "shared_media_store",
+        "plaintext_logs"
+      ],
+      "redaction": "omit_paths_and_transfer_urls"
+    },
+    {
+      "id": "server_origin",
+      "classification": "non_secret",
+      "allowed_storage": [
+        "app_preferences"
+      ],
+      "forbidden_storage": [],
+      "redaction": "host_only"
+    },
+    {
+      "id": "user_summary",
+      "classification": "private",
+      "allowed_storage": [
+        "platform_secure_storage",
+        "encrypted_app_storage"
+      ],
+      "forbidden_storage": [
+        "logs",
+        "crash_reports_without_consent"
+      ],
+      "redaction": "user_id_only"
+    },
+    {
+      "id": "device_identifier",
+      "classification": "private",
+      "allowed_storage": [
+        "platform_secure_storage"
+      ],
+      "forbidden_storage": [
+        "logs",
+        "query_string"
+      ],
+      "redaction": "stable_hash"
+    }
+  ]
+}

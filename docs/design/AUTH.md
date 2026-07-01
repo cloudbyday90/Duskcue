@@ -755,6 +755,12 @@ Phase 16a Task 4 adds client-side consumption of the existing auth/session APIs:
 
 **Phase 16a Task 11 account settings update:** `GET /api/v1/user/sessions` now includes the non-secret `device_id` in `SessionDetailResponse` so first-party clients can label the current device without guessing from name/platform strings. The Flutter settings screen uses that field to distinguish current-session sign-out from remote-session revocation. Passkey registration finish also accepts an optional `name` and preserves the caller-supplied display name instead of forcing every newly registered credential to `New Passkey`. Mobile settings consume the existing passkey list/delete endpoints for account maintenance and keep native registration behind the same platform-channel boundary described above.
 
+### Phase 16d Auth/Session Conformance
+
+Phase 16d Task 5 adds [auth/session conformance fixtures](../api/fixtures/auth/v1/manifest.json) and `scripts/verify-auth-conformance.mjs` for downstream desktop, mobile, TV, and console clients. The fixture pack covers device linking, passkey-capable login, fallback login, re-auth, logout, logout-all, session deletion, expired sessions, `session_kicked`, secure-storage policy, server/user switching, session revocation, account deletion, local-network/TLS validation failure, BOLA denial, stale platform IDs, stale deep links, expired re-auth codes, and denied device-linking flows.
+
+These fixtures do not replace the server auth implementation. They define the client-facing conformance contract: clients must scope passkeys to the selected server origin, clear or preserve local state according to the documented session event, keep bearer tokens and signed media URLs out of plaintext stores/logs/diagnostics, and revalidate access before using platform-owned launcher or deep-link IDs.
+
 ### Re-Authentication Codes (Task 7)
 
 Task 7 implements the "Sign Out Everywhere" + re-authentication code flow from the "Session Management → Account Recovery" section above. Prior to Task 7, `reauth` and `reauth_request` handlers were `todo!()` stubs with routes, DTOs (`ReauthRequest`, `ReauthCodeResponse`), and error variants (`ReauthCodeInvalid`, `ReauthRateLimited`) already in place from Task 1.

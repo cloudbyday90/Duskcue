@@ -88,6 +88,12 @@ Android Media3 exposes player events and track-selection APIs, Apple AVFoundatio
 
 **Decision:** Phase 16d Task 4 adds `docs/api/fixtures/playback/v1/manifest.json` plus state-machine, track-selection, stream-path, media-session, QoE, cross-device resume, and error-reporting fixtures. `scripts/verify-playback-conformance.mjs` verifies required transitions, ordering, API paths, direct/direct-stream/HLS coverage, remote actions, QoE fields, resume refresh behavior, Problem Details shape, and redaction. Platform phases must map their native player callbacks into this pack before claiming playback conformance.
 
+### Auth And Session Conformance
+
+FIDO passkeys and WebAuthn keep passkey ceremonies bound to the selected relying-party/server origin, while OWASP API Security guidance keeps broken object-level authorization and broken authentication as core client/server contract risks. The OWASP Session Management guidance also reinforces that clients must handle expiry, revocation, logout, and secret storage consistently instead of treating session state as only a UI concern.
+
+**Decision:** Phase 16d Task 5 adds `docs/api/fixtures/auth/v1/manifest.json` plus auth-flow, session-lifecycle, secure-storage, server/user-switching, and negative-case fixtures. `scripts/verify-auth-conformance.mjs` verifies required login and re-auth flows, logout/session revocation behavior, `session_kicked`, storage classifications, plaintext secret prohibitions, switching behavior, BOLA/stale-ID denial cases, Problem Details shape, stable IDs where applicable, UTC timestamps, and redaction. Platform phases must pass this pack before claiming sign-in/session conformance.
+
 ## Mandatory Gates for Phases 17-23
 
 The following outputs are mandatory before a downstream platform phase can claim implementation complete:
@@ -120,7 +126,7 @@ These are recommended but not release-blocking for the first platform implementa
 | 2. SDK/generated bindings strategy | `docs/api/client-binding-targets.v1.json`, shared adapter contracts, binding verifier |
 | 3. Contract test fixtures | `docs/api/fixtures/client/v1`, client fixture manifest, fixture verifier |
 | 4. Playback conformance | `docs/api/fixtures/playback/v1`, state-machine/QoE fixtures, playback verifier |
-| 5. Auth/session conformance | Auth/session fixtures and negative cases |
+| 5. Auth/session conformance | `docs/api/fixtures/auth/v1`, auth/session verifier, negative auth fixtures |
 | 6. TV/deep-link conformance | TV fixture pack and adapter mapping expectations |
 | 7. Accessibility/input baselines | Accessibility/input checklist and test cases |
 | 8. Shared design assets/tokens | Shared assets, visual tokens, artwork/fallback rules |

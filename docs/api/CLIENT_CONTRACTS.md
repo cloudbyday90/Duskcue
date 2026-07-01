@@ -8,6 +8,7 @@ The machine-readable starting point is [client-contracts.v1.json](client-contrac
 The Phase 16d binding target matrix is [client-binding-targets.v1.json](client-binding-targets.v1.json).
 The Phase 16d versioned fixture pack starts at [fixtures/client/v1/manifest.json](fixtures/client/v1/manifest.json).
 The Phase 16d playback conformance pack starts at [fixtures/playback/v1/manifest.json](fixtures/playback/v1/manifest.json).
+The Phase 16d auth/session conformance pack starts at [fixtures/auth/v1/manifest.json](fixtures/auth/v1/manifest.json).
 
 ## Decision
 
@@ -205,6 +206,26 @@ node scripts/verify-playback-conformance.mjs
 
 The verifier checks required state events, event ordering, playback API paths, stream decision coverage, track-selection cases, media-session action mappings, QoE field coverage, cross-device resume expectations, Problem Details error shape, UTC timestamps, stable UUIDs, and redaction of tokens, signatures, and private paths.
 
+## Phase 16d Auth And Session Conformance
+
+Phase 16d Task 5 adds a reusable auth/session conformance pack under `docs/api/fixtures/auth/v1`. This pack separates protocol and client-state behavior from general API examples so platform clients can prove the same secure lifecycle before implementing platform-specific login UI.
+
+The pack covers:
+
+- device-linking, passkey-capable login, fallback login, and re-auth flows;
+- logout, logout-all, session deletion, expired-session handling, and `session_kicked` handling;
+- secure-storage expectations for bearer tokens, signed media URLs, push tokens, download package manifests, server origins, user summaries, and device identifiers;
+- switching servers, switching users, session revocation, account deletion, and local-network/TLS validation failure behavior;
+- negative cases for BOLA-protected item access, stale TV platform IDs, stale deep links, expired re-auth codes, and denied device-linking flows.
+
+Run:
+
+```bash
+node scripts/verify-auth-conformance.mjs
+```
+
+The verifier checks required auth flows, required session lifecycle cases, storage classifications, plaintext-storage prohibitions, switching behavior, Problem Details shape, API-relative request paths, UTC timestamps, stable UUIDs where applicable, and redaction of real tokens, signatures, and private paths.
+
 Phase 16b added reusable TV surface fixtures ahead of full Phase 16d generation:
 
 ```bash
@@ -238,6 +259,11 @@ The TV verifier checks `docs/api/fixtures/tv` feed, resolve, diagnostics, unavai
 - Apple AVFoundation media selection: https://developer.apple.com/documentation/avfoundation/selecting-subtitles-and-alternative-audio-tracks
 - Apple HLS authoring: https://developer.apple.com/documentation/http-live-streaming/hls-authoring-specification-for-apple-devices
 - W3C Media Session: https://www.w3.org/TR/mediasession/
+- FIDO passkeys: https://fidoalliance.org/passkeys/
+- W3C WebAuthn Level 3: https://www.w3.org/TR/webauthn-3/
+- OWASP API1 Broken Object Level Authorization: https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/
+- OWASP API2 Broken Authentication: https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/
+- OWASP Session Management Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html
 - Dart JSON serialization: https://docs.flutter.dev/data-and-backend/serialization/json
 - Dart json_serializable: https://pub.dev/packages/json_serializable
 - Kotlin serialization: https://kotlinlang.org/docs/serialization.html

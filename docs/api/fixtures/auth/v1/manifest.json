@@ -1,0 +1,110 @@
+{
+  "fixture_pack": "duskcue-auth-session-conformance",
+  "version": 1,
+  "updated": "2026-07-01",
+  "contract_manifest": "docs/api/client-contracts.v1.json",
+  "client_fixture_pack": "docs/api/fixtures/client/v1/manifest.json",
+  "purpose": "Reusable auth/session conformance fixtures for desktop, mobile, TV, and console clients.",
+  "required_fixture_ids": [
+    "auth-flow-matrix",
+    "session-lifecycle",
+    "secure-storage-policy",
+    "server-user-switching",
+    "auth-negative-cases"
+  ],
+  "required_flows": [
+    "device_linking",
+    "passkey_login",
+    "fallback_login",
+    "logout",
+    "logout_all",
+    "session_delete",
+    "reauth",
+    "expired_session",
+    "session_kicked"
+  ],
+  "required_storage_items": [
+    "bearer_token",
+    "signed_media_url",
+    "push_token",
+    "download_package_manifest",
+    "server_origin",
+    "user_summary",
+    "device_identifier"
+  ],
+  "required_switching_cases": [
+    "switch_server",
+    "switch_user",
+    "session_revoked",
+    "account_deleted",
+    "local_network_tls_failure"
+  ],
+  "required_negative_cases": [
+    "bola_media_item",
+    "bola_tv_platform_id",
+    "stale_deep_link",
+    "expired_reauth_code",
+    "device_linking_denied"
+  ],
+  "sources": [
+    "FIDO passkeys",
+    "W3C WebAuthn Level 3",
+    "OWASP API1 Broken Object Level Authorization",
+    "OWASP API2 Broken Authentication",
+    "OWASP Session Management Cheat Sheet"
+  ],
+  "fixtures": [
+    {
+      "id": "auth-flow-matrix",
+      "file": "auth-flow-matrix.json",
+      "covers": [
+        "device linking",
+        "passkey login",
+        "fallback login",
+        "reauth"
+      ]
+    },
+    {
+      "id": "session-lifecycle",
+      "file": "session-lifecycle.json",
+      "covers": [
+        "logout",
+        "logout-all",
+        "session deletion",
+        "expired session",
+        "session kicked"
+      ]
+    },
+    {
+      "id": "secure-storage-policy",
+      "file": "secure-storage-policy.json",
+      "covers": [
+        "secret storage prohibition",
+        "allowed secure storage",
+        "diagnostics redaction"
+      ]
+    },
+    {
+      "id": "server-user-switching",
+      "file": "server-user-switching.json",
+      "covers": [
+        "switching servers",
+        "switching users",
+        "session revoke",
+        "account deletion",
+        "TLS failure"
+      ]
+    },
+    {
+      "id": "auth-negative-cases",
+      "file": "negative-cases.json",
+      "covers": [
+        "BOLA",
+        "stale platform IDs",
+        "stale deep links",
+        "expired reauth",
+        "device-link denial"
+      ]
+    }
+  ]
+}

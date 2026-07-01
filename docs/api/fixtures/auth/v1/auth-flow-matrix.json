@@ -1,0 +1,132 @@
+{
+  "fixture": "auth-flow-matrix",
+  "flows": [
+    {
+      "id": "device_linking",
+      "steps": [
+        {
+          "request": {
+            "method": "POST",
+            "path": "/api/v1/device/code"
+          },
+          "expect": {
+            "device_code": "fixture-device-code",
+            "user_code": "ABCD-EFGH",
+            "verification_uri": "https://duskcue.example.test/link",
+            "expires_at": "2026-07-01T12:10:00Z",
+            "poll_interval_seconds": 5
+          }
+        },
+        {
+          "request": {
+            "method": "POST",
+            "path": "/api/v1/device/token"
+          },
+          "expect_pending": {
+            "status": 428,
+            "title": "AUTH_007"
+          }
+        },
+        {
+          "request": {
+            "method": "POST",
+            "path": "/api/v1/device/token"
+          },
+          "expect_success": {
+            "session_id": "abababab-abab-4bab-8bab-abababababab",
+            "token_placeholder": "fixture-token-not-secret",
+            "device_id": "fixture-tv-device-01"
+          }
+        }
+      ],
+      "client_requirements": [
+        "poll no faster than interval_seconds",
+        "resume original deep link after success",
+        "do not display device_code as a reusable secret"
+      ]
+    },
+    {
+      "id": "passkey_login",
+      "steps": [
+        {
+          "request": {
+            "method": "POST",
+            "path": "/api/v1/auth/webauthn/start"
+          },
+          "expect": {
+            "challenge_id": "challenge-passkey-login",
+            "rp_id": "duskcue.example.test",
+            "user_verification": "preferred"
+          }
+        },
+        {
+          "request": {
+            "method": "POST",
+            "path": "/api/v1/auth/webauthn/finish"
+          },
+          "expect_success": {
+            "session_id": "abababab-abab-4bab-8bab-abababababab",
+            "token_placeholder": "fixture-token-not-secret",
+            "user_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+          }
+        }
+      ],
+      "client_requirements": [
+        "scope credential requests to the selected server origin",
+        "preserve challenge_id only until finish or expiry",
+        "fall back only when passkey is unsupported or unavailable"
+      ]
+    },
+    {
+      "id": "fallback_login",
+      "steps": [
+        {
+          "request": {
+            "method": "POST",
+            "path": "/api/v1/auth/login"
+          },
+          "expect_success": {
+            "session_id": "abababab-abab-4bab-8bab-abababababab",
+            "token_placeholder": "fixture-token-not-secret",
+            "client_platform": "android"
+          }
+        }
+      ],
+      "client_requirements": [
+        "send stable client metadata",
+        "store the resulting bearer token only in platform secure storage",
+        "rate-limit visible retry loops after auth failure"
+      ]
+    },
+    {
+      "id": "reauth",
+      "steps": [
+        {
+          "request": {
+            "method": "POST",
+            "path": "/api/v1/auth/reauth/request"
+          },
+          "expect": {
+            "prefix": "ABCD",
+            "expires_at": "2026-07-01T13:00:00Z"
+          }
+        },
+        {
+          "request": {
+            "method": "POST",
+            "path": "/api/v1/auth/reauth"
+          },
+          "expect_success": {
+            "session_id": "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
+            "token_placeholder": "fixture-token-not-secret"
+          }
+        }
+      ],
+      "client_requirements": [
+        "use reauth for sensitive account actions",
+        "replace the local session token after success",
+        "clear the reauth code after success or expiry"
+      ]
+    }
+  ]
+}

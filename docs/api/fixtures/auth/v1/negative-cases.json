@@ -1,0 +1,90 @@
+{
+  "fixture": "auth-negative-cases",
+  "cases": [
+    {
+      "id": "bola_media_item",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/media-items/99999999-9999-4999-8999-999999999999"
+      },
+      "problem": {
+        "type": "/errors/auth_004",
+        "title": "AUTH_004",
+        "status": 403,
+        "detail": "Access denied",
+        "instance": "/api/v1/media-items/99999999-9999-4999-8999-999999999999",
+        "trace_id": "fixture-bola-media-item",
+        "errors": null
+      },
+      "expected_client_action": "show_access_denied_without_retry"
+    },
+    {
+      "id": "bola_tv_platform_id",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/tv/resolve/duskcue%3Amovie%3A99999999-9999-4999-8999-999999999999"
+      },
+      "problem": {
+        "type": "/errors/tv_003",
+        "title": "TV_003",
+        "status": 403,
+        "detail": "Platform content access was revoked",
+        "instance": "/api/v1/tv/resolve/duskcue:movie:99999999-9999-4999-8999-999999999999",
+        "trace_id": "fixture-bola-tv-platform-id",
+        "errors": null
+      },
+      "expected_client_action": "clear_platform_tile_or_reauth"
+    },
+    {
+      "id": "stale_deep_link",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/tv/resolve/duskcue%3Aepisode%3A88888888-8888-4888-8888-888888888888"
+      },
+      "problem": {
+        "type": "/errors/tv_002",
+        "title": "TV_002",
+        "status": 404,
+        "detail": "Platform content is unavailable",
+        "instance": "/api/v1/tv/resolve/duskcue:episode:88888888-8888-4888-8888-888888888888",
+        "trace_id": "fixture-stale-deep-link",
+        "errors": null
+      },
+      "expected_client_action": "show_unavailable_and_refresh_surface"
+    },
+    {
+      "id": "expired_reauth_code",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/reauth"
+      },
+      "problem": {
+        "type": "/errors/auth_011",
+        "title": "AUTH_011",
+        "status": 401,
+        "detail": "Re-authentication code invalid or expired",
+        "instance": "/api/v1/auth/reauth",
+        "trace_id": "fixture-expired-reauth-code",
+        "errors": null
+      },
+      "expected_client_action": "request_new_reauth_code"
+    },
+    {
+      "id": "device_linking_denied",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/device/token"
+      },
+      "problem": {
+        "type": "/errors/auth_008",
+        "title": "AUTH_008",
+        "status": 403,
+        "detail": "Device linking request denied",
+        "instance": "/api/v1/device/token",
+        "trace_id": "fixture-device-linking-denied",
+        "errors": null
+      },
+      "expected_client_action": "stop_polling_and_restart_linking"
+    }
+  ]
+}

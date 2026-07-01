@@ -1,0 +1,79 @@
+{
+  "fixture": "session-lifecycle",
+  "flows": [
+    {
+      "id": "logout",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/logout"
+      },
+      "expect_client_state": {
+        "clear_bearer_token": true,
+        "clear_cached_user": true,
+        "keep_selected_server": true,
+        "disconnect_sse": true
+      }
+    },
+    {
+      "id": "logout_all",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/auth/logout-all"
+      },
+      "expect_client_state": {
+        "clear_bearer_token": true,
+        "clear_cached_user": true,
+        "invalidate_other_device_sessions": true,
+        "disconnect_sse": true
+      }
+    },
+    {
+      "id": "session_delete",
+      "request": {
+        "method": "DELETE",
+        "path": "/api/v1/user/sessions/cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd"
+      },
+      "expect": {
+        "deleted_session_id": "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd"
+      }
+    },
+    {
+      "id": "expired_session",
+      "response": {
+        "status": 401,
+        "problem": {
+          "type": "/errors/auth_001",
+          "title": "AUTH_001",
+          "status": 401,
+          "detail": "Session expired or revoked",
+          "instance": "/api/v1/user/sessions",
+          "trace_id": "fixture-expired-session",
+          "errors": null
+        }
+      },
+      "expect_client_state": {
+        "clear_bearer_token": true,
+        "keep_selected_server": true,
+        "show_sign_in": true
+      }
+    },
+    {
+      "id": "session_kicked",
+      "event": {
+        "event": "session_kicked",
+        "id": "evt-auth-0001",
+        "data": {
+          "session_id": "abababab-abab-4bab-8bab-abababababab",
+          "reason": "logout_all",
+          "occurred_at": "2026-07-01T12:30:00Z"
+        }
+      },
+      "expect_client_state": {
+        "clear_bearer_token": true,
+        "clear_cached_user": true,
+        "disconnect_sse": true,
+        "show_sign_in": true
+      }
+    }
+  ]
+}

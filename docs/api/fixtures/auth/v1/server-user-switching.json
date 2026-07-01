@@ -1,0 +1,65 @@
+{
+  "fixture": "server-user-switching",
+  "cases": [
+    {
+      "id": "switch_server",
+      "from": "https://duskcue.example.test",
+      "to": "https://family.example.test",
+      "expect_client_state": {
+        "scope_token_by_server_origin": true,
+        "clear_in_memory_api_client_bearer": true,
+        "reload_server_profile": true,
+        "do_not_send_previous_server_token": true
+      }
+    },
+    {
+      "id": "switch_user",
+      "server": "https://duskcue.example.test",
+      "from_user_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "to_user_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "expect_client_state": {
+        "clear_previous_user_cache": true,
+        "clear_download_inventory_scope": true,
+        "refresh_capabilities": true,
+        "disconnect_then_reconnect_sse": true
+      }
+    },
+    {
+      "id": "session_revoked",
+      "trigger": {
+        "status": 401,
+        "title": "AUTH_001"
+      },
+      "expect_client_state": {
+        "clear_bearer_token": true,
+        "keep_selected_server": true,
+        "show_sign_in": true
+      }
+    },
+    {
+      "id": "account_deleted",
+      "trigger": {
+        "status": 403,
+        "title": "AUTH_004"
+      },
+      "expect_client_state": {
+        "clear_bearer_token": true,
+        "clear_cached_user": true,
+        "clear_user_scoped_offline_data": true,
+        "show_account_unavailable": true
+      }
+    },
+    {
+      "id": "local_network_tls_failure",
+      "trigger": {
+        "kind": "tls_or_local_network_denied",
+        "server_origin": "https://duskcue.example.test"
+      },
+      "expect_client_state": {
+        "do_not_downgrade_to_http_when_exposed": true,
+        "show_connection_help": true,
+        "preserve_existing_session_until_user_changes_server": true
+      }
+    }
+  ]
+}
