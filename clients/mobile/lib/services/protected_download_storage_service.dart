@@ -143,6 +143,33 @@ class ProtectedDownloadStorageService {
     await _writeJson(file, events);
   }
 
+  Future<List<OfflinePlaybackEvent>> readOfflinePlaybackEvents(DownloadInventoryScope scope) async {
+    final location = await prepareScope(scope);
+    final file = File('${location.path}${Platform.pathSeparator}sync_queue.json');
+    final events = await _readJsonList(file);
+    return events
+        .whereType<Map>()
+        .map((event) => OfflinePlaybackEvent.fromJson(Map<String, Object?>.from(event)))
+        .where((event) => event.packageId.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  Future<void> removeOfflinePlaybackEvents(
+    DownloadInventoryScope scope,
+    Set<String> eventIds,
+  ) async {
+    if (eventIds.isEmpty) return;
+    final location = await prepareScope(scope);
+    final file = File('${location.path}${Platform.pathSeparator}sync_queue.json');
+    final events = await _readJsonList(file);
+    final remaining = events.where((event) {
+      if (event is! Map) return false;
+      final decoded = OfflinePlaybackEvent.fromJson(Map<String, Object?>.from(event));
+      return !eventIds.contains(decoded.eventId);
+    }).toList(growable: false);
+    await _writeJson(file, remaining);
+  }
+
   Future<int> pendingPlaybackEventCount(
     DownloadInventoryScope scope,
     String packageId,

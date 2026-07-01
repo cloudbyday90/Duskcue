@@ -107,6 +107,23 @@ class DownloadService {
     return response.data ?? const [];
   }
 
+  Future<DownloadSyncResponse> syncDownloadState({
+    required List<Map<String, Object?>> packageStates,
+    required List<OfflinePlaybackEvent> playbackEvents,
+  }) async {
+    final identity = await _deviceIdentity.current();
+    final response = await _apiClient.post<Map<String, Object?>>(
+      '/api/v1/downloads/sync',
+      body: {
+        'device_identifier': identity.deviceId,
+        'client_platform': identity.clientPlatform,
+        'package_states': packageStates,
+        'playback_events': playbackEvents.map((event) => event.toJson()).toList(growable: false),
+      },
+    );
+    return DownloadSyncResponse.fromJson(_payload(response.data));
+  }
+
   Map<String, Object?> _payload(Object? data) {
     if (data is Map<String, Object?>) return data;
     if (data is Map) return Map<String, Object?>.from(data);

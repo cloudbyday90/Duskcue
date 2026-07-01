@@ -14,10 +14,12 @@ This document is the authoritative Phase 16c design for mobile offline downloads
 |---|---|
 | Android long-running user downloads | Android Developers: [User-initiated data transfer jobs](https://developer.android.com/develop/background-work/background-tasks/uidt) |
 | Android background constraints | Android Developers: [WorkManager constraints](https://developer.android.com/develop/background-work/background-tasks/persistent/getting-started/define-work#work-constraints) |
+| Android retryable reconnect sync | Android Developers: [Build an offline-first app](https://developer.android.com/topic/architecture/data-layer/offline-first) and [Define work requests](https://developer.android.com/develop/background-work/background-tasks/persistent/getting-started/define-work) |
 | Android offline playback/download model | Android Developers: [Downloading media](https://developer.android.com/media/media3/exoplayer/downloading-media) |
 | Android app storage and backup boundaries | Android Developers: [Data and file storage overview](https://developer.android.com/training/data-storage) and [Back up user data](https://developer.android.com/identity/data/autobackup) |
 | Android protected metadata | Android Developers: [Security with data](https://developer.android.com/privacy-and-security/security-data) and [Android Keystore system](https://developer.android.com/privacy-and-security/keystore) |
 | iOS background transfer | Apple Developer Documentation: [URLSessionConfiguration](https://developer.apple.com/documentation/foundation/urlsessionconfiguration) and [Downloading files in the background](https://developer.apple.com/documentation/foundation/url_loading_system/downloading_files_in_the_background) |
+| iOS background refresh/sync | Apple Developer Documentation: [Using background tasks to update your app](https://developer.apple.com/documentation/uikit/using-background-tasks-to-update-your-app) and [URLSessionConfiguration.waitsForConnectivity](https://developer.apple.com/documentation/foundation/urlsessionconfiguration) |
 | iOS HLS offline playback | Apple Developer Documentation: [AVAssetDownloadURLSession](https://developer.apple.com/documentation/avfoundation/avassetdownloadurlsession) and [Using AVFoundation to play and persist HTTP Live Streams](https://developer.apple.com/documentation/AVFoundation/using-avfoundation-to-play-and-persist-http-live-streams) |
 | iOS file protection and backup exclusion | Apple Developer Documentation: [FileProtectionType](https://developer.apple.com/documentation/foundation/fileprotectiontype) and [URLResourceKey.isExcludedFromBackupKey](https://developer.apple.com/documentation/foundation/urlresourcekey/1414219-isexcludedfrombackupkey) |
 | iOS review constraints | Apple: [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) |
@@ -122,7 +124,7 @@ Phase 16c Task 2 added the `server/src/domains/downloads/` five-file domain shel
 | `GET /api/v1/downloads/packages/{id}/manifest` | Fetch package manifest | Implemented for ready/serving package rows in Task 5; device/session revalidation added in Task 7 |
 | `POST /api/v1/downloads/packages/{id}/transfer-urls` | Create short-lived transfer URLs | Implemented in Task 7 as authenticated endpoint URLs |
 | `GET /api/v1/downloads/packages/{id}/files/{*file_path}` | Serve package file/range | Implemented in Task 7 |
-| `POST /api/v1/downloads/sync` | Submit reconnect sync state | Validates body and returns `DOWNLOAD_015` until Task 12 |
+| `POST /api/v1/downloads/sync` | Submit reconnect sync state | Implemented in Task 12 with idempotent package-state and playback-event acceptance |
 
 `DOWNLOAD_001`-`DOWNLOAD_016` are registered in [ERROR_HANDLING.md](ERROR_HANDLING.md). Planning and job creation require the `can_download` capability; read/delete/manifest/sync routes are authenticated user-scoped and enforce BOLA/policy checks in the service layer as implementation lands.
 
@@ -197,6 +199,16 @@ Phase 16c Task 11 added offline playback foundations:
 - `OfflinePlaybackService` resolves MP4 packages to the local MP4 file and HLS/fMP4 packages to the local `.m3u8` manifest. Playback uses `video_player` from local file paths and does not call online playback start, seek, heartbeat, QoE, telemetry, or bandwidth-probe endpoints while in offline mode.
 - Offline playback records heartbeat, seek, stop, completion, watched state, duration, and local resume position into the scoped protected sync queue. Task 12 will submit those queued events to `POST /api/v1/downloads/sync` and clear accepted events idempotently.
 - Downloads, media detail, and shared library/search media cards expose offline playback only when the scoped inventory has a verified local package. Packaged selected audio/subtitle metadata is displayed as fixed local selections; downloading alternate track combinations remains future package-selection work.
+
+Phase 16c Task 12 added reconnect sync:
+
+- `POST /api/v1/downloads/sync` accepts package state updates and offline playback events for the authenticated user/device. The route validates ownership and device binding for every submitted package.
+- Sync revalidates package status, expiry, revocation, originating session binding, current download network policy, media access, and streaming policy. Expired and revoked packages are reported in the response so the mobile client stops treating them as playable.
+- Valid package state updates upsert `download_device_state` with local status, downloaded bytes, verified file count, manifest hash, local resume position, pending sync payload, online-check timestamp, and last-played timestamp.
+- Offline playback events use stable `event_id` values. Server device-state metadata stores a bounded accepted-event ID set and the response returns `accepted_playback_event_ids`, so duplicate submissions after app crash, response loss, or network retry can be safely drained by the client without double-applying progress.
+- Heartbeat and seek events update `user_item_data.resume_position_ms` only when the event is not older than the current row, so newer progress from another device wins. Stop and completed events increment play count once per accepted event ID, OR watched state, reset resume to zero when watched/completed, and preserve the newest `last_played_at`.
+- The Flutter download manager submits scoped package states plus protected queued events on authenticated foreground load, manual/job refresh, and after recording offline playback progress. Accepted events are removed from `sync_queue.json`, pending counts are refreshed, and expired/revoked package IDs mark local items expired or unavailable.
+- Android WorkManager/iOS BGTaskScheduler native background scheduling remains a later enhancement; Task 12 establishes the foreground reconnect path and retry-safe server contract those schedulers can invoke.
 
 ## Mobile Contract
 
@@ -281,4 +293,4 @@ Download quality reuses the Phase 7 quality-management model but is not identica
 
 ## Implementation Status
 
-Phase 16c Tasks 0-11 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, manifest response format, durable job creation/status/cancel, scheduled package worker, authenticated package serving, resumable transfer, foreground/push notifications, Flutter mobile download manager shell, protected Android/iOS local storage foundations, foreground package materialization, and local MP4/HLS offline playback are in place. Reconnect sync, revocation cleanup, settings completion, observability, and broader integration tests are pending Phase 16c Tasks 12-15.
+Phase 16c Tasks 0-12 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, manifest response format, durable job creation/status/cancel, scheduled package worker, authenticated package serving, resumable transfer, foreground/push notifications, Flutter mobile download manager shell, protected Android/iOS local storage foundations, foreground package materialization, local MP4/HLS offline playback, and idempotent reconnect sync are in place. Revocation cleanup, settings completion, observability, and broader integration tests are pending Phase 16c Tasks 13-15.

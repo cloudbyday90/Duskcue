@@ -271,6 +271,7 @@ class PackageTransferUrls {
 
 class OfflinePlaybackEvent {
   const OfflinePlaybackEvent({
+    required this.eventId,
     required this.packageId,
     required this.eventType,
     required this.positionMs,
@@ -278,6 +279,7 @@ class OfflinePlaybackEvent {
     this.details = const {},
   });
 
+  final String eventId;
   final String packageId;
   final String eventType;
   final int positionMs;
@@ -286,6 +288,7 @@ class OfflinePlaybackEvent {
 
   Map<String, Object?> toJson() {
     return {
+      'event_id': eventId,
       'package_id': packageId,
       'event_type': eventType,
       'position_ms': positionMs,
@@ -296,11 +299,41 @@ class OfflinePlaybackEvent {
 
   static OfflinePlaybackEvent fromJson(Map<String, Object?> json) {
     return OfflinePlaybackEvent(
+      eventId: _string(json, const ['event_id'], fallback: _legacyEventId(json)),
       packageId: _string(json, const ['package_id']),
       eventType: _string(json, const ['event_type'], fallback: 'heartbeat'),
       positionMs: _int(json['position_ms']) ?? 0,
       occurredAt: _date(json['occurred_at']) ?? DateTime.fromMillisecondsSinceEpoch(0),
       details: Map<String, Object?>.from((json['details'] as Map?) ?? const {}),
+    );
+  }
+}
+
+class DownloadSyncResponse {
+  const DownloadSyncResponse({
+    required this.acceptedPackageStates,
+    required this.acceptedPlaybackEvents,
+    required this.acceptedPlaybackEventIds,
+    required this.revokedPackageIds,
+    required this.expiredPackageIds,
+    required this.serverTime,
+  });
+
+  final int acceptedPackageStates;
+  final int acceptedPlaybackEvents;
+  final List<String> acceptedPlaybackEventIds;
+  final List<String> revokedPackageIds;
+  final List<String> expiredPackageIds;
+  final DateTime? serverTime;
+
+  static DownloadSyncResponse fromJson(Map<String, Object?> json) {
+    return DownloadSyncResponse(
+      acceptedPackageStates: _int(json['accepted_package_states']) ?? 0,
+      acceptedPlaybackEvents: _int(json['accepted_playback_events']) ?? 0,
+      acceptedPlaybackEventIds: _stringList(json['accepted_playback_event_ids']),
+      revokedPackageIds: _stringList(json['revoked_package_ids']),
+      expiredPackageIds: _stringList(json['expired_package_ids']),
+      serverTime: _date(json['server_time']),
     );
   }
 }
@@ -782,6 +815,22 @@ DateTime? _date(Object? value) {
   if (value is DateTime) return value;
   if (value is String && value.isNotEmpty) return DateTime.tryParse(value);
   return null;
+}
+
+List<String> _stringList(Object? value) {
+  return (value as List? ?? const [])
+      .map((item) => item.toString())
+      .where((item) => item.isNotEmpty)
+      .toList(growable: false);
+}
+
+String _legacyEventId(Map<String, Object?> json) {
+  return [
+    _string(json, const ['package_id']),
+    _string(json, const ['event_type'], fallback: 'heartbeat'),
+    _int(json['position_ms']) ?? 0,
+    _string(json, const ['occurred_at']),
+  ].join(':');
 }
 
 T? _firstWhereOrNull<T>(Iterable<T> items, bool Function(T item) test) {

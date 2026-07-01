@@ -544,6 +544,28 @@ Verification:
 
 Flutter/Dart are not installed in the current Windows environment, so `flutter analyze`, `flutter test`, Android/iOS builds, foreground package-transfer checks, local MP4/HLS playback checks, and offline event queue device validation remain CI/SDK-environment verification.
 
+### Phase 16c Task 12 — Reconnect Sync
+
+Implementation:
+
+- Server `POST /api/v1/downloads/sync` now accepts package-state updates plus offline playback events, validates user ownership and device binding, and revalidates package expiry/revocation/session/policy/access before reporting whether a package can remain playable.
+- Server sync upserts `download_device_state` and applies accepted offline playback events to `user_item_data` using the same resume/completion semantics as online playback.
+- Offline events carry stable `event_id` values. The server stores a bounded accepted-event ID set in device-state metadata and returns `accepted_playback_event_ids`; mobile drains only accepted IDs from protected `sync_queue.json`.
+- Conflict resolution is deterministic: newer `user_item_data` resume progress from another device wins over older offline heartbeat/seek events, while completed/watched sync events OR watched state, reset resume to zero, and increment play count once per accepted event ID.
+- `DownloadManagerNotifier` submits package states and queued playback events during authenticated foreground load, job refresh, and after local offline playback progress changes. Expired/revoked package IDs in the response mark local items expired or unavailable.
+
+Verification:
+
+- `cargo fmt --all -- --check`
+- `cargo check -p duskcue`
+- `node scripts/verify-client-contracts.mjs`
+- `node scripts/verify-tv-surface-fixtures.mjs`
+- `git diff --check`
+- `flutter --version` attempted and failed because Flutter is not installed in the current Windows environment.
+- `dart --version` attempted and failed because Dart is not installed in the current Windows environment.
+
+Flutter/Dart are not installed in the current Windows environment, so `flutter analyze`, `flutter test`, Android/iOS builds, real-device reconnect sync, and native background scheduler validation remain CI/SDK-environment verification.
+
 ## Relationship to Other Documents
 
 | Document | Relationship |

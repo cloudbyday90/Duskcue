@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use chrono::{DateTime, Duration, Utc};
@@ -780,13 +781,136 @@ pub async fn sync_download_state(
     user: &AuthenticatedUser,
     req: DownloadSyncRequest,
 ) -> Result<DownloadSyncResponse, DownloadError> {
+    let device_identifier = require_device_identifier(Some(&req.device_identifier))?.to_string();
+    let mut package_ids = HashSet::new();
     for package_state in &req.package_states {
-        ensure_package_owner(&state.pool, user, package_state.package_id).await?;
+        package_ids.insert(package_state.package_id);
     }
     for playback_event in &req.playback_events {
-        ensure_package_owner(&state.pool, user, playback_event.package_id).await?;
+        package_ids.insert(playback_event.package_id);
     }
-    Err(DownloadError::NotImplemented("download reconnect sync"))
+
+    let mut contexts = HashMap::new();
+    let mut revoked_package_ids = Vec::new();
+    let mut expired_package_ids = Vec::new();
+    for package_id in package_ids {
+        let mut context =
+            load_sync_package_context(state, user, package_id, &device_identifier).await?;
+        classify_sync_package(state, user, &mut context, &device_identifier).await?;
+        if context.is_expired && !expired_package_ids.contains(&package_id) {
+            expired_package_ids.push(package_id);
+        }
+        if context.is_revoked && !revoked_package_ids.contains(&package_id) {
+            revoked_package_ids.push(package_id);
+        }
+        contexts.insert(package_id, context);
+    }
+
+    let mut accepted_package_states = 0;
+    for package_state in &req.package_states {
+        let Some(context) = contexts.get(&package_state.package_id) else {
+            continue;
+        };
+        upsert_download_device_state(
+            state,
+            user,
+            context,
+            &device_identifier,
+            req.client_platform,
+            context.effective_local_status(package_state.local_status.clone()),
+            package_state.bytes_downloaded,
+            package_state.files_verified,
+            package_state.local_manifest_hash_sha256.clone(),
+            package_state.local_resume_position_ms,
+            json!([]),
+            None,
+            None,
+        )
+        .await?;
+        accepted_package_states += 1;
+    }
+
+    let mut events_by_package: HashMap<Uuid, Vec<&OfflinePlaybackEvent>> = HashMap::new();
+    for event in &req.playback_events {
+        events_by_package
+            .entry(event.package_id)
+            .or_default()
+            .push(event);
+    }
+
+    let mut accepted_playback_event_ids = Vec::new();
+    let mut accepted_playback_events = 0;
+    for (package_id, events) in events_by_package {
+        let Some(context) = contexts.get(&package_id) else {
+            continue;
+        };
+        let mut metadata =
+            load_device_state_metadata(&state.pool, user.user_id, &device_identifier, package_id)
+                .await?
+                .unwrap_or_else(|| json!({}));
+        let mut accepted_ids = accepted_offline_event_ids(&metadata);
+        let mut newest_position = None;
+        let mut newest_played_at = None;
+        let mut applied_new_event = false;
+
+        for event in events {
+            let event_id = offline_event_id(event);
+            accepted_playback_event_ids.push(event_id.clone());
+            if accepted_ids.contains(&event_id) {
+                continue;
+            }
+            apply_offline_playback_event(&state.pool, user, context, event).await?;
+            accepted_ids.insert(event_id);
+            accepted_playback_events += 1;
+            applied_new_event = true;
+            newest_position = Some(event.position_ms.max(0));
+            newest_played_at = Some(
+                newest_played_at
+                    .map(|current: DateTime<Utc>| current.max(event.occurred_at))
+                    .unwrap_or(event.occurred_at),
+            );
+        }
+
+        if applied_new_event {
+            metadata = write_accepted_offline_event_ids(metadata, accepted_ids);
+            upsert_download_device_state(
+                state,
+                user,
+                context,
+                &device_identifier,
+                req.client_platform,
+                context.effective_local_status(DownloadLocalStatus::Playable),
+                context.total_bytes,
+                context.file_count,
+                context.manifest_hash_sha256.clone(),
+                newest_position.unwrap_or(0),
+                json!([]),
+                newest_played_at,
+                Some(metadata),
+            )
+            .await?;
+        }
+    }
+
+    record_download_sync_event(
+        &state.pool,
+        user,
+        &device_identifier,
+        accepted_package_states,
+        accepted_playback_events,
+        &revoked_package_ids,
+        &expired_package_ids,
+    )
+    .await?;
+
+    Ok(DownloadSyncResponse {
+        accepted_package_states,
+        accepted_playback_events,
+        accepted_playback_event_ids,
+        revoked_package_ids,
+        expired_package_ids,
+        server_time: Utc::now(),
+    })
 }
 
 #[derive(Clone)]
@@ -1038,6 +1162,317 @@ struct DownloadPackageAccess {
     storage_key: String,
 }
 
+struct DownloadSyncPackageContext {
+    package_id: Uuid,
+    media_item_id: Uuid,
+    media_file_id: Option<Uuid>,
+    user_session_id: Option<Uuid>,
+    status: String,
+    total_bytes: i64,
+    file_count: i32,
+    manifest_hash_sha256: Option<String>,
+    expires_at: Option<DateTime<Utc>>,
+    revoked_at: Option<DateTime<Utc>>,
+    is_expired: bool,
+    is_revoked: bool,
+}
+
+impl DownloadSyncPackageContext {
+    fn effective_local_status(&self, requested: DownloadLocalStatus) -> DownloadLocalStatus {
+        if self.is_expired {
+            DownloadLocalStatus::Expired
+        } else if self.is_revoked {
+            DownloadLocalStatus::Revoked
+        } else {
+            requested
+        }
+    }
+}
+
+async fn load_sync_package_context(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    package_id: Uuid,
+    device_identifier: &str,
+) -> Result<DownloadSyncPackageContext, DownloadError> {
+    let row = sqlx::query(
+        "SELECT id, user_session_id, device_identifier, media_item_id, \
+                media_file_id, status, total_bytes, file_count, manifest_hash_sha256, \
+                expires_at, revoked_at \
+         FROM download_packages \
+         WHERE id = $1 AND user_id = $2",
+    )
+    .bind(package_id)
+    .bind(user.user_id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let Some(row) = row else {
+        return Err(DownloadError::PackageNotFound(package_id));
+    };
+    let package_device_identifier: String = row.get("device_identifier");
+    if package_device_identifier != device_identifier {
+        return Err(DownloadError::AccessDenied);
+    }
+
+    Ok(DownloadSyncPackageContext {
+        package_id,
+        media_item_id: row.get("media_item_id"),
+        media_file_id: row.try_get("media_file_id").ok().flatten(),
+        user_session_id: row.try_get("user_session_id").ok().flatten(),
+        status: row.get("status"),
+        total_bytes: row.get("total_bytes"),
+        file_count: row.get("file_count"),
+        manifest_hash_sha256: row.try_get("manifest_hash_sha256").ok().flatten(),
+        expires_at: row.try_get("expires_at").ok().flatten(),
+        revoked_at: row.try_get("revoked_at").ok().flatten(),
+        is_expired: false,
+        is_revoked: false,
+    })
+}
+
+async fn classify_sync_package(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    context: &mut DownloadSyncPackageContext,
+    device_identifier: &str,
+) -> Result<(), DownloadError> {
+    if context.user_session_id.is_some() && context.user_session_id != Some(user.session_id) {
+        context.is_revoked = true;
+        return Ok(());
+    }
+    if context.status == "expired"
+        || context
+            .expires_at
+            .is_some_and(|expires_at| expires_at <= Utc::now())
+    {
+        context.is_expired = true;
+        sqlx::query(
+            "UPDATE download_packages \
+             SET status = 'expired', cleanup_after_at = COALESCE(cleanup_after_at, now()), \
+                 updated_at = now() \
+             WHERE id = $1 AND status IN ('ready', 'serving')",
+        )
+        .bind(context.package_id)
+        .execute(&state.pool)
+        .await?;
+        return Ok(());
+    }
+    if context.status == "revoked" || context.revoked_at.is_some() {
+        context.is_revoked = true;
+        return Ok(());
+    }
+    if !matches!(context.status.as_str(), "ready" | "serving") {
+        return Err(DownloadError::PackageNotReady(context.package_id));
+    }
+
+    let config = state.runtime_config.load();
+    let downloads = config.downloads.clone();
+    let network_mode = config.auth.network_mode.clone();
+    drop(config);
+
+    if validate_network_policy(&downloads, &network_mode).is_err()
+        || resolve_media_access(&state.pool, user, context.media_item_id)
+            .await
+            .is_err()
+        || enforce_streaming_policy(&state.pool, user, context.media_item_id, device_identifier)
+            .await
+            .is_err()
+    {
+        context.is_revoked = true;
+    }
+
+    Ok(())
+}
+
+async fn upsert_download_device_state(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    context: &DownloadSyncPackageContext,
+    device_identifier: &str,
+    client_platform: DownloadClientPlatform,
+    local_status: DownloadLocalStatus,
+    bytes_downloaded: i64,
+    files_verified: i32,
+    local_manifest_hash_sha256: Option<String>,
+    local_resume_position_ms: i64,
+    pending_sync: Value,
+    last_played_at: Option<DateTime<Utc>>,
+    metadata: Option<Value>,
+) -> Result<(), DownloadError> {
+    sqlx::query(
+        "INSERT INTO download_device_state \
+         (id, user_id, user_session_id, download_package_id, device_identifier, \
+          client_platform, local_status, bytes_downloaded, files_verified, \
+          local_manifest_hash_sha256, last_online_check_at, last_download_progress_at, \
+          last_played_at, local_resume_position_ms, pending_sync, metadata) \
+         VALUES (uuidv7(), $1, $2, $3, $4, $5, $6, $7, $8, $9, now(), \
+                 CASE WHEN $7 > 0 THEN now() ELSE NULL END, $10, $11, $12, COALESCE($13, '{}'::jsonb)) \
+         ON CONFLICT (user_id, device_identifier, download_package_id) \
+         DO UPDATE SET user_session_id = $2, \
+                       client_platform = $5, \
+                       local_status = $6, \
+                       bytes_downloaded = GREATEST(download_device_state.bytes_downloaded, $7), \
+                       files_verified = GREATEST(download_device_state.files_verified, $8), \
+                       local_manifest_hash_sha256 = COALESCE($9, download_device_state.local_manifest_hash_sha256), \
+                       last_online_check_at = now(), \
+                       last_download_progress_at = CASE WHEN $7 > download_device_state.bytes_downloaded THEN now() ELSE download_device_state.last_download_progress_at END, \
+                       last_played_at = COALESCE(GREATEST(download_device_state.last_played_at, $10), download_device_state.last_played_at, $10), \
+                       local_resume_position_ms = $11, \
+                       pending_sync = $12, \
+                       metadata = COALESCE($13, download_device_state.metadata), \
+                       updated_at = now()",
+    )
+    .bind(user.user_id)
+    .bind(user.session_id)
+    .bind(context.package_id)
+    .bind(device_identifier)
+    .bind(client_platform_to_db(client_platform))
+    .bind(local_status_to_db(local_status))
+    .bind(bytes_downloaded.max(0))
+    .bind(files_verified.max(0))
+    .bind(local_manifest_hash_sha256)
+    .bind(last_played_at)
+    .bind(local_resume_position_ms.max(0))
+    .bind(pending_sync)
+    .bind(metadata)
+    .execute(&state.pool)
+    .await?;
+    Ok(())
+}
+
+async fn load_device_state_metadata(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    device_identifier: &str,
+    package_id: Uuid,
+) -> Result<Option<Value>, DownloadError> {
+    Ok(sqlx::query_scalar(
+        "SELECT metadata FROM download_device_state \
+         WHERE user_id = $1 AND device_identifier = $2 AND download_package_id = $3",
+    )
+    .bind(user_id)
+    .bind(device_identifier)
+    .bind(package_id)
+    .fetch_optional(pool)
+    .await?)
+}
+
+async fn apply_offline_playback_event(
+    pool: &sqlx::PgPool,
+    user: &AuthenticatedUser,
+    context: &DownloadSyncPackageContext,
+    event: &OfflinePlaybackEvent,
+) -> Result<(), DownloadError> {
+    let event_type = event.event_type.to_lowercase();
+    let completed = event_type == "completed" || json_bool(&event.details, "completed");
+    let watched = completed || json_bool(&event.details, "watched");
+    let position_ms = clamp_i64_to_i32(event.position_ms);
+
+    if event_type == "stop" || event_type == "completed" {
+        let resume_position_ms = if watched { 0 } else { position_ms };
+        sqlx::query(
+            "INSERT INTO user_item_data \
+             (id, user_id, media_item_id, is_watched, play_count, last_played_at, \
+              resume_position_ms, last_played_media_file_id, updated_at) \
+             VALUES (uuidv7(), $1, $2, $3, 1, $4, $5, $6, $4) \
+             ON CONFLICT (user_id, media_item_id) \
+             DO UPDATE SET play_count = user_item_data.play_count + 1, \
+                           last_played_at = COALESCE(GREATEST(user_item_data.last_played_at, $4), user_item_data.last_played_at, $4), \
+                           is_watched = user_item_data.is_watched OR $3, \
+                           resume_position_ms = CASE \
+                               WHEN user_item_data.is_watched OR $3 THEN 0 \
+                               WHEN user_item_data.updated_at <= $4 THEN $5 \
+                               ELSE user_item_data.resume_position_ms \
+                           END, \
+                           last_played_media_file_id = COALESCE($6, user_item_data.last_played_media_file_id), \
+                           updated_at = GREATEST(user_item_data.updated_at, $4)",
+        )
+        .bind(user.user_id)
+        .bind(context.media_item_id)
+        .bind(watched)
+        .bind(event.occurred_at)
+        .bind(resume_position_ms)
+        .bind(context.media_file_id)
+        .execute(pool)
+        .await?;
+    } else {
+        sqlx::query(
+            "INSERT INTO user_item_data \
+             (id, user_id, media_item_id, resume_position_ms, last_played_media_file_id, updated_at) \
+             VALUES (uuidv7(), $1, $2, $3, $4, $5) \
+             ON CONFLICT (user_id, media_item_id) \
+             DO UPDATE SET resume_position_ms = CASE \
+                               WHEN user_item_data.is_watched THEN 0 \
+                               WHEN user_item_data.updated_at <= $5 THEN $3 \
+                               ELSE user_item_data.resume_position_ms \
+                           END, \
+                           last_played_media_file_id = COALESCE($4, user_item_data.last_played_media_file_id), \
+                           updated_at = GREATEST(user_item_data.updated_at, $5)",
+        )
+        .bind(user.user_id)
+        .bind(context.media_item_id)
+        .bind(position_ms)
+        .bind(context.media_file_id)
+        .bind(event.occurred_at)
+        .execute(pool)
+        .await?;
+    }
+
+    Ok(())
+}
+
+fn accepted_offline_event_ids(metadata: &Value) -> HashSet<String> {
+    metadata
+        .get("accepted_offline_event_ids")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(str::to_string)
+        .collect()
+}
+
+fn write_accepted_offline_event_ids(mut metadata: Value, ids: HashSet<String>) -> Value {
+    let mut ids = ids.into_iter().collect::<Vec<_>>();
+    ids.sort();
+    if ids.len() > 500 {
+        ids = ids.split_off(ids.len() - 500);
+    }
+    let value = json!(ids);
+    if let Some(object) = metadata.as_object_mut() {
+        object.insert("accepted_offline_event_ids".to_string(), value);
+        metadata
+    } else {
+        json!({ "accepted_offline_event_ids": value })
+    }
+}
+
+fn offline_event_id(event: &OfflinePlaybackEvent) -> String {
+    event
+        .event_id
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            format!(
+                "{}:{}:{}:{}",
+                event.package_id,
+                event.event_type,
+                event.position_ms,
+                event.occurred_at.to_rfc3339()
+            )
+        })
+}
+
+fn json_bool(value: &Value, key: &str) -> bool {
+    value.get(key).and_then(Value::as_bool).unwrap_or(false)
+}
+
+fn clamp_i64_to_i32(value: i64) -> i32 {
+    value.clamp(0, i64::from(i32::MAX)) as i32
+}
+
 struct DownloadPackageFileRecord {
     relative_path: String,
     file_role: String,
@@ -1268,6 +1703,20 @@ fn client_platform_to_db(value: DownloadClientPlatform) -> &'static str {
     match value {
         DownloadClientPlatform::Android => "android",
         DownloadClientPlatform::Ios => "ios",
+    }
+}
+
+fn local_status_to_db(value: DownloadLocalStatus) -> &'static str {
+    match value {
+        DownloadLocalStatus::NotDownloaded => "not_downloaded",
+        DownloadLocalStatus::Downloading => "downloading",
+        DownloadLocalStatus::Paused => "paused",
+        DownloadLocalStatus::Playable => "playable",
+        DownloadLocalStatus::Failed => "failed",
+        DownloadLocalStatus::Expired => "expired",
+        DownloadLocalStatus::Revoked => "revoked",
+        DownloadLocalStatus::Deleted => "deleted",
+        DownloadLocalStatus::SyncPending => "sync_pending",
     }
 }
 
@@ -1845,6 +2294,36 @@ async fn record_download_event_for_package(
     Ok(())
 }
 
+async fn record_download_sync_event(
+    pool: &sqlx::PgPool,
+    user: &AuthenticatedUser,
+    device_identifier: &str,
+    accepted_package_states: usize,
+    accepted_playback_events: usize,
+    revoked_package_ids: &[Uuid],
+    expired_package_ids: &[Uuid],
+) -> Result<(), DownloadError> {
+    sqlx::query(
+        "INSERT INTO download_events \
+         (user_id, user_session_id, device_identifier, event_type, reason, details) \
+         VALUES ($1, $2, $3, 'sync_submitted', $4, $5)",
+    )
+    .bind(user.user_id)
+    .bind(user.session_id)
+    .bind(device_identifier)
+    .bind("mobile reconnect sync")
+    .bind(json!({
+        "accepted_package_states": accepted_package_states,
+        "accepted_playback_events": accepted_playback_events,
+        "revoked_package_ids": revoked_package_ids,
+        "expired_package_ids": expired_package_ids
+    }))
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1876,6 +2355,43 @@ mod tests {
         assert_eq!(resolution_height("720p"), Some(720));
         assert_eq!(resolution_height("4K"), Some(2160));
         assert_eq!(resolution_height("unknown"), None);
+    }
+
+    #[test]
+    fn offline_event_id_prefers_client_id_and_falls_back_stably() {
+        let event = OfflinePlaybackEvent {
+            event_id: Some("client-event-1".to_string()),
+            package_id: Uuid::nil(),
+            event_type: "heartbeat".to_string(),
+            position_ms: 42,
+            occurred_at: DateTime::parse_from_rfc3339("2026-07-01T00:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            details: json!({}),
+        };
+        assert_eq!(offline_event_id(&event), "client-event-1");
+
+        let fallback = OfflinePlaybackEvent {
+            event_id: None,
+            ..event
+        };
+        assert_eq!(
+            offline_event_id(&fallback),
+            "00000000-0000-0000-0000-000000000000:heartbeat:42:2026-07-01T00:00:00+00:00"
+        );
+    }
+
+    #[test]
+    fn accepted_offline_event_ids_round_trip_and_cap() {
+        let ids = (0..510)
+            .map(|index| format!("event-{index:03}"))
+            .collect::<HashSet<_>>();
+        let metadata = write_accepted_offline_event_ids(json!({ "other": true }), ids);
+        assert_eq!(metadata["other"], true);
+        let accepted = accepted_offline_event_ids(&metadata);
+        assert_eq!(accepted.len(), 500);
+        assert!(!accepted.contains("event-000"));
+        assert!(accepted.contains("event-509"));
     }
 
     #[test]

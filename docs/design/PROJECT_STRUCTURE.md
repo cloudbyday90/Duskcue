@@ -940,6 +940,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 11 offline playback status:** `clients/mobile/lib/services/offline_playback_service.dart` resolves verified local packages for offline MP4/HLS playback, while `DownloadService` fetches package manifests/transfer URLs/files and `DownloadManagerNotifier` foreground-materializes ready packages into protected storage with SHA-256 verification. The mobile router supports `/play/:itemId?offline=true`, and Downloads, media detail, and shared media cards expose offline playback only for scoped `playableOffline` inventory items. Offline progress/completion/watched events are queued in the protected sync queue for the Task 12 reconnect sync implementation.
 
+**Task 12 reconnect sync status:** `server/src/domains/downloads/service.rs` now implements `sync_download_state` for package-state and offline playback-event submissions, upserting `download_device_state`, applying accepted events to `user_item_data`, and returning accepted event IDs plus expired/revoked package IDs. `clients/mobile/lib/stores/download_manager_store.dart`, `services/download_service.dart`, and `services/protected_download_storage_service.dart` now submit scoped package state and protected queued events, remove accepted events from `sync_queue.json`, refresh pending counts, and mark expired/revoked packages locally.
+
 ## Development Workflow
 
 ### Server Development

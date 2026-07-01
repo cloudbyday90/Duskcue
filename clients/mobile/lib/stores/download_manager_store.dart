@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
@@ -81,6 +82,7 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
         loading: false,
         clearError: true,
       );
+      await _syncPendingChanges(scope);
     } catch (error) {
       state = state.copyWith(loading: false, error: error.toString());
     }
@@ -134,6 +136,7 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     final materialized = await _materializeReadyPackages(scope, constrained);
     await _persistItems(scope, materialized);
     state = state.copyWith(scope: scope, items: _sortItems(materialized), clearError: true);
+    await _syncPendingChanges(scope);
   }
 
   Future<void> cancel(DownloadItem item) async {
@@ -284,6 +287,7 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     await protectedStorage.appendOfflinePlaybackEvent(
       scope,
       OfflinePlaybackEvent(
+        eventId: _offlineEventId(packageId, eventType, positionMs),
         packageId: packageId,
         eventType: eventType,
         positionMs: positionMs,
@@ -310,6 +314,7 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     final next = _replaceItem(state.items, nextItem);
     await _persistItems(scope, next);
     state = state.copyWith(items: _sortItems(next), clearError: true);
+    unawaited(_syncPendingChanges(scope));
   }
 
   Future<DownloadInventoryScope> _requireScope() async {
@@ -362,6 +367,90 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     for (final item in items) {
       await protectedStorage.writePackageMetadata(scope, item);
     }
+  }
+
+  Future<void> _syncPendingChanges(DownloadInventoryScope scope) async {
+    try {
+      final protectedStorage = ref.read(protectedDownloadStorageProvider);
+      final events = await protectedStorage.readOfflinePlaybackEvents(scope);
+      final packageStates = _packageStatesForSync(state.items, events);
+      if (packageStates.isEmpty && events.isEmpty) return;
+      final response = await ref.read(downloadServiceProvider).syncDownloadState(
+            packageStates: packageStates,
+            playbackEvents: events,
+          );
+      await protectedStorage.removeOfflinePlaybackEvents(
+        scope,
+        response.acceptedPlaybackEventIds.toSet(),
+      );
+      final next = <DownloadItem>[];
+      for (final item in state.items) {
+        var updated = item;
+        final packageId = item.packageId;
+        if (packageId != null && response.expiredPackageIds.contains(packageId)) {
+          updated = updated.copyWith(
+            status: DownloadItemStatus.expired,
+            waitingReason: 'Expired',
+            updatedAt: DateTime.now(),
+          );
+        } else if (packageId != null && response.revokedPackageIds.contains(packageId)) {
+          updated = updated.copyWith(
+            status: DownloadItemStatus.unavailable,
+            waitingReason: 'Access changed',
+            updatedAt: DateTime.now(),
+          );
+        }
+        if (packageId != null) {
+          updated = updated.copyWith(
+            pendingPlaybackEventCount: await protectedStorage.pendingPlaybackEventCount(scope, packageId),
+          );
+        }
+        next.add(updated);
+      }
+      await _persistItems(scope, next);
+      state = state.copyWith(items: _sortItems(next), clearError: true);
+    } catch (_) {}
+  }
+
+  List<Map<String, Object?>> _packageStatesForSync(
+    List<DownloadItem> items,
+    List<OfflinePlaybackEvent> events,
+  ) {
+    final eventsByPackage = <String, List<Map<String, Object?>>>{};
+    for (final event in events) {
+      eventsByPackage.putIfAbsent(event.packageId, () => <Map<String, Object?>>[]).add(event.toJson());
+    }
+    return items
+        .where((item) => item.packageId != null && item.packageId!.isNotEmpty)
+        .map(
+          (item) => {
+            'package_id': item.packageId,
+            'local_status': _syncStatusFor(item),
+            'bytes_downloaded': item.bytesPrepared,
+            'files_verified': item.localFilesVerified,
+            'local_manifest_hash_sha256': item.localManifestHashSha256,
+            'local_resume_position_ms': item.localResumePositionMs,
+            'pending_events': eventsByPackage[item.packageId] ?? const <Map<String, Object?>>[],
+          },
+        )
+        .toList(growable: false);
+  }
+
+  String _syncStatusFor(DownloadItem item) {
+    return switch (item.status) {
+      DownloadItemStatus.downloading => 'downloading',
+      DownloadItemStatus.paused => 'paused',
+      DownloadItemStatus.playableOffline => item.pendingPlaybackEventCount > 0 ? 'sync_pending' : 'playable',
+      DownloadItemStatus.failed => 'failed',
+      DownloadItemStatus.expired => 'expired',
+      DownloadItemStatus.unavailable => 'revoked',
+      DownloadItemStatus.cancelled => 'deleted',
+      _ => 'not_downloaded',
+    };
+  }
+
+  String _offlineEventId(String packageId, String eventType, int positionMs) {
+    return '$packageId:$eventType:$positionMs:${DateTime.now().microsecondsSinceEpoch}';
   }
 
   Future<List<DownloadItem>> _materializeReadyPackages(

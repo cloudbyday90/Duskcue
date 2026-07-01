@@ -246,6 +246,8 @@ pub struct DownloadPackageStateUpdate {
 
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct OfflinePlaybackEvent {
+    #[validate(length(max = 128))]
+    pub event_id: Option<String>,
     pub package_id: Uuid,
     #[validate(length(min = 1, max = 64))]
     pub event_type: String,
@@ -394,6 +396,7 @@ pub struct PackageTransferUrlResponse {
 pub struct DownloadSyncResponse {
     pub accepted_package_states: usize,
     pub accepted_playback_events: usize,
+    pub accepted_playback_event_ids: Vec<String>,
     pub revoked_package_ids: Vec<Uuid>,
     pub expired_package_ids: Vec<Uuid>,
     pub server_time: DateTime<Utc>,
