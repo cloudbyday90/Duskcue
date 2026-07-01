@@ -147,11 +147,41 @@ class _DownloadSettingsPanel extends StatelessWidget {
               onChanged: (value) => onChanged(settings.copyWith(pauseOnLowStorage: value)),
               title: Text(strings.pauseOnLowStorage),
             ),
+            DropdownButtonFormField<int?>(
+              value: _storageCapValue(settings.storageCapBytes),
+              decoration: const InputDecoration(labelText: 'Storage cap'),
+              items: const [
+                DropdownMenuItem<int?>(value: null, child: Text('No cap')),
+                DropdownMenuItem<int?>(value: 5 * 1024 * 1024 * 1024, child: Text('5 GB')),
+                DropdownMenuItem<int?>(value: 10 * 1024 * 1024 * 1024, child: Text('10 GB')),
+                DropdownMenuItem<int?>(value: 25 * 1024 * 1024 * 1024, child: Text('25 GB')),
+                DropdownMenuItem<int?>(value: 50 * 1024 * 1024 * 1024, child: Text('50 GB')),
+              ],
+              onChanged: (value) => onChanged(
+                value == null ? settings.copyWith(clearStorageCap: true) : settings.copyWith(storageCapBytes: value),
+              ),
+            ),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              value: settings.autoDeleteWatched,
+              onChanged: (value) => onChanged(settings.copyWith(autoDeleteWatched: value)),
+              title: const Text('Auto-delete watched downloads'),
+            ),
           ],
         ),
       ),
     );
   }
+}
+
+int? _storageCapValue(int? value) {
+  const caps = <int>{
+    5 * 1024 * 1024 * 1024,
+    10 * 1024 * 1024 * 1024,
+    25 * 1024 * 1024 * 1024,
+    50 * 1024 * 1024 * 1024,
+  };
+  return caps.contains(value) ? value : null;
 }
 
 class _DownloadTile extends ConsumerWidget {

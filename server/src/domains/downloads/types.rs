@@ -224,6 +224,19 @@ pub struct DownloadInventoryQuery {
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
+pub struct DownloadAdminInventoryQuery {
+    pub user_id: Option<Uuid>,
+    #[validate(length(min = 1, max = 128))]
+    pub device_identifier: Option<String>,
+    #[validate(length(max = 64))]
+    pub status: Option<String>,
+    #[validate(range(min = 1, max = 250))]
+    pub limit: Option<u32>,
+    #[validate(length(max = 256))]
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
 pub struct DownloadSyncRequest {
     #[validate(length(min = 1, max = 128))]
     pub device_identifier: String,
@@ -337,15 +350,44 @@ pub struct DownloadInventoryResponse {
 pub struct DownloadInventoryItemResponse {
     pub package_id: Uuid,
     pub job_id: Uuid,
+    pub user_id: Option<Uuid>,
+    pub user_display_name: Option<String>,
     pub media_item_id: Uuid,
     pub media_file_id: Option<Uuid>,
+    pub media_title: Option<String>,
     pub device_identifier: String,
     pub status: DownloadLocalStatus,
+    pub package_status: String,
+    pub job_status: String,
     pub package_format: DownloadPackageFormat,
     pub total_bytes: i64,
     pub bytes_downloaded: i64,
+    pub files_verified: i32,
+    pub failure_reason: Option<String>,
     pub expires_at: Option<DateTime<Utc>>,
     pub revoked_at: Option<DateTime<Utc>>,
+    pub last_online_check_at: Option<DateTime<Utc>>,
+    pub last_played_at: Option<DateTime<Utc>>,
+    pub last_served_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DownloadAdminInventoryResponse {
+    pub items: Vec<DownloadInventoryItemResponse>,
+    pub summary: DownloadAdminInventorySummaryResponse,
+    pub next_cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DownloadAdminInventorySummaryResponse {
+    pub total_packages: i64,
+    pub total_bytes: i64,
+    pub active_jobs: i64,
+    pub failed_jobs: i64,
+    pub expired_packages: i64,
+    pub revoked_packages: i64,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -34,14 +34,15 @@ class DownloadService {
   Future<DownloadJob> createDownloadJob({
     required MediaItemSummary item,
     required DownloadQualityMode qualityMode,
+    DownloadPlan? plan,
   }) async {
     final identity = await _deviceIdentity.current();
-    final plan = await planDownload(mediaItemId: item.id, qualityMode: qualityMode);
+    final selectedPlan = plan ?? await planDownload(mediaItemId: item.id, qualityMode: qualityMode);
     final response = await _apiClient.post<Map<String, Object?>>(
       '/api/v1/downloads/jobs',
       body: {
         'media_item_id': item.id,
-        'media_file_id': plan.mediaFileId,
+        'media_file_id': selectedPlan.mediaFileId,
         'device_identifier': identity.deviceId,
         'device_name': identity.deviceName,
         'client_platform': identity.clientPlatform,
@@ -51,8 +52,8 @@ class DownloadService {
         'selected_subtitles': <Object?>[],
         'include_storyboards': false,
         'include_artwork': true,
-        'plan_revision': plan.planRevision,
-        'plan_hash': plan.planHash,
+        'plan_revision': selectedPlan.planRevision,
+        'plan_hash': selectedPlan.planHash,
       },
     );
     return DownloadJob.fromJson(_payload(response.data));

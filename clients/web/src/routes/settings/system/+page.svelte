@@ -111,6 +111,28 @@
             ],
         },
         {
+            key: 'downloads',
+            title: 'Downloads',
+            desc: 'Offline package policy, retention, quota, and network controls.',
+            fields: [
+                toggle('enabled', 'Enable offline downloads'),
+                select('max_quality_resolution', 'Max Quality Resolution', ['480p', '720p', '1080p', '1440p', '2160p']),
+                number('max_bytes_per_user', 'Max Bytes per User', 1073741824, 10995116277760, 1073741824, 'bytes'),
+                number('max_bytes_per_device', 'Max Bytes per Device', 1073741824, 5497558138880, 1073741824, 'bytes'),
+                number('max_active_jobs_per_user', 'Max Active Jobs per User', 1, 50, 1),
+                number('max_active_jobs_per_device', 'Max Active Jobs per Device', 1, 25, 1),
+                number('max_retained_packages_per_user', 'Max Retained Packages per User', 1, 500, 1),
+                number('max_retained_packages_per_device', 'Max Retained Packages per Device', 1, 250, 1),
+                toggle('allow_lan_downloads', 'Allow LAN Downloads'),
+                toggle('allow_remote_downloads', 'Allow Remote Downloads'),
+                toggle('allow_transcoded_downloads', 'Allow Transcoded Downloads'),
+                number('default_package_expiry_days', 'Default Package Expiry', 1, 365, 1, 'days'),
+                number('ready_package_retention_days', 'Ready Package Retention', 1, 90, 1, 'days'),
+                jsonField('user_overrides', 'User Overrides JSON', 'Map user UUIDs to partial download policy overrides.'),
+                jsonField('library_overrides', 'Library Overrides JSON', 'Map library UUIDs to partial download policy overrides.'),
+            ],
+        },
+        {
             key: 'transcoding',
             title: m.routes_settings_system_page_transcoding(),
             desc: m.routes_settings_system_page_ffmpeg_hls_segments_and_storyboard_generation(),
@@ -413,6 +435,10 @@
         return { path, label, type: 'list', hint };
     }
 
+    function jsonField(path, label, hint = '') {
+        return { path, label, type: 'json', hint };
+    }
+
     async function load() {
         loading = true;
         loadError = null;
@@ -437,6 +463,8 @@
             const current = getPath(next, field.path);
             if (field.type === 'list' && Array.isArray(current)) {
                 setPath(next, field.path, current.join(', '));
+            } else if (field.type === 'json') {
+                setPath(next, field.path, JSON.stringify(current ?? {}, null, 2));
             }
         }
         return next;
@@ -455,6 +483,8 @@
                 setPath(next, field.path, parseList(current));
             } else if (field.type === 'number') {
                 setPath(next, field.path, parseNumber(current, field));
+            } else if (field.type === 'json') {
+                setPath(next, field.path, parseJson(current));
             } else if (field.type === 'text' || field.type === 'password') {
                 setPath(next, field.path, current === '' && field.nullable ? null : current);
             }
@@ -532,6 +562,16 @@
         if (Number.isInteger(field.step)) return Math.trunc(parsed);
         return parsed;
     }
+
+    function parseJson(value) {
+        if (!value || String(value).trim() === '') return {};
+        try {
+            const parsed = JSON.parse(value);
+            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+        } catch {
+            return {};
+        }
+    }
 </script>
 
 <div class="system-settings">
@@ -597,7 +637,10 @@
                                     </span>
                                 </label>
                             {:else}
-                                <label class="field" class:field-wide={field.type === 'list' || field.type === 'password'}>
+                                <label
+                                    class="field"
+                                    class:field-wide={field.type === 'list' || field.type === 'password' || field.type === 'json'}
+                                >
                                     <span class="field-label">
                                         {field.label}
                                         {#if field.unit}<span class="field-unit">({field.unit})</span>{/if}
@@ -631,6 +674,12 @@
                                                 placeholder={field.nullable ? 'default' : ''}
                                             />
                                         </div>
+                                    {:else if field.type === 'json'}
+                                        <textarea
+                                            value={fieldValue(field)}
+                                            oninput={(event) => updateField(field, event.currentTarget.value)}
+                                            rows="6"
+                                        ></textarea>
                                     {:else}
                                         <input
                                             type={field.type === 'password' ? 'password' : 'text'}
@@ -812,7 +861,8 @@
     }
 
     input,
-    select {
+    select,
+    textarea {
         width: 100%;
         min-width: 0;
         padding: 0.5rem 0.625rem;
@@ -823,6 +873,12 @@
         font-size: 0.8125rem;
     }
 
+    textarea {
+        resize: vertical;
+        font-family: var(--font-mono, monospace);
+        line-height: 1.4;
+    }
+
     input[type='range'] {
         padding: 0;
         border: none;
@@ -830,7 +886,8 @@
     }
 
     input:focus,
-    select:focus {
+    select:focus,
+    textarea:focus {
         outline: none;
         border-color: var(--color-accent);
     }

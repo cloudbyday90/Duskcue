@@ -24,7 +24,7 @@ use validator::Validate;
 
 use super::error::DownloadError;
 use crate::error::AppError;
-use crate::extractors::{AuthenticatedUser, CanDownload, Require};
+use crate::extractors::{AuthenticatedUser, CanDownload, CanManageServer, Require};
 use crate::state::AppState;
 
 use super::service;
@@ -87,6 +87,19 @@ pub async fn list_download_inventory(
         .map_err(|e| validation_error(e, "/api/v1/downloads/inventory"))?;
     Ok(Json(
         service::list_download_inventory(&state, &user, query).await?,
+    ))
+}
+
+pub async fn list_admin_download_inventory(
+    State(state): State<AppState>,
+    _auth: Require<CanManageServer>,
+    Query(query): Query<DownloadAdminInventoryQuery>,
+) -> Result<Json<DownloadAdminInventoryResponse>, AppError> {
+    query
+        .validate()
+        .map_err(|e| validation_error(e, "/api/v1/downloads/admin/inventory"))?;
+    Ok(Json(
+        service::list_admin_download_inventory(&state, query).await?,
     ))
 }
 

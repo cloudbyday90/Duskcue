@@ -50,6 +50,10 @@ pub fn router(state: AppState) -> Router<AppState> {
             get(handlers::list_download_inventory),
         )
         .route(
+            "/api/v1/downloads/admin/inventory",
+            get(handlers::list_admin_download_inventory),
+        )
+        .route(
             "/api/v1/downloads/packages/{id}",
             delete(handlers::delete_download_package),
         )

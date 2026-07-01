@@ -73,6 +73,7 @@
         { href: '/settings/users', label: m.routes_settings_page_users(), icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01', desc: m.routes_settings_page_manage_user_accounts_and_invitations() },
         { href: '/settings/libraries', label: m.routes_settings_page_libraries(), icon: 'M2 3h20v18H2zM2 8h20', desc: m.routes_settings_page_configure_media_libraries_and_scan_paths() },
         { href: '/settings/quality', label: m.routes_settings_page_quality(), icon: 'M3 3v18h18', desc: m.routes_settings_page_streaming_quality_and_transcoding(), soon: true },
+        { href: '/settings/downloads', label: 'Downloads', icon: 'M12 3v12m0 0l-5-5m5 5l5-5M4 19h16', desc: 'Offline download policy and package inventory' },
         { href: '/settings/subtitles', label: m.routes_settings_page_subtitles(), icon: 'M4 4h16v16H4z', desc: m.routes_settings_page_subtitle_preferences_and_providers() },
         { href: '/settings/overlays', label: m.routes_settings_page_overlays(), icon: 'M3 3h18v18H3z', desc: m.routes_settings_page_artwork_overlays_and_posters() },
         { href: '/settings/collections', label: m.routes_settings_page_collections(), icon: 'M3 3h18v18H3z', desc: m.routes_settings_page_collection_management() },

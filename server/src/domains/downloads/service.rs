@@ -268,10 +268,10 @@ async fn build_download_plan(
     let platform = query
         .client_platform
         .ok_or_else(|| DownloadError::InvalidRequest("client_platform is required".into()))?;
-    authorize_download_request(state, user, media_item_id, device_identifier, platform).await?;
+    let downloads =
+        authorize_download_request(state, user, media_item_id, device_identifier, platform).await?;
 
     let config = state.runtime_config.load();
-    let downloads = config.downloads.clone();
     let quality = config.quality.clone();
     drop(config);
 
@@ -567,11 +567,160 @@ pub async fn cancel_download_job(
 }
 
 pub async fn list_download_inventory(
-    _state: &AppState,
-    _user: &AuthenticatedUser,
-    _query: DownloadInventoryQuery,
+    state: &AppState,
+    user: &AuthenticatedUser,
+    query: DownloadInventoryQuery,
 ) -> Result<DownloadInventoryResponse, DownloadError> {
-    Err(DownloadError::NotImplemented("download inventory"))
+    let limit = query.limit.unwrap_or(50).clamp(1, 100);
+    let status = query
+        .status
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let device_identifier = query
+        .device_identifier
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    let rows = sqlx::query(
+        "SELECT dp.id AS package_id, dp.download_job_id, dp.user_id, NULL::TEXT AS user_display_name, \
+                dp.media_item_id, dp.media_file_id, mi.title AS media_title, dp.device_identifier, \
+                dp.status AS package_status, dj.status AS job_status, dp.package_format, \
+                dp.total_bytes, COALESCE(dds.bytes_downloaded, 0) AS bytes_downloaded, \
+                COALESCE(dds.files_verified, 0) AS files_verified, \
+                COALESCE(dds.local_status, CASE dp.status \
+                    WHEN 'expired' THEN 'expired' \
+                    WHEN 'revoked' THEN 'revoked' \
+                    WHEN 'cleanup_pending' THEN 'deleted' \
+                    WHEN 'cleaned' THEN 'deleted' \
+                    WHEN 'failed' THEN 'failed' \
+                    ELSE 'not_downloaded' \
+                END) AS local_status, \
+                COALESCE(dds.failure_reason, dj.failure_reason) AS failure_reason, \
+                dp.expires_at, dp.revoked_at, dds.last_online_check_at, dds.last_played_at, \
+                dp.last_served_at, dp.created_at, dp.updated_at \
+         FROM download_packages dp \
+         JOIN download_jobs dj ON dj.id = dp.download_job_id \
+         JOIN media_items mi ON mi.id = dp.media_item_id \
+         LEFT JOIN download_device_state dds \
+           ON dds.user_id = dp.user_id \
+          AND dds.device_identifier = dp.device_identifier \
+          AND dds.download_package_id = dp.id \
+         WHERE dp.user_id = $1 \
+           AND ($2::TEXT IS NULL OR dp.device_identifier = $2) \
+           AND ($3::TEXT IS NULL OR dp.status = $3 OR dj.status = $3 OR dds.local_status = $3) \
+         ORDER BY dp.created_at DESC \
+         LIMIT $4",
+    )
+    .bind(user.user_id)
+    .bind(device_identifier)
+    .bind(status)
+    .bind(i64::from(limit))
+    .fetch_all(&state.pool)
+    .await?;
+
+    Ok(DownloadInventoryResponse {
+        items: rows
+            .iter()
+            .map(inventory_item_from_row)
+            .collect::<Result<Vec<_>, _>>()?,
+        next_cursor: None,
+    })
+}
+
+pub async fn list_admin_download_inventory(
+    state: &AppState,
+    query: DownloadAdminInventoryQuery,
+) -> Result<DownloadAdminInventoryResponse, DownloadError> {
+    let limit = query.limit.unwrap_or(100).clamp(1, 250);
+    let status = query
+        .status
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let device_identifier = query
+        .device_identifier
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    let rows = sqlx::query(
+        "SELECT dp.id AS package_id, dp.download_job_id, dp.user_id, u.display_name AS user_display_name, \
+                dp.media_item_id, dp.media_file_id, mi.title AS media_title, dp.device_identifier, \
+                dp.status AS package_status, dj.status AS job_status, dp.package_format, \
+                dp.total_bytes, COALESCE(dds.bytes_downloaded, 0) AS bytes_downloaded, \
+                COALESCE(dds.files_verified, 0) AS files_verified, \
+                COALESCE(dds.local_status, CASE dp.status \
+                    WHEN 'expired' THEN 'expired' \
+                    WHEN 'revoked' THEN 'revoked' \
+                    WHEN 'cleanup_pending' THEN 'deleted' \
+                    WHEN 'cleaned' THEN 'deleted' \
+                    WHEN 'failed' THEN 'failed' \
+                    ELSE 'not_downloaded' \
+                END) AS local_status, \
+                COALESCE(dds.failure_reason, dj.failure_reason) AS failure_reason, \
+                dp.expires_at, dp.revoked_at, dds.last_online_check_at, dds.last_played_at, \
+                dp.last_served_at, dp.created_at, dp.updated_at \
+         FROM download_packages dp \
+         JOIN download_jobs dj ON dj.id = dp.download_job_id \
+         JOIN media_items mi ON mi.id = dp.media_item_id \
+         JOIN users u ON u.id = dp.user_id \
+         LEFT JOIN download_device_state dds \
+           ON dds.user_id = dp.user_id \
+          AND dds.device_identifier = dp.device_identifier \
+          AND dds.download_package_id = dp.id \
+         WHERE ($1::UUID IS NULL OR dp.user_id = $1) \
+           AND ($2::TEXT IS NULL OR dp.device_identifier = $2) \
+           AND ($3::TEXT IS NULL OR dp.status = $3 OR dj.status = $3 OR dds.local_status = $3) \
+         ORDER BY dp.created_at DESC \
+         LIMIT $4",
+    )
+    .bind(query.user_id)
+    .bind(device_identifier)
+    .bind(status)
+    .bind(i64::from(limit))
+    .fetch_all(&state.pool)
+    .await?;
+
+    let summary_row = sqlx::query(
+        "SELECT COUNT(*)::BIGINT AS total_packages, \
+                COALESCE(SUM(dp.total_bytes), 0)::BIGINT AS total_bytes, \
+                COUNT(*) FILTER (WHERE dj.status IN ('queued', 'preparing'))::BIGINT AS active_jobs, \
+                COUNT(*) FILTER (WHERE dj.status = 'failed')::BIGINT AS failed_jobs, \
+                COUNT(*) FILTER (WHERE dp.status = 'expired')::BIGINT AS expired_packages, \
+                COUNT(*) FILTER (WHERE dp.status = 'revoked')::BIGINT AS revoked_packages \
+         FROM download_packages dp \
+         JOIN download_jobs dj ON dj.id = dp.download_job_id \
+         LEFT JOIN download_device_state dds \
+           ON dds.user_id = dp.user_id \
+          AND dds.device_identifier = dp.device_identifier \
+          AND dds.download_package_id = dp.id \
+         WHERE ($1::UUID IS NULL OR dp.user_id = $1) \
+           AND ($2::TEXT IS NULL OR dp.device_identifier = $2) \
+           AND ($3::TEXT IS NULL OR dp.status = $3 OR dj.status = $3 OR dds.local_status = $3)",
+    )
+    .bind(query.user_id)
+    .bind(device_identifier)
+    .bind(status)
+    .fetch_one(&state.pool)
+    .await?;
+
+    Ok(DownloadAdminInventoryResponse {
+        items: rows
+            .iter()
+            .map(inventory_item_from_row)
+            .collect::<Result<Vec<_>, _>>()?,
+        summary: DownloadAdminInventorySummaryResponse {
+            total_packages: summary_row.get("total_packages"),
+            total_bytes: summary_row.get("total_bytes"),
+            active_jobs: summary_row.get("active_jobs"),
+            failed_jobs: summary_row.get("failed_jobs"),
+            expired_packages: summary_row.get("expired_packages"),
+            revoked_packages: summary_row.get("revoked_packages"),
+        },
+        next_cursor: None,
+    })
 }
 
 pub async fn delete_download_package(
@@ -735,7 +884,7 @@ pub async fn get_package_manifest(
     let device_identifier = require_device_identifier(query.device_identifier.as_deref())?;
     let row = sqlx::query(
         "SELECT dp.id, dp.download_job_id, dp.user_session_id, dp.device_identifier, \
-                dp.media_item_id, dp.media_file_id, dp.status, dp.package_format, \
+                dp.library_id, dp.media_item_id, dp.media_file_id, dp.status, dp.package_format, \
                 dp.manifest_version, dp.total_bytes, \
                 dp.package_hash_sha256, dp.selected_audio, dp.selected_subtitles, \
                 dp.included_artwork, dp.included_storyboards, dp.sync_metadata, \
@@ -1312,6 +1461,7 @@ struct DownloadPackageAccess {
 
 struct DownloadSyncPackageContext {
     package_id: Uuid,
+    library_id: Uuid,
     media_item_id: Uuid,
     media_file_id: Option<Uuid>,
     user_session_id: Option<Uuid>,
@@ -1347,7 +1497,7 @@ async fn load_sync_package_context(
     device_identifier: &str,
 ) -> Result<DownloadSyncPackageContext, DownloadError> {
     let row = sqlx::query(
-        "SELECT id, user_session_id, device_identifier, media_item_id, \
+        "SELECT id, user_session_id, device_identifier, library_id, media_item_id, \
                 media_file_id, status, total_bytes, file_count, manifest_hash_sha256, \
                 expires_at, revoked_at \
          FROM download_packages \
@@ -1368,6 +1518,7 @@ async fn load_sync_package_context(
 
     Ok(DownloadSyncPackageContext {
         package_id,
+        library_id: row.get("library_id"),
         media_item_id: row.get("media_item_id"),
         media_file_id: row.try_get("media_file_id").ok().flatten(),
         user_session_id: row.try_get("user_session_id").ok().flatten(),
@@ -1425,7 +1576,8 @@ async fn classify_sync_package(
     }
 
     let config = state.runtime_config.load();
-    let downloads = config.downloads.clone();
+    let downloads =
+        effective_downloads_config(config.downloads.clone(), user.user_id, context.library_id);
     let network_mode = config.auth.network_mode.clone();
     drop(config);
 
@@ -1699,7 +1851,7 @@ async fn revalidate_package_access(
     device_identifier: &str,
 ) -> Result<DownloadPackageAccess, DownloadError> {
     let row = sqlx::query(
-        "SELECT id, download_job_id, user_session_id, device_identifier, media_item_id, \
+        "SELECT id, download_job_id, user_session_id, device_identifier, library_id, media_item_id, \
                 status, storage_key, expires_at, revoked_at \
          FROM download_packages \
          WHERE id = $1 AND user_id = $2",
@@ -1787,7 +1939,8 @@ async fn revalidate_package_access_from_row(
     }
 
     let config = state.runtime_config.load();
-    let downloads = config.downloads.clone();
+    let library_id: Uuid = row.get("library_id");
+    let downloads = effective_downloads_config(config.downloads.clone(), user.user_id, library_id);
     let network_mode = config.auth.network_mode.clone();
     drop(config);
     if let Err(err) = validate_network_policy(&downloads, &network_mode) {
@@ -2021,6 +2174,55 @@ fn local_status_to_db(value: DownloadLocalStatus) -> &'static str {
     }
 }
 
+fn local_status_from_db(value: &str) -> Result<DownloadLocalStatus, DownloadError> {
+    match value {
+        "not_downloaded" => Ok(DownloadLocalStatus::NotDownloaded),
+        "downloading" => Ok(DownloadLocalStatus::Downloading),
+        "paused" => Ok(DownloadLocalStatus::Paused),
+        "playable" => Ok(DownloadLocalStatus::Playable),
+        "failed" => Ok(DownloadLocalStatus::Failed),
+        "expired" => Ok(DownloadLocalStatus::Expired),
+        "revoked" => Ok(DownloadLocalStatus::Revoked),
+        "deleted" => Ok(DownloadLocalStatus::Deleted),
+        "sync_pending" => Ok(DownloadLocalStatus::SyncPending),
+        other => Err(DownloadError::InvalidRequest(format!(
+            "unknown download local status: {other}"
+        ))),
+    }
+}
+
+fn inventory_item_from_row(
+    row: &sqlx::postgres::PgRow,
+) -> Result<DownloadInventoryItemResponse, DownloadError> {
+    let package_format: String = row.get("package_format");
+    let local_status: String = row.get("local_status");
+    Ok(DownloadInventoryItemResponse {
+        package_id: row.get("package_id"),
+        job_id: row.get("download_job_id"),
+        user_id: row.try_get("user_id").ok(),
+        user_display_name: row.try_get("user_display_name").ok().flatten(),
+        media_item_id: row.get("media_item_id"),
+        media_file_id: row.try_get("media_file_id").ok().flatten(),
+        media_title: row.try_get("media_title").ok().flatten(),
+        device_identifier: row.get("device_identifier"),
+        status: local_status_from_db(&local_status)?,
+        package_status: row.get("package_status"),
+        job_status: row.get("job_status"),
+        package_format: package_format_from_db(&package_format)?,
+        total_bytes: row.get("total_bytes"),
+        bytes_downloaded: row.get("bytes_downloaded"),
+        files_verified: row.get("files_verified"),
+        failure_reason: row.try_get("failure_reason").ok().flatten(),
+        expires_at: row.try_get("expires_at").ok().flatten(),
+        revoked_at: row.try_get("revoked_at").ok().flatten(),
+        last_online_check_at: row.try_get("last_online_check_at").ok().flatten(),
+        last_played_at: row.try_get("last_played_at").ok().flatten(),
+        last_served_at: row.try_get("last_served_at").ok().flatten(),
+        created_at: row.get("created_at"),
+        updated_at: row.get("updated_at"),
+    })
+}
+
 fn json_array_to_vec(value: Value) -> Vec<Value> {
     value.as_array().cloned().unwrap_or_default()
 }
@@ -2198,15 +2400,98 @@ fn sha256_hex(input: &str) -> String {
         .collect()
 }
 
+fn effective_downloads_config(
+    mut downloads: DownloadsConfig,
+    user_id: Uuid,
+    library_id: Uuid,
+) -> DownloadsConfig {
+    let user_override = downloads.user_overrides.get(user_id.to_string()).cloned();
+    apply_download_policy_override(&mut downloads, user_override.as_ref());
+    let library_override = downloads
+        .library_overrides
+        .get(library_id.to_string())
+        .cloned();
+    apply_download_policy_override(&mut downloads, library_override.as_ref());
+    downloads
+}
+
+fn apply_download_policy_override(downloads: &mut DownloadsConfig, value: Option<&Value>) {
+    let Some(value) = value.and_then(Value::as_object) else {
+        return;
+    };
+
+    if let Some(next) = json_bool_field(value, "enabled") {
+        downloads.enabled = next;
+    }
+    if let Some(next) = json_string_field(value, "max_quality_resolution") {
+        downloads.max_quality_resolution = next;
+    }
+    if let Some(next) = json_i64_field(value, "max_bytes_per_user") {
+        downloads.max_bytes_per_user = next.max(0);
+    }
+    if let Some(next) = json_i64_field(value, "max_bytes_per_device") {
+        downloads.max_bytes_per_device = next.max(0);
+    }
+    if let Some(next) = json_i32_field(value, "max_active_jobs_per_user") {
+        downloads.max_active_jobs_per_user = next.max(0);
+    }
+    if let Some(next) = json_i32_field(value, "max_active_jobs_per_device") {
+        downloads.max_active_jobs_per_device = next.max(0);
+    }
+    if let Some(next) = json_i32_field(value, "max_retained_packages_per_user") {
+        downloads.max_retained_packages_per_user = next.max(0);
+    }
+    if let Some(next) = json_i32_field(value, "max_retained_packages_per_device") {
+        downloads.max_retained_packages_per_device = next.max(0);
+    }
+    if let Some(next) = json_bool_field(value, "allow_lan_downloads") {
+        downloads.allow_lan_downloads = next;
+    }
+    if let Some(next) = json_bool_field(value, "allow_remote_downloads") {
+        downloads.allow_remote_downloads = next;
+    }
+    if let Some(next) = json_bool_field(value, "allow_transcoded_downloads") {
+        downloads.allow_transcoded_downloads = next;
+    }
+    if let Some(next) = json_i32_field(value, "default_package_expiry_days") {
+        downloads.default_package_expiry_days = next.max(1);
+    }
+    if let Some(next) = json_i32_field(value, "ready_package_retention_days") {
+        downloads.ready_package_retention_days = next.max(1);
+    }
+}
+
+fn json_bool_field(value: &serde_json::Map<String, Value>, key: &str) -> Option<bool> {
+    value.get(key).and_then(Value::as_bool)
+}
+
+fn json_string_field(value: &serde_json::Map<String, Value>, key: &str) -> Option<String> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn json_i64_field(value: &serde_json::Map<String, Value>, key: &str) -> Option<i64> {
+    value.get(key).and_then(Value::as_i64)
+}
+
+fn json_i32_field(value: &serde_json::Map<String, Value>, key: &str) -> Option<i32> {
+    json_i64_field(value, key).and_then(|value| i32::try_from(value).ok())
+}
+
 async fn authorize_download_request(
     state: &AppState,
     user: &AuthenticatedUser,
     media_item_id: Uuid,
     device_identifier: &str,
     _platform: DownloadClientPlatform,
-) -> Result<(), DownloadError> {
+) -> Result<DownloadsConfig, DownloadError> {
+    let library_id = resolve_media_access(&state.pool, user, media_item_id).await?;
     let config = state.runtime_config.load();
-    let downloads = config.downloads.clone();
+    let downloads = effective_downloads_config(config.downloads.clone(), user.user_id, library_id);
     let network_mode = config.auth.network_mode.clone();
     drop(config);
 
@@ -2225,10 +2510,9 @@ async fn authorize_download_request(
         return Err(err);
     }
 
-    resolve_media_access(&state.pool, user, media_item_id).await?;
     enforce_streaming_policy(&state.pool, user, media_item_id, device_identifier).await?;
     enforce_quota_policy(&state.pool, user, device_identifier, &downloads).await?;
-    Ok(())
+    Ok(downloads)
 }
 
 fn validate_network_policy(
@@ -2258,7 +2542,7 @@ async fn resolve_media_access(
     pool: &sqlx::PgPool,
     user: &AuthenticatedUser,
     media_item_id: Uuid,
-) -> Result<(), DownloadError> {
+) -> Result<Uuid, DownloadError> {
     let row = sqlx::query(
         "SELECT mi.library_id, \
                 EXISTS ( \
@@ -2304,7 +2588,7 @@ async fn resolve_media_access(
         }
     }
 
-    Ok(())
+    Ok(library_id)
 }
 
 async fn enforce_quota_policy(

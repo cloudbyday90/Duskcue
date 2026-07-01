@@ -57,3 +57,7 @@ export async function cancelScheduledTask(taskId) {
 export async function listScheduledTaskRuns(taskId, params = {}) {
     return get(`/scheduled-tasks/${taskId}/runs`, params);
 }
+
+export async function listDownloadAdminInventory(params = {}) {
+    return get('/downloads/admin/inventory', params);
+}

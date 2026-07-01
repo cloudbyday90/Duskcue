@@ -95,9 +95,15 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     final settings = state.settings;
     state = state.copyWith(loading: true, clearError: true);
     try {
-      final job = await ref.read(downloadServiceProvider).createDownloadJob(
+      final service = ref.read(downloadServiceProvider);
+      final plan = await service.planDownload(mediaItemId: item.id, qualityMode: settings.defaultQualityMode);
+      if (!_fitsStorageCap(settings, plan.estimatedBytes)) {
+        throw StateError('Download storage cap would be exceeded.');
+      }
+      final job = await service.createDownloadJob(
             item: item,
             qualityMode: settings.defaultQualityMode,
+            plan: plan,
           );
       final next = _upsertItem(
         state.items,
@@ -316,6 +322,11 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     final next = _replaceItem(state.items, nextItem);
     await _persistItems(scope, next);
     state = state.copyWith(items: _sortItems(next), clearError: true);
+    if (completed && state.settings.autoDeleteWatched) {
+      await delete(nextItem);
+      unawaited(_syncPendingChanges(scope));
+      return;
+    }
     unawaited(_syncPendingChanges(scope));
   }
 
@@ -627,6 +638,7 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     final connectivity = await ref.read(connectivityServiceProvider).current();
     final onCellular = connectivity.contains(ConnectivityResult.mobile);
     final waitingForWifi = settings.wifiOnly && !settings.allowCellular && onCellular;
+    final overStorageCap = _storageCapExceeded(items, settings);
     return items.map((item) {
       if (waitingForWifi &&
           (item.status == DownloadItemStatus.ready || item.status == DownloadItemStatus.downloading)) {
@@ -636,8 +648,44 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
           updatedAt: DateTime.now(),
         );
       }
+      if (overStorageCap &&
+          (item.status == DownloadItemStatus.queued ||
+              item.status == DownloadItemStatus.ready ||
+              item.status == DownloadItemStatus.downloading)) {
+        return item.copyWith(
+          status: DownloadItemStatus.paused,
+          waitingReason: 'Storage cap reached',
+          updatedAt: DateTime.now(),
+        );
+      }
       return item;
     }).toList(growable: false);
+  }
+
+  bool _fitsStorageCap(DownloadManagerSettings settings, int estimatedBytes) {
+    final cap = settings.storageCapBytes;
+    if (cap == null || cap <= 0) return true;
+    return _currentStorageBytes(state.items) + estimatedBytes <= cap;
+  }
+
+  bool _storageCapExceeded(List<DownloadItem> items, DownloadManagerSettings settings) {
+    final cap = settings.storageCapBytes;
+    if (cap == null || cap <= 0) return false;
+    return _currentStorageBytes(items) > cap;
+  }
+
+  int _currentStorageBytes(List<DownloadItem> items) {
+    return items.fold<int>(
+      0,
+      (total, item) {
+        if (item.status == DownloadItemStatus.cancelled ||
+            item.status == DownloadItemStatus.expired ||
+            item.status == DownloadItemStatus.unavailable) {
+          return total;
+        }
+        return total + (item.bytesExpected ?? item.bytesPrepared);
+      },
+    );
   }
 
   Map<String, Object?> _decodeRoot(String? raw) {

@@ -119,7 +119,8 @@ Phase 16c Task 2 added the `server/src/domains/downloads/` five-file domain shel
 | `POST /api/v1/downloads/jobs` | Create durable package job | Implemented in Task 6 |
 | `GET /api/v1/downloads/jobs/{id}` | Read job status | Implemented in Task 6 |
 | `POST /api/v1/downloads/jobs/{id}/cancel` | Cancel job | Implemented in Task 6 |
-| `GET /api/v1/downloads/inventory` | List user/device inventory | Validates query and returns `DOWNLOAD_015` until Task 14 inventory diagnostics |
+| `GET /api/v1/downloads/inventory` | List user/device inventory | Implemented in Task 14 |
+| `GET /api/v1/downloads/admin/inventory` | Admin package inventory diagnostics | Implemented in Task 14; requires `can_manage_server` |
 | `DELETE /api/v1/downloads/packages/{id}` | Delete package/local state | Implemented in Task 13 as cleanup-pending package deletion plus device-state tombstoning |
 | `POST /api/v1/downloads/packages/{id}/renew` | Renew package expiry | Implemented in Task 13 with device/session/access/policy revalidation |
 | `GET /api/v1/downloads/packages/{id}/manifest` | Fetch package manifest | Implemented for ready/serving package rows in Task 5; device/session revalidation added in Task 7 |
@@ -220,6 +221,15 @@ Phase 16c Task 13 added revocation, expiry, renewal, and cleanup behavior:
 - Mobile refresh-time renewal attempts run for ready/playable packages within three days of expiry. Renewal failures leave the item unchanged; the next sync or manifest/file request still enforces revocation/expiry.
 - `download_package_worker` now proactively expires due packages, moves never-served ready packages to cleanup after the retention window, cleans expired/revoked/cleanup-pending/failed package directories, cleans failed/cancelled job directories without package rows, and removes orphaned `{data_dir}/downloads/{job_id}` directories with no database owner.
 
+Phase 16c Task 14 added user/admin settings and diagnostics:
+
+- The system config API now exposes `server_config.downloads`. Admins can update global download enablement, max quality, user/device byte caps, active job caps, retained package caps, LAN/remote allowance, transcode-download allowance, package expiry, ready-package retention, and per-user/library override maps through the existing hot-reload path.
+- Download policy resolution applies `user_overrides[<user_uuid>]` and then `library_overrides[<library_uuid>]` as partial scalar overrides on top of the global policy. Planning, job creation, package serving, renewal, and reconnect sync use the effective policy.
+- The web system settings page includes a Downloads configuration group, with JSON editors for user and library override maps. The settings hub links to a Downloads diagnostics page that lists recent package rows and aggregate storage/status counts.
+- `GET /api/v1/downloads/inventory` returns authenticated user/device package inventory. `GET /api/v1/downloads/admin/inventory` requires `can_manage_server` and returns recent package rows plus package count, total bytes, active jobs, failed jobs, expired packages, and revoked packages without source filesystem paths, tokens, signed URLs, or package file paths.
+- The mobile Downloads settings panel now exposes storage cap and auto-delete watched controls. New queue actions use the selected plan estimate to reject downloads that would exceed the local cap, settings updates pause queued/ready/downloading items when the local cap is exceeded, and completed offline playback queues its final sync event before optional auto-delete removes the package.
+- Existing prepared packages continue to honor admin policy changes at manifest, transfer URL, file serving, renewal, and reconnect sync boundaries. Existing queued server jobs retain their policy snapshot until future job migration/requeue controls exist.
+
 ## Mobile Contract
 
 The mobile clients own these responsibilities:
@@ -303,4 +313,4 @@ Download quality reuses the Phase 7 quality-management model but is not identica
 
 ## Implementation Status
 
-Phase 16c Tasks 0-13 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, manifest response format, durable job creation/status/cancel, scheduled package worker, authenticated package serving, resumable transfer, foreground/push notifications, Flutter mobile download manager shell, protected Android/iOS local storage foundations, foreground package materialization, local MP4/HLS offline playback, idempotent reconnect sync, revocation/expiry invalidation, package renewal, and server cleanup are in place. User/admin settings completion, observability, and broader integration tests are pending Phase 16c Tasks 14-15.
+Phase 16c Tasks 0-14 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, manifest response format, durable job creation/status/cancel, scheduled package worker, authenticated package serving, resumable transfer, foreground/push notifications, Flutter mobile download manager shell, protected Android/iOS local storage foundations, foreground package materialization, local MP4/HLS offline playback, idempotent reconnect sync, revocation/expiry invalidation, package renewal, server cleanup, user settings, admin policy settings, effective user/library overrides, and inventory diagnostics are in place. Observability and broader integration tests are pending Phase 16c Task 15.

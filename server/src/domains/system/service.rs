@@ -55,6 +55,7 @@ const JSON_CONFIG_GROUPS: &[&str] = &[
     "quality",
     "subtitles",
     "analytics",
+    "downloads",
 ];
 
 pub async fn validate_provider(
