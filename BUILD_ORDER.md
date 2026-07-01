@@ -4076,14 +4076,17 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 | [MOBILE_PUSH.md](docs/design/MOBILE_PUSH.md) | Push-device registration and provider-response handling |
 | [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md) | TV feed contracts, platform content IDs, living-room adapter behavior |
 | [HTTP_CACHING.md](docs/design/HTTP_CACHING.md) | ETag/private-cache expectations for client and platform surfaces |
+| [CLIENT_PLATFORM_READINESS.md](docs/design/CLIENT_PLATFORM_READINESS.md) | **Primary Phase 16d Task 0 outcome** — platform research, mandatory/advisory gates, contract-source decision, task routing |
 
 **Tasks:**
 
-0. Research, design, and phase enrichment:
+0. [x] Research, design, and phase enrichment:
     - Review current platform guidance for Android, iOS, Windows, macOS, Linux desktop, Android TV, Fire TV, Roku, Tizen, webOS, tvOS, and Xbox around app identity, signing, accessibility, privacy disclosures, diagnostics, media playback, and store review.
     - Create `docs/design/CLIENT_PLATFORM_READINESS.md` before implementation begins.
     - Define which outputs are mandatory gates for Phases 17-23 and which are advisory checklists.
     - Decide whether shared client contracts are generated from server code, OpenAPI-like descriptions, checked-in JSON schema, or curated fixtures.
+
+**Task 0 implementation note:** Added [CLIENT_PLATFORM_READINESS.md](docs/design/CLIENT_PLATFORM_READINESS.md) as the Phase 16d authoritative research/design document. Official Android, Apple, Microsoft, Amazon Fire TV, Roku, Samsung Tizen, LG webOS, and Flutter documentation confirms Phase 16d should produce shared contracts, fixtures, conformance tests, accessibility/input baselines, diagnostics redaction rules, release/store readiness checklists, and a device-lab matrix rather than another user-facing client. Mandatory gates for Phases 17-23 now include contract fixtures, playback conformance, auth/session denial cases, TV surface/deep-link conformance, accessibility/input checks, diagnostics bundle redaction, release metadata/signing placeholders, and representative device/simulator evidence. Advisory outputs include fully generated SDKs for every language, partner-gated catalog ingestion, exhaustive hardware automation, real signing automation, advanced diagnostics upload, and non-mobile offline-download conformance. The contract-source decision is to extend the existing curated `docs/api/client-contracts.v1.json` plus checked-in fixtures first; generated OpenAPI/JSON Schema and language bindings remain the target direction but must consume the curated manifest/fixtures until the Rust server emits schemas.
 1. Define shared client contract source of truth:
     - Inventory required routes and DTOs across auth, server health, libraries, media, search, collections, playback, subtitles, storyboards, artwork, quality, notifications, settings, TV surfaces, and offline downloads where available.
     - Add contract metadata for request methods, auth requirements, query/path validation, response schemas, Problem Details codes, cache headers, pagination, and SSE event payloads.
