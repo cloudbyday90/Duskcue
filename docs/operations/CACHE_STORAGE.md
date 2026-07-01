@@ -336,6 +336,10 @@ No interaction — scanning reads source files from `/media` and writes metadata
 
 Transcode segments written to `/data/transcode` (tmpfs). HLS segments served from `/cache/hls`. Disk space monitoring kills oldest transcode session if tmpfs fills.
 
+### Offline Downloads (OFFLINE_DOWNLOADS.md)
+
+Offline download packages are durable user-requested data, not cache. Phase 16c stores server-prepared package manifests/files and mobile-local package files under explicit offline-download storage governed by download quotas, expiry, revocation, and user delete actions. Generic cache thresholds and LRU eviction must not delete an active offline package. Cleanup is limited to failed work directories, cancelled packages, expired packages after retention, orphaned files with no database record, never-downloaded ready packages past retention, and revoked packages after the server records the revoke/delete instruction.
+
 ### Storyboards (STORYBOARDS.md)
 
 Sprite sheets and WebVTT index stored in `/cache/storyboards/`. The `storyboard_generation` scheduled task respects the size cap — before generating new storyboards, it checks the current cache size and evicts LRU items if the cap would be exceeded.

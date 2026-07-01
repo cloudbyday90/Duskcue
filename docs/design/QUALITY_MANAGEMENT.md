@@ -10,6 +10,8 @@ This document is the authoritative design for the quality management domain — 
 
 The goal is to maximize direct play (zero server CPU cost) while ensuring smooth playback for users on slow networks or low-performing devices.
 
+Phase 16c offline downloads reuse these same device capability and transcoding-decision inputs, but download planning also considers package size, selected audio/subtitle tracks, mobile platform constraints, user download quality preference, and server download policy. The offline-download package and policy contract is documented in [OFFLINE_DOWNLOADS.md](OFFLINE_DOWNLOADS.md).
+
 ## Architecture
 
 ### Three-Layer Quality Decision

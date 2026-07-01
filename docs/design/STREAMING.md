@@ -386,6 +386,10 @@ Key flags explained:
 - `-pix_fmt yuv420p` — maximum compatibility; 10-bit → 8-bit downsampling when tone mapping
 - `-progress pipe:1` — structured machine-readable `key=value` progress output to stdout (separate from stderr logs); parsed by the server for real-time progress tracking and stall detection. See [MEMORY.md](MEMORY.md) for progress parsing details
 
+### Offline Package Reuse
+
+Offline downloads reuse the streaming decision engine, compatible remux/transcode profiles, fMP4 segment posture, subtitle conversion rules, and stream URL security model, but package generation is durable background work rather than a live playback session. The Phase 16c package decision is documented in [OFFLINE_DOWNLOADS.md](OFFLINE_DOWNLOADS.md): HLS/fMP4 directory packages are canonical for Android/iOS offline playback, while single MP4 packages are only a direct-compatible optimization. Offline package workers must not share the live playback/transcode concurrency pool in a way that can starve active streams.
+
 ---
 
 ## Hardware Acceleration

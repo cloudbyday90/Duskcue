@@ -3920,12 +3920,14 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 **Tasks:**
 
-0. Research, design, and phase enrichment:
+0. [x] Research, design, and phase enrichment:
     - Verify current Android and iOS background download limits, media file protection APIs, encrypted metadata storage, app backup exclusion behavior, cellular/Wi-Fi controls, low-storage behavior, and app-store review constraints.
     - Create `docs/design/OFFLINE_DOWNLOADS.md` before implementation begins.
     - Define supported v1 platforms as Android and iOS only, with desktop/web/TV explicitly deferred.
     - Choose whether v1 packages are HLS/fMP4 directories, single MP4 files, or a hybrid; document tradeoffs for subtitles, audio tracks, trickplay/storyboards, resumability, and player support.
     - Define what offline revocation can enforce immediately, what requires reconnect, and how the UI explains that limitation.
+
+**Task 0 implementation note:** Added [OFFLINE_DOWNLOADS.md](docs/design/OFFLINE_DOWNLOADS.md) as the Phase 16c authoritative research/design document. Official Android and Apple research confirms v1 support is Android and iOS only; web, desktop, TV, console, and casting surfaces are explicitly deferred. V1 uses a manifest-backed hybrid package model: HLS/fMP4 directory packages are canonical for mobile playback, subtitles, selected audio tracks, trickplay/storyboard sidecars, resumable transfer, and per-file repair; single MP4 packages are allowed only as a direct-compatible optimization when selected streams and policy can be preserved. The design defines Android user-initiated/background transfer and WorkManager constraint posture, iOS background URLSession/AVAssetDownloadURLSession posture, OS-protected app storage, backup exclusion, cellular/Wi-Fi/Low Data Mode controls, low-storage handling, and app-review constraints. Revocation is split into immediate server enforcement for new jobs and online package serving, and reconnect-bound disabling/deletion for fully offline devices; UI must explain expiry and periodic online checks.
 1. Add download database schema:
     - Add migrations for `download_jobs`, `download_packages`, `download_package_files`, `download_device_state`, and download-related audit/event rows as needed.
     - Store user, session/device, media item, media file/version, selected quality, selected audio/subtitle streams, status, progress, bytes, checksum, expiry, access-policy snapshot, failure reason, retry count, cancellation marker, and cleanup eligibility.
