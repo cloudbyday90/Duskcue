@@ -418,6 +418,7 @@ If an admin switches from FCM to APNs (or vice versa):
 | `notifications` table + `notification_types` seed | ✅ Implemented | Phase 2 migration |
 | Fluent notification template rendering | ✅ Implemented | Phase 13b Task 1 — `services/i18n.rs`; `notification_types.in_app_template` migrated from English strings to Fluent message IDs |
 | Multi-channel dispatch pipeline | ✅ Implemented | Phase 13b Task 2 + Phase 16a Task 9 — `services/notification_dispatch.rs`; DB-write-first + SSE fan-out + webhook + mobile push fan-out |
+| Offline download ready/failed notifications | ✅ Implemented | Phase 16c Task 8 — `download_ready` and `download_failed` notification types are seeded; ready/final-failed download jobs dispatch through the same in-app/SSE/webhook/opt-in mobile push pipeline, while noisy progress remains foreground SSE only |
 | In-app notification center (REST API) | ✅ Implemented | Phase 13b Task 3 — `domains/notifications/` (10 routes: list + unread-count + mark-read single/all + delete single/all + notification-types + preferences list/update + admin test dispatch). See [NOTIFICATIONS.md](NOTIFICATIONS.md) |
 | SSE event bus for `notification` events | ✅ Wired by dispatch pipeline | `services/event_bus.rs` (Phase 10 Task 11); dispatch pipeline calls `state.event_bus.publish(user_id, ServerEvent::new("notification", payload))` |
 | Webhook dispatch (basic: generic format + HMAC signing) | ✅ Implemented | Phase 13b Task 2 — `notification_dispatch::dispatch_webhook()`; generic JSON payload + `X-Duskcue-Signature` HMAC-SHA256 |

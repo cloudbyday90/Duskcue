@@ -147,6 +147,10 @@ The preferences list endpoint returns all notification types with the user's per
 
 Phase 14 Task 13 adds the `migration_completed` and `migration_failed` notification types. They are produced by `workers::migration_runner` for users who can manage migrations and use the standard dispatch pipeline, so they appear in the notification center, the navbar bell SSE feed, and any enabled webhook channel without migration-specific client code.
 
+### Offline Download Notifications
+
+Phase 16c Task 8 adds the `download_ready` and `download_failed` notification types. They are produced by the offline download worker only for actionable terminal states and use the standard dispatch pipeline, so they appear in-app, emit normal `notification` SSE events, and fan out to webhook/mobile push only when configured and enabled by the user. Coalesced download progress uses the separate foreground `download_job_status` SSE event and does not create unread notification records.
+
 ### Not Implemented (Deferred to Future Tasks)
 
 - **`user_push_devices` table + registration API** — ✅ Implemented in Phase 13b Task 5. See [MOBILE_PUSH.md](MOBILE_PUSH.md) "Phase 13b Task 5 implementation notes". Four routes under `/api/v1/user/push-devices` (register + list + heartbeat + revoke) with token lifecycle (24h heartbeat → 30-day stale deactivation).

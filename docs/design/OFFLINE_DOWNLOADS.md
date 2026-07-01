@@ -163,6 +163,14 @@ Phase 16c Task 7 added authenticated package serving and resumable transfer:
 - Package files support single HTTP byte-range requests for resumable mobile transfers. Responses include `Accept-Ranges: bytes`, `Content-Range` for partial responses, private/no-store cache headers, and checksum/file-role/segment headers. Invalid ranges return `DOWNLOAD_016`.
 - Serving updates package first/last served timestamps, transitions ready packages to `serving`, records `package_served` and expiry events, and emits served-file metrics.
 
+Phase 16c Task 8 added job status notifications:
+
+- Job creation and the package worker publish user-scoped `download_job_status` SSE events through the existing EventBus for foreground mobile clients. Payloads include job/package/media IDs, device identifier, status, progress percent, byte counts, failure reason, retry count, reason, and event timestamp.
+- Progress is intentionally coalesced to durable state transitions: queued, preparing claim at 5%, preparation start at 10%, package staged at 85%, ready at 100%, retry, failed, and cancelled. The worker does not publish per-file events.
+- Ready jobs and final failed jobs dispatch durable notification records using the existing multi-channel notification pipeline. These notifications are visible in-app, emitted as normal `notification` SSE events, sent to webhook when configured, and sent to mobile push only when the operator and user have enabled push for that notification type.
+- `download_ready` and `download_failed` notification types are seeded by `20260701040000_seed_download_notifications.sql` with Fluent templates in every configured server locale.
+- Non-actionable progress, retry, and cancellation updates remain foreground SSE only. Quota/storage warning notifications remain reserved for the settings/quota work that can produce actionable remediation.
+
 ## Mobile Contract
 
 The mobile clients own these responsibilities:

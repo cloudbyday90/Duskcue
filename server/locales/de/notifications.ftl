@@ -38,3 +38,15 @@ migration-completed =
 
 migration-failed =
     Migration { $source-name } fehlgeschlagen: { $error }
+
+download-ready-title =
+    Download bereit
+
+download-ready =
+    { $title } ist für den Offline-Download bereit
+
+download-failed-title =
+    Download fehlgeschlagen
+
+download-failed =
+    { $title } konnte nicht für den Offline-Download vorbereitet werden: { $reason }

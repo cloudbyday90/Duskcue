@@ -38,3 +38,15 @@ migration-completed =
 
 migration-failed =
     فشلت هجرة { $source-name }: { $error }
+
+download-ready-title =
+    التنزيل جاهز
+
+download-ready =
+    أصبح { $title } جاهزًا للتنزيل دون اتصال
+
+download-failed-title =
+    فشل التنزيل
+
+download-failed =
+    تعذر تجهيز { $title } للتنزيل دون اتصال: { $reason }

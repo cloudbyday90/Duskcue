@@ -38,3 +38,15 @@ migration-completed =
 
 migration-failed =
     迁移 { $source-name } 失败：{ $error }
+
+download-ready-title =
+    下载已就绪
+
+download-ready =
+    { $title } 已可离线下载
+
+download-failed-title =
+    下载失败
+
+download-failed =
+    无法为离线下载准备 { $title }：{ $reason }

@@ -24,6 +24,8 @@ use sqlx::Row;
 use uuid::Uuid;
 
 use crate::extractors::AuthenticatedUser;
+use crate::services::event_bus::ServerEvent;
+use crate::services::notification_dispatch::{NotificationInput, dispatch};
 use crate::state::{AppState, DownloadsConfig, NetworkMode};
 
 use super::error::DownloadError;
@@ -61,6 +63,50 @@ pub struct DownloadRangeSpec {
     pub start: u64,
     pub end: u64,
     pub total: u64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DownloadJobStatusEventPayload {
+    pub job_id: Uuid,
+    pub package_id: Option<Uuid>,
+    pub media_item_id: Uuid,
+    pub media_file_id: Option<Uuid>,
+    pub device_identifier: String,
+    pub status: String,
+    pub progress_percent: f32,
+    pub bytes_expected: Option<i64>,
+    pub bytes_prepared: i64,
+    pub failure_reason: Option<String>,
+    pub retry_count: Option<i32>,
+    pub reason: Option<String>,
+    pub occurred_at: DateTime<Utc>,
+}
+
+impl DownloadJobStatusEventPayload {
+    fn from_job_response(
+        job: &DownloadJobResponse,
+        package_id: Option<Uuid>,
+        reason: Option<&str>,
+    ) -> Self {
+        Self {
+            job_id: job.id,
+            package_id,
+            media_item_id: job.media_item_id,
+            media_file_id: job.media_file_id,
+            device_identifier: job.device_identifier.clone(),
+            status: serde_json::to_value(&job.status)
+                .ok()
+                .and_then(|value| value.as_str().map(str::to_string))
+                .unwrap_or_else(|| "unknown".to_string()),
+            progress_percent: job.progress_percent,
+            bytes_expected: job.bytes_expected,
+            bytes_prepared: job.bytes_prepared,
+            failure_reason: job.failure_reason.clone(),
+            retry_count: None,
+            reason: reason.map(str::to_string),
+            occurred_at: Utc::now(),
+        }
+    }
 }
 
 impl DownloadRangeSpec {
@@ -134,6 +180,68 @@ impl DownloadRangeSpec {
 
     pub fn content_range_header(&self) -> String {
         format!("bytes {}-{}/{}", self.start, self.end, self.total)
+    }
+}
+
+pub fn publish_download_job_status_event(
+    state: &AppState,
+    user_id: Uuid,
+    payload: DownloadJobStatusEventPayload,
+) -> bool {
+    state.event_bus.publish(
+        user_id,
+        ServerEvent::new(
+            "download_job_status",
+            serde_json::to_value(payload).unwrap_or_else(|_| json!({})),
+        ),
+    )
+}
+
+pub async fn dispatch_download_job_notification(
+    state: &AppState,
+    user_id: Uuid,
+    job_id: Uuid,
+    media_item_id: Uuid,
+    status: &str,
+    failure_reason: Option<&str>,
+) {
+    let notification_type = match status {
+        "ready" => "download_ready",
+        "failed" => "download_failed",
+        _ => return,
+    };
+    let media_title = load_media_title(&state.pool, media_item_id)
+        .await
+        .unwrap_or_else(|error| {
+            tracing::warn!(
+                user_id = %user_id,
+                job_id = %job_id,
+                media_item_id = %media_item_id,
+                error = %error,
+                "Failed to load media title for download notification"
+            );
+            "Media item".to_string()
+        });
+    let metadata = json!({
+        "title": media_title,
+        "reason": failure_reason.unwrap_or("offline package preparation failed"),
+        "job-id": job_id,
+        "media-item-id": media_item_id
+    });
+    let mut input = NotificationInput::new(user_id, notification_type, metadata);
+    input.link = Some(format!("/media/{media_item_id}"));
+    input.related_item_type = Some("download_job".to_string());
+    input.related_item_id = Some(job_id);
+
+    if let Err(error) = dispatch(state, &input).await {
+        tracing::warn!(
+            user_id = %user_id,
+            job_id = %job_id,
+            media_item_id = %media_item_id,
+            notification_type,
+            error = %error,
+            "Failed to dispatch download job notification"
+        );
     }
 }
 
@@ -352,7 +460,18 @@ pub async fn create_download_job(
     .await?;
     metrics::counter!("download_jobs_queued_total").increment(1);
 
-    job_response_from_row(&row)
+    let response = job_response_from_row(&row)?;
+    publish_download_job_status_event(
+        state,
+        user.user_id,
+        DownloadJobStatusEventPayload::from_job_response(
+            &response,
+            None,
+            Some("download job queued"),
+        ),
+    );
+
+    Ok(response)
 }
 
 pub async fn get_download_job(
@@ -401,7 +520,9 @@ pub async fn cancel_download_job(
              cleanup_after_at = now(), \
              updated_at = now() \
          WHERE id = $1 AND user_id = $2 \
-         RETURNING status",
+         RETURNING id, media_item_id, media_file_id, device_identifier, status, package_format, \
+                   quality_mode, progress_percent::REAL AS progress_percent, bytes_expected, \
+                   bytes_prepared, failure_reason, expires_at",
     )
     .bind(id)
     .bind(user.user_id)
@@ -412,18 +533,30 @@ pub async fn cancel_download_job(
     let Some(row) = row else {
         return Err(DownloadError::JobNotFound(id));
     };
+    let response = job_response_from_row(&row)?;
     let status: String = row.get("status");
 
     record_download_event(
         &state.pool,
         user,
-        None,
-        None,
+        Some(response.media_item_id),
+        Some(&response.device_identifier),
         "job_cancelled",
         Some(&reason),
     )
     .await?;
     metrics::counter!("download_jobs_cancelled_total").increment(1);
+    if status == "cancelled" {
+        publish_download_job_status_event(
+            state,
+            user.user_id,
+            DownloadJobStatusEventPayload::from_job_response(
+                &response,
+                None,
+                Some("download job cancelled"),
+            ),
+        );
+    }
 
     Ok(DownloadActionResponse {
         ok: true,
@@ -1063,6 +1196,17 @@ async fn load_package_manifest_files(
             is_required: row.get("is_required"),
         })
         .collect())
+}
+
+async fn load_media_title(pool: &sqlx::PgPool, media_item_id: Uuid) -> Result<String, sqlx::Error> {
+    let title: Option<String> = sqlx::query_scalar("SELECT title FROM media_items WHERE id = $1")
+        .bind(media_item_id)
+        .fetch_optional(pool)
+        .await?;
+    Ok(title
+        .map(|title| title.trim().to_string())
+        .filter(|title| !title.is_empty())
+        .unwrap_or_else(|| "Media item".to_string()))
 }
 
 fn package_format_from_db(value: &str) -> Result<DownloadPackageFormat, DownloadError> {

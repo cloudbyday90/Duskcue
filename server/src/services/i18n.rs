@@ -363,6 +363,11 @@ mod tests {
                 "migration-failed",
                 vec![("source-name", "Plex"), ("error", "timeout")],
             ),
+            ("download-ready", vec![("title", "Movie")]),
+            (
+                "download-failed",
+                vec![("title", "Movie"), ("reason", "disk full")],
+            ),
         ];
         for (message_id, arg_pairs) in cases {
             let args: HashMap<Cow<'static, str>, FluentValue> = arg_pairs
@@ -454,6 +459,11 @@ mod tests {
             (
                 "migration-failed",
                 vec![("source-name", "Plex"), ("error", "timeout")],
+            ),
+            ("download-ready", vec![("title", "Movie")]),
+            (
+                "download-failed",
+                vec![("title", "Movie"), ("reason", "disk full")],
             ),
         ];
 

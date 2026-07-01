@@ -932,6 +932,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 7 serving status:** `server/src/domains/downloads/handlers.rs` now returns real package-file HTTP responses for authenticated clients. Manifest, transfer URL, and file-serving endpoints require `device_identifier` and revalidate package user/session/device bindings plus current access/policy before returning metadata or bytes. `POST /api/v1/downloads/packages/{id}/transfer-urls` returns authenticated endpoint URLs for manifest-relative files, while `GET /api/v1/downloads/packages/{id}/files/{*file_path}` serves only manifest-listed package paths under `{data_dir}/downloads/{job_id}` with single-range `206` support, private/no-store cache headers, checksum headers, and `DOWNLOAD_016` invalid-range errors.
 
+**Task 8 notification status:** `server/src/domains/downloads/service.rs` owns `download_job_status` SSE payload publishing for job creation/cancellation, and `server/src/workers/download_package_worker.rs` publishes coalesced worker milestones for preparing/staged/ready/retry/failed states. Ready and final failed jobs call `services/notification_dispatch.rs` through seeded `download_ready` and `download_failed` notification types, so in-app unread records and opt-in mobile push are limited to actionable terminal states.
+
 ## Development Workflow
 
 ### Server Development

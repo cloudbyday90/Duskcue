@@ -38,3 +38,15 @@ migration-completed =
 
 migration-failed =
     La migración { $source-name } falló: { $error }
+
+download-ready-title =
+    Descarga lista
+
+download-ready =
+    { $title } está listo para descargar sin conexión
+
+download-failed-title =
+    Error de descarga
+
+download-failed =
+    { $title } no se pudo preparar para descargar sin conexión: { $reason }

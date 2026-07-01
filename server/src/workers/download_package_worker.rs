@@ -26,6 +26,10 @@ use sqlx::{PgPool, Row};
 use tokio::process::Command;
 use uuid::Uuid;
 
+use crate::domains::downloads::service::{
+    DownloadJobStatusEventPayload, dispatch_download_job_notification,
+    publish_download_job_status_event,
+};
 use crate::state::AppState;
 
 const DOWNLOADS_SUBDIR: &str = "downloads";
@@ -102,6 +106,14 @@ struct WorkerStats {
     cleaned: u64,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct FailureOutcome {
+    retried: bool,
+    retry_count: i32,
+    progress_percent: f32,
+    bytes_prepared: i64,
+}
+
 pub async fn run_download_package_worker(
     state: &AppState,
     task_id: Uuid,
@@ -140,6 +152,17 @@ pub async fn run_download_package_worker(
             json!({ "task_id": task_id }),
         )
         .await?;
+        publish_worker_status_event(
+            state,
+            &job,
+            "preparing",
+            5.0,
+            0,
+            None,
+            None,
+            None,
+            Some("download package preparation claimed"),
+        );
 
         match process_job(state, &package_root, &job).await {
             Ok(()) => {
@@ -148,7 +171,7 @@ pub async fn run_download_package_worker(
             }
             Err(err) => {
                 let failure = truncate_reason(&err.to_string());
-                let retried = fail_or_retry_job(
+                let failure_outcome = fail_or_retry_job(
                     &state.pool,
                     &job,
                     &failure,
@@ -156,12 +179,40 @@ pub async fn run_download_package_worker(
                     config.failed_cleanup_hours,
                 )
                 .await?;
-                if retried {
+                publish_worker_status_event(
+                    state,
+                    &job,
+                    if failure_outcome.retried {
+                        "queued"
+                    } else {
+                        "failed"
+                    },
+                    failure_outcome.progress_percent,
+                    failure_outcome.bytes_prepared,
+                    None,
+                    Some(&failure),
+                    Some(failure_outcome.retry_count),
+                    Some(if failure_outcome.retried {
+                        "download package preparation will retry"
+                    } else {
+                        "download package preparation failed"
+                    }),
+                );
+                if failure_outcome.retried {
                     stats.retried += 1;
                     metrics::counter!("download_jobs_retried_total").increment(1);
                 } else {
                     stats.failed += 1;
                     metrics::counter!("download_jobs_failed_total").increment(1);
+                    dispatch_download_job_notification(
+                        state,
+                        job.user_id,
+                        job.id,
+                        job.media_item_id,
+                        "failed",
+                        Some(&failure),
+                    )
+                    .await;
                 }
                 let _ = tokio::fs::remove_dir_all(package_root.join(job.id.to_string())).await;
             }
@@ -193,12 +244,34 @@ async fn process_job(
 ) -> anyhow::Result<()> {
     if is_cancelled(&state.pool, job.id).await? {
         mark_cancelled(&state.pool, job, "cancelled before package preparation").await?;
+        publish_worker_status_event(
+            state,
+            job,
+            "cancelled",
+            5.0,
+            0,
+            None,
+            Some("cancelled before package preparation"),
+            None,
+            Some("download job cancelled"),
+        );
         return Ok(());
     }
 
     let package_dir = package_root.join(job.id.to_string());
     reset_package_dir(package_root, &package_dir).await?;
     update_progress(&state.pool, job.id, 10.0, 0).await?;
+    publish_worker_status_event(
+        state,
+        job,
+        "preparing",
+        10.0,
+        0,
+        None,
+        None,
+        None,
+        Some("download package preparation started"),
+    );
 
     match job.package_strategy.as_str() {
         "direct_copy" => prepare_direct_copy(job, &package_dir).await?,
@@ -209,17 +282,34 @@ async fn process_job(
 
     if is_cancelled(&state.pool, job.id).await? {
         mark_cancelled(&state.pool, job, "cancelled after package preparation").await?;
+        publish_worker_status_event(
+            state,
+            job,
+            "cancelled",
+            85.0,
+            package_size(&package_dir).await as i64,
+            None,
+            Some("cancelled after package preparation"),
+            None,
+            Some("download job cancelled"),
+        );
         let _ = tokio::fs::remove_dir_all(&package_dir).await;
         return Ok(());
     }
 
-    update_progress(
-        &state.pool,
-        job.id,
+    let prepared_bytes = package_size(&package_dir).await as i64;
+    update_progress(&state.pool, job.id, 85.0, prepared_bytes).await?;
+    publish_worker_status_event(
+        state,
+        job,
+        "preparing",
         85.0,
-        package_size(&package_dir).await as i64,
-    )
-    .await?;
+        prepared_bytes,
+        None,
+        None,
+        None,
+        Some("download package staged"),
+    );
     write_package_manifest(job, &package_dir).await?;
     let files = collect_package_files(&package_dir)?;
     let total_bytes: i64 = files.iter().map(|file| file.byte_size).sum();
@@ -229,7 +319,7 @@ async fn process_job(
         .find(|file| file.relative_path == "manifest.json")
         .map(|file| file.checksum_sha256.clone());
 
-    persist_ready_package(
+    let package_id = persist_ready_package(
         &state.pool,
         job,
         &files,
@@ -258,8 +348,60 @@ async fn process_job(
     )
     .await?;
     update_progress(&state.pool, job.id, 100.0, total_bytes).await?;
+    publish_worker_status_event(
+        state,
+        job,
+        "ready",
+        100.0,
+        total_bytes,
+        Some(package_id),
+        None,
+        None,
+        Some("download package ready"),
+    );
+    dispatch_download_job_notification(
+        state,
+        job.user_id,
+        job.id,
+        job.media_item_id,
+        "ready",
+        None,
+    )
+    .await;
 
     Ok(())
+}
+
+fn publish_worker_status_event(
+    state: &AppState,
+    job: &DownloadJobWork,
+    status: &str,
+    progress_percent: f32,
+    bytes_prepared: i64,
+    package_id: Option<Uuid>,
+    failure_reason: Option<&str>,
+    retry_count: Option<i32>,
+    reason: Option<&str>,
+) {
+    publish_download_job_status_event(
+        state,
+        job.user_id,
+        DownloadJobStatusEventPayload {
+            job_id: job.id,
+            package_id,
+            media_item_id: job.media_item_id,
+            media_file_id: Some(job.media_file_id),
+            device_identifier: job.device_identifier.clone(),
+            status: status.to_string(),
+            progress_percent,
+            bytes_expected: job.bytes_expected,
+            bytes_prepared,
+            failure_reason: failure_reason.map(str::to_string),
+            retry_count,
+            reason: reason.map(str::to_string),
+            occurred_at: Utc::now(),
+        },
+    );
 }
 
 async fn prepare_direct_copy(job: &DownloadJobWork, package_dir: &Path) -> anyhow::Result<()> {
@@ -446,7 +588,7 @@ async fn persist_ready_package(
     total_bytes: i64,
     package_hash: String,
     manifest_hash: Option<String>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Uuid> {
     let storage_key = format!("{DOWNLOADS_SUBDIR}/{}", job.id);
     let mut tx = pool.begin().await?;
     let package_row = sqlx::query(
@@ -536,7 +678,7 @@ async fn persist_ready_package(
     .await?;
 
     tx.commit().await?;
-    Ok(())
+    Ok(package_id)
 }
 
 async fn fail_or_retry_job(
@@ -545,24 +687,25 @@ async fn fail_or_retry_job(
     failure: &str,
     max_retries: i32,
     failed_cleanup_hours: i64,
-) -> anyhow::Result<bool> {
+) -> anyhow::Result<FailureOutcome> {
     let next_retry_count = job.retry_count + 1;
     let retry = next_retry_count <= max_retries;
     let status = if retry { "queued" } else { "failed" };
-    sqlx::query(
+    let row = sqlx::query(
         "UPDATE download_jobs \
          SET status = $2, failure_reason = $3, retry_count = retry_count + 1, \
              progress_percent = CASE WHEN $2 = 'queued' THEN 0 ELSE progress_percent END, \
              completed_at = CASE WHEN $2 = 'failed' THEN now() ELSE completed_at END, \
              cleanup_after_at = CASE WHEN $2 = 'failed' THEN now() + ($4::TEXT || ' hours')::INTERVAL ELSE cleanup_after_at END, \
              updated_at = now() \
-         WHERE id = $1",
+         WHERE id = $1 \
+         RETURNING progress_percent::REAL AS progress_percent, bytes_prepared",
     )
     .bind(job.id)
     .bind(status)
     .bind(failure)
     .bind(failed_cleanup_hours)
-    .execute(pool)
+    .fetch_one(pool)
     .await?;
 
     record_event(
@@ -579,7 +722,12 @@ async fn fail_or_retry_job(
     )
     .await?;
 
-    Ok(retry)
+    Ok(FailureOutcome {
+        retried: retry,
+        retry_count: next_retry_count,
+        progress_percent: row.get("progress_percent"),
+        bytes_prepared: row.get("bytes_prepared"),
+    })
 }
 
 async fn mark_cancelled(pool: &PgPool, job: &DownloadJobWork, reason: &str) -> anyhow::Result<()> {

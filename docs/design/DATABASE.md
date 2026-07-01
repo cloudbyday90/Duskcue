@@ -1360,6 +1360,7 @@ Stores durable mobile download jobs, server-prepared package manifests/files, pe
 - Table-level audit triggers cover `download_jobs`, `download_packages`, and `download_device_state`; `download_events` stores explicit domain events such as quota denial or checksum mismatch.
 - `server_config.downloads` is added by migration `20260701020000_add_download_policy_config.sql`; Rust deserializes missing/partial JSON through `DownloadsConfig::default()` for upgrade safety.
 - `20260701030000_seed_download_package_worker_task.sql` extends the scheduled-task type constraint with `download_package_worker` and seeds the durable package worker for existing deployments. The worker populates `download_packages` and `download_package_files` from completed jobs and records cleanup/job-state events in `download_events`.
+- `20260701040000_seed_download_notifications.sql` seeds `download_ready` and `download_failed` notification types for actionable offline-download terminal states; high-frequency progress remains in the process-local SSE EventBus, not persisted as notifications.
 
 ### Indexing
 
@@ -2301,6 +2302,10 @@ The system domain handles server configuration, background task scheduling, and 
 | `new_login` | security | medium | New device/browser login |
 | `user_invited` | user | low | Invitation created or used |
 | `trakt_sync_error` | user | medium | Trakt sync failed for a user |
+| `migration_completed` | task | medium | Platform migration completed |
+| `migration_failed` | task | high | Platform migration failed |
+| `download_ready` | media | medium | Offline package is ready to download |
+| `download_failed` | task | high | Offline package preparation failed |
 
 ### Entity-Relationship Overview
 
