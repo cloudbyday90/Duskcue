@@ -98,6 +98,16 @@ The downloads domain owns these server responsibilities:
 - Record audit events for create, serve, cancel, delete, quota denial, expiry, cleanup, and revoke/delete.
 - Emit foreground SSE and mobile push notifications for important state changes without high-frequency progress spam.
 
+Phase 16c Task 1 added the database foundation:
+
+| Table | Responsibility |
+|---|---|
+| `download_jobs` | Durable package planning/preparation queue with user/session/device/media ownership, selected quality/streams/artwork, package strategy, progress, retries, failure reason, cancellation marker, policy snapshot, expiry, and cleanup eligibility. |
+| `download_packages` | Server package inventory with logical storage key, relative manifest path, package format, byte/file counts, hashes, selected streams, included artwork/storyboards, sync metadata, policy snapshot, serve timestamps, expiry, revocation, and cleanup eligibility. |
+| `download_package_files` | Per-file manifest for relative package paths, roles, content types, byte sizes, SHA-256 checksums, segment indexes, track identifiers, and required/optional flags. |
+| `download_device_state` | Per-user/device local inventory and sync state with local status, transferred bytes, verified file count, local manifest hash, online/download/play timestamps, resume position, pending sync queue, deletion marker, and local failure details. |
+| `download_events` | Explicit event rows for job/package/quota/policy/checksum/sync/cleanup audit history. |
+
 ## Mobile Contract
 
 The mobile clients own these responsibilities:
@@ -181,4 +191,4 @@ Download quality reuses the Phase 7 quality-management model but is not identica
 
 ## Implementation Status
 
-Phase 16c Task 0 is complete as a design/research task. Server schema, APIs, package workers, mobile download manager, protected local storage, offline playback, reconnect sync, settings, observability, and tests are pending Phase 16c Tasks 1-15.
+Phase 16c Tasks 0-1 are complete. The design/research outcome and database schema are in place. Server API domain, access/quota/policy integration, planning APIs, package manifest generation, package workers, package serving, notifications, mobile download manager, protected local storage, offline playback, reconnect sync, settings, observability, and tests are pending Phase 16c Tasks 2-15.

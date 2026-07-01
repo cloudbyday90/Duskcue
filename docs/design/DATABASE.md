@@ -1321,6 +1321,56 @@ The `UNIQUE(playlist_id, media_item_id)` constraint prevents the same item from 
 
 ---
 
+## Offline Downloads Domain: Schema Design
+
+### Overview
+
+Stores durable mobile download jobs, server-prepared package manifests/files, per-device local inventory state, and explicit download audit events. Offline download behavior is documented in [OFFLINE_DOWNLOADS.md](OFFLINE_DOWNLOADS.md).
+
+### Entity-Relationship Overview
+
+```
+ users ──< download_jobs >── media_items
+                  │
+                  └── download_packages ──< download_package_files
+                              │
+                              └── download_device_state >── users
+
+ download_events links users, jobs, packages, media_items, and devices for operational audit history.
+```
+
+### Tables
+
+| Table | Purpose |
+|---|---|
+| `download_jobs` | Durable planning/preparation queue for mobile package generation. Stores user, session/device, media item, selected source file, selected quality, selected audio/subtitle/artwork, package strategy, progress, bytes, policy snapshot, failure reason, retries, cancellation marker, expiry, and cleanup eligibility. |
+| `download_packages` | Server package record created from a ready job. Stores user/device/media ownership, package format, manifest version, logical storage key, relative manifest path, byte/file counts, hashes, selected streams, included artwork/storyboards, sync metadata, policy snapshot, serve timestamps, expiry, revocation, and cleanup eligibility. |
+| `download_package_files` | Per-file manifest for package integrity and resumable repair. Stores relative package path, role, content type, byte size, SHA-256 checksum, segment index, track type/identifier, and required/optional status. |
+| `download_device_state` | Per-user, per-device local inventory and sync state. Stores local status, bytes downloaded, verified file count, local manifest hash, last online/download/play timestamps, local resume position, pending sync queue, deletion marker, and local failure details. |
+| `download_events` | Explicit operational event stream for create/start/ready/fail/cancel/serve/delete/expire/revoke/quota/policy/checksum/sync/cleanup actions. |
+
+### Key Constraints
+
+- `client_platform` is restricted to `android` and `ios` for v1.
+- `package_format` is restricted to `hls_fmp4` and `mp4`; HLS/fMP4 is canonical and MP4 is a direct-compatible optimization.
+- Package storage uses logical `storage_key` plus package-relative file paths. Raw signed URLs, bearer tokens, refresh tokens, client secrets, and source filesystem paths are not stored.
+- Download jobs and packages retain `access_policy_snapshot` JSONB for diagnostics and reconnect decisions.
+- `download_device_state` is unique on `(user_id, device_identifier, download_package_id)` so switching users or servers cannot merge package inventory.
+- Table-level audit triggers cover `download_jobs`, `download_packages`, and `download_device_state`; `download_events` stores explicit domain events such as quota denial or checksum mismatch.
+
+### Indexing
+
+Indexes cover:
+
+- User inventory and media detail views: `download_jobs(user_id, status, created_at)`, `download_packages(user_id, status, media_item_id, created_at)`.
+- Worker queues: partial index on queued/preparing `download_jobs`.
+- Device inventory: `download_jobs(user_id, device_identifier, status)`, `download_packages(user_id, device_identifier, status, created_at)`, `download_device_state(user_id, device_identifier, local_status, updated_at)`.
+- Expiry/cleanup scans: partial expiry indexes on jobs and packages plus deleted device-state rows.
+- Integrity and repair: package-file lookup by package/role/segment and checksum.
+- Audit/diagnostics: download events by user, job, package, and event type.
+
+---
+
 ## Segment Detection Domain: Schema Design
 
 ### Overview

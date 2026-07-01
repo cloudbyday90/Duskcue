@@ -918,6 +918,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 0 design status:** Phase 16c uses a manifest-backed hybrid package model. HLS/fMP4 package directories are canonical; single MP4 packages are allowed only as direct-compatible optimizations. Android uses OS-managed long-running/background download primitives plus WorkManager-style constraints; iOS uses background `URLSession` and `AVAssetDownloadURLSession` where HLS asset behavior fits. Both platforms require OS-protected app storage, backup exclusion for downloaded media, explicit Wi-Fi/cellular/low-storage controls, and reconnect-bound revocation for fully offline devices.
 
+**Task 1 schema status:** Migration `20260701010000_create_download_domain.sql` adds `download_jobs`, `download_packages`, `download_package_files`, `download_device_state`, and `download_events`. These tables provide the durable queue, package inventory, per-file integrity manifest, per-device local state, and explicit operational event stream that `server/src/domains/downloads/` will consume in Task 2.
+
 ## Development Workflow
 
 ### Server Development
