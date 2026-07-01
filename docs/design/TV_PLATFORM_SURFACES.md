@@ -130,6 +130,71 @@ Platform implementations may differ in:
 - local cache and platform content ID storage
 - certification test process and required hardware matrix
 
+### Living-Room UX Contract
+
+All TV and console clients must open into the product experience, not a marketing screen. The first authenticated view is a living-room home surface backed by `GET /api/v1/users/me/tv-surface`, with app-local navigation to Search, Libraries, Collections, Settings, and profile/server controls.
+
+Row order is fixed unless a platform certification rule requires otherwise:
+
+1. Continue Watching
+2. Next Up
+3. New Episodes
+4. Recommendations
+
+Rows with no items should keep their position only when the platform UI benefits from stable landmarks; otherwise they may be omitted. Empty messages must use bounded client strings keyed by server `empty_reason` values such as `no_matching_items`, `limit_reached`, `tv_publication_disabled`, `tv_platform_disabled`, and `tv_section_disabled`. Do not show raw server errors, SQL details, file paths, or provider payloads in empty states.
+
+Row labels are client-localized strings. Server section identifiers remain stable API keys. Recommended default English labels are "Continue Watching", "Next Up", "New Episodes", and "Recommended"; platform clients may use shorter vendor-native labels only where launcher space is constrained.
+
+Focus behavior:
+
+- D-pad/remote navigation must have one predictable focused element at all times.
+- Horizontal rows move left/right within a row and up/down between rows without trapping focus.
+- Focus, selected, pressed, disabled, and loading states must be visually distinct at 10-foot viewing distance.
+- Back exits transient panels first, then playback, then the current page, and never silently logs out.
+- Long-press, media remote, controller shoulder buttons, and voice-entry shortcuts may be added per platform, but every action must also be reachable through basic D-pad/select/back input.
+
+Layout and typography:
+
+- Prefer poster cards for movie, episode, and recommendation rows; prefer wide backdrop cards only where the platform launcher expects them.
+- Use title, subtitle, season/episode metadata, progress, runtime, and availability in that priority order.
+- Keep TV text short, avoid paragraphs in browse rows, and reserve detailed descriptions for detail/pre-playback screens.
+- Maintain readable text and focus rings on both SDR and HDR displays; do not depend on subtle gradients or low-contrast overlays.
+
+Artwork requirements:
+
+- Minimum useful assets are poster and backdrop for movies/series, thumbnail for episodes, and logo where available.
+- If an artwork URL fails, fall back in this order: server-provided alternate category, deterministic title tile, then platform-native placeholder.
+- Fallback title tiles must not expose filesystem names or unmatched provider IDs.
+- Clients should cache artwork using server cache headers and ETags, but must refetch after `tv_surface_changed` events that include `artwork_changed`, `metadata_changed`, or `settings_changed` when affected rows are visible.
+
+Playback controls:
+
+- Required controls are play/pause, seek, skip forward/back where platform conventions support it, stop/back, audio track selection, subtitle selection, quality/status display, and segment skip where the server marks a skippable intro/credits/recap window.
+- Transport overlays should auto-hide during playback and reappear on remote input, pause, buffering, seek, errors, or track/quality changes.
+- TV clients must expose enough status to explain Direct Play, Remux, Transcode, unavailable media, buffering, and playback errors without dumping diagnostics into the normal player UI.
+- Audio/subtitle selectors must write preferences back through existing watch-data/playback APIs when the server exposes the relevant track indices.
+
+Profile, server, and device-linking behavior:
+
+- A TV device is commonly shared. Clients must make the active Duskcue user/profile visible in Settings and any profile switcher.
+- Launcher, Top Shelf, Watch Next, Smart Hub Preview, and app-local rows are scoped to the authenticated Duskcue user whose settings enabled publication.
+- Device-linking must resume the original deep link or platform tile after authentication succeeds.
+- Switching user/profile or server must clear platform-local launcher mappings and cached TV rows for the old identity before publishing new rows.
+
+Privacy rules:
+
+- Never publish another Duskcue user's resume position, watched state, collection membership, or private recommendation into the active platform profile.
+- If a TV OS has its own household/profile model, Duskcue must map rows only into the platform profile that authenticated the Duskcue user, or fall back to app-local rows when that guarantee is not available.
+- Notification, migration, admin, and diagnostic events must not appear on TV launcher surfaces.
+- Error messages should say what the user can do next: sign in, refresh, check library access, choose another version, or contact the server admin.
+
+Localization:
+
+- API enum values, reasons, and IDs are not display strings.
+- Row labels, empty states, errors, settings labels, and playback controls are localized in the client.
+- Server-provided media titles, episode names, collection names, and artwork remain content data and should be displayed as returned.
+- Clients must preserve layout under longer translated strings by truncating non-critical browse metadata before truncating the primary title.
+
 Each platform phase starts with Task 0: current online research, design refresh, and phase enrichment. Task 0 must use official platform documentation current to 2026, update this document, update [BUILD_ORDER.md](../../BUILD_ORDER.md), and record any changed implementation constraints before code is written.
 
 ## Goals
