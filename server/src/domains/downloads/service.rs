@@ -207,8 +207,79 @@ pub async fn get_package_manifest(
     user: &AuthenticatedUser,
     id: Uuid,
 ) -> Result<DownloadPackageManifestResponse, DownloadError> {
-    ensure_package_owner(&state.pool, user, id).await?;
-    Err(DownloadError::NotImplemented("download package manifest"))
+    let row = sqlx::query(
+        "SELECT dp.id, dp.download_job_id, dp.media_item_id, dp.media_file_id, \
+                dp.status, dp.package_format, dp.manifest_version, dp.total_bytes, \
+                dp.package_hash_sha256, dp.selected_audio, dp.selected_subtitles, \
+                dp.included_artwork, dp.included_storyboards, dp.sync_metadata, \
+                dp.access_policy_snapshot, dp.expires_at, dp.revoked_at, \
+                dj.package_strategy, dj.quality_mode, dj.quality_label, \
+                mf.file_hash, mf.file_modified_at, mf.container_format, mf.video_codec, \
+                mf.video_resolution, mf.video_bitrate, mf.audio_codec, mf.audio_channels, \
+                mf.audio_language, mf.runtime_seconds \
+         FROM download_packages dp \
+         JOIN download_jobs dj ON dj.id = dp.download_job_id \
+         LEFT JOIN media_files mf ON mf.id = dp.media_file_id \
+         WHERE dp.id = $1 AND dp.user_id = $2",
+    )
+    .bind(id)
+    .bind(user.user_id)
+    .fetch_optional(&state.pool)
+    .await?;
+
+    let Some(row) = row else {
+        return Err(DownloadError::PackageNotFound(id));
+    };
+
+    let status: String = row.get("status");
+    match status.as_str() {
+        "ready" | "serving" => {}
+        "expired" => return Err(DownloadError::PackageExpired(id)),
+        "revoked" => return Err(DownloadError::AccessDenied),
+        _ => return Err(DownloadError::PackageNotReady(id)),
+    }
+
+    let files = load_package_manifest_files(&state.pool, id).await?;
+    let source_version = json!({
+        "media_file_id": row.try_get::<Option<Uuid>, _>("media_file_id").ok().flatten(),
+        "file_hash": row.try_get::<Option<String>, _>("file_hash").ok().flatten(),
+        "file_modified_at": row.try_get::<Option<DateTime<Utc>>, _>("file_modified_at").ok().flatten(),
+        "container_format": row.try_get::<Option<String>, _>("container_format").ok().flatten(),
+        "video_codec": row.try_get::<Option<String>, _>("video_codec").ok().flatten(),
+        "video_resolution": row.try_get::<Option<String>, _>("video_resolution").ok().flatten(),
+        "video_bitrate": row.try_get::<Option<i32>, _>("video_bitrate").ok().flatten(),
+        "audio_codec": row.try_get::<Option<String>, _>("audio_codec").ok().flatten(),
+        "audio_channels": row.try_get::<Option<i32>, _>("audio_channels").ok().flatten(),
+        "audio_language": row.try_get::<Option<String>, _>("audio_language").ok().flatten(),
+        "runtime_seconds": row.try_get::<Option<i32>, _>("runtime_seconds").ok().flatten()
+    });
+    let selected_quality = json!({
+        "quality_mode": row.try_get::<String, _>("quality_mode").unwrap_or_else(|_| "auto".to_string()),
+        "quality_label": row.try_get::<Option<String>, _>("quality_label").ok().flatten()
+    });
+
+    Ok(DownloadPackageManifestResponse {
+        package_id: row.get("id"),
+        download_job_id: row.get("download_job_id"),
+        schema_version: 1,
+        manifest_version: row.get("manifest_version"),
+        package_format: package_format_from_db(&row.get::<String, _>("package_format"))?,
+        package_strategy: row.get("package_strategy"),
+        media_item_id: row.get("media_item_id"),
+        media_file_id: row.try_get("media_file_id").ok().flatten(),
+        source_version,
+        selected_quality,
+        total_bytes: row.get("total_bytes"),
+        package_hash_sha256: row.try_get("package_hash_sha256").ok().flatten(),
+        files,
+        selected_audio: row.get("selected_audio"),
+        selected_subtitles: json_array_to_vec(row.get("selected_subtitles")),
+        included_artwork: row.get("included_artwork"),
+        included_storyboards: row.get("included_storyboards"),
+        expires_at: row.try_get("expires_at").ok().flatten(),
+        sync_metadata: row.get("sync_metadata"),
+        access_policy: row.get("access_policy_snapshot"),
+    })
 }
 
 pub async fn create_package_transfer_urls(
@@ -490,6 +561,49 @@ fn extract_subtitle_options(source: &DownloadSourceCandidate) -> Vec<Value> {
         .and_then(Value::as_array)
         .cloned()
         .unwrap_or_default()
+}
+
+async fn load_package_manifest_files(
+    pool: &sqlx::PgPool,
+    package_id: Uuid,
+) -> Result<Vec<DownloadPackageFileResponse>, DownloadError> {
+    let rows = sqlx::query(
+        "SELECT relative_path, file_role, content_type, byte_size, checksum_sha256, \
+                segment_index, is_required \
+         FROM download_package_files \
+         WHERE download_package_id = $1 \
+         ORDER BY file_role, segment_index NULLS FIRST, relative_path",
+    )
+    .bind(package_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .iter()
+        .map(|row| DownloadPackageFileResponse {
+            relative_path: row.get("relative_path"),
+            file_role: row.get("file_role"),
+            content_type: row.try_get("content_type").ok().flatten(),
+            byte_size: row.get("byte_size"),
+            checksum_sha256: row.get("checksum_sha256"),
+            segment_index: row.try_get("segment_index").ok().flatten(),
+            is_required: row.get("is_required"),
+        })
+        .collect())
+}
+
+fn package_format_from_db(value: &str) -> Result<DownloadPackageFormat, DownloadError> {
+    match value {
+        "hls_fmp4" => Ok(DownloadPackageFormat::HlsFmp4),
+        "mp4" => Ok(DownloadPackageFormat::Mp4),
+        other => Err(DownloadError::InvalidRequest(format!(
+            "unknown package format in manifest: {other}"
+        ))),
+    }
+}
+
+fn json_array_to_vec(value: Value) -> Vec<Value> {
+    value.as_array().cloned().unwrap_or_default()
 }
 
 fn source_file_response(source: &DownloadSourceCandidate) -> DownloadSourceFileResponse {
@@ -1005,5 +1119,18 @@ mod tests {
             estimate_package_bytes(&source, &target, &strategy),
             Some(((1_500_000 + 192_000) * 3600) / 8)
         );
+    }
+
+    #[test]
+    fn package_format_from_db_accepts_manifest_formats() {
+        assert!(matches!(
+            package_format_from_db("hls_fmp4").unwrap(),
+            DownloadPackageFormat::HlsFmp4
+        ));
+        assert!(matches!(
+            package_format_from_db("mp4").unwrap(),
+            DownloadPackageFormat::Mp4
+        ));
+        assert!(package_format_from_db("zip").is_err());
     }
 }

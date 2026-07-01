@@ -335,10 +335,15 @@ pub struct DownloadInventoryItemResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct DownloadPackageManifestResponse {
     pub package_id: Uuid,
+    pub download_job_id: Uuid,
+    pub schema_version: i32,
     pub manifest_version: i32,
     pub package_format: DownloadPackageFormat,
+    pub package_strategy: String,
     pub media_item_id: Uuid,
     pub media_file_id: Option<Uuid>,
+    pub source_version: Value,
+    pub selected_quality: Value,
     pub total_bytes: i64,
     pub package_hash_sha256: Option<String>,
     pub files: Vec<DownloadPackageFileResponse>,
@@ -348,6 +353,7 @@ pub struct DownloadPackageManifestResponse {
     pub included_storyboards: Value,
     pub expires_at: Option<DateTime<Utc>>,
     pub sync_metadata: Value,
+    pub access_policy: Value,
 }
 
 #[derive(Debug, Clone, Serialize)]

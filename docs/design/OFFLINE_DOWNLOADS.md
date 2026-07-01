@@ -118,7 +118,7 @@ Phase 16c Task 2 added the `server/src/domains/downloads/` five-file domain shel
 | `POST /api/v1/downloads/jobs/{id}/cancel` | Cancel job | Validates body and returns `DOWNLOAD_015` until Task 6 |
 | `GET /api/v1/downloads/inventory` | List user/device inventory | Validates query and returns `DOWNLOAD_015` until Tasks 7 and 10 |
 | `DELETE /api/v1/downloads/packages/{id}` | Delete package/local state | Validates body and returns `DOWNLOAD_015` until Tasks 7, 10, and 13 |
-| `GET /api/v1/downloads/packages/{id}/manifest` | Fetch package manifest | Returns `DOWNLOAD_015` until Tasks 5 and 7 |
+| `GET /api/v1/downloads/packages/{id}/manifest` | Fetch package manifest | Implemented for ready/serving package rows in Task 5 |
 | `POST /api/v1/downloads/packages/{id}/transfer-urls` | Create short-lived transfer URLs | Validates body and returns `DOWNLOAD_015` until Task 7 |
 | `GET /api/v1/downloads/packages/{id}/files/{*file_path}` | Serve package file/range | Returns `DOWNLOAD_015` until Task 7 |
 | `POST /api/v1/downloads/sync` | Submit reconnect sync state | Validates body and returns `DOWNLOAD_015` until Task 12 |
@@ -139,6 +139,13 @@ Phase 16c Task 4 added deterministic planning:
 - Package selection follows the Task 0 hybrid decision: direct-compatible MP4 can return a single-file `mp4` package with `direct_copy`; otherwise the canonical `hls_fmp4` package is selected with `remux` or `transcode`.
 - Quality modes return explicit options for Auto, Data Saver, Standard, and Maximum with target resolution, target bitrate, estimated bytes, and whether a transcode is required. Data Saver targets 480p, Standard targets 720p, Auto targets up to 1080p, and Maximum uses the source/policy ceiling.
 - The response includes source file details, selected package format/strategy, selected quality target, estimated bytes/duration, audio/subtitle options from `additional_streams` or file fallbacks, artwork/storyboard inclusion flags, expiry, bounded policy constraints, `plan_revision`, and deterministic `plan_hash`.
+
+Phase 16c Task 5 defined and wired the package manifest format:
+
+- `GET /api/v1/downloads/packages/{id}/manifest` now loads owned package rows and package-file rows, rejects missing packages, expired packages, revoked packages, and packages that are not ready/serving.
+- The manifest response is schema version 1 and includes package ID, job ID, manifest version, package format, package strategy, media item/file IDs, source-version metadata, selected quality, total bytes, package hash, ordered file list with per-file SHA-256 checksums, selected audio/subtitles, included artwork/storyboards, expiry, sync metadata, and access-policy snapshot.
+- File entries are package-relative paths only. The manifest does not include bearer tokens, refresh tokens, signed URLs, source filesystem paths, or reusable client secrets.
+- Subtitle/artwork/storyboard fields are represented as manifest JSON now; package-generation tasks are responsible for populating mobile-playable subtitle files, poster/backdrop/thumb assets, storyboard sprites, chapters, and checksum rows.
 
 ## Mobile Contract
 
@@ -223,4 +230,4 @@ Download quality reuses the Phase 7 quality-management model but is not identica
 
 ## Implementation Status
 
-Phase 16c Tasks 0-4 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, and deterministic planning endpoint are in place. Package manifest generation, package workers, package serving, notifications, mobile download manager, protected local storage, offline playback, reconnect sync, settings, observability, and broader integration tests are pending Phase 16c Tasks 5-15.
+Phase 16c Tasks 0-5 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, and manifest response format are in place. Package workers, package serving, notifications, mobile download manager, protected local storage, offline playback, reconnect sync, settings, observability, and broader integration tests are pending Phase 16c Tasks 6-15.

@@ -926,6 +926,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 4 planning status:** `server/src/domains/downloads/service.rs` now implements `GET /api/v1/downloads/plan/{media_item_id}`. Planning selects a healthy movie/episode source file, chooses MP4 direct copy vs HLS/fMP4 remux/transcode, returns quality options and byte estimates, extracts audio/subtitle options, applies expiry/policy metadata, and emits a deterministic `plan_revision`/`plan_hash`. Job creation remains a later-task boundary.
 
+**Task 5 manifest status:** `GET /api/v1/downloads/packages/{id}/manifest` now reads `download_packages` and `download_package_files` for owned ready/serving packages. The response is the schema-v1 package manifest with package/job/source/quality/strategy metadata, relative file entries, checksums, selected streams, artwork/storyboard metadata, expiry, sync metadata, and access-policy snapshot.
+
 ## Development Workflow
 
 ### Server Development
