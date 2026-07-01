@@ -120,7 +120,16 @@ The verifier currently checks:
 - each declared web helper name exists under `clients/web/src/lib/api`;
 - duplicate method/path pairs are rejected.
 
-Phase 16d extends this into response fixtures, generated bindings, and CI conformance tests.
+Phase 16d Task 1 extends the manifest into the shared client contract source of truth for desktop, mobile, TV, and console phases. `client-contracts.v1.json` now includes:
+
+- the required Phase 16d domain list;
+- standard Problem Details expectations by route class;
+- cache profiles for health, authenticated JSON, private ETag JSON, binary/media bytes, and mutation responses;
+- pagination profile names;
+- foreground SSE event payload inventory for notifications, download jobs, TV surface changes, and session lifecycle events;
+- a `contract` block on every route covering response schema, cache profile, pagination profile, path/query validation metadata, request schema, and expected Problem Details codes.
+
+The verifier now fails when a required Phase 16d domain is missing or a route lacks the required contract metadata. Later Phase 16d tasks extend this into response fixtures, generated bindings, and broader CI conformance tests.
 
 Phase 16b added reusable TV surface fixtures ahead of full Phase 16d generation:
 

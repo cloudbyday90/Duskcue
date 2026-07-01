@@ -23,6 +23,17 @@ const serverSource = readFiles(path.join(root, 'server', 'src'), ['.rs']).join('
 const webApiSource = readFiles(path.join(root, 'clients', 'web', 'src', 'lib', 'api'), ['.js']).join('\n');
 const seenRoutes = new Set();
 const failures = [];
+const domainNames = new Set((manifest.domains ?? []).map((domain) => domain.name));
+
+for (const domain of manifest.phase16d?.required_domains ?? []) {
+  if (!domainNames.has(domain)) {
+    failures.push(`Missing required Phase 16d contract domain: ${domain}`);
+  }
+}
+
+function getPath(value, path) {
+  return path.split('.').reduce((current, part) => current?.[part], value);
+}
 
 for (const domain of manifest.domains ?? []) {
   for (const route of domain.routes ?? []) {
@@ -40,6 +51,17 @@ for (const domain of manifest.domains ?? []) {
     for (const helper of route.web_helpers ?? []) {
       if (!webApiSource.includes(`function ${helper}`)) {
         failures.push(`Missing web API helper ${helper} for ${key}`);
+      }
+    }
+
+    for (const field of manifest.phase16d?.route_contract_required_fields ?? []) {
+      const value = getPath(route.contract, field);
+      if (
+        value === undefined ||
+        value === null ||
+        (field === "errors.problem_codes" && Array.isArray(value) && value.length === 0)
+      ) {
+        failures.push(`Missing route contract field ${field} for ${key}`);
       }
     }
   }

@@ -1,18 +1,26 @@
 {
   "version": 1,
-  "updated": "2026-06-30",
+  "updated": "2026-07-01",
   "base_origin": "http(s)://<server>:48027",
   "base_api_path": "/api/v1",
   "source_of_truth": {
     "phase16a": "curated_manifest",
     "future": "generated_openapi_or_json_schema",
-    "rationale": "The Rust server does not yet emit OpenAPI or JSON Schema. Phase 16a uses this curated manifest as the checked-in route/DTO/error contract and validates it against server routes plus existing web helpers. Full schema generation is deferred to Phase 16d."
+    "rationale": "The Rust server does not yet emit OpenAPI or JSON Schema. Phase 16a uses this curated manifest as the checked-in route/DTO/error contract and validates it against server routes plus existing web helpers. Full schema generation is deferred to Phase 16d.",
+    "phase16d": "curated_manifest_plus_checked_in_fixtures",
+    "schema_generation_target": "OpenAPI_3_1_or_JSON_Schema_when_server_emits_schema_metadata"
   },
   "http_semantics": {
-    "auth": ["cookie", "bearer"],
+    "auth": [
+      "cookie",
+      "bearer"
+    ],
     "bearer_header": "Authorization: Bearer <token>",
     "credentials": "same-origin for web and Tauri webview; explicit bearer header for mobile",
-    "success_empty_statuses": [204, 304],
+    "success_empty_statuses": [
+      204,
+      304
+    ],
     "problem_details": "RFC 9457 with Duskcue trace_id and optional errors array"
   },
   "problem_detail": {
@@ -49,177 +57,3517 @@
       "name": "health",
       "phase16a_priority": "required",
       "routes": [
-        { "method": "GET", "path": "/health/ready", "auth": "none", "response": "HealthResponse", "web_helpers": ["getHealth"] }
-      ]
+        {
+          "method": "GET",
+          "path": "/health/ready",
+          "auth": "none",
+          "response": "HealthResponse",
+          "web_helpers": [
+            "getHealth"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "HealthResponse",
+              "cache_profile": "health",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "required"
     },
     {
       "name": "auth",
       "phase16a_priority": "required",
       "routes": [
-        { "method": "POST", "path": "/api/v1/setup", "auth": "none", "request": "SetupRequest", "response": "AuthResponse", "web_helpers": ["setup"] },
-        { "method": "POST", "path": "/api/v1/auth/invite", "auth": "none", "request": "InviteAuthRequest", "response": "AuthResponse", "web_helpers": ["loginWithInvite"] },
-        { "method": "POST", "path": "/api/v1/auth/login", "auth": "none", "request": "PasswordAuthRequest", "response": "AuthResponse", "web_helpers": ["loginWithPassword"] },
-        { "method": "POST", "path": "/api/v1/auth/logout", "auth": "user", "response": "Empty", "web_helpers": ["logout"] },
-        { "method": "POST", "path": "/api/v1/auth/logout-all", "auth": "user", "response": "Empty", "web_helpers": ["logoutAll"] },
-        { "method": "POST", "path": "/api/v1/auth/webauthn/start", "auth": "none", "request": "WebauthnStartRequest", "response": "WebauthnChallengeResponse", "web_helpers": ["startWebauthnAuth"] },
-        { "method": "POST", "path": "/api/v1/auth/webauthn/finish", "auth": "none", "request": "WebauthnFinishRequest", "response": "AuthResponse", "web_helpers": ["finishWebauthnAuth"] },
-        { "method": "POST", "path": "/api/v1/auth/reauth", "auth": "none", "request": "ReauthRequest", "response": "AuthResponse", "web_helpers": ["authenticateWithReauthCode"] },
-        { "method": "POST", "path": "/api/v1/auth/reauth/request", "auth": "user", "response": "ReauthCodeResponse", "web_helpers": ["requestReauthCode"] },
-        { "method": "POST", "path": "/api/v1/user/request-reauth", "auth": "user", "response": "ReauthCodeResponse", "web_helpers": ["requestUserReauth"] },
-        { "method": "POST", "path": "/api/v1/device/code", "auth": "none", "request": "DeviceCodeRequest", "response": "DeviceCodeResponse", "web_helpers": ["createDeviceCode"] },
-        { "method": "POST", "path": "/api/v1/device/token", "auth": "none", "request": "DeviceTokenRequest", "response": "AuthResponse", "web_helpers": ["pollDeviceToken"] },
-        { "method": "POST", "path": "/api/v1/device/verify", "auth": "user", "request": "DeviceVerifyRequest", "response": "DeviceVerifyResponse", "web_helpers": ["verifyDeviceCode"] },
-        { "method": "GET", "path": "/api/v1/user/sessions", "auth": "user", "response": "SessionListResponse", "web_helpers": ["listSessions"] },
-        { "method": "DELETE", "path": "/api/v1/user/sessions/{id}", "auth": "user", "response": "Empty", "web_helpers": ["deleteSession"] },
-        { "method": "GET", "path": "/api/v1/user/passkeys", "auth": "user", "response": "PasskeyListResponse", "web_helpers": ["listPasskeys"] },
-        { "method": "POST", "path": "/api/v1/user/passkeys/register/start", "auth": "user", "request": "PasskeyRegistrationStartRequest", "response": "WebauthnChallengeResponse", "web_helpers": ["startPasskeyRegistration"] },
-        { "method": "POST", "path": "/api/v1/user/passkeys/register/finish", "auth": "user", "request": "PasskeyRegistrationFinishRequest", "response": "PasskeyResponse", "web_helpers": ["finishPasskeyRegistration"] },
-        { "method": "DELETE", "path": "/api/v1/user/passkeys/{id}", "auth": "user", "response": "Empty", "web_helpers": ["deletePasskey"] }
-      ]
+        {
+          "method": "POST",
+          "path": "/api/v1/setup",
+          "auth": "none",
+          "request": "SetupRequest",
+          "response": "AuthResponse",
+          "web_helpers": [
+            "setup"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "AuthResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "SetupRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/auth/invite",
+          "auth": "none",
+          "request": "InviteAuthRequest",
+          "response": "AuthResponse",
+          "web_helpers": [
+            "loginWithInvite"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "AuthResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "InviteAuthRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/auth/login",
+          "auth": "none",
+          "request": "PasswordAuthRequest",
+          "response": "AuthResponse",
+          "web_helpers": [
+            "loginWithPassword"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "AuthResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "PasswordAuthRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/auth/logout",
+          "auth": "user",
+          "response": "Empty",
+          "web_helpers": [
+            "logout"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "Empty",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/auth/logout-all",
+          "auth": "user",
+          "response": "Empty",
+          "web_helpers": [
+            "logoutAll"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "Empty",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/auth/webauthn/start",
+          "auth": "none",
+          "request": "WebauthnStartRequest",
+          "response": "WebauthnChallengeResponse",
+          "web_helpers": [
+            "startWebauthnAuth"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "WebauthnChallengeResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "WebauthnStartRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/auth/webauthn/finish",
+          "auth": "none",
+          "request": "WebauthnFinishRequest",
+          "response": "AuthResponse",
+          "web_helpers": [
+            "finishWebauthnAuth"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "AuthResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "WebauthnFinishRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/auth/reauth",
+          "auth": "none",
+          "request": "ReauthRequest",
+          "response": "AuthResponse",
+          "web_helpers": [
+            "authenticateWithReauthCode"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "AuthResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "ReauthRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/auth/reauth/request",
+          "auth": "user",
+          "response": "ReauthCodeResponse",
+          "web_helpers": [
+            "requestReauthCode"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "ReauthCodeResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/user/request-reauth",
+          "auth": "user",
+          "response": "ReauthCodeResponse",
+          "web_helpers": [
+            "requestUserReauth"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "ReauthCodeResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/device/code",
+          "auth": "none",
+          "request": "DeviceCodeRequest",
+          "response": "DeviceCodeResponse",
+          "web_helpers": [
+            "createDeviceCode"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "DeviceCodeResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "DeviceCodeRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/device/token",
+          "auth": "none",
+          "request": "DeviceTokenRequest",
+          "response": "AuthResponse",
+          "web_helpers": [
+            "pollDeviceToken"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "AuthResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "DeviceTokenRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/device/verify",
+          "auth": "user",
+          "request": "DeviceVerifyRequest",
+          "response": "DeviceVerifyResponse",
+          "web_helpers": [
+            "verifyDeviceCode"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "DeviceVerifyResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "DeviceVerifyRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/user/sessions",
+          "auth": "user",
+          "response": "SessionListResponse",
+          "web_helpers": [
+            "listSessions"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "SessionListResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/v1/user/sessions/{id}",
+          "auth": "user",
+          "response": "Empty",
+          "web_helpers": [
+            "deleteSession"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "Empty",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/user/passkeys",
+          "auth": "user",
+          "response": "PasskeyListResponse",
+          "web_helpers": [
+            "listPasskeys"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "PasskeyListResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/user/passkeys/register/start",
+          "auth": "user",
+          "request": "PasskeyRegistrationStartRequest",
+          "response": "WebauthnChallengeResponse",
+          "web_helpers": [
+            "startPasskeyRegistration"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "WebauthnChallengeResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "PasskeyRegistrationStartRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/user/passkeys/register/finish",
+          "auth": "user",
+          "request": "PasskeyRegistrationFinishRequest",
+          "response": "PasskeyResponse",
+          "web_helpers": [
+            "finishPasskeyRegistration"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "PasskeyResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "PasskeyRegistrationFinishRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/v1/user/passkeys/{id}",
+          "auth": "user",
+          "response": "Empty",
+          "web_helpers": [
+            "deletePasskey"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "Empty",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "required"
     },
     {
       "name": "users",
       "phase16a_priority": "required",
       "routes": [
-        { "method": "GET", "path": "/api/v1/user/preferences", "auth": "user", "response": "UserPreferencesResponse", "web_helpers": ["getUserPreferences"] },
-        { "method": "PUT", "path": "/api/v1/user/preferences", "auth": "user", "request": "UpdateUserPreferencesRequest", "response": "UserPreferencesResponse", "web_helpers": ["updateUserPreferences"] },
-        { "method": "GET", "path": "/api/v1/users/{id}", "auth": "admin_or_self", "response": "UserResponse", "web_helpers": ["getUser"] },
-        { "method": "PATCH", "path": "/api/v1/users/{id}", "auth": "admin_or_self", "request": "UpdateUserRequest", "response": "UserResponse", "web_helpers": ["updateUser"] }
-      ]
+        {
+          "method": "GET",
+          "path": "/api/v1/user/preferences",
+          "auth": "user",
+          "response": "UserPreferencesResponse",
+          "web_helpers": [
+            "getUserPreferences"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "UserPreferencesResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/user/preferences",
+          "auth": "user",
+          "request": "UpdateUserPreferencesRequest",
+          "response": "UserPreferencesResponse",
+          "web_helpers": [
+            "updateUserPreferences"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "UserPreferencesResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "UpdateUserPreferencesRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/users/{id}",
+          "auth": "admin_or_self",
+          "response": "UserResponse",
+          "web_helpers": [
+            "getUser"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "UserResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "PATCH",
+          "path": "/api/v1/users/{id}",
+          "auth": "admin_or_self",
+          "request": "UpdateUserRequest",
+          "response": "UserResponse",
+          "web_helpers": [
+            "updateUser"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "UserResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": "UpdateUserRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "required"
     },
     {
       "name": "libraries",
       "phase16a_priority": "required",
       "routes": [
-        { "method": "GET", "path": "/api/v1/libraries", "auth": "user", "response": "LibraryListResponse", "web_helpers": ["listLibraries"] },
-        { "method": "GET", "path": "/api/v1/libraries/{id}", "auth": "user", "response": "LibraryResponse", "web_helpers": ["getLibrary"] },
-        { "method": "GET", "path": "/api/v1/libraries/{id}/items", "auth": "user", "response": "MediaItemPageResponse", "web_helpers": ["listLibraryItems"] }
-      ]
+        {
+          "method": "GET",
+          "path": "/api/v1/libraries",
+          "auth": "user",
+          "response": "LibraryListResponse",
+          "web_helpers": [
+            "listLibraries"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "LibraryListResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/libraries/{id}",
+          "auth": "user",
+          "response": "LibraryResponse",
+          "web_helpers": [
+            "getLibrary"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "LibraryResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/libraries/{id}/items",
+          "auth": "user",
+          "response": "MediaItemPageResponse",
+          "web_helpers": [
+            "listLibraryItems"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "MediaItemPageResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "required"
     },
     {
       "name": "media",
       "phase16a_priority": "required",
       "routes": [
-        { "method": "GET", "path": "/api/v1/media-items", "auth": "user", "response": "MediaItemPageResponse", "web_helpers": ["listMediaItems"] },
-        { "method": "GET", "path": "/api/v1/media-items/{id}", "auth": "user", "response": "MediaItemResponse", "web_helpers": ["getMediaItem"] },
-        { "method": "GET", "path": "/api/v1/media-items/{id}/files", "auth": "user", "response": "MediaFileListResponse", "web_helpers": ["listMediaFiles"] },
-        { "method": "GET", "path": "/api/v1/items/{id}/artwork/{type}", "auth": "user", "response": "BinaryArtwork", "web_helpers": [] }
-      ]
+        {
+          "method": "GET",
+          "path": "/api/v1/media-items",
+          "auth": "user",
+          "response": "MediaItemPageResponse",
+          "web_helpers": [
+            "listMediaItems"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "MediaItemPageResponse",
+              "cache_profile": "private_json",
+              "pagination": "cursor"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                {
+                  "name": "limit",
+                  "required": false,
+                  "validation": "1..100 unless route-specific docs narrow it"
+                },
+                {
+                  "name": "cursor",
+                  "required": false,
+                  "validation": "opaque cursor"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/media-items/{id}",
+          "auth": "user",
+          "response": "MediaItemResponse",
+          "web_helpers": [
+            "getMediaItem"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "MediaItemResponse",
+              "cache_profile": "private_json",
+              "pagination": "cursor"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [
+                {
+                  "name": "limit",
+                  "required": false,
+                  "validation": "1..100 unless route-specific docs narrow it"
+                },
+                {
+                  "name": "cursor",
+                  "required": false,
+                  "validation": "opaque cursor"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/media-items/{id}/files",
+          "auth": "user",
+          "response": "MediaFileListResponse",
+          "web_helpers": [
+            "listMediaFiles"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "MediaFileListResponse",
+              "cache_profile": "private_json",
+              "pagination": "cursor"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [
+                {
+                  "name": "limit",
+                  "required": false,
+                  "validation": "1..100 unless route-specific docs narrow it"
+                },
+                {
+                  "name": "cursor",
+                  "required": false,
+                  "validation": "opaque cursor"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/items/{id}/artwork/{type}",
+          "auth": "user",
+          "response": "BinaryArtwork",
+          "web_helpers": [],
+          "contract": {
+            "success": {
+              "response_schema": "BinaryArtwork",
+              "cache_profile": "private_binary",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                },
+                {
+                  "name": "type",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "required"
     },
     {
       "name": "search",
       "phase16a_priority": "required",
       "routes": [
-        { "method": "GET", "path": "/api/v1/search", "auth": "user", "response": "SearchResponse", "web_helpers": ["search"] }
-      ]
+        {
+          "method": "GET",
+          "path": "/api/v1/search",
+          "auth": "user",
+          "response": "SearchResponse",
+          "web_helpers": [
+            "search"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "SearchResponse",
+              "cache_profile": "private_json",
+              "pagination": "cursor"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                {
+                  "name": "limit",
+                  "required": false,
+                  "validation": "1..100 unless route-specific docs narrow it"
+                },
+                {
+                  "name": "cursor",
+                  "required": false,
+                  "validation": "opaque cursor"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "required"
     },
     {
       "name": "playback",
       "phase16a_priority": "required",
       "routes": [
-        { "method": "POST", "path": "/api/v1/playback/start", "auth": "user", "request": "StartPlaybackRequest", "response": "StartPlaybackResponse", "web_helpers": ["startPlayback"] },
-        { "method": "POST", "path": "/api/v1/playback/heartbeat", "auth": "user", "request": "HeartbeatRequest", "response": "HeartbeatResponse", "web_helpers": ["heartbeat"] },
-        { "method": "POST", "path": "/api/v1/playback/stop", "auth": "user", "request": "StopPlaybackRequest", "response": "StopPlaybackResponse", "web_helpers": ["stopPlayback"] },
-        { "method": "POST", "path": "/api/v1/playback/seek", "auth": "user", "request": "SeekRequest", "response": "SeekResponse", "web_helpers": ["seek"] },
-        { "method": "GET", "path": "/api/v1/playback/info/{session_id}", "auth": "user", "response": "PlaybackInfoResponse", "web_helpers": ["getPlaybackInfo"] },
-        { "method": "GET", "path": "/api/v1/stream/{media_file_id}", "auth": "signed_or_user", "response": "BinaryStream", "web_helpers": ["streamFileUrl"] },
-        { "method": "GET", "path": "/api/v1/transcode/{session_id}/manifest.m3u8", "auth": "signed_or_user", "response": "HlsManifest", "web_helpers": ["transcodeManifestUrl"] },
-        { "method": "GET", "path": "/api/v1/items/{item_id}/watch-data", "auth": "user", "response": "UserItemDataResponse", "web_helpers": ["getWatchData"] },
-        { "method": "PUT", "path": "/api/v1/items/{item_id}/watch-data", "auth": "user", "request": "UpdateWatchDataRequest", "response": "UserItemDataResponse", "web_helpers": ["updateWatchData"] },
-        { "method": "GET", "path": "/api/v1/playlists", "auth": "user", "response": "PlaylistPageResponse", "web_helpers": ["listPlaylists"] },
-        { "method": "GET", "path": "/api/v1/playlists/{playlist_id}", "auth": "user", "response": "PlaylistResponse", "web_helpers": ["getPlaylist"] }
-      ]
+        {
+          "method": "POST",
+          "path": "/api/v1/playback/start",
+          "auth": "user",
+          "request": "StartPlaybackRequest",
+          "response": "StartPlaybackResponse",
+          "web_helpers": [
+            "startPlayback"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "StartPlaybackResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "StartPlaybackRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PLAYBACK_001",
+                "PLAYBACK_002",
+                "PLAYBACK_003",
+                "STREAM_001",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/playback/heartbeat",
+          "auth": "user",
+          "request": "HeartbeatRequest",
+          "response": "HeartbeatResponse",
+          "web_helpers": [
+            "heartbeat"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "HeartbeatResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "HeartbeatRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PLAYBACK_001",
+                "PLAYBACK_002",
+                "PLAYBACK_003",
+                "STREAM_001",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/playback/stop",
+          "auth": "user",
+          "request": "StopPlaybackRequest",
+          "response": "StopPlaybackResponse",
+          "web_helpers": [
+            "stopPlayback"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "StopPlaybackResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "StopPlaybackRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PLAYBACK_001",
+                "PLAYBACK_002",
+                "PLAYBACK_003",
+                "STREAM_001",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/playback/seek",
+          "auth": "user",
+          "request": "SeekRequest",
+          "response": "SeekResponse",
+          "web_helpers": [
+            "seek"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "SeekResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "SeekRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PLAYBACK_001",
+                "PLAYBACK_002",
+                "PLAYBACK_003",
+                "STREAM_001",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/playback/info/{session_id}",
+          "auth": "user",
+          "response": "PlaybackInfoResponse",
+          "web_helpers": [
+            "getPlaybackInfo"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "PlaybackInfoResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "session_id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PLAYBACK_001",
+                "PLAYBACK_002",
+                "PLAYBACK_003",
+                "STREAM_001",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/stream/{media_file_id}",
+          "auth": "signed_or_user",
+          "response": "BinaryStream",
+          "web_helpers": [
+            "streamFileUrl"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "BinaryStream",
+              "cache_profile": "private_binary",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "media_file_id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PLAYBACK_001",
+                "PLAYBACK_002",
+                "PLAYBACK_003",
+                "STREAM_001",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/transcode/{session_id}/manifest.m3u8",
+          "auth": "signed_or_user",
+          "response": "HlsManifest",
+          "web_helpers": [
+            "transcodeManifestUrl"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "HlsManifest",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "session_id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PLAYBACK_001",
+                "PLAYBACK_002",
+                "PLAYBACK_003",
+                "STREAM_001",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/items/{item_id}/watch-data",
+          "auth": "user",
+          "response": "UserItemDataResponse",
+          "web_helpers": [
+            "getWatchData"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "UserItemDataResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "item_id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PLAYBACK_001",
+                "PLAYBACK_002",
+                "PLAYBACK_003",
+                "STREAM_001",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/items/{item_id}/watch-data",
+          "auth": "user",
+          "request": "UpdateWatchDataRequest",
+          "response": "UserItemDataResponse",
+          "web_helpers": [
+            "updateWatchData"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "UserItemDataResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "item_id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": "UpdateWatchDataRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PLAYBACK_001",
+                "PLAYBACK_002",
+                "PLAYBACK_003",
+                "STREAM_001",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/playlists",
+          "auth": "user",
+          "response": "PlaylistPageResponse",
+          "web_helpers": [
+            "listPlaylists"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "PlaylistPageResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PLAYBACK_001",
+                "PLAYBACK_002",
+                "PLAYBACK_003",
+                "STREAM_001",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/playlists/{playlist_id}",
+          "auth": "user",
+          "response": "PlaylistResponse",
+          "web_helpers": [
+            "getPlaylist"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "PlaylistResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "playlist_id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PLAYBACK_001",
+                "PLAYBACK_002",
+                "PLAYBACK_003",
+                "STREAM_001",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "required"
     },
     {
       "name": "subtitles",
       "phase16a_priority": "required",
       "routes": [
-        { "method": "GET", "path": "/api/v1/items/{item_id}/subtitles", "auth": "user", "response": "SubtitleListResponse", "web_helpers": ["listSubtitles"] },
-        { "method": "GET", "path": "/api/v1/items/{item_id}/subtitles/{subtitle_id}", "auth": "user", "response": "SubtitleResponse", "web_helpers": ["getSubtitle"] },
-        { "method": "GET", "path": "/api/v1/items/{item_id}/subtitles/{subtitle_id}/content", "auth": "signed_or_user", "response": "TextSubtitle", "web_helpers": ["getSubtitleContentUrl"] }
-      ]
+        {
+          "method": "GET",
+          "path": "/api/v1/items/{item_id}/subtitles",
+          "auth": "user",
+          "response": "SubtitleListResponse",
+          "web_helpers": [
+            "listSubtitles"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "SubtitleListResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "item_id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/items/{item_id}/subtitles/{subtitle_id}",
+          "auth": "user",
+          "response": "SubtitleResponse",
+          "web_helpers": [
+            "getSubtitle"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "SubtitleResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "item_id",
+                  "required": true
+                },
+                {
+                  "name": "subtitle_id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/items/{item_id}/subtitles/{subtitle_id}/content",
+          "auth": "signed_or_user",
+          "response": "TextSubtitle",
+          "web_helpers": [
+            "getSubtitleContentUrl"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "TextSubtitle",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "item_id",
+                  "required": true
+                },
+                {
+                  "name": "subtitle_id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "required"
     },
     {
       "name": "segments_storyboards",
       "phase16a_priority": "required",
       "routes": [
-        { "method": "GET", "path": "/api/v1/items/{item_id}/segments", "auth": "user", "response": "SegmentListResponse", "web_helpers": ["listSegments"] },
-        { "method": "GET", "path": "/api/v1/items/{item_id}/storyboard", "auth": "user", "response": "StoryboardResponse", "web_helpers": ["getStoryboard"] },
-        { "method": "GET", "path": "/api/v1/items/{item_id}/storyboard/index.vtt", "auth": "signed_or_user", "response": "WebVtt", "web_helpers": ["storyboardIndexUrl"] }
-      ]
+        {
+          "method": "GET",
+          "path": "/api/v1/items/{item_id}/segments",
+          "auth": "user",
+          "response": "SegmentListResponse",
+          "web_helpers": [
+            "listSegments"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "SegmentListResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "item_id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/items/{item_id}/storyboard",
+          "auth": "user",
+          "response": "StoryboardResponse",
+          "web_helpers": [
+            "getStoryboard"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "StoryboardResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "item_id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/items/{item_id}/storyboard/index.vtt",
+          "auth": "signed_or_user",
+          "response": "WebVtt",
+          "web_helpers": [
+            "storyboardIndexUrl"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "WebVtt",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "item_id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "required"
     },
     {
       "name": "collections",
       "phase16a_priority": "required",
       "routes": [
-        { "method": "GET", "path": "/api/v1/collections", "auth": "user", "response": "CollectionPageResponse", "web_helpers": ["listCollections"] },
-        { "method": "GET", "path": "/api/v1/collections/{id}", "auth": "user", "response": "CollectionResponse", "web_helpers": ["getCollection"] },
-        { "method": "GET", "path": "/api/v1/collections/{id}/items", "auth": "user", "response": "CollectionItemPageResponse", "web_helpers": ["listCollectionItems"] }
-      ]
+        {
+          "method": "GET",
+          "path": "/api/v1/collections",
+          "auth": "user",
+          "response": "CollectionPageResponse",
+          "web_helpers": [
+            "listCollections"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "CollectionPageResponse",
+              "cache_profile": "private_json",
+              "pagination": "cursor"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                {
+                  "name": "limit",
+                  "required": false,
+                  "validation": "1..100 unless route-specific docs narrow it"
+                },
+                {
+                  "name": "cursor",
+                  "required": false,
+                  "validation": "opaque cursor"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/collections/{id}",
+          "auth": "user",
+          "response": "CollectionResponse",
+          "web_helpers": [
+            "getCollection"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "CollectionResponse",
+              "cache_profile": "private_json",
+              "pagination": "cursor"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [
+                {
+                  "name": "limit",
+                  "required": false,
+                  "validation": "1..100 unless route-specific docs narrow it"
+                },
+                {
+                  "name": "cursor",
+                  "required": false,
+                  "validation": "opaque cursor"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/collections/{id}/items",
+          "auth": "user",
+          "response": "CollectionItemPageResponse",
+          "web_helpers": [
+            "listCollectionItems"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "CollectionItemPageResponse",
+              "cache_profile": "private_json",
+              "pagination": "cursor"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [
+                {
+                  "name": "limit",
+                  "required": false,
+                  "validation": "1..100 unless route-specific docs narrow it"
+                },
+                {
+                  "name": "cursor",
+                  "required": false,
+                  "validation": "opaque cursor"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "required"
     },
     {
       "name": "quality",
       "phase16a_priority": "required",
       "routes": [
-        { "method": "POST", "path": "/api/v1/device/capabilities", "auth": "user", "request": "ReportCapabilitiesRequest", "response": "DeviceProfileResponse", "web_helpers": ["reportCapabilities"] },
-        { "method": "GET", "path": "/api/v1/device/capabilities", "auth": "user", "response": "DeviceProfileListResponse", "web_helpers": ["getCapabilities"] },
-        { "method": "POST", "path": "/api/v1/probe/bandwidth/result", "auth": "user", "request": "BandwidthProbeResultRequest", "response": "NetworkReportResponse", "web_helpers": ["submitBandwidthProbeResult"] },
-        { "method": "POST", "path": "/api/v1/playback/telemetry", "auth": "user", "request": "SegmentTelemetryRequest", "response": "TelemetryResponse", "web_helpers": ["submitTelemetry"] },
-        { "method": "POST", "path": "/api/v1/playback/qoe", "auth": "user", "request": "QoeReportRequest", "response": "QoeReportResponse", "web_helpers": ["submitQoeReport"] }
-      ]
+        {
+          "method": "POST",
+          "path": "/api/v1/device/capabilities",
+          "auth": "user",
+          "request": "ReportCapabilitiesRequest",
+          "response": "DeviceProfileResponse",
+          "web_helpers": [
+            "reportCapabilities"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "DeviceProfileResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "ReportCapabilitiesRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/device/capabilities",
+          "auth": "user",
+          "response": "DeviceProfileListResponse",
+          "web_helpers": [
+            "getCapabilities"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "DeviceProfileListResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/probe/bandwidth/result",
+          "auth": "user",
+          "request": "BandwidthProbeResultRequest",
+          "response": "NetworkReportResponse",
+          "web_helpers": [
+            "submitBandwidthProbeResult"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "NetworkReportResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "BandwidthProbeResultRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/playback/telemetry",
+          "auth": "user",
+          "request": "SegmentTelemetryRequest",
+          "response": "TelemetryResponse",
+          "web_helpers": [
+            "submitTelemetry"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "TelemetryResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "SegmentTelemetryRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/playback/qoe",
+          "auth": "user",
+          "request": "QoeReportRequest",
+          "response": "QoeReportResponse",
+          "web_helpers": [
+            "submitQoeReport"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "QoeReportResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "QoeReportRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "required"
     },
     {
       "name": "tv",
       "phase16a_priority": "optional",
       "routes": [
-        { "method": "GET", "path": "/api/v1/users/me/tv-surface", "auth": "user", "response": "TvSurfaceResponse", "web_helpers": ["getTvSurface"] },
-        { "method": "GET", "path": "/api/v1/tv/resolve/{platform_content_id}", "auth": "user", "response": "TvResolveResponse", "web_helpers": ["resolveTvContent"] },
-        { "method": "GET", "path": "/api/v1/tv/settings", "auth": "user", "response": "TvSurfaceSettingsResponse", "web_helpers": ["getTvSettings"] },
-        { "method": "PUT", "path": "/api/v1/tv/settings", "auth": "user", "request": "TvSurfaceSettingsRequest", "response": "TvSurfaceSettingsResponse", "web_helpers": ["updateTvSettings"] },
-        { "method": "GET", "path": "/api/v1/tv/diagnostics", "auth": "admin", "response": "TvDiagnosticsResponse", "web_helpers": ["getTvDiagnostics"] }
-      ]
+        {
+          "method": "GET",
+          "path": "/api/v1/users/me/tv-surface",
+          "auth": "user",
+          "response": "TvSurfaceResponse",
+          "web_helpers": [
+            "getTvSurface"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "TvSurfaceResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/tv/resolve/{platform_content_id}",
+          "auth": "user",
+          "response": "TvResolveResponse",
+          "web_helpers": [
+            "resolveTvContent"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "TvResolveResponse",
+              "cache_profile": "private_etag_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "platform_content_id",
+                  "required": true
+                }
+              ],
+              "query_params": [
+                {
+                  "name": "platform",
+                  "required": false,
+                  "validation": "known platform hint where supplied"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/tv/settings",
+          "auth": "user",
+          "response": "TvSurfaceSettingsResponse",
+          "web_helpers": [
+            "getTvSettings"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "TvSurfaceSettingsResponse",
+              "cache_profile": "private_etag_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                {
+                  "name": "platform",
+                  "required": false,
+                  "validation": "known platform hint where supplied"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/tv/settings",
+          "auth": "user",
+          "request": "TvSurfaceSettingsRequest",
+          "response": "TvSurfaceSettingsResponse",
+          "web_helpers": [
+            "updateTvSettings"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "TvSurfaceSettingsResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                {
+                  "name": "platform",
+                  "required": false,
+                  "validation": "known platform hint where supplied"
+                }
+              ],
+              "request_schema": "TvSurfaceSettingsRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/tv/diagnostics",
+          "auth": "admin",
+          "response": "TvDiagnosticsResponse",
+          "web_helpers": [
+            "getTvDiagnostics"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "TvDiagnosticsResponse",
+              "cache_profile": "private_etag_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                {
+                  "name": "platform",
+                  "required": false,
+                  "validation": "known platform hint where supplied"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "required"
     },
     {
       "name": "downloads",
       "phase16a_priority": "phase16c_mobile",
       "routes": [
-        { "method": "GET", "path": "/api/v1/downloads/plan/{media_item_id}", "auth": "download", "response": "DownloadPlanResponse", "web_helpers": [] },
-        { "method": "POST", "path": "/api/v1/downloads/jobs", "auth": "download", "request": "CreateDownloadJobRequest", "response": "DownloadJobResponse", "web_helpers": [] },
-        { "method": "GET", "path": "/api/v1/downloads/jobs/{id}", "auth": "user", "response": "DownloadJobResponse", "web_helpers": [] },
-        { "method": "POST", "path": "/api/v1/downloads/jobs/{id}/cancel", "auth": "user", "request": "CancelDownloadJobRequest", "response": "DownloadActionResponse", "web_helpers": [] },
-        { "method": "GET", "path": "/api/v1/downloads/inventory", "auth": "user", "response": "DownloadInventoryResponse", "web_helpers": [] },
-        { "method": "DELETE", "path": "/api/v1/downloads/packages/{id}", "auth": "user", "request": "DeleteDownloadPackageRequest", "response": "DownloadActionResponse", "web_helpers": [] },
-        { "method": "GET", "path": "/api/v1/downloads/packages/{id}/manifest", "auth": "user", "response": "DownloadPackageManifestResponse", "web_helpers": [] },
-        { "method": "POST", "path": "/api/v1/downloads/packages/{id}/transfer-urls", "auth": "user", "request": "PackageTransferUrlsRequest", "response": "PackageTransferUrlsResponse", "web_helpers": [] },
-        { "method": "GET", "path": "/api/v1/downloads/packages/{id}/files/{*file_path}", "auth": "user", "response": "DownloadPackageFile", "web_helpers": [] },
-        { "method": "POST", "path": "/api/v1/downloads/sync", "auth": "user", "request": "DownloadSyncRequest", "response": "DownloadSyncResponse", "web_helpers": [] }
-      ]
+        {
+          "method": "GET",
+          "path": "/api/v1/downloads/plan/{media_item_id}",
+          "auth": "download",
+          "response": "DownloadPlanResponse",
+          "web_helpers": [],
+          "contract": {
+            "success": {
+              "response_schema": "DownloadPlanResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "media_item_id",
+                  "required": true
+                }
+              ],
+              "query_params": [
+                {
+                  "name": "device_identifier",
+                  "required": true,
+                  "validation": "non-empty mobile device identifier"
+                },
+                {
+                  "name": "client_platform",
+                  "required": true,
+                  "validation": "android or ios for Phase 16c mobile downloads"
+                },
+                {
+                  "name": "quality_mode",
+                  "required": false,
+                  "validation": "auto, data_saver, standard, maximum, or manual"
+                },
+                {
+                  "name": "media_file_id",
+                  "required": false,
+                  "validation": "UUID for a healthy source file belonging to the media item"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "DOWNLOAD_001",
+                "DOWNLOAD_002",
+                "DOWNLOAD_003",
+                "DOWNLOAD_004",
+                "DOWNLOAD_006",
+                "DOWNLOAD_008",
+                "DOWNLOAD_016",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/downloads/jobs",
+          "auth": "download",
+          "request": "CreateDownloadJobRequest",
+          "response": "DownloadJobResponse",
+          "web_helpers": [],
+          "contract": {
+            "success": {
+              "response_schema": "DownloadJobResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                {
+                  "name": "device_identifier",
+                  "required": false,
+                  "validation": "non-empty mobile device identifier where required"
+                }
+              ],
+              "request_schema": "CreateDownloadJobRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "DOWNLOAD_001",
+                "DOWNLOAD_002",
+                "DOWNLOAD_003",
+                "DOWNLOAD_004",
+                "DOWNLOAD_006",
+                "DOWNLOAD_008",
+                "DOWNLOAD_016",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/downloads/jobs/{id}",
+          "auth": "user",
+          "response": "DownloadJobResponse",
+          "web_helpers": [],
+          "contract": {
+            "success": {
+              "response_schema": "DownloadJobResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [
+                {
+                  "name": "device_identifier",
+                  "required": false,
+                  "validation": "non-empty mobile device identifier where required"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "DOWNLOAD_001",
+                "DOWNLOAD_002",
+                "DOWNLOAD_003",
+                "DOWNLOAD_004",
+                "DOWNLOAD_006",
+                "DOWNLOAD_008",
+                "DOWNLOAD_016",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/downloads/jobs/{id}/cancel",
+          "auth": "user",
+          "request": "CancelDownloadJobRequest",
+          "response": "DownloadActionResponse",
+          "web_helpers": [],
+          "contract": {
+            "success": {
+              "response_schema": "DownloadActionResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [
+                {
+                  "name": "device_identifier",
+                  "required": false,
+                  "validation": "non-empty mobile device identifier where required"
+                }
+              ],
+              "request_schema": "CancelDownloadJobRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "DOWNLOAD_001",
+                "DOWNLOAD_002",
+                "DOWNLOAD_003",
+                "DOWNLOAD_004",
+                "DOWNLOAD_006",
+                "DOWNLOAD_008",
+                "DOWNLOAD_016",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/downloads/inventory",
+          "auth": "user",
+          "response": "DownloadInventoryResponse",
+          "web_helpers": [],
+          "contract": {
+            "success": {
+              "response_schema": "DownloadInventoryResponse",
+              "cache_profile": "private_json",
+              "pagination": "cursor"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                {
+                  "name": "limit",
+                  "required": false,
+                  "validation": "1..100 unless route-specific docs narrow it"
+                },
+                {
+                  "name": "cursor",
+                  "required": false,
+                  "validation": "opaque cursor"
+                },
+                {
+                  "name": "device_identifier",
+                  "required": false,
+                  "validation": "optional device inventory filter"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "DOWNLOAD_001",
+                "DOWNLOAD_002",
+                "DOWNLOAD_003",
+                "DOWNLOAD_004",
+                "DOWNLOAD_006",
+                "DOWNLOAD_008",
+                "DOWNLOAD_016",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/v1/downloads/packages/{id}",
+          "auth": "user",
+          "request": "DeleteDownloadPackageRequest",
+          "response": "DownloadActionResponse",
+          "web_helpers": [],
+          "contract": {
+            "success": {
+              "response_schema": "DownloadActionResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [
+                {
+                  "name": "device_identifier",
+                  "required": true,
+                  "validation": "non-empty mobile device identifier where required"
+                }
+              ],
+              "request_schema": "DeleteDownloadPackageRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "DOWNLOAD_001",
+                "DOWNLOAD_002",
+                "DOWNLOAD_003",
+                "DOWNLOAD_004",
+                "DOWNLOAD_006",
+                "DOWNLOAD_008",
+                "DOWNLOAD_016",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/downloads/packages/{id}/manifest",
+          "auth": "user",
+          "response": "DownloadPackageManifestResponse",
+          "web_helpers": [],
+          "contract": {
+            "success": {
+              "response_schema": "DownloadPackageManifestResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [
+                {
+                  "name": "device_identifier",
+                  "required": true,
+                  "validation": "must match the package device binding"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "DOWNLOAD_001",
+                "DOWNLOAD_002",
+                "DOWNLOAD_003",
+                "DOWNLOAD_004",
+                "DOWNLOAD_006",
+                "DOWNLOAD_008",
+                "DOWNLOAD_016",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/downloads/packages/{id}/transfer-urls",
+          "auth": "user",
+          "request": "PackageTransferUrlsRequest",
+          "response": "PackageTransferUrlsResponse",
+          "web_helpers": [],
+          "contract": {
+            "success": {
+              "response_schema": "PackageTransferUrlsResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [
+                {
+                  "name": "device_identifier",
+                  "required": true,
+                  "validation": "non-empty mobile device identifier where required"
+                }
+              ],
+              "request_schema": "PackageTransferUrlsRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "DOWNLOAD_001",
+                "DOWNLOAD_002",
+                "DOWNLOAD_003",
+                "DOWNLOAD_004",
+                "DOWNLOAD_006",
+                "DOWNLOAD_008",
+                "DOWNLOAD_016",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/downloads/packages/{id}/files/{*file_path}",
+          "auth": "user",
+          "response": "DownloadPackageFile",
+          "web_helpers": [],
+          "contract": {
+            "success": {
+              "response_schema": "DownloadPackageFile",
+              "cache_profile": "private_binary",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                },
+                {
+                  "name": "file_path",
+                  "required": true
+                }
+              ],
+              "query_params": [
+                {
+                  "name": "device_identifier",
+                  "required": true,
+                  "validation": "must match the package device binding"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "DOWNLOAD_001",
+                "DOWNLOAD_002",
+                "DOWNLOAD_003",
+                "DOWNLOAD_004",
+                "DOWNLOAD_006",
+                "DOWNLOAD_008",
+                "DOWNLOAD_016",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/downloads/sync",
+          "auth": "user",
+          "request": "DownloadSyncRequest",
+          "response": "DownloadSyncResponse",
+          "web_helpers": [],
+          "contract": {
+            "success": {
+              "response_schema": "DownloadSyncResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                {
+                  "name": "device_identifier",
+                  "required": false,
+                  "validation": "non-empty mobile device identifier where required"
+                }
+              ],
+              "request_schema": "DownloadSyncRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "DOWNLOAD_001",
+                "DOWNLOAD_002",
+                "DOWNLOAD_003",
+                "DOWNLOAD_004",
+                "DOWNLOAD_006",
+                "DOWNLOAD_008",
+                "DOWNLOAD_016",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "required"
     },
     {
       "name": "notifications",
       "phase16a_priority": "required",
       "routes": [
-        { "method": "GET", "path": "/api/v1/events", "auth": "user", "response": "SseStream", "web_helpers": [] },
-        { "method": "GET", "path": "/api/v1/notifications", "auth": "user", "response": "NotificationPageResponse", "web_helpers": ["listNotifications"] },
-        { "method": "GET", "path": "/api/v1/notifications/unread-count", "auth": "user", "response": "UnreadCountResponse", "web_helpers": ["getUnreadCount"] },
-        { "method": "POST", "path": "/api/v1/notifications/{notification_id}/read", "auth": "user", "response": "NotificationResponse", "web_helpers": ["markNotificationRead"] },
-        { "method": "POST", "path": "/api/v1/notifications/read-all", "auth": "user", "response": "BulkNotificationResponse", "web_helpers": ["markAllRead"] },
-        { "method": "GET", "path": "/api/v1/user/notification-preferences", "auth": "user", "response": "NotificationPreferenceListResponse", "web_helpers": ["listNotificationPreferences"] },
-        { "method": "PUT", "path": "/api/v1/user/notification-preferences/{type_id}", "auth": "user", "request": "UpdateNotificationPreferenceRequest", "response": "NotificationPreferenceResponse", "web_helpers": ["updateNotificationPreference"] },
-        { "method": "GET", "path": "/api/v1/user/push-devices", "auth": "user", "response": "PushDeviceListResponse", "web_helpers": ["listPushDevices"] },
-        { "method": "POST", "path": "/api/v1/user/push-devices", "auth": "user", "request": "RegisterPushDeviceRequest", "response": "PushDeviceResponse", "web_helpers": ["registerPushDevice"] },
-        { "method": "PUT", "path": "/api/v1/user/push-devices/{device_id}", "auth": "user", "request": "UpdatePushDeviceRequest", "response": "PushDeviceResponse", "web_helpers": ["updatePushDevice"] },
-        { "method": "DELETE", "path": "/api/v1/user/push-devices/{device_id}", "auth": "user", "response": "Empty", "web_helpers": ["deletePushDevice"] }
-      ]
+        {
+          "method": "GET",
+          "path": "/api/v1/events",
+          "auth": "user",
+          "response": "SseStream",
+          "web_helpers": [],
+          "contract": {
+            "success": {
+              "response_schema": "SseStream",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/notifications",
+          "auth": "user",
+          "response": "NotificationPageResponse",
+          "web_helpers": [
+            "listNotifications"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "NotificationPageResponse",
+              "cache_profile": "private_json",
+              "pagination": "cursor"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                {
+                  "name": "limit",
+                  "required": false,
+                  "validation": "1..100 unless route-specific docs narrow it"
+                },
+                {
+                  "name": "cursor",
+                  "required": false,
+                  "validation": "opaque cursor"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/notifications/unread-count",
+          "auth": "user",
+          "response": "UnreadCountResponse",
+          "web_helpers": [
+            "getUnreadCount"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "UnreadCountResponse",
+              "cache_profile": "private_json",
+              "pagination": "cursor"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                {
+                  "name": "limit",
+                  "required": false,
+                  "validation": "1..100 unless route-specific docs narrow it"
+                },
+                {
+                  "name": "cursor",
+                  "required": false,
+                  "validation": "opaque cursor"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/notifications/{notification_id}/read",
+          "auth": "user",
+          "response": "NotificationResponse",
+          "web_helpers": [
+            "markNotificationRead"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "NotificationResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "notification_id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/notifications/read-all",
+          "auth": "user",
+          "response": "BulkNotificationResponse",
+          "web_helpers": [
+            "markAllRead"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "BulkNotificationResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/user/notification-preferences",
+          "auth": "user",
+          "response": "NotificationPreferenceListResponse",
+          "web_helpers": [
+            "listNotificationPreferences"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "NotificationPreferenceListResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/user/notification-preferences/{type_id}",
+          "auth": "user",
+          "request": "UpdateNotificationPreferenceRequest",
+          "response": "NotificationPreferenceResponse",
+          "web_helpers": [
+            "updateNotificationPreference"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "NotificationPreferenceResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "type_id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": "UpdateNotificationPreferenceRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/user/push-devices",
+          "auth": "user",
+          "response": "PushDeviceListResponse",
+          "web_helpers": [
+            "listPushDevices"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "PushDeviceListResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/user/push-devices",
+          "auth": "user",
+          "request": "RegisterPushDeviceRequest",
+          "response": "PushDeviceResponse",
+          "web_helpers": [
+            "registerPushDevice"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "PushDeviceResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "RegisterPushDeviceRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/user/push-devices/{device_id}",
+          "auth": "user",
+          "request": "UpdatePushDeviceRequest",
+          "response": "PushDeviceResponse",
+          "web_helpers": [
+            "updatePushDevice"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "PushDeviceResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "device_id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": "UpdatePushDeviceRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/v1/user/push-devices/{device_id}",
+          "auth": "user",
+          "response": "Empty",
+          "web_helpers": [
+            "deletePushDevice"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "Empty",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "device_id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "required"
     },
     {
       "name": "settings",
       "phase16a_priority": "required",
       "routes": [
-        { "method": "GET", "path": "/api/v1/server/config", "auth": "admin", "response": "ServerConfigResponse", "web_helpers": ["getServerConfig"] },
-        { "method": "GET", "path": "/api/v1/server/config/{group}", "auth": "admin", "response": "ConfigGroupResponse", "web_helpers": ["getConfigGroup"] },
-        { "method": "PUT", "path": "/api/v1/server/config/{group}", "auth": "admin", "request": "UpdateConfigGroupRequest", "response": "ConfigGroupResponse", "web_helpers": ["updateConfigGroup"] }
-      ]
+        {
+          "method": "GET",
+          "path": "/api/v1/server/config",
+          "auth": "admin",
+          "response": "ServerConfigResponse",
+          "web_helpers": [
+            "getServerConfig"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "ServerConfigResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/server/config/{group}",
+          "auth": "admin",
+          "response": "ConfigGroupResponse",
+          "web_helpers": [
+            "getConfigGroup"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "ConfigGroupResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "group",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/server/config/{group}",
+          "auth": "admin",
+          "request": "UpdateConfigGroupRequest",
+          "response": "ConfigGroupResponse",
+          "web_helpers": [
+            "updateConfigGroup"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "ConfigGroupResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "group",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": "UpdateConfigGroupRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "required"
     }
-  ]
+  ],
+  "phase16d": {
+    "status": "task1_contract_source_of_truth",
+    "required_domains": [
+      "health",
+      "auth",
+      "users",
+      "libraries",
+      "media",
+      "search",
+      "playback",
+      "subtitles",
+      "segments_storyboards",
+      "collections",
+      "quality",
+      "tv",
+      "downloads",
+      "notifications",
+      "settings"
+    ],
+    "route_contract_required_fields": [
+      "success.response_schema",
+      "success.cache_profile",
+      "validation.path_params",
+      "validation.query_params",
+      "errors.problem_codes"
+    ],
+    "schema_strategy": {
+      "current": "Curated route manifest plus checked-in JSON fixtures",
+      "next": "Add JSON Schema fixtures beside the manifest and make fixture drift fail CI",
+      "future": "Generate OpenAPI 3.1 or JSON Schema from Rust server metadata when DTO/schema derivation exists"
+    },
+    "standard_error_cases": {
+      "none": [
+        "VALID_001",
+        "RATE_LIMITED",
+        "INTERNAL"
+      ],
+      "user": [
+        "AUTH_001",
+        "AUTH_003",
+        "AUTH_007",
+        "VALID_001",
+        "RATE_LIMITED",
+        "NOT_FOUND",
+        "INTERNAL"
+      ],
+      "admin": [
+        "AUTH_001",
+        "AUTH_003",
+        "AUTH_007",
+        "VALID_001",
+        "RATE_LIMITED",
+        "NOT_FOUND",
+        "INTERNAL"
+      ],
+      "streaming": [
+        "AUTH_001",
+        "AUTH_003",
+        "PLAYBACK_001",
+        "PLAYBACK_002",
+        "PLAYBACK_003",
+        "STREAM_001",
+        "VALID_001",
+        "RATE_LIMITED",
+        "INTERNAL"
+      ],
+      "download": [
+        "AUTH_001",
+        "AUTH_003",
+        "DOWNLOAD_001",
+        "DOWNLOAD_002",
+        "DOWNLOAD_003",
+        "DOWNLOAD_004",
+        "DOWNLOAD_006",
+        "DOWNLOAD_008",
+        "DOWNLOAD_016",
+        "VALID_001",
+        "RATE_LIMITED",
+        "INTERNAL"
+      ]
+    },
+    "cache_profiles": {
+      "health": "no-store readiness response",
+      "private_json": "Authenticated JSON; clients must not public-cache and should revalidate on foreground/resume unless a route declares ETag semantics",
+      "private_etag_json": "Authenticated JSON with private ETag/If-None-Match support where route implementation exposes it",
+      "private_binary": "Authenticated binary or media bytes; clients must not persist signed URLs or bearer-bearing request metadata",
+      "no_store_action": "Mutation/action response; clients must not cache"
+    },
+    "pagination_profiles": {
+      "cursor": "limit plus opaque cursor where response exposes next_cursor",
+      "offset": "page/page_size only where existing route documents offset pagination",
+      "none": "No pagination contract"
+    },
+    "sse_events": [
+      {
+        "type": "notification",
+        "payload_schema": "NotificationEventPayload",
+        "auth": "user",
+        "privacy": "No tokens, signed URLs, or private paths"
+      },
+      {
+        "type": "download_job_status",
+        "payload_schema": "DownloadJobStatusEventPayload",
+        "auth": "user",
+        "privacy": "No source paths, bearer tokens, or package file paths"
+      },
+      {
+        "type": "tv_surface_changed",
+        "payload_schema": "TvSurfaceChangedEventPayload",
+        "auth": "user",
+        "privacy": "Stable item IDs and bounded reason strings only"
+      },
+      {
+        "type": "session_kicked",
+        "payload_schema": "SessionLifecycleEventPayload",
+        "auth": "user",
+        "privacy": "Session identifiers only; clients clear local credentials immediately"
+      }
+    ]
+  }
 }
