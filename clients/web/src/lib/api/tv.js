@@ -16,19 +16,24 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-export * from './core.js';
-export * from './auth.js';
-export * from './users.js';
-export * from './libraries.js';
-export * from './media.js';
-export * from './playback.js';
-export * from './settings.js';
-export * from './search.js';
-export * from './quality.js';
-export * from './segments.js';
-export * from './storyboards.js';
-export * from './subtitles.js';
-export * from './notifications.js';
-export * from './backups.js';
-export * from './migrations.js';
-export * from './tv.js';
+import { get, put } from './core.js';
+
+export async function getTvSurface(params = {}) {
+    return get('/users/me/tv-surface', params);
+}
+
+export async function resolveTvContent(platformContentId) {
+    return get(`/tv/resolve/${encodeURIComponent(platformContentId)}`);
+}
+
+export async function getTvSettings() {
+    return get('/tv/settings');
+}
+
+export async function updateTvSettings(data) {
+    return put('/tv/settings', data);
+}
+
+export async function getTvDiagnostics(params = {}) {
+    return get('/tv/diagnostics', params);
+}

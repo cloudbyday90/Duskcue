@@ -178,6 +178,7 @@ pub struct TvSurfaceSettingsResponse {
     pub publish_next_up: bool,
     pub publish_new_episodes: bool,
     pub publish_recommendations: bool,
+    pub integration_status: TvSurfaceIntegrationStatus,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -188,6 +189,29 @@ pub struct TvSurfaceSettingsRequest {
     pub publish_next_up: Option<bool>,
     pub publish_new_episodes: Option<bool>,
     pub publish_recommendations: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TvSurfaceIntegrationStatus {
+    pub publication_enabled: bool,
+    pub enabled_platforms: Vec<TvPlatform>,
+    pub diagnostics_available: bool,
+    pub last_feed_generation: Option<DateTime<Utc>>,
+    pub last_event: Option<TvSurfaceLastEvent>,
+    pub last_resolve_failure: Option<TvResolveFailureStatus>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TvSurfaceLastEvent {
+    pub reason: String,
+    pub changed_sections: Vec<TvSurfaceSectionType>,
+    pub generated_at: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct TvResolveFailureStatus {
+    pub reason: String,
+    pub generated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Serialize)]

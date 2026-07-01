@@ -55,10 +55,33 @@ pub async fn resolve_platform_content(
 }
 
 pub async fn get_tv_settings(
-    State(_state): State<AppState>,
-    _user: AuthenticatedUser,
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
 ) -> Result<Json<TvSurfaceSettingsResponse>, AppError> {
-    Ok(Json(service::default_settings()))
+    Ok(Json(
+        service::get_tv_settings(&state.pool, user.user_id).await?,
+    ))
+}
+
+pub async fn update_tv_settings(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<TvSurfaceSettingsRequest>,
+) -> Result<Json<TvSurfaceSettingsResponse>, AppError> {
+    let result = service::update_tv_settings(&state.pool, user.user_id, req).await?;
+    if !result.changed_sections.is_empty() {
+        service::publish_tv_surface_changed(
+            &state.event_bus,
+            user.user_id,
+            "settings_changed",
+            result.changed_sections.clone(),
+            None,
+            None,
+            None,
+            0,
+        );
+    }
+    Ok(Json(result.response))
 }
 
 pub async fn get_tv_diagnostics(

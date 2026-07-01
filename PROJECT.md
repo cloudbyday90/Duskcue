@@ -127,6 +127,7 @@ TV launcher integration is documented in [TV_PLATFORM_SURFACES.md](docs/design/T
 - **No schema change for v1.0 feed** — existing playback, user item, episode, artwork, and access-control tables can produce the first TV surface API.
 - **Google TV launcher visibility is a release constraint** — Android Watch Next integration is buildable in-client; Google TV home-surface exposure may require store approval/certification.
 - **TV surface refresh is event-driven** — the server emits debounced `tv_surface_changed` SSE hints after playback, watch-data, library scan, metadata/artwork, collection, and access-control changes so running TV clients can refresh rows without polling.
+- **TV publication settings are per profile** — users can opt out of TV publication, narrow enabled platforms, and disable individual TV rows; settings live in `users.metadata.tv_surface_settings`.
 
 ## Product Identity & Client UI
 

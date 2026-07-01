@@ -186,10 +186,11 @@ Phase 16b Task 1 added the initial authenticated TV domain shell under `server/s
 
 | Route | Current Phase 16b behavior | Later task |
 |---|---|---|
-| `GET /api/v1/users/me/tv-surface` | Validates `platform`, `limit`, and `sections`; returns accessible, healthy user-scoped Continue Watching, Next Up, New Episodes, and deterministic Recommendation sections with private cache headers, ETags, bounded availability states, and privacy-safe availability details. | Task 9 adds event-driven refresh hints. |
-| `GET /api/v1/tv/resolve/{platform_content_id}` | Validates canonical `duskcue:{movie|episode}:{uuid}` IDs, performs inverse lookup through the shared TV access scope, reloads current resume/media-file state, and returns playback-start hints for accessible items. | Task 8 documents the full playback-entry flow. |
-| `GET /api/v1/tv/settings` | Returns default enabled TV publication settings for the supported platform enum. | Task 8+ define settings persistence and playback-entry policy. |
-| `GET /api/v1/tv/diagnostics` | Requires `can_manage_server`; validates feed query parameters and returns candidate counts, included section counts, aggregate exclusion reasons, and a bounded privacy-safe exclusion sample. | Task 10 adds integration-status settings. |
+| `GET /api/v1/users/me/tv-surface` | Validates `platform`, `limit`, and `sections`; returns accessible, healthy user-scoped Continue Watching, Next Up, New Episodes, and deterministic Recommendation sections with private cache headers, ETags, bounded availability states, and privacy-safe availability details. Per-user TV publication settings can return explicit empty sections for disabled publication/platform/section states. | Implemented. |
+| `GET /api/v1/tv/resolve/{platform_content_id}` | Validates canonical `duskcue:{movie|episode}:{uuid}` IDs, performs inverse lookup through the shared TV access scope, reloads current resume/media-file state, and returns playback-start hints for accessible items. Returns unavailable content when the authenticated user has disabled TV publication. | Implemented. |
+| `GET /api/v1/tv/settings` | Returns persisted per-user TV publication settings plus integration status: enabled platforms, diagnostics availability, last feed generation, last TV surface event, and last resolve failure. | Implemented. |
+| `PUT /api/v1/tv/settings` | Updates per-user TV publication settings stored at `users.metadata.tv_surface_settings`; accepts partial publication/platform/section toggles and emits `tv_surface_changed` with `settings_changed` when affected sections change. | Implemented. |
+| `GET /api/v1/tv/diagnostics` | Requires `can_manage_server`; validates feed query parameters and returns candidate counts, included section counts, aggregate exclusion reasons, and a bounded privacy-safe exclusion sample. | Implemented. |
 
 The registered TV error codes are `TV_001` invalid platform, `TV_002` unavailable content, `TV_003` access denied, `TV_004` unsupported platform hint, `TV_005` invalid platform content ID, `TV_006` invalid section, `TV_007` invalid limit, and `TV_008` diagnostics unavailable.
 
@@ -444,7 +445,7 @@ Payload:
 }
 ```
 
-Implemented reasons are bounded to `playback_started`, `resume_position_changed`, `playback_paused`, `playback_stopped`, `playback_completed`, `watch_data_updated`, `library_changed`, `library_scan_completed`, `metadata_changed`, `artwork_changed`, `collection_changed`, `access_changed`, or `other`.
+Implemented reasons are bounded to `playback_started`, `resume_position_changed`, `playback_paused`, `playback_stopped`, `playback_completed`, `watch_data_updated`, `library_changed`, `library_scan_completed`, `metadata_changed`, `artwork_changed`, `collection_changed`, `access_changed`, `settings_changed`, or `other`.
 
 Server producers:
 
@@ -454,6 +455,7 @@ Server producers:
 - poster/artwork and overlay handlers emit `artwork_changed`
 - collection handlers emit `collection_changed`
 - user status, library-access, and capability changes emit `access_changed`
+- TV publication settings emit `settings_changed`
 
 Native TV clients can subscribe while running and schedule a refresh after receiving the event. If `debounce_until` is present, clients should avoid immediately refetching more than once for the same user/reason/item window; the server also coalesces heartbeat-heavy resume updates per user so TV launchers do not thrash during active playback.
 

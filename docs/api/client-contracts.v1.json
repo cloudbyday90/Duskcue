@@ -169,6 +169,17 @@
       ]
     },
     {
+      "name": "tv",
+      "phase16a_priority": "optional",
+      "routes": [
+        { "method": "GET", "path": "/api/v1/users/me/tv-surface", "auth": "user", "response": "TvSurfaceResponse", "web_helpers": ["getTvSurface"] },
+        { "method": "GET", "path": "/api/v1/tv/resolve/{platform_content_id}", "auth": "user", "response": "TvResolveResponse", "web_helpers": ["resolveTvContent"] },
+        { "method": "GET", "path": "/api/v1/tv/settings", "auth": "user", "response": "TvSurfaceSettingsResponse", "web_helpers": ["getTvSettings"] },
+        { "method": "PUT", "path": "/api/v1/tv/settings", "auth": "user", "request": "TvSurfaceSettingsRequest", "response": "TvSurfaceSettingsResponse", "web_helpers": ["updateTvSettings"] },
+        { "method": "GET", "path": "/api/v1/tv/diagnostics", "auth": "admin", "response": "TvDiagnosticsResponse", "web_helpers": ["getTvDiagnostics"] }
+      ]
+    },
+    {
       "name": "notifications",
       "phase16a_priority": "required",
       "routes": [

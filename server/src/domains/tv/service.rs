@@ -14,11 +14,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 use std::time::Instant;
 
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
 use dashmap::DashMap;
+use serde::{Deserialize, Serialize};
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -33,6 +34,48 @@ const RESUME_EVENT_DEBOUNCE_SECONDS: i64 = 60;
 const DEFAULT_EVENT_DEBOUNCE_SECONDS: i64 = 5;
 
 static TV_SURFACE_EVENT_DEBOUNCE: OnceLock<DashMap<String, DateTime<Utc>>> = OnceLock::new();
+static TV_SURFACE_RUNTIME_STATUS: OnceLock<RwLock<TvSurfaceRuntimeStatus>> = OnceLock::new();
+
+#[derive(Debug, Clone, Default)]
+struct TvSurfaceRuntimeStatus {
+    last_feed_generation: Option<DateTime<Utc>>,
+    last_event: Option<TvSurfaceLastEvent>,
+    last_resolve_failure: Option<TvResolveFailureStatus>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+struct StoredTvSurfaceSettings {
+    #[serde(default = "default_true")]
+    tv_publication_enabled: bool,
+    #[serde(default = "default_tv_platforms")]
+    enabled_platforms: Vec<TvPlatform>,
+    #[serde(default = "default_true")]
+    publish_continue_watching: bool,
+    #[serde(default = "default_true")]
+    publish_next_up: bool,
+    #[serde(default = "default_true")]
+    publish_new_episodes: bool,
+    #[serde(default = "default_true")]
+    publish_recommendations: bool,
+}
+
+impl Default for StoredTvSurfaceSettings {
+    fn default() -> Self {
+        Self {
+            tv_publication_enabled: true,
+            enabled_platforms: default_tv_platforms(),
+            publish_continue_watching: true,
+            publish_next_up: true,
+            publish_new_episodes: true,
+            publish_recommendations: true,
+        }
+    }
+}
+
+pub struct TvSurfaceSettingsUpdate {
+    pub response: TvSurfaceSettingsResponse,
+    pub changed_sections: Vec<TvSurfaceSectionType>,
+}
 
 #[derive(Debug, Clone)]
 pub struct TvAccessScope {
@@ -482,6 +525,25 @@ FROM users
 WHERE deleted_at IS NULL AND status = 'active'
 "#;
 
+const USER_TV_SETTINGS_SQL: &str = r#"
+SELECT metadata -> 'tv_surface_settings' AS tv_surface_settings
+FROM users
+WHERE id = $1 AND deleted_at IS NULL
+"#;
+
+const UPDATE_USER_TV_SETTINGS_SQL: &str = r#"
+UPDATE users
+SET metadata = jsonb_set(
+        COALESCE(metadata, '{}'::jsonb),
+        '{tv_surface_settings}',
+        $2::jsonb,
+        true
+    ),
+    updated_at = now()
+WHERE id = $1 AND deleted_at IS NULL
+RETURNING metadata -> 'tv_surface_settings' AS tv_surface_settings
+"#;
+
 const USERS_WITH_LIBRARY_ACCESS_SQL: &str = r#"
 SELECT u.id
 FROM users u
@@ -547,11 +609,28 @@ async fn build_tv_surface(
     user: &AuthenticatedUser,
     query: &ResolvedTvSurfaceQuery,
 ) -> Result<TvSurfaceResponse, TvError> {
+    let settings = load_user_tv_settings(pool, user.user_id).await?;
+    if let Some(reason) = surface_disabled_reason(&settings, query.platform) {
+        let response = disabled_surface_response(query, reason);
+        record_tv_surface_feed_generation(response.generated_at);
+        return Ok(response);
+    }
+
     let access_scope = load_tv_access_scope(pool, user).await?;
     let mut remaining = query.limit as usize;
     let mut sections = Vec::with_capacity(query.sections.len());
 
     for section_type in &query.sections {
+        if !settings.section_enabled(*section_type) {
+            sections.push(TvSurfaceSectionResponse {
+                section_type: *section_type,
+                title: section_title(*section_type).to_string(),
+                empty_reason: Some("tv_section_disabled".to_string()),
+                items: Vec::new(),
+            });
+            continue;
+        }
+
         let items = if remaining == 0 {
             Vec::new()
         } else {
@@ -578,6 +657,7 @@ async fn build_tv_surface(
     }
 
     let generated_at = surface_generated_at(&sections);
+    record_tv_surface_feed_generation(generated_at);
 
     Ok(TvSurfaceResponse {
         generated_at,
@@ -588,23 +668,228 @@ async fn build_tv_surface(
 }
 
 pub fn default_settings() -> TvSurfaceSettingsResponse {
-    TvSurfaceSettingsResponse {
-        tv_publication_enabled: true,
-        enabled_platforms: vec![
-            TvPlatform::AndroidTv,
-            TvPlatform::GoogleTv,
-            TvPlatform::FireTv,
-            TvPlatform::Roku,
-            TvPlatform::Tizen,
-            TvPlatform::Webos,
-            TvPlatform::Tvos,
-            TvPlatform::Xbox,
-        ],
-        publish_continue_watching: true,
-        publish_next_up: true,
-        publish_new_episodes: true,
-        publish_recommendations: true,
+    settings_response(StoredTvSurfaceSettings::default())
+}
+
+pub async fn get_tv_settings(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+) -> Result<TvSurfaceSettingsResponse, TvError> {
+    let settings = load_user_tv_settings(pool, user_id).await?;
+    Ok(settings_response(settings))
+}
+
+pub async fn update_tv_settings(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    req: TvSurfaceSettingsRequest,
+) -> Result<TvSurfaceSettingsUpdate, TvError> {
+    let current = load_user_tv_settings(pool, user_id).await?;
+    let next = merge_tv_settings(current.clone(), req)?;
+    let changed_sections = changed_settings_sections(&current, &next);
+
+    let value = serde_json::to_value(&next).unwrap_or_else(|_| serde_json::json!({}));
+    let row = sqlx::query(UPDATE_USER_TV_SETTINGS_SQL)
+        .bind(user_id)
+        .bind(value)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(TvError::AccessDenied)?;
+    let saved = stored_settings_from_row(&row);
+
+    Ok(TvSurfaceSettingsUpdate {
+        response: settings_response(saved),
+        changed_sections,
+    })
+}
+
+async fn load_user_tv_settings(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+) -> Result<StoredTvSurfaceSettings, TvError> {
+    let row = sqlx::query(USER_TV_SETTINGS_SQL)
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(TvError::AccessDenied)?;
+
+    Ok(stored_settings_from_row(&row))
+}
+
+fn stored_settings_from_row(row: &sqlx::postgres::PgRow) -> StoredTvSurfaceSettings {
+    row.try_get::<Option<serde_json::Value>, _>("tv_surface_settings")
+        .ok()
+        .flatten()
+        .and_then(|value| serde_json::from_value(value).ok())
+        .unwrap_or_default()
+}
+
+fn merge_tv_settings(
+    mut current: StoredTvSurfaceSettings,
+    req: TvSurfaceSettingsRequest,
+) -> Result<StoredTvSurfaceSettings, TvError> {
+    if let Some(enabled) = req.tv_publication_enabled {
+        current.tv_publication_enabled = enabled;
     }
+    if let Some(platforms) = req.enabled_platforms {
+        current.enabled_platforms = parse_settings_platforms(platforms)?;
+    }
+    if let Some(enabled) = req.publish_continue_watching {
+        current.publish_continue_watching = enabled;
+    }
+    if let Some(enabled) = req.publish_next_up {
+        current.publish_next_up = enabled;
+    }
+    if let Some(enabled) = req.publish_new_episodes {
+        current.publish_new_episodes = enabled;
+    }
+    if let Some(enabled) = req.publish_recommendations {
+        current.publish_recommendations = enabled;
+    }
+    Ok(current)
+}
+
+fn parse_settings_platforms(platforms: Vec<String>) -> Result<Vec<TvPlatform>, TvError> {
+    let mut parsed = Vec::with_capacity(platforms.len());
+    for platform in platforms {
+        let platform = parse_platform(platform.trim())?;
+        if !parsed.contains(&platform) {
+            parsed.push(platform);
+        }
+    }
+    Ok(parsed)
+}
+
+fn changed_settings_sections(
+    current: &StoredTvSurfaceSettings,
+    next: &StoredTvSurfaceSettings,
+) -> Vec<TvSurfaceSectionType> {
+    if current == next {
+        return Vec::new();
+    }
+
+    if current.tv_publication_enabled != next.tv_publication_enabled
+        || current.enabled_platforms != next.enabled_platforms
+    {
+        return all_tv_sections();
+    }
+
+    let mut sections = Vec::new();
+    if current.publish_continue_watching != next.publish_continue_watching {
+        sections.push(TvSurfaceSectionType::Continue);
+    }
+    if current.publish_next_up != next.publish_next_up {
+        sections.push(TvSurfaceSectionType::NextUp);
+    }
+    if current.publish_new_episodes != next.publish_new_episodes {
+        sections.push(TvSurfaceSectionType::NewEpisodes);
+    }
+    if current.publish_recommendations != next.publish_recommendations {
+        sections.push(TvSurfaceSectionType::Recommended);
+    }
+    sections
+}
+
+fn settings_response(settings: StoredTvSurfaceSettings) -> TvSurfaceSettingsResponse {
+    TvSurfaceSettingsResponse {
+        tv_publication_enabled: settings.tv_publication_enabled,
+        enabled_platforms: settings.enabled_platforms.clone(),
+        publish_continue_watching: settings.publish_continue_watching,
+        publish_next_up: settings.publish_next_up,
+        publish_new_episodes: settings.publish_new_episodes,
+        publish_recommendations: settings.publish_recommendations,
+        integration_status: integration_status(&settings),
+    }
+}
+
+fn integration_status(settings: &StoredTvSurfaceSettings) -> TvSurfaceIntegrationStatus {
+    let snapshot = tv_surface_runtime_status()
+        .read()
+        .map(|status| status.clone())
+        .unwrap_or_default();
+
+    TvSurfaceIntegrationStatus {
+        publication_enabled: settings.tv_publication_enabled,
+        enabled_platforms: settings.enabled_platforms.clone(),
+        diagnostics_available: true,
+        last_feed_generation: snapshot.last_feed_generation,
+        last_event: snapshot.last_event,
+        last_resolve_failure: snapshot.last_resolve_failure,
+    }
+}
+
+fn surface_disabled_reason(
+    settings: &StoredTvSurfaceSettings,
+    platform: Option<TvPlatform>,
+) -> Option<&'static str> {
+    if !settings.tv_publication_enabled {
+        return Some("tv_publication_disabled");
+    }
+    if let Some(platform) = platform
+        && !settings.enabled_platforms.contains(&platform)
+    {
+        return Some("tv_platform_disabled");
+    }
+    None
+}
+
+fn disabled_surface_response(
+    query: &ResolvedTvSurfaceQuery,
+    reason: &'static str,
+) -> TvSurfaceResponse {
+    TvSurfaceResponse {
+        generated_at: Utc::now(),
+        platform: query.platform,
+        limit: query.limit,
+        sections: query
+            .sections
+            .iter()
+            .copied()
+            .map(|section_type| TvSurfaceSectionResponse {
+                section_type,
+                title: section_title(section_type).to_string(),
+                empty_reason: Some(reason.to_string()),
+                items: Vec::new(),
+            })
+            .collect(),
+    }
+}
+
+impl StoredTvSurfaceSettings {
+    fn section_enabled(&self, section_type: TvSurfaceSectionType) -> bool {
+        match section_type {
+            TvSurfaceSectionType::Continue => self.publish_continue_watching,
+            TvSurfaceSectionType::NextUp => self.publish_next_up,
+            TvSurfaceSectionType::NewEpisodes => self.publish_new_episodes,
+            TvSurfaceSectionType::Recommended => self.publish_recommendations,
+        }
+    }
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_tv_platforms() -> Vec<TvPlatform> {
+    vec![
+        TvPlatform::AndroidTv,
+        TvPlatform::GoogleTv,
+        TvPlatform::FireTv,
+        TvPlatform::Roku,
+        TvPlatform::Tizen,
+        TvPlatform::Webos,
+        TvPlatform::Tvos,
+        TvPlatform::Xbox,
+    ]
+}
+
+fn all_tv_sections() -> Vec<TvSurfaceSectionType> {
+    vec![
+        TvSurfaceSectionType::Continue,
+        TvSurfaceSectionType::NextUp,
+        TvSurfaceSectionType::NewEpisodes,
+        TvSurfaceSectionType::Recommended,
+    ]
 }
 
 async fn fetch_surface_items(
@@ -891,6 +1176,11 @@ pub async fn resolve_platform_content(
     user: &AuthenticatedUser,
     value: &str,
 ) -> Result<TvResolveResponse, TvError> {
+    let settings = load_user_tv_settings(pool, user.user_id).await?;
+    if !settings.tv_publication_enabled {
+        return Err(TvError::UnavailableContent);
+    }
+
     let lookup = lookup_platform_content(pool, user, value).await?;
     if lookup.access_status == TvContentAccessStatus::AccessDenied {
         return Err(TvError::AccessDenied);
@@ -993,6 +1283,7 @@ pub fn build_platform_content_id(media_type: TvMediaType, media_item_id: Uuid) -
 pub fn record_tv_resolve_failure(err: &TvError) {
     metrics::counter!("tv_resolve_failures_total", "reason" => resolve_failure_reason(err))
         .increment(1);
+    record_tv_surface_resolve_failure(err);
 }
 
 pub fn publish_tv_surface_changed(
@@ -1037,6 +1328,7 @@ pub fn publish_tv_surface_changed(
         debounce_until,
     };
 
+    record_tv_surface_event(&payload);
     let value = serde_json::to_value(payload).unwrap_or_else(|_| serde_json::json!({}));
     let _ = event_bus.publish(user_id, ServerEvent::new("tv_surface_changed", value));
     true
@@ -1377,12 +1669,42 @@ fn normalize_surface_change_reason(reason: &str) -> &'static str {
         "artwork_changed" => "artwork_changed",
         "collection_changed" => "collection_changed",
         "access_changed" => "access_changed",
+        "settings_changed" => "settings_changed",
         _ => "other",
     }
 }
 
 fn surface_event_debounce() -> &'static DashMap<String, DateTime<Utc>> {
     TV_SURFACE_EVENT_DEBOUNCE.get_or_init(DashMap::new)
+}
+
+fn tv_surface_runtime_status() -> &'static RwLock<TvSurfaceRuntimeStatus> {
+    TV_SURFACE_RUNTIME_STATUS.get_or_init(|| RwLock::new(TvSurfaceRuntimeStatus::default()))
+}
+
+fn record_tv_surface_feed_generation(generated_at: DateTime<Utc>) {
+    if let Ok(mut status) = tv_surface_runtime_status().write() {
+        status.last_feed_generation = Some(generated_at);
+    }
+}
+
+fn record_tv_surface_event(payload: &TvSurfaceChangedEventPayload) {
+    if let Ok(mut status) = tv_surface_runtime_status().write() {
+        status.last_event = Some(TvSurfaceLastEvent {
+            reason: payload.reason.clone(),
+            changed_sections: payload.changed_sections.clone(),
+            generated_at: payload.generated_after,
+        });
+    }
+}
+
+fn record_tv_surface_resolve_failure(err: &TvError) {
+    if let Ok(mut status) = tv_surface_runtime_status().write() {
+        status.last_resolve_failure = Some(TvResolveFailureStatus {
+            reason: resolve_failure_reason(err).to_string(),
+            generated_at: Utc::now(),
+        });
+    }
 }
 
 fn should_debounce_surface_event(
@@ -1838,5 +2160,90 @@ mod tests {
             0,
         ));
         assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn tv_settings_merge_validates_and_deduplicates_platforms() {
+        let settings = merge_tv_settings(
+            StoredTvSurfaceSettings::default(),
+            TvSurfaceSettingsRequest {
+                tv_publication_enabled: Some(false),
+                enabled_platforms: Some(vec!["roku".into(), "roku".into(), "tvos".into()]),
+                publish_continue_watching: None,
+                publish_next_up: Some(false),
+                publish_new_episodes: None,
+                publish_recommendations: None,
+            },
+        )
+        .expect("settings should merge");
+
+        assert!(!settings.tv_publication_enabled);
+        assert_eq!(
+            settings.enabled_platforms,
+            vec![TvPlatform::Roku, TvPlatform::Tvos]
+        );
+        assert!(!settings.publish_next_up);
+
+        assert!(
+            merge_tv_settings(
+                StoredTvSurfaceSettings::default(),
+                TvSurfaceSettingsRequest {
+                    tv_publication_enabled: None,
+                    enabled_platforms: Some(vec!["unsupported".into()]),
+                    publish_continue_watching: None,
+                    publish_next_up: None,
+                    publish_new_episodes: None,
+                    publish_recommendations: None,
+                },
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn tv_settings_changed_sections_are_precise() {
+        let current = StoredTvSurfaceSettings::default();
+        let mut next = current.clone();
+        next.publish_continue_watching = false;
+        next.publish_recommendations = false;
+
+        assert_eq!(
+            changed_settings_sections(&current, &next),
+            vec![
+                TvSurfaceSectionType::Continue,
+                TvSurfaceSectionType::Recommended
+            ]
+        );
+
+        next.tv_publication_enabled = false;
+        assert_eq!(
+            changed_settings_sections(&current, &next),
+            all_tv_sections()
+        );
+    }
+
+    #[test]
+    fn disabled_tv_surface_response_preserves_requested_sections() {
+        let query = ResolvedTvSurfaceQuery {
+            platform: Some(TvPlatform::Roku),
+            limit: 10,
+            sections: vec![TvSurfaceSectionType::Continue, TvSurfaceSectionType::NextUp],
+        };
+
+        let response = disabled_surface_response(&query, "tv_platform_disabled");
+
+        assert_eq!(response.platform, Some(TvPlatform::Roku));
+        assert_eq!(response.limit, 10);
+        assert_eq!(response.sections.len(), 2);
+        assert_eq!(
+            response.sections[0].empty_reason.as_deref(),
+            Some("tv_platform_disabled")
+        );
+        assert!(
+            response
+                .sections
+                .iter()
+                .all(|section| section.items.is_empty())
+        );
     }
 }

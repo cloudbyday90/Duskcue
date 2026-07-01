@@ -39,7 +39,10 @@ pub fn router(state: AppState) -> Router<AppState> {
             "/api/v1/tv/resolve/{platform_content_id}",
             get(handlers::resolve_platform_content),
         )
-        .route("/api/v1/tv/settings", get(handlers::get_tv_settings))
+        .route(
+            "/api/v1/tv/settings",
+            get(handlers::get_tv_settings).put(handlers::update_tv_settings),
+        )
         .route("/api/v1/tv/diagnostics", get(handlers::get_tv_diagnostics))
         .with_state(state)
 }
