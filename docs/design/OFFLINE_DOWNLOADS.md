@@ -180,6 +180,14 @@ Phase 16c Task 9 added the mobile download manager shell:
 - Media detail screens can queue the current movie/episode for offline preparation. Download-next-episode and auto-remove-watched behavior remain deferred until the base manager is stable.
 - Actual protected package-file placement and native OS background transfer execution remain Task 10 responsibilities; Task 9 establishes the durable lifecycle/inventory/control surface those adapters will drive.
 
+Phase 16c Task 10 added protected local storage foundations:
+
+- `clients/mobile/lib/services/protected_download_storage_service.dart` owns the Dart boundary for protected download roots. It prepares a scoped directory, prepares per-package directories, writes `scope.json`, preserves a `sync_queue.json`, writes redacted `metadata.json`, and deletes package/scope/all protected data.
+- Android uses the native `duskcue/mobile_storage` channel in `MainActivity.kt` to place hashed scope/package directories under `noBackupFilesDir/duskcue_downloads`. This keeps package files app-private and excluded from Android Auto Backup/device transfer without broad external-storage permissions.
+- iOS uses the same method channel in `AppDelegate.swift` to place hashed scope/package directories under Application Support, marks directories `isExcludedFromBackup`, and applies `FileProtectionType.completeUntilFirstUserAuthentication`.
+- The Dart metadata writer strips bearer/session/access/refresh tokens, package keys, signed URLs, stream URLs, and transfer URLs before writing local package metadata. Download inventory/settings remain scoped by `(server_origin, user_id, device_identifier)` and are cleared with the protected roots on local session cleanup.
+- `DownloadManagerNotifier` creates protected package placeholders for queued/ready/failed items and deletes protected package/scope directories on item delete or delete-all. `AuthService.clearLocalSession()` deletes all protected downloads and scoped download metadata, covering logout, logout-all, session invalidation/kick, and server-switch flows that clear local auth.
+
 ## Mobile Contract
 
 The mobile clients own these responsibilities:
@@ -263,4 +271,4 @@ Download quality reuses the Phase 7 quality-management model but is not identica
 
 ## Implementation Status
 
-Phase 16c Tasks 0-9 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, manifest response format, durable job creation/status/cancel, scheduled package worker, authenticated package serving, resumable transfer, foreground/push notifications, and Flutter mobile download manager shell are in place. Protected local storage, offline playback, reconnect sync, revocation cleanup, settings completion, observability, and broader integration tests are pending Phase 16c Tasks 10-15.
+Phase 16c Tasks 0-10 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, manifest response format, durable job creation/status/cancel, scheduled package worker, authenticated package serving, resumable transfer, foreground/push notifications, Flutter mobile download manager shell, and protected Android/iOS local storage foundations are in place. Offline playback, reconnect sync, revocation cleanup, settings completion, observability, and broader integration tests are pending Phase 16c Tasks 11-15.

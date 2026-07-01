@@ -82,6 +82,11 @@ class SecureStorageService {
     return _storage.read(key: 'download_settings');
   }
 
+  Future<void> clearDownloadState() async {
+    await _storage.delete(key: 'download_inventory');
+    await _storage.delete(key: 'download_settings');
+  }
+
   Future<void> writeQualityPreferences(String value) {
     return _storage.write(key: 'quality_preferences', value: value);
   }

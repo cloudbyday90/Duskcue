@@ -5,6 +5,7 @@ import 'package:duskcue_mobile/models/server_profile.dart';
 import 'package:duskcue_mobile/services/api_client.dart';
 import 'package:duskcue_mobile/services/device_identity_service.dart';
 import 'package:duskcue_mobile/services/native_passkey_service.dart';
+import 'package:duskcue_mobile/services/protected_download_storage_service.dart';
 import 'package:duskcue_mobile/services/secure_storage_service.dart';
 
 class AuthService {
@@ -13,15 +14,18 @@ class AuthService {
     required SecureStorageService storage,
     required DeviceIdentityService deviceIdentity,
     required NativePasskeyService passkeys,
+    required ProtectedDownloadStorageService protectedDownloads,
   })  : _apiClient = apiClient,
         _storage = storage,
         _deviceIdentity = deviceIdentity,
-        _passkeys = passkeys;
+        _passkeys = passkeys,
+        _protectedDownloads = protectedDownloads;
 
   final DuskcueApiClient _apiClient;
   final SecureStorageService _storage;
   final DeviceIdentityService _deviceIdentity;
   final NativePasskeyService _passkeys;
+  final ProtectedDownloadStorageService _protectedDownloads;
 
   Future<AuthSession?> restore(ServerProfile server) async {
     final token = await _storage.readToken();
@@ -194,7 +198,11 @@ class AuthService {
 
   Future<void> clearLocalSession() async {
     _apiClient.clearBearerToken();
+    try {
+      await _protectedDownloads.deleteAllProtectedDownloads();
+    } catch (_) {}
     await _storage.clearSession();
+    await _storage.clearDownloadState();
   }
 
   Future<Map<String, Object?>> _authPayload(ServerProfile server) async {

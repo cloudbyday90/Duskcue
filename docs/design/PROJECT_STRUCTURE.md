@@ -936,6 +936,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 9 mobile manager status:** `clients/mobile/lib/models/download_models.dart`, `services/download_service.dart`, `stores/download_manager_store.dart`, and `screens/downloads_screen.dart` now define the mobile offline-download manager surface. The authenticated shell includes a Downloads branch, media detail can queue the current item, secure-storage metadata keeps inventory/settings scoped by server/user/device, and `AppShell` routes `download_job_status` SSE events into the manager store. Package-file storage and native transfer adapters remain Task 10.
 
+**Task 10 protected storage status:** `clients/mobile/lib/services/protected_download_storage_service.dart` owns protected download root/package preparation, redacted metadata writes, sync-queue placeholder storage, and protected package/scope/all deletion. Android `MainActivity.kt` backs the channel with `noBackupFilesDir/duskcue_downloads`; iOS `AppDelegate.swift` backs it with Application Support plus backup exclusion and `completeUntilFirstUserAuthentication` file protection. `AuthService.clearLocalSession()` and `DownloadManagerNotifier` now purge protected local download data on logout/session clear and delete/delete-all flows.
+
 ## Development Workflow
 
 ### Server Development

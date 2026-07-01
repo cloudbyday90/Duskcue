@@ -489,6 +489,33 @@ Verification:
 
 Flutter/Dart are not installed in the current Windows environment, so `flutter analyze`, `flutter test`, Android/iOS builds, and device background-transfer checks remain CI/SDK-environment verification.
 
+### Phase 16c Task 10 — Protected Local Download Storage
+
+Implementation:
+
+- Added `ProtectedDownloadStorageService` with the `duskcue/mobile_storage` method channel for protected download scope/package roots, redacted local metadata writes, sync-queue placeholder storage, and package/scope/all deletion.
+- Android native storage lives under `noBackupFilesDir/duskcue_downloads/<scope_hash>/<package_hash>`, which is app-private and excluded from Android Auto Backup/device transfer.
+- iOS native storage lives under `Application Support/DuskcueDownloads/<scope_hash>/<package_hash>`, with `isExcludedFromBackup = true` and `FileProtectionType.completeUntilFirstUserAuthentication`.
+- `DownloadManagerNotifier` prepares protected roots for queued/package-state items and deletes protected directories on item delete or delete-all.
+- `AuthService.clearLocalSession()` deletes all protected download roots and clears scoped download metadata, covering logout, logout-all, session invalidation/kick, and server switching flows that clear local auth.
+
+Security posture:
+
+- Local metadata writes strip bearer/session/access/refresh tokens, package keys, signed URLs, stream URLs, and transfer URLs before writing `metadata.json`.
+- Scope and package directory names are SHA-256 hashes of scope/package identifiers so server/user/device names do not appear in local directory names.
+
+Verification:
+
+- `cargo fmt --all -- --check`
+- `cargo check -p duskcue`
+- `node scripts/verify-client-contracts.mjs`
+- `node scripts/verify-tv-surface-fixtures.mjs`
+- `git diff --check`
+- `flutter --version` attempted and failed because Flutter is not installed in the current Windows environment.
+- `dart --version` attempted and failed because Dart is not installed in the current Windows environment.
+
+Flutter/Dart are not installed in the current Windows environment, so `flutter analyze`, `flutter test`, Android/iOS builds, native method-channel checks, and device backup/file-protection validation remain CI/SDK-environment verification.
+
 ## Relationship to Other Documents
 
 | Document | Relationship |

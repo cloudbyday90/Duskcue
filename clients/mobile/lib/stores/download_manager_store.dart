@@ -70,6 +70,7 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
 
     state = state.copyWith(scope: scope, loading: true, clearError: true);
     try {
+      await ref.read(protectedDownloadStorageProvider).prepareScope(scope);
       final items = await _readItems(scope);
       final settings = await _readSettings(scope);
       state = state.copyWith(
@@ -97,7 +98,7 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
         state.items,
         DownloadItem.queued(item, job),
       );
-      await _saveItems(scope, next);
+      await _persistItems(scope, next);
       state = state.copyWith(
         scope: scope,
         items: _sortItems(await _applyTransferConstraints(next, settings)),
@@ -128,7 +129,7 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
       }
     }
     final constrained = await _applyTransferConstraints(updated, state.settings);
-    await _saveItems(scope, constrained);
+    await _persistItems(scope, constrained);
     state = state.copyWith(scope: scope, items: _sortItems(constrained), clearError: true);
   }
 
@@ -148,7 +149,7 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
         updatedAt: DateTime.now(),
       ),
     );
-    await _saveItems(scope, next);
+    await _persistItems(scope, next);
     state = state.copyWith(items: _sortItems(next), clearError: true);
   }
 
@@ -162,7 +163,7 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
         updatedAt: DateTime.now(),
       ),
     );
-    await _saveItems(scope, next);
+    await _persistItems(scope, next);
     state = state.copyWith(items: _sortItems(next), clearError: true);
   }
 
@@ -174,7 +175,7 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
       clearWaitingReason: true,
     );
     final next = await _applyTransferConstraints(_replaceItem(state.items, resumed), state.settings);
-    await _saveItems(scope, next);
+    await _persistItems(scope, next);
     state = state.copyWith(items: _sortItems(next), clearError: true);
   }
 
@@ -186,8 +187,9 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
         await ref.read(downloadServiceProvider).deletePackage(packageId);
       } catch (_) {}
     }
+    await ref.read(protectedDownloadStorageProvider).deletePackage(scope, item);
     final next = state.items.where((candidate) => candidate.id != item.id).toList(growable: false);
-    await _saveItems(scope, next);
+    await _persistItems(scope, next);
     state = state.copyWith(items: _sortItems(next), clearError: true);
   }
 
@@ -201,6 +203,7 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
         } catch (_) {}
       }
     }
+    await ref.read(protectedDownloadStorageProvider).deleteScope(scope);
     await _saveItems(scope, const []);
     state = state.copyWith(items: const [], clearError: true);
   }
@@ -219,7 +222,7 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     final scope = await _requireScope();
     await _saveSettings(scope, settings);
     final constrained = await _applyTransferConstraints(state.items, settings);
-    await _saveItems(scope, constrained);
+    await _persistItems(scope, constrained);
     state = state.copyWith(settings: settings, items: _sortItems(constrained), clearError: true);
   }
 
@@ -249,7 +252,7 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
       _upsertItem(state.items, current.applyStatusEvent(update)),
       state.settings,
     );
-    await _saveItems(scope, next);
+    await _persistItems(scope, next);
     state = state.copyWith(scope: scope, items: _sortItems(next), clearError: true);
   }
 
@@ -294,6 +297,15 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     final root = _decodeRoot(await storage.readDownloadInventory());
     root[scope.key] = items.map((item) => item.toJson()).toList(growable: false);
     await storage.writeDownloadInventory(jsonEncode(root));
+  }
+
+  Future<void> _persistItems(DownloadInventoryScope scope, List<DownloadItem> items) async {
+    await _saveItems(scope, items);
+    final protectedStorage = ref.read(protectedDownloadStorageProvider);
+    await protectedStorage.prepareScope(scope);
+    for (final item in items) {
+      await protectedStorage.writePackageMetadata(scope, item);
+    }
   }
 
   Future<DownloadManagerSettings> _readSettings(DownloadInventoryScope scope) async {
