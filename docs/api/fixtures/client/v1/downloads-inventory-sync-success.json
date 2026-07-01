@@ -1,0 +1,44 @@
+{
+  "fixture": "downloads-inventory-sync-success",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/downloads/inventory"
+  },
+  "status": 200,
+  "body": {
+    "device_id": "fixture-mobile-device-01",
+    "packages": [
+      {
+        "package_id": "d0d0d0d0-d0d0-40d0-80d0-d0d0d0d0d0d0",
+        "media_item_id": "11111111-1111-4111-8111-111111111111",
+        "status": "ready",
+        "package_format": "hls_fmp4",
+        "bytes_total": 2147483648,
+        "expires_at": "2026-07-08T12:00:00Z",
+        "manifest_hash": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "playable_offline": true,
+        "last_synced_at": "2026-07-01T12:00:00Z"
+      }
+    ],
+    "transfer_urls": [
+      {
+        "package_id": "d0d0d0d0-d0d0-40d0-80d0-d0d0d0d0d0d0",
+        "file_path": "manifest.json",
+        "url": "/api/v1/downloads/packages/d0d0d0d0-d0d0-40d0-80d0-d0d0d0d0d0d0/files/manifest.json",
+        "checksum": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "size_bytes": 4096
+      }
+    ],
+    "sync_response": {
+      "accepted_package_ids": [
+        "d0d0d0d0-d0d0-40d0-80d0-d0d0d0d0d0d0"
+      ],
+      "accepted_playback_event_ids": [
+        "offline-event-0001"
+      ],
+      "expired_package_ids": [],
+      "revoked_package_ids": [],
+      "deleted_package_ids": []
+    }
+  }
+}

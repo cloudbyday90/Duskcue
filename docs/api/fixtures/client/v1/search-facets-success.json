@@ -1,0 +1,64 @@
+{
+  "fixture": "search-facets-success",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/search?q=harbor&type=movie"
+  },
+  "status": 200,
+  "order_by": "score_desc_then_title_asc",
+  "body": {
+    "query": "harbor",
+    "results": [
+      {
+        "id": "11111111-1111-4111-8111-111111111111",
+        "media_type": "movie",
+        "title": "Moonlit Harbor",
+        "year": 2026,
+        "score": 0.98,
+        "matched_fields": [
+          "title",
+          "overview"
+        ]
+      },
+      {
+        "id": "77777777-7777-4777-8777-777777777777",
+        "media_type": "movie",
+        "title": "Return to Harbor",
+        "year": 2024,
+        "score": 0.82,
+        "matched_fields": [
+          "title"
+        ]
+      }
+    ],
+    "facets": {
+      "media_type": [
+        {
+          "value": "movie",
+          "count": 2
+        }
+      ],
+      "year": [
+        {
+          "value": 2026,
+          "count": 1
+        },
+        {
+          "value": 2024,
+          "count": 1
+        }
+      ],
+      "genre": [
+        {
+          "value": "Mystery",
+          "count": 1
+        }
+      ]
+    },
+    "pagination": {
+      "limit": 20,
+      "offset": 0,
+      "total_count": 2
+    }
+  }
+}

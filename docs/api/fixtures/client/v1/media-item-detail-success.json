@@ -1,0 +1,47 @@
+{
+  "fixture": "media-item-detail-success",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/media-items/11111111-1111-4111-8111-111111111111"
+  },
+  "status": 200,
+  "body": {
+    "id": "11111111-1111-4111-8111-111111111111",
+    "library_id": "10101010-1010-4010-8010-101010101010",
+    "media_type": "movie",
+    "title": "Moonlit Harbor",
+    "sort_title": "Moonlit Harbor",
+    "year": 2026,
+    "overview": "A quiet mystery in a coastal town.",
+    "duration_ms": 7200000,
+    "genres": [
+      "Mystery",
+      "Drama"
+    ],
+    "user_data": {
+      "favorite": false,
+      "watched": false,
+      "resume_position_ms": 1800000,
+      "last_played_at": "2026-07-01T10:15:00Z"
+    },
+    "files": [
+      {
+        "id": "66666666-6666-4666-8666-666666666666",
+        "container": "mkv",
+        "video_codec": "h264",
+        "audio_codec": "aac",
+        "resolution": "1920x1080",
+        "size_bytes": 6442450944,
+        "duration_ms": 7200000,
+        "is_available": true
+      }
+    ],
+    "artwork": {
+      "poster": "/api/v1/items/11111111-1111-4111-8111-111111111111/artwork/poster",
+      "backdrop": "/api/v1/items/11111111-1111-4111-8111-111111111111/artwork/backdrop",
+      "logo": "/api/v1/items/11111111-1111-4111-8111-111111111111/artwork/logo",
+      "thumbnail": "/api/v1/items/11111111-1111-4111-8111-111111111111/artwork/thumbnail"
+    },
+    "updated_at": "2026-07-01T11:55:00Z"
+  }
+}

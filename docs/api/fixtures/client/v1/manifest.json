@@ -1,0 +1,282 @@
+{
+  "fixture_pack": "duskcue-client-contract-fixtures",
+  "version": 1,
+  "updated": "2026-07-01",
+  "contract_manifest": "docs/api/client-contracts.v1.json",
+  "schema_dialect": "JSON Schema 2020-12 target; curated structural checks until server schemas exist",
+  "pinning": {
+    "branch_policy": "Downstream client branches should pin this directory by repository commit and update intentionally.",
+    "breaking_change_policy": "Changing an existing fixture response shape requires a version bump or an explicit compatibility note in CLIENT_CONTRACTS.md."
+  },
+  "golden_expectations": {
+    "stable_ids": true,
+    "date_time_format": "RFC3339 UTC strings ending in Z",
+    "row_ordering": "Fixture arrays marked with order_by must be sorted by that rule.",
+    "enum_values": "Verifier-owned allowlists cover media, playback, download, notification, cache, and error enums.",
+    "localized_string_ownership": "Fields listed as server-owned localized strings must be display-ready and must not be client localization keys."
+  },
+  "required_domains": [
+    "health",
+    "auth",
+    "users",
+    "libraries",
+    "media",
+    "search",
+    "playback",
+    "subtitles",
+    "segments_storyboards",
+    "collections",
+    "quality",
+    "tv",
+    "downloads",
+    "notifications",
+    "settings"
+  ],
+  "required_fixture_ids": [
+    "server-selection-ready",
+    "auth-login-success",
+    "auth-device-linking-pending",
+    "users-preferences-success",
+    "libraries-list-success",
+    "libraries-list-empty",
+    "media-item-detail-success",
+    "search-facets-success",
+    "collections-row-success",
+    "playback-start-resume-success",
+    "playback-heartbeat-stop-success",
+    "subtitles-storyboard-artwork-success",
+    "quality-device-success",
+    "downloads-inventory-sync-success",
+    "notifications-settings-success",
+    "tv-surface-resolve-success",
+    "client-denial-cases"
+  ],
+  "fixtures": [
+    {
+      "id": "server-selection-ready",
+      "file": "server-selection-ready.json",
+      "domains": [
+        "health"
+      ],
+      "covers": [
+        "server selection",
+        "ready health response"
+      ]
+    },
+    {
+      "id": "auth-login-success",
+      "file": "auth-login-success.json",
+      "domains": [
+        "auth"
+      ],
+      "covers": [
+        "login",
+        "session metadata",
+        "bearer token placeholder"
+      ]
+    },
+    {
+      "id": "auth-device-linking-pending",
+      "file": "auth-device-linking-pending.json",
+      "domains": [
+        "auth"
+      ],
+      "covers": [
+        "device linking",
+        "polling interval",
+        "expiry timestamp"
+      ]
+    },
+    {
+      "id": "users-preferences-success",
+      "file": "users-preferences-success.json",
+      "domains": [
+        "users"
+      ],
+      "covers": [
+        "user preferences",
+        "reviewed locale ownership"
+      ]
+    },
+    {
+      "id": "libraries-list-success",
+      "file": "libraries-list-success.json",
+      "domains": [
+        "libraries"
+      ],
+      "order_by": "name_asc",
+      "covers": [
+        "library list",
+        "stable row order"
+      ]
+    },
+    {
+      "id": "libraries-list-empty",
+      "file": "libraries-list-empty.json",
+      "domains": [
+        "libraries"
+      ],
+      "covers": [
+        "empty state"
+      ]
+    },
+    {
+      "id": "media-item-detail-success",
+      "file": "media-item-detail-success.json",
+      "domains": [
+        "media"
+      ],
+      "covers": [
+        "item detail",
+        "media files",
+        "artwork URLs"
+      ]
+    },
+    {
+      "id": "search-facets-success",
+      "file": "search-facets-success.json",
+      "domains": [
+        "search"
+      ],
+      "order_by": "score_desc_then_title_asc",
+      "covers": [
+        "search results",
+        "facets"
+      ]
+    },
+    {
+      "id": "collections-row-success",
+      "file": "collections-row-success.json",
+      "domains": [
+        "collections"
+      ],
+      "order_by": "sort_title_asc",
+      "covers": [
+        "collection rows",
+        "collection item counts"
+      ]
+    },
+    {
+      "id": "playback-start-resume-success",
+      "file": "playback-start-resume-success.json",
+      "domains": [
+        "playback"
+      ],
+      "covers": [
+        "playback start",
+        "resume position",
+        "direct stream path"
+      ]
+    },
+    {
+      "id": "playback-heartbeat-stop-success",
+      "file": "playback-heartbeat-stop-success.json",
+      "domains": [
+        "playback"
+      ],
+      "covers": [
+        "heartbeat",
+        "seek",
+        "stop",
+        "completion"
+      ]
+    },
+    {
+      "id": "subtitles-storyboard-artwork-success",
+      "file": "subtitles-storyboard-artwork-success.json",
+      "domains": [
+        "subtitles",
+        "segments_storyboards",
+        "media"
+      ],
+      "covers": [
+        "subtitles",
+        "audio tracks",
+        "segments",
+        "storyboard metadata",
+        "artwork variants"
+      ]
+    },
+    {
+      "id": "quality-device-success",
+      "file": "quality-device-success.json",
+      "domains": [
+        "quality"
+      ],
+      "covers": [
+        "device capabilities",
+        "bandwidth probe",
+        "QoE payload"
+      ]
+    },
+    {
+      "id": "downloads-inventory-sync-success",
+      "file": "downloads-inventory-sync-success.json",
+      "domains": [
+        "downloads"
+      ],
+      "covers": [
+        "download inventory",
+        "transfer URLs without signatures",
+        "sync accepted events"
+      ]
+    },
+    {
+      "id": "notifications-settings-success",
+      "file": "notifications-settings-success.json",
+      "domains": [
+        "notifications",
+        "settings"
+      ],
+      "covers": [
+        "notifications",
+        "SSE event",
+        "push devices",
+        "settings groups"
+      ]
+    },
+    {
+      "id": "tv-surface-resolve-success",
+      "file": "tv-surface-resolve-success.json",
+      "domains": [
+        "tv"
+      ],
+      "order_by": "section_order",
+      "covers": [
+        "TV feed",
+        "deep-link resolve"
+      ]
+    },
+    {
+      "id": "client-denial-cases",
+      "file": "client-denial-cases.json",
+      "domains": [
+        "auth",
+        "media",
+        "playback",
+        "downloads",
+        "tv",
+        "notifications"
+      ],
+      "covers": [
+        "access denied",
+        "revoked session",
+        "missing library access",
+        "unavailable media file",
+        "expired signed URL",
+        "transcode unavailable",
+        "quota policy denial",
+        "stale client state"
+      ]
+    }
+  ],
+  "server_owned_localized_string_fields": [
+    "title",
+    "display_name",
+    "message",
+    "empty_state.title",
+    "empty_state.body",
+    "notification.title",
+    "notification.body"
+  ]
+}

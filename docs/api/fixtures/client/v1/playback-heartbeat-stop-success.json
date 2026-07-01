@@ -1,0 +1,54 @@
+{
+  "fixture": "playback-heartbeat-stop-success",
+  "status": 200,
+  "sequence": [
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/playback/heartbeat"
+      },
+      "body": {
+        "session_id": "50505050-5050-4050-8050-505050505050",
+        "position_ms": 1815000,
+        "is_paused": false,
+        "buffer_health_ms": 30000,
+        "recorded_at": "2026-07-01T12:00:15Z"
+      },
+      "response": {
+        "accepted": true,
+        "next_heartbeat_seconds": 15
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/playback/seek"
+      },
+      "body": {
+        "session_id": "50505050-5050-4050-8050-505050505050",
+        "position_ms": 2400000,
+        "recorded_at": "2026-07-01T12:01:00Z"
+      },
+      "response": {
+        "accepted": true
+      }
+    },
+    {
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/playback/stop"
+      },
+      "body": {
+        "session_id": "50505050-5050-4050-8050-505050505050",
+        "position_ms": 7200000,
+        "completed": true,
+        "recorded_at": "2026-07-01T13:59:59Z"
+      },
+      "response": {
+        "accepted": true,
+        "watch_state": "completed",
+        "resume_position_ms": 0
+      }
+    }
+  ]
+}

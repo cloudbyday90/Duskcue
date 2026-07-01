@@ -1,0 +1,32 @@
+{
+  "fixture": "libraries-list-success",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/libraries"
+  },
+  "status": 200,
+  "order_by": "name_asc",
+  "body": {
+    "libraries": [
+      {
+        "id": "10101010-1010-4010-8010-101010101010",
+        "name": "Movies",
+        "media_type": "movie",
+        "item_count": 2,
+        "updated_at": "2026-07-01T11:55:00Z"
+      },
+      {
+        "id": "20202020-2020-4020-8020-202020202020",
+        "name": "TV Shows",
+        "media_type": "show",
+        "item_count": 2,
+        "updated_at": "2026-07-01T11:50:00Z"
+      }
+    ],
+    "pagination": {
+      "limit": 50,
+      "offset": 0,
+      "total_count": 2
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "fixture": "users-preferences-success",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/user/preferences"
+  },
+  "status": 200,
+  "body": {
+    "preferred_language": "en",
+    "reviewed_ui_locales": [
+      {
+        "locale": "en",
+        "display_name": "English",
+        "text_direction": "ltr"
+      }
+    ],
+    "playback": {
+      "default_quality_mode": "auto",
+      "remember_subtitle_track": true,
+      "remember_audio_track": true
+    },
+    "notifications": {
+      "in_app_enabled": true,
+      "push_enabled": true,
+      "webhook_enabled": false
+    },
+    "updated_at": "2026-07-01T12:00:00Z"
+  }
+}

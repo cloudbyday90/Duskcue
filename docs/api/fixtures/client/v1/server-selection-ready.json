@@ -1,0 +1,19 @@
+{
+  "fixture": "server-selection-ready",
+  "request": {
+    "method": "GET",
+    "path": "/health/ready"
+  },
+  "status": 200,
+  "headers": {
+    "cache-control": "no-store"
+  },
+  "body": {
+    "status": "ready",
+    "server_name": "Duskcue Fixture Server",
+    "public_base_url": "https://duskcue.example.test",
+    "api_base_path": "/api/v1",
+    "version": "0.1.0",
+    "generated_at": "2026-07-01T12:00:00Z"
+  }
+}

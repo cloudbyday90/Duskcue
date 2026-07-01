@@ -1,0 +1,52 @@
+{
+  "fixture": "notifications-settings-success",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/notifications"
+  },
+  "status": 200,
+  "body": {
+    "notifications": [
+      {
+        "id": "b0b0b0b0-b0b0-40b0-80b0-b0b0b0b0b0b0",
+        "type": "download_package_ready",
+        "category": "downloads",
+        "priority": "normal",
+        "title": "Download ready",
+        "body": "Moonlit Harbor is ready for offline playback.",
+        "is_read": false,
+        "created_at": "2026-07-01T12:00:00Z",
+        "link": "/downloads"
+      }
+    ],
+    "unread_count": 1,
+    "sse_event": {
+      "event": "notification",
+      "id": "evt-20260701-0001",
+      "data": {
+        "notification_id": "b0b0b0b0-b0b0-40b0-80b0-b0b0b0b0b0b0",
+        "type": "download_package_ready",
+        "priority": "normal",
+        "created_at": "2026-07-01T12:00:00Z"
+      }
+    },
+    "push_devices": [
+      {
+        "id": "c0c0c0c0-c0c0-40c0-80c0-c0c0c0c0c0c0",
+        "provider": "fcm",
+        "device_name": "Fixture Pixel",
+        "platform": "android",
+        "token_preview": "preview:fcm_..._tail",
+        "is_active": true,
+        "last_seen_at": "2026-07-01T12:00:00Z"
+      }
+    ],
+    "settings": {
+      "group": "downloads",
+      "enabled": true,
+      "max_active_jobs_per_user": 2,
+      "default_expiry_days": 7,
+      "updated_at": "2026-07-01T12:00:00Z"
+    }
+  }
+}

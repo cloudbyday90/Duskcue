@@ -1,0 +1,58 @@
+{
+  "fixture": "tv-surface-resolve-success",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/users/me/tv-surface?platform=android_tv&limit=4"
+  },
+  "status": 200,
+  "order_by": "section_order",
+  "body": {
+    "surface": {
+      "generated_at": "2026-07-01T12:00:00Z",
+      "platform": "android_tv",
+      "sections": [
+        {
+          "section_type": "continue",
+          "title": "Continue Watching",
+          "items": [
+            {
+              "platform_content_id": "duskcue:movie:11111111-1111-4111-8111-111111111111",
+              "media_item_id": "11111111-1111-4111-8111-111111111111",
+              "title": "Moonlit Harbor",
+              "deep_link": "duskcue://play/movie/11111111-1111-4111-8111-111111111111",
+              "availability": "playable"
+            }
+          ]
+        },
+        {
+          "section_type": "next_up",
+          "title": "Next Up",
+          "items": []
+        },
+        {
+          "section_type": "new_episodes",
+          "title": "New Episodes",
+          "items": []
+        },
+        {
+          "section_type": "recommended",
+          "title": "Recommended",
+          "items": []
+        }
+      ]
+    },
+    "resolve": {
+      "request_path": "/api/v1/tv/resolve/duskcue%3Amovie%3A11111111-1111-4111-8111-111111111111",
+      "platform_content_id": "duskcue:movie:11111111-1111-4111-8111-111111111111",
+      "media_item_id": "11111111-1111-4111-8111-111111111111",
+      "playback_action": "start_playback",
+      "playback_start": {
+        "method": "POST",
+        "path": "/api/v1/playback/start",
+        "media_item_id": "11111111-1111-4111-8111-111111111111",
+        "start_position_ms": 1800000
+      },
+      "requires_auth": true
+    }
+  }
+}

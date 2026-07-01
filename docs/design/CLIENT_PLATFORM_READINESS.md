@@ -76,6 +76,12 @@ OpenAPI Generator currently lists broad client generator coverage, including Typ
 
 All downstream clients must keep the following behind small adapters: base URL resolution, bearer-token injection, session refresh/re-auth handling, timeout/retry policy, RFC 9457 Problem Details mapping, pagination helpers, private cache/ETag storage, SSE event decoding, secure storage, and diagnostics redaction. Platform-specific keychain, keystore, credential locker, app-private storage, and networking APIs must not leak into shared DTO or fixture logic.
 
+### Contract Fixture Pack
+
+JSON Schema 2020-12 remains the target vocabulary for machine validation once server schemas exist, and OpenAPI components/examples remain the target packaging format for generated clients. Until then, Phase 16d uses a curated fixture pack with explicit verifier rules. Pact's consumer-contract guidance reinforces that fixtures should be shaped around real client expectations, not only provider implementation detail; Duskcue therefore includes success, empty, and denial fixtures for the client flows that downstream platform phases must implement.
+
+**Decision:** Phase 16d Task 3 adds `docs/api/fixtures/client/v1/manifest.json` plus focused JSON fixtures for server selection, auth/device-linking, preferences, libraries, media detail, search, collections, playback, subtitles/audio/storyboards/artwork, quality, downloads, notifications/settings, TV surface/deep-link behavior, and common denial cases. `scripts/verify-client-fixtures.mjs` is the drift gate for coverage, stable IDs, row ordering, UTC date-times, enum values, Problem Details shape, localized string ownership, and secret/path redaction.
+
 ## Mandatory Gates for Phases 17-23
 
 The following outputs are mandatory before a downstream platform phase can claim implementation complete:
@@ -106,7 +112,7 @@ These are recommended but not release-blocking for the first platform implementa
 |---|---|
 | 1. Shared client contract source of truth | Expanded `docs/api/client-contracts.v1.json`, schemas/fixtures, verifier updates |
 | 2. SDK/generated bindings strategy | `docs/api/client-binding-targets.v1.json`, shared adapter contracts, binding verifier |
-| 3. Contract test fixtures | Versioned fixtures under `docs/api/fixtures/` |
+| 3. Contract test fixtures | `docs/api/fixtures/client/v1`, client fixture manifest, fixture verifier |
 | 4. Playback conformance | Playback state-machine fixtures and expected event/QoE payloads |
 | 5. Auth/session conformance | Auth/session fixtures and negative cases |
 | 6. TV/deep-link conformance | TV fixture pack and adapter mapping expectations |

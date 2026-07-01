@@ -6,6 +6,7 @@ This document defines the Phase 16a desktop/mobile client contract strategy and 
 
 The machine-readable starting point is [client-contracts.v1.json](client-contracts.v1.json).
 The Phase 16d binding target matrix is [client-binding-targets.v1.json](client-binding-targets.v1.json).
+The Phase 16d versioned fixture pack starts at [fixtures/client/v1/manifest.json](fixtures/client/v1/manifest.json).
 
 ## Decision
 
@@ -156,6 +157,31 @@ node scripts/verify-client-bindings.mjs
 
 The verifier fails if a required target, required shared adapter, required manifest domain, or fixture requirement is missing. Generated clients remain the target direction for TypeScript, Dart, Kotlin, and Swift once server-emitted schemas exist; Roku and some TV web targets stay fixture-first unless platform tooling makes full client generation practical.
 
+## Phase 16d Client Fixtures
+
+Phase 16d Task 3 adds a versioned client fixture pack under `docs/api/fixtures/client/v1`. It is intentionally broader than the earlier TV-only fixtures and gives downstream clients a stable response corpus before generated schemas exist. The pack includes:
+
+- server selection and readiness;
+- auth login and device-link polling;
+- user preferences and reviewed locale metadata;
+- library success and empty states;
+- media detail, artwork URLs, search facets, and collection rows;
+- playback start/resume plus heartbeat/seek/stop sequence examples;
+- subtitles, audio tracks, segments, storyboard metadata, and artwork variants;
+- device quality, bandwidth, and QoE payloads;
+- download inventory, transfer URL, and reconnect-sync examples;
+- notifications, SSE, push-device, and settings examples;
+- TV surface and deep-link resolve examples;
+- denial cases for revoked sessions, missing library access, unavailable media, expired playback URLs, transcode unavailable, quota denial, stale client state, and TV access denial.
+
+Run:
+
+```bash
+node scripts/verify-client-fixtures.mjs
+```
+
+The verifier checks that the fixture manifest covers every required Phase 16d domain, every required fixture exists, rows marked with ordering rules are stable, UUIDs and platform content IDs have canonical shapes, timestamps use UTC RFC3339 strings, enum values stay inside approved sets, Problem Details denial fixtures are complete, server-owned localized strings are display-ready, and fixtures do not leak local paths, bearer headers, signed URLs, or package signatures.
+
 Phase 16b added reusable TV surface fixtures ahead of full Phase 16d generation:
 
 ```bash
@@ -181,6 +207,8 @@ The TV verifier checks `docs/api/fixtures/tv` feed, resolve, diagnostics, unavai
 - JSON Schema 2020-12: https://json-schema.org/draft/2020-12
 - JSON Schema reference: https://json-schema.org/understanding-json-schema/reference
 - RFC 9457 Problem Details: https://www.rfc-editor.org/rfc/rfc9457
+- Pact consumer testing guidance: https://docs.pact.io/consumer
+- Ajv JSON Schema validation: https://ajv.js.org/
 - Dart JSON serialization: https://docs.flutter.dev/data-and-backend/serialization/json
 - Dart json_serializable: https://pub.dev/packages/json_serializable
 - Kotlin serialization: https://kotlinlang.org/docs/serialization.html

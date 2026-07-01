@@ -1,0 +1,150 @@
+{
+  "fixture": "client-denial-cases",
+  "status": 200,
+  "cases": [
+    {
+      "id": "revoked-session",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/user/sessions"
+      },
+      "status": 401,
+      "problem": {
+        "type": "/errors/auth_001",
+        "title": "AUTH_001",
+        "status": 401,
+        "detail": "Session expired or revoked",
+        "instance": "/api/v1/user/sessions",
+        "trace_id": "fixture-revoked-session",
+        "errors": null
+      },
+      "expected_client_action": "clear_session_keep_selected_server"
+    },
+    {
+      "id": "missing-library-access",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/media-items/99999999-9999-4999-8999-999999999999"
+      },
+      "status": 403,
+      "problem": {
+        "type": "/errors/media_001",
+        "title": "MEDIA_001",
+        "status": 403,
+        "detail": "Media item is not available to this user",
+        "instance": "/api/v1/media-items/99999999-9999-4999-8999-999999999999",
+        "trace_id": "fixture-missing-library-access",
+        "errors": null
+      },
+      "expected_client_action": "show_access_denied"
+    },
+    {
+      "id": "unavailable-media-file",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/playback/start"
+      },
+      "status": 404,
+      "problem": {
+        "type": "/errors/playback_002",
+        "title": "PLAYBACK_002",
+        "status": 404,
+        "detail": "No available media file can be played",
+        "instance": "/api/v1/playback/start",
+        "trace_id": "fixture-unavailable-media-file",
+        "errors": null
+      },
+      "expected_client_action": "show_unavailable_media"
+    },
+    {
+      "id": "expired-signed-url",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/transcode/50505050-5050-4050-8050-505050505050/manifest.m3u8"
+      },
+      "status": 401,
+      "problem": {
+        "type": "/errors/auth_001",
+        "title": "AUTH_001",
+        "status": 401,
+        "detail": "Playback URL expired",
+        "instance": "/api/v1/transcode/50505050-5050-4050-8050-505050505050/manifest.m3u8",
+        "trace_id": "fixture-expired-url",
+        "errors": null
+      },
+      "expected_client_action": "restart_playback_session"
+    },
+    {
+      "id": "transcode-unavailable",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/playback/start"
+      },
+      "status": 503,
+      "problem": {
+        "type": "/errors/playback_004",
+        "title": "PLAYBACK_004",
+        "status": 503,
+        "detail": "Transcoding is temporarily unavailable",
+        "instance": "/api/v1/playback/start",
+        "trace_id": "fixture-transcode-unavailable",
+        "errors": null
+      },
+      "expected_client_action": "show_retryable_playback_error"
+    },
+    {
+      "id": "quota-policy-denial",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/downloads/jobs"
+      },
+      "status": 409,
+      "problem": {
+        "type": "/errors/download_006",
+        "title": "DOWNLOAD_006",
+        "status": 409,
+        "detail": "Download quota exceeded",
+        "instance": "/api/v1/downloads/jobs",
+        "trace_id": "fixture-quota-policy-denial",
+        "errors": null
+      },
+      "expected_client_action": "show_download_policy_denial"
+    },
+    {
+      "id": "stale-client-state",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/downloads/sync"
+      },
+      "status": 409,
+      "problem": {
+        "type": "/errors/conflict",
+        "title": "CONFLICT",
+        "status": 409,
+        "detail": "Client state is stale and must refresh",
+        "instance": "/api/v1/downloads/sync",
+        "trace_id": "fixture-stale-client-state",
+        "errors": null
+      },
+      "expected_client_action": "refresh_inventory_then_retry"
+    },
+    {
+      "id": "tv-access-denied",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/tv/resolve/duskcue%3Amovie%3A99999999-9999-4999-8999-999999999999"
+      },
+      "status": 403,
+      "problem": {
+        "type": "/errors/tv_003",
+        "title": "TV_003",
+        "status": 403,
+        "detail": "Platform content access was revoked",
+        "instance": "/api/v1/tv/resolve/duskcue:movie:99999999-9999-4999-8999-999999999999",
+        "trace_id": "fixture-tv-access-denied",
+        "errors": null
+      },
+      "expected_client_action": "return_to_detail_or_sign_in"
+    }
+  ]
+}

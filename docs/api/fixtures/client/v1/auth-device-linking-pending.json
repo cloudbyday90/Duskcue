@@ -1,0 +1,18 @@
+{
+  "fixture": "auth-device-linking-pending",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/device/code"
+  },
+  "status": 200,
+  "body": {
+    "device_code": "fixture-device-code",
+    "user_code": "ABCD-EFGH",
+    "verification_uri": "https://duskcue.example.test/link",
+    "verification_uri_complete": "https://duskcue.example.test/link?user_code=ABCD-EFGH",
+    "expires_at": "2026-07-01T12:10:00Z",
+    "interval_seconds": 5,
+    "status": "pending",
+    "message": "Enter ABCD-EFGH on your Duskcue server to link this device."
+  }
+}

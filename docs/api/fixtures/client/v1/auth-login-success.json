@@ -1,0 +1,36 @@
+{
+  "fixture": "auth-login-success",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/auth/login"
+  },
+  "status": 200,
+  "body": {
+    "access_token": "fixture-token-not-secret",
+    "token_type": "Bearer",
+    "expires_at": "2026-07-01T20:00:00Z",
+    "user": {
+      "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "username": "fixture-owner",
+      "display_name": "Fixture Owner",
+      "role": "owner",
+      "preferred_language": "en",
+      "capabilities": [
+        "can_manage_server",
+        "can_manage_libraries",
+        "can_download",
+        "can_view_analytics"
+      ]
+    },
+    "session": {
+      "id": "abababab-abab-4bab-8bab-abababababab",
+      "device_id": "fixture-mobile-device-01",
+      "device_name": "Fixture Pixel",
+      "client_name": "Duskcue Mobile",
+      "client_version": "0.1.0",
+      "client_platform": "android",
+      "created_at": "2026-07-01T12:00:00Z",
+      "last_seen_at": "2026-07-01T12:00:00Z"
+    }
+  }
+}

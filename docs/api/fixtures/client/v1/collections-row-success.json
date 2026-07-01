@@ -1,0 +1,34 @@
+{
+  "fixture": "collections-row-success",
+  "request": {
+    "method": "GET",
+    "path": "/api/v1/collections"
+  },
+  "status": 200,
+  "order_by": "sort_title_asc",
+  "body": {
+    "collections": [
+      {
+        "id": "30303030-3030-4030-8030-303030303030",
+        "title": "Coastal Mysteries",
+        "sort_title": "Coastal Mysteries",
+        "description": "Quiet mysteries near the water.",
+        "item_count": 2,
+        "updated_at": "2026-07-01T11:40:00Z"
+      },
+      {
+        "id": "40404040-4040-4040-8040-404040404040",
+        "title": "Storm Watch",
+        "sort_title": "Storm Watch",
+        "description": "Stories driven by weather and signal failures.",
+        "item_count": 1,
+        "updated_at": "2026-07-01T11:30:00Z"
+      }
+    ],
+    "pagination": {
+      "limit": 50,
+      "offset": 0,
+      "total_count": 2
+    }
+  }
+}

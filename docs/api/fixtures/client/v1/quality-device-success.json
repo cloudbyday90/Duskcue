@@ -1,0 +1,42 @@
+{
+  "fixture": "quality-device-success",
+  "request": {
+    "method": "POST",
+    "path": "/api/v1/device/capabilities"
+  },
+  "status": 200,
+  "body": {
+    "device_id": "fixture-mobile-device-01",
+    "client_platform": "android",
+    "reported_at": "2026-07-01T12:00:00Z",
+    "capabilities": {
+      "max_resolution": "1920x1080",
+      "video_codecs": [
+        "h264",
+        "hevc"
+      ],
+      "audio_codecs": [
+        "aac",
+        "opus"
+      ],
+      "subtitle_formats": [
+        "srt",
+        "webvtt"
+      ],
+      "hdr_supported": false
+    },
+    "bandwidth_probe": {
+      "measured_bps": 25000000,
+      "network_type": "wifi",
+      "recorded_at": "2026-07-01T12:00:05Z"
+    },
+    "qoe_sample": {
+      "session_id": "50505050-5050-4050-8050-505050505050",
+      "startup_time_ms": 1200,
+      "rebuffer_ratio": 0.01,
+      "average_bitrate_bps": 8000000,
+      "quality_mode": "auto",
+      "recorded_at": "2026-07-01T12:01:00Z"
+    }
+  }
+}
