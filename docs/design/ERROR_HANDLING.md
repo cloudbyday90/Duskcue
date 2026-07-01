@@ -485,6 +485,26 @@ All API errors return [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) Problem
 | `PLAY_017` | 400 | Invalid transcode resolution value |
 | `PLAY_018` | 400 | Invalid IP range format |
 
+### DOWNLOAD — Offline Downloads
+
+| Code | HTTP | Description |
+|---|---|---|
+| `DOWNLOAD_001` | 403 | Download access denied |
+| `DOWNLOAD_002` | 403 | Download denied by policy |
+| `DOWNLOAD_003` | 409 | Download quota exceeded |
+| `DOWNLOAD_004` | 422 | Unsupported media for offline download |
+| `DOWNLOAD_005` | 503 | Download storage unavailable |
+| `DOWNLOAD_006` | 410 | Download package expired |
+| `DOWNLOAD_007` | 409 | Download job cancelled |
+| `DOWNLOAD_008` | 409 | Download package not ready |
+| `DOWNLOAD_009` | 409 | Download checksum mismatch |
+| `DOWNLOAD_010` | 409 | Stale download client state |
+| `DOWNLOAD_011` | 404 | Download job not found |
+| `DOWNLOAD_012` | 404 | Download package not found |
+| `DOWNLOAD_013` | 400 | Invalid download platform |
+| `DOWNLOAD_014` | 400 | Invalid download request |
+| `DOWNLOAD_015` | 501 | Download feature not implemented yet |
+
 ### TRAKT — Trakt.tv Integration
 
 | Code | HTTP | Description |
@@ -699,7 +719,7 @@ Valid values: `development`, `staging`, `production`. Default: `production`.
 
 `server/src/error.rs` implements the application-layer `AppError` enum and RFC 9457 response format. Phase 3 implemented generic variants; each subsequent domain phase adds its own domain-specific variant with a `xxx_error_to_http()` mapping function. All domain variants use `#[from]` for ergonomic `?` propagation from domain errors to the central `AppError`.
 
-**Implemented variants:** `NotFound`, `BadRequest`, `Conflict`, `Unauthorized`, `Forbidden`, `UnprocessableEntity`, `ServiceUnavailable`, `GatewayTimeout`, `Validation` (carries `Vec<FieldError>` + optional `instance` for `VALID_001`), `RateLimited` (carries error code string), `Internal` (wraps `anyhow::Error`), plus domain-specific variants: `Auth` (Phase 4), `Users` (Phase 4), `Library` (Phase 5), `Media` (Phase 5), `System` (Phase 6), `Playback` (Phase 7), `Quality` (Phase 7), `Subtitle` (Phase 9), `Segment` (Phase 10), `Storyboard` (Phase 10), `Analytics` (Phase 11), `Trakt` (Phase 11), `Overlay` (Phase 12). Each domain variant wraps its domain error enum and maps all variants to HTTP status codes + error code strings via a dedicated `xxx_error_to_http()` function.
+**Implemented variants:** `NotFound`, `BadRequest`, `Conflict`, `Unauthorized`, `Forbidden`, `UnprocessableEntity`, `ServiceUnavailable`, `GatewayTimeout`, `Validation` (carries `Vec<FieldError>` + optional `instance` for `VALID_001`), `RateLimited` (carries error code string), `Internal` (wraps `anyhow::Error`), plus domain-specific variants: `Auth` (Phase 4), `Users` (Phase 4), `Library` (Phase 5), `Media` (Phase 5), `System` (Phase 6), `Playback` (Phase 7), `Quality` (Phase 7), `Subtitle` (Phase 9), `Segment` (Phase 10), `Storyboard` (Phase 10), `Analytics` (Phase 11), `Trakt` (Phase 11), `Overlay` (Phase 12), `Collections` (Phase 12), `Downloads` (Phase 16c), and `Tv` (Phase 16b). Each domain variant wraps its domain error enum and maps all variants to HTTP status codes + error code strings via a dedicated `xxx_error_to_http()` function.
 
 **Deferred decisions:**
 - `is_development_env()` reads from `OnceLock<String>` global set by `AppState::new()` (via `set_environment()`), falling back to `DUSKCUE_ENVIRONMENT` env var if not yet initialized. Wired in Phase 3, Task 2 (`state.rs`).

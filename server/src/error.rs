@@ -120,6 +120,9 @@ pub enum AppError {
     Collections(#[from] crate::domains::collections::CollectionsError),
 
     #[error(transparent)]
+    Downloads(#[from] crate::domains::downloads::DownloadError),
+
+    #[error(transparent)]
     System(#[from] crate::domains::system::SystemError),
 
     #[error(transparent)]
@@ -191,6 +194,10 @@ impl IntoResponse for AppError {
             }
             AppError::Collections(e) => {
                 let (s, c, d) = collections_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Downloads(e) => {
+                let (s, c, d) = downloads_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::System(e) => {
@@ -1217,6 +1224,96 @@ fn system_error_to_http(
             "Internal server error".into(),
         ),
         SystemError::Database(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL",
+            "Internal server error".into(),
+        ),
+    }
+}
+
+fn downloads_error_to_http(
+    err: &crate::domains::downloads::DownloadError,
+) -> (StatusCode, &'static str, String) {
+    use crate::domains::downloads::DownloadError;
+    use axum::http::StatusCode;
+
+    match err {
+        DownloadError::AccessDenied => (
+            StatusCode::FORBIDDEN,
+            "DOWNLOAD_001",
+            "Download access denied".into(),
+        ),
+        DownloadError::PolicyDenied(reason) => (
+            StatusCode::FORBIDDEN,
+            "DOWNLOAD_002",
+            format!("Download policy denied: {reason}"),
+        ),
+        DownloadError::QuotaExceeded(reason) => (
+            StatusCode::CONFLICT,
+            "DOWNLOAD_003",
+            format!("Download quota exceeded: {reason}"),
+        ),
+        DownloadError::UnsupportedMedia(reason) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "DOWNLOAD_004",
+            format!("Unsupported media for offline download: {reason}"),
+        ),
+        DownloadError::StorageUnavailable(reason) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "DOWNLOAD_005",
+            format!("Download storage unavailable: {reason}"),
+        ),
+        DownloadError::PackageExpired(id) => (
+            StatusCode::GONE,
+            "DOWNLOAD_006",
+            format!("Download package expired: {id}"),
+        ),
+        DownloadError::JobCancelled(id) => (
+            StatusCode::CONFLICT,
+            "DOWNLOAD_007",
+            format!("Download job cancelled: {id}"),
+        ),
+        DownloadError::PackageNotReady(id) => (
+            StatusCode::CONFLICT,
+            "DOWNLOAD_008",
+            format!("Download package is not ready: {id}"),
+        ),
+        DownloadError::ChecksumMismatch(path) => (
+            StatusCode::CONFLICT,
+            "DOWNLOAD_009",
+            format!("Download checksum mismatch: {path}"),
+        ),
+        DownloadError::StaleClientState(reason) => (
+            StatusCode::CONFLICT,
+            "DOWNLOAD_010",
+            format!("Stale download client state: {reason}"),
+        ),
+        DownloadError::JobNotFound(id) => (
+            StatusCode::NOT_FOUND,
+            "DOWNLOAD_011",
+            format!("Download job not found: {id}"),
+        ),
+        DownloadError::PackageNotFound(id) => (
+            StatusCode::NOT_FOUND,
+            "DOWNLOAD_012",
+            format!("Download package not found: {id}"),
+        ),
+        DownloadError::InvalidPlatform(platform) => (
+            StatusCode::BAD_REQUEST,
+            "DOWNLOAD_013",
+            format!("Invalid download platform: {platform}"),
+        ),
+        DownloadError::InvalidRequest(reason) => (
+            StatusCode::BAD_REQUEST,
+            "DOWNLOAD_014",
+            format!("Invalid download request: {reason}"),
+        ),
+        DownloadError::NotImplemented(feature) => (
+            StatusCode::NOT_IMPLEMENTED,
+            "DOWNLOAD_015",
+            format!("Download feature not implemented yet: {feature}"),
+        ),
+        DownloadError::Database(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "INTERNAL",
             "Internal server error".into(),

@@ -108,6 +108,23 @@ Phase 16c Task 1 added the database foundation:
 | `download_device_state` | Per-user/device local inventory and sync state with local status, transferred bytes, verified file count, local manifest hash, online/download/play timestamps, resume position, pending sync queue, deletion marker, and local failure details. |
 | `download_events` | Explicit event rows for job/package/quota/policy/checksum/sync/cleanup audit history. |
 
+Phase 16c Task 2 added the `server/src/domains/downloads/` five-file domain shell:
+
+| Route | Purpose | Current Task 2 behavior |
+|---|---|---|
+| `GET /api/v1/downloads/plan/{media_item_id}` | Planning contract for a movie or episode | Validates query and returns `DOWNLOAD_015` until Task 4 |
+| `POST /api/v1/downloads/jobs` | Create durable package job | Validates body and returns `DOWNLOAD_015` until Tasks 3-6 |
+| `GET /api/v1/downloads/jobs/{id}` | Read job status | Returns `DOWNLOAD_015` until Task 6 |
+| `POST /api/v1/downloads/jobs/{id}/cancel` | Cancel job | Validates body and returns `DOWNLOAD_015` until Task 6 |
+| `GET /api/v1/downloads/inventory` | List user/device inventory | Validates query and returns `DOWNLOAD_015` until Tasks 7 and 10 |
+| `DELETE /api/v1/downloads/packages/{id}` | Delete package/local state | Validates body and returns `DOWNLOAD_015` until Tasks 7, 10, and 13 |
+| `GET /api/v1/downloads/packages/{id}/manifest` | Fetch package manifest | Returns `DOWNLOAD_015` until Tasks 5 and 7 |
+| `POST /api/v1/downloads/packages/{id}/transfer-urls` | Create short-lived transfer URLs | Validates body and returns `DOWNLOAD_015` until Task 7 |
+| `GET /api/v1/downloads/packages/{id}/files/{*file_path}` | Serve package file/range | Returns `DOWNLOAD_015` until Task 7 |
+| `POST /api/v1/downloads/sync` | Submit reconnect sync state | Validates body and returns `DOWNLOAD_015` until Task 12 |
+
+`DOWNLOAD_001`-`DOWNLOAD_015` are registered in [ERROR_HANDLING.md](ERROR_HANDLING.md). Planning and job creation require the `can_download` capability; read/delete/manifest/sync routes are authenticated user-scoped and will enforce BOLA/policy checks in the service layer as implementation lands.
+
 ## Mobile Contract
 
 The mobile clients own these responsibilities:
@@ -191,4 +208,4 @@ Download quality reuses the Phase 7 quality-management model but is not identica
 
 ## Implementation Status
 
-Phase 16c Tasks 0-1 are complete. The design/research outcome and database schema are in place. Server API domain, access/quota/policy integration, planning APIs, package manifest generation, package workers, package serving, notifications, mobile download manager, protected local storage, offline playback, reconnect sync, settings, observability, and tests are pending Phase 16c Tasks 2-15.
+Phase 16c Tasks 0-2 are complete. The design/research outcome, database schema, and downloads domain route/DTO/error shell are in place. Access/quota/policy integration, planning implementations, package manifest generation, package workers, package serving, notifications, mobile download manager, protected local storage, offline playback, reconnect sync, settings, observability, and tests are pending Phase 16c Tasks 3-15.

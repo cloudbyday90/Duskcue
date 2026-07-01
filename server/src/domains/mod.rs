@@ -18,6 +18,7 @@ pub mod analytics;
 pub mod auth;
 pub mod backup;
 pub mod collections;
+pub mod downloads;
 pub mod libraries;
 pub mod media;
 pub mod migration;
