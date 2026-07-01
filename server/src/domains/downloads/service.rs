@@ -184,6 +184,21 @@ impl DownloadRangeSpec {
     }
 }
 
+pub fn record_package_file_transfer_metrics(
+    file: &DownloadPackageFileServe,
+    bytes_served: u64,
+    ranged: bool,
+) {
+    metrics::counter!("download_package_file_transfer_total", "role" => file.file_role.clone())
+        .increment(1);
+    metrics::counter!(
+        "download_package_file_bytes_served_total",
+        "role" => file.file_role.clone(),
+        "ranged" => ranged.to_string()
+    )
+    .increment(bytes_served);
+}
+
 pub fn publish_download_job_status_event(
     state: &AppState,
     user_id: Uuid,
@@ -1135,6 +1150,7 @@ pub async fn sync_download_state(
 
     let mut accepted_playback_event_ids = Vec::new();
     let mut accepted_playback_events = 0;
+    let mut sync_conflicts = 0;
     for (package_id, events) in events_by_package {
         let Some(context) = contexts.get(&package_id) else {
             continue;
@@ -1154,9 +1170,18 @@ pub async fn sync_download_state(
             if accepted_ids.contains(&event_id) {
                 continue;
             }
+            let conflict = offline_sync_conflict(
+                context.current_user_item_updated_at,
+                context.current_user_item_is_watched,
+                event.occurred_at,
+                event_type_is_watched(event),
+            );
             apply_offline_playback_event(&state.pool, user, context, event).await?;
             accepted_ids.insert(event_id);
             accepted_playback_events += 1;
+            if conflict {
+                sync_conflicts += 1;
+            }
             applied_new_event = true;
             newest_position = Some(event.position_ms.max(0));
             newest_played_at = Some(
@@ -1187,6 +1212,14 @@ pub async fn sync_download_state(
         }
     }
 
+    record_download_sync_metrics(
+        accepted_package_states,
+        accepted_playback_events,
+        sync_conflicts,
+        revoked_package_ids.len(),
+        expired_package_ids.len(),
+        deleted_package_ids.len(),
+    );
     record_download_sync_event(
         &state.pool,
         user,
@@ -1474,6 +1507,8 @@ struct DownloadSyncPackageContext {
     is_expired: bool,
     is_revoked: bool,
     is_deleted: bool,
+    current_user_item_updated_at: Option<DateTime<Utc>>,
+    current_user_item_is_watched: bool,
 }
 
 impl DownloadSyncPackageContext {
@@ -1516,10 +1551,21 @@ async fn load_sync_package_context(
         return Err(DownloadError::AccessDenied);
     }
 
+    let media_item_id: Uuid = row.get("media_item_id");
+    let user_item_row = sqlx::query(
+        "SELECT is_watched, updated_at \
+         FROM user_item_data \
+         WHERE user_id = $1 AND media_item_id = $2",
+    )
+    .bind(user.user_id)
+    .bind(media_item_id)
+    .fetch_optional(&state.pool)
+    .await?;
+
     Ok(DownloadSyncPackageContext {
         package_id,
         library_id: row.get("library_id"),
-        media_item_id: row.get("media_item_id"),
+        media_item_id,
         media_file_id: row.try_get("media_file_id").ok().flatten(),
         user_session_id: row.try_get("user_session_id").ok().flatten(),
         status: row.get("status"),
@@ -1531,6 +1577,13 @@ async fn load_sync_package_context(
         is_expired: false,
         is_revoked: false,
         is_deleted: false,
+        current_user_item_updated_at: user_item_row
+            .as_ref()
+            .and_then(|row| row.try_get("updated_at").ok()),
+        current_user_item_is_watched: user_item_row
+            .as_ref()
+            .and_then(|row| row.try_get("is_watched").ok())
+            .unwrap_or(false),
     })
 }
 
@@ -1829,6 +1882,50 @@ fn offline_event_id(event: &OfflinePlaybackEvent) -> String {
 
 fn json_bool(value: &Value, key: &str) -> bool {
     value.get(key).and_then(Value::as_bool).unwrap_or(false)
+}
+
+fn event_type_is_watched(event: &OfflinePlaybackEvent) -> bool {
+    let event_type = event.event_type.to_lowercase();
+    event_type == "completed"
+        || json_bool(&event.details, "completed")
+        || json_bool(&event.details, "watched")
+}
+
+fn offline_sync_conflict(
+    current_updated_at: Option<DateTime<Utc>>,
+    current_is_watched: bool,
+    event_occurred_at: DateTime<Utc>,
+    event_marks_watched: bool,
+) -> bool {
+    if event_marks_watched {
+        return false;
+    }
+    current_is_watched
+        || current_updated_at
+            .map(|updated_at| updated_at > event_occurred_at)
+            .unwrap_or(false)
+}
+
+fn record_download_sync_metrics(
+    accepted_package_states: usize,
+    accepted_playback_events: usize,
+    sync_conflicts: usize,
+    revoked_packages: usize,
+    expired_packages: usize,
+    deleted_packages: usize,
+) {
+    metrics::counter!("download_sync_submissions_total").increment(1);
+    metrics::counter!("download_sync_package_states_accepted_total")
+        .increment(accepted_package_states as u64);
+    metrics::counter!("download_sync_playback_events_accepted_total")
+        .increment(accepted_playback_events as u64);
+    metrics::counter!("download_sync_conflicts_total").increment(sync_conflicts as u64);
+    metrics::counter!("download_sync_packages_rejected_total", "reason" => "revoked")
+        .increment(revoked_packages as u64);
+    metrics::counter!("download_sync_packages_rejected_total", "reason" => "expired")
+        .increment(expired_packages as u64);
+    metrics::counter!("download_sync_packages_rejected_total", "reason" => "deleted")
+        .increment(deleted_packages as u64);
 }
 
 fn clamp_i64_to_i32(value: i64) -> i32 {
@@ -2962,6 +3059,39 @@ mod tests {
         assert_eq!(accepted.len(), 500);
         assert!(!accepted.contains("event-000"));
         assert!(accepted.contains("event-509"));
+    }
+
+    #[test]
+    fn offline_sync_conflict_detects_newer_server_progress() {
+        let event_at = DateTime::parse_from_rfc3339("2026-07-01T00:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let newer_server_at = DateTime::parse_from_rfc3339("2026-07-01T00:05:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let older_server_at = DateTime::parse_from_rfc3339("2026-06-30T23:55:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+
+        assert!(offline_sync_conflict(
+            Some(newer_server_at),
+            false,
+            event_at,
+            false
+        ));
+        assert!(!offline_sync_conflict(
+            Some(older_server_at),
+            false,
+            event_at,
+            false
+        ));
+        assert!(!offline_sync_conflict(
+            Some(newer_server_at),
+            false,
+            event_at,
+            true
+        ));
+        assert!(offline_sync_conflict(None, true, event_at, false));
     }
 
     #[test]

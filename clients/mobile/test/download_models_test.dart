@@ -61,6 +61,7 @@ void main() {
       chargingOnly: true,
       pauseOnLowStorage: true,
       storageCapBytes: 1073741824,
+      autoDeleteWatched: true,
     );
 
     final decoded = DownloadManagerSettings.fromJson(settings.toJson());
@@ -70,6 +71,18 @@ void main() {
     expect(decoded.allowCellular, isTrue);
     expect(decoded.chargingOnly, isTrue);
     expect(decoded.storageCapBytes, 1073741824);
+    expect(decoded.autoDeleteWatched, isTrue);
+  });
+
+  test('download settings can clear storage cap independently', () {
+    const settings = DownloadManagerSettings(storageCapBytes: 1073741824);
+
+    final cleared = settings.copyWith(clearStorageCap: true);
+    final retained = settings.copyWith(allowCellular: true);
+
+    expect(cleared.storageCapBytes, isNull);
+    expect(retained.storageCapBytes, 1073741824);
+    expect(retained.allowCellular, isTrue);
   });
 
   test('package manifest resolves local playback file by package format', () {
@@ -125,6 +138,31 @@ void main() {
     expect(mp4.primaryPlaybackFile?.relativePath, 'media.mp4');
   });
 
+  test('transfer urls preserve checksums and byte-size hints', () {
+    final urls = PackageTransferUrls.fromJson({
+      'package_id': 'package-1',
+      'expires_at': '2026-07-01T00:15:00Z',
+      'files': [
+        {
+          'relative_path': 'media.mp4',
+          'url': '/api/v1/downloads/packages/package-1/files/media.mp4',
+          'method': 'GET',
+          'headers': {
+            'Accept-Ranges': 'bytes',
+            'X-Duskcue-Checksum-Sha256': 'abc',
+            'X-Duskcue-Byte-Size': 42,
+          },
+        },
+      ],
+    });
+
+    expect(urls.packageId, 'package-1');
+    expect(urls.files.single.relativePath, 'media.mp4');
+    expect(urls.files.single.headers['Accept-Ranges'], 'bytes');
+    expect(urls.files.single.headers['X-Duskcue-Checksum-Sha256'], 'abc');
+    expect(urls.files.single.headers['X-Duskcue-Byte-Size'], 42);
+  });
+
   test('download item tracks playable offline state and pending sync events', () {
     final item = DownloadItem(
       mediaItemId: 'media-1',
@@ -143,5 +181,25 @@ void main() {
     expect(decoded.localResumePositionMs, 45000);
     expect(decoded.pendingPlaybackEventCount, 2);
     expect(decoded.status, DownloadItemStatus.playableOffline);
+  });
+
+  test('sync response separates accepted events and invalidated packages', () {
+    final response = DownloadSyncResponse.fromJson({
+      'accepted_package_states': 1,
+      'accepted_playback_events': 2,
+      'accepted_playback_event_ids': ['event-1', 'event-2'],
+      'revoked_package_ids': ['package-revoked'],
+      'expired_package_ids': ['package-expired'],
+      'deleted_package_ids': ['package-deleted'],
+      'server_time': '2026-07-01T00:00:00Z',
+    });
+
+    expect(response.acceptedPackageStates, 1);
+    expect(response.acceptedPlaybackEvents, 2);
+    expect(response.acceptedPlaybackEventIds, ['event-1', 'event-2']);
+    expect(response.revokedPackageIds, ['package-revoked']);
+    expect(response.expiredPackageIds, ['package-expired']);
+    expect(response.deletedPackageIds, ['package-deleted']);
+    expect(response.serverTime, DateTime.parse('2026-07-01T00:00:00Z'));
   });
 }

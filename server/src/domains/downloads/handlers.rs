@@ -195,6 +195,7 @@ pub async fn serve_package_file(
                 DownloadError::StorageUnavailable("package file is unavailable".into())
             })?;
 
+            service::record_package_file_transfer_metrics(&file, length as u64, true);
             Ok(download_file_response(
                 StatusCode::PARTIAL_CONTENT,
                 &file,
@@ -208,6 +209,7 @@ pub async fn serve_package_file(
                 DownloadError::StorageUnavailable("package file is unavailable".into())
             })?;
 
+            service::record_package_file_transfer_metrics(&file, file_size, false);
             Ok(download_file_response(
                 StatusCode::OK,
                 &file,

@@ -16,6 +16,7 @@
 
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 use anyhow::{Context, anyhow};
 use chrono::{DateTime, Utc};
@@ -198,6 +199,17 @@ pub async fn run_download_package_worker(
                         "download package preparation failed"
                     }),
                 );
+                let outcome = if failure_outcome.retried {
+                    "retry"
+                } else {
+                    "failed"
+                };
+                metrics::counter!(
+                    "download_job_failures_total",
+                    "reason" => failure_reason_label(&failure),
+                    "outcome" => outcome
+                )
+                .increment(1);
                 if failure_outcome.retried {
                     stats.retried += 1;
                     metrics::counter!("download_jobs_retried_total").increment(1);
@@ -233,6 +245,7 @@ pub async fn run_download_package_worker(
     stats.cleaned += cleanup_orphaned_package_dirs(&state.pool, &package_root).await?;
     metrics::gauge!("download_worker_last_claimed_jobs").set(stats.claimed as f64);
     metrics::gauge!("download_worker_last_cleaned_packages").set(stats.cleaned as f64);
+    record_download_worker_gauges(&state.pool).await?;
 
     tracing::info!(
         task_id = %task_id,
@@ -358,6 +371,17 @@ async fn process_job(
         }),
     )
     .await?;
+    metrics::counter!(
+        "download_package_bytes_prepared_total",
+        "strategy" => job.package_strategy.clone(),
+        "format" => job.package_format.clone()
+    )
+    .increment(total_bytes.max(0) as u64);
+    metrics::histogram!(
+        "download_package_files_per_package",
+        "format" => job.package_format.clone()
+    )
+    .record(files.len() as f64);
     update_progress(&state.pool, job.id, 100.0, total_bytes).await?;
     publish_worker_status_event(
         state,
@@ -492,6 +516,7 @@ async fn prepare_hls_package(
         command.arg("-c:v").arg("copy").arg("-c:a").arg("copy");
     }
 
+    let started_at = Instant::now();
     let status = command
         .arg("-f")
         .arg("hls")
@@ -509,6 +534,13 @@ async fn prepare_hls_package(
         .status()
         .await
         .context("failed to run ffmpeg for offline package")?;
+    if transcode {
+        metrics::histogram!(
+            "download_transcode_duration_seconds",
+            "outcome" => if status.success() { "success" } else { "failed" }
+        )
+        .record(started_at.elapsed().as_secs_f64());
+    }
 
     if !status.success() {
         return Err(anyhow!("ffmpeg exited with status {status}"));
@@ -866,6 +898,7 @@ async fn cleanup_due_packages(
     }
     if cleaned > 0 {
         metrics::counter!("download_packages_cleaned_total").increment(cleaned);
+        metrics::counter!("download_cleanup_total", "kind" => "package").increment(cleaned);
     }
     Ok(cleaned)
 }
@@ -917,6 +950,7 @@ async fn cleanup_due_job_dirs(pool: &PgPool, package_root: &Path) -> anyhow::Res
 
     if cleaned > 0 {
         metrics::counter!("download_job_dirs_cleaned_total").increment(cleaned);
+        metrics::counter!("download_cleanup_total", "kind" => "job_dir").increment(cleaned);
     }
     Ok(cleaned)
 }
@@ -972,8 +1006,39 @@ async fn cleanup_orphaned_package_dirs(pool: &PgPool, package_root: &Path) -> an
 
     if cleaned > 0 {
         metrics::counter!("download_orphaned_dirs_cleaned_total").increment(cleaned);
+        metrics::counter!("download_cleanup_total", "kind" => "orphaned_dir").increment(cleaned);
     }
     Ok(cleaned)
+}
+
+async fn record_download_worker_gauges(pool: &PgPool) -> anyhow::Result<()> {
+    let row = sqlx::query(
+        "SELECT \
+            COUNT(*) FILTER (WHERE status = 'queued')::BIGINT AS queued_jobs, \
+            COUNT(*) FILTER (WHERE status IN ('queued', 'preparing'))::BIGINT AS active_jobs, \
+            COALESCE(SUM(bytes_prepared), 0)::BIGINT AS bytes_prepared \
+         FROM download_jobs",
+    )
+    .fetch_one(pool)
+    .await?;
+    let package_row = sqlx::query(
+        "SELECT \
+            COALESCE(SUM(total_bytes), 0)::BIGINT AS storage_bytes, \
+            COUNT(*)::BIGINT AS retained_packages \
+         FROM download_packages \
+         WHERE status IN ('ready', 'serving', 'expired', 'revoked', 'cleanup_pending', 'failed')",
+    )
+    .fetch_one(pool)
+    .await?;
+
+    metrics::gauge!("download_queue_depth_jobs").set(row.get::<i64, _>("queued_jobs") as f64);
+    metrics::gauge!("download_active_jobs").set(row.get::<i64, _>("active_jobs") as f64);
+    metrics::gauge!("download_bytes_prepared").set(row.get::<i64, _>("bytes_prepared") as f64);
+    metrics::gauge!("download_storage_used_bytes")
+        .set(package_row.get::<i64, _>("storage_bytes") as f64);
+    metrics::gauge!("download_retained_packages")
+        .set(package_row.get::<i64, _>("retained_packages") as f64);
+    Ok(())
 }
 
 async fn update_progress(
@@ -1276,6 +1341,27 @@ fn truncate_reason(reason: &str) -> String {
     }
 }
 
+fn failure_reason_label(reason: &str) -> String {
+    let reason = reason.to_lowercase();
+    if reason.contains("cancel") {
+        "cancelled".to_string()
+    } else if reason.contains("ffmpeg") {
+        "ffmpeg".to_string()
+    } else if reason.contains("checksum") || reason.contains("hash") {
+        "checksum".to_string()
+    } else if reason.contains("permission") || reason.contains("access") {
+        "access".to_string()
+    } else if reason.contains("space") || reason.contains("storage") || reason.contains("disk") {
+        "storage".to_string()
+    } else if reason.contains("timeout") || reason.contains("timed out") {
+        "timeout".to_string()
+    } else if reason.contains("source") || reason.contains("media file") {
+        "source_media".to_string()
+    } else {
+        "other".to_string()
+    }
+}
+
 fn default_max_jobs_per_run() -> i64 {
     DEFAULT_MAX_JOBS_PER_RUN
 }
@@ -1290,4 +1376,31 @@ fn default_stale_preparing_minutes() -> i64 {
 
 fn default_failed_cleanup_hours() -> i64 {
     DEFAULT_FAILED_CLEANUP_HOURS
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failure_reason_label_is_bounded_and_stable() {
+        assert_eq!(
+            failure_reason_label("ffmpeg exited with status 1"),
+            "ffmpeg"
+        );
+        assert_eq!(
+            failure_reason_label("checksum mismatch for segment"),
+            "checksum"
+        );
+        assert_eq!(failure_reason_label("not enough disk space"), "storage");
+        assert_eq!(
+            failure_reason_label("permission denied reading file"),
+            "access"
+        );
+        assert_eq!(
+            failure_reason_label("source media file missing"),
+            "source_media"
+        );
+        assert_eq!(failure_reason_label("unexpected worker error"), "other");
+    }
 }
