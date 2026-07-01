@@ -49,6 +49,15 @@ fn format_listen_url(bind_address: &str, port: u16) -> String {
     }
 }
 
+fn all_tv_sections() -> Vec<duskcue::domains::tv::types::TvSurfaceSectionType> {
+    vec![
+        duskcue::domains::tv::types::TvSurfaceSectionType::Continue,
+        duskcue::domains::tv::types::TvSurfaceSectionType::NextUp,
+        duskcue::domains::tv::types::TvSurfaceSectionType::NewEpisodes,
+        duskcue::domains::tv::types::TvSurfaceSectionType::Recommended,
+    ]
+}
+
 async fn wait_for_signal(shutdown: CancellationToken) {
     let ctrl_c = async {
         tokio::signal::ctrl_c()
@@ -335,6 +344,8 @@ async fn main() {
 
     let enrichment = state.enrichment.clone();
     let cache_dir = state.bootstrap.cache_dir.clone();
+    let library_scan_event_bus = state.event_bus.clone();
+    let metadata_refresh_event_bus = state.event_bus.clone();
 
     let worker_state = state.clone();
     let segment_state = state.clone();
@@ -353,8 +364,9 @@ async fn main() {
     let migration_cleanup_state = state.clone();
     let scheduler = Arc::new(
         Scheduler::new(state.pool.clone())
-            .register_executor("library_scan", |pool, task_id, config| {
+            .register_executor("library_scan", move |pool, task_id, config| {
                 let pool = pool.clone();
+                let event_bus = library_scan_event_bus.clone();
                 async move {
                     let mode = config
                         .get("mode")
@@ -388,6 +400,21 @@ async fn main() {
                                         total_added += result.items_created;
                                         total_updated += result.files_modified;
                                         total_removed += result.files_deleted;
+                                        if let Err(e) = duskcue::domains::tv::service::publish_tv_surface_changed_for_library(
+                                            &pool,
+                                            &event_bus,
+                                            library_id,
+                                            "library_scan_completed",
+                                            all_tv_sections(),
+                                        )
+                                        .await
+                                        {
+                                            tracing::warn!(
+                                                library_id = %library_id,
+                                                error = %e,
+                                                "Failed to publish TV surface change after scheduled library scan"
+                                            );
+                                        }
                                     }
                                     Err(e) => {
                                         tracing::error!(
@@ -417,11 +444,13 @@ async fn main() {
                 let pool = pool.clone();
                 let enrichment = enrichment.clone();
                 let cache_dir = cache_dir.clone();
+                let event_bus = metadata_refresh_event_bus.clone();
                 async move {
                     duskcue::workers::metadata_refresh::run_metadata_refresh(
                         &pool,
                         &cache_dir,
                         &enrichment,
+                        &event_bus,
                         task_id,
                         config,
                     )

@@ -22,6 +22,9 @@ use sqlx::{PgPool, Row};
 use tokio::fs;
 use uuid::Uuid;
 
+use crate::domains::tv::service as tv_service;
+use crate::domains::tv::types::TvSurfaceSectionType;
+use crate::services::event_bus::EventBus;
 use crate::services::metadata::EnrichmentOrchestrator;
 
 const EXPORTS_SUBDIR: &str = "metadata/exports";
@@ -32,6 +35,7 @@ pub async fn run_metadata_refresh(
     pool: &PgPool,
     cache_dir: &std::path::Path,
     orchestrator: &EnrichmentOrchestrator,
+    event_bus: &EventBus,
     task_id: Uuid,
     config: serde_json::Value,
 ) {
@@ -41,8 +45,26 @@ pub async fn run_metadata_refresh(
         tracing::warn!(error = %e, "Daily export download failed — continuing with /changes refresh");
     }
 
-    if let Err(e) = refresh_changed_items(pool, orchestrator, &config).await {
-        tracing::error!(error = %e, "Metadata refresh failed");
+    match refresh_changed_items(pool, orchestrator, &config).await {
+        Ok(enriched) => {
+            if enriched > 0 {
+                if let Err(e) = tv_service::publish_tv_surface_changed_for_all_users(
+                    pool,
+                    event_bus,
+                    "metadata_changed",
+                    all_tv_sections(),
+                    None,
+                    None,
+                )
+                .await
+                {
+                    tracing::warn!(error = %e, "Failed to publish TV metadata change event");
+                }
+            }
+        }
+        Err(e) => {
+            tracing::error!(error = %e, "Metadata refresh failed");
+        }
     }
 
     tracing::info!(task_id = %task_id, "Metadata refresh task completed");
@@ -142,12 +164,12 @@ async fn refresh_changed_items(
     pool: &PgPool,
     orchestrator: &EnrichmentOrchestrator,
     config: &serde_json::Value,
-) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
     let tmdb_client = match orchestrator.tmdb_client() {
         Some(c) => c,
         None => {
             tracing::info!("No TMDB client configured — skipping metadata refresh");
-            return Ok(());
+            return Ok(0);
         }
     };
 
@@ -260,7 +282,16 @@ async fn refresh_changed_items(
 
     tracing::info!(enriched, failed, "Metadata refresh re-enrichment complete");
 
-    Ok(())
+    Ok(enriched)
+}
+
+fn all_tv_sections() -> Vec<TvSurfaceSectionType> {
+    vec![
+        TvSurfaceSectionType::Continue,
+        TvSurfaceSectionType::NextUp,
+        TvSurfaceSectionType::NewEpisodes,
+        TvSurfaceSectionType::Recommended,
+    ]
 }
 
 async fn find_matching_items(

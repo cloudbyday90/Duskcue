@@ -14,18 +14,25 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+use std::sync::OnceLock;
 use std::time::Instant;
 
-use chrono::{DateTime, Datelike, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
+use dashmap::DashMap;
 use sqlx::Row;
 use uuid::Uuid;
 
 use super::error::TvError;
 use super::types::*;
 use crate::extractors::AuthenticatedUser;
+use crate::services::event_bus::{EventBus, ServerEvent};
 
 const DEFAULT_LIMIT: u32 = 30;
 const MAX_LIMIT: u32 = 100;
+const RESUME_EVENT_DEBOUNCE_SECONDS: i64 = 60;
+const DEFAULT_EVENT_DEBOUNCE_SECONDS: i64 = 5;
+
+static TV_SURFACE_EVENT_DEBOUNCE: OnceLock<DashMap<String, DateTime<Utc>>> = OnceLock::new();
 
 #[derive(Debug, Clone)]
 pub struct TvAccessScope {
@@ -467,6 +474,27 @@ WHERE mi.type IN ('movie', 'episode')
   AND NOT (mi.id = ANY($3::uuid[]))
 ORDER BY mi.sort_title ASC, mi.id ASC
 LIMIT $4
+"#;
+
+const ACTIVE_USERS_SQL: &str = r#"
+SELECT id
+FROM users
+WHERE deleted_at IS NULL AND status = 'active'
+"#;
+
+const USERS_WITH_LIBRARY_ACCESS_SQL: &str = r#"
+SELECT u.id
+FROM users u
+WHERE u.deleted_at IS NULL
+  AND u.status = 'active'
+  AND (
+      u.has_all_library_access = true
+      OR EXISTS (
+          SELECT 1
+          FROM user_library_access ula
+          WHERE ula.user_id = u.id AND ula.library_id = $1
+      )
+  )
 "#;
 
 pub fn resolve_surface_query(query: TvSurfaceQuery) -> Result<ResolvedTvSurfaceQuery, TvError> {
@@ -967,6 +995,128 @@ pub fn record_tv_resolve_failure(err: &TvError) {
         .increment(1);
 }
 
+pub fn publish_tv_surface_changed(
+    event_bus: &EventBus,
+    user_id: Uuid,
+    reason: &str,
+    changed_sections: Vec<TvSurfaceSectionType>,
+    media_item_id: Option<Uuid>,
+    series_id: Option<Uuid>,
+    library_id: Option<Uuid>,
+    debounce_seconds: i64,
+) -> bool {
+    if changed_sections.is_empty() {
+        return false;
+    }
+
+    let reason = normalize_surface_change_reason(reason);
+    let now = Utc::now();
+    let debounce_until = if debounce_seconds > 0 {
+        Some(now + Duration::seconds(debounce_seconds))
+    } else {
+        None
+    };
+
+    if should_debounce_surface_event(user_id, reason, media_item_id, library_id, now) {
+        return false;
+    }
+
+    if let Some(until) = debounce_until {
+        let key = surface_event_debounce_key(user_id, reason, media_item_id, library_id);
+        surface_event_debounce().insert(key, until);
+    }
+
+    let payload = TvSurfaceChangedEventPayload {
+        user_id,
+        reason: reason.to_string(),
+        changed_sections,
+        media_item_id,
+        series_id,
+        library_id,
+        generated_after: now,
+        debounce_until,
+    };
+
+    let value = serde_json::to_value(payload).unwrap_or_else(|_| serde_json::json!({}));
+    let _ = event_bus.publish(user_id, ServerEvent::new("tv_surface_changed", value));
+    true
+}
+
+pub fn publish_tv_resume_changed(
+    event_bus: &EventBus,
+    user_id: Uuid,
+    media_item_id: Option<Uuid>,
+) -> bool {
+    publish_tv_surface_changed(
+        event_bus,
+        user_id,
+        "resume_position_changed",
+        vec![TvSurfaceSectionType::Continue],
+        media_item_id,
+        None,
+        None,
+        RESUME_EVENT_DEBOUNCE_SECONDS,
+    )
+}
+
+pub async fn publish_tv_surface_changed_for_all_users(
+    pool: &sqlx::PgPool,
+    event_bus: &EventBus,
+    reason: &str,
+    changed_sections: Vec<TvSurfaceSectionType>,
+    media_item_id: Option<Uuid>,
+    library_id: Option<Uuid>,
+) -> Result<usize, TvError> {
+    let rows = sqlx::query(ACTIVE_USERS_SQL).fetch_all(pool).await?;
+    let mut published = 0;
+    for row in rows {
+        let user_id: Uuid = row.try_get("id")?;
+        if publish_tv_surface_changed(
+            event_bus,
+            user_id,
+            reason,
+            changed_sections.clone(),
+            media_item_id,
+            None,
+            library_id,
+            DEFAULT_EVENT_DEBOUNCE_SECONDS,
+        ) {
+            published += 1;
+        }
+    }
+    Ok(published)
+}
+
+pub async fn publish_tv_surface_changed_for_library(
+    pool: &sqlx::PgPool,
+    event_bus: &EventBus,
+    library_id: Uuid,
+    reason: &str,
+    changed_sections: Vec<TvSurfaceSectionType>,
+) -> Result<usize, TvError> {
+    let rows = sqlx::query(USERS_WITH_LIBRARY_ACCESS_SQL)
+        .bind(library_id)
+        .fetch_all(pool)
+        .await?;
+    let mut published = 0;
+    for row in rows {
+        let user_id: Uuid = row.try_get("id")?;
+        if publish_tv_surface_changed(
+            event_bus,
+            user_id,
+            reason,
+            changed_sections.clone(),
+            None,
+            None,
+            Some(library_id),
+            DEFAULT_EVENT_DEBOUNCE_SECONDS,
+        ) {
+            published += 1;
+        }
+    }
+    Ok(published)
+}
+
 pub fn encode_platform_content_id(id: &PlatformContentId, target: TvPlatformIdTarget) -> String {
     match target {
         TvPlatformIdTarget::Canonical => build_platform_content_id(id.media_type, id.media_item_id),
@@ -1211,6 +1361,61 @@ fn resolve_failure_reason(err: &TvError) -> &'static str {
         TvError::UnsupportedPlatformHint(_) => "unsupported_platform_hint",
         TvError::DiagnosticsUnavailable => "diagnostics_unavailable",
     }
+}
+
+fn normalize_surface_change_reason(reason: &str) -> &'static str {
+    match reason {
+        "playback_started" => "playback_started",
+        "resume_position_changed" => "resume_position_changed",
+        "playback_paused" => "playback_paused",
+        "playback_stopped" => "playback_stopped",
+        "playback_completed" => "playback_completed",
+        "watch_data_updated" => "watch_data_updated",
+        "library_changed" => "library_changed",
+        "library_scan_completed" => "library_scan_completed",
+        "metadata_changed" => "metadata_changed",
+        "artwork_changed" => "artwork_changed",
+        "collection_changed" => "collection_changed",
+        "access_changed" => "access_changed",
+        _ => "other",
+    }
+}
+
+fn surface_event_debounce() -> &'static DashMap<String, DateTime<Utc>> {
+    TV_SURFACE_EVENT_DEBOUNCE.get_or_init(DashMap::new)
+}
+
+fn should_debounce_surface_event(
+    user_id: Uuid,
+    reason: &str,
+    media_item_id: Option<Uuid>,
+    library_id: Option<Uuid>,
+    now: DateTime<Utc>,
+) -> bool {
+    let key = surface_event_debounce_key(user_id, reason, media_item_id, library_id);
+    surface_event_debounce()
+        .get(&key)
+        .map(|until| *until > now)
+        .unwrap_or(false)
+}
+
+fn surface_event_debounce_key(
+    user_id: Uuid,
+    reason: &str,
+    media_item_id: Option<Uuid>,
+    library_id: Option<Uuid>,
+) -> String {
+    format!(
+        "{}:{}:{}:{}",
+        user_id,
+        reason,
+        media_item_id
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "all_media".to_string()),
+        library_id
+            .map(|id| id.to_string())
+            .unwrap_or_else(|| "all_libraries".to_string())
+    )
 }
 
 fn platform_metric_label(platform: Option<TvPlatform>) -> &'static str {
@@ -1496,5 +1701,142 @@ mod tests {
             TvAvailabilityState::Playable,
             None
         ));
+    }
+
+    #[test]
+    fn tv_surface_reason_normalization_is_bounded() {
+        assert_eq!(
+            normalize_surface_change_reason("playback_completed"),
+            "playback_completed"
+        );
+        assert_eq!(
+            normalize_surface_change_reason("raw path /tmp/movie"),
+            "other"
+        );
+    }
+
+    #[test]
+    fn tv_surface_event_debounce_keys_include_user_reason_and_item() {
+        let user_id = Uuid::now_v7();
+        let media_item_id = Uuid::now_v7();
+        let library_id = Uuid::now_v7();
+
+        let key = surface_event_debounce_key(
+            user_id,
+            "resume_position_changed",
+            Some(media_item_id),
+            Some(library_id),
+        );
+
+        assert!(key.contains(&user_id.to_string()));
+        assert!(key.contains("resume_position_changed"));
+        assert!(key.contains(&media_item_id.to_string()));
+        assert!(key.contains(&library_id.to_string()));
+    }
+
+    #[test]
+    fn tv_surface_event_debounce_suppresses_until_deadline() {
+        let user_id = Uuid::now_v7();
+        let media_item_id = Some(Uuid::now_v7());
+        let now = Utc::now();
+        let key =
+            surface_event_debounce_key(user_id, "resume_position_changed", media_item_id, None);
+        surface_event_debounce().insert(key, now + Duration::seconds(30));
+
+        assert!(should_debounce_surface_event(
+            user_id,
+            "resume_position_changed",
+            media_item_id,
+            None,
+            now
+        ));
+        assert!(!should_debounce_surface_event(
+            user_id,
+            "resume_position_changed",
+            media_item_id,
+            None,
+            now + Duration::seconds(31)
+        ));
+    }
+
+    #[test]
+    fn publish_tv_surface_changed_emits_bounded_payload() {
+        let bus = EventBus::with_default_limit();
+        let user_id = Uuid::now_v7();
+        let media_item_id = Uuid::now_v7();
+        let mut rx = bus.subscribe(user_id);
+
+        assert!(publish_tv_surface_changed(
+            &bus,
+            user_id,
+            "playback_completed",
+            vec![TvSurfaceSectionType::Continue],
+            Some(media_item_id),
+            None,
+            None,
+            0,
+        ));
+
+        let event = rx.try_recv().expect("tv surface event should be emitted");
+        assert_eq!(event.event_type, "tv_surface_changed");
+        assert_eq!(event.payload["user_id"], user_id.to_string());
+        assert_eq!(event.payload["reason"], "playback_completed");
+        assert_eq!(event.payload["changed_sections"][0], "continue");
+        assert_eq!(event.payload["media_item_id"], media_item_id.to_string());
+        assert!(event.payload["generated_after"].is_string());
+        assert!(event.payload["debounce_until"].is_null());
+    }
+
+    #[test]
+    fn publish_tv_surface_changed_coalesces_duplicate_events() {
+        let bus = EventBus::with_default_limit();
+        let user_id = Uuid::now_v7();
+        let media_item_id = Uuid::now_v7();
+        let mut rx = bus.subscribe(user_id);
+
+        assert!(publish_tv_surface_changed(
+            &bus,
+            user_id,
+            "resume_position_changed",
+            vec![TvSurfaceSectionType::Continue],
+            Some(media_item_id),
+            None,
+            None,
+            60,
+        ));
+        assert!(!publish_tv_surface_changed(
+            &bus,
+            user_id,
+            "resume_position_changed",
+            vec![TvSurfaceSectionType::Continue],
+            Some(media_item_id),
+            None,
+            None,
+            60,
+        ));
+
+        let event = rx.try_recv().expect("first event should be emitted");
+        assert_eq!(event.payload["reason"], "resume_position_changed");
+        assert!(event.payload["debounce_until"].is_string());
+        assert!(rx.try_recv().is_err());
+    }
+
+    #[test]
+    fn publish_tv_surface_changed_skips_empty_section_updates() {
+        let bus = EventBus::with_default_limit();
+        let user_id = Uuid::now_v7();
+        let mut rx = bus.subscribe(user_id);
+
+        assert!(!publish_tv_surface_changed(
+            &bus,
+            user_id,
+            "metadata_changed",
+            vec![],
+            None,
+            None,
+            None,
+            0,
+        ));
+        assert!(rx.try_recv().is_err());
     }
 }

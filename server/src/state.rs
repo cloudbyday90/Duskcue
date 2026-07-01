@@ -1029,7 +1029,12 @@ impl AppState {
             MetadataConfig::default(),
             bootstrap.data_dir.clone(),
         ));
-        let fs_watcher = Arc::new(LibraryWatcherManager::new(pool.clone(), enrichment.clone()));
+        let event_bus = Arc::new(EventBus::with_default_limit());
+        let fs_watcher = Arc::new(LibraryWatcherManager::new(
+            pool.clone(),
+            enrichment.clone(),
+            event_bus.clone(),
+        ));
         let transcode_manager = Arc::new(crate::services::transcoding::TranscodeManager::new(
             Arc::new(ArcSwap::from_pointee(RuntimeConfig::default())),
         ));
@@ -1048,7 +1053,7 @@ impl AppState {
             enrichment,
             encryption_key: Arc::new(encryption_key),
             transcode_manager,
-            event_bus: Arc::new(EventBus::with_default_limit()),
+            event_bus,
             geoip: Arc::new(GeoIpService::disabled()),
             scheduler: Arc::new(std::sync::OnceLock::new()),
         }
@@ -1082,7 +1087,12 @@ impl AppState {
             bootstrap.data_dir.clone(),
         ));
 
-        let fs_watcher = Arc::new(LibraryWatcherManager::new(pool.clone(), enrichment.clone()));
+        let event_bus = Arc::new(EventBus::with_default_limit());
+        let fs_watcher = Arc::new(LibraryWatcherManager::new(
+            pool.clone(),
+            enrichment.clone(),
+            event_bus.clone(),
+        ));
 
         let config_arc = Arc::new(ArcSwap::from_pointee(runtime_config));
         let transcode_manager = Arc::new(crate::services::transcoding::TranscodeManager::new(
@@ -1106,7 +1116,7 @@ impl AppState {
             enrichment,
             encryption_key: Arc::new(encryption_key),
             transcode_manager,
-            event_bus: Arc::new(EventBus::with_default_limit()),
+            event_bus,
             geoip,
             scheduler: Arc::new(std::sync::OnceLock::new()),
         }

@@ -20,6 +20,8 @@ use serde::Deserialize;
 use uuid::Uuid;
 use validator::Validate;
 
+use crate::domains::tv::service as tv_service;
+use crate::domains::tv::types::TvSurfaceSectionType;
 use crate::error::AppError;
 use crate::extractors::{CanManageLibraries, Require};
 use crate::state::AppState;
@@ -117,6 +119,15 @@ pub async fn create_library(
         }
     }
 
+    tv_service::publish_tv_surface_changed_for_library(
+        &state.pool,
+        &state.event_bus,
+        response.id,
+        "library_changed",
+        all_tv_sections(),
+    )
+    .await?;
+
     Ok(Json(response))
 }
 
@@ -162,6 +173,15 @@ pub async fn update_library(
     )
     .await?;
 
+    tv_service::publish_tv_surface_changed_for_library(
+        &state.pool,
+        &state.event_bus,
+        response.id,
+        "library_changed",
+        all_tv_sections(),
+    )
+    .await?;
+
     Ok(Json(response))
 }
 
@@ -172,6 +192,14 @@ pub async fn delete_library(
 ) -> Result<Json<serde_json::Value>, AppError> {
     service::soft_delete_library(&state.pool, library_id).await?;
     state.fs_watcher.unwatch_library(library_id);
+    tv_service::publish_tv_surface_changed_for_library(
+        &state.pool,
+        &state.event_bus,
+        library_id,
+        "library_changed",
+        all_tv_sections(),
+    )
+    .await?;
     Ok(Json(serde_json::json!({ "status": "deleted" })))
 }
 
@@ -186,6 +214,14 @@ pub async fn scan_library(
         crate::workers::library_scanner::scan_library(&pool, library_id, false, enrichment)
             .await
             .map_err(|e| crate::error::AppError::Internal(anyhow::anyhow!("{}", e)))?;
+    tv_service::publish_tv_surface_changed_for_library(
+        &state.pool,
+        &state.event_bus,
+        library_id,
+        "library_scan_completed",
+        all_tv_sections(),
+    )
+    .await?;
     Ok(Json(serde_json::to_value(result).unwrap_or_else(
         |_| serde_json::json!({ "status": "scan_completed" }),
     )))
@@ -281,6 +317,15 @@ pub async fn create_library_path(
         }
     }
 
+    tv_service::publish_tv_surface_changed_for_library(
+        &state.pool,
+        &state.event_bus,
+        library_id,
+        "library_changed",
+        all_tv_sections(),
+    )
+    .await?;
+
     Ok(Json(response))
 }
 
@@ -324,6 +369,15 @@ pub async fn update_library_path(
     )
     .await?;
 
+    tv_service::publish_tv_surface_changed_for_library(
+        &state.pool,
+        &state.event_bus,
+        library_id,
+        "library_changed",
+        all_tv_sections(),
+    )
+    .await?;
+
     Ok(Json(response))
 }
 
@@ -342,5 +396,22 @@ pub async fn delete_library_path(
             tracing::warn!(library_id = %library_id, error = %e, "Failed to update FS watcher after path deletion");
         }
     }
+    tv_service::publish_tv_surface_changed_for_library(
+        &state.pool,
+        &state.event_bus,
+        library_id,
+        "library_changed",
+        all_tv_sections(),
+    )
+    .await?;
     Ok(Json(serde_json::json!({ "status": "deleted" })))
+}
+
+fn all_tv_sections() -> Vec<TvSurfaceSectionType> {
+    vec![
+        TvSurfaceSectionType::Continue,
+        TvSurfaceSectionType::NextUp,
+        TvSurfaceSectionType::NewEpisodes,
+        TvSurfaceSectionType::Recommended,
+    ]
 }

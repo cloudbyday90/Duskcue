@@ -160,6 +160,7 @@ The server maintains a short ring buffer (default: 100 events per user, ~5 minut
 | `storyboard_progress` | `workers/storyboard_generator.rs` | [STORYBOARDS.md](STORYBOARDS.md) | Emitted on admin-triggered generation (`phase: started|progress|completed`); scheduled task does not emit |
 | `migration_progress` | `workers/migration_runner.rs` | [MIGRATIONS.md](MIGRATIONS.md) | Emitted to users with `can_manage_users` during import (`phase: started|importing|completed|failed|cancelled`) |
 | `notification` | `services/notification_dispatch.rs` (Phase 13b Task 2) | [MOBILE_PUSH.md](MOBILE_PUSH.md) | New in-app notification created; published via `EventBus::publish()` on every dispatch |
+| `tv_surface_changed` | `domains/tv/service.rs` plus playback/library/metadata/artwork/collection/access producers | [TV_PLATFORM_SURFACES.md](TV_PLATFORM_SURFACES.md) | User-scoped refresh hint for TV launcher/app rows; payload includes bounded reason, changed sections, affected IDs, `generated_after`, and optional `debounce_until` |
 | `session_kicked` | `domains/auth/service.rs` | [AUTH.md](AUTH.md) | Admin force-logout; client must clear session and redirect to login |
 | `playback_command` | `domains/playback/` | [STREAMING.md](STREAMING.md) | Server-initiated stop/pause (e.g., streaming policy auto-terminate) |
 | `analytics_update` | Phase 11 analytics | Phase 11 (TBD) | Live dashboard refresh tick |
@@ -277,6 +278,7 @@ SSE complements these — it carries metadata about state changes ("your transco
 | `tokio-stream` dependency | ✅ Added | `tokio-stream = { version = "0.1", features = ["sync"] }` — `BroadcastStream` wraps `broadcast::Receiver` as a `Stream` for Axum's `Sse` response |
 | Svelte `events.js` store | ✅ Implemented | Phase 10 Task 12 — `clients/web/src/lib/stores/events.js`. Owns `EventSource` lifecycle; handler registry dispatches named events to domain stores. Layout connects on `$isAuthenticated`, disconnects on logout. `libraries.js` consumes `storyboard_progress` events. |
 | `notification` SSE events | ✅ Wired by dispatch pipeline + consumed by web client | Phase 13b Task 2 — `services/notification_dispatch.rs` publishes `notification` events via `EventBus::publish()` on every dispatch. Payload includes `id`, `notification_type`, `category`, `priority`, `title`, `body`, `link`, and `created_at`. Phase 13b Task 6 — `clients/web/src/lib/stores/notificationCenter.js` subscribes via `events.on('notification', ...)` to prepend live notifications + increment unread count in the navbar bell. |
+| `tv_surface_changed` SSE events | ✅ Implemented server-side | Phase 16b Task 9 — `domains/tv/service.rs` publishes bounded, debounced refresh hints for playback, watch-data, library scan/mutation, metadata/artwork refresh, poster/overlay, collection, and access-control changes. TV clients consume this in platform phases. |
 | SSE Prometheus metrics | ✅ Implemented | Pre-v1.0 Task 4 — `sse_connections`, `sse_connected_users`, `sse_connections_opened_total`, `sse_connections_rejected_total`, and `sse_events_published_total{event_type,delivered}` |
 | Mobile push gateway (FCM/APNs) | Not implemented | Phase 16a |
 

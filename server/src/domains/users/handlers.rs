@@ -20,6 +20,8 @@ use serde::Deserialize;
 use uuid::Uuid;
 use validator::Validate;
 
+use crate::domains::tv::service as tv_service;
+use crate::domains::tv::types::TvSurfaceSectionType;
 use crate::error::AppError;
 use crate::extractors::{AuthenticatedUser, CanManageUsers, Require};
 use crate::state::AppState;
@@ -135,6 +137,7 @@ pub async fn update_user(
         }
     }
 
+    let tv_access_changed = req.has_all_library_access.is_some() || req.status.is_some();
     let response = service::update_user(
         &state.pool,
         service::UpdateUserParams {
@@ -154,6 +157,19 @@ pub async fn update_user(
     )
     .await?;
 
+    if tv_access_changed {
+        tv_service::publish_tv_surface_changed(
+            &state.event_bus,
+            target_user_id,
+            "access_changed",
+            all_tv_sections(),
+            None,
+            None,
+            None,
+            0,
+        );
+    }
+
     Ok(Json(response))
 }
 
@@ -163,6 +179,25 @@ pub async fn delete_user(
     axum::extract::Path(target_user_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     service::soft_delete_user(&state.pool, target_user_id, auth.user.user_id).await?;
+    tv_service::publish_tv_surface_changed(
+        &state.event_bus,
+        target_user_id,
+        "access_changed",
+        all_tv_sections(),
+        None,
+        None,
+        None,
+        0,
+    );
 
     Ok(Json(serde_json::json!({ "status": "deleted" })))
+}
+
+fn all_tv_sections() -> Vec<TvSurfaceSectionType> {
+    vec![
+        TvSurfaceSectionType::Continue,
+        TvSurfaceSectionType::NextUp,
+        TvSurfaceSectionType::NewEpisodes,
+        TvSurfaceSectionType::Recommended,
+    ]
 }

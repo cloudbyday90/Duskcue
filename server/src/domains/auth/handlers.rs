@@ -22,6 +22,8 @@ use axum::response::{IntoResponse, Response};
 use sqlx::Row;
 use validator::Validate;
 
+use crate::domains::tv::service as tv_service;
+use crate::domains::tv::types::TvSurfaceSectionType;
 use crate::error::AppError;
 use crate::extractors::{AuthenticatedUser, CanManageUsers, Require};
 use crate::state::{AppState, NetworkMode};
@@ -810,6 +812,21 @@ pub async fn update_user_capabilities(
 
     let overrides = service::get_capability_overrides(&state.pool, target_user_id).await?;
     let effective = service::resolve_capabilities(&state.pool, target_user_id, &role).await?;
+    tv_service::publish_tv_surface_changed(
+        &state.event_bus,
+        target_user_id,
+        "access_changed",
+        vec![
+            TvSurfaceSectionType::Continue,
+            TvSurfaceSectionType::NextUp,
+            TvSurfaceSectionType::NewEpisodes,
+            TvSurfaceSectionType::Recommended,
+        ],
+        None,
+        None,
+        None,
+        0,
+    );
 
     Ok(Json(CapabilityOverridesResponse {
         user_id: target_user_id,

@@ -20,6 +20,8 @@ use serde::Deserialize;
 use uuid::Uuid;
 use validator::Validate;
 
+use crate::domains::tv::service as tv_service;
+use crate::domains::tv::types::TvSurfaceSectionType;
 use crate::error::AppError;
 use crate::extractors::{CanManageLibraries, Require};
 use crate::state::AppState;
@@ -99,6 +101,7 @@ pub async fn create_overlay(
     }
 
     let response = service::create_overlay(&state.pool, req).await?;
+    publish_artwork_changed(&state).await?;
     Ok(Json(response))
 }
 
@@ -138,6 +141,7 @@ pub async fn update_overlay(
     }
 
     let response = service::update_overlay(&state.pool, overlay_id, req).await?;
+    publish_artwork_changed(&state).await?;
     Ok(Json(response))
 }
 
@@ -147,6 +151,7 @@ pub async fn delete_overlay(
     axum::extract::Path(overlay_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     service::delete_overlay(&state.pool, overlay_id).await?;
+    publish_artwork_changed(&state).await?;
     Ok(Json(serde_json::json!({ "status": "deleted" })))
 }
 
@@ -175,7 +180,26 @@ pub async fn apply_overlays(
     })?;
 
     let response = service::apply_overlays(&state, req).await?;
+    publish_artwork_changed(&state).await?;
     Ok(Json(response))
+}
+
+async fn publish_artwork_changed(state: &AppState) -> Result<(), AppError> {
+    tv_service::publish_tv_surface_changed_for_all_users(
+        &state.pool,
+        &state.event_bus,
+        "artwork_changed",
+        vec![
+            TvSurfaceSectionType::Continue,
+            TvSurfaceSectionType::NextUp,
+            TvSurfaceSectionType::NewEpisodes,
+            TvSurfaceSectionType::Recommended,
+        ],
+        None,
+        None,
+    )
+    .await?;
+    Ok(())
 }
 
 pub async fn preview_overlay(

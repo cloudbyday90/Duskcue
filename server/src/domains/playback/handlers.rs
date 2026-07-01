@@ -26,6 +26,8 @@ use validator::Validate;
 use crate::domains::playback::error::PlaybackError;
 use crate::domains::playback::service::{self, RangeSpec};
 use crate::domains::playback::types::*;
+use crate::domains::tv::service as tv_service;
+use crate::domains::tv::types::TvSurfaceSectionType;
 use crate::error::AppError;
 use crate::extractors::{AuthenticatedUser, CanManageServer, Require};
 use crate::state::AppState;
@@ -71,6 +73,17 @@ pub async fn start_playback(
     )
     .await?;
     drop(config);
+
+    tv_service::publish_tv_surface_changed(
+        &state.event_bus,
+        user.user_id,
+        "playback_started",
+        vec![TvSurfaceSectionType::Continue],
+        Some(result.media_item_id),
+        None,
+        None,
+        5,
+    );
 
     let client_ip = crate::middleware::extract_client_ip(&headers, Some(&connect_info));
     let enrichment_state = state.clone();
@@ -139,6 +152,8 @@ pub async fn heartbeat(
     )
     .await?;
 
+    tv_service::publish_tv_resume_changed(&state.event_bus, user.user_id, None);
+
     Ok(Json(result))
 }
 
@@ -189,6 +204,27 @@ pub async fn stop_playback(
         req.position_ms,
     )
     .await?;
+
+    let reason = if result.is_watched {
+        "playback_completed"
+    } else {
+        "playback_stopped"
+    };
+    tv_service::publish_tv_surface_changed(
+        &state.event_bus,
+        user.user_id,
+        reason,
+        vec![
+            TvSurfaceSectionType::Continue,
+            TvSurfaceSectionType::NextUp,
+            TvSurfaceSectionType::NewEpisodes,
+            TvSurfaceSectionType::Recommended,
+        ],
+        Some(result.media_item_id),
+        None,
+        None,
+        0,
+    );
 
     Ok(Json(result))
 }
@@ -254,6 +290,8 @@ pub async fn seek(
     )
     .await?;
 
+    tv_service::publish_tv_resume_changed(&state.event_bus, user.user_id, None);
+
     Ok(Json(result))
 }
 
@@ -311,6 +349,19 @@ pub async fn update_watch_data(
     })?;
 
     let result = service::update_user_item_data(&state.pool, user.user_id, item_id, &req).await?;
+    tv_service::publish_tv_surface_changed(
+        &state.event_bus,
+        user.user_id,
+        "watch_data_updated",
+        vec![
+            TvSurfaceSectionType::Continue,
+            TvSurfaceSectionType::Recommended,
+        ],
+        Some(result.media_item_id),
+        None,
+        None,
+        5,
+    );
     Ok(Json(result))
 }
 

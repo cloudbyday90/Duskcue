@@ -417,10 +417,12 @@ TV clients should refresh the surface feed after:
 
 - playback start
 - playback pause/stop
-- heartbeat resume-position updates
+- meaningful heartbeat/seek resume-position updates
 - playback completion
 - library scan completion
 - metadata/artwork refresh
+- poster/overlay changes
+- collection changes
 - user library-access changes
 
 The server should also emit an SSE event when TV surface state changes:
@@ -433,11 +435,27 @@ Payload:
 {
   "user_id": "01J...",
   "reason": "playback_completed",
-  "media_item_id": "01J..."
+  "changed_sections": ["continue", "next_up", "new_episodes", "recommended"],
+  "media_item_id": "01J...",
+  "series_id": null,
+  "library_id": null,
+  "generated_after": "2026-06-30T18:00:00Z",
+  "debounce_until": null
 }
 ```
 
-Native TV clients can subscribe while running and schedule a refresh after receiving the event.
+Implemented reasons are bounded to `playback_started`, `resume_position_changed`, `playback_paused`, `playback_stopped`, `playback_completed`, `watch_data_updated`, `library_changed`, `library_scan_completed`, `metadata_changed`, `artwork_changed`, `collection_changed`, `access_changed`, or `other`.
+
+Server producers:
+
+- playback handlers emit user-scoped events for start, resume movement, seek, stop/completion, and explicit watch-data changes
+- library handlers, scheduled scans, and filesystem-triggered scans emit library-scoped events only to active users who can access that library
+- metadata refresh emits `metadata_changed` after changed items are re-enriched
+- poster/artwork and overlay handlers emit `artwork_changed`
+- collection handlers emit `collection_changed`
+- user status, library-access, and capability changes emit `access_changed`
+
+Native TV clients can subscribe while running and schedule a refresh after receiving the event. If `debounce_until` is present, clients should avoid immediately refetching more than once for the same user/reason/item window; the server also coalesces heartbeat-heavy resume updates per user so TV launchers do not thrash during active playback.
 
 ## Android TV / Google TV Adapter
 

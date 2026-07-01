@@ -19,6 +19,8 @@ use axum::extract::{Path, Query, State};
 use uuid::Uuid;
 use validator::Validate;
 
+use crate::domains::tv::service as tv_service;
+use crate::domains::tv::types::TvSurfaceSectionType;
 use crate::error::AppError;
 use crate::extractors::{CanManageLibraries, Require};
 use crate::state::AppState;
@@ -84,6 +86,7 @@ pub async fn create_collection(
     validate_create_request(&req)?;
 
     let response = service::create_collection(&state.pool, req).await?;
+    publish_collection_changed(&state).await?;
     Ok(Json(response))
 }
 
@@ -98,6 +101,7 @@ pub async fn update_collection(
     validate_update_request(&req)?;
 
     let response = service::update_collection(&state.pool, collection_id, req).await?;
+    publish_collection_changed(&state).await?;
     Ok(Json(response))
 }
 
@@ -107,6 +111,7 @@ pub async fn delete_collection(
     Path(collection_id): Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     service::delete_collection(&state.pool, collection_id).await?;
+    publish_collection_changed(&state).await?;
     Ok(Json(serde_json::json!({ "status": "deleted" })))
 }
 
@@ -133,6 +138,7 @@ pub async fn add_collection_items(
         .map_err(|e| validation_error(e, format!("/api/v1/collections/{collection_id}/items")))?;
 
     let response = service::add_collection_items(&state.pool, collection_id, req).await?;
+    publish_collection_changed(&state).await?;
     Ok(Json(response))
 }
 
@@ -150,6 +156,7 @@ pub async fn reorder_collection_items(
     })?;
 
     let response = service::reorder_collection_items(&state.pool, collection_id, req).await?;
+    publish_collection_changed(&state).await?;
     Ok(Json(response))
 }
 
@@ -159,6 +166,7 @@ pub async fn remove_collection_item(
     Path((collection_id, media_item_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     service::remove_collection_item(&state.pool, collection_id, media_item_id).await?;
+    publish_collection_changed(&state).await?;
     Ok(Json(serde_json::json!({ "status": "removed" })))
 }
 
@@ -171,6 +179,7 @@ pub async fn sync_collections(
         .map_err(|e| validation_error(e, "/api/v1/collections/sync"))?;
 
     let response = service::sync_collections(&state, req).await?;
+    publish_collection_changed(&state).await?;
     Ok(Json(response))
 }
 
@@ -184,6 +193,7 @@ pub async fn sync_collection(
         .map_err(|e| validation_error(e, format!("/api/v1/collections/{collection_id}/sync")))?;
 
     let response = service::sync_collection(&state, collection_id, req).await?;
+    publish_collection_changed(&state).await?;
     Ok(Json(response))
 }
 
@@ -206,6 +216,19 @@ pub async fn import_template(
 
     let response = service::import_template(&state.pool, req).await?;
     Ok(Json(response))
+}
+
+async fn publish_collection_changed(state: &AppState) -> Result<(), AppError> {
+    tv_service::publish_tv_surface_changed_for_all_users(
+        &state.pool,
+        &state.event_bus,
+        "collection_changed",
+        vec![TvSurfaceSectionType::Recommended],
+        None,
+        None,
+    )
+    .await?;
+    Ok(())
 }
 
 fn validate_create_request(req: &CreateCollectionRequest) -> Result<(), AppError> {

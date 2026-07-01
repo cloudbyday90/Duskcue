@@ -230,6 +230,7 @@ pub struct TvSurfaceChangedEventPayload {
     pub series_id: Option<Uuid>,
     pub library_id: Option<Uuid>,
     pub generated_after: DateTime<Utc>,
+    pub debounce_until: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

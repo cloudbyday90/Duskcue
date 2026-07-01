@@ -126,6 +126,7 @@ TV launcher integration is documented in [TV_PLATFORM_SURFACES.md](docs/design/T
 - **VIDAA is next** — VIDAA is the next platform research target; operator set-top ecosystems and Apple Vision Pro / visionOS remain lower-priority research targets.
 - **No schema change for v1.0 feed** — existing playback, user item, episode, artwork, and access-control tables can produce the first TV surface API.
 - **Google TV launcher visibility is a release constraint** — Android Watch Next integration is buildable in-client; Google TV home-surface exposure may require store approval/certification.
+- **TV surface refresh is event-driven** — the server emits debounced `tv_surface_changed` SSE hints after playback, watch-data, library scan, metadata/artwork, collection, and access-control changes so running TV clients can refresh rows without polling.
 
 ## Product Identity & Client UI
 
@@ -136,7 +137,7 @@ Baseline client look and feel, navigation language, and reusable UI surfaces are
 ### API Layer
 
 - **REST API** — Core CRUD operations, media management, user auth
-- **SSE (Server-Sent Events)** — Real-time events (transcode progress, playback sessions, notifications)
+- **SSE (Server-Sent Events)** — Real-time events (transcode progress, playback sessions, notifications, TV surface refresh hints)
 - **HLS / DASH** — Adaptive streaming protocols for video delivery
 
 ## Core Features

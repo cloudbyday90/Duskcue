@@ -26,6 +26,10 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use uuid::Uuid;
 
+use crate::domains::tv::service as tv_service;
+use crate::domains::tv::types::TvSurfaceSectionType;
+use crate::services::event_bus::EventBus;
+
 const MEDIA_VIDEO_EXTENSIONS: &[&str] = &[
     "mkv", "mp4", "avi", "ts", "m2ts", "wmv", "flv", "webm", "mov", "mpg", "mpeg", "m4v", "3gp",
     "ogv", "iso", "img",
@@ -52,6 +56,7 @@ struct PendingDirectory {
 pub struct LibraryWatcherManager {
     pool: sqlx::PgPool,
     enrichment: Arc<crate::services::metadata::EnrichmentOrchestrator>,
+    event_bus: Arc<EventBus>,
     watched: Arc<std::sync::Mutex<HashMap<Uuid, WatchedLibrary>>>,
     debouncer: Arc<
         std::sync::Mutex<
@@ -71,10 +76,12 @@ impl LibraryWatcherManager {
     pub fn new(
         pool: sqlx::PgPool,
         enrichment: Arc<crate::services::metadata::EnrichmentOrchestrator>,
+        event_bus: Arc<EventBus>,
     ) -> Self {
         Self {
             pool,
             enrichment,
+            event_bus,
             watched: Arc::new(std::sync::Mutex::new(HashMap::new())),
             debouncer: Arc::new(std::sync::Mutex::new(None)),
             pending: Arc::new(std::sync::Mutex::new(HashMap::new())),
@@ -269,6 +276,7 @@ impl LibraryWatcherManager {
         let watched = Arc::clone(&self.watched);
         let pool = self.pool.clone();
         let enrichment = self.enrichment.clone();
+        let event_bus = self.event_bus.clone();
 
         loop {
             tokio::select! {
@@ -281,7 +289,15 @@ impl LibraryWatcherManager {
                                 continue;
                             }
 
-                            process_batch(&batch, &watched, &cooldowns, &pool, &enrichment).await;
+                            process_batch(
+                                &batch,
+                                &watched,
+                                &cooldowns,
+                                &pool,
+                                &enrichment,
+                                &event_bus,
+                            )
+                            .await;
                         }
                         None => {
                             tracing::info!("FS watcher channel closed");
@@ -336,6 +352,7 @@ async fn process_batch(
     cooldowns: &Arc<std::sync::Mutex<HashMap<Uuid, std::time::Instant>>>,
     pool: &sqlx::PgPool,
     enrichment: &Arc<crate::services::metadata::EnrichmentOrchestrator>,
+    event_bus: &Arc<EventBus>,
 ) {
     for (directory, count) in batch {
         let library_id = {
@@ -385,6 +402,7 @@ async fn process_batch(
 
         let pool = pool.clone();
         let enrichment = enrichment.clone();
+        let event_bus = event_bus.clone();
         tokio::spawn(async move {
             match crate::workers::library_scanner::scan_library(
                 &pool,
@@ -403,6 +421,21 @@ async fn process_batch(
                         deleted = result.files_deleted,
                         "FS-triggered scan completed"
                     );
+                    if let Err(e) = tv_service::publish_tv_surface_changed_for_library(
+                        &pool,
+                        &event_bus,
+                        library_id,
+                        "library_scan_completed",
+                        all_tv_sections(),
+                    )
+                    .await
+                    {
+                        tracing::warn!(
+                            library_id = %library_id,
+                            error = %e,
+                            "Failed to publish TV surface change after FS-triggered scan"
+                        );
+                    }
                 }
                 Err(e) => {
                     tracing::warn!(
@@ -414,6 +447,15 @@ async fn process_batch(
             }
         });
     }
+}
+
+fn all_tv_sections() -> Vec<TvSurfaceSectionType> {
+    vec![
+        TvSurfaceSectionType::Continue,
+        TvSurfaceSectionType::NextUp,
+        TvSurfaceSectionType::NewEpisodes,
+        TvSurfaceSectionType::Recommended,
+    ]
 }
 
 fn resolve_library_for_path(watched: &HashMap<Uuid, WatchedLibrary>, path: &Path) -> Option<Uuid> {
