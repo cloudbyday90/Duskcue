@@ -253,9 +253,14 @@ pub struct DownloadPlanResponse {
     pub media_item_id: Uuid,
     pub media_file_id: Option<Uuid>,
     pub package_format: DownloadPackageFormat,
+    pub package_strategy: String,
     pub quality_mode: DownloadQualityMode,
+    pub target_resolution: Option<String>,
+    pub target_bitrate_bps: Option<i64>,
     pub estimated_bytes: Option<i64>,
     pub estimated_duration_seconds: Option<i64>,
+    pub source_file: Option<DownloadSourceFileResponse>,
+    pub quality_options: Vec<DownloadQualityOptionResponse>,
     pub audio_options: Vec<Value>,
     pub subtitle_options: Vec<Value>,
     pub artwork_included: bool,
@@ -264,6 +269,30 @@ pub struct DownloadPlanResponse {
     pub policy: Value,
     pub plan_revision: String,
     pub plan_hash: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DownloadSourceFileResponse {
+    pub id: Uuid,
+    pub file_size: i64,
+    pub container_format: String,
+    pub video_codec: Option<String>,
+    pub video_resolution: Option<String>,
+    pub video_bitrate: Option<i32>,
+    pub audio_codec: Option<String>,
+    pub audio_channels: Option<i32>,
+    pub audio_language: Option<String>,
+    pub runtime_seconds: i32,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DownloadQualityOptionResponse {
+    pub quality_mode: DownloadQualityMode,
+    pub label: String,
+    pub target_resolution: Option<String>,
+    pub target_bitrate_bps: Option<i64>,
+    pub estimated_bytes: Option<i64>,
+    pub requires_transcode: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

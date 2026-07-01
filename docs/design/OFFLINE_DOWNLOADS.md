@@ -112,7 +112,7 @@ Phase 16c Task 2 added the `server/src/domains/downloads/` five-file domain shel
 
 | Route | Purpose | Current Task 2 behavior |
 |---|---|---|
-| `GET /api/v1/downloads/plan/{media_item_id}` | Planning contract for a movie or episode | Validates query and returns `DOWNLOAD_015` until Task 4 |
+| `GET /api/v1/downloads/plan/{media_item_id}` | Planning contract for a movie or episode | Implemented in Task 4 |
 | `POST /api/v1/downloads/jobs` | Create durable package job | Validates body and returns `DOWNLOAD_015` until Tasks 3-6 |
 | `GET /api/v1/downloads/jobs/{id}` | Read job status | Returns `DOWNLOAD_015` until Task 6 |
 | `POST /api/v1/downloads/jobs/{id}/cancel` | Cancel job | Validates body and returns `DOWNLOAD_015` until Task 6 |
@@ -131,6 +131,14 @@ Phase 16c Task 3 added policy enforcement foundations:
 - Planning and job creation now check the authenticated user's library access, verify that the item has at least one healthy media file, enforce Android/iOS route payloads, enforce global enablement and LAN/remote restrictions, and enforce active-job, retained-package, and retained-byte quotas before returning later-task not-implemented responses.
 - Job/package/manifest/transfer/file/sync routes verify job/package ownership before returning later-task not-implemented responses so future implementation starts from BOLA-safe boundaries.
 - Policy and quota denials create `download_events` rows with bounded reasons and no filesystem paths, tokens, signed URLs, or private package internals.
+
+Phase 16c Task 4 added deterministic planning:
+
+- `GET /api/v1/downloads/plan/{media_item_id}` now supports movies and episodes, requires `device_identifier` and `client_platform`, reuses Task 3 access/policy/quota preflight, rejects non-movie/episode items, and requires at least one healthy media file.
+- Source selection is deterministic: requested healthy `media_file_id` wins; otherwise the planner prefers mobile-compatible MP4 direct-copy candidates, then lower-resolution/smaller healthy files to avoid starting from the largest source unnecessarily.
+- Package selection follows the Task 0 hybrid decision: direct-compatible MP4 can return a single-file `mp4` package with `direct_copy`; otherwise the canonical `hls_fmp4` package is selected with `remux` or `transcode`.
+- Quality modes return explicit options for Auto, Data Saver, Standard, and Maximum with target resolution, target bitrate, estimated bytes, and whether a transcode is required. Data Saver targets 480p, Standard targets 720p, Auto targets up to 1080p, and Maximum uses the source/policy ceiling.
+- The response includes source file details, selected package format/strategy, selected quality target, estimated bytes/duration, audio/subtitle options from `additional_streams` or file fallbacks, artwork/storyboard inclusion flags, expiry, bounded policy constraints, `plan_revision`, and deterministic `plan_hash`.
 
 ## Mobile Contract
 
@@ -215,4 +223,4 @@ Download quality reuses the Phase 7 quality-management model but is not identica
 
 ## Implementation Status
 
-Phase 16c Tasks 0-3 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, and access/quota/policy foundations are in place. Planning implementations, package manifest generation, package workers, package serving, notifications, mobile download manager, protected local storage, offline playback, reconnect sync, settings, observability, and tests are pending Phase 16c Tasks 4-15.
+Phase 16c Tasks 0-4 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, and deterministic planning endpoint are in place. Package manifest generation, package workers, package serving, notifications, mobile download manager, protected local storage, offline playback, reconnect sync, settings, observability, and broader integration tests are pending Phase 16c Tasks 5-15.

@@ -14,7 +14,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use serde_json::json;
+use chrono::{DateTime, Duration, Utc};
+use ring::digest::{SHA256, digest};
+use serde::Serialize;
+use serde_json::{Value, json};
 use sqlx::Row;
 use uuid::Uuid;
 
@@ -23,6 +26,24 @@ use crate::state::{AppState, DownloadsConfig, NetworkMode};
 
 use super::error::DownloadError;
 use super::types::*;
+
+#[derive(Clone)]
+struct DownloadSourceCandidate {
+    id: Uuid,
+    updated_at: DateTime<Utc>,
+    file_size: i64,
+    file_hash: Option<String>,
+    container_format: String,
+    video_codec: Option<String>,
+    video_resolution: Option<String>,
+    video_bitrate: Option<i32>,
+    audio_codec: Option<String>,
+    audio_channels: Option<i32>,
+    audio_language: Option<String>,
+    audio_bitrate: Option<i32>,
+    runtime_seconds: i32,
+    additional_streams: Value,
+}
 
 pub async fn get_download_plan(
     state: &AppState,
@@ -38,7 +59,94 @@ pub async fn get_download_plan(
         .client_platform
         .ok_or_else(|| DownloadError::InvalidRequest("client_platform is required".into()))?;
     authorize_download_request(state, _user, media_item_id, device_identifier, platform).await?;
-    Err(DownloadError::NotImplemented("download planning"))
+
+    let config = state.runtime_config.load();
+    let downloads = config.downloads.clone();
+    let quality = config.quality.clone();
+    drop(config);
+
+    let source = select_source_file(&state.pool, media_item_id, query.media_file_id).await?;
+    let quality_mode = query.quality_mode.unwrap_or(DownloadQualityMode::Auto);
+    let target = resolve_quality_target(
+        quality_mode,
+        source.video_resolution.as_deref(),
+        &downloads.max_quality_resolution,
+        quality.fallback_max_bitrate_bps,
+    );
+    let package_format = choose_package_format(&source, &target);
+    let package_strategy = choose_package_strategy(&source, &target, package_format);
+
+    if package_strategy == "transcode" && !downloads.allow_transcoded_downloads {
+        record_download_event(
+            &state.pool,
+            _user,
+            Some(media_item_id),
+            Some(device_identifier),
+            "policy_denied",
+            Some("transcoded downloads are disabled by server policy"),
+        )
+        .await?;
+        return Err(DownloadError::PolicyDenied(
+            "transcoded downloads are disabled by server policy".into(),
+        ));
+    }
+
+    let estimated_bytes = estimate_package_bytes(&source, &target, &package_strategy);
+    let expires_at =
+        Some(Utc::now() + Duration::days(i64::from(downloads.default_package_expiry_days)));
+    let quality_options =
+        quality_options_for_source(&source, &downloads, quality.fallback_max_bitrate_bps);
+    let audio_options = extract_audio_options(&source);
+    let subtitle_options = extract_subtitle_options(&source);
+    let plan_revision = format!(
+        "v1:{}:{}:{}",
+        source.id,
+        source.file_hash.as_deref().unwrap_or("no-file-hash"),
+        source.updated_at.timestamp()
+    );
+    let policy = json!({
+        "max_quality_resolution": downloads.max_quality_resolution,
+        "allow_transcoded_downloads": downloads.allow_transcoded_downloads,
+        "max_bytes_per_user": downloads.max_bytes_per_user,
+        "max_bytes_per_device": downloads.max_bytes_per_device,
+        "default_package_expiry_days": downloads.default_package_expiry_days
+    });
+
+    let hash_seed = PlanHashSeed {
+        media_item_id,
+        media_file_id: source.id,
+        device_identifier,
+        package_format,
+        package_strategy: &package_strategy,
+        quality_mode,
+        target_resolution: target.resolution.as_deref(),
+        target_bitrate_bps: target.bitrate_bps,
+        estimated_bytes,
+        plan_revision: &plan_revision,
+    };
+    let plan_hash = sha256_hex(&serde_json::to_string(&hash_seed).unwrap_or_default());
+
+    Ok(DownloadPlanResponse {
+        media_item_id,
+        media_file_id: Some(source.id),
+        package_format,
+        package_strategy,
+        quality_mode,
+        target_resolution: target.resolution,
+        target_bitrate_bps: target.bitrate_bps,
+        estimated_bytes,
+        estimated_duration_seconds: Some(i64::from(source.runtime_seconds)),
+        source_file: Some(source_file_response(&source)),
+        quality_options,
+        audio_options,
+        subtitle_options,
+        artwork_included: query.include_artwork.unwrap_or(true),
+        storyboards_included: query.include_storyboards.unwrap_or(false),
+        expires_at,
+        policy,
+        plan_revision,
+        plan_hash,
+    })
 }
 
 pub async fn create_download_job(
@@ -139,6 +247,304 @@ pub async fn sync_download_state(
         ensure_package_owner(&state.pool, user, playback_event.package_id).await?;
     }
     Err(DownloadError::NotImplemented("download reconnect sync"))
+}
+
+#[derive(Clone)]
+struct QualityTarget {
+    resolution: Option<String>,
+    bitrate_bps: Option<i64>,
+}
+
+#[derive(Serialize)]
+struct PlanHashSeed<'a> {
+    media_item_id: Uuid,
+    media_file_id: Uuid,
+    device_identifier: &'a str,
+    package_format: DownloadPackageFormat,
+    package_strategy: &'a str,
+    quality_mode: DownloadQualityMode,
+    target_resolution: Option<&'a str>,
+    target_bitrate_bps: Option<i64>,
+    estimated_bytes: Option<i64>,
+    plan_revision: &'a str,
+}
+
+async fn select_source_file(
+    pool: &sqlx::PgPool,
+    media_item_id: Uuid,
+    requested_media_file_id: Option<Uuid>,
+) -> Result<DownloadSourceCandidate, DownloadError> {
+    let item_row = sqlx::query("SELECT type FROM media_items WHERE id = $1")
+        .bind(media_item_id)
+        .fetch_optional(pool)
+        .await?;
+    let Some(item_row) = item_row else {
+        return Err(DownloadError::UnsupportedMedia(
+            "media item is unavailable".into(),
+        ));
+    };
+    let media_type: String = item_row.get("type");
+    if media_type != "movie" && media_type != "episode" {
+        return Err(DownloadError::UnsupportedMedia(
+            "only movies and episodes support offline downloads".into(),
+        ));
+    }
+
+    let rows = sqlx::query(
+        "SELECT id, updated_at, file_size, file_hash, container_format, video_codec, \
+                video_resolution, video_bitrate, audio_codec, audio_channels, \
+                audio_language, audio_bitrate, runtime_seconds, additional_streams \
+         FROM media_files \
+         WHERE media_item_id = $1 \
+           AND is_healthy = true \
+           AND ($2::uuid IS NULL OR id = $2)",
+    )
+    .bind(media_item_id)
+    .bind(requested_media_file_id)
+    .fetch_all(pool)
+    .await?;
+
+    let mut candidates: Vec<DownloadSourceCandidate> = rows
+        .iter()
+        .map(|row| DownloadSourceCandidate {
+            id: row.get("id"),
+            updated_at: row.get("updated_at"),
+            file_size: row.get("file_size"),
+            file_hash: row.try_get("file_hash").ok().flatten(),
+            container_format: row.get("container_format"),
+            video_codec: row.try_get("video_codec").ok().flatten(),
+            video_resolution: row.try_get("video_resolution").ok().flatten(),
+            video_bitrate: row.try_get("video_bitrate").ok().flatten(),
+            audio_codec: row.try_get("audio_codec").ok().flatten(),
+            audio_channels: row.try_get("audio_channels").ok().flatten(),
+            audio_language: row.try_get("audio_language").ok().flatten(),
+            audio_bitrate: row.try_get("audio_bitrate").ok().flatten(),
+            runtime_seconds: row.get("runtime_seconds"),
+            additional_streams: row.get("additional_streams"),
+        })
+        .collect();
+
+    if candidates.is_empty() {
+        return Err(DownloadError::UnsupportedMedia(
+            "no healthy media file is available for download".into(),
+        ));
+    }
+
+    candidates.sort_by_key(|candidate| {
+        (
+            !is_mobile_direct_mp4(candidate),
+            candidate
+                .video_resolution
+                .as_deref()
+                .and_then(resolution_height)
+                .unwrap_or(i32::MAX),
+            candidate.file_size,
+        )
+    });
+
+    Ok(candidates.remove(0))
+}
+
+fn resolve_quality_target(
+    quality_mode: DownloadQualityMode,
+    source_resolution: Option<&str>,
+    policy_max_resolution: &str,
+    fallback_bitrate_bps: i64,
+) -> QualityTarget {
+    let source_height = source_resolution
+        .and_then(resolution_height)
+        .unwrap_or(1080);
+    let policy_height = resolution_height(policy_max_resolution).unwrap_or(1080);
+    let ceiling = source_height.min(policy_height);
+    let target_height = match quality_mode {
+        DownloadQualityMode::DataSaver => ceiling.min(480),
+        DownloadQualityMode::Standard => ceiling.min(720),
+        DownloadQualityMode::Auto => ceiling.min(1080),
+        DownloadQualityMode::Maximum | DownloadQualityMode::Manual => ceiling,
+    };
+
+    let bitrate_bps = match target_height {
+        h if h <= 480 => 1_500_000,
+        h if h <= 720 => 3_000_000,
+        h if h <= 1080 => fallback_bitrate_bps.max(6_000_000),
+        _ => 16_000_000,
+    };
+
+    QualityTarget {
+        resolution: Some(format!("{target_height}p")),
+        bitrate_bps: Some(bitrate_bps),
+    }
+}
+
+fn choose_package_format(
+    source: &DownloadSourceCandidate,
+    target: &QualityTarget,
+) -> DownloadPackageFormat {
+    if is_mobile_direct_mp4(source)
+        && target.resolution.as_deref().and_then(resolution_height)
+            >= source
+                .video_resolution
+                .as_deref()
+                .and_then(resolution_height)
+    {
+        DownloadPackageFormat::Mp4
+    } else {
+        DownloadPackageFormat::HlsFmp4
+    }
+}
+
+fn choose_package_strategy(
+    source: &DownloadSourceCandidate,
+    target: &QualityTarget,
+    package_format: DownloadPackageFormat,
+) -> String {
+    let source_height = source
+        .video_resolution
+        .as_deref()
+        .and_then(resolution_height);
+    let target_height = target.resolution.as_deref().and_then(resolution_height);
+    let needs_downscale = source_height.zip(target_height).is_some_and(|(s, t)| s > t);
+    let codec = source
+        .video_codec
+        .as_deref()
+        .unwrap_or_default()
+        .to_lowercase();
+
+    if needs_downscale || !matches!(codec.as_str(), "h264" | "avc" | "avc1" | "hevc" | "h265") {
+        "transcode".to_string()
+    } else if matches!(package_format, DownloadPackageFormat::Mp4) {
+        "direct_copy".to_string()
+    } else {
+        "remux".to_string()
+    }
+}
+
+fn estimate_package_bytes(
+    source: &DownloadSourceCandidate,
+    target: &QualityTarget,
+    package_strategy: &str,
+) -> Option<i64> {
+    if package_strategy == "direct_copy" || package_strategy == "remux" {
+        return Some(source.file_size);
+    }
+
+    let bitrate = target.bitrate_bps?;
+    let audio_bitrate = i64::from(source.audio_bitrate.unwrap_or(192_000));
+    Some(((bitrate + audio_bitrate) * i64::from(source.runtime_seconds)) / 8)
+}
+
+fn quality_options_for_source(
+    source: &DownloadSourceCandidate,
+    downloads: &DownloadsConfig,
+    fallback_bitrate_bps: i64,
+) -> Vec<DownloadQualityOptionResponse> {
+    [
+        (DownloadQualityMode::Auto, "Auto"),
+        (DownloadQualityMode::DataSaver, "Data Saver"),
+        (DownloadQualityMode::Standard, "Standard"),
+        (DownloadQualityMode::Maximum, "Maximum"),
+    ]
+    .into_iter()
+    .map(|(quality_mode, label)| {
+        let target = resolve_quality_target(
+            quality_mode,
+            source.video_resolution.as_deref(),
+            &downloads.max_quality_resolution,
+            fallback_bitrate_bps,
+        );
+        let format = choose_package_format(source, &target);
+        let strategy = choose_package_strategy(source, &target, format);
+        DownloadQualityOptionResponse {
+            quality_mode,
+            label: label.to_string(),
+            target_resolution: target.resolution.clone(),
+            target_bitrate_bps: target.bitrate_bps,
+            estimated_bytes: estimate_package_bytes(source, &target, &strategy),
+            requires_transcode: strategy == "transcode",
+        }
+    })
+    .collect()
+}
+
+fn extract_audio_options(source: &DownloadSourceCandidate) -> Vec<Value> {
+    source
+        .additional_streams
+        .get("audio")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_else(|| {
+            vec![json!({
+                "codec": source.audio_codec.clone(),
+                "channels": source.audio_channels,
+                "language": source.audio_language.clone(),
+                "bitrate": source.audio_bitrate
+            })]
+        })
+}
+
+fn extract_subtitle_options(source: &DownloadSourceCandidate) -> Vec<Value> {
+    source
+        .additional_streams
+        .get("subtitles")
+        .or_else(|| source.additional_streams.get("subtitle"))
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn source_file_response(source: &DownloadSourceCandidate) -> DownloadSourceFileResponse {
+    DownloadSourceFileResponse {
+        id: source.id,
+        file_size: source.file_size,
+        container_format: source.container_format.clone(),
+        video_codec: source.video_codec.clone(),
+        video_resolution: source.video_resolution.clone(),
+        video_bitrate: source.video_bitrate,
+        audio_codec: source.audio_codec.clone(),
+        audio_channels: source.audio_channels,
+        audio_language: source.audio_language.clone(),
+        runtime_seconds: source.runtime_seconds,
+    }
+}
+
+fn is_mobile_direct_mp4(source: &DownloadSourceCandidate) -> bool {
+    let container = source.container_format.to_lowercase();
+    let video = source
+        .video_codec
+        .as_deref()
+        .unwrap_or_default()
+        .to_lowercase();
+    let audio = source
+        .audio_codec
+        .as_deref()
+        .unwrap_or_default()
+        .to_lowercase();
+    container == "mp4"
+        && matches!(video.as_str(), "h264" | "avc" | "avc1" | "hevc" | "h265")
+        && matches!(audio.as_str(), "aac" | "ac3" | "eac3" | "mp3" | "")
+}
+
+fn resolution_height(value: &str) -> Option<i32> {
+    let value = value.trim().to_lowercase();
+    if let Some(height) = value.strip_suffix('p') {
+        return height.parse::<i32>().ok();
+    }
+    if value == "4k" || value == "uhd" {
+        return Some(2160);
+    }
+    if let Some((_, height)) = value.split_once('x') {
+        return height.parse::<i32>().ok();
+    }
+    None
+}
+
+fn sha256_hex(input: &str) -> String {
+    let result = digest(&SHA256, input.as_bytes());
+    result
+        .as_ref()
+        .iter()
+        .map(|byte| format!("{:02x}", byte))
+        .collect()
 }
 
 async fn authorize_download_request(
@@ -505,4 +911,99 @@ async fn record_download_event(
     .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn source(overrides: impl FnOnce(&mut DownloadSourceCandidate)) -> DownloadSourceCandidate {
+        let mut source = DownloadSourceCandidate {
+            id: Uuid::nil(),
+            updated_at: Utc::now(),
+            file_size: 4_000_000_000,
+            file_hash: Some("hash".to_string()),
+            container_format: "mp4".to_string(),
+            video_codec: Some("h264".to_string()),
+            video_resolution: Some("1920x1080".to_string()),
+            video_bitrate: Some(6_000_000),
+            audio_codec: Some("aac".to_string()),
+            audio_channels: Some(2),
+            audio_language: Some("en".to_string()),
+            audio_bitrate: Some(192_000),
+            runtime_seconds: 3600,
+            additional_streams: json!({}),
+        };
+        overrides(&mut source);
+        source
+    }
+
+    #[test]
+    fn resolution_height_parses_common_shapes() {
+        assert_eq!(resolution_height("1920x1080"), Some(1080));
+        assert_eq!(resolution_height("720p"), Some(720));
+        assert_eq!(resolution_height("4K"), Some(2160));
+        assert_eq!(resolution_height("unknown"), None);
+    }
+
+    #[test]
+    fn direct_mobile_mp4_can_use_single_file_package() {
+        let source = source(|_| {});
+        let target = resolve_quality_target(
+            DownloadQualityMode::Maximum,
+            source.video_resolution.as_deref(),
+            "1080p",
+            6_000_000,
+        );
+
+        assert!(matches!(
+            choose_package_format(&source, &target),
+            DownloadPackageFormat::Mp4
+        ));
+        assert_eq!(
+            choose_package_strategy(&source, &target, DownloadPackageFormat::Mp4),
+            "direct_copy"
+        );
+    }
+
+    #[test]
+    fn non_mp4_compatible_source_uses_hls_remux_or_transcode() {
+        let source = source(|source| {
+            source.container_format = "mkv".to_string();
+        });
+        let target = resolve_quality_target(
+            DownloadQualityMode::Maximum,
+            source.video_resolution.as_deref(),
+            "1080p",
+            6_000_000,
+        );
+
+        assert!(matches!(
+            choose_package_format(&source, &target),
+            DownloadPackageFormat::HlsFmp4
+        ));
+        assert_eq!(
+            choose_package_strategy(&source, &target, DownloadPackageFormat::HlsFmp4),
+            "remux"
+        );
+    }
+
+    #[test]
+    fn downscaled_data_saver_estimates_transcoded_bytes() {
+        let source = source(|_| {});
+        let target = resolve_quality_target(
+            DownloadQualityMode::DataSaver,
+            source.video_resolution.as_deref(),
+            "1080p",
+            6_000_000,
+        );
+        let strategy = choose_package_strategy(&source, &target, DownloadPackageFormat::HlsFmp4);
+
+        assert_eq!(strategy, "transcode");
+        assert_eq!(target.resolution.as_deref(), Some("480p"));
+        assert_eq!(
+            estimate_package_bytes(&source, &target, &strategy),
+            Some(((1_500_000 + 192_000) * 3600) / 8)
+        );
+    }
 }
