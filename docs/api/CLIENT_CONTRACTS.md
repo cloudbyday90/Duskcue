@@ -7,6 +7,7 @@ This document defines the Phase 16a desktop/mobile client contract strategy and 
 The machine-readable starting point is [client-contracts.v1.json](client-contracts.v1.json).
 The Phase 16d binding target matrix is [client-binding-targets.v1.json](client-binding-targets.v1.json).
 The Phase 16d versioned fixture pack starts at [fixtures/client/v1/manifest.json](fixtures/client/v1/manifest.json).
+The Phase 16d playback conformance pack starts at [fixtures/playback/v1/manifest.json](fixtures/playback/v1/manifest.json).
 
 ## Decision
 
@@ -182,6 +183,28 @@ node scripts/verify-client-fixtures.mjs
 
 The verifier checks that the fixture manifest covers every required Phase 16d domain, every required fixture exists, rows marked with ordering rules are stable, UUIDs and platform content IDs have canonical shapes, timestamps use UTC RFC3339 strings, enum values stay inside approved sets, Problem Details denial fixtures are complete, server-owned localized strings are display-ready, and fixtures do not leak local paths, bearer headers, signed URLs, or package signatures.
 
+## Phase 16d Playback Conformance
+
+Phase 16d Task 4 adds a reusable playback conformance pack under `docs/api/fixtures/playback/v1`. This pack is separate from the general client fixture pack because playback clients need an ordered state-machine contract, not only request/response examples.
+
+The pack covers:
+
+- start, resume seek, first frame, heartbeat, pause, resume, seek, stop, completion, and playback-error transitions;
+- supported and unsupported audio/subtitle selection, including downmix/transcode and image-subtitle burn-in cases;
+- direct play, direct stream, and HLS transcode handoff paths with credential material kept out of URLs;
+- remote/media-session actions for play, pause, seek backward/forward, seek-to, and stop;
+- QoE payloads for startup, buffering, bitrate, quality changes, selected quality mode, and playback failure;
+- cross-device resume refresh, including TV-surface refresh events and stale launcher-cache avoidance;
+- Problem Details examples for transcode unavailable, expired media URL, and unavailable track selections.
+
+Run:
+
+```bash
+node scripts/verify-playback-conformance.mjs
+```
+
+The verifier checks required state events, event ordering, playback API paths, stream decision coverage, track-selection cases, media-session action mappings, QoE field coverage, cross-device resume expectations, Problem Details error shape, UTC timestamps, stable UUIDs, and redaction of tokens, signatures, and private paths.
+
 Phase 16b added reusable TV surface fixtures ahead of full Phase 16d generation:
 
 ```bash
@@ -207,8 +230,14 @@ The TV verifier checks `docs/api/fixtures/tv` feed, resolve, diagnostics, unavai
 - JSON Schema 2020-12: https://json-schema.org/draft/2020-12
 - JSON Schema reference: https://json-schema.org/understanding-json-schema/reference
 - RFC 9457 Problem Details: https://www.rfc-editor.org/rfc/rfc9457
+- RFC 8216 HTTP Live Streaming: https://datatracker.ietf.org/doc/html/rfc8216
 - Pact consumer testing guidance: https://docs.pact.io/consumer
 - Ajv JSON Schema validation: https://ajv.js.org/
+- Android Media3 player events: https://developer.android.com/media/media3/exoplayer/listening-to-player-events
+- Android Media3 track selection: https://developer.android.com/media/media3/exoplayer/track-selection
+- Apple AVFoundation media selection: https://developer.apple.com/documentation/avfoundation/selecting-subtitles-and-alternative-audio-tracks
+- Apple HLS authoring: https://developer.apple.com/documentation/http-live-streaming/hls-authoring-specification-for-apple-devices
+- W3C Media Session: https://www.w3.org/TR/mediasession/
 - Dart JSON serialization: https://docs.flutter.dev/data-and-backend/serialization/json
 - Dart json_serializable: https://pub.dev/packages/json_serializable
 - Kotlin serialization: https://kotlinlang.org/docs/serialization.html

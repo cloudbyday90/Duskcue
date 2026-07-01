@@ -1,0 +1,104 @@
+{
+  "fixture": "playback-track-selection",
+  "cases": [
+    {
+      "id": "supported_audio_and_subtitle",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/playback/start",
+        "body": {
+          "media_item_id": "11111111-1111-4111-8111-111111111111",
+          "audio_stream_index": 1,
+          "subtitle_stream_index": 3
+        }
+      },
+      "device_profile": {
+        "audio_codecs": [
+          "aac",
+          "ac3"
+        ],
+        "max_audio_channels": 6,
+        "subtitle_formats": [
+          "srt",
+          "webvtt"
+        ]
+      },
+      "expect": {
+        "selected_audio_stream_index": 1,
+        "selected_subtitle_stream_index": 3,
+        "audio_decision": "passthrough",
+        "subtitle_decision": "passthrough",
+        "restart_required": true
+      }
+    },
+    {
+      "id": "unsupported_audio_downmix",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/playback/start",
+        "body": {
+          "media_item_id": "11111111-1111-4111-8111-111111111111",
+          "audio_stream_index": 2
+        }
+      },
+      "source_track": {
+        "stream_index": 2,
+        "codec": "truehd",
+        "channels": 8
+      },
+      "device_profile": {
+        "audio_codecs": [
+          "aac"
+        ],
+        "max_audio_channels": 2
+      },
+      "expect": {
+        "audio_decision": "transcode",
+        "target_audio_codec": "aac",
+        "target_audio_channels": 2,
+        "playback_type": "transcode_hls"
+      }
+    },
+    {
+      "id": "unsupported_image_subtitle_burn_in",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/playback/start",
+        "body": {
+          "media_item_id": "11111111-1111-4111-8111-111111111111",
+          "subtitle_stream_index": 7
+        }
+      },
+      "source_track": {
+        "stream_index": 7,
+        "format": "pgs"
+      },
+      "device_profile": {
+        "subtitle_formats": [
+          "srt",
+          "webvtt"
+        ]
+      },
+      "expect": {
+        "subtitle_decision": "burn_in",
+        "playback_type": "transcode_hls"
+      }
+    },
+    {
+      "id": "unavailable_track_rejected",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/playback/start",
+        "body": {
+          "media_item_id": "11111111-1111-4111-8111-111111111111",
+          "audio_stream_index": 99
+        }
+      },
+      "expect_problem": {
+        "status": 422,
+        "title": "VALID_001",
+        "client_action": "show_track_unavailable"
+      }
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "fixture": "playback-media-session-remote",
+  "platform_expectations": {
+    "web_desktop": "Map W3C Media Session actions to Duskcue playback APIs.",
+    "android_fire_tv": "Expose Media3/MediaSession state and media-button actions.",
+    "apple_tvos_ios": "Expose Now Playing/remote command state where the platform allows it.",
+    "roku_tizen_webos_xbox": "Map remote/controller actions into the same Duskcue state transitions."
+  },
+  "actions": [
+    {
+      "action": "play",
+      "from_state": "paused",
+      "to_state": "playing",
+      "duskcue_request": "POST /api/v1/playback/heartbeat",
+      "position_source": "current_player_position"
+    },
+    {
+      "action": "pause",
+      "from_state": "playing",
+      "to_state": "paused",
+      "duskcue_request": "POST /api/v1/playback/heartbeat",
+      "position_source": "current_player_position"
+    },
+    {
+      "action": "seekbackward",
+      "from_state": "playing",
+      "to_state": "playing",
+      "seek_delta_ms": -10000,
+      "duskcue_request": "POST /api/v1/playback/seek"
+    },
+    {
+      "action": "seekforward",
+      "from_state": "playing",
+      "to_state": "playing",
+      "seek_delta_ms": 30000,
+      "duskcue_request": "POST /api/v1/playback/seek"
+    },
+    {
+      "action": "seekto",
+      "from_state": "playing",
+      "to_state": "playing",
+      "seek_position_ms": 2400000,
+      "duskcue_request": "POST /api/v1/playback/seek"
+    },
+    {
+      "action": "stop",
+      "from_state": "playing",
+      "to_state": "stopped",
+      "duskcue_request": "POST /api/v1/playback/stop",
+      "position_source": "current_player_position"
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "fixture": "playback-error-reporting",
+  "cases": [
+    {
+      "id": "transcode-unavailable",
+      "status": 503,
+      "problem": {
+        "type": "/errors/playback_004",
+        "title": "PLAYBACK_004",
+        "status": 503,
+        "detail": "Transcoding is temporarily unavailable",
+        "instance": "/api/v1/playback/start",
+        "trace_id": "fixture-playback-transcode-unavailable",
+        "errors": null
+      },
+      "expected_client_action": "show_retryable_playback_error",
+      "qoe": {
+        "playback_failure_code": "transcode_unavailable",
+        "selected_quality_mode": "auto"
+      }
+    },
+    {
+      "id": "expired-media-url",
+      "status": 401,
+      "problem": {
+        "type": "/errors/auth_001",
+        "title": "AUTH_001",
+        "status": 401,
+        "detail": "Playback URL expired",
+        "instance": "/api/v1/transcode/50505050-5050-4050-8050-505050505050/manifest.m3u8",
+        "trace_id": "fixture-playback-expired-url",
+        "errors": null
+      },
+      "expected_client_action": "restart_playback_session"
+    },
+    {
+      "id": "unsupported-track",
+      "status": 422,
+      "problem": {
+        "type": "/errors/valid_001",
+        "title": "VALID_001",
+        "status": 422,
+        "detail": "Selected audio or subtitle track is unavailable",
+        "instance": "/api/v1/playback/start",
+        "trace_id": "fixture-playback-unsupported-track",
+        "errors": [
+          {
+            "field": "audio_stream_index",
+            "code": "unavailable",
+            "message": "The selected audio stream is not available for this item."
+          }
+        ]
+      },
+      "expected_client_action": "show_track_unavailable"
+    }
+  ]
+}

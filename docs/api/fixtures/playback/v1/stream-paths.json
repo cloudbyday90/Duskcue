@@ -1,0 +1,51 @@
+{
+  "fixture": "playback-stream-paths",
+  "credential_policy": "auth_header_or_session_bound_id",
+  "credential_url_material_allowed": false,
+  "cases": [
+    {
+      "id": "direct_play",
+      "decision": "direct_play",
+      "container": "mp4",
+      "stream_url": "/api/v1/stream/66666666-6666-4666-8666-666666666666?session_id=50505050-5050-4050-8050-505050505050",
+      "requires_bearer_header": true,
+      "range_requests": true,
+      "expect": {
+        "player_handoff": "native_file_stream",
+        "transcode_session": false
+      }
+    },
+    {
+      "id": "direct_stream",
+      "decision": "direct_stream",
+      "container": "mkv",
+      "stream_url": "/api/v1/stream/66666666-6666-4666-8666-666666666666?session_id=50505050-5050-4050-8050-505050505050",
+      "requires_bearer_header": true,
+      "range_requests": true,
+      "expect": {
+        "player_handoff": "server_remuxed_stream",
+        "transcode_session": false
+      }
+    },
+    {
+      "id": "transcode_hls",
+      "decision": "transcode_hls",
+      "container": "hls_fmp4",
+      "manifest_url": "/api/v1/transcode/50505050-5050-4050-8050-505050505050/manifest.m3u8",
+      "segment_url_template": "/api/v1/transcode/50505050-5050-4050-8050-505050505050/segment-{number}.m4s",
+      "subtitle_renditions": [
+        {
+          "language": "en",
+          "format": "webvtt",
+          "uri": "/api/v1/items/11111111-1111-4111-8111-111111111111/subtitles/80808080-8080-4080-8080-808080808080/content"
+        }
+      ],
+      "requires_bearer_header": true,
+      "expect": {
+        "player_handoff": "hls_manifest",
+        "transcode_session": true,
+        "webvtt_timestamp_map_required": true
+      }
+    }
+  ]
+}

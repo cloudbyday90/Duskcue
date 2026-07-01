@@ -82,6 +82,12 @@ JSON Schema 2020-12 remains the target vocabulary for machine validation once se
 
 **Decision:** Phase 16d Task 3 adds `docs/api/fixtures/client/v1/manifest.json` plus focused JSON fixtures for server selection, auth/device-linking, preferences, libraries, media detail, search, collections, playback, subtitles/audio/storyboards/artwork, quality, downloads, notifications/settings, TV surface/deep-link behavior, and common denial cases. `scripts/verify-client-fixtures.mjs` is the drift gate for coverage, stable IDs, row ordering, UTC date-times, enum values, Problem Details shape, localized string ownership, and secret/path redaction.
 
+### Playback Conformance
+
+Android Media3 exposes player events and track-selection APIs, Apple AVFoundation exposes media selection for subtitles and alternative audio tracks, HLS/WebVTT timing rules matter for subtitle synchronization, and web/desktop surfaces can receive remote actions through the W3C Media Session API. These platform APIs differ, but the Duskcue-facing lifecycle must be identical: the server owns start/resume, heartbeat, seek, stop/completion, selected track intent, stream decision, cross-device resume, and QoE/error reporting.
+
+**Decision:** Phase 16d Task 4 adds `docs/api/fixtures/playback/v1/manifest.json` plus state-machine, track-selection, stream-path, media-session, QoE, cross-device resume, and error-reporting fixtures. `scripts/verify-playback-conformance.mjs` verifies required transitions, ordering, API paths, direct/direct-stream/HLS coverage, remote actions, QoE fields, resume refresh behavior, Problem Details shape, and redaction. Platform phases must map their native player callbacks into this pack before claiming playback conformance.
+
 ## Mandatory Gates for Phases 17-23
 
 The following outputs are mandatory before a downstream platform phase can claim implementation complete:
@@ -113,7 +119,7 @@ These are recommended but not release-blocking for the first platform implementa
 | 1. Shared client contract source of truth | Expanded `docs/api/client-contracts.v1.json`, schemas/fixtures, verifier updates |
 | 2. SDK/generated bindings strategy | `docs/api/client-binding-targets.v1.json`, shared adapter contracts, binding verifier |
 | 3. Contract test fixtures | `docs/api/fixtures/client/v1`, client fixture manifest, fixture verifier |
-| 4. Playback conformance | Playback state-machine fixtures and expected event/QoE payloads |
+| 4. Playback conformance | `docs/api/fixtures/playback/v1`, state-machine/QoE fixtures, playback verifier |
 | 5. Auth/session conformance | Auth/session fixtures and negative cases |
 | 6. TV/deep-link conformance | TV fixture pack and adapter mapping expectations |
 | 7. Accessibility/input baselines | Accessibility/input checklist and test cases |

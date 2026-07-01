@@ -1,0 +1,140 @@
+{
+  "fixture_pack": "duskcue-playback-conformance",
+  "version": 1,
+  "updated": "2026-07-01",
+  "contract_manifest": "docs/api/client-contracts.v1.json",
+  "client_fixture_pack": "docs/api/fixtures/client/v1/manifest.json",
+  "purpose": "Reusable playback state-machine, stream-selection, media-session, track-selection, resume, and QoE conformance cases for desktop, mobile, TV, and console clients.",
+  "required_fixture_ids": [
+    "playback-state-machine",
+    "playback-track-selection",
+    "playback-stream-paths",
+    "playback-media-session-remote",
+    "playback-qoe-metrics",
+    "playback-cross-device-resume",
+    "playback-error-reporting"
+  ],
+  "required_state_events": [
+    "start",
+    "resume_seek",
+    "first_frame",
+    "heartbeat_playing",
+    "pause",
+    "resume",
+    "seek",
+    "heartbeat_after_seek",
+    "stop",
+    "completion",
+    "playback_error"
+  ],
+  "required_stream_decisions": [
+    "direct_play",
+    "direct_stream",
+    "transcode_hls"
+  ],
+  "required_track_cases": [
+    "supported_audio_and_subtitle",
+    "unsupported_audio_downmix",
+    "unsupported_image_subtitle_burn_in",
+    "unavailable_track_rejected"
+  ],
+  "required_remote_actions": [
+    "play",
+    "pause",
+    "seekbackward",
+    "seekforward",
+    "seekto",
+    "stop"
+  ],
+  "required_qoe_fields": [
+    "startup_time_ms",
+    "rebuffer_count",
+    "rebuffer_duration_ms",
+    "quality_change_count",
+    "average_bitrate_bps",
+    "selected_quality_mode",
+    "playback_failure_code"
+  ],
+  "sources": [
+    "Android Media3 player events and track selection",
+    "Apple AVFoundation media selection and HLS authoring",
+    "W3C Media Session actions",
+    "RFC 8216 HLS/WebVTT timing"
+  ],
+  "fixtures": [
+    {
+      "id": "playback-state-machine",
+      "file": "state-machine.json",
+      "covers": [
+        "start",
+        "resume",
+        "play",
+        "pause",
+        "seek",
+        "heartbeat",
+        "stop",
+        "completion",
+        "playback error reporting"
+      ]
+    },
+    {
+      "id": "playback-track-selection",
+      "file": "track-selection.json",
+      "covers": [
+        "audio selection",
+        "subtitle selection",
+        "unsupported tracks",
+        "burn-in or transcode fallback"
+      ]
+    },
+    {
+      "id": "playback-stream-paths",
+      "file": "stream-paths.json",
+      "covers": [
+        "direct play",
+        "direct stream",
+        "HLS transcode",
+        "authenticated media URL handling"
+      ]
+    },
+    {
+      "id": "playback-media-session-remote",
+      "file": "media-session-remote.json",
+      "covers": [
+        "remote controls",
+        "media-session actions",
+        "platform event mapping"
+      ]
+    },
+    {
+      "id": "playback-qoe-metrics",
+      "file": "qoe-metrics.json",
+      "covers": [
+        "startup",
+        "buffering",
+        "quality changes",
+        "failure",
+        "selected quality mode"
+      ]
+    },
+    {
+      "id": "playback-cross-device-resume",
+      "file": "cross-device-resume.json",
+      "covers": [
+        "server-owned resume",
+        "foreground refresh",
+        "launcher cache invalidation"
+      ]
+    },
+    {
+      "id": "playback-error-reporting",
+      "file": "error-reporting.json",
+      "covers": [
+        "transcode unavailable",
+        "expired media URL",
+        "unsupported track",
+        "QoE failure report"
+      ]
+    }
+  ]
+}
