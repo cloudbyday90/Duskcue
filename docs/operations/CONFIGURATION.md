@@ -291,6 +291,7 @@ pub struct RuntimeConfig {
     pub integrations: IntegrationsConfig,
     pub logging: LoggingConfig,
     pub storage: StorageConfig,
+    pub downloads: DownloadsConfig,
     pub maintenance: MaintenanceConfig,
     pub resource_limits: ResourceLimitsConfig,
     pub cpu: CpuConfig,
@@ -299,7 +300,43 @@ pub struct RuntimeConfig {
 }
 ```
 
-`BackupConfig` is defined in BACKUP_RECOVERY.md. `StorageConfig` is defined in CACHE_STORAGE.md. `MaintenanceConfig` is defined in DATABASE_MAINTENANCE.md. `ResourceLimitsConfig` is defined in MEMORY.md. `CpuConfig` is defined in CPU.md. `QualityConfig` is defined below. `SubtitleConfig` is defined below. `AuthConfig` is defined below. `MetadataConfig` is defined in POSTER_MANAGEMENT.md and METADATA_PROVIDERS.md (expanded in Phase 6 with 22 fields including `ProviderConfig` for TMDB/TVDB/Fanart/OMDb). Other structs follow the same serde-deserialized pattern from JSONB. The full audio format catalog (codecs, channels, spatial audio, transcode targets) is documented in [AUDIO_FORMATS.md](../design/AUDIO_FORMATS.md).
+`BackupConfig` is defined in BACKUP_RECOVERY.md. `StorageConfig` is defined in CACHE_STORAGE.md. `DownloadsConfig` is defined below and in OFFLINE_DOWNLOADS.md. `MaintenanceConfig` is defined in DATABASE_MAINTENANCE.md. `ResourceLimitsConfig` is defined in MEMORY.md. `CpuConfig` is defined in CPU.md. `QualityConfig` is defined below. `SubtitleConfig` is defined below. `AuthConfig` is defined below. `MetadataConfig` is defined in POSTER_MANAGEMENT.md and METADATA_PROVIDERS.md (expanded in Phase 6 with 22 fields including `ProviderConfig` for TMDB/TVDB/Fanart/OMDb). Other structs follow the same serde-deserialized pattern from JSONB. The full audio format catalog (codecs, channels, spatial audio, transcode targets) is documented in [AUDIO_FORMATS.md](../design/AUDIO_FORMATS.md).
+
+### DownloadsConfig Rust Struct
+
+Stored in `server_config.downloads` JSONB and documented in [OFFLINE_DOWNLOADS.md](../design/OFFLINE_DOWNLOADS.md).
+
+```rust
+pub struct DownloadsConfig {
+    pub enabled: bool,
+    pub max_quality_resolution: String,
+    pub max_bytes_per_user: i64,
+    pub max_bytes_per_device: i64,
+    pub max_active_jobs_per_user: i32,
+    pub max_active_jobs_per_device: i32,
+    pub max_retained_packages_per_user: i32,
+    pub max_retained_packages_per_device: i32,
+    pub allow_lan_downloads: bool,
+    pub allow_remote_downloads: bool,
+    pub allow_transcoded_downloads: bool,
+    pub default_package_expiry_days: i32,
+    pub ready_package_retention_days: i32,
+    pub user_overrides: serde_json::Value,
+    pub library_overrides: serde_json::Value,
+}
+```
+
+**Field semantics:**
+- `enabled` — global server-side download switch. Disabled returns `DOWNLOAD_002` before planning/job creation.
+- `max_quality_resolution` — highest offline package resolution allowed by default.
+- `max_bytes_per_user` / `max_bytes_per_device` — retained ready/serving package byte quotas.
+- `max_active_jobs_per_user` / `max_active_jobs_per_device` — queued/preparing package job limits.
+- `max_retained_packages_per_user` / `max_retained_packages_per_device` — retained ready/serving package count limits.
+- `allow_lan_downloads` / `allow_remote_downloads` — runtime-mode restrictions for Local/LAN and Exposed/remote deployments.
+- `allow_transcoded_downloads` — whether future planning may create offline transcode jobs instead of direct/remux packages.
+- `default_package_expiry_days` — default package expiry for new jobs.
+- `ready_package_retention_days` — cleanup window for ready packages that were never downloaded.
+- `user_overrides` / `library_overrides` — forward-compatible per-user and per-library policy override maps.
 
 ### QualityConfig Rust Struct
 

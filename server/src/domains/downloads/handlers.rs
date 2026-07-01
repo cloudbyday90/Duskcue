@@ -36,7 +36,7 @@ pub async fn get_download_plan(
         .validate()
         .map_err(|e| validation_error(e, format!("/api/v1/downloads/plan/{media_item_id}")))?;
     Ok(Json(
-        service::get_download_plan(&state.pool, &auth.user, media_item_id, query).await?,
+        service::get_download_plan(&state, &auth.user, media_item_id, query).await?,
     ))
 }
 
@@ -48,7 +48,7 @@ pub async fn create_download_job(
     req.validate()
         .map_err(|e| validation_error(e, "/api/v1/downloads/jobs"))?;
     Ok(Json(
-        service::create_download_job(&state.pool, &auth.user, req).await?,
+        service::create_download_job(&state, &auth.user, req).await?,
     ))
 }
 
@@ -57,9 +57,7 @@ pub async fn get_download_job(
     user: AuthenticatedUser,
     Path(id): Path<Uuid>,
 ) -> Result<Json<DownloadJobResponse>, AppError> {
-    Ok(Json(
-        service::get_download_job(&state.pool, &user, id).await?,
-    ))
+    Ok(Json(service::get_download_job(&state, &user, id).await?))
 }
 
 pub async fn cancel_download_job(
@@ -71,7 +69,7 @@ pub async fn cancel_download_job(
     req.validate()
         .map_err(|e| validation_error(e, format!("/api/v1/downloads/jobs/{id}/cancel")))?;
     Ok(Json(
-        service::cancel_download_job(&state.pool, &user, id, req).await?,
+        service::cancel_download_job(&state, &user, id, req).await?,
     ))
 }
 
@@ -84,7 +82,7 @@ pub async fn list_download_inventory(
         .validate()
         .map_err(|e| validation_error(e, "/api/v1/downloads/inventory"))?;
     Ok(Json(
-        service::list_download_inventory(&state.pool, &user, query).await?,
+        service::list_download_inventory(&state, &user, query).await?,
     ))
 }
 
@@ -98,7 +96,7 @@ pub async fn delete_download_package(
     req.validate()
         .map_err(|e| validation_error(e, format!("/api/v1/downloads/packages/{id}")))?;
     Ok(Json(
-        service::delete_download_package(&state.pool, &user, id, req).await?,
+        service::delete_download_package(&state, &user, id, req).await?,
     ))
 }
 
@@ -108,7 +106,7 @@ pub async fn get_package_manifest(
     Path(id): Path<Uuid>,
 ) -> Result<Json<DownloadPackageManifestResponse>, AppError> {
     Ok(Json(
-        service::get_package_manifest(&state.pool, &user, id).await?,
+        service::get_package_manifest(&state, &user, id).await?,
     ))
 }
 
@@ -122,7 +120,7 @@ pub async fn create_package_transfer_urls(
         validation_error(e, format!("/api/v1/downloads/packages/{id}/transfer-urls"))
     })?;
     Ok(Json(
-        service::create_package_transfer_urls(&state.pool, &user, id, req).await?,
+        service::create_package_transfer_urls(&state, &user, id, req).await?,
     ))
 }
 
@@ -131,7 +129,7 @@ pub async fn serve_package_file(
     user: AuthenticatedUser,
     Path((id, file_path)): Path<(Uuid, String)>,
 ) -> Result<(), AppError> {
-    service::serve_package_file(&state.pool, &user, id, file_path).await?;
+    service::serve_package_file(&state, &user, id, file_path).await?;
     Ok(())
 }
 
@@ -143,7 +141,7 @@ pub async fn sync_download_state(
     req.validate()
         .map_err(|e| validation_error(e, "/api/v1/downloads/sync"))?;
     Ok(Json(
-        service::sync_download_state(&state.pool, &user, req).await?,
+        service::sync_download_state(&state, &user, req).await?,
     ))
 }
 

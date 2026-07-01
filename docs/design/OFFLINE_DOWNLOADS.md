@@ -125,6 +125,13 @@ Phase 16c Task 2 added the `server/src/domains/downloads/` five-file domain shel
 
 `DOWNLOAD_001`-`DOWNLOAD_015` are registered in [ERROR_HANDLING.md](ERROR_HANDLING.md). Planning and job creation require the `can_download` capability; read/delete/manifest/sync routes are authenticated user-scoped and will enforce BOLA/policy checks in the service layer as implementation lands.
 
+Phase 16c Task 3 added policy enforcement foundations:
+
+- `server_config.downloads` stores global enablement, max quality/resolution, max bytes per user/device, max active jobs per user/device, max retained packages per user/device, LAN/remote restrictions, transcode-download allowance, default expiry, ready-package retention, and per-user/library override maps.
+- Planning and job creation now check the authenticated user's library access, verify that the item has at least one healthy media file, enforce Android/iOS route payloads, enforce global enablement and LAN/remote restrictions, and enforce active-job, retained-package, and retained-byte quotas before returning later-task not-implemented responses.
+- Job/package/manifest/transfer/file/sync routes verify job/package ownership before returning later-task not-implemented responses so future implementation starts from BOLA-safe boundaries.
+- Policy and quota denials create `download_events` rows with bounded reasons and no filesystem paths, tokens, signed URLs, or private package internals.
+
 ## Mobile Contract
 
 The mobile clients own these responsibilities:
@@ -208,4 +215,4 @@ Download quality reuses the Phase 7 quality-management model but is not identica
 
 ## Implementation Status
 
-Phase 16c Tasks 0-2 are complete. The design/research outcome, database schema, and downloads domain route/DTO/error shell are in place. Access/quota/policy integration, planning implementations, package manifest generation, package workers, package serving, notifications, mobile download manager, protected local storage, offline playback, reconnect sync, settings, observability, and tests are pending Phase 16c Tasks 3-15.
+Phase 16c Tasks 0-3 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, and access/quota/policy foundations are in place. Planning implementations, package manifest generation, package workers, package serving, notifications, mobile download manager, protected local storage, offline playback, reconnect sync, settings, observability, and tests are pending Phase 16c Tasks 4-15.

@@ -922,6 +922,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 2 domain status:** `server/src/domains/downloads/` now exists with `mod.rs`, `handlers.rs`, `service.rs`, `error.rs`, and `types.rs`. Routes are mounted under `/api/v1/downloads/*` for planning, job creation/status/cancel, inventory, package delete, package manifest, transfer URLs, file serving, and reconnect sync. DTOs cover plan/job/inventory/manifest/transfer/sync request and response shapes. Services currently return `DOWNLOAD_015` not-implemented errors until Tasks 3-7 and 12 fill the behavior.
 
+**Task 3 policy status:** `RuntimeConfig` now includes a `downloads: DownloadsConfig` group backed by `server_config.downloads`. `server/src/domains/downloads/service.rs` owns the initial access and policy helpers: library BOLA checks, healthy-file availability check, global enablement, LAN/remote mode restrictions, active-job quotas, retained-package quotas, retained-byte quotas, policy/quota event recording, and job/package ownership checks.
+
 ## Development Workflow
 
 ### Server Development

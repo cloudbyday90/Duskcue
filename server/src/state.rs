@@ -788,6 +788,48 @@ pub struct StorageConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
+pub struct DownloadsConfig {
+    pub enabled: bool,
+    pub max_quality_resolution: String,
+    pub max_bytes_per_user: i64,
+    pub max_bytes_per_device: i64,
+    pub max_active_jobs_per_user: i32,
+    pub max_active_jobs_per_device: i32,
+    pub max_retained_packages_per_user: i32,
+    pub max_retained_packages_per_device: i32,
+    pub allow_lan_downloads: bool,
+    pub allow_remote_downloads: bool,
+    pub allow_transcoded_downloads: bool,
+    pub default_package_expiry_days: i32,
+    pub ready_package_retention_days: i32,
+    pub user_overrides: serde_json::Value,
+    pub library_overrides: serde_json::Value,
+}
+
+impl Default for DownloadsConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            max_quality_resolution: "1080p".to_string(),
+            max_bytes_per_user: 100 * 1024 * 1024 * 1024,
+            max_bytes_per_device: 50 * 1024 * 1024 * 1024,
+            max_active_jobs_per_user: 3,
+            max_active_jobs_per_device: 2,
+            max_retained_packages_per_user: 50,
+            max_retained_packages_per_device: 25,
+            allow_lan_downloads: true,
+            allow_remote_downloads: true,
+            allow_transcoded_downloads: true,
+            default_package_expiry_days: 30,
+            ready_package_retention_days: 7,
+            user_overrides: serde_json::json!({}),
+            library_overrides: serde_json::json!({}),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct DiskSpaceWarnings {
     pub data_threshold_percent: u8,
     pub cache_threshold_percent: u8,
@@ -934,6 +976,7 @@ pub struct RuntimeConfig {
     pub integrations: IntegrationsConfig,
     pub logging: LoggingConfig,
     pub storage: StorageConfig,
+    pub downloads: DownloadsConfig,
     pub maintenance: MaintenanceConfig,
     pub resource_limits: ResourceLimitsConfig,
     pub cpu: CpuConfig,
@@ -961,6 +1004,7 @@ impl Default for RuntimeConfig {
             integrations: IntegrationsConfig::default(),
             logging: LoggingConfig::default(),
             storage: StorageConfig::default(),
+            downloads: DownloadsConfig::default(),
             maintenance: MaintenanceConfig::default(),
             resource_limits: ResourceLimitsConfig::default(),
             cpu: CpuConfig::default(),
@@ -1197,6 +1241,7 @@ pub async fn load_runtime_config(
             integrations,
             logging,
             storage,
+            downloads,
             maintenance,
             resource_limits,
             cpu,
@@ -1252,6 +1297,9 @@ pub async fn load_runtime_config(
         .unwrap_or(serde_json::Value::Object(Default::default()));
     let storage: serde_json::Value = row
         .try_get("storage")
+        .unwrap_or(serde_json::Value::Object(Default::default()));
+    let downloads: serde_json::Value = row
+        .try_get("downloads")
         .unwrap_or(serde_json::Value::Object(Default::default()));
     let maintenance: serde_json::Value = row
         .try_get("maintenance")
@@ -1313,6 +1361,7 @@ pub async fn load_runtime_config(
         },
         logging: serde_json::from_value(logging).unwrap_or_default(),
         storage: serde_json::from_value(storage).unwrap_or_default(),
+        downloads: serde_json::from_value(downloads).unwrap_or_default(),
         maintenance: serde_json::from_value(maintenance).unwrap_or_default(),
         resource_limits: serde_json::from_value(resource_limits).unwrap_or_default(),
         cpu: serde_json::from_value(cpu).unwrap_or_default(),

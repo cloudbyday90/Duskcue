@@ -1348,6 +1348,7 @@ Stores durable mobile download jobs, server-prepared package manifests/files, pe
 | `download_package_files` | Per-file manifest for package integrity and resumable repair. Stores relative package path, role, content type, byte size, SHA-256 checksum, segment index, track type/identifier, and required/optional status. |
 | `download_device_state` | Per-user, per-device local inventory and sync state. Stores local status, bytes downloaded, verified file count, local manifest hash, last online/download/play timestamps, local resume position, pending sync queue, deletion marker, and local failure details. |
 | `download_events` | Explicit operational event stream for create/start/ready/fail/cancel/serve/delete/expire/revoke/quota/policy/checksum/sync/cleanup actions. |
+| `server_config.downloads` | Runtime policy JSONB group for global enablement, quality ceiling, byte quotas, active job limits, retained package limits, LAN/remote restrictions, transcode-download allowance, package expiry, retention, and per-user/library override maps. |
 
 ### Key Constraints
 
@@ -1357,6 +1358,7 @@ Stores durable mobile download jobs, server-prepared package manifests/files, pe
 - Download jobs and packages retain `access_policy_snapshot` JSONB for diagnostics and reconnect decisions.
 - `download_device_state` is unique on `(user_id, device_identifier, download_package_id)` so switching users or servers cannot merge package inventory.
 - Table-level audit triggers cover `download_jobs`, `download_packages`, and `download_device_state`; `download_events` stores explicit domain events such as quota denial or checksum mismatch.
+- `server_config.downloads` is added by migration `20260701020000_add_download_policy_config.sql`; Rust deserializes missing/partial JSON through `DownloadsConfig::default()` for upgrade safety.
 
 ### Indexing
 
