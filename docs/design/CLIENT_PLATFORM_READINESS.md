@@ -68,6 +68,14 @@ Options considered:
 
 **Decision:** Phase 16d starts from the curated manifest and checked-in fixtures. Task 1 extends metadata for auth, validation, cache, errors, pagination, SSE, and offline-download routes. Task 2 may add generated bindings where practical, but generation must consume the curated manifest/fixtures until a server-emitted schema exists.
 
+### SDK and Binding Strategy
+
+OpenAPI Generator currently lists broad client generator coverage, including TypeScript, Dart, Kotlin, and Swift families. Dart's `json_serializable`, Kotlin serialization, and Swift OpenAPI Generator each provide practical typed-model or client-generation paths once Duskcue has a real OpenAPI 3.1 or JSON Schema source. JSON Schema also remains useful for validating canonical fixtures even on platforms where full client generation is not practical.
+
+**Decision:** Phase 16d Task 2 adds `docs/api/client-binding-targets.v1.json` as the binding target matrix and `scripts/verify-client-bindings.mjs` as the drift gate. The current output is typed fixture contracts and shared adapter requirements, not generated SDK source. TypeScript/Tauri, Dart/Flutter, Kotlin Android/Fire TV, and Swift tvOS/iOS are marked generation-practical once server schemas exist. Roku, Samsung Tizen, LG webOS, Windows, and Xbox remain fixture-first or target-dependent until their platform phase selects tooling and packaging constraints.
+
+All downstream clients must keep the following behind small adapters: base URL resolution, bearer-token injection, session refresh/re-auth handling, timeout/retry policy, RFC 9457 Problem Details mapping, pagination helpers, private cache/ETag storage, SSE event decoding, secure storage, and diagnostics redaction. Platform-specific keychain, keystore, credential locker, app-private storage, and networking APIs must not leak into shared DTO or fixture logic.
+
 ## Mandatory Gates for Phases 17-23
 
 The following outputs are mandatory before a downstream platform phase can claim implementation complete:
@@ -97,7 +105,7 @@ These are recommended but not release-blocking for the first platform implementa
 | Task | Primary artifact |
 |---|---|
 | 1. Shared client contract source of truth | Expanded `docs/api/client-contracts.v1.json`, schemas/fixtures, verifier updates |
-| 2. SDK/generated bindings strategy | Binding-generation decision, adapters, fixture validation guidance |
+| 2. SDK/generated bindings strategy | `docs/api/client-binding-targets.v1.json`, shared adapter contracts, binding verifier |
 | 3. Contract test fixtures | Versioned fixtures under `docs/api/fixtures/` |
 | 4. Playback conformance | Playback state-machine fixtures and expected event/QoE payloads |
 | 5. Auth/session conformance | Auth/session fixtures and negative cases |
@@ -112,5 +120,4 @@ These are recommended but not release-blocking for the first platform implementa
 ## Open Follow-Ups
 
 - Decide in Task 1 whether to add JSON Schema files beside the manifest or embed schema snippets in the manifest first.
-- Decide in Task 2 which generated clients are worth producing immediately versus fixture-only validation.
 - Decide in Task 12 whether the seeded Docker smoke harness owns its own fixture database or reuses migration/test seed scripts from existing server verification.

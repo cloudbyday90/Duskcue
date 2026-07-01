@@ -2,9 +2,10 @@
 
 ## Purpose
 
-This document defines the Phase 16a desktop/mobile client contract strategy. It is scoped to the online desktop and mobile MVP and supports the task list in [BUILD_ORDER.md](../../BUILD_ORDER.md).
+This document defines the Phase 16a desktop/mobile client contract strategy and its Phase 16d promotion into shared client contracts for desktop, mobile, TV, and console platforms. It supports the task list in [BUILD_ORDER.md](../../BUILD_ORDER.md).
 
 The machine-readable starting point is [client-contracts.v1.json](client-contracts.v1.json).
+The Phase 16d binding target matrix is [client-binding-targets.v1.json](client-binding-targets.v1.json).
 
 ## Decision
 
@@ -131,6 +132,30 @@ Phase 16d Task 1 extends the manifest into the shared client contract source of 
 
 The verifier now fails when a required Phase 16d domain is missing or a route lacks the required contract metadata. Later Phase 16d tasks extend this into response fixtures, generated bindings, and broader CI conformance tests.
 
+## Phase 16d Binding Targets
+
+Phase 16d Task 2 adds [client-binding-targets.v1.json](client-binding-targets.v1.json) as the machine-readable SDK and binding strategy. The current source remains the curated manifest plus checked-in fixtures. The immediate output is typed fixture contracts and a common adapter contract rather than fully generated SDKs, because the Rust server still does not emit OpenAPI 3.1 or JSON Schema.
+
+The matrix defines target strategies for:
+
+- TypeScript/Tauri webview helpers;
+- Dart/Flutter mobile DTOs and services;
+- Kotlin Android TV / Fire TV clients;
+- Swift tvOS / iOS clients;
+- Roku BrightScript clients;
+- Samsung Tizen and LG webOS JavaScript clients;
+- Windows/Xbox clients once their app shell is selected.
+
+Every target must cover the required Phase 16d domains from the manifest and must implement or explicitly adapt the same shared concerns: base URL resolution, bearer-token injection, re-auth/session revoke handling, timeout/retry behavior, Problem Details mapping, pagination helpers, cache/ETag handling, SSE decoding, secure storage, and diagnostics redaction.
+
+Run:
+
+```bash
+node scripts/verify-client-bindings.mjs
+```
+
+The verifier fails if a required target, required shared adapter, required manifest domain, or fixture requirement is missing. Generated clients remain the target direction for TypeScript, Dart, Kotlin, and Swift once server-emitted schemas exist; Roku and some TV web targets stay fixture-first unless platform tooling makes full client generation practical.
+
 Phase 16b added reusable TV surface fixtures ahead of full Phase 16d generation:
 
 ```bash
@@ -152,6 +177,11 @@ The TV verifier checks `docs/api/fixtures/tv` feed, resolve, diagnostics, unavai
 ## Research Sources
 
 - OpenAPI Specification: https://spec.openapis.org/oas/latest.html
+- OpenAPI Generator generators: https://openapi-generator.tech/docs/generators/
 - JSON Schema 2020-12: https://json-schema.org/draft/2020-12
+- JSON Schema reference: https://json-schema.org/understanding-json-schema/reference
 - RFC 9457 Problem Details: https://www.rfc-editor.org/rfc/rfc9457
 - Dart JSON serialization: https://docs.flutter.dev/data-and-backend/serialization/json
+- Dart json_serializable: https://pub.dev/packages/json_serializable
+- Kotlin serialization: https://kotlinlang.org/docs/serialization.html
+- Swift OpenAPI Generator: https://swift.org/blog/introducing-swift-openapi-generator/

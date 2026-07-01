@@ -1,0 +1,444 @@
+{
+  "version": 1,
+  "updated": "2026-07-01",
+  "contract_manifest": "docs/api/client-contracts.v1.json",
+  "status": "phase16d_task2",
+  "decision": {
+    "current_source": "curated_manifest_plus_checked_in_fixtures",
+    "current_output": "typed_fixture_contracts_and_shared_adapter_requirements",
+    "future_source": "server_emitted_openapi_3_1_or_json_schema",
+    "future_output": "generated_language_clients_where_tooling_is_practical",
+    "rationale": "The server does not yet emit OpenAPI or JSON Schema, so generated clients would be manually maintained wrappers around an incomplete schema. Phase 16d Task 2 standardizes reusable adapters and target-specific fixture validation now, then gates later SDK generation on a server-emitted schema."
+  },
+  "required_shared_adapters": [
+    "base_url_resolver",
+    "bearer_token_provider",
+    "reauth_handler",
+    "timeout_retry_policy",
+    "problem_details_mapper",
+    "pagination_helper",
+    "cache_etag_store",
+    "sse_event_decoder",
+    "secure_storage_adapter",
+    "diagnostics_redactor"
+  ],
+  "adapter_contracts": [
+    {
+      "id": "base_url_resolver",
+      "purpose": "Resolve user-selected server origins to the stable public Duskcue API port and base API path.",
+      "must_not": [
+        "silently use the internal Docker API port",
+        "store bearer tokens in URLs"
+      ]
+    },
+    {
+      "id": "bearer_token_provider",
+      "purpose": "Inject Authorization: Bearer headers for native clients and preserve same-origin credential behavior for web/Tauri webview clients.",
+      "must_not": [
+        "log token values",
+        "persist tokens outside platform secure storage"
+      ]
+    },
+    {
+      "id": "reauth_handler",
+      "purpose": "Map 401, session revoke, logout-all, and session_kicked events to a single clear-session flow.",
+      "must_not": [
+        "retry auth-expired requests indefinitely",
+        "leave stale selected-server state ambiguous"
+      ]
+    },
+    {
+      "id": "timeout_retry_policy",
+      "purpose": "Apply bounded request timeouts, idempotent retry rules, Retry-After handling, and offline/network failure classification.",
+      "must_not": [
+        "retry non-idempotent mutations unless explicitly designed",
+        "hide server validation failures behind network errors"
+      ]
+    },
+    {
+      "id": "problem_details_mapper",
+      "purpose": "Map RFC 9457 Problem Details plus Duskcue error titles into platform-native error enums.",
+      "must_not": [
+        "discard trace_id",
+        "treat VALID_001 field errors as generic unknown failures"
+      ]
+    },
+    {
+      "id": "pagination_helper",
+      "purpose": "Normalize offset, cursor, and no-pagination response handling from the route contract metadata.",
+      "must_not": [
+        "invent client-only cursor formats",
+        "drop next_cursor or total_count metadata where present"
+      ]
+    },
+    {
+      "id": "cache_etag_store",
+      "purpose": "Apply route cache profiles, private ETag revalidation, 304 empty-success behavior, and binary/media cache boundaries.",
+      "must_not": [
+        "share authenticated ETags across users",
+        "cache private JSON without server cache metadata"
+      ]
+    },
+    {
+      "id": "sse_event_decoder",
+      "purpose": "Decode foreground SSE frames and map known event names to typed payloads while tolerating unknown future events.",
+      "must_not": [
+        "fail the whole connection on an unknown event type",
+        "drop Last-Event-ID resume metadata"
+      ]
+    },
+    {
+      "id": "secure_storage_adapter",
+      "purpose": "Keep platform-specific keychain, keystore, credential locker, or app-private storage behind a small interface.",
+      "must_not": [
+        "store secrets in plaintext preferences",
+        "reuse one user's local offline/download scope for another user"
+      ]
+    },
+    {
+      "id": "diagnostics_redactor",
+      "purpose": "Redact tokens, signed media URLs, local filesystem paths, push tokens, and raw sensitive payloads before export.",
+      "must_not": [
+        "export Authorization headers",
+        "export package transfer URLs or push provider tokens"
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "id": "typescript_tauri",
+      "display_name": "TypeScript / Tauri webview",
+      "platforms": [
+        "web",
+        "desktop_tauri"
+      ],
+      "language": "TypeScript or checked JavaScript",
+      "current_strategy": "Reuse existing web API helpers with manifest-backed fixture tests and shared adapter expectations.",
+      "future_generation": "Generate a typed fetch client from OpenAPI 3.1 when the server emits schemas; keep Tauri-native storage behind the existing bridge.",
+      "generation_practical": true,
+      "contract_mode": "helpers_plus_typed_fixtures",
+      "required_domains": [
+        "health",
+        "auth",
+        "users",
+        "libraries",
+        "media",
+        "search",
+        "playback",
+        "subtitles",
+        "segments_storyboards",
+        "collections",
+        "quality",
+        "tv",
+        "downloads",
+        "notifications",
+        "settings"
+      ],
+      "shared_adapters": [
+        "base_url_resolver",
+        "bearer_token_provider",
+        "reauth_handler",
+        "timeout_retry_policy",
+        "problem_details_mapper",
+        "pagination_helper",
+        "cache_etag_store",
+        "sse_event_decoder",
+        "secure_storage_adapter",
+        "diagnostics_redactor"
+      ],
+      "fixture_requirements": [
+        "route manifest drift",
+        "Problem Details mapping",
+        "private ETag cache behavior",
+        "SSE event decoding"
+      ]
+    },
+    {
+      "id": "dart_flutter",
+      "display_name": "Dart / Flutter mobile",
+      "platforms": [
+        "android",
+        "ios"
+      ],
+      "language": "Dart",
+      "current_strategy": "Keep handwritten DTOs and services, but validate them against manifest routes, typed fixtures, and shared adapter semantics.",
+      "future_generation": "Use json_serializable-backed DTOs from generated JSON Schema or OpenAPI components when server schemas exist.",
+      "generation_practical": true,
+      "contract_mode": "handwritten_client_plus_typed_fixtures",
+      "required_domains": [
+        "health",
+        "auth",
+        "users",
+        "libraries",
+        "media",
+        "search",
+        "playback",
+        "subtitles",
+        "segments_storyboards",
+        "collections",
+        "quality",
+        "tv",
+        "downloads",
+        "notifications",
+        "settings"
+      ],
+      "shared_adapters": [
+        "base_url_resolver",
+        "bearer_token_provider",
+        "reauth_handler",
+        "timeout_retry_policy",
+        "problem_details_mapper",
+        "pagination_helper",
+        "cache_etag_store",
+        "sse_event_decoder",
+        "secure_storage_adapter",
+        "diagnostics_redactor"
+      ],
+      "fixture_requirements": [
+        "mobile auth/session lifecycle",
+        "playback start/resume/QoE",
+        "offline download inventory/sync",
+        "foreground SSE"
+      ]
+    },
+    {
+      "id": "kotlin_android_firetv",
+      "display_name": "Kotlin / Android TV / Fire TV",
+      "platforms": [
+        "android_tv",
+        "fire_tv"
+      ],
+      "language": "Kotlin",
+      "current_strategy": "Use fixture-first DTO validation and adapter contracts before creating the platform client.",
+      "future_generation": "Generate Kotlin data classes and a small HTTP client from OpenAPI 3.1 or JSON Schema; integrate with kotlinx.serialization.",
+      "generation_practical": true,
+      "contract_mode": "typed_fixtures_now_generated_client_later",
+      "required_domains": [
+        "health",
+        "auth",
+        "users",
+        "libraries",
+        "media",
+        "search",
+        "playback",
+        "subtitles",
+        "segments_storyboards",
+        "collections",
+        "quality",
+        "tv",
+        "downloads",
+        "notifications",
+        "settings"
+      ],
+      "shared_adapters": [
+        "base_url_resolver",
+        "bearer_token_provider",
+        "reauth_handler",
+        "timeout_retry_policy",
+        "problem_details_mapper",
+        "pagination_helper",
+        "cache_etag_store",
+        "sse_event_decoder",
+        "secure_storage_adapter",
+        "diagnostics_redactor"
+      ],
+      "fixture_requirements": [
+        "TV surface feed and deep-link resolver",
+        "playback denial paths",
+        "watch activity mapping",
+        "auth revoke/session kicked"
+      ]
+    },
+    {
+      "id": "swift_tvos_ios",
+      "display_name": "Swift / tvOS / iOS",
+      "platforms": [
+        "tvos",
+        "ios"
+      ],
+      "language": "Swift",
+      "current_strategy": "Use fixture-first Codable model validation and adapter contracts before creating native tvOS surfaces.",
+      "future_generation": "Use Swift OpenAPI Generator for client calls once an OpenAPI document exists; keep Keychain and AVKit code behind adapters.",
+      "generation_practical": true,
+      "contract_mode": "typed_fixtures_now_generated_client_later",
+      "required_domains": [
+        "health",
+        "auth",
+        "users",
+        "libraries",
+        "media",
+        "search",
+        "playback",
+        "subtitles",
+        "segments_storyboards",
+        "collections",
+        "quality",
+        "tv",
+        "downloads",
+        "notifications",
+        "settings"
+      ],
+      "shared_adapters": [
+        "base_url_resolver",
+        "bearer_token_provider",
+        "reauth_handler",
+        "timeout_retry_policy",
+        "problem_details_mapper",
+        "pagination_helper",
+        "cache_etag_store",
+        "sse_event_decoder",
+        "secure_storage_adapter",
+        "diagnostics_redactor"
+      ],
+      "fixture_requirements": [
+        "Top Shelf/deep-link mapping",
+        "playback start and selected track mapping",
+        "Problem Details Codable decoding",
+        "private ETag cache behavior"
+      ]
+    },
+    {
+      "id": "roku_brightscript",
+      "display_name": "Roku / BrightScript",
+      "platforms": [
+        "roku"
+      ],
+      "language": "BrightScript",
+      "current_strategy": "Use canonical JSON fixtures and validation schemas; keep handwritten platform adapters small.",
+      "future_generation": "Do not plan full generated clients unless Roku tooling matures; generate fixture validators and enum tables only.",
+      "generation_practical": false,
+      "contract_mode": "canonical_json_fixtures",
+      "required_domains": [
+        "health",
+        "auth",
+        "users",
+        "libraries",
+        "media",
+        "search",
+        "playback",
+        "subtitles",
+        "segments_storyboards",
+        "collections",
+        "quality",
+        "tv",
+        "downloads",
+        "notifications",
+        "settings"
+      ],
+      "shared_adapters": [
+        "base_url_resolver",
+        "bearer_token_provider",
+        "reauth_handler",
+        "timeout_retry_policy",
+        "problem_details_mapper",
+        "pagination_helper",
+        "cache_etag_store",
+        "sse_event_decoder",
+        "secure_storage_adapter",
+        "diagnostics_redactor"
+      ],
+      "fixture_requirements": [
+        "Direct to Play deep-link parameters",
+        "TV surface feed ordering",
+        "access revoked and unavailable responses",
+        "playback URL handoff"
+      ]
+    },
+    {
+      "id": "samsung_tizen_webos",
+      "display_name": "Samsung Tizen / LG webOS",
+      "platforms": [
+        "samsung_tizen",
+        "lg_webos"
+      ],
+      "language": "JavaScript",
+      "current_strategy": "Reuse web-shaped JSON fixtures and adapter contracts, with platform-specific packaging and media adapters.",
+      "future_generation": "Generate TypeScript declarations or checked JavaScript fixtures from OpenAPI/JSON Schema; keep full generated clients optional.",
+      "generation_practical": "partial",
+      "contract_mode": "canonical_json_fixtures_plus_typescript_declarations",
+      "required_domains": [
+        "health",
+        "auth",
+        "users",
+        "libraries",
+        "media",
+        "search",
+        "playback",
+        "subtitles",
+        "segments_storyboards",
+        "collections",
+        "quality",
+        "tv",
+        "downloads",
+        "notifications",
+        "settings"
+      ],
+      "shared_adapters": [
+        "base_url_resolver",
+        "bearer_token_provider",
+        "reauth_handler",
+        "timeout_retry_policy",
+        "problem_details_mapper",
+        "pagination_helper",
+        "cache_etag_store",
+        "sse_event_decoder",
+        "secure_storage_adapter",
+        "diagnostics_redactor"
+      ],
+      "fixture_requirements": [
+        "launcher/deep-link parameters",
+        "TV surface feed rendering",
+        "platform media URL handoff",
+        "diagnostics redaction"
+      ]
+    },
+    {
+      "id": "windows_xbox",
+      "display_name": "Windows / Xbox",
+      "platforms": [
+        "windows",
+        "xbox"
+      ],
+      "language": "TypeScript, C#, or C++/WinRT depending on client shell",
+      "current_strategy": "Use canonical fixtures and adapter contracts until the platform phase chooses the app technology.",
+      "future_generation": "Generate TypeScript or C# clients from OpenAPI when the target shell is chosen and schemas exist.",
+      "generation_practical": "target_dependent",
+      "contract_mode": "canonical_json_fixtures_until_shell_selection",
+      "required_domains": [
+        "health",
+        "auth",
+        "users",
+        "libraries",
+        "media",
+        "search",
+        "playback",
+        "subtitles",
+        "segments_storyboards",
+        "collections",
+        "quality",
+        "tv",
+        "downloads",
+        "notifications",
+        "settings"
+      ],
+      "shared_adapters": [
+        "base_url_resolver",
+        "bearer_token_provider",
+        "reauth_handler",
+        "timeout_retry_policy",
+        "problem_details_mapper",
+        "pagination_helper",
+        "cache_etag_store",
+        "sse_event_decoder",
+        "secure_storage_adapter",
+        "diagnostics_redactor"
+      ],
+      "fixture_requirements": [
+        "media playback state machine",
+        "controller/remote auth denial",
+        "private cache behavior",
+        "diagnostics bundle redaction"
+      ]
+    }
+  ]
+}
