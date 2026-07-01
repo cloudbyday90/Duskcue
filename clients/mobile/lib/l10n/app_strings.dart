@@ -22,6 +22,9 @@ class AppStrings {
   String get settings => 'Settings';
   String get mediaDetails => 'Details';
   String get play => 'Play';
+  String get playOffline => 'Play offline';
+  String get saveOffline => 'Save for offline playback';
+  String get offline => 'Offline';
   String get browseLibraries => 'Browse libraries';
   String get recentlyAdded => 'Recently added';
   String get noServerSelected => 'No server selected';

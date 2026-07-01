@@ -2,18 +2,22 @@ import 'dart:async';
 
 import 'package:duskcue_mobile/l10n/app_strings.dart';
 import 'package:duskcue_mobile/models/content_models.dart';
+import 'package:duskcue_mobile/models/download_models.dart';
 import 'package:duskcue_mobile/models/playback_models.dart';
+import 'package:duskcue_mobile/services/offline_playback_service.dart';
 import 'package:duskcue_mobile/services/quality_service.dart';
 import 'package:duskcue_mobile/services/service_providers.dart';
+import 'package:duskcue_mobile/stores/download_manager_store.dart';
 import 'package:duskcue_mobile/widgets/mobile_state_views.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:video_player/video_player.dart';
 
 class PlaybackEntryScreen extends ConsumerStatefulWidget {
-  const PlaybackEntryScreen({required this.itemId, super.key});
+  const PlaybackEntryScreen({required this.itemId, this.offline = false, super.key});
 
   final String itemId;
+  final bool offline;
 
   @override
   ConsumerState<PlaybackEntryScreen> createState() => _PlaybackEntryScreenState();
@@ -27,6 +31,8 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
   VideoPlayerController? _controller;
   MediaItemSummary? _item;
   PlaybackStart? _playback;
+  OfflinePlaybackStart? _offlinePlayback;
+  DownloadItem? _offlineItem;
   Timer? _heartbeatTimer;
   Timer? _qoeTimer;
   Timer? _probeTimer;
@@ -97,26 +103,51 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
       _rebufferTotalMs = 0;
       _qualitySwitches = 0;
 
-      final item = await content.getMediaItem(widget.itemId);
-      final watchData = await playbackService.getWatchData(widget.itemId);
-      final selection = await qualityService.selectionForItem(widget.itemId);
-      final audioTracks = await playbackService.listAudioTracks(widget.itemId);
-      final subtitles = await playbackService.listSubtitles(widget.itemId);
-      final segments = await playbackService.listSegments(widget.itemId);
-      final deviceProfile = await qualityService.mobileDeviceProfile();
-      final playback = await playbackService.startPlayback(
-        mediaItemId: widget.itemId,
-        audioStreamIndex: _selectedAudioStreamIndex,
-        subtitleStreamIndex: _selectedSubtitleStreamIndex,
-        qualityMode: selection.mode.apiValue,
-        maxStreamingBitrate: selection.mode.maxStreamingBitrate,
-        deviceProfile: deviceProfile,
-      );
-
-      final controller = await playbackService.createNetworkController(playbackService.streamUri(playback.streamUrl));
+      final item = widget.offline ? null : await content.getMediaItem(widget.itemId);
+      final watchData = widget.offline ? const WatchData() : await playbackService.getWatchData(widget.itemId);
+      final selection = widget.offline
+          ? const QualitySelection(mode: QualityMode.auto)
+          : await qualityService.selectionForItem(widget.itemId);
+      final audioTracks = widget.offline ? const <AudioTrack>[] : await playbackService.listAudioTracks(widget.itemId);
+      final subtitles = widget.offline ? const <SubtitleTrack>[] : await playbackService.listSubtitles(widget.itemId);
+      final segments = widget.offline ? const <SegmentSkip>[] : await playbackService.listSegments(widget.itemId);
+      PlaybackStart? playback;
+      OfflinePlaybackStart? offlinePlayback;
+      DownloadItem? offlineItem;
+      VideoPlayerController controller;
+      if (widget.offline) {
+        final manager = ref.read(downloadManagerProvider.notifier);
+        if (ref.read(downloadManagerProvider).scope == null) {
+          await manager.loadForCurrentSession();
+        }
+        offlineItem = _firstPlayableOffline(ref.read(downloadManagerProvider).items);
+        if (offlineItem == null) {
+          throw StateError('No playable offline download exists for this item.');
+        }
+        final scope = ref.read(downloadManagerProvider).scope;
+        if (scope == null) {
+          throw StateError('No authenticated download scope.');
+        }
+        offlinePlayback = await ref.read(offlinePlaybackServiceProvider).startPlayback(
+              scope: scope,
+              item: offlineItem,
+            );
+        controller = await ref.read(offlinePlaybackServiceProvider).createLocalController(offlinePlayback.playbackPath);
+      } else {
+        final deviceProfile = await qualityService.mobileDeviceProfile();
+        playback = await playbackService.startPlayback(
+          mediaItemId: widget.itemId,
+          audioStreamIndex: _selectedAudioStreamIndex,
+          subtitleStreamIndex: _selectedSubtitleStreamIndex,
+          qualityMode: selection.mode.apiValue,
+          maxStreamingBitrate: selection.mode.maxStreamingBitrate,
+          deviceProfile: deviceProfile,
+        );
+        controller = await playbackService.createNetworkController(playbackService.streamUri(playback.streamUrl));
+      }
       controller.addListener(_handleVideoState);
 
-      final resumeMs = resumeOverrideMs ?? watchData.resumePositionMs;
+      final resumeMs = resumeOverrideMs ?? offlinePlayback?.resumePositionMs ?? watchData.resumePositionMs;
       if (resumeMs > 0) {
         await controller.seekTo(Duration(milliseconds: resumeMs));
       }
@@ -137,11 +168,19 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
 
       if (!mounted) return;
       setState(() {
-        _item = item;
+        _item = offlinePlayback?.item ?? item;
+        _offlineItem = offlineItem;
         _playback = playback;
+        _offlinePlayback = offlinePlayback;
         _qualityMode = selection.mode;
-        _audioTracks = audioTracks;
-        _subtitleTracks = subtitles;
+        _audioTracks = offlinePlayback?.audioTracks ?? audioTracks;
+        _subtitleTracks = offlinePlayback?.subtitleTracks ?? subtitles;
+        _selectedAudioStreamIndex = offlinePlayback?.audioTracks.isNotEmpty == true
+            ? offlinePlayback!.audioTracks.first.index
+            : _selectedAudioStreamIndex;
+        _selectedSubtitleStreamIndex = offlinePlayback?.subtitleTracks.isNotEmpty == true
+            ? offlinePlayback!.subtitleTracks.first.streamIndex
+            : _selectedSubtitleStreamIndex;
         _segments = segments;
         _loading = false;
       });
@@ -203,9 +242,16 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
   Future<void> _seekTo(Duration position) async {
     final controller = _controller;
     final playback = _playback;
-    if (controller == null || playback == null) return;
+    if (controller == null) return;
     setState(() => _seeking = true);
     await controller.seekTo(position);
+    if (widget.offline) {
+      await _recordOfflineEvent('seek');
+      await _sendHeartbeat();
+      if (mounted) setState(() => _seeking = false);
+      return;
+    }
+    if (playback == null) return;
     final result = await ref.read(playbackServiceProvider).seek(
           sessionId: playback.sessionId,
           positionMs: position.inMilliseconds,
@@ -231,6 +277,12 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
   }
 
   Future<void> _sendHeartbeat() async {
+    if (widget.offline) {
+      try {
+        await _recordOfflineEvent('heartbeat');
+      } catch (_) {}
+      return;
+    }
     final playback = _playback;
     final controller = _controller;
     if (playback == null || controller == null) return;
@@ -246,6 +298,17 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
   }
 
   Future<void> _stopPlayback() async {
+    if (widget.offline) {
+      if (_offlinePlayback == null) return;
+      _offlinePlayback = null;
+      try {
+        await _recordOfflineEvent(_completed ? 'completed' : 'stop');
+      } catch (_) {}
+      _heartbeatTimer?.cancel();
+      _qoeTimer?.cancel();
+      _probeTimer?.cancel();
+      return;
+    }
     final playback = _playback;
     if (playback == null) return;
     final positionMs = _positionMs;
@@ -260,6 +323,7 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
   }
 
   Future<void> _sendTelemetry() async {
+    if (widget.offline) return;
     final playback = _playback;
     if (playback == null) return;
     await ref.read(qualityServiceProvider).submitSegmentTelemetry(
@@ -272,6 +336,7 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
   }
 
   Future<void> _sendQoeReport({String? sessionIdOverride}) async {
+    if (widget.offline) return;
     final playback = _playback;
     final controller = _controller;
     final sessionId = sessionIdOverride ?? playback?.sessionId;
@@ -292,12 +357,14 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
   }
 
   Future<void> _runBandwidthProbe() async {
+    if (widget.offline) return;
     final playback = _playback;
     if (playback == null) return;
     await ref.read(qualityServiceProvider).runBandwidthProbe(sessionId: playback.sessionId);
   }
 
   Future<void> _setQualityMode(QualityMode mode) async {
+    if (widget.offline) return;
     if (_qualityMode == mode) return;
     setState(() => _qualityMode = mode);
     await ref.read(qualityServiceProvider).saveSelectionForItem(widget.itemId, mode);
@@ -305,6 +372,35 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
   }
 
   int get _positionMs => _controller?.value.position.inMilliseconds ?? 0;
+
+  Future<void> _recordOfflineEvent(String eventType) async {
+    final item = _offlineItem;
+    final controller = _controller;
+    if (item == null || controller == null) return;
+    await ref.read(downloadManagerProvider.notifier).recordOfflinePlaybackProgress(
+          item: item,
+          positionMs: controller.value.position.inMilliseconds,
+          durationMs: controller.value.duration.inMilliseconds,
+          eventType: eventType,
+          isPaused: !controller.value.isPlaying,
+          isBuffering: controller.value.isBuffering,
+        );
+    _offlineItem = _findDownload(ref.read(downloadManagerProvider).items, item);
+  }
+
+  DownloadItem? _firstPlayableOffline(List<DownloadItem> items) {
+    for (final item in items) {
+      if (item.mediaItemId == widget.itemId && item.canPlayOffline) return item;
+    }
+    return null;
+  }
+
+  DownloadItem? _findDownload(List<DownloadItem> items, DownloadItem item) {
+    for (final candidate in items) {
+      if (candidate.packageId == item.packageId || candidate.mediaItemId == item.mediaItemId) return candidate;
+    }
+    return null;
+  }
 
   SegmentSkip? get _activeSkip {
     final position = _positionMs;
@@ -322,7 +418,11 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(item?.title ?? strings.playbackEntry),
+        title: Text(
+          widget.offline
+              ? '${item?.title ?? strings.playbackEntry} · ${strings.offline}'
+              : (item?.title ?? strings.playbackEntry),
+        ),
         actions: [
           IconButton(
             tooltip: strings.stop,
@@ -375,17 +475,19 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
                                 ),
                                 if (_buffering) Text(strings.buffering),
                                 const SizedBox(height: 16),
-                                DropdownButtonFormField<QualityMode>(
-                                  value: _qualityMode,
-                                  decoration: InputDecoration(labelText: strings.quality, border: const OutlineInputBorder()),
-                                  items: QualityMode.values
-                                      .map((mode) => DropdownMenuItem<QualityMode>(value: mode, child: Text(mode.label)))
-                                      .toList(growable: false),
-                                  onChanged: (value) {
-                                    if (value != null) unawaited(_setQualityMode(value));
-                                  },
-                                ),
-                                const SizedBox(height: 12),
+                                if (!widget.offline) ...[
+                                  DropdownButtonFormField<QualityMode>(
+                                    value: _qualityMode,
+                                    decoration: InputDecoration(labelText: strings.quality, border: const OutlineInputBorder()),
+                                    items: QualityMode.values
+                                        .map((mode) => DropdownMenuItem<QualityMode>(value: mode, child: Text(mode.label)))
+                                        .toList(growable: false),
+                                    onChanged: (value) {
+                                      if (value != null) unawaited(_setQualityMode(value));
+                                    },
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
                                 DropdownButtonFormField<int?>(
                                   value: _selectedAudioStreamIndex,
                                   decoration: InputDecoration(labelText: strings.audio, border: const OutlineInputBorder()),
@@ -393,10 +495,12 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
                                     const DropdownMenuItem<int?>(value: null, child: Text('Default')),
                                     ..._audioTracks.map((track) => DropdownMenuItem<int?>(value: track.index, child: Text(track.label))),
                                   ],
-                                  onChanged: (value) {
-                                    setState(() => _selectedAudioStreamIndex = value);
-                                    unawaited(_restartWithSelections());
-                                  },
+                                  onChanged: widget.offline
+                                      ? null
+                                      : (value) {
+                                          setState(() => _selectedAudioStreamIndex = value);
+                                          unawaited(_restartWithSelections());
+                                        },
                                 ),
                                 const SizedBox(height: 12),
                                 DropdownButtonFormField<int?>(
@@ -408,10 +512,12 @@ class _PlaybackEntryScreenState extends ConsumerState<PlaybackEntryScreen> with 
                                         .where((track) => track.streamIndex != null)
                                         .map((track) => DropdownMenuItem<int?>(value: track.streamIndex, child: Text(track.label))),
                                   ],
-                                  onChanged: (value) {
-                                    setState(() => _selectedSubtitleStreamIndex = value);
-                                    unawaited(_restartWithSelections());
-                                  },
+                                  onChanged: widget.offline
+                                      ? null
+                                      : (value) {
+                                          setState(() => _selectedSubtitleStreamIndex = value);
+                                          unawaited(_restartWithSelections());
+                                        },
                                 ),
                               ],
                             ),

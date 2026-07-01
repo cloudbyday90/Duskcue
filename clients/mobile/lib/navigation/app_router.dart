@@ -120,7 +120,10 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/play/:itemId',
-        builder: (context, state) => PlaybackEntryScreen(itemId: state.pathParameters['itemId'] ?? ''),
+        builder: (context, state) => PlaybackEntryScreen(
+          itemId: state.pathParameters['itemId'] ?? '',
+          offline: state.uri.queryParameters['offline'] == 'true',
+        ),
       ),
     ],
   );

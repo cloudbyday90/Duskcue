@@ -25,6 +25,7 @@ enum DownloadItemStatus {
   ready,
   downloading,
   paused,
+  playableOffline,
   failed,
   expired,
   unavailable,
@@ -39,6 +40,7 @@ enum DownloadItemStatus {
       DownloadItemStatus.ready => 'Ready',
       DownloadItemStatus.downloading => 'Downloading',
       DownloadItemStatus.paused => 'Paused',
+      DownloadItemStatus.playableOffline => 'Playable offline',
       DownloadItemStatus.failed => 'Failed',
       DownloadItemStatus.expired => 'Expired',
       DownloadItemStatus.unavailable => 'Unavailable',
@@ -48,6 +50,7 @@ enum DownloadItemStatus {
 
   bool get isTerminal {
     return this == DownloadItemStatus.ready ||
+        this == DownloadItemStatus.playableOffline ||
         this == DownloadItemStatus.failed ||
         this == DownloadItemStatus.expired ||
         this == DownloadItemStatus.unavailable ||
@@ -68,9 +71,236 @@ enum DownloadItemStatus {
   }
 
   static DownloadItemStatus fromJson(String? value) {
+    if (value == 'playable_offline') return DownloadItemStatus.playableOffline;
     return DownloadItemStatus.values.firstWhere(
       (status) => status.name == value,
       orElse: () => DownloadItemStatus.unavailable,
+    );
+  }
+}
+
+class DownloadPackageManifest {
+  const DownloadPackageManifest({
+    required this.packageId,
+    required this.downloadJobId,
+    required this.schemaVersion,
+    required this.manifestVersion,
+    required this.packageFormat,
+    required this.packageStrategy,
+    required this.mediaItemId,
+    required this.totalBytes,
+    required this.files,
+    this.mediaFileId,
+    this.packageHashSha256,
+    this.selectedAudio = const {},
+    this.selectedSubtitles = const [],
+    this.expiresAt,
+    this.syncMetadata = const {},
+  });
+
+  final String packageId;
+  final String downloadJobId;
+  final int schemaVersion;
+  final int manifestVersion;
+  final String packageFormat;
+  final String packageStrategy;
+  final String mediaItemId;
+  final String? mediaFileId;
+  final int totalBytes;
+  final String? packageHashSha256;
+  final List<DownloadPackageFile> files;
+  final Map<String, Object?> selectedAudio;
+  final List<Map<String, Object?>> selectedSubtitles;
+  final DateTime? expiresAt;
+  final Map<String, Object?> syncMetadata;
+
+  DownloadPackageFile? get primaryPlaybackFile {
+    if (packageFormat == 'mp4') {
+      return _firstWhereOrNull(
+        files,
+        (file) => file.fileRole == 'mp4' || file.relativePath.endsWith('.mp4'),
+      );
+    }
+    return _firstWhereOrNull(
+      files,
+      (file) => file.relativePath.endsWith('.m3u8'),
+    );
+  }
+
+  int get requiredFileCount {
+    return files.where((file) => file.isRequired).length;
+  }
+
+  Map<String, Object?> toJson() {
+    return {
+      'package_id': packageId,
+      'download_job_id': downloadJobId,
+      'schema_version': schemaVersion,
+      'manifest_version': manifestVersion,
+      'package_format': packageFormat,
+      'package_strategy': packageStrategy,
+      'media_item_id': mediaItemId,
+      'media_file_id': mediaFileId,
+      'total_bytes': totalBytes,
+      'package_hash_sha256': packageHashSha256,
+      'files': files.map((file) => file.toJson()).toList(growable: false),
+      'selected_audio': selectedAudio,
+      'selected_subtitles': selectedSubtitles,
+      'expires_at': expiresAt?.toIso8601String(),
+      'sync_metadata': syncMetadata,
+    };
+  }
+
+  static DownloadPackageManifest fromJson(Map<String, Object?> json) {
+    final selectedSubtitles = (json['selected_subtitles'] as List? ?? const [])
+        .whereType<Map>()
+        .map((item) => Map<String, Object?>.from(item))
+        .toList(growable: false);
+    return DownloadPackageManifest(
+      packageId: _string(json, const ['package_id']),
+      downloadJobId: _string(json, const ['download_job_id', 'job_id']),
+      schemaVersion: _int(json['schema_version']) ?? 1,
+      manifestVersion: _int(json['manifest_version']) ?? 1,
+      packageFormat: _string(json, const ['package_format'], fallback: 'hls_fmp4'),
+      packageStrategy: _string(json, const ['package_strategy'], fallback: 'remux'),
+      mediaItemId: _string(json, const ['media_item_id']),
+      mediaFileId: _nullableString(json, const ['media_file_id']),
+      totalBytes: _int(json['total_bytes']) ?? 0,
+      packageHashSha256: _nullableString(json, const ['package_hash_sha256']),
+      files: (json['files'] as List? ?? const [])
+          .whereType<Map>()
+          .map((file) => DownloadPackageFile.fromJson(Map<String, Object?>.from(file)))
+          .toList(growable: false),
+      selectedAudio: Map<String, Object?>.from((json['selected_audio'] as Map?) ?? const {}),
+      selectedSubtitles: selectedSubtitles,
+      expiresAt: _date(json['expires_at']),
+      syncMetadata: Map<String, Object?>.from((json['sync_metadata'] as Map?) ?? const {}),
+    );
+  }
+}
+
+class DownloadPackageFile {
+  const DownloadPackageFile({
+    required this.relativePath,
+    required this.fileRole,
+    required this.byteSize,
+    required this.checksumSha256,
+    required this.isRequired,
+    this.contentType,
+    this.segmentIndex,
+  });
+
+  final String relativePath;
+  final String fileRole;
+  final String? contentType;
+  final int byteSize;
+  final String checksumSha256;
+  final int? segmentIndex;
+  final bool isRequired;
+
+  Map<String, Object?> toJson() {
+    return {
+      'relative_path': relativePath,
+      'file_role': fileRole,
+      'content_type': contentType,
+      'byte_size': byteSize,
+      'checksum_sha256': checksumSha256,
+      'segment_index': segmentIndex,
+      'is_required': isRequired,
+    };
+  }
+
+  static DownloadPackageFile fromJson(Map<String, Object?> json) {
+    return DownloadPackageFile(
+      relativePath: _string(json, const ['relative_path']),
+      fileRole: _string(json, const ['file_role'], fallback: 'metadata'),
+      contentType: _nullableString(json, const ['content_type']),
+      byteSize: _int(json['byte_size']) ?? 0,
+      checksumSha256: _string(json, const ['checksum_sha256']),
+      segmentIndex: _int(json['segment_index']),
+      isRequired: json['is_required'] as bool? ?? true,
+    );
+  }
+}
+
+class PackageTransferUrl {
+  const PackageTransferUrl({
+    required this.relativePath,
+    required this.url,
+    required this.method,
+    this.headers = const {},
+  });
+
+  final String relativePath;
+  final String url;
+  final String method;
+  final Map<String, Object?> headers;
+
+  static PackageTransferUrl fromJson(Map<String, Object?> json) {
+    return PackageTransferUrl(
+      relativePath: _string(json, const ['relative_path']),
+      url: _string(json, const ['url']),
+      method: _string(json, const ['method'], fallback: 'GET'),
+      headers: Map<String, Object?>.from((json['headers'] as Map?) ?? const {}),
+    );
+  }
+}
+
+class PackageTransferUrls {
+  const PackageTransferUrls({
+    required this.packageId,
+    required this.expiresAt,
+    required this.files,
+  });
+
+  final String packageId;
+  final DateTime? expiresAt;
+  final List<PackageTransferUrl> files;
+
+  static PackageTransferUrls fromJson(Map<String, Object?> json) {
+    return PackageTransferUrls(
+      packageId: _string(json, const ['package_id']),
+      expiresAt: _date(json['expires_at']),
+      files: (json['files'] as List? ?? const [])
+          .whereType<Map>()
+          .map((file) => PackageTransferUrl.fromJson(Map<String, Object?>.from(file)))
+          .toList(growable: false),
+    );
+  }
+}
+
+class OfflinePlaybackEvent {
+  const OfflinePlaybackEvent({
+    required this.packageId,
+    required this.eventType,
+    required this.positionMs,
+    required this.occurredAt,
+    this.details = const {},
+  });
+
+  final String packageId;
+  final String eventType;
+  final int positionMs;
+  final DateTime occurredAt;
+  final Map<String, Object?> details;
+
+  Map<String, Object?> toJson() {
+    return {
+      'package_id': packageId,
+      'event_type': eventType,
+      'position_ms': positionMs,
+      'occurred_at': occurredAt.toIso8601String(),
+      'details': details,
+    };
+  }
+
+  static OfflinePlaybackEvent fromJson(Map<String, Object?> json) {
+    return OfflinePlaybackEvent(
+      packageId: _string(json, const ['package_id']),
+      eventType: _string(json, const ['event_type'], fallback: 'heartbeat'),
+      positionMs: _int(json['position_ms']) ?? 0,
+      occurredAt: _date(json['occurred_at']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+      details: Map<String, Object?>.from((json['details'] as Map?) ?? const {}),
     );
   }
 }
@@ -316,9 +546,17 @@ class DownloadItem {
     this.progressPercent = 0,
     this.bytesExpected,
     this.bytesPrepared = 0,
+    this.localFilesVerified = 0,
+    this.localResumePositionMs = 0,
+    this.pendingPlaybackEventCount = 0,
     this.failureReason,
     this.waitingReason,
+    this.localPlaybackPath,
+    this.localManifestHashSha256,
     this.expiresAt,
+    this.localPlaybackUpdatedAt,
+    this.localCompleted = false,
+    this.localWatched = false,
   });
 
   final String mediaItemId;
@@ -332,14 +570,29 @@ class DownloadItem {
   final double progressPercent;
   final int? bytesExpected;
   final int bytesPrepared;
+  final int localFilesVerified;
+  final int localResumePositionMs;
+  final int pendingPlaybackEventCount;
   final String? failureReason;
   final String? waitingReason;
+  final String? localPlaybackPath;
+  final String? localManifestHashSha256;
   final DateTime? expiresAt;
+  final DateTime? localPlaybackUpdatedAt;
+  final bool localCompleted;
+  final bool localWatched;
   final DateTime updatedAt;
 
   String get id => jobId ?? mediaItemId;
 
   bool get canRetry => status == DownloadItemStatus.failed || status == DownloadItemStatus.unavailable;
+
+  bool get canPlayOffline {
+    return status == DownloadItemStatus.playableOffline &&
+        localPlaybackPath != null &&
+        localPlaybackPath!.isNotEmpty &&
+        (expiresAt == null || expiresAt!.isAfter(DateTime.now()));
+  }
 
   DownloadItem copyWith({
     String? title,
@@ -352,10 +605,18 @@ class DownloadItem {
     double? progressPercent,
     int? bytesExpected,
     int? bytesPrepared,
+    int? localFilesVerified,
+    int? localResumePositionMs,
+    int? pendingPlaybackEventCount,
     String? failureReason,
     String? waitingReason,
     bool clearWaitingReason = false,
+    String? localPlaybackPath,
+    String? localManifestHashSha256,
     DateTime? expiresAt,
+    DateTime? localPlaybackUpdatedAt,
+    bool? localCompleted,
+    bool? localWatched,
     DateTime? updatedAt,
   }) {
     return DownloadItem(
@@ -370,9 +631,17 @@ class DownloadItem {
       progressPercent: progressPercent ?? this.progressPercent,
       bytesExpected: bytesExpected ?? this.bytesExpected,
       bytesPrepared: bytesPrepared ?? this.bytesPrepared,
+      localFilesVerified: localFilesVerified ?? this.localFilesVerified,
+      localResumePositionMs: localResumePositionMs ?? this.localResumePositionMs,
+      pendingPlaybackEventCount: pendingPlaybackEventCount ?? this.pendingPlaybackEventCount,
       failureReason: failureReason,
       waitingReason: clearWaitingReason ? null : waitingReason ?? this.waitingReason,
+      localPlaybackPath: localPlaybackPath ?? this.localPlaybackPath,
+      localManifestHashSha256: localManifestHashSha256 ?? this.localManifestHashSha256,
       expiresAt: expiresAt ?? this.expiresAt,
+      localPlaybackUpdatedAt: localPlaybackUpdatedAt ?? this.localPlaybackUpdatedAt,
+      localCompleted: localCompleted ?? this.localCompleted,
+      localWatched: localWatched ?? this.localWatched,
       updatedAt: updatedAt ?? this.updatedAt,
     );
   }
@@ -420,9 +689,17 @@ class DownloadItem {
       'progress_percent': progressPercent,
       'bytes_expected': bytesExpected,
       'bytes_prepared': bytesPrepared,
+      'local_files_verified': localFilesVerified,
+      'local_resume_position_ms': localResumePositionMs,
+      'pending_playback_event_count': pendingPlaybackEventCount,
       'failure_reason': failureReason,
       'waiting_reason': waitingReason,
+      'local_playback_path': localPlaybackPath,
+      'local_manifest_hash_sha256': localManifestHashSha256,
       'expires_at': expiresAt?.toIso8601String(),
+      'local_playback_updated_at': localPlaybackUpdatedAt?.toIso8601String(),
+      'local_completed': localCompleted,
+      'local_watched': localWatched,
       'updated_at': updatedAt.toIso8601String(),
     };
   }
@@ -440,9 +717,17 @@ class DownloadItem {
       progressPercent: _double(json['progress_percent']) ?? 0,
       bytesExpected: _int(json['bytes_expected']),
       bytesPrepared: _int(json['bytes_prepared']) ?? 0,
+      localFilesVerified: _int(json['local_files_verified']) ?? 0,
+      localResumePositionMs: _int(json['local_resume_position_ms']) ?? 0,
+      pendingPlaybackEventCount: _int(json['pending_playback_event_count']) ?? 0,
       failureReason: _nullableString(json, const ['failure_reason']),
       waitingReason: _nullableString(json, const ['waiting_reason']),
+      localPlaybackPath: _nullableString(json, const ['local_playback_path']),
+      localManifestHashSha256: _nullableString(json, const ['local_manifest_hash_sha256']),
       expiresAt: _date(json['expires_at']),
+      localPlaybackUpdatedAt: _date(json['local_playback_updated_at']),
+      localCompleted: json['local_completed'] as bool? ?? false,
+      localWatched: json['local_watched'] as bool? ?? false,
       updatedAt: _date(json['updated_at']) ?? DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
@@ -496,5 +781,12 @@ double? _double(Object? value) {
 DateTime? _date(Object? value) {
   if (value is DateTime) return value;
   if (value is String && value.isNotEmpty) return DateTime.tryParse(value);
+  return null;
+}
+
+T? _firstWhereOrNull<T>(Iterable<T> items, bool Function(T item) test) {
+  for (final item in items) {
+    if (test(item)) return item;
+  }
   return null;
 }

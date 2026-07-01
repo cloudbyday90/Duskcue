@@ -193,8 +193,14 @@ class _DownloadTile extends ConsumerWidget {
                 PopupMenuButton<String>(
                   onSelected: (action) {
                     switch (action) {
+                      case 'play_offline':
+                        context.go('/play/${item.mediaItemId}?offline=true');
+                        break;
                       case 'open':
                         context.go('/media/${item.mediaItemId}');
+                        break;
+                      case 'save_offline':
+                        manager.materializePackage(item);
                         break;
                       case 'pause':
                         manager.pause(item);
@@ -214,7 +220,10 @@ class _DownloadTile extends ConsumerWidget {
                     }
                   },
                   itemBuilder: (context) => [
+                    if (item.canPlayOffline) PopupMenuItem(value: 'play_offline', child: Text(strings.playOffline)),
                     PopupMenuItem(value: 'open', child: Text(strings.mediaDetails)),
+                    if (item.status == DownloadItemStatus.ready)
+                      PopupMenuItem(value: 'save_offline', child: Text(strings.saveOffline)),
                     if (item.status == DownloadItemStatus.downloading || item.status == DownloadItemStatus.ready)
                       PopupMenuItem(value: 'pause', child: Text(strings.pause)),
                     if (item.status == DownloadItemStatus.paused)
@@ -227,6 +236,14 @@ class _DownloadTile extends ConsumerWidget {
               ],
             ),
             const SizedBox(height: 12),
+            if (item.canPlayOffline) ...[
+              FilledButton.icon(
+                onPressed: () => context.go('/play/${item.mediaItemId}?offline=true'),
+                icon: const Icon(Icons.play_arrow),
+                label: Text(strings.playOffline),
+              ),
+              const SizedBox(height: 12),
+            ],
             LinearProgressIndicator(value: item.status == DownloadItemStatus.failed ? null : progress),
             const SizedBox(height: 8),
             Row(

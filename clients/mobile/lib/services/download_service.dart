@@ -74,6 +74,39 @@ class DownloadService {
     await _apiClient.delete<Map<String, Object?>>('/api/v1/downloads/packages/$packageId');
   }
 
+  Future<DownloadPackageManifest> getPackageManifest(String packageId) async {
+    final identity = await _deviceIdentity.current();
+    final response = await _apiClient.get<Map<String, Object?>>(
+      '/api/v1/downloads/packages/$packageId/manifest',
+      query: {'device_identifier': identity.deviceId},
+    );
+    return DownloadPackageManifest.fromJson(_payload(response.data));
+  }
+
+  Future<PackageTransferUrls> createTransferUrls({
+    required String packageId,
+    required List<String> filePaths,
+  }) async {
+    final identity = await _deviceIdentity.current();
+    final response = await _apiClient.post<Map<String, Object?>>(
+      '/api/v1/downloads/packages/$packageId/transfer-urls',
+      body: {
+        'device_identifier': identity.deviceId,
+        'file_paths': filePaths,
+      },
+    );
+    return PackageTransferUrls.fromJson(_payload(response.data));
+  }
+
+  Future<List<int>> downloadPackageFile(String url) async {
+    final uri = Uri.parse(url);
+    final response = await _apiClient.getBytes(
+      uri.path,
+      query: uri.queryParameters,
+    );
+    return response.data ?? const [];
+  }
+
   Map<String, Object?> _payload(Object? data) {
     if (data is Map<String, Object?>) return data;
     if (data is Map) return Map<String, Object?>.from(data);

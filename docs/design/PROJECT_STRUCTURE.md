@@ -938,6 +938,8 @@ The Tauri desktop app (`clients/desktop/`) imports the SvelteKit web client (`cl
 
 **Task 10 protected storage status:** `clients/mobile/lib/services/protected_download_storage_service.dart` owns protected download root/package preparation, redacted metadata writes, sync-queue placeholder storage, and protected package/scope/all deletion. Android `MainActivity.kt` backs the channel with `noBackupFilesDir/duskcue_downloads`; iOS `AppDelegate.swift` backs it with Application Support plus backup exclusion and `completeUntilFirstUserAuthentication` file protection. `AuthService.clearLocalSession()` and `DownloadManagerNotifier` now purge protected local download data on logout/session clear and delete/delete-all flows.
 
+**Task 11 offline playback status:** `clients/mobile/lib/services/offline_playback_service.dart` resolves verified local packages for offline MP4/HLS playback, while `DownloadService` fetches package manifests/transfer URLs/files and `DownloadManagerNotifier` foreground-materializes ready packages into protected storage with SHA-256 verification. The mobile router supports `/play/:itemId?offline=true`, and Downloads, media detail, and shared media cards expose offline playback only for scoped `playableOffline` inventory items. Offline progress/completion/watched events are queued in the protected sync queue for the Task 12 reconnect sync implementation.
+
 ## Development Workflow
 
 ### Server Development

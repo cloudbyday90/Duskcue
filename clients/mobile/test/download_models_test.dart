@@ -71,4 +71,77 @@ void main() {
     expect(decoded.chargingOnly, isTrue);
     expect(decoded.storageCapBytes, 1073741824);
   });
+
+  test('package manifest resolves local playback file by package format', () {
+    final hls = DownloadPackageManifest.fromJson({
+      'package_id': 'package-1',
+      'download_job_id': 'job-1',
+      'schema_version': 1,
+      'manifest_version': 1,
+      'package_format': 'hls_fmp4',
+      'package_strategy': 'remux',
+      'media_item_id': 'media-1',
+      'total_bytes': 100,
+      'files': [
+        {
+          'relative_path': 'manifest.json',
+          'file_role': 'manifest',
+          'byte_size': 10,
+          'checksum_sha256': 'a',
+          'is_required': true,
+        },
+        {
+          'relative_path': 'stream.m3u8',
+          'file_role': 'manifest',
+          'byte_size': 10,
+          'checksum_sha256': 'b',
+          'is_required': true,
+        },
+      ],
+    });
+
+    expect(hls.primaryPlaybackFile?.relativePath, 'stream.m3u8');
+
+    final mp4 = DownloadPackageManifest.fromJson({
+      'package_id': 'package-1',
+      'download_job_id': 'job-1',
+      'schema_version': 1,
+      'manifest_version': 1,
+      'package_format': 'mp4',
+      'package_strategy': 'direct_copy',
+      'media_item_id': 'media-1',
+      'total_bytes': 100,
+      'files': [
+        {
+          'relative_path': 'media.mp4',
+          'file_role': 'mp4',
+          'byte_size': 10,
+          'checksum_sha256': 'c',
+          'is_required': true,
+        },
+      ],
+    });
+
+    expect(mp4.primaryPlaybackFile?.relativePath, 'media.mp4');
+  });
+
+  test('download item tracks playable offline state and pending sync events', () {
+    final item = DownloadItem(
+      mediaItemId: 'media-1',
+      title: 'Movie',
+      packageId: 'package-1',
+      status: DownloadItemStatus.playableOffline,
+      localPlaybackPath: '/app/downloads/media.mp4',
+      localResumePositionMs: 45000,
+      pendingPlaybackEventCount: 2,
+      updatedAt: DateTime.utc(2026),
+    );
+
+    final decoded = DownloadItem.fromJson(item.toJson());
+
+    expect(decoded.canPlayOffline, isTrue);
+    expect(decoded.localResumePositionMs, 45000);
+    expect(decoded.pendingPlaybackEventCount, 2);
+    expect(decoded.status, DownloadItemStatus.playableOffline);
+  });
 }

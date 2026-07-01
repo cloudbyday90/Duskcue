@@ -7,6 +7,7 @@ import 'package:duskcue_mobile/services/connectivity_service.dart';
 import 'package:duskcue_mobile/services/device_identity_service.dart';
 import 'package:duskcue_mobile/services/download_service.dart';
 import 'package:duskcue_mobile/services/native_passkey_service.dart';
+import 'package:duskcue_mobile/services/offline_playback_service.dart';
 import 'package:duskcue_mobile/services/playback_service.dart';
 import 'package:duskcue_mobile/services/protected_download_storage_service.dart';
 import 'package:duskcue_mobile/services/push_registration_service.dart';
@@ -34,6 +35,10 @@ final deviceIdentityProvider = Provider<DeviceIdentityService>((ref) {
 
 final protectedDownloadStorageProvider = Provider<ProtectedDownloadStorageService>((ref) {
   return ProtectedDownloadStorageService();
+});
+
+final offlinePlaybackServiceProvider = Provider<OfflinePlaybackService>((ref) {
+  return OfflinePlaybackService(ref.watch(protectedDownloadStorageProvider));
 });
 
 final connectivityServiceProvider = Provider<ConnectivityService>((ref) {

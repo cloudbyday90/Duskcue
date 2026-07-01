@@ -516,6 +516,34 @@ Verification:
 
 Flutter/Dart are not installed in the current Windows environment, so `flutter analyze`, `flutter test`, Android/iOS builds, native method-channel checks, and device backup/file-protection validation remain CI/SDK-environment verification.
 
+### Phase 16c Task 11 — Mobile Offline Playback
+
+Implementation:
+
+- Added package-manifest and transfer DTOs to `clients/mobile/lib/models/download_models.dart`, including the local `playableOffline` state that is distinct from server `ready`.
+- `DownloadService` now fetches package manifests, creates authenticated transfer URLs, and downloads package files for the current mobile device binding.
+- `DownloadManagerNotifier` materializes server-ready packages into protected local storage, verifies SHA-256 checksums, writes protected manifest metadata, preserves local playable state across job refresh/realtime updates, and records offline playback progress into the scoped sync queue.
+- Added `OfflinePlaybackService` to resolve local MP4 or HLS/fMP4 package entry files and create local `video_player` controllers without online playback session calls.
+- The playback screen supports `/play/:itemId?offline=true`; Downloads, media detail, and shared library/search cards expose offline playback only for verified local packages.
+
+Security and sync posture:
+
+- Transfer URLs remain short-lived authenticated endpoint paths and are never persisted in local package metadata.
+- Offline heartbeat, seek, stop, completion, watched-state, duration, and resume-position events are queued locally under the protected download scope for Task 12 reconnect sync.
+- Packaged selected audio/subtitle metadata is shown as fixed local selections; changing to another track combination requires a future package-selection/download flow.
+
+Verification:
+
+- `cargo fmt --all -- --check`
+- `cargo check -p duskcue`
+- `node scripts/verify-client-contracts.mjs`
+- `node scripts/verify-tv-surface-fixtures.mjs`
+- `git diff --check`
+- `flutter --version` attempted and failed because Flutter is not installed in the current Windows environment.
+- `dart --version` attempted and failed because Dart is not installed in the current Windows environment.
+
+Flutter/Dart are not installed in the current Windows environment, so `flutter analyze`, `flutter test`, Android/iOS builds, foreground package-transfer checks, local MP4/HLS playback checks, and offline event queue device validation remain CI/SDK-environment verification.
+
 ## Relationship to Other Documents
 
 | Document | Relationship |

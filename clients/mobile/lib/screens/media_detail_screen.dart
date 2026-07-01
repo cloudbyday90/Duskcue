@@ -1,6 +1,7 @@
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:duskcue_mobile/l10n/app_strings.dart';
 import 'package:duskcue_mobile/models/content_models.dart';
+import 'package:duskcue_mobile/models/download_models.dart';
 import 'package:duskcue_mobile/services/service_providers.dart';
 import 'package:duskcue_mobile/stores/download_manager_store.dart';
 import 'package:duskcue_mobile/widgets/mobile_state_views.dart';
@@ -26,6 +27,9 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
   void initState() {
     super.initState();
     _load();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      ref.read(downloadManagerProvider.notifier).loadForCurrentSession();
+    });
   }
 
   Future<void> _load() async {
@@ -54,6 +58,8 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
     final strings = AppStrings.of(context);
     final item = _item;
     final service = ref.watch(contentServiceProvider);
+    final downloadState = ref.watch(downloadManagerProvider);
+    final offlineItem = _offlineItemFor(downloadState.items, widget.itemId);
 
     return Scaffold(
       appBar: AppBar(title: Text(item?.title ?? strings.mediaDetails)),
@@ -93,6 +99,14 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                           icon: const Icon(Icons.play_arrow),
                           label: Text(strings.play),
                         ),
+                        if (offlineItem != null) ...[
+                          const SizedBox(height: 12),
+                          FilledButton.tonalIcon(
+                            onPressed: () => context.go('/play/${item.id}?offline=true'),
+                            icon: const Icon(Icons.offline_pin),
+                            label: Text(strings.playOffline),
+                          ),
+                        ],
                         const SizedBox(height: 12),
                         OutlinedButton.icon(
                           onPressed: () async {
@@ -111,5 +125,12 @@ class _MediaDetailScreenState extends ConsumerState<MediaDetailScreen> {
                   ),
       ),
     );
+  }
+
+  DownloadItem? _offlineItemFor(List<DownloadItem> items, String itemId) {
+    for (final item in items) {
+      if (item.mediaItemId == itemId && item.canPlayOffline) return item;
+    }
+    return null;
   }
 }

@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:crypto/crypto.dart';
 import 'package:duskcue_mobile/models/content_models.dart';
 import 'package:duskcue_mobile/models/download_models.dart';
 import 'package:duskcue_mobile/models/realtime_models.dart';
@@ -123,14 +124,16 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
         continue;
       }
       try {
-        updated.add(item.applyJob(await service.getJob(jobId)));
+        final job = await service.getJob(jobId);
+        updated.add(_mergeJob(item, job));
       } catch (_) {
         updated.add(item);
       }
     }
     final constrained = await _applyTransferConstraints(updated, state.settings);
-    await _persistItems(scope, constrained);
-    state = state.copyWith(scope: scope, items: _sortItems(constrained), clearError: true);
+    final materialized = await _materializeReadyPackages(scope, constrained);
+    await _persistItems(scope, materialized);
+    state = state.copyWith(scope: scope, items: _sortItems(materialized), clearError: true);
   }
 
   Future<void> cancel(DownloadItem item) async {
@@ -249,11 +252,64 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
       ),
     );
     final next = await _applyTransferConstraints(
-      _upsertItem(state.items, current.applyStatusEvent(update)),
+      _upsertItem(state.items, _mergeStatusEvent(current, update)),
       state.settings,
     );
+    final materialized = await _materializeReadyPackages(scope, next);
+    await _persistItems(scope, materialized);
+    state = state.copyWith(scope: scope, items: _sortItems(materialized), clearError: true);
+  }
+
+  Future<void> materializePackage(DownloadItem item) async {
+    final scope = await _requireScope();
+    final next = await _materializeReadyPackages(scope, _replaceItem(state.items, item));
     await _persistItems(scope, next);
-    state = state.copyWith(scope: scope, items: _sortItems(next), clearError: true);
+    state = state.copyWith(items: _sortItems(next), clearError: true);
+  }
+
+  Future<void> recordOfflinePlaybackProgress({
+    required DownloadItem item,
+    required int positionMs,
+    required int durationMs,
+    required String eventType,
+    bool isPaused = false,
+    bool isBuffering = false,
+  }) async {
+    final scope = await _requireScope();
+    final packageId = item.packageId;
+    if (packageId == null || packageId.isEmpty) return;
+    final completed = eventType == 'completed' || (durationMs > 0 && durationMs - positionMs <= 2000);
+    final watched = completed || (durationMs > 0 && positionMs / durationMs >= 0.9);
+    final protectedStorage = ref.read(protectedDownloadStorageProvider);
+    await protectedStorage.appendOfflinePlaybackEvent(
+      scope,
+      OfflinePlaybackEvent(
+        packageId: packageId,
+        eventType: eventType,
+        positionMs: positionMs,
+        occurredAt: DateTime.now(),
+        details: {
+          'media_item_id': item.mediaItemId,
+          'duration_ms': durationMs,
+          'completed': completed,
+          'watched': watched,
+          'is_paused': isPaused,
+          'is_buffering': isBuffering,
+        },
+      ),
+    );
+    final pendingCount = await protectedStorage.pendingPlaybackEventCount(scope, packageId);
+    final nextItem = item.copyWith(
+      localResumePositionMs: completed ? 0 : positionMs,
+      localCompleted: completed,
+      localWatched: watched,
+      localPlaybackUpdatedAt: DateTime.now(),
+      pendingPlaybackEventCount: pendingCount,
+      updatedAt: DateTime.now(),
+    );
+    final next = _replaceItem(state.items, nextItem);
+    await _persistItems(scope, next);
+    state = state.copyWith(items: _sortItems(next), clearError: true);
   }
 
   Future<DownloadInventoryScope> _requireScope() async {
@@ -306,6 +362,101 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     for (final item in items) {
       await protectedStorage.writePackageMetadata(scope, item);
     }
+  }
+
+  Future<List<DownloadItem>> _materializeReadyPackages(
+    DownloadInventoryScope scope,
+    List<DownloadItem> items,
+  ) async {
+    var next = items;
+    for (final item in items) {
+      if (item.status != DownloadItemStatus.ready || item.packageId == null || item.packageId!.isEmpty) {
+        continue;
+      }
+      try {
+        next = _replaceItem(
+          next,
+          item.copyWith(
+            status: DownloadItemStatus.downloading,
+            waitingReason: 'Saving package files',
+            updatedAt: DateTime.now(),
+          ),
+        );
+        state = state.copyWith(items: _sortItems(next), clearError: true);
+        final playable = await _materializePackage(scope, item);
+        next = _replaceItem(next, playable);
+      } catch (error) {
+        next = _replaceItem(
+          next,
+          item.copyWith(
+            status: DownloadItemStatus.ready,
+            failureReason: error.toString(),
+            waitingReason: 'Ready on server; local files not saved',
+            updatedAt: DateTime.now(),
+          ),
+        );
+      }
+    }
+    return next;
+  }
+
+  Future<DownloadItem> _materializePackage(DownloadInventoryScope scope, DownloadItem item) async {
+    final packageId = item.packageId;
+    if (packageId == null || packageId.isEmpty) {
+      throw StateError('Download package is missing.');
+    }
+    final downloadService = ref.read(downloadServiceProvider);
+    final protectedStorage = ref.read(protectedDownloadStorageProvider);
+    final manifest = await downloadService.getPackageManifest(packageId);
+    final transfer = await downloadService.createTransferUrls(
+      packageId: packageId,
+      filePaths: manifest.files.map((file) => file.relativePath).toList(growable: false),
+    );
+    final transferByPath = {
+      for (final file in transfer.files) file.relativePath: file,
+    };
+    var bytesWritten = 0;
+    var filesVerified = 0;
+    for (final file in manifest.files) {
+      final transferFile = transferByPath[file.relativePath];
+      if (transferFile == null) {
+        throw StateError('Missing transfer URL for ${file.relativePath}.');
+      }
+      final bytes = await downloadService.downloadPackageFile(transferFile.url);
+      final checksum = sha256.convert(bytes).toString();
+      if (checksum.toLowerCase() != file.checksumSha256.toLowerCase()) {
+        throw StateError('Checksum mismatch for ${file.relativePath}.');
+      }
+      await protectedStorage.writePackageFile(
+        scope,
+        item,
+        relativePath: file.relativePath,
+        bytes: bytes,
+      );
+      bytesWritten += bytes.length;
+      filesVerified += 1;
+    }
+    await protectedStorage.writePackageManifest(scope, item, manifest);
+    final playbackFile = manifest.primaryPlaybackFile;
+    if (playbackFile == null) {
+      throw StateError('Package has no playable offline file.');
+    }
+    final playbackPath = await protectedStorage.packageFilePath(scope, item, playbackFile.relativePath);
+    final pendingEvents = await protectedStorage.pendingPlaybackEventCount(scope, packageId);
+    return item.copyWith(
+      status: DownloadItemStatus.playableOffline,
+      progressPercent: 100,
+      bytesExpected: manifest.totalBytes,
+      bytesPrepared: bytesWritten,
+      localFilesVerified: filesVerified,
+      localPlaybackPath: playbackPath,
+      localManifestHashSha256: manifest.packageHashSha256,
+      pendingPlaybackEventCount: pendingEvents,
+      expiresAt: manifest.expiresAt ?? item.expiresAt,
+      waitingReason: 'Playable offline',
+      localPlaybackUpdatedAt: DateTime.now(),
+      updatedAt: DateTime.now(),
+    );
   }
 
   Future<DownloadManagerSettings> _readSettings(DownloadInventoryScope scope) async {
@@ -367,6 +518,34 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     }).toList(growable: true);
     if (!replaced) next.add(item);
     return next;
+  }
+
+  DownloadItem _mergeJob(DownloadItem item, DownloadJob job) {
+    if (item.canPlayOffline && job.status == DownloadItemStatus.ready) {
+      return item.copyWith(
+        jobId: job.id,
+        mediaFileId: job.mediaFileId,
+        qualityMode: job.qualityMode,
+        bytesExpected: job.bytesExpected,
+        expiresAt: job.expiresAt,
+        updatedAt: DateTime.now(),
+      );
+    }
+    return item.applyJob(job);
+  }
+
+  DownloadItem _mergeStatusEvent(DownloadItem item, DownloadJobStatusEvent event) {
+    if (item.canPlayOffline && event.status == DownloadItemStatus.ready) {
+      return item.copyWith(
+        jobId: event.jobId,
+        packageId: event.packageId,
+        mediaFileId: event.mediaFileId,
+        bytesExpected: event.bytesExpected,
+        waitingReason: 'Playable offline',
+        updatedAt: DateTime.now(),
+      );
+    }
+    return item.applyStatusEvent(event);
   }
 
   List<DownloadItem> _replaceItem(List<DownloadItem> items, DownloadItem item) {

@@ -82,6 +82,80 @@ class ProtectedDownloadStorageService {
     );
   }
 
+  Future<void> writePackageManifest(
+    DownloadInventoryScope scope,
+    DownloadItem item,
+    DownloadPackageManifest manifest,
+  ) async {
+    final location = await preparePackage(scope, item);
+    await _writeJson(
+      File('${location.path}${Platform.pathSeparator}package_manifest.json'),
+      _sanitize(manifest.toJson()),
+    );
+  }
+
+  Future<DownloadPackageManifest?> readPackageManifest(
+    DownloadInventoryScope scope,
+    DownloadItem item,
+  ) async {
+    final location = await preparePackage(scope, item);
+    final file = File('${location.path}${Platform.pathSeparator}package_manifest.json');
+    if (!await file.exists()) return null;
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is Map) {
+        return DownloadPackageManifest.fromJson(Map<String, Object?>.from(decoded));
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  Future<String> writePackageFile(
+    DownloadInventoryScope scope,
+    DownloadItem item, {
+    required String relativePath,
+    required List<int> bytes,
+  }) async {
+    final location = await preparePackage(scope, item);
+    final file = File(_packageFilePath(location.path, relativePath));
+    await file.parent.create(recursive: true);
+    await file.writeAsBytes(bytes, flush: true);
+    return file.path;
+  }
+
+  Future<String> packageFilePath(
+    DownloadInventoryScope scope,
+    DownloadItem item,
+    String relativePath,
+  ) async {
+    final location = await preparePackage(scope, item);
+    return _packageFilePath(location.path, relativePath);
+  }
+
+  Future<void> appendOfflinePlaybackEvent(
+    DownloadInventoryScope scope,
+    OfflinePlaybackEvent event,
+  ) async {
+    final location = await prepareScope(scope);
+    final file = File('${location.path}${Platform.pathSeparator}sync_queue.json');
+    final events = await _readJsonList(file);
+    events.add(event.toJson());
+    await _writeJson(file, events);
+  }
+
+  Future<int> pendingPlaybackEventCount(
+    DownloadInventoryScope scope,
+    String packageId,
+  ) async {
+    final location = await prepareScope(scope);
+    final file = File('${location.path}${Platform.pathSeparator}sync_queue.json');
+    final events = await _readJsonList(file);
+    return events
+        .whereType<Map>()
+        .where((event) => event['package_id']?.toString() == packageId)
+        .length;
+  }
+
   Future<void> deletePackage(DownloadInventoryScope scope, DownloadItem item) async {
     await _channel.invokeMethod<void>(
       'deleteDownloadPackage',
@@ -106,6 +180,27 @@ class ProtectedDownloadStorageService {
   Future<void> _writeJson(File file, Object? value) async {
     await file.parent.create(recursive: true);
     await file.writeAsString(jsonEncode(value), flush: true);
+  }
+
+  Future<List<Object?>> _readJsonList(File file) async {
+    if (!await file.exists()) return <Object?>[];
+    try {
+      final decoded = jsonDecode(await file.readAsString());
+      if (decoded is List) return decoded.cast<Object?>().toList(growable: true);
+    } catch (_) {}
+    return <Object?>[];
+  }
+
+  String _packageFilePath(String packageRoot, String relativePath) {
+    final parts = relativePath.split('/');
+    if (relativePath.isEmpty || parts.any(_unsafePathPart) || relativePath.contains('\\')) {
+      throw ArgumentError.value(relativePath, 'relativePath', 'Package path must stay inside the package root.');
+    }
+    return ([packageRoot, ...parts]).join(Platform.pathSeparator);
+  }
+
+  bool _unsafePathPart(String part) {
+    return part.isEmpty || part == '.' || part == '..' || part.contains(':');
   }
 
   String _packageKey(DownloadItem item) {

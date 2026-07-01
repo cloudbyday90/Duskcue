@@ -14,10 +14,11 @@ This document is the authoritative Phase 16c design for mobile offline downloads
 |---|---|
 | Android long-running user downloads | Android Developers: [User-initiated data transfer jobs](https://developer.android.com/develop/background-work/background-tasks/uidt) |
 | Android background constraints | Android Developers: [WorkManager constraints](https://developer.android.com/develop/background-work/background-tasks/persistent/getting-started/define-work#work-constraints) |
+| Android offline playback/download model | Android Developers: [Downloading media](https://developer.android.com/media/media3/exoplayer/downloading-media) |
 | Android app storage and backup boundaries | Android Developers: [Data and file storage overview](https://developer.android.com/training/data-storage) and [Back up user data](https://developer.android.com/identity/data/autobackup) |
 | Android protected metadata | Android Developers: [Security with data](https://developer.android.com/privacy-and-security/security-data) and [Android Keystore system](https://developer.android.com/privacy-and-security/keystore) |
 | iOS background transfer | Apple Developer Documentation: [URLSessionConfiguration](https://developer.apple.com/documentation/foundation/urlsessionconfiguration) and [Downloading files in the background](https://developer.apple.com/documentation/foundation/url_loading_system/downloading_files_in_the_background) |
-| iOS HLS offline playback | Apple Developer Documentation: [AVAssetDownloadURLSession](https://developer.apple.com/documentation/avfoundation/avassetdownloadurlsession) |
+| iOS HLS offline playback | Apple Developer Documentation: [AVAssetDownloadURLSession](https://developer.apple.com/documentation/avfoundation/avassetdownloadurlsession) and [Using AVFoundation to play and persist HTTP Live Streams](https://developer.apple.com/documentation/AVFoundation/using-avfoundation-to-play-and-persist-http-live-streams) |
 | iOS file protection and backup exclusion | Apple Developer Documentation: [FileProtectionType](https://developer.apple.com/documentation/foundation/fileprotectiontype) and [URLResourceKey.isExcludedFromBackupKey](https://developer.apple.com/documentation/foundation/urlresourcekey/1414219-isexcludedfrombackupkey) |
 | iOS review constraints | Apple: [App Review Guidelines](https://developer.apple.com/app-store/review/guidelines/) |
 
@@ -188,6 +189,15 @@ Phase 16c Task 10 added protected local storage foundations:
 - The Dart metadata writer strips bearer/session/access/refresh tokens, package keys, signed URLs, stream URLs, and transfer URLs before writing local package metadata. Download inventory/settings remain scoped by `(server_origin, user_id, device_identifier)` and are cleared with the protected roots on local session cleanup.
 - `DownloadManagerNotifier` creates protected package placeholders for queued/ready/failed items and deletes protected package/scope directories on item delete or delete-all. `AuthService.clearLocalSession()` deletes all protected downloads and scoped download metadata, covering logout, logout-all, session invalidation/kick, and server-switch flows that clear local auth.
 
+Phase 16c Task 11 added offline playback foundations:
+
+- `DownloadService` now fetches package manifests, requests authenticated transfer URLs, and downloads package-relative files with the current device identifier. The mobile client does not persist transfer URLs or bearer-bearing metadata.
+- `DownloadManagerNotifier` foreground-materializes server-ready packages into the protected package root, verifies every manifest-listed file by SHA-256, writes the server manifest as protected local metadata, and promotes verified packages to `playableOffline`.
+- The local state model now separates `ready` packages that still depend on server reachability from `playableOffline` packages with verified files and a local playback path.
+- `OfflinePlaybackService` resolves MP4 packages to the local MP4 file and HLS/fMP4 packages to the local `.m3u8` manifest. Playback uses `video_player` from local file paths and does not call online playback start, seek, heartbeat, QoE, telemetry, or bandwidth-probe endpoints while in offline mode.
+- Offline playback records heartbeat, seek, stop, completion, watched state, duration, and local resume position into the scoped protected sync queue. Task 12 will submit those queued events to `POST /api/v1/downloads/sync` and clear accepted events idempotently.
+- Downloads, media detail, and shared library/search media cards expose offline playback only when the scoped inventory has a verified local package. Packaged selected audio/subtitle metadata is displayed as fixed local selections; downloading alternate track combinations remains future package-selection work.
+
 ## Mobile Contract
 
 The mobile clients own these responsibilities:
@@ -271,4 +281,4 @@ Download quality reuses the Phase 7 quality-management model but is not identica
 
 ## Implementation Status
 
-Phase 16c Tasks 0-10 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, manifest response format, durable job creation/status/cancel, scheduled package worker, authenticated package serving, resumable transfer, foreground/push notifications, Flutter mobile download manager shell, and protected Android/iOS local storage foundations are in place. Offline playback, reconnect sync, revocation cleanup, settings completion, observability, and broader integration tests are pending Phase 16c Tasks 11-15.
+Phase 16c Tasks 0-11 are complete. The design/research outcome, database schema, downloads domain route/DTO/error shell, access/quota/policy foundations, deterministic planning endpoint, manifest response format, durable job creation/status/cancel, scheduled package worker, authenticated package serving, resumable transfer, foreground/push notifications, Flutter mobile download manager shell, protected Android/iOS local storage foundations, foreground package materialization, and local MP4/HLS offline playback are in place. Reconnect sync, revocation cleanup, settings completion, observability, and broader integration tests are pending Phase 16c Tasks 12-15.

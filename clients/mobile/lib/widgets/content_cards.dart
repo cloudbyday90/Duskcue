@@ -1,8 +1,12 @@
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:duskcue_mobile/l10n/app_strings.dart';
 import 'package:duskcue_mobile/models/content_models.dart';
+import 'package:duskcue_mobile/models/download_models.dart';
 import 'package:duskcue_mobile/services/service_providers.dart';
+import 'package:duskcue_mobile/stores/download_manager_store.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 class MediaItemCard extends ConsumerWidget {
   const MediaItemCard({
@@ -17,7 +21,9 @@ class MediaItemCard extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final service = ref.watch(contentServiceProvider);
+    final offlinePlayable = _hasOfflinePlayable(ref.watch(downloadManagerProvider).items, item.id);
     final theme = Theme.of(context);
+    final strings = AppStrings.of(context);
 
     return Card(
       clipBehavior: Clip.antiAlias,
@@ -28,15 +34,30 @@ class MediaItemCard extends ConsumerWidget {
           children: [
             AspectRatio(
               aspectRatio: 2 / 3,
-              child: CachedNetworkImage(
-                imageUrl: service.artworkUri(item.id).toString(),
-                httpHeaders: service.mediaHeaders,
-                fit: BoxFit.cover,
-                placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
-                errorWidget: (context, url, error) => ColoredBox(
-                  color: theme.colorScheme.surfaceContainerHighest,
-                  child: const Center(child: Icon(Icons.movie_outlined)),
-                ),
+              child: Stack(
+                fit: StackFit.expand,
+                children: [
+                  CachedNetworkImage(
+                    imageUrl: service.artworkUri(item.id).toString(),
+                    httpHeaders: service.mediaHeaders,
+                    fit: BoxFit.cover,
+                    placeholder: (context, url) => const Center(child: CircularProgressIndicator()),
+                    errorWidget: (context, url, error) => ColoredBox(
+                      color: theme.colorScheme.surfaceContainerHighest,
+                      child: const Center(child: Icon(Icons.movie_outlined)),
+                    ),
+                  ),
+                  if (offlinePlayable)
+                    Positioned(
+                      right: 8,
+                      bottom: 8,
+                      child: IconButton.filledTonal(
+                        tooltip: strings.playOffline,
+                        onPressed: () => context.go('/play/${item.id}?offline=true'),
+                        icon: const Icon(Icons.offline_pin),
+                      ),
+                    ),
+                ],
               ),
             ),
             Padding(
@@ -75,6 +96,8 @@ class MediaItemListTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final service = ref.watch(contentServiceProvider);
+    final offlinePlayable = _hasOfflinePlayable(ref.watch(downloadManagerProvider).items, item.id);
+    final strings = AppStrings.of(context);
 
     return ListTile(
       leading: ClipRRect(
@@ -99,8 +122,21 @@ class MediaItemListTile extends ConsumerWidget {
         maxLines: 2,
         overflow: TextOverflow.ellipsis,
       ),
-      trailing: const Icon(Icons.chevron_right),
+      trailing: offlinePlayable
+          ? IconButton(
+              tooltip: strings.playOffline,
+              onPressed: () => context.go('/play/${item.id}?offline=true'),
+              icon: const Icon(Icons.offline_pin),
+            )
+          : const Icon(Icons.chevron_right),
       onTap: onTap,
     );
   }
+}
+
+bool _hasOfflinePlayable(List<DownloadItem> items, String itemId) {
+  for (final item in items) {
+    if (item.mediaItemId == itemId && item.canPlayOffline == true) return true;
+  }
+  return false;
 }
