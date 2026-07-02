@@ -58,7 +58,7 @@ const proxyBackend = async (event) => {
     const init = {
         method: event.request.method,
         headers,
-        redirect: 'manual',
+        redirect: /** @type {RequestRedirect} */ ('manual'),
     };
 
     if (event.request.method !== 'GET' && event.request.method !== 'HEAD') {

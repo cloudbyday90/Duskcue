@@ -23,7 +23,7 @@ let eventUnsubscribers = [];
 let sseUnsubscriber = null;
 
 export function isTauriDesktop() {
-    return typeof window !== 'undefined' && !!window.__TAURI_INTERNALS__;
+    return typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
 }
 
 async function tauriApi() {
