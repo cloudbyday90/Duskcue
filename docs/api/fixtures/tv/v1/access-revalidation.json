@@ -1,0 +1,104 @@
+{
+  "fixture": "tv-access-revalidation",
+  "cases": [
+    {
+      "id": "launcher_cached_resume_stale",
+      "entry": {
+        "platform_content_id": "duskcue:movie:11111111-1111-4111-8111-111111111111",
+        "cached_resume_position_ms": 1800000,
+        "published_at": "2026-07-02T11:40:00Z"
+      },
+      "resolve_request": {
+        "method": "GET",
+        "path": "/api/v1/tv/resolve/duskcue%3Amovie%3A11111111-1111-4111-8111-111111111111"
+      },
+      "expect": {
+        "latest_resume_position_ms": 2400000,
+        "ignore_cached_resume": true,
+        "start_playback_after_resolve": true
+      }
+    },
+    {
+      "id": "session_revoked_after_publication",
+      "entry": {
+        "platform_content_id": "duskcue:movie:11111111-1111-4111-8111-111111111111"
+      },
+      "resolve_response": {
+        "status": 401,
+        "problem": {
+          "type": "/errors/auth_001",
+          "title": "AUTH_001",
+          "status": 401,
+          "detail": "Session expired or revoked",
+          "instance": "/api/v1/tv/resolve/duskcue:movie:11111111-1111-4111-8111-111111111111",
+          "trace_id": "fixture-tv-session-revoked",
+          "errors": null
+        }
+      },
+      "expect": {
+        "clear_bearer_token": true,
+        "remove_or_hide_platform_entry": true,
+        "show_sign_in": true
+      }
+    },
+    {
+      "id": "library_access_revoked_after_publication",
+      "entry": {
+        "platform_content_id": "duskcue:episode:22222222-2222-4222-8222-222222222222"
+      },
+      "resolve_response": {
+        "status": 403,
+        "problem": {
+          "type": "/errors/tv_003",
+          "title": "TV_003",
+          "status": 403,
+          "detail": "Platform content access was revoked",
+          "instance": "/api/v1/tv/resolve/duskcue:episode:22222222-2222-4222-8222-222222222222",
+          "trace_id": "fixture-tv-library-revoked",
+          "errors": null
+        }
+      },
+      "expect": {
+        "remove_or_hide_platform_entry": true,
+        "do_not_start_playback": true,
+        "refresh_tv_surface": true
+      }
+    },
+    {
+      "id": "different_duskcue_user_selected",
+      "entry": {
+        "platform_content_id": "duskcue:movie:11111111-1111-4111-8111-111111111111",
+        "published_user_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "selected_user_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+      },
+      "expect": {
+        "discard_previous_user_launcher_cache": true,
+        "fetch_selected_user_surface": true,
+        "do_not_send_previous_user_token": true
+      }
+    },
+    {
+      "id": "platform_id_deleted_or_replaced",
+      "entry": {
+        "platform_content_id": "duskcue:movie:77777777-7777-4777-8777-777777777777"
+      },
+      "resolve_response": {
+        "status": 404,
+        "problem": {
+          "type": "/errors/tv_002",
+          "title": "TV_002",
+          "status": 404,
+          "detail": "Platform content is unavailable",
+          "instance": "/api/v1/tv/resolve/duskcue:movie:77777777-7777-4777-8777-777777777777",
+          "trace_id": "fixture-tv-id-deleted",
+          "errors": null
+        }
+      },
+      "expect": {
+        "remove_platform_entry": true,
+        "refresh_tv_surface": true,
+        "do_not_retry_without_user_action": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,157 @@
+{
+  "fixture": "tv-platform-adapter-mappings",
+  "source_surface_endpoint": "/api/v1/users/me/tv-surface",
+  "adapters": [
+    {
+      "id": "android_tv_watch_next",
+      "platform": "android_tv",
+      "surface": "WatchNextProgram",
+      "source_section_types": [
+        "continue",
+        "next_up"
+      ],
+      "mapping": {
+        "program_id_storage": "app_local_mapping_by_platform_content_id",
+        "content_id": "duskcue:movie:11111111-1111-4111-8111-111111111111",
+        "watch_next_type": "continue",
+        "intent_uri": "duskcue://play/movie/11111111-1111-4111-8111-111111111111",
+        "poster_artwork": "/api/v1/items/11111111-1111-4111-8111-111111111111/artwork/poster",
+        "last_engagement_time_millis": 1782992400000
+      },
+      "requirements": {
+        "remove_completed_items": true,
+        "refresh_on_tv_surface_changed": true,
+        "revalidate_before_playback": true
+      }
+    },
+    {
+      "id": "fire_tv_watch_activity",
+      "platform": "fire_tv",
+      "surface": "Watch Activity",
+      "source_section_types": [
+        "continue"
+      ],
+      "mapping": {
+        "content_id": "duskcue:movie:11111111-1111-4111-8111-111111111111",
+        "activity": "progress",
+        "progress_ms": 2400000,
+        "duration_ms": 7200000,
+        "deep_link_intent_uri": "duskcue://play/movie/11111111-1111-4111-8111-111111111111"
+      },
+      "requirements": {
+        "report_in_player_progress_every_seconds": 60,
+        "catalog_integration_optional_partner_gated": true,
+        "revalidate_before_playback": true
+      }
+    },
+    {
+      "id": "roku_search_direct_to_play",
+      "platform": "roku",
+      "surface": "Search and Direct to Play",
+      "source_section_types": [
+        "continue",
+        "next_up",
+        "new_episodes",
+        "recommended"
+      ],
+      "mapping": {
+        "contentId": "duskcue:episode:22222222-2222-4222-8222-222222222222",
+        "mediaType": "episode",
+        "launch_behavior": "direct_to_play",
+        "bookmark_position_ms": 0
+      },
+      "requirements": {
+        "accept_contentId_and_mediaType": true,
+        "no_resume_interstitial_for_voice_launch": true,
+        "revalidate_before_playback": true
+      }
+    },
+    {
+      "id": "samsung_smart_hub_preview",
+      "platform": "samsung_tizen",
+      "surface": "Smart Hub Preview",
+      "source_section_types": [
+        "continue",
+        "next_up"
+      ],
+      "mapping": {
+        "preview_id": "duskcue:movie:11111111-1111-4111-8111-111111111111",
+        "title": "Moonlit Harbor",
+        "deeplink_data": "duskcue://play/movie/11111111-1111-4111-8111-111111111111",
+        "image": "/api/v1/items/11111111-1111-4111-8111-111111111111/artwork/backdrop"
+      },
+      "requirements": {
+        "public_preview_allowed": true,
+        "personal_preview_requires_background_service_validation": true,
+        "revalidate_before_playback": true
+      }
+    },
+    {
+      "id": "lg_webos_launch_params",
+      "platform": "lg_webos",
+      "surface": "Launch Parameters",
+      "source_section_types": [
+        "continue",
+        "next_up",
+        "new_episodes",
+        "recommended"
+      ],
+      "mapping": {
+        "app_id": "com.duskcue.tv",
+        "params": {
+          "platform_content_id": "duskcue:movie:11111111-1111-4111-8111-111111111111",
+          "action": "play"
+        },
+        "handles_relaunch": true,
+        "mediaOption_resume_ms": 2400000
+      },
+      "requirements": {
+        "handle_webOSLaunch": true,
+        "handle_webOSRelaunch": true,
+        "revalidate_before_playback": true
+      }
+    },
+    {
+      "id": "apple_tvos_top_shelf_universal_links",
+      "platform": "apple_tvos",
+      "surface": "Top Shelf and Universal Links",
+      "source_section_types": [
+        "continue",
+        "next_up"
+      ],
+      "mapping": {
+        "top_shelf_identifier": "duskcue:episode:22222222-2222-4222-8222-222222222222",
+        "action_url": "https://duskcue.example.test/tv/play/duskcue%3Aepisode%3A22222222-2222-4222-8222-222222222222",
+        "universal_link_required": true,
+        "associated_domain_required": true
+      },
+      "requirements": {
+        "prefer_continue_and_next_up": true,
+        "stable_https_base_url_required_for_universal_links": true,
+        "revalidate_before_playback": true
+      }
+    },
+    {
+      "id": "xbox_uri_activation",
+      "platform": "xbox",
+      "surface": "URI Activation",
+      "source_section_types": [
+        "continue",
+        "next_up",
+        "new_episodes",
+        "recommended"
+      ],
+      "mapping": {
+        "protocol": "duskcue",
+        "uri": "duskcue://play/movie/11111111-1111-4111-8111-111111111111",
+        "platform_content_id": "duskcue:movie:11111111-1111-4111-8111-111111111111",
+        "media_transport_controls": "system_media_transport_controls"
+      },
+      "requirements": {
+        "handle_protocol_activation": true,
+        "refresh_resume_after_activation": true,
+        "revalidate_before_playback": true
+      }
+    }
+  ]
+}

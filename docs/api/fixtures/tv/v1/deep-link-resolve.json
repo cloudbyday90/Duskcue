@@ -1,0 +1,111 @@
+{
+  "fixture": "tv-deep-link-resolve",
+  "cases": [
+    {
+      "id": "movie_playable",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/tv/resolve/duskcue%3Amovie%3A11111111-1111-4111-8111-111111111111?platform=android_tv"
+      },
+      "status": 200,
+      "body": {
+        "platform_content_id": "duskcue:movie:11111111-1111-4111-8111-111111111111",
+        "media_item_id": "11111111-1111-4111-8111-111111111111",
+        "media_type": "movie",
+        "resume_position_ms": 2400000,
+        "availability": "playable",
+        "playback_action": "start_playback",
+        "requires_auth": true,
+        "access_revalidated": true,
+        "playback_start": {
+          "method": "POST",
+          "path": "/api/v1/playback/start",
+          "media_item_id": "11111111-1111-4111-8111-111111111111",
+          "start_position_ms": 2400000,
+          "device_profile_required": false
+        }
+      },
+      "expected_client_action": "start_playback_after_latest_resume"
+    },
+    {
+      "id": "episode_playable",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/tv/resolve/duskcue%3Aepisode%3A22222222-2222-4222-8222-222222222222?platform=roku"
+      },
+      "status": 200,
+      "body": {
+        "platform_content_id": "duskcue:episode:22222222-2222-4222-8222-222222222222",
+        "media_item_id": "22222222-2222-4222-8222-222222222222",
+        "media_type": "episode",
+        "resume_position_ms": 0,
+        "availability": "playable",
+        "playback_action": "start_playback",
+        "requires_auth": true,
+        "access_revalidated": true,
+        "playback_start": {
+          "method": "POST",
+          "path": "/api/v1/playback/start",
+          "media_item_id": "22222222-2222-4222-8222-222222222222",
+          "start_position_ms": 0,
+          "device_profile_required": true
+        }
+      },
+      "expected_client_action": "direct_to_play_without_resume_prompt"
+    },
+    {
+      "id": "revoked_access",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/tv/resolve/duskcue%3Amovie%3A99999999-9999-4999-8999-999999999999?platform=android_tv"
+      },
+      "status": 403,
+      "problem": {
+        "type": "/errors/tv_003",
+        "title": "TV_003",
+        "status": 403,
+        "detail": "Platform content access was revoked",
+        "instance": "/api/v1/tv/resolve/duskcue:movie:99999999-9999-4999-8999-999999999999",
+        "trace_id": "fixture-tv-revoked-access",
+        "errors": null
+      },
+      "expected_client_action": "remove_platform_entry_and_show_access_denied"
+    },
+    {
+      "id": "unavailable_media",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/tv/resolve/duskcue%3Amovie%3A55555555-5555-4555-8555-555555555555?platform=samsung_tizen"
+      },
+      "status": 404,
+      "problem": {
+        "type": "/errors/tv_002",
+        "title": "TV_002",
+        "status": 404,
+        "detail": "Platform content is unavailable",
+        "instance": "/api/v1/tv/resolve/duskcue:movie:55555555-5555-4555-8555-555555555555",
+        "trace_id": "fixture-tv-unavailable-media",
+        "errors": null
+      },
+      "expected_client_action": "remove_platform_entry_and_refresh_surface"
+    },
+    {
+      "id": "unsupported_platform_hint",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/tv/resolve/duskcue%3Aepisode%3A33333333-3333-4333-8333-333333333333?platform=unsupported_box"
+      },
+      "status": 400,
+      "problem": {
+        "type": "/errors/tv_004",
+        "title": "TV_004",
+        "status": 400,
+        "detail": "Unsupported TV platform hint",
+        "instance": "/api/v1/tv/resolve/duskcue:episode:33333333-3333-4333-8333-333333333333",
+        "trace_id": "fixture-tv-unsupported-platform",
+        "errors": null
+      },
+      "expected_client_action": "fall_back_to_app_local_resolve"
+    }
+  ]
+}

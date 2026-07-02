@@ -9,6 +9,7 @@ The Phase 16d binding target matrix is [client-binding-targets.v1.json](client-b
 The Phase 16d versioned fixture pack starts at [fixtures/client/v1/manifest.json](fixtures/client/v1/manifest.json).
 The Phase 16d playback conformance pack starts at [fixtures/playback/v1/manifest.json](fixtures/playback/v1/manifest.json).
 The Phase 16d auth/session conformance pack starts at [fixtures/auth/v1/manifest.json](fixtures/auth/v1/manifest.json).
+The Phase 16d TV/deep-link conformance pack starts at [fixtures/tv/v1/manifest.json](fixtures/tv/v1/manifest.json).
 
 ## Decision
 
@@ -226,6 +227,25 @@ node scripts/verify-auth-conformance.mjs
 
 The verifier checks required auth flows, required session lifecycle cases, storage classifications, plaintext-storage prohibitions, switching behavior, Problem Details shape, API-relative request paths, UTC timestamps, stable UUIDs where applicable, and redaction of real tokens, signatures, and private paths.
 
+## Phase 16d TV And Deep-Link Conformance
+
+Phase 16d Task 6 promotes TV surface and deep-link behavior into a versioned conformance pack under `docs/api/fixtures/tv/v1`. This pack complements the earlier unversioned Phase 16b TV surface examples by adding a manifest, platform adapter mappings, and launch-time revalidation cases.
+
+The pack covers:
+
+- TV surface section order, limits, stable `platform_content_id` values, private cache headers, ETags, access filtering, and empty states;
+- deep-link resolve behavior for playable movies, playable episodes, revoked access, unavailable media, and unsupported platform hints;
+- adapter mappings for Android TV Watch Next, Fire TV Watch Activity, Roku Search/Direct to Play, Samsung Smart Hub Preview, LG webOS launch parameters, tvOS Top Shelf/Universal Links, and Xbox URI activation;
+- revalidation when launcher caches are stale, sessions are revoked, library access changes, users switch, or platform IDs are deleted/replaced.
+
+Run:
+
+```bash
+node scripts/verify-tv-deeplink-conformance.mjs
+```
+
+The verifier checks the manifest coverage, section ordering, cache policy, stable platform IDs, API-relative paths, Problem Details shape, adapter coverage, mandatory access revalidation, UTC timestamps, stable UUIDs where applicable, and redaction of tokens, signed URL parameters, and private paths.
+
 Phase 16b added reusable TV surface fixtures ahead of full Phase 16d generation:
 
 ```bash
@@ -264,6 +284,15 @@ The TV verifier checks `docs/api/fixtures/tv` feed, resolve, diagnostics, unavai
 - OWASP API1 Broken Object Level Authorization: https://owasp.org/API-Security/editions/2023/en/0xa1-broken-object-level-authorization/
 - OWASP API2 Broken Authentication: https://owasp.org/API-Security/editions/2023/en/0xa2-broken-authentication/
 - OWASP Session Management Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html
+- Android TV Watch Next: https://developer.android.com/training/tv/discovery/watch-next-add-programs
+- Fire TV featured content deep links: https://developer.amazon.com/docs/fire-tv/deep-linking-featured-content.html
+- Fire TV Content Personalization: https://developer.amazon.com/docs/fire-tv/introduction-content-personalization.html
+- Roku deep linking: https://developer.roku.com/dev/docs/implementing-deep-linking
+- Roku Direct to Play: https://developer.roku.com/dev/docs/direct-to-play
+- Samsung Smart Hub Preview: https://developer.samsung.com/smarttv/develop/guides/smart-hub-preview/smart-hub-preview.html
+- LG webOS app lifecycle: https://webostv.developer.lge.com/develop/guides/app-lifecycle-management
+- Apple Top Shelf: https://developer.apple.com/design/human-interface-guidelines/top-shelf
+- Microsoft URI activation: https://learn.microsoft.com/en-us/windows/apps/develop/launch/handle-uri-activation
 - Dart JSON serialization: https://docs.flutter.dev/data-and-backend/serialization/json
 - Dart json_serializable: https://pub.dev/packages/json_serializable
 - Kotlin serialization: https://kotlinlang.org/docs/serialization.html

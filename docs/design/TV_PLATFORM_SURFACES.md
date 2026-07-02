@@ -619,6 +619,24 @@ node scripts/verify-tv-surface-fixtures.mjs
 
 The verifier checks section order, row labels, total limits, stable canonical `platform_content_id` values, private cache headers, quoted ETags, unavailable/diagnostic BOLA behavior, privacy-safe fixture content, and the golden renderer output. Platform clients should port the same expectations into their native test suites before implementing platform-specific launcher APIs.
 
+Phase 16d promotes those server fixtures into a versioned cross-platform conformance pack under `docs/api/fixtures/tv/v1`:
+
+| Fixture | Purpose |
+|---|---|
+| `manifest.json` | Versioned TV/deep-link conformance manifest for Phases 17-23. |
+| `surface-contract.json` | Feed order, limits, stable IDs, private cache, ETag, access filtering, and empty-state expectations. |
+| `deep-link-resolve.json` | Playable movie/episode resolve cases plus revoked-access, unavailable-media, and unsupported-platform responses. |
+| `platform-adapter-mappings.json` | Android Watch Next, Fire TV Watch Activity, Roku Direct to Play, Samsung Smart Hub Preview, LG webOS launch parameters, tvOS Top Shelf/Universal Links, and Xbox URI activation mappings. |
+| `access-revalidation.json` | Required behavior when launcher caches are stale, sessions/access are revoked, users switch, or platform IDs disappear. |
+
+Run the Phase 16d conformance verifier before claiming TV surface or deep-link readiness:
+
+```bash
+node scripts/verify-tv-deeplink-conformance.mjs
+```
+
+This verifier checks manifest coverage, API-relative paths, adapter coverage, mandatory access revalidation before playback, Problem Details shape, UTC timestamps, stable IDs where applicable, and redaction of tokens, signed URL parameters, and private paths.
+
 ## Android TV / Google TV Adapter
 
 Android TV / Google TV is the first target because it provides a documented Watch Next API through AndroidX TV Provider.
@@ -1058,7 +1076,7 @@ Add tables only when a platform adapter needs durable server-side synchronizatio
 
 - TV surface endpoint requires normal user authentication.
 - Every item must pass the same BOLA checks as media detail/playback APIs.
-- Deep links must revalidate auth and access before playback.
+- Deep links must revalidate auth and access before playback; `scripts/verify-tv-deeplink-conformance.mjs` defines the shared launch-time cases downstream clients must satisfy.
 - Platform clients must not cache bearer tokens in plaintext.
 - Artwork URLs should use existing authenticated or signed artwork delivery rules.
 

@@ -1,0 +1,102 @@
+{
+  "fixture_pack": "duskcue-tv-deeplink-conformance",
+  "version": 1,
+  "updated": "2026-07-02",
+  "contract_manifest": "docs/api/client-contracts.v1.json",
+  "purpose": "Reusable Phase 16d TV surface and deep-link conformance fixtures for Android TV, Fire TV, Roku, Samsung Tizen, LG webOS, Apple TV/tvOS, and Xbox clients.",
+  "legacy_fixture_pack": "docs/api/fixtures/tv",
+  "required_fixture_ids": [
+    "tv-surface-contract",
+    "tv-deep-link-resolve",
+    "tv-platform-adapter-mappings",
+    "tv-access-revalidation"
+  ],
+  "required_sections": [
+    "continue",
+    "next_up",
+    "new_episodes",
+    "recommended"
+  ],
+  "required_resolve_cases": [
+    "movie_playable",
+    "episode_playable",
+    "revoked_access",
+    "unavailable_media",
+    "unsupported_platform_hint"
+  ],
+  "required_platform_adapters": [
+    "android_tv_watch_next",
+    "fire_tv_watch_activity",
+    "roku_search_direct_to_play",
+    "samsung_smart_hub_preview",
+    "lg_webos_launch_params",
+    "apple_tvos_top_shelf_universal_links",
+    "xbox_uri_activation"
+  ],
+  "required_revalidation_cases": [
+    "launcher_cached_resume_stale",
+    "session_revoked_after_publication",
+    "library_access_revoked_after_publication",
+    "different_duskcue_user_selected",
+    "platform_id_deleted_or_replaced"
+  ],
+  "sources": [
+    "Android TV Watch Next",
+    "Amazon Fire TV deep links and Content Personalization",
+    "Roku deep linking and Direct to Play",
+    "Samsung Smart Hub Preview",
+    "LG webOS launch and relaunch parameters",
+    "Apple tvOS Top Shelf and Universal Links",
+    "Microsoft Windows/Xbox URI activation"
+  ],
+  "fixtures": [
+    {
+      "id": "tv-surface-contract",
+      "file": "surface-contract.json",
+      "covers": [
+        "section order",
+        "limits",
+        "stable IDs",
+        "private cache",
+        "ETag",
+        "access filtering",
+        "empty states"
+      ]
+    },
+    {
+      "id": "tv-deep-link-resolve",
+      "file": "deep-link-resolve.json",
+      "covers": [
+        "movie resolve",
+        "episode resolve",
+        "revoked access",
+        "unavailable media",
+        "unsupported platform hints"
+      ]
+    },
+    {
+      "id": "tv-platform-adapter-mappings",
+      "file": "platform-adapter-mappings.json",
+      "covers": [
+        "Android Watch Next",
+        "Fire TV Watch Activity",
+        "Roku Search and Direct to Play",
+        "Samsung Smart Hub Preview",
+        "LG webOS launch parameters",
+        "tvOS Top Shelf and Universal Links",
+        "Xbox URI activation"
+      ]
+    },
+    {
+      "id": "tv-access-revalidation",
+      "file": "access-revalidation.json",
+      "covers": [
+        "stale launcher cache",
+        "session revocation",
+        "library access revocation",
+        "user switching",
+        "deleted platform IDs"
+      ]
+    }
+  ]
+}
