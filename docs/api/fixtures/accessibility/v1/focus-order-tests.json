@@ -1,0 +1,138 @@
+{
+  "fixture": "focus-order-tests",
+  "cases": [
+    {
+      "id": "setup_to_sign_in",
+      "route": "setup",
+      "platform_families": [
+        "desktop",
+        "mobile"
+      ],
+      "sequence": [
+        "server_url",
+        "network_mode",
+        "test_connection",
+        "continue",
+        "sign_in_method"
+      ],
+      "expect": {
+        "no_keyboard_trap": true,
+        "visible_focus": true,
+        "screen_reader_labels": true,
+        "errors_announced": true
+      }
+    },
+    {
+      "id": "home_to_media_detail",
+      "route": "home",
+      "platform_families": [
+        "desktop",
+        "mobile",
+        "tv",
+        "console"
+      ],
+      "sequence": [
+        "primary_navigation",
+        "continue_row",
+        "media_card",
+        "media_detail_heading",
+        "primary_play_action"
+      ],
+      "expect": {
+        "semantic_order_matches_visual_order": true,
+        "card_role_names_item_title": true,
+        "focus_restored_on_back": true
+      }
+    },
+    {
+      "id": "search_results_to_filter",
+      "route": "search",
+      "platform_families": [
+        "desktop",
+        "mobile",
+        "tv",
+        "console"
+      ],
+      "sequence": [
+        "search_input",
+        "search_submit",
+        "filter_group",
+        "first_result",
+        "load_more"
+      ],
+      "expect": {
+        "input_label_present": true,
+        "filter_selected_state_announced": true,
+        "result_count_announced": true
+      }
+    },
+    {
+      "id": "media_detail_to_playback",
+      "route": "media_detail",
+      "platform_families": [
+        "desktop",
+        "mobile",
+        "tv",
+        "console"
+      ],
+      "sequence": [
+        "media_title",
+        "resume_or_play",
+        "playback_surface",
+        "play_pause",
+        "seek",
+        "subtitles",
+        "audio_tracks",
+        "back_or_close"
+      ],
+      "expect": {
+        "transport_controls_reachable": true,
+        "current_position_announced_or_visible": true,
+        "captions_menu_reachable": true,
+        "exit_returns_to_media_detail": true
+      }
+    },
+    {
+      "id": "settings_modal_return",
+      "route": "settings",
+      "platform_families": [
+        "desktop",
+        "mobile",
+        "tv",
+        "console"
+      ],
+      "sequence": [
+        "settings_navigation",
+        "account_sessions",
+        "delete_session",
+        "confirmation_dialog",
+        "cancel",
+        "delete_session"
+      ],
+      "expect": {
+        "dialog_focus_contained": true,
+        "escape_or_back_closes_dialog": true,
+        "focus_returns_to_invoker": true
+      }
+    },
+    {
+      "id": "notification_toast_live_region",
+      "route": "any_authenticated_route",
+      "platform_families": [
+        "desktop",
+        "mobile"
+      ],
+      "sequence": [
+        "receive_notification_event",
+        "toast_live_region",
+        "notification_center",
+        "mark_read"
+      ],
+      "expect": {
+        "toast_announced_without_stealing_focus": true,
+        "notification_action_reachable": true,
+        "read_state_announced": true
+      }
+    }
+  ]
+}

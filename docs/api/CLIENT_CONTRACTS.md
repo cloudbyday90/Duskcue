@@ -10,6 +10,7 @@ The Phase 16d versioned fixture pack starts at [fixtures/client/v1/manifest.json
 The Phase 16d playback conformance pack starts at [fixtures/playback/v1/manifest.json](fixtures/playback/v1/manifest.json).
 The Phase 16d auth/session conformance pack starts at [fixtures/auth/v1/manifest.json](fixtures/auth/v1/manifest.json).
 The Phase 16d TV/deep-link conformance pack starts at [fixtures/tv/v1/manifest.json](fixtures/tv/v1/manifest.json).
+The Phase 16d accessibility/input baseline pack starts at [fixtures/accessibility/v1/manifest.json](fixtures/accessibility/v1/manifest.json).
 
 ## Decision
 
@@ -246,6 +247,26 @@ node scripts/verify-tv-deeplink-conformance.mjs
 
 The verifier checks the manifest coverage, section ordering, cache policy, stable platform IDs, API-relative paths, Problem Details shape, adapter coverage, mandatory access revalidation, UTC timestamps, stable UUIDs where applicable, and redaction of tokens, signed URL parameters, and private paths.
 
+## Phase 16d Accessibility And Input Baselines
+
+Phase 16d Task 7 adds [CLIENT_ACCESSIBILITY_INPUT.md](../design/CLIENT_ACCESSIBILITY_INPUT.md) plus a reusable accessibility/input fixture pack under `docs/api/fixtures/accessibility/v1`. The pack gives downstream clients a common set of release-gate checks instead of leaving accessibility to each platform phase.
+
+The pack covers:
+
+- minimum baselines for desktop keyboard navigation, mobile screen readers, Dynamic Type/text scaling, mobile touch targets, TV focus navigation, remote/controller input, captions/subtitles, contrast/focus, reduced motion, and localization/RTL;
+- focus-order cases for setup/sign-in, home-to-media-detail, search/filter, media-detail-to-playback, settings dialogs, and notification live regions;
+- TV/console remote-navigation cases for row traversal, row boundaries, player controls, search keyboard return, modal back behavior, and surface-refresh focus restore;
+- per-platform review checklists for web desktop, Tauri desktop, Android/iOS mobile, Android TV/Google TV, Fire TV, Roku, Samsung Tizen, LG webOS, Apple tvOS, and Xbox;
+- localization/RTL cases for client catalogs, server-owned strings, layout mirroring, directional icons, locale-aware formatting, and activation gates.
+
+Run:
+
+```bash
+node scripts/verify-accessibility-input.mjs
+```
+
+The verifier checks required platform families, baseline categories, focus cases, remote cases, platform reviews, localization cases, actionable evidence, captions coverage, and non-empty expectations.
+
 Phase 16b added reusable TV surface fixtures ahead of full Phase 16d generation:
 
 ```bash
@@ -293,6 +314,18 @@ The TV verifier checks `docs/api/fixtures/tv` feed, resolve, diagnostics, unavai
 - LG webOS app lifecycle: https://webostv.developer.lge.com/develop/guides/app-lifecycle-management
 - Apple Top Shelf: https://developer.apple.com/design/human-interface-guidelines/top-shelf
 - Microsoft URI activation: https://learn.microsoft.com/en-us/windows/apps/develop/launch/handle-uri-activation
+- WCAG 2.2: https://www.w3.org/TR/WCAG22/
+- WCAG 2.2 Quick Reference: https://www.w3.org/WAI/WCAG22/quickref/
+- Android accessibility testing: https://developer.android.com/guide/topics/ui/accessibility/testing
+- Android TV navigation: https://developer.android.com/training/tv/get-started/navigation
+- Android TV focus system: https://developer.android.com/design/ui/tv/guides/styles/focus-system
+- Apple accessibility HIG: https://developer.apple.com/design/human-interface-guidelines/accessibility
+- Apple VoiceOver HIG: https://developer.apple.com/design/human-interface-guidelines/voiceover
+- Roku certification criteria: https://developer.roku.com/dev/docs/certification
+- Roku text to speech: https://developer.roku.com/dev/docs/text-to-speech
+- Samsung TV accessibility guide: https://developer.samsung.com/smarttv/develop/guides/fundamentals/accessibility.html
+- Microsoft Narrator: https://support.microsoft.com/en-us/accessibility/windows/narrator/complete-guide-to-narrator
+- Xbox Accessibility Guideline 106: https://learn.microsoft.com/en-us/xbox/accessibility/xbox-accessibility-guidelines/106
 - Dart JSON serialization: https://docs.flutter.dev/data-and-backend/serialization/json
 - Dart json_serializable: https://pub.dev/packages/json_serializable
 - Kotlin serialization: https://kotlinlang.org/docs/serialization.html

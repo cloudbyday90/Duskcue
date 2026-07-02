@@ -1,0 +1,122 @@
+{
+  "fixture_pack": "duskcue-accessibility-input-baseline",
+  "version": 1,
+  "updated": "2026-07-02",
+  "purpose": "Reusable Phase 16d accessibility and input baseline fixtures for desktop, mobile, TV, and console clients.",
+  "design_doc": "docs/design/CLIENT_ACCESSIBILITY_INPUT.md",
+  "required_platform_families": [
+    "desktop",
+    "mobile",
+    "tv",
+    "console"
+  ],
+  "required_baseline_categories": [
+    "desktop_keyboard_navigation",
+    "mobile_screen_reader",
+    "mobile_dynamic_type",
+    "mobile_touch_targets",
+    "tv_focus_navigation",
+    "remote_controller_input",
+    "captions_subtitles",
+    "contrast_focus",
+    "reduced_motion",
+    "localization_rtl"
+  ],
+  "required_focus_cases": [
+    "setup_to_sign_in",
+    "home_to_media_detail",
+    "search_results_to_filter",
+    "media_detail_to_playback",
+    "settings_modal_return",
+    "notification_toast_live_region"
+  ],
+  "required_remote_cases": [
+    "tv_home_row_traversal",
+    "tv_row_boundary_navigation",
+    "tv_player_transport_controls",
+    "tv_search_keyboard_return",
+    "tv_modal_back_behavior",
+    "tv_surface_refresh_focus_restore"
+  ],
+  "required_platform_reviews": [
+    "web_desktop",
+    "tauri_desktop",
+    "android_mobile",
+    "ios_mobile",
+    "android_tv_google_tv",
+    "fire_tv",
+    "roku",
+    "samsung_tizen",
+    "lg_webos",
+    "apple_tvos",
+    "xbox"
+  ],
+  "required_localization_cases": [
+    "client_catalog_coverage",
+    "server_owned_strings",
+    "rtl_layout_mirroring",
+    "directional_icon_mirroring",
+    "locale_aware_formatting",
+    "activation_gate"
+  ],
+  "fixtures": [
+    {
+      "id": "accessibility-baseline-checklist",
+      "file": "baseline-checklist.json",
+      "covers": [
+        "minimum baseline categories",
+        "platform families",
+        "assistive technology coverage"
+      ]
+    },
+    {
+      "id": "focus-order-tests",
+      "file": "focus-order-tests.json",
+      "covers": [
+        "desktop keyboard",
+        "mobile traversal",
+        "live region behavior"
+      ]
+    },
+    {
+      "id": "remote-navigation-tests",
+      "file": "remote-navigation-tests.json",
+      "covers": [
+        "TV focus navigation",
+        "remote/controller input",
+        "back behavior",
+        "focus restore"
+      ]
+    },
+    {
+      "id": "platform-review-checklists",
+      "file": "platform-review-checklists.json",
+      "covers": [
+        "per-platform release review",
+        "screen reader",
+        "captions",
+        "reduced motion"
+      ]
+    },
+    {
+      "id": "localization-rtl-cases",
+      "file": "localization-rtl-cases.json",
+      "covers": [
+        "client catalogs",
+        "server strings",
+        "RTL",
+        "locale formatting"
+      ]
+    }
+  ],
+  "sources": [
+    "WCAG 2.2",
+    "Android accessibility testing",
+    "Android TV navigation and focus system",
+    "Apple accessibility and VoiceOver HIG",
+    "Roku certification and text-to-speech",
+    "Samsung TV accessibility",
+    "Microsoft Narrator",
+    "Xbox Accessibility Guidelines"
+  ]
+}

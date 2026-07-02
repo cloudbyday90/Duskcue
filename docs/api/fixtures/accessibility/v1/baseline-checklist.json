@@ -1,0 +1,189 @@
+{
+  "fixture": "accessibility-baseline-checklist",
+  "baselines": [
+    {
+      "id": "desktop_keyboard_navigation",
+      "platform_families": [
+        "desktop"
+      ],
+      "requirements": [
+        "all primary routes are reachable by keyboard",
+        "focus order follows visual and semantic order",
+        "visible focus is never clipped by scroll containers",
+        "modals and drawers return focus to the invoking control",
+        "player controls are usable without pointer input"
+      ],
+      "evidence": [
+        "keyboard walkthrough",
+        "screen reader labels",
+        "no keyboard traps"
+      ]
+    },
+    {
+      "id": "mobile_screen_reader",
+      "platform_families": [
+        "mobile"
+      ],
+      "requirements": [
+        "TalkBack and VoiceOver announce labels, roles, selected state, disabled state, and progress",
+        "screen reader traversal matches visual reading order",
+        "errors and async status changes are announced",
+        "playback controls expose names and current values"
+      ],
+      "evidence": [
+        "TalkBack walkthrough",
+        "VoiceOver walkthrough",
+        "semantic tree review"
+      ]
+    },
+    {
+      "id": "mobile_dynamic_type",
+      "platform_families": [
+        "mobile"
+      ],
+      "requirements": [
+        "text scaling preserves essential actions",
+        "primary controls do not overlap at large text sizes",
+        "cards and rows reflow instead of truncating critical labels",
+        "captions and player controls remain usable"
+      ],
+      "evidence": [
+        "largest text smoke",
+        "screen screenshots",
+        "manual overflow check"
+      ]
+    },
+    {
+      "id": "mobile_touch_targets",
+      "platform_families": [
+        "mobile"
+      ],
+      "requirements": [
+        "primary controls meet platform touch target guidance",
+        "icon-only controls have accessible labels",
+        "destructive controls have confirmation or undo where appropriate",
+        "gestures have visible non-gesture alternatives"
+      ],
+      "evidence": [
+        "touch target scan",
+        "manual reachability walkthrough"
+      ]
+    },
+    {
+      "id": "tv_focus_navigation",
+      "platform_families": [
+        "tv",
+        "console"
+      ],
+      "requirements": [
+        "exactly one visible focused element exists at a time",
+        "D-pad movement is predictable within rows and between rows",
+        "focus can reach every visible interactive control",
+        "focus restores after dialogs, playback exit, and surface refresh",
+        "overscan safe area preserves focused controls"
+      ],
+      "evidence": [
+        "D-pad walkthrough",
+        "focus graph",
+        "overscan screenshot"
+      ]
+    },
+    {
+      "id": "remote_controller_input",
+      "platform_families": [
+        "tv",
+        "console"
+      ],
+      "requirements": [
+        "select activates the focused element",
+        "back returns to the previous logical view",
+        "menu/options opens contextual playback or subtitle actions where platform appropriate",
+        "media remote play pause seek and stop map to playback actions",
+        "text input can be completed with platform keyboard or voice input where available"
+      ],
+      "evidence": [
+        "remote walkthrough",
+        "controller walkthrough",
+        "media key mapping"
+      ]
+    },
+    {
+      "id": "captions_subtitles",
+      "platform_families": [
+        "desktop",
+        "mobile",
+        "tv",
+        "console"
+      ],
+      "requirements": [
+        "subtitle and audio track selection is reachable",
+        "current caption state is announced or visible",
+        "platform caption preferences are honored where exposed",
+        "captions do not collide with player chrome in normal or reduced-motion modes"
+      ],
+      "evidence": [
+        "playback track walkthrough",
+        "caption preference check"
+      ]
+    },
+    {
+      "id": "contrast_focus",
+      "platform_families": [
+        "desktop",
+        "mobile",
+        "tv",
+        "console"
+      ],
+      "requirements": [
+        "text and controls meet WCAG AA contrast or stricter platform guidance",
+        "focus indicators are visible against adjacent content",
+        "focused selected and disabled states do not rely on color alone",
+        "error and warning states remain distinguishable in high contrast"
+      ],
+      "evidence": [
+        "contrast audit",
+        "focus visual audit",
+        "high contrast smoke"
+      ]
+    },
+    {
+      "id": "reduced_motion",
+      "platform_families": [
+        "desktop",
+        "mobile",
+        "tv",
+        "console"
+      ],
+      "requirements": [
+        "decorative motion is disabled when reduced motion is active",
+        "focus and route transitions remain understandable without animation",
+        "auto-playing decorative loops are not used",
+        "player state changes are still visible without motion"
+      ],
+      "evidence": [
+        "reduced motion smoke",
+        "route transition check"
+      ]
+    },
+    {
+      "id": "localization_rtl",
+      "platform_families": [
+        "desktop",
+        "mobile",
+        "tv",
+        "console"
+      ],
+      "requirements": [
+        "client-owned strings live in client catalogs",
+        "server-owned strings are displayed without client retranslation",
+        "RTL locales mirror layout and directional icons before activation",
+        "dates durations counts and byte sizes use locale-aware formatting"
+      ],
+      "evidence": [
+        "catalog parity check",
+        "RTL smoke",
+        "locale formatting smoke"
+      ]
+    }
+  ]
+}

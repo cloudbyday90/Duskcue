@@ -1,0 +1,94 @@
+{
+  "fixture": "localization-rtl-cases",
+  "cases": [
+    {
+      "id": "client_catalog_coverage",
+      "platform_families": [
+        "desktop",
+        "mobile",
+        "tv",
+        "console"
+      ],
+      "expect": {
+        "client_owned_strings_in_catalogs": true,
+        "no_hardcoded_visible_strings_for_new_platforms": true,
+        "fallback_locale": "en"
+      }
+    },
+    {
+      "id": "server_owned_strings",
+      "platform_families": [
+        "desktop",
+        "mobile",
+        "tv",
+        "console"
+      ],
+      "expect": {
+        "display_server_titles_without_retranslation": true,
+        "preserve_problem_detail_title_codes": true,
+        "localize_client_recovery_copy": true
+      }
+    },
+    {
+      "id": "rtl_layout_mirroring",
+      "locale": "ar",
+      "platform_families": [
+        "desktop",
+        "mobile",
+        "tv",
+        "console"
+      ],
+      "expect": {
+        "layout_direction": "rtl",
+        "primary_navigation_mirrors": true,
+        "row_order_policy_documented": true,
+        "no_horizontal_overflow": true
+      }
+    },
+    {
+      "id": "directional_icon_mirroring",
+      "locale": "ar",
+      "platform_families": [
+        "desktop",
+        "mobile",
+        "tv",
+        "console"
+      ],
+      "expect": {
+        "back_icons_mirror": true,
+        "next_previous_icons_mirror": true,
+        "playback_timeline_does_not_reverse_time": true,
+        "seek_coordinates_remain_ltr_time_axis": true
+      }
+    },
+    {
+      "id": "locale_aware_formatting",
+      "platform_families": [
+        "desktop",
+        "mobile",
+        "tv",
+        "console"
+      ],
+      "expect": {
+        "dates_locale_aware": true,
+        "durations_locale_aware": true,
+        "byte_sizes_locale_aware": true,
+        "counts_pluralized": true
+      }
+    },
+    {
+      "id": "activation_gate",
+      "platform_families": [
+        "desktop",
+        "mobile",
+        "tv",
+        "console"
+      ],
+      "expect": {
+        "translation_review_required": true,
+        "rtl_layout_review_required_for_rtl_locales": true,
+        "platform_smoke_required_before_locale_visible": true
+      }
+    }
+  ]
+}

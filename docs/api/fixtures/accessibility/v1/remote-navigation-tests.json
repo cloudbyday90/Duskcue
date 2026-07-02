@@ -1,0 +1,121 @@
+{
+  "fixture": "remote-navigation-tests",
+  "cases": [
+    {
+      "id": "tv_home_row_traversal",
+      "surface": "tv_home",
+      "platform_families": [
+        "tv",
+        "console"
+      ],
+      "input": [
+        "down",
+        "right",
+        "right",
+        "select"
+      ],
+      "expect": {
+        "focus_starts_on_first_action_or_first_card": true,
+        "right_moves_within_row": true,
+        "down_moves_to_next_row": true,
+        "select_opens_focused_item": true
+      }
+    },
+    {
+      "id": "tv_row_boundary_navigation",
+      "surface": "tv_home",
+      "platform_families": [
+        "tv",
+        "console"
+      ],
+      "input": [
+        "left_at_row_start",
+        "right_at_row_end",
+        "up_at_first_row",
+        "down_at_last_row"
+      ],
+      "expect": {
+        "boundary_behavior_is_stable": true,
+        "focus_never_disappears": true,
+        "scroll_position_changes_only_when_expected": true
+      }
+    },
+    {
+      "id": "tv_player_transport_controls",
+      "surface": "playback",
+      "platform_families": [
+        "tv",
+        "console"
+      ],
+      "input": [
+        "select",
+        "left",
+        "right",
+        "play_pause",
+        "menu_or_options",
+        "back"
+      ],
+      "expect": {
+        "play_pause_toggles_state": true,
+        "seek_controls_are_reachable": true,
+        "subtitles_audio_menu_reachable": true,
+        "back_exits_or_hides_controls_predictably": true
+      }
+    },
+    {
+      "id": "tv_search_keyboard_return",
+      "surface": "search",
+      "platform_families": [
+        "tv",
+        "console"
+      ],
+      "input": [
+        "select_search",
+        "enter_text",
+        "dismiss_keyboard",
+        "down_to_results"
+      ],
+      "expect": {
+        "platform_keyboard_does_not_cover_active_field": true,
+        "focus_returns_to_search_or_first_result": true,
+        "results_are_reachable_without_pointer": true
+      }
+    },
+    {
+      "id": "tv_modal_back_behavior",
+      "surface": "settings_dialog",
+      "platform_families": [
+        "tv",
+        "console"
+      ],
+      "input": [
+        "open_dialog",
+        "down",
+        "back"
+      ],
+      "expect": {
+        "back_closes_dialog_first": true,
+        "focus_returns_to_invoker": true,
+        "second_back_returns_previous_view": true
+      }
+    },
+    {
+      "id": "tv_surface_refresh_focus_restore",
+      "surface": "tv_home",
+      "platform_families": [
+        "tv",
+        "console"
+      ],
+      "input": [
+        "focus_continue_item",
+        "receive_tv_surface_changed",
+        "refresh_rows"
+      ],
+      "expect": {
+        "same_platform_content_id_keeps_focus": true,
+        "removed_item_moves_focus_to_nearest_valid_item": true,
+        "focus_never_moves_to_hidden_item": true
+      }
+    }
+  ]
+}

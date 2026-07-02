@@ -1,0 +1,198 @@
+{
+  "fixture": "platform-review-checklists",
+  "platforms": [
+    {
+      "id": "web_desktop",
+      "family": "desktop",
+      "assistive_technology": [
+        "keyboard",
+        "NVDA",
+        "VoiceOver on macOS",
+        "high contrast"
+      ],
+      "required_checks": [
+        "keyboard navigation",
+        "focus order",
+        "screen reader names roles states",
+        "reduced motion",
+        "captions/subtitles",
+        "RTL smoke"
+      ]
+    },
+    {
+      "id": "tauri_desktop",
+      "family": "desktop",
+      "assistive_technology": [
+        "keyboard",
+        "platform screen reader",
+        "native menu focus"
+      ],
+      "required_checks": [
+        "webview focus handoff",
+        "native dialog focus return",
+        "tray/menu keyboard access",
+        "protocol launch focus restore",
+        "secure-storage prompts do not trap focus",
+        "captions/subtitles"
+      ]
+    },
+    {
+      "id": "android_mobile",
+      "family": "mobile",
+      "assistive_technology": [
+        "TalkBack",
+        "Accessibility Scanner",
+        "font scaling",
+        "remove animations"
+      ],
+      "required_checks": [
+        "TalkBack traversal",
+        "touch targets",
+        "content labels",
+        "contrast",
+        "dynamic text",
+        "captions/subtitles"
+      ]
+    },
+    {
+      "id": "ios_mobile",
+      "family": "mobile",
+      "assistive_technology": [
+        "VoiceOver",
+        "Dynamic Type",
+        "Reduce Motion",
+        "Increase Contrast"
+      ],
+      "required_checks": [
+        "VoiceOver traversal",
+        "dynamic type",
+        "touch targets",
+        "caption controls",
+        "local network permission copy",
+        "RTL smoke"
+      ]
+    },
+    {
+      "id": "android_tv_google_tv",
+      "family": "tv",
+      "assistive_technology": [
+        "D-pad",
+        "TalkBack",
+        "captions",
+        "remote keyboard"
+      ],
+      "required_checks": [
+        "D-pad reachability",
+        "visible focus",
+        "overscan safety",
+        "Back button semantics",
+        "caption controls",
+        "Watch Next launch focus"
+      ]
+    },
+    {
+      "id": "fire_tv",
+      "family": "tv",
+      "assistive_technology": [
+        "remote",
+        "screen reader where available",
+        "captions",
+        "voice input"
+      ],
+      "required_checks": [
+        "remote reachability",
+        "Back/Menu behavior",
+        "caption controls",
+        "deep-link launch focus",
+        "watch activity does not expose private labels"
+      ]
+    },
+    {
+      "id": "roku",
+      "family": "tv",
+      "assistive_technology": [
+        "Roku remote",
+        "screen reader",
+        "text to speech",
+        "closed captions"
+      ],
+      "required_checks": [
+        "remote reachability",
+        "screen reader labels",
+        "closed caption options",
+        "Direct to Play no interstitial",
+        "Options menu caption access"
+      ]
+    },
+    {
+      "id": "samsung_tizen",
+      "family": "tv",
+      "assistive_technology": [
+        "Samsung remote",
+        "Voice Guide",
+        "High Contrast",
+        "captions"
+      ],
+      "required_checks": [
+        "remote reachability",
+        "Voice Guide labels",
+        "High Contrast visibility",
+        "caption controls",
+        "Smart Hub Preview launch focus"
+      ]
+    },
+    {
+      "id": "lg_webos",
+      "family": "tv",
+      "assistive_technology": [
+        "Magic Remote directional input",
+        "screen reader where available",
+        "captions"
+      ],
+      "required_checks": [
+        "directional remote reachability",
+        "pointer-free operation",
+        "launch/relaunch focus restore",
+        "caption controls",
+        "RTL smoke if locale enabled"
+      ]
+    },
+    {
+      "id": "apple_tvos",
+      "family": "tv",
+      "assistive_technology": [
+        "Siri Remote",
+        "VoiceOver",
+        "Reduce Motion",
+        "captions"
+      ],
+      "required_checks": [
+        "tvOS focus behavior",
+        "VoiceOver labels",
+        "Top Shelf action focus",
+        "Universal Link launch focus",
+        "caption controls",
+        "Reduce Motion"
+      ]
+    },
+    {
+      "id": "xbox",
+      "family": "console",
+      "assistive_technology": [
+        "controller",
+        "media remote",
+        "Narrator",
+        "high contrast",
+        "captions"
+      ],
+      "required_checks": [
+        "controller reachability",
+        "Narrator labels",
+        "SMTC media controls",
+        "URI activation focus restore",
+        "caption controls",
+        "high contrast"
+      ]
+    }
+  ]
+}

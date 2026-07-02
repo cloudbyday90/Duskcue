@@ -100,6 +100,12 @@ Android TV Watch Next, Fire TV featured-content/deep-link behavior, Roku deep li
 
 **Decision:** Phase 16d Task 6 adds `docs/api/fixtures/tv/v1/manifest.json` plus surface-contract, deep-link resolve, platform-adapter mapping, and access-revalidation fixtures. `scripts/verify-tv-deeplink-conformance.mjs` verifies section order, limits, private cache and ETags, stable `platform_content_id` values, playable and denial resolve cases, adapter mappings for Phases 17-23, launch-time access revalidation, Problem Details shape, UTC timestamps, stable IDs where applicable, and redaction. Platform phases must pass this pack before claiming TV surface or platform deep-link conformance.
 
+### Accessibility And Input Baselines
+
+WCAG 2.2 provides the common baseline for focus order, keyboard access, contrast, target size, captions, visible focus, and reduced motion. Android, Apple, Roku, Samsung, Microsoft, and Xbox guidance then specialize that baseline into native screen readers, Dynamic Type/text scaling, TalkBack/VoiceOver/Narrator behavior, D-pad and remote/controller focus, caption setting expectations, and platform-specific review evidence.
+
+**Decision:** Phase 16d Task 7 adds [CLIENT_ACCESSIBILITY_INPUT.md](CLIENT_ACCESSIBILITY_INPUT.md), `docs/api/fixtures/accessibility/v1/manifest.json`, and `scripts/verify-accessibility-input.mjs`. The pack covers desktop keyboard navigation, mobile screen readers and dynamic type, touch targets, TV focus navigation, remote/controller input, captions/subtitles, contrast/focus, reduced motion, focus-order cases, remote-navigation cases, per-platform accessibility review checklists, and localization/RTL activation cases. Platform phases must pass this pack or explicitly document non-applicable platform capabilities before claiming accessibility/input readiness.
+
 ## Mandatory Gates for Phases 17-23
 
 The following outputs are mandatory before a downstream platform phase can claim implementation complete:
@@ -134,7 +140,7 @@ These are recommended but not release-blocking for the first platform implementa
 | 4. Playback conformance | `docs/api/fixtures/playback/v1`, state-machine/QoE fixtures, playback verifier |
 | 5. Auth/session conformance | `docs/api/fixtures/auth/v1`, auth/session verifier, negative auth fixtures |
 | 6. TV/deep-link conformance | `docs/api/fixtures/tv/v1`, TV/deep-link verifier, adapter mapping expectations |
-| 7. Accessibility/input baselines | Accessibility/input checklist and test cases |
+| 7. Accessibility/input baselines | `docs/design/CLIENT_ACCESSIBILITY_INPUT.md`, `docs/api/fixtures/accessibility/v1`, accessibility/input verifier |
 | 8. Shared design assets/tokens | Shared assets, visual tokens, artwork/fallback rules |
 | 9. Diagnostics/logging bundles | Log schema, bundle manifest, redaction rules |
 | 10. Device lab matrix | Device/OS/media capability matrix and manual smoke scripts |
