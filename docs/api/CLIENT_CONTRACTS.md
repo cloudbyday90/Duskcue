@@ -13,6 +13,7 @@ The Phase 16d TV/deep-link conformance pack starts at [fixtures/tv/v1/manifest.j
 The Phase 16d accessibility/input baseline pack starts at [fixtures/accessibility/v1/manifest.json](fixtures/accessibility/v1/manifest.json).
 The Phase 16d design asset/token pack starts at [fixtures/design/v1/manifest.json](fixtures/design/v1/manifest.json).
 The Phase 16d diagnostics/support-bundle pack starts at [fixtures/diagnostics/v1/manifest.json](fixtures/diagnostics/v1/manifest.json).
+The Phase 16d device lab and compatibility pack starts at [fixtures/device-lab/v1/manifest.json](fixtures/device-lab/v1/manifest.json).
 
 ## Decision
 
@@ -311,6 +312,27 @@ node scripts/verify-client-diagnostics.mjs
 ```
 
 The verifier checks log schema coverage, bundle section coverage, redaction rules, privacy classes, correlation IDs, platform checklists, and absence of fixture leak patterns outside the redaction policy fixture.
+
+## Phase 16d Device Lab And Compatibility Matrix
+
+Phase 16d Task 10 adds [CLIENT_DEVICE_LAB.md](../design/CLIENT_DEVICE_LAB.md) plus a reusable device lab fixture pack under `docs/api/fixtures/device-lab/v1`. The pack defines the compatibility evidence downstream platform phases need before claiming release readiness.
+
+The pack covers:
+
+- required platform IDs for Android mobile, iOS mobile, Windows, macOS, Linux, Android TV/Google TV, Fire TV, Roku, Samsung Tizen, LG webOS, Apple tvOS, and Xbox;
+- minimum and representative devices, including release-required and best-effort hardware;
+- OS/runtime, browser/webview engine, codec, HLS, HDR, audio, subtitle, remote/input, storage, and known-limitation fields;
+- manual smoke scripts against the Docker deployment on `http://<server>:48027`;
+- release validation rules for simulator/emulator evidence versus physical device evidence;
+- known platform limitations and Phase 16d hardware-gap tracking.
+
+Run:
+
+```bash
+node scripts/verify-device-lab.mjs
+```
+
+The verifier checks required platform coverage, required capability fields, Docker port `48027`, smoke-step coverage, release-required/best-effort classifications, hardware-gap coverage, and fixture leak patterns.
 
 Phase 16b added reusable TV surface fixtures ahead of full Phase 16d generation:
 

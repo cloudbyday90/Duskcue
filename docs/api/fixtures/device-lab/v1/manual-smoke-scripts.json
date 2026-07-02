@@ -1,0 +1,135 @@
+{
+  "fixture": "manual-smoke-scripts",
+  "updated": "2026-07-02",
+  "docker_target": {
+    "origin_template": "http://<server>:48027",
+    "default_port": 48027,
+    "readiness_url": "http://<server>:48027/health/ready",
+    "api_base_url": "http://<server>:48027/api/v1",
+    "notes": [
+      "Use the host LAN address reachable from the target device, not Docker's internal API port.",
+      "Exposed-mode release claims require HTTPS; local/VPN smoke may use local HTTP."
+    ]
+  },
+  "common_steps": [
+    {
+      "id": "docker_deployment_health",
+      "title": "Verify Docker deployment health",
+      "expected_evidence": "Screenshot or log line showing /health/ready success from the target network."
+    },
+    {
+      "id": "server_selection",
+      "title": "Select server origin on :48027",
+      "expected_evidence": "Client shows the selected Duskcue server origin without exposing bearer tokens."
+    },
+    {
+      "id": "auth_device_link_or_login",
+      "title": "Authenticate through device-linking or platform login",
+      "expected_evidence": "Authenticated home/library view appears; failed attempts produce Problem Details mapping."
+    },
+    {
+      "id": "library_browse",
+      "title": "Browse libraries, media rows, and a media detail page",
+      "expected_evidence": "At least one library row and one media detail page render with placeholder/artwork fallback behavior."
+    },
+    {
+      "id": "playback_start",
+      "title": "Start playback from a resumable media item",
+      "expected_evidence": "Playback starts; stream decision, first-frame time, and selected device profile are recorded."
+    },
+    {
+      "id": "resume_heartbeat_stop",
+      "title": "Seek/resume, emit heartbeat, then stop playback",
+      "expected_evidence": "Server watch state updates and subsequent resume starts at the expected position."
+    },
+    {
+      "id": "subtitle_audio_selection",
+      "title": "Switch audio and subtitle tracks",
+      "expected_evidence": "Supported track change succeeds; unsupported track maps to the expected error fixture."
+    },
+    {
+      "id": "diagnostics_export",
+      "title": "Export diagnostics bundle or equivalent platform evidence",
+      "expected_evidence": "Bundle/log evidence contains request IDs and omits tokens, signed URLs, private paths, and raw watch history."
+    },
+    {
+      "id": "logout_cleanup",
+      "title": "Logout and clear local session state",
+      "expected_evidence": "Auth credential is removed from secure storage and protected routes require re-auth."
+    }
+  ],
+  "platform_scripts": [
+    {
+      "platform": "android_mobile",
+      "setup": ["Install debug APK or run Flutter on device/emulator.", "Allow local-network cleartext only for local/VPN smoke."],
+      "extra_steps": ["Rotate between portrait and landscape during playback.", "Confirm Android notification/media controls do not leak media URLs."],
+      "evidence": ["Flutter integration-test log", "Device model/API level", "Capability wizard result"]
+    },
+    {
+      "platform": "ios_mobile",
+      "setup": ["Run from Xcode or TestFlight.", "Use a LAN-reachable :48027 origin and approve local-network prompt if shown."],
+      "extra_steps": ["Toggle VoiceOver or Dynamic Type for one browse/playback path.", "Background and foreground the app during playback where supported."],
+      "evidence": ["Device model/iOS version", "Xcode/TestFlight build identifier", "AVPlayer/HLS playback notes"]
+    },
+    {
+      "platform": "windows_desktop",
+      "setup": ["Install or run the Tauri desktop build.", "Confirm selected server origin points at :48027."],
+      "extra_steps": ["Use keyboard-only navigation for setup, browse, and playback.", "Validate OS-keyring token removal after logout."],
+      "evidence": ["Windows version/build", "WebView2 runtime version", "Build artifact hash"]
+    },
+    {
+      "platform": "macos_desktop",
+      "setup": ["Run signed development or local Tauri app.", "Use current macOS stable release or documented supported baseline."],
+      "extra_steps": ["Validate Keychain token storage.", "Check local-network prompt behavior when connecting to LAN Docker host."],
+      "evidence": ["macOS version", "Hardware architecture", "Keychain/logout evidence"]
+    },
+    {
+      "platform": "linux_desktop",
+      "setup": ["Run packaged Tauri build on the target distro.", "Confirm WebKitGTK runtime and secret-service availability."],
+      "extra_steps": ["Smoke both Wayland and X11 when both are claimed.", "Document credential fallback if keyring is unavailable."],
+      "evidence": ["Distro/version", "Desktop session type", "WebKitGTK/runtime version"]
+    },
+    {
+      "platform": "android_tv_google_tv",
+      "setup": ["Install on Android TV emulator and at least one Google TV device.", "Use D-pad remote input only after setup."],
+      "extra_steps": ["Validate TV surface/deep-link revalidation.", "Check playback with HLS transcode and direct-compatible media."],
+      "evidence": ["Device model/firmware", "Remote-navigation video or checklist", "Codec/HDR/audio capability report"]
+    },
+    {
+      "platform": "fire_tv",
+      "setup": ["Connect through ADB and install the debug build.", "Use the Fire TV remote for all TV smoke after setup."],
+      "extra_steps": ["Validate Fire OS-specific back/menu behavior.", "Check memory/storage pressure on stick-class hardware."],
+      "evidence": ["Fire TV model/Fire OS version", "ADB install/run log", "Playback decision and diagnostics export"]
+    },
+    {
+      "platform": "roku",
+      "setup": ["Sideload the Roku channel package on a physical Roku device.", "Pair with a Docker host reachable at :48027."],
+      "extra_steps": ["Run deep-link and Direct to Play smoke cases.", "Validate unsupported subtitle fallback behavior."],
+      "evidence": ["Roku model/OS version", "Sideload package identifier", "Certification pre-check notes"]
+    },
+    {
+      "platform": "samsung_tizen",
+      "setup": ["Run in Samsung TV Emulator and on at least one physical or Remote Test Lab TV before release.", "Use Tizen certificate profile for device install."],
+      "extra_steps": ["Validate AVPlay HLS startup/seek/resume.", "Check Return/Back and Smart Hub launch return behavior."],
+      "evidence": ["Tizen version/model year", "Certificate profile type without secrets", "AVPlay capability notes"]
+    },
+    {
+      "platform": "lg_webos",
+      "setup": ["Run in webOS TV Emulator and on a Developer Mode physical TV before release.", "Install IPK through webOS CLI or Studio."],
+      "extra_steps": ["Smoke Magic Remote pointer and D-pad focus paths.", "Validate HLS playback and launch/relaunch parameters."],
+      "evidence": ["webOS version/model year", "IPK build identifier", "Pointer/D-pad smoke notes"]
+    },
+    {
+      "platform": "apple_tvos",
+      "setup": ["Run on tvOS simulator and at least one Apple TV 4K physical device before release.", "Use TestFlight or Xcode deploy for hardware evidence."],
+      "extra_steps": ["Validate Siri Remote focus and play/pause behavior.", "Smoke Top Shelf/Universal Link launch revalidation when implemented."],
+      "evidence": ["Apple TV model/tvOS version", "TestFlight or Xcode build", "AVKit/HLS playback notes"]
+    },
+    {
+      "platform": "xbox",
+      "setup": ["Run the UWP shell on Windows first, then deploy to Xbox through Device Portal when hardware is available.", "Use controller-only navigation for console smoke."],
+      "extra_steps": ["Validate MediaPlayerElement startup/seek/resume.", "Check system media transport controls and URI activation when implemented."],
+      "evidence": ["Xbox model/OS version", "Device Portal deploy log", "Controller/SMTC playback notes"]
+    }
+  ]
+}

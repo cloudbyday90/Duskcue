@@ -118,6 +118,12 @@ OpenTelemetry's log data model provides a useful structure for timestamped recor
 
 **Decision:** Phase 16d Task 9 adds [CLIENT_DIAGNOSTICS.md](CLIENT_DIAGNOSTICS.md), `docs/api/fixtures/diagnostics/v1/manifest.json`, and `scripts/verify-client-diagnostics.mjs`. The pack defines required client log fields, privacy classifications, support bundle sections, forbidden data/redaction transforms, server-side correlation IDs, and platform export checklists. Platform phases must include request IDs and bounded domain IDs instead of raw request bodies, tokens, signed URLs, private paths, or raw watch history.
 
+### Device Lab And Compatibility Matrix
+
+Official platform guidance consistently distinguishes emulator/simulator usefulness from physical-device media and release evidence. Android and Media3 document format support as a combination of stream container and device codecs. Apple HLS/AVFoundation behavior depends on hardware, display chain, and AVPlayer/AVKit capabilities. Fire TV, Roku, Samsung Tizen, LG webOS, and Xbox all require device or certification-style testing before public platform claims.
+
+**Decision:** Phase 16d Task 10 adds [CLIENT_DEVICE_LAB.md](CLIENT_DEVICE_LAB.md), `docs/api/fixtures/device-lab/v1/manifest.json`, and `scripts/verify-device-lab.mjs`. The pack defines required platform IDs, minimum and representative devices, OS/runtime tracking, media capability categories, HLS/HDR/audio/subtitle expectations, remote/input behavior, storage constraints, known limitations, Docker `:48027` smoke scripts, release-required hardware, best-effort hardware, and allowed Phase 16d hardware gaps. Platform phases must close or explicitly defer their hardware gaps before claiming release readiness.
+
 ## Mandatory Gates for Phases 17-23
 
 The following outputs are mandatory before a downstream platform phase can claim implementation complete:
@@ -130,7 +136,7 @@ The following outputs are mandatory before a downstream platform phase can claim
 - Shared design asset/token pack for icon sources, placeholder artwork, artwork loading behavior, string ownership, and media-state badges.
 - Diagnostics bundle redaction checklist and request/playback/session correlation fields.
 - Release/store readiness checklist for app identity, package ID, signing placeholder, metadata, privacy labels/disclosures, permissions/capabilities, and platform smoke tests.
-- Device-lab entry for at least one representative target device or simulator/emulator plus documented hardware gaps.
+- Device-lab entry from [CLIENT_DEVICE_LAB.md](CLIENT_DEVICE_LAB.md) for at least one representative target device or simulator/emulator, with release-required hardware, best-effort hardware, and documented hardware gaps.
 
 ## Advisory Outputs
 
@@ -156,7 +162,7 @@ These are recommended but not release-blocking for the first platform implementa
 | 7. Accessibility/input baselines | `docs/design/CLIENT_ACCESSIBILITY_INPUT.md`, `docs/api/fixtures/accessibility/v1`, accessibility/input verifier |
 | 8. Shared design assets/tokens | `docs/design/CLIENT_DESIGN_ASSETS.md`, `docs/api/fixtures/design/v1`, source SVG assets, design verifier |
 | 9. Diagnostics/logging bundles | `docs/design/CLIENT_DIAGNOSTICS.md`, `docs/api/fixtures/diagnostics/v1`, diagnostics verifier |
-| 10. Device lab matrix | Device/OS/media capability matrix and manual smoke scripts |
+| 10. Device lab matrix | `docs/design/CLIENT_DEVICE_LAB.md`, `docs/api/fixtures/device-lab/v1`, device lab verifier |
 | 11. Release/store readiness | Per-platform release checklist and CI placeholders |
 | 12. Client CI/smoke harness | Docker-backed seeded smoke harness and CI jobs |
 
@@ -164,3 +170,21 @@ These are recommended but not release-blocking for the first platform implementa
 
 - Decide in Task 1 whether to add JSON Schema files beside the manifest or embed schema snippets in the manifest first.
 - Decide in Task 12 whether the seeded Docker smoke harness owns its own fixture database or reuses migration/test seed scripts from existing server verification.
+
+## Task 10 Research Sources
+
+- Android supported media formats: https://developer.android.com/media/platform/supported-formats
+- Android Media3 ExoPlayer supported formats: https://developer.android.com/media/media3/exoplayer/supported-formats
+- Android TV app creation: https://developer.android.com/training/tv/get-started/create
+- Apple HTTP Live Streaming: https://developer.apple.com/streaming/
+- Apple HLS authoring specification: https://developer.apple.com/documentation/http-live-streaming/hls-authoring-specification-for-apple-devices
+- Fire TV ADB device testing: https://developer.amazon.com/docs/fire-tv/connecting-adb-to-device.html
+- Fire OS 14+ TV device testing: https://developer.amazon.com/docs/app-testing/test-on-fire-os-14.html
+- Roku certification criteria: https://developer.roku.com/dev/docs/certification
+- Roku deep linking: https://developer.roku.com/dev/docs/implementing-deep-linking
+- Samsung TV media specifications: https://developer.samsung.com/smarttv/develop/specifications/media-specifications.html
+- Samsung Remote Test Lab: https://developer.samsung.com/remote-test-lab
+- LG webOS streaming protocol and DRM: https://webostv.developer.lge.com/develop/specifications/streaming-protocol-drm
+- Flutter integration testing: https://docs.flutter.dev/testing/integration-tests
+- Windows Device Portal: https://learn.microsoft.com/en-us/windows/uwp/debug-test-perf/device-portal
+- Xbox Device Portal: https://learn.microsoft.com/en-us/xbox/gdk/docs/tools/tools-console/wdp/wdp

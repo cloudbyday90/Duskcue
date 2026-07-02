@@ -596,6 +596,7 @@ Before a platform adapter is considered complete, it must prove:
 - `tv_surface_changed` or foreground refresh updates/removes stale rows.
 - Logout/profile/server switching clears local platform mappings and private cached rows.
 - The platform's secure storage story is documented and tested.
+- Device-lab evidence exists for the platform's release-required target or a documented hardware gap explicitly blocks release readiness.
 
 ## Reference Fixtures and Harness
 
@@ -636,6 +637,12 @@ node scripts/verify-tv-deeplink-conformance.mjs
 ```
 
 This verifier checks manifest coverage, API-relative paths, adapter coverage, mandatory access revalidation before playback, Problem Details shape, UTC timestamps, stable IDs where applicable, and redaction of tokens, signed URL parameters, and private paths.
+
+Phase 16d Task 10 adds the companion device-lab matrix under `docs/api/fixtures/device-lab/v1` with release-required hardware, best-effort hardware, media capability fields, Docker `:48027` smoke scripts, known platform limitations, and allowed hardware gaps. Run it before claiming platform readiness:
+
+```bash
+node scripts/verify-device-lab.mjs
+```
 
 ## Android TV / Google TV Adapter
 

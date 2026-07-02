@@ -1,0 +1,144 @@
+{
+  "fixture": "known-platform-limitations",
+  "updated": "2026-07-02",
+  "limitations": [
+    {
+      "platform": "android_mobile",
+      "items": [
+        {
+          "id": "android-codec-reporting",
+          "limitation": "Platform codec APIs can report support that fails for real samples.",
+          "workaround": "Run the Duskcue capability wizard and update the device profile before allowing direct play for advanced codecs.",
+          "fallback": "Direct stream or HLS transcode"
+        },
+        {
+          "id": "android-local-http",
+          "limitation": "Cleartext HTTP is acceptable only for local/VPN mode.",
+          "workaround": "Gate exposed-mode server origins behind HTTPS and OS-trusted certificates.",
+          "fallback": "Connection blocked with actionable error"
+        }
+      ]
+    },
+    {
+      "platform": "ios_mobile",
+      "items": [
+        {
+          "id": "ios-simulator-media",
+          "limitation": "Simulator cannot prove hardware codec, HDR, or audio route behavior.",
+          "workaround": "Require physical iPhone smoke for playback release claims.",
+          "fallback": "Treat simulator as navigation/auth evidence only"
+        }
+      ]
+    },
+    {
+      "platform": "windows_desktop",
+      "items": [
+        {
+          "id": "windows-codec-extensions",
+          "limitation": "HEVC, Dolby, and some HDR paths depend on optional extensions, GPU, and display chain.",
+          "workaround": "Record installed codec extensions and GPU driver in evidence.",
+          "fallback": "HLS transcode to H.264/AAC"
+        }
+      ]
+    },
+    {
+      "platform": "macos_desktop",
+      "items": [
+        {
+          "id": "mac-architecture-split",
+          "limitation": "Intel and Apple silicon Macs expose different decode and power characteristics.",
+          "workaround": "Keep separate device profile evidence for each architecture.",
+          "fallback": "Transcode advanced formats until profile is proven"
+        }
+      ]
+    },
+    {
+      "platform": "linux_desktop",
+      "items": [
+        {
+          "id": "linux-distro-codecs",
+          "limitation": "Media codec availability varies by distro policy and installed packages.",
+          "workaround": "Document runtime packages and smoke a conservative H.264/AAC baseline.",
+          "fallback": "HLS transcode"
+        }
+      ]
+    },
+    {
+      "platform": "android_tv_google_tv",
+      "items": [
+        {
+          "id": "android-tv-oem-variance",
+          "limitation": "OEM TVs and Google TV dongles can differ for HDR, audio passthrough, and subtitle rendering.",
+          "workaround": "Keep model-specific device profiles and validate on at least one physical TV-class target.",
+          "fallback": "Transcode video/audio or burn-in image subtitles"
+        }
+      ]
+    },
+    {
+      "platform": "fire_tv",
+      "items": [
+        {
+          "id": "fire-os-divergence",
+          "limitation": "Fire OS behavior and Appstore requirements diverge from Google Play Android TV.",
+          "workaround": "Run Fire TV-specific ADB install and remote-control smoke.",
+          "fallback": "Use Android TV contract with Fire OS-specific exceptions documented"
+        }
+      ]
+    },
+    {
+      "platform": "roku",
+      "items": [
+        {
+          "id": "roku-model-codecs",
+          "limitation": "Codec, container, subtitle, and HDR support vary by Roku model generation.",
+          "workaround": "Capture Roku model and OS version with every playback evidence record.",
+          "fallback": "Transcode or burn in unsupported subtitle formats"
+        }
+      ]
+    },
+    {
+      "platform": "samsung_tizen",
+      "items": [
+        {
+          "id": "samsung-emulator-media",
+          "limitation": "Samsung TV Emulator cannot prove AVPlay hardware media behavior.",
+          "workaround": "Require physical or Remote Test Lab media evidence for release.",
+          "fallback": "Keep emulator evidence scoped to UI/auth/navigation"
+        }
+      ]
+    },
+    {
+      "platform": "lg_webos",
+      "items": [
+        {
+          "id": "lg-pointer-focus",
+          "limitation": "Magic Remote pointer and D-pad focus behavior can diverge.",
+          "workaround": "Run both pointer and D-pad smoke scripts on physical TV.",
+          "fallback": "Prefer deterministic D-pad focus for all critical flows"
+        }
+      ]
+    },
+    {
+      "platform": "apple_tvos",
+      "items": [
+        {
+          "id": "tvos-simulator-media",
+          "limitation": "tvOS simulator cannot prove HDR, Dolby Vision, HDMI audio, or Top Shelf behavior.",
+          "workaround": "Require Apple TV 4K hardware before tvOS release claims.",
+          "fallback": "Treat simulator as layout/auth/focus evidence only"
+        }
+      ]
+    },
+    {
+      "platform": "xbox",
+      "items": [
+        {
+          "id": "xbox-generation-split",
+          "limitation": "Xbox Series, Xbox One S/X, and original Xbox One have different media capability envelopes.",
+          "workaround": "Make Series S/X release-required and document One-family support separately.",
+          "fallback": "Reduced-capability profile and transcode for older consoles"
+        }
+      ]
+    }
+  ]
+}

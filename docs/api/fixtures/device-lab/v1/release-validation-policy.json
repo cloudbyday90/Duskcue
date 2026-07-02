@@ -1,0 +1,84 @@
+{
+  "fixture": "release-validation-policy",
+  "updated": "2026-07-02",
+  "policy": {
+    "release_claim_rule": "A platform phase may claim release readiness only after its release_required targets pass the manual smoke script or the gap report marks the missing hardware as non-release-blocking for that phase.",
+    "simulator_rule": "Simulator or emulator evidence is acceptable for navigation, layout, auth, and fixture conformance but not for hardware codec, HDR, surround audio, remote-control, store-surface, or device-storage claims.",
+    "best_effort_rule": "Best-effort devices improve compatibility confidence but must not block the first platform release unless the platform phase explicitly claims support for that hardware class.",
+    "evidence_retention": "Store evidence as issue/PR artifacts, CI logs, or release notes; do not commit diagnostics bundles containing user-private data."
+  },
+  "platforms": [
+    {
+      "platform": "android_mobile",
+      "release_required": ["Current Android emulator or physical phone", "Current Google Pixel-class physical phone"],
+      "best_effort": ["Older supported Android phone", "Tablet form factor"],
+      "blocked_without_hardware": false
+    },
+    {
+      "platform": "ios_mobile",
+      "release_required": ["Current iOS simulator", "Current iPhone physical hardware"],
+      "best_effort": ["Older supported iPhone", "iPad layout if claimed"],
+      "blocked_without_hardware": true
+    },
+    {
+      "platform": "windows_desktop",
+      "release_required": ["Windows 11 workstation or VM", "Windows physical laptop for media/keyring smoke"],
+      "best_effort": ["Discrete GPU desktop", "Windows tablet/touch device"],
+      "blocked_without_hardware": false
+    },
+    {
+      "platform": "macos_desktop",
+      "release_required": ["Current macOS runner or Mac", "Apple silicon physical Mac"],
+      "best_effort": ["Intel Mac"],
+      "blocked_without_hardware": true
+    },
+    {
+      "platform": "linux_desktop",
+      "release_required": ["Ubuntu LTS or equivalent VM/desktop", "One claimed display stack"],
+      "best_effort": ["Second display stack", "Additional distro package format"],
+      "blocked_without_hardware": false
+    },
+    {
+      "platform": "android_tv_google_tv",
+      "release_required": ["Android TV emulator", "Current Google TV physical device"],
+      "best_effort": ["Sony BRAVIA Android/Google TV", "Older Android TV device"],
+      "blocked_without_hardware": true
+    },
+    {
+      "platform": "fire_tv",
+      "release_required": ["Current Fire TV physical device"],
+      "best_effort": ["Older Fire TV Stick class device", "Fire TV television model"],
+      "blocked_without_hardware": true
+    },
+    {
+      "platform": "roku",
+      "release_required": ["Current Roku physical streaming player"],
+      "best_effort": ["Roku TV model", "Older supported Roku generation"],
+      "blocked_without_hardware": true
+    },
+    {
+      "platform": "samsung_tizen",
+      "release_required": ["Samsung TV Emulator", "Recent Samsung Tizen physical TV or Remote Test Lab evidence"],
+      "best_effort": ["Older supported model-year TV"],
+      "blocked_without_hardware": true
+    },
+    {
+      "platform": "lg_webos",
+      "release_required": ["webOS TV Emulator", "Recent LG webOS physical TV"],
+      "best_effort": ["Older supported model-year TV"],
+      "blocked_without_hardware": true
+    },
+    {
+      "platform": "apple_tvos",
+      "release_required": ["tvOS simulator", "Apple TV 4K physical device"],
+      "best_effort": ["Older Apple TV 4K generation"],
+      "blocked_without_hardware": true
+    },
+    {
+      "platform": "xbox",
+      "release_required": ["UWP local deployment on Windows", "Xbox Series S or Series X physical console before public Xbox release"],
+      "best_effort": ["Xbox One S/X", "Original Xbox One reduced-capability smoke"],
+      "blocked_without_hardware": true
+    }
+  ]
+}

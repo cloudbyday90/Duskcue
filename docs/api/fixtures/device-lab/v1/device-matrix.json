@@ -1,0 +1,485 @@
+{
+  "fixture": "device-matrix",
+  "updated": "2026-07-02",
+  "platforms": [
+    {
+      "id": "android_mobile",
+      "family": "mobile",
+      "minimum_target": {
+        "name": "Android API 26 emulator or physical phone",
+        "os_version": "Android 8.0 or later baseline for Flutter/Media3 compatibility checks",
+        "hardware_class": "emulator_or_device",
+        "release_validation": "required_virtual_or_physical"
+      },
+      "representative_targets": [
+        {
+          "name": "Current Google Pixel phone",
+          "os_version": "Current stable Android release",
+          "hardware_class": "physical",
+          "release_validation": "required_physical"
+        },
+        {
+          "name": "Older midrange Android phone",
+          "os_version": "One supported older Android release",
+          "hardware_class": "physical",
+          "release_validation": "best_effort"
+        }
+      ],
+      "browser_webview_engine": "Android System WebView/Chromium for embedded web content only; playback uses Media3/ExoPlayer.",
+      "remote_input": [
+        "touch",
+        "software keyboard",
+        "hardware volume controls",
+        "Bluetooth keyboard optional"
+      ],
+      "storage_constraints": [
+        "App-private storage for logs and offline package metadata",
+        "OS media/cache eviction can remove non-persistent cache data",
+        "Offline package storage must honor Phase 16c quota policy"
+      ],
+      "known_limitations": [
+        "Device codec APIs can overstate support; run the capability wizard before direct-play release claims.",
+        "Cleartext local HTTP is allowed only for local/VPN mode and must be disabled for exposed mode."
+      ]
+    },
+    {
+      "id": "ios_mobile",
+      "family": "mobile",
+      "minimum_target": {
+        "name": "iOS simulator for sign-in and navigation",
+        "os_version": "Current Xcode-supported iOS simulator",
+        "hardware_class": "simulator",
+        "release_validation": "required_virtual"
+      },
+      "representative_targets": [
+        {
+          "name": "Current iPhone hardware",
+          "os_version": "Current stable iOS release",
+          "hardware_class": "physical",
+          "release_validation": "required_physical"
+        },
+        {
+          "name": "Older supported iPhone hardware",
+          "os_version": "One supported older iOS release",
+          "hardware_class": "physical",
+          "release_validation": "best_effort"
+        }
+      ],
+      "browser_webview_engine": "WKWebView/WebKit for embedded web content only; playback uses AVFoundation/AVPlayer.",
+      "remote_input": [
+        "touch",
+        "software keyboard",
+        "Control Center media controls where applicable",
+        "VoiceOver gestures"
+      ],
+      "storage_constraints": [
+        "Keychain for bearer tokens",
+        "App container storage for logs and offline package metadata",
+        "Files marked cacheable may be purged by iOS"
+      ],
+      "known_limitations": [
+        "Local-network access needs platform permission text and manual LAN validation.",
+        "Simulator cannot prove hardware codec, HDR, AirPlay, or background media behavior."
+      ]
+    },
+    {
+      "id": "windows_desktop",
+      "family": "desktop",
+      "minimum_target": {
+        "name": "Windows 11 development workstation",
+        "os_version": "Windows 11 current servicing baseline",
+        "hardware_class": "physical_or_vm",
+        "release_validation": "required_virtual_or_physical"
+      },
+      "representative_targets": [
+        {
+          "name": "Windows laptop with integrated GPU",
+          "os_version": "Windows 11 current stable",
+          "hardware_class": "physical",
+          "release_validation": "required_physical"
+        },
+        {
+          "name": "Windows desktop with discrete GPU",
+          "os_version": "Windows 11 current stable",
+          "hardware_class": "physical",
+          "release_validation": "best_effort"
+        }
+      ],
+      "browser_webview_engine": "WebView2/Chromium for Tauri webview content; native media paths remain platform-specific when added.",
+      "remote_input": [
+        "keyboard",
+        "mouse",
+        "touchpad",
+        "media keys"
+      ],
+      "storage_constraints": [
+        "Windows Credential Locker or OS keyring for tokens",
+        "App data directory for selected server profiles and logs",
+        "Do not store signed URLs in plaintext files"
+      ],
+      "known_limitations": [
+        "Codec support depends on Windows edition, optional extensions, GPU, and installed media components.",
+        "VM smoke tests cannot prove HDR, HDMI audio, or hardware decoding."
+      ]
+    },
+    {
+      "id": "macos_desktop",
+      "family": "desktop",
+      "minimum_target": {
+        "name": "Current macOS runner or development Mac",
+        "os_version": "Current stable macOS release supported by Tauri",
+        "hardware_class": "physical_or_ci_runner",
+        "release_validation": "required_virtual_or_physical"
+      },
+      "representative_targets": [
+        {
+          "name": "Apple silicon Mac",
+          "os_version": "Current stable macOS",
+          "hardware_class": "physical",
+          "release_validation": "required_physical"
+        },
+        {
+          "name": "Intel Mac",
+          "os_version": "Latest supported macOS for that hardware",
+          "hardware_class": "physical",
+          "release_validation": "best_effort"
+        }
+      ],
+      "browser_webview_engine": "WKWebView/WebKit for Tauri webview content.",
+      "remote_input": [
+        "keyboard",
+        "mouse",
+        "trackpad",
+        "media keys"
+      ],
+      "storage_constraints": [
+        "Keychain for tokens",
+        "Application Support directory for selected server profiles and logs",
+        "Notarized release builds must keep diagnostics export user-initiated"
+      ],
+      "known_limitations": [
+        "Intel and Apple silicon media capabilities differ; HDR and hardware decode need physical checks.",
+        "Local-network prompts must be tested outside CI."
+      ]
+    },
+    {
+      "id": "linux_desktop",
+      "family": "desktop",
+      "minimum_target": {
+        "name": "Ubuntu LTS or equivalent desktop VM",
+        "os_version": "Current supported LTS desktop baseline",
+        "hardware_class": "vm_or_physical",
+        "release_validation": "required_virtual_or_physical"
+      },
+      "representative_targets": [
+        {
+          "name": "Wayland Linux desktop",
+          "os_version": "Current stable distro release",
+          "hardware_class": "physical_or_vm",
+          "release_validation": "required_virtual_or_physical"
+        },
+        {
+          "name": "X11 Linux desktop",
+          "os_version": "Current stable distro release",
+          "hardware_class": "physical_or_vm",
+          "release_validation": "best_effort"
+        }
+      ],
+      "browser_webview_engine": "WebKitGTK/Wry stack for Tauri webview content where packaged.",
+      "remote_input": [
+        "keyboard",
+        "mouse",
+        "desktop media keys"
+      ],
+      "storage_constraints": [
+        "Secret Service/libsecret-compatible keyring where available",
+        "Fallback credential storage must be documented before release",
+        "Distro sandboxing can restrict filesystem diagnostics paths"
+      ],
+      "known_limitations": [
+        "Codec availability varies by distro packaging and patent policy.",
+        "Wayland/X11 focus and file-picker behavior must both be smoked when supported."
+      ]
+    },
+    {
+      "id": "android_tv_google_tv",
+      "family": "tv",
+      "minimum_target": {
+        "name": "Android TV emulator",
+        "os_version": "Current Android TV system image",
+        "hardware_class": "emulator",
+        "release_validation": "required_virtual"
+      },
+      "representative_targets": [
+        {
+          "name": "Chromecast with Google TV or equivalent Google TV device",
+          "os_version": "Current stable Google TV release",
+          "hardware_class": "physical",
+          "release_validation": "required_physical"
+        },
+        {
+          "name": "Sony BRAVIA Android/Google TV",
+          "os_version": "Supported TV firmware",
+          "hardware_class": "physical",
+          "release_validation": "best_effort"
+        }
+      ],
+      "browser_webview_engine": "Android WebView/Chromium only for web content; playback uses Media3/ExoPlayer.",
+      "remote_input": [
+        "D-pad remote",
+        "Back",
+        "Home launch return",
+        "media transport buttons where present"
+      ],
+      "storage_constraints": [
+        "Limited app storage on TV devices",
+        "Avoid large diagnostics bundles",
+        "Offline downloads are not a first-release TV requirement"
+      ],
+      "known_limitations": [
+        "TV OEM codec support can differ from handheld Android despite similar APIs.",
+        "HDR and surround audio require physical HDMI/display-chain validation."
+      ]
+    },
+    {
+      "id": "fire_tv",
+      "family": "tv",
+      "minimum_target": {
+        "name": "Fire TV device connected through ADB",
+        "os_version": "Current Fire OS baseline supported by target app phase",
+        "hardware_class": "physical",
+        "release_validation": "required_physical"
+      },
+      "representative_targets": [
+        {
+          "name": "Current Fire TV Stick 4K class device",
+          "os_version": "Current Fire OS TV release",
+          "hardware_class": "physical",
+          "release_validation": "required_physical"
+        },
+        {
+          "name": "Older Fire TV Stick class device",
+          "os_version": "Supported older Fire OS release",
+          "hardware_class": "physical",
+          "release_validation": "best_effort"
+        }
+      ],
+      "browser_webview_engine": "Android WebView/Chromium only for embedded content; playback uses Media3/ExoPlayer unless the platform phase selects another native player.",
+      "remote_input": [
+        "Fire TV remote D-pad",
+        "Back/Menu",
+        "media transport buttons",
+        "voice launch optional"
+      ],
+      "storage_constraints": [
+        "Small app storage budgets on stick-class devices",
+        "Diagnostics bundles must stay capped and user-exported",
+        "ADB test installs must not require production signing secrets"
+      ],
+      "known_limitations": [
+        "Fire OS diverges from Google TV APIs and store requirements.",
+        "Catalog personalization and featured content may be partner or store-policy constrained."
+      ]
+    },
+    {
+      "id": "roku",
+      "family": "tv",
+      "minimum_target": {
+        "name": "Roku streaming player or Roku TV",
+        "os_version": "Current Roku OS public release",
+        "hardware_class": "physical",
+        "release_validation": "required_physical"
+      },
+      "representative_targets": [
+        {
+          "name": "Current Roku 4K streaming player",
+          "os_version": "Current Roku OS",
+          "hardware_class": "physical",
+          "release_validation": "required_physical"
+        },
+        {
+          "name": "Roku TV model",
+          "os_version": "Current supported Roku OS for that model",
+          "hardware_class": "physical",
+          "release_validation": "best_effort"
+        }
+      ],
+      "browser_webview_engine": "Not applicable; Roku uses SceneGraph/BrightScript runtime.",
+      "remote_input": [
+        "Roku remote D-pad",
+        "Back",
+        "Instant replay where present",
+        "play/pause"
+      ],
+      "storage_constraints": [
+        "Registry storage is small and must not hold bearer tokens in plaintext",
+        "Channel package size and runtime memory must stay within Roku certification expectations",
+        "Diagnostics export is platform-limited and may require on-screen code/manual copy"
+      ],
+      "known_limitations": [
+        "Codec, subtitle, and container support vary materially by Roku model generation.",
+        "Certification requires deep-link and Direct to Play behavior to be correct for media content."
+      ]
+    },
+    {
+      "id": "samsung_tizen",
+      "family": "tv",
+      "minimum_target": {
+        "name": "Samsung TV Emulator",
+        "os_version": "Current Tizen TV emulator profile",
+        "hardware_class": "emulator",
+        "release_validation": "required_virtual"
+      },
+      "representative_targets": [
+        {
+          "name": "Recent Samsung Tizen TV",
+          "os_version": "Recent supported Tizen TV version",
+          "hardware_class": "physical",
+          "release_validation": "required_physical"
+        },
+        {
+          "name": "Older supported Samsung Tizen TV",
+          "os_version": "Older supported model-year firmware",
+          "hardware_class": "physical_or_remote_lab",
+          "release_validation": "best_effort"
+        }
+      ],
+      "browser_webview_engine": "Samsung Tizen TV Web Runtime; playback uses AVPlay where available.",
+      "remote_input": [
+        "Samsung remote D-pad",
+        "Back/Return",
+        "color/media keys where present",
+        "Smart Hub launch return"
+      ],
+      "storage_constraints": [
+        "Local storage quotas vary by model",
+        "Certificate profiles are required for real-device install",
+        "Diagnostics bundle should avoid filesystem assumptions"
+      ],
+      "known_limitations": [
+        "Emulator cannot prove AVPlay codec, DRM-free HLS, HDR, or HDMI audio behavior.",
+        "Model-year media specifications are release validation inputs."
+      ]
+    },
+    {
+      "id": "lg_webos",
+      "family": "tv",
+      "minimum_target": {
+        "name": "webOS TV Emulator",
+        "os_version": "Current emulator profile",
+        "hardware_class": "emulator",
+        "release_validation": "required_virtual"
+      },
+      "representative_targets": [
+        {
+          "name": "Recent LG webOS TV",
+          "os_version": "Recent supported webOS TV version",
+          "hardware_class": "physical",
+          "release_validation": "required_physical"
+        },
+        {
+          "name": "Older supported LG webOS TV",
+          "os_version": "Older supported model-year firmware",
+          "hardware_class": "physical",
+          "release_validation": "best_effort"
+        }
+      ],
+      "browser_webview_engine": "LG webOS TV Web Runtime; playback uses HTML media APIs and platform media options.",
+      "remote_input": [
+        "Magic Remote pointer",
+        "D-pad",
+        "Back",
+        "media transport buttons where present"
+      ],
+      "storage_constraints": [
+        "App data storage is constrained by model and app lifecycle",
+        "Developer Mode installs expire and are not release evidence",
+        "Diagnostics export must be user-visible and bounded"
+      ],
+      "known_limitations": [
+        "Emulator cannot prove hardware decode, HDR, or audio output behavior.",
+        "Pointer and D-pad focus behavior both need manual validation."
+      ]
+    },
+    {
+      "id": "apple_tvos",
+      "family": "tv",
+      "minimum_target": {
+        "name": "tvOS simulator",
+        "os_version": "Current Xcode-supported tvOS simulator",
+        "hardware_class": "simulator",
+        "release_validation": "required_virtual"
+      },
+      "representative_targets": [
+        {
+          "name": "Apple TV 4K current generation",
+          "os_version": "Current stable tvOS release",
+          "hardware_class": "physical",
+          "release_validation": "required_physical"
+        },
+        {
+          "name": "Older Apple TV 4K generation",
+          "os_version": "Supported tvOS release",
+          "hardware_class": "physical",
+          "release_validation": "best_effort"
+        }
+      ],
+      "browser_webview_engine": "Not a web client; playback uses AVKit/AVFoundation.",
+      "remote_input": [
+        "Siri Remote focus and clickpad",
+        "Back/Menu",
+        "Play/Pause",
+        "game controller optional"
+      ],
+      "storage_constraints": [
+        "Small local storage budget",
+        "Keychain for auth material",
+        "No mobile-style offline download requirement for first TV release"
+      ],
+      "known_limitations": [
+        "Simulator cannot prove HDR, Dolby Vision, AirPlay, or HDMI audio.",
+        "Top Shelf and Universal Link behavior require signed builds and device validation."
+      ]
+    },
+    {
+      "id": "xbox",
+      "family": "console",
+      "minimum_target": {
+        "name": "Windows UWP local deployment before Xbox hardware",
+        "os_version": "Current Windows SDK/UWP baseline",
+        "hardware_class": "development_pc",
+        "release_validation": "required_virtual_or_physical"
+      },
+      "representative_targets": [
+        {
+          "name": "Xbox Series S or Series X",
+          "os_version": "Current public Xbox OS",
+          "hardware_class": "physical",
+          "release_validation": "required_physical"
+        },
+        {
+          "name": "Xbox One S or One X",
+          "os_version": "Current public Xbox OS for that generation",
+          "hardware_class": "physical",
+          "release_validation": "best_effort"
+        }
+      ],
+      "browser_webview_engine": "UWP WebView2 only if used by the platform phase; media playback should use MediaPlayerElement/MediaPlayer.",
+      "remote_input": [
+        "Xbox controller",
+        "media remote where available",
+        "keyboard optional",
+        "system media transport controls"
+      ],
+      "storage_constraints": [
+        "UWP app data sandbox",
+        "Credential Locker or platform credential API for tokens",
+        "Diagnostics export may require save/share broker flows"
+      ],
+      "known_limitations": [
+        "Original Xbox One should be treated as a reduced-capability profile.",
+        "HEVC/HDR availability depends on console generation, TV chain, and app capability declarations."
+      ]
+    }
+  ]
+}

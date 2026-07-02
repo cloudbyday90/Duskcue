@@ -1,0 +1,122 @@
+{
+  "fixture_pack": "duskcue-client-device-lab",
+  "version": 1,
+  "updated": "2026-07-02",
+  "purpose": "Reusable Phase 16d device lab, compatibility matrix, and Docker-backed manual smoke scripts for Duskcue clients.",
+  "design_doc": "docs/design/CLIENT_DEVICE_LAB.md",
+  "docker_target": {
+    "default_origin_template": "http://<server>:48027",
+    "default_port": 48027,
+    "readiness_path": "/health/ready",
+    "api_base_path": "/api/v1"
+  },
+  "required_platforms": [
+    "android_mobile",
+    "ios_mobile",
+    "windows_desktop",
+    "macos_desktop",
+    "linux_desktop",
+    "android_tv_google_tv",
+    "fire_tv",
+    "roku",
+    "samsung_tizen",
+    "lg_webos",
+    "apple_tvos",
+    "xbox"
+  ],
+  "required_capability_fields": [
+    "os_version",
+    "browser_webview_engine",
+    "media_codecs",
+    "hls_support",
+    "hdr_support",
+    "audio_support",
+    "subtitle_support",
+    "remote_input",
+    "storage_constraints",
+    "known_limitations"
+  ],
+  "required_smoke_steps": [
+    "docker_deployment_health",
+    "server_selection",
+    "auth_device_link_or_login",
+    "library_browse",
+    "playback_start",
+    "resume_heartbeat_stop",
+    "subtitle_audio_selection",
+    "diagnostics_export",
+    "logout_cleanup"
+  ],
+  "fixtures": [
+    {
+      "id": "device-matrix",
+      "file": "device-matrix.json",
+      "covers": [
+        "minimum devices",
+        "representative devices",
+        "OS and engine tracking",
+        "input and storage constraints"
+      ]
+    },
+    {
+      "id": "media-capability-matrix",
+      "file": "media-capability-matrix.json",
+      "covers": [
+        "codec support",
+        "HLS",
+        "HDR",
+        "audio",
+        "subtitles"
+      ]
+    },
+    {
+      "id": "manual-smoke-scripts",
+      "file": "manual-smoke-scripts.json",
+      "covers": [
+        "Docker target",
+        "per-platform smoke steps",
+        "evidence capture"
+      ]
+    },
+    {
+      "id": "release-validation-policy",
+      "file": "release-validation-policy.json",
+      "covers": [
+        "release-required hardware",
+        "best-effort hardware",
+        "simulator and emulator rules"
+      ]
+    },
+    {
+      "id": "known-platform-limitations",
+      "file": "known-platform-limitations.json",
+      "covers": [
+        "known limitations",
+        "workarounds",
+        "quality fallback behavior"
+      ]
+    },
+    {
+      "id": "hardware-gap-report",
+      "file": "hardware-gap-report.json",
+      "covers": [
+        "missing hardware",
+        "allowed temporary gaps",
+        "release blockers"
+      ]
+    }
+  ],
+  "sources": [
+    "Android supported media formats",
+    "Android Media3 supported formats",
+    "Android TV app creation and testing",
+    "Apple AVFoundation and HLS authoring",
+    "Apple TestFlight",
+    "Amazon Fire TV device testing and ADB",
+    "Roku certification testing and criteria",
+    "Samsung TV emulator, device testing, and media specifications",
+    "LG webOS emulator, Developer Mode, and streaming protocol specifications",
+    "Flutter integration testing",
+    "Microsoft UWP MediaPlayerElement and Xbox Device Portal"
+  ]
+}

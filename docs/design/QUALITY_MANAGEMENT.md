@@ -12,6 +12,8 @@ The goal is to maximize direct play (zero server CPU cost) while ensuring smooth
 
 Phase 16c offline downloads reuse these same device capability and transcoding-decision inputs, but download planning also considers package size, selected audio/subtitle tracks, mobile platform constraints, user download quality preference, and server download policy. The offline-download package and policy contract is documented in [OFFLINE_DOWNLOADS.md](OFFLINE_DOWNLOADS.md).
 
+Phase 16d device-lab work defines the cross-platform hardware and media evidence that should feed these profiles. See [CLIENT_DEVICE_LAB.md](CLIENT_DEVICE_LAB.md) and `docs/api/fixtures/device-lab/v1` for required platform IDs, release-required hardware, best-effort hardware, media capability fields, and Docker-backed manual smoke scripts.
+
 ## Architecture
 
 ### Three-Layer Quality Decision
@@ -106,6 +108,8 @@ A server-side database of common device models and their known capabilities. Thi
 - Manufacturer specifications
 
 Not comprehensive — covers the most popular devices. Unknown devices fall back to a conservative baseline profile (H.264 8-bit, AAC stereo, SRT subtitles, MP4 container, 1080p max).
+
+Phase 16d Task 10 makes device-lab evidence the preferred input for future known-device entries. Each recorded profile should include the platform ID, device model, OS or firmware version, browser/webview or runtime engine, HLS behavior, HDR/audio/subtitle support, storage constraints, and known limitations from the device-lab matrix.
 
 ## Network Quality Measurement
 

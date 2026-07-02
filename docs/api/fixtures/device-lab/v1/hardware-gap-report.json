@@ -1,0 +1,83 @@
+{
+  "fixture": "hardware-gap-report",
+  "updated": "2026-07-02",
+  "policy": {
+    "allowed_gap_rule": "A gap may remain open during Phase 16d because this phase defines release gates; the downstream platform phase must close or explicitly defer the gap before claiming release readiness.",
+    "release_blocker_rule": "If a platform phase claims public release readiness and the platform policy marks physical hardware as blocked_without_hardware, an unresolved physical-device gap is release-blocking.",
+    "evidence_rule": "Gap closure evidence must include platform ID, device model, OS/firmware version, app/build identifier, smoke script result, and media capability summary."
+  },
+  "gaps": [
+    {
+      "platform": "android_mobile",
+      "gap": "Physical Android handset evidence can be collected in Phase 17 reuse work or mobile hardening.",
+      "required_before": "Android mobile release claim",
+      "release_blocking": false
+    },
+    {
+      "platform": "ios_mobile",
+      "gap": "Physical iPhone/iOS playback evidence is required before iOS mobile release claim.",
+      "required_before": "iOS mobile release claim",
+      "release_blocking": true
+    },
+    {
+      "platform": "windows_desktop",
+      "gap": "Physical Windows media-key/HDR evidence is required only if those capabilities are claimed.",
+      "required_before": "Windows desktop release claim with media-key/HDR support",
+      "release_blocking": false
+    },
+    {
+      "platform": "macos_desktop",
+      "gap": "Apple silicon physical Mac evidence is required before signed macOS release claim.",
+      "required_before": "macOS desktop release claim",
+      "release_blocking": true
+    },
+    {
+      "platform": "linux_desktop",
+      "gap": "Second distro/display-stack evidence is best-effort unless that distro/package is claimed.",
+      "required_before": "Linux package-specific release claim",
+      "release_blocking": false
+    },
+    {
+      "platform": "android_tv_google_tv",
+      "gap": "Physical Google TV/Android TV device evidence is required before Android TV release claim.",
+      "required_before": "Phase 17 release claim",
+      "release_blocking": true
+    },
+    {
+      "platform": "fire_tv",
+      "gap": "Physical Fire TV hardware evidence is required before Fire TV release claim.",
+      "required_before": "Phase 18 release claim",
+      "release_blocking": true
+    },
+    {
+      "platform": "roku",
+      "gap": "Physical Roku device evidence is required before Roku release claim.",
+      "required_before": "Phase 19 release claim",
+      "release_blocking": true
+    },
+    {
+      "platform": "samsung_tizen",
+      "gap": "Physical or Remote Test Lab Samsung TV evidence is required before Samsung release claim.",
+      "required_before": "Phase 20 release claim",
+      "release_blocking": true
+    },
+    {
+      "platform": "lg_webos",
+      "gap": "Physical LG webOS TV evidence is required before LG release claim.",
+      "required_before": "Phase 21 release claim",
+      "release_blocking": true
+    },
+    {
+      "platform": "apple_tvos",
+      "gap": "Apple TV 4K hardware evidence is required before tvOS release claim.",
+      "required_before": "Phase 22 release claim",
+      "release_blocking": true
+    },
+    {
+      "platform": "xbox",
+      "gap": "Xbox Series hardware evidence is required before Xbox release claim.",
+      "required_before": "Phase 23 release claim",
+      "release_blocking": true
+    }
+  ]
+}
