@@ -106,6 +106,12 @@ WCAG 2.2 provides the common baseline for focus order, keyboard access, contrast
 
 **Decision:** Phase 16d Task 7 adds [CLIENT_ACCESSIBILITY_INPUT.md](CLIENT_ACCESSIBILITY_INPUT.md), `docs/api/fixtures/accessibility/v1/manifest.json`, and `scripts/verify-accessibility-input.mjs`. The pack covers desktop keyboard navigation, mobile screen readers and dynamic type, touch targets, TV focus navigation, remote/controller input, captions/subtitles, contrast/focus, reduced motion, focus-order cases, remote-navigation cases, per-platform accessibility review checklists, and localization/RTL activation cases. Platform phases must pass this pack or explicitly document non-applicable platform capabilities before claiming accessibility/input readiness.
 
+### Shared Design Assets And UI Tokens
+
+W3C Design Tokens Community Group work and the Design Tokens Format Module provide a practical exchange shape for named design decisions. Material Design 3 reinforces semantic tokens for color, type, spacing, shape, and state. Apple and Android guidance make app icons platform-specific release assets, so Duskcue needs shared source artwork rather than one exported icon file. WCAG focus and non-text contrast guidance keeps focus rings and badges from becoming decorative-only cues.
+
+**Decision:** Phase 16d Task 8 adds [CLIENT_DESIGN_ASSETS.md](CLIENT_DESIGN_ASSETS.md), `docs/api/fixtures/design/v1/manifest.json`, source SVGs under `docs/branding/assets`, and `scripts/verify-design-assets.mjs`. The pack defines shared token groups, app-icon and placeholder sources, poster/backdrop/thumbnail/logo sizing, authenticated and signed artwork loading rules, fallback/offline/unavailable behavior, string ownership, media-state badges, and per-platform mapping guidance. Platform phases must consume these assets and rules while mapping them into native UI systems instead of sharing one toolkit abstraction.
+
 ## Mandatory Gates for Phases 17-23
 
 The following outputs are mandatory before a downstream platform phase can claim implementation complete:
@@ -115,6 +121,7 @@ The following outputs are mandatory before a downstream platform phase can claim
 - Auth/session conformance for device linking or equivalent sign-in, logout, logout-all/session revoke handling, expired session behavior, and BOLA denial.
 - TV surface/deep-link conformance for platform-owned launcher/search/top-shelf/watch-next surfaces where applicable.
 - Accessibility/input checklist for the target device family.
+- Shared design asset/token pack for icon sources, placeholder artwork, artwork loading behavior, string ownership, and media-state badges.
 - Diagnostics bundle redaction checklist and request/playback/session correlation fields.
 - Release/store readiness checklist for app identity, package ID, signing placeholder, metadata, privacy labels/disclosures, permissions/capabilities, and platform smoke tests.
 - Device-lab entry for at least one representative target device or simulator/emulator plus documented hardware gaps.
@@ -141,7 +148,7 @@ These are recommended but not release-blocking for the first platform implementa
 | 5. Auth/session conformance | `docs/api/fixtures/auth/v1`, auth/session verifier, negative auth fixtures |
 | 6. TV/deep-link conformance | `docs/api/fixtures/tv/v1`, TV/deep-link verifier, adapter mapping expectations |
 | 7. Accessibility/input baselines | `docs/design/CLIENT_ACCESSIBILITY_INPUT.md`, `docs/api/fixtures/accessibility/v1`, accessibility/input verifier |
-| 8. Shared design assets/tokens | Shared assets, visual tokens, artwork/fallback rules |
+| 8. Shared design assets/tokens | `docs/design/CLIENT_DESIGN_ASSETS.md`, `docs/api/fixtures/design/v1`, source SVG assets, design verifier |
 | 9. Diagnostics/logging bundles | Log schema, bundle manifest, redaction rules |
 | 10. Device lab matrix | Device/OS/media capability matrix and manual smoke scripts |
 | 11. Release/store readiness | Per-platform release checklist and CI placeholders |

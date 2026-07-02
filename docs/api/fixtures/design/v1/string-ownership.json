@@ -1,0 +1,117 @@
+{
+  "fixture": "string-ownership",
+  "updated": "2026-07-02",
+  "server_owned": [
+    {
+      "category": "media_metadata",
+      "examples": [
+        "movie title",
+        "episode title",
+        "overview",
+        "collection name",
+        "library name"
+      ],
+      "client_behavior": "display server value as provided; do not translate unless the server provides localized variants"
+    },
+    {
+      "category": "problem_details",
+      "examples": [
+        "RFC 9457 title",
+        "detail",
+        "field validation message"
+      ],
+      "client_behavior": "display or map to client recovery copy without changing diagnostic meaning"
+    },
+    {
+      "category": "notification_templates",
+      "examples": [
+        "download ready",
+        "download failed",
+        "trust alert",
+        "new login"
+      ],
+      "client_behavior": "display rendered server notification text; use client copy only for surrounding actions"
+    },
+    {
+      "category": "policy_state",
+      "examples": [
+        "admin-disabled downloads",
+        "library policy denial",
+        "quota denial"
+      ],
+      "client_behavior": "preserve server-owned denial reason and add client-owned recovery framing if useful"
+    }
+  ],
+  "client_owned": [
+    {
+      "category": "navigation",
+      "examples": [
+        "Home",
+        "Libraries",
+        "Search",
+        "Downloads",
+        "Settings"
+      ],
+      "catalog_owner": "client platform catalog"
+    },
+    {
+      "category": "controls",
+      "examples": [
+        "Play",
+        "Resume",
+        "Download",
+        "Cancel",
+        "Retry"
+      ],
+      "catalog_owner": "client platform catalog"
+    },
+    {
+      "category": "recovery_copy",
+      "examples": [
+        "sign in again",
+        "connect to your server",
+        "check local network access",
+        "free up storage"
+      ],
+      "catalog_owner": "client platform catalog"
+    },
+    {
+      "category": "platform_permissions",
+      "examples": [
+        "local network permission",
+        "notification permission",
+        "storage warning",
+        "background playback explanation"
+      ],
+      "catalog_owner": "client platform catalog"
+    },
+    {
+      "category": "accessibility_labels",
+      "examples": [
+        "play button label",
+        "focused media card label",
+        "badge spoken label",
+        "drawer close label"
+      ],
+      "catalog_owner": "client platform catalog"
+    }
+  ],
+  "shared_key_reuse": [
+    {
+      "rule": "web_message_key_reference",
+      "expectation": "Existing web message keys may guide future platform catalog naming, but native clients own generated/native resource files."
+    },
+    {
+      "rule": "badge_label_keys",
+      "expectation": "Badge keys from media-state-badges.json are stable shared contract keys and map to each client's localization files."
+    },
+    {
+      "rule": "server_key_reuse",
+      "expectation": "Server message/template keys can be referenced for display source attribution but must not be retranslated client-side unless server localization is absent and the flow explicitly permits client framing copy."
+    },
+    {
+      "rule": "locale_activation",
+      "expectation": "A platform locale is release-ready only when its client catalog, server-owned string behavior, accessibility labels, and RTL/layout review gates are complete."
+    }
+  ]
+}

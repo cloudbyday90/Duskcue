@@ -206,6 +206,8 @@ If a working name is needed immediately for prototypes, use a neutral internal c
 2. Decide whether the server and client products share one public name or need a subtle server/client labeling scheme.
 3. Define the product glossary for user-facing terms such as library, collection, continue watching, downloads, and admin settings.
 
+Phase 16d Task 8 addresses the first item at the source-asset level. [CLIENT_DESIGN_ASSETS.md](../design/CLIENT_DESIGN_ASSETS.md) defines the shared app-icon direction and [app-icon.svg](assets/app-icon.svg) provides the current source symbol for future platform-specific icon exports. Final public naming, trademark, and store-artwork decisions remain separate release-readiness work.
+
 ## Official Sources
 
 - Microsoft Learn: Recommendations for writing user interface content - https://learn.microsoft.com/en-us/power-platform/well-architected/experience-optimization/user-interface-content

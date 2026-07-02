@@ -1,0 +1,146 @@
+{
+  "fixture": "artwork-rules",
+  "updated": "2026-07-02",
+  "variants": {
+    "poster": {
+      "aspect_ratio": "2:3",
+      "sizes": [
+        "w185",
+        "w342",
+        "w500",
+        "original"
+      ],
+      "default_size": "w342"
+    },
+    "backdrop": {
+      "aspect_ratio": "16:9",
+      "sizes": [
+        "w300",
+        "w780",
+        "w1280",
+        "original"
+      ],
+      "default_size": "w780"
+    },
+    "thumbnail": {
+      "aspect_ratio": "16:9",
+      "sizes": [
+        "w185",
+        "w300",
+        "original"
+      ],
+      "default_size": "w300"
+    },
+    "logo": {
+      "aspect_ratio": "intrinsic_transparent",
+      "sizes": [
+        "original"
+      ],
+      "default_size": "original"
+    }
+  },
+  "rules": [
+    {
+      "id": "authenticated_url",
+      "url_shape": "/api/v1/items/{media_item_id}/artwork/{type}?size={size}",
+      "credential_handling": "same-origin cookies on web; bearer-token or authorized fetch adapter on native clients",
+      "must": [
+        "use API-relative paths when same-origin is available",
+        "reserve the target aspect ratio before load",
+        "retry through the normal auth/session adapter after re-auth"
+      ],
+      "must_not": [
+        "put bearer tokens in query strings",
+        "log Authorization headers",
+        "treat artwork access as public unless the server route says it is public"
+      ]
+    },
+    {
+      "id": "signed_url",
+      "credential_handling": "short-lived secret URL for active media transfer or playback only",
+      "must": [
+        "store in memory only unless a protected offline package manifest explicitly allows local use",
+        "redact query parameters in logs and diagnostics",
+        "discard on session revoke, expiry, or user switch"
+      ],
+      "must_not": [
+        "persist signed URLs in plaintext",
+        "use signed URL strings as cache keys",
+        "send signed URLs to platform launcher surfaces"
+      ]
+    },
+    {
+      "id": "cache_busting",
+      "validator_priority": [
+        "ETag",
+        "artwork_id",
+        "artwork_revision",
+        "package_manifest_revision"
+      ],
+      "must": [
+        "use private caches for authenticated artwork",
+        "refresh platform-owned surfaces when ETag or artwork revision changes",
+        "clear cached entries after library access is revoked"
+      ],
+      "must_not": [
+        "append bearer tokens or signatures for cache busting",
+        "reuse stale launcher artwork after access revalidation fails"
+      ]
+    },
+    {
+      "id": "fallback",
+      "sequence": [
+        "stable aspect-ratio box",
+        "loading skeleton or surface fill",
+        "type-specific placeholder asset",
+        "state badge or recovery action"
+      ],
+      "must": [
+        "avoid layout shift",
+        "avoid exposing private file paths",
+        "keep fallback artwork visually quieter than real artwork"
+      ],
+      "must_not": [
+        "render raw filenames as placeholder text",
+        "hide important unavailable states with only a decorative image"
+      ]
+    },
+    {
+      "id": "offline",
+      "source_priority": [
+        "protected local package artwork",
+        "cached authenticated artwork if policy permits",
+        "placeholder asset"
+      ],
+      "must": [
+        "use the package manifest revision to invalidate local artwork",
+        "serve local artwork only from protected app storage",
+        "badge offline-ready content when appropriate"
+      ],
+      "must_not": [
+        "fall back to expired remote signed URLs",
+        "expose protected artwork through public filesystem paths"
+      ]
+    },
+    {
+      "id": "unavailable",
+      "states": [
+        "revoked",
+        "expired",
+        "deleted",
+        "missing_file",
+        "transcode_unavailable",
+        "artwork_missing"
+      ],
+      "must": [
+        "remove stale signed URLs",
+        "show a specific state badge when media access or playback is blocked",
+        "require server revalidation before playback"
+      ],
+      "must_not": [
+        "continue playback from launcher-cached state",
+        "silently downgrade revoked media into a generic missing image state"
+      ]
+    }
+  ]
+}

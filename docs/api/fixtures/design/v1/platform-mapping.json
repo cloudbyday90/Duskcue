@@ -1,0 +1,76 @@
+{
+  "fixture": "platform-mapping",
+  "updated": "2026-07-02",
+  "platforms": [
+    {
+      "id": "web",
+      "token_output": "CSS custom properties",
+      "asset_output": "SVG source plus generated web app icons",
+      "focus_behavior": "CSS focus-visible outline using focus.ring tokens",
+      "notes": "Current app.css is the first token consumer."
+    },
+    {
+      "id": "tauri_desktop",
+      "token_output": "webview CSS plus native tray/window constants where needed",
+      "asset_output": "desktop icon outputs derived from app-icon.svg",
+      "focus_behavior": "web focus-visible inside the webview; OS focus for native dialogs",
+      "notes": "Do not duplicate token names in Rust UI unless native surfaces need them."
+    },
+    {
+      "id": "flutter_mobile",
+      "token_output": "Dart ThemeData and app constants generated or hand-mapped from fixtures",
+      "asset_output": "Android/iOS launcher icons and Flutter asset placeholders",
+      "focus_behavior": "Flutter focus, semantics, TalkBack/VoiceOver, and platform text scaling",
+      "notes": "Keep secure image loading behind the mobile API/storage adapters."
+    },
+    {
+      "id": "android_tv",
+      "token_output": "Material 3/TV design constants and Compose or View theme mapping",
+      "asset_output": "adaptive launcher icons, TV banner art, poster/backdrop placeholders",
+      "focus_behavior": "Android TV focus system with visible scale/outline/glow mapping",
+      "notes": "Launcher and Watch Next surfaces must refresh artwork after ETag or revision changes."
+    },
+    {
+      "id": "fire_tv",
+      "token_output": "Android-compatible constants with Fire TV divergence notes",
+      "asset_output": "Amazon Appstore icons, TV banners, placeholders",
+      "focus_behavior": "Fire TV D-pad focus behavior using native Android focus primitives where available",
+      "notes": "Catalog/featured-content assets may be partner-gated."
+    },
+    {
+      "id": "roku",
+      "token_output": "BrightScript constants and SceneGraph XML style values",
+      "asset_output": "Roku channel icons, splash assets, placeholder bitmaps derived from SVG",
+      "focus_behavior": "SceneGraph focus rings and row traversal",
+      "notes": "Use fixture labels and badge states; do not assume CSS availability."
+    },
+    {
+      "id": "samsung_tizen",
+      "token_output": "web app CSS variables or JavaScript constants",
+      "asset_output": "Tizen package icons, Smart Hub imagery, placeholders",
+      "focus_behavior": "Tizen remote focus and TV accessibility behavior",
+      "notes": "Map source SVGs to package-required raster sizes."
+    },
+    {
+      "id": "lg_webos",
+      "token_output": "web app CSS variables or JavaScript constants",
+      "asset_output": "webOS app icons, launch imagery, placeholders",
+      "focus_behavior": "webOS remote focus and launch/relaunch state restoration",
+      "notes": "Use protected caches for authenticated artwork."
+    },
+    {
+      "id": "apple_tvos",
+      "token_output": "Swift constants or asset catalog color sets where applicable",
+      "asset_output": "tvOS layered icons, Top Shelf imagery, placeholders",
+      "focus_behavior": "tvOS focus system, parallax/focus effects, and VoiceOver",
+      "notes": "SF Symbols may map icon hints, but badge text remains localized."
+    },
+    {
+      "id": "windows_xbox",
+      "token_output": "WinUI/UWP/selected-shell constants once the platform shell is chosen",
+      "asset_output": "Store logos, tiles, package icons, placeholders",
+      "focus_behavior": "keyboard/controller focus and Narrator expectations",
+      "notes": "Do not decide shell toolkit in this fixture; keep mapping constraints ready."
+    }
+  ]
+}

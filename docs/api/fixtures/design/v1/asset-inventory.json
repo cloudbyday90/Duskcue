@@ -1,0 +1,204 @@
+{
+  "fixture": "asset-inventory",
+  "updated": "2026-07-02",
+  "assets": [
+    {
+      "role": "app_icon_source",
+      "type": "svg",
+      "path": "docs/branding/assets/app-icon.svg",
+      "source_of_truth": true,
+      "platforms": [
+        "web",
+        "tauri_desktop",
+        "flutter_mobile",
+        "android_tv",
+        "fire_tv",
+        "apple_tvos",
+        "windows_xbox"
+      ],
+      "constraints": [
+        "simple silhouette",
+        "monochrome-friendly",
+        "no text",
+        "scales to launcher and taskbar sizes"
+      ]
+    },
+    {
+      "role": "android_adaptive_icon_source",
+      "type": "svg",
+      "path": "docs/branding/assets/app-icon.svg",
+      "source_of_truth": false,
+      "platforms": [
+        "flutter_mobile",
+        "android_tv",
+        "fire_tv"
+      ],
+      "constraints": [
+        "derive foreground and background layers later",
+        "safe zone survives launcher masks",
+        "no baked platform shadow"
+      ]
+    },
+    {
+      "role": "android_monochrome_icon_source",
+      "type": "svg",
+      "path": "docs/branding/assets/app-icon.svg",
+      "source_of_truth": false,
+      "platforms": [
+        "flutter_mobile",
+        "android_tv",
+        "fire_tv"
+      ],
+      "constraints": [
+        "derive single-color themed icon later",
+        "keep recognizable symbol without color"
+      ]
+    },
+    {
+      "role": "apple_icon_source",
+      "type": "svg",
+      "path": "docs/branding/assets/app-icon.svg",
+      "source_of_truth": false,
+      "platforms": [
+        "flutter_mobile",
+        "apple_tvos",
+        "tauri_desktop"
+      ],
+      "constraints": [
+        "derive Apple app icon set later",
+        "avoid small text",
+        "preserve recognizability under platform tint and focus contexts"
+      ]
+    },
+    {
+      "role": "desktop_icon_source",
+      "type": "svg",
+      "path": "docs/branding/assets/app-icon.svg",
+      "source_of_truth": false,
+      "platforms": [
+        "web",
+        "tauri_desktop",
+        "windows_xbox"
+      ],
+      "constraints": [
+        "derive ico, png, and packaged desktop outputs later",
+        "works on dark and light desktop surfaces"
+      ]
+    },
+    {
+      "role": "tv_banner_source",
+      "type": "svg",
+      "path": "docs/branding/assets/placeholder-backdrop.svg",
+      "source_of_truth": false,
+      "platforms": [
+        "android_tv",
+        "fire_tv",
+        "roku",
+        "samsung_tizen",
+        "lg_webos",
+        "apple_tvos",
+        "windows_xbox"
+      ],
+      "constraints": [
+        "derive TV launcher/banner art later",
+        "use real store art before release",
+        "preserve 16:9 safe composition"
+      ]
+    },
+    {
+      "role": "poster_placeholder",
+      "type": "svg",
+      "path": "docs/branding/assets/placeholder-poster.svg",
+      "source_of_truth": true,
+      "platforms": [
+        "web",
+        "tauri_desktop",
+        "flutter_mobile",
+        "android_tv",
+        "fire_tv",
+        "roku",
+        "samsung_tizen",
+        "lg_webos",
+        "apple_tvos",
+        "windows_xbox"
+      ],
+      "aspect_ratio": "2:3",
+      "constraints": [
+        "reserve poster ratio",
+        "no private filename text",
+        "quiet visual weight"
+      ]
+    },
+    {
+      "role": "backdrop_placeholder",
+      "type": "svg",
+      "path": "docs/branding/assets/placeholder-backdrop.svg",
+      "source_of_truth": true,
+      "platforms": [
+        "web",
+        "tauri_desktop",
+        "flutter_mobile",
+        "android_tv",
+        "fire_tv",
+        "roku",
+        "samsung_tizen",
+        "lg_webos",
+        "apple_tvos",
+        "windows_xbox"
+      ],
+      "aspect_ratio": "16:9",
+      "constraints": [
+        "reserve backdrop ratio",
+        "safe for hero and TV surfaces",
+        "no private filename text"
+      ]
+    },
+    {
+      "role": "thumbnail_placeholder",
+      "type": "svg",
+      "path": "docs/branding/assets/placeholder-thumbnail.svg",
+      "source_of_truth": true,
+      "platforms": [
+        "web",
+        "tauri_desktop",
+        "flutter_mobile",
+        "android_tv",
+        "fire_tv",
+        "roku",
+        "samsung_tizen",
+        "lg_webos",
+        "apple_tvos",
+        "windows_xbox"
+      ],
+      "aspect_ratio": "16:9",
+      "constraints": [
+        "reserve thumbnail ratio",
+        "works in compact rows",
+        "no private filename text"
+      ]
+    },
+    {
+      "role": "logo_placeholder",
+      "type": "svg",
+      "path": "docs/branding/assets/placeholder-logo.svg",
+      "source_of_truth": true,
+      "platforms": [
+        "web",
+        "tauri_desktop",
+        "flutter_mobile",
+        "android_tv",
+        "fire_tv",
+        "roku",
+        "samsung_tizen",
+        "lg_webos",
+        "apple_tvos",
+        "windows_xbox"
+      ],
+      "constraints": [
+        "transparent-title-art fallback",
+        "wide composition",
+        "no media title text"
+      ]
+    }
+  ]
+}

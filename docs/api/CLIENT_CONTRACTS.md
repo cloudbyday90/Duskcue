@@ -11,6 +11,7 @@ The Phase 16d playback conformance pack starts at [fixtures/playback/v1/manifest
 The Phase 16d auth/session conformance pack starts at [fixtures/auth/v1/manifest.json](fixtures/auth/v1/manifest.json).
 The Phase 16d TV/deep-link conformance pack starts at [fixtures/tv/v1/manifest.json](fixtures/tv/v1/manifest.json).
 The Phase 16d accessibility/input baseline pack starts at [fixtures/accessibility/v1/manifest.json](fixtures/accessibility/v1/manifest.json).
+The Phase 16d design asset/token pack starts at [fixtures/design/v1/manifest.json](fixtures/design/v1/manifest.json).
 
 ## Decision
 
@@ -267,6 +268,28 @@ node scripts/verify-accessibility-input.mjs
 
 The verifier checks required platform families, baseline categories, focus cases, remote cases, platform reviews, localization cases, actionable evidence, captions coverage, and non-empty expectations.
 
+## Phase 16d Design Assets And UI Tokens
+
+Phase 16d Task 8 adds [CLIENT_DESIGN_ASSETS.md](../design/CLIENT_DESIGN_ASSETS.md) plus a reusable design asset/token fixture pack under `docs/api/fixtures/design/v1`. The pack keeps visual consistency machine-checkable without forcing all clients into one UI toolkit.
+
+The pack covers:
+
+- DTCG-compatible token groups for color, typography, spacing, radius, shadow, motion, focus, artwork, and media-state badge tones;
+- source SVG assets for the app icon and poster/backdrop/thumbnail/logo placeholders;
+- app icon derivation rules for Android adaptive/themed icons, Apple app icons, desktop icons, TV banners, and store assets;
+- poster, backdrop, thumbnail, and logo aspect-ratio and size rules;
+- authenticated artwork URLs, signed URL secrecy, ETag/revision cache busting, fallback placeholders, offline package artwork, and unavailable/revoked states;
+- string ownership across server-rendered media/problem/notification text, client catalogs, and shared message-key reuse;
+- media-state badges for playable, downloading, offline-ready, unavailable, missing-file, metadata-incomplete, access-revoked, expired, transcode-unavailable, syncing, live, and upcoming states.
+
+Run:
+
+```bash
+node scripts/verify-design-assets.mjs
+```
+
+The verifier checks required token groups, hex color values, CSS mappings, source asset paths, required artwork rules, string ownership sections, platform mappings, badge states, label keys, and color-alone accessibility requirements.
+
 Phase 16b added reusable TV surface fixtures ahead of full Phase 16d generation:
 
 ```bash
@@ -326,6 +349,21 @@ The TV verifier checks `docs/api/fixtures/tv` feed, resolve, diagnostics, unavai
 - Samsung TV accessibility guide: https://developer.samsung.com/smarttv/develop/guides/fundamentals/accessibility.html
 - Microsoft Narrator: https://support.microsoft.com/en-us/accessibility/windows/narrator/complete-guide-to-narrator
 - Xbox Accessibility Guideline 106: https://learn.microsoft.com/en-us/xbox/accessibility/xbox-accessibility-guidelines/106
+- W3C Design Tokens Community Group: https://www.w3.org/community/design-tokens/
+- Design Tokens Format Module: https://www.designtokens.org/tr/drafts/format/
+- Material Design 3 design tokens: https://m3.material.io/foundations/design-tokens
+- Material Design 3 typography: https://m3.material.io/styles/typography/overview
+- Material Design 3 spacing tokens: https://m3.material.io/styles/spacing/tokens
+- Material Design 3 states: https://m3.material.io/foundations/interaction/states
+- Apple app icons: https://developer.apple.com/design/human-interface-guidelines/app-icons
+- Apple SF Symbols: https://developer.apple.com/sf-symbols/
+- Apple focus and selection: https://developer.apple.com/design/human-interface-guidelines/focus-and-selection
+- Apple designing for tvOS: https://developer.apple.com/design/human-interface-guidelines/designing-for-tvos
+- Android adaptive icons: https://developer.android.com/develop/ui/compose/system/icon_design_adaptive
+- Android launcher icon codelab: https://codelabs.developers.google.com/design-android-launcher
+- Google Play icon design specifications: https://developer.android.com/distribute/google-play/resources/icon-design-specifications
+- WCAG non-text contrast: https://www.w3.org/WAI/WCAG21/Understanding/non-text-contrast.html
+- WCAG focus appearance: https://www.w3.org/WAI/WCAG22/Understanding/focus-appearance.html
 - Dart JSON serialization: https://docs.flutter.dev/data-and-backend/serialization/json
 - Dart json_serializable: https://pub.dev/packages/json_serializable
 - Kotlin serialization: https://kotlinlang.org/docs/serialization.html

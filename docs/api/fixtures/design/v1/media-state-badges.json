@@ -1,0 +1,96 @@
+{
+  "fixture": "media-state-badges",
+  "updated": "2026-07-02",
+  "badges": [
+    {
+      "state": "playable",
+      "tone_token": "badge.tone.success",
+      "icon_hint": "play",
+      "label_key": "media_state.playable",
+      "visibility": "show on detail and recovery surfaces; optional on normal cards"
+    },
+    {
+      "state": "downloading",
+      "tone_token": "badge.tone.warning",
+      "icon_hint": "download",
+      "label_key": "media_state.downloading",
+      "visibility": "show while a package job or client transfer is active"
+    },
+    {
+      "state": "offline_ready",
+      "tone_token": "badge.tone.success",
+      "icon_hint": "download_done",
+      "label_key": "media_state.offline_ready",
+      "visibility": "show when protected local playback is available"
+    },
+    {
+      "state": "unavailable",
+      "tone_token": "badge.tone.error",
+      "icon_hint": "block",
+      "label_key": "media_state.unavailable",
+      "visibility": "show when playback or detail access is blocked"
+    },
+    {
+      "state": "missing_file",
+      "tone_token": "badge.tone.error",
+      "icon_hint": "file_missing",
+      "label_key": "media_state.missing_file",
+      "visibility": "show on detail, admin, and recovery surfaces"
+    },
+    {
+      "state": "metadata_incomplete",
+      "tone_token": "badge.tone.neutral",
+      "icon_hint": "info",
+      "label_key": "media_state.metadata_incomplete",
+      "visibility": "show in admin/editing contexts and optional media detail"
+    },
+    {
+      "state": "access_revoked",
+      "tone_token": "badge.tone.error",
+      "icon_hint": "lock",
+      "label_key": "media_state.access_revoked",
+      "visibility": "show after revalidation denies access"
+    },
+    {
+      "state": "expired",
+      "tone_token": "badge.tone.error",
+      "icon_hint": "timer_off",
+      "label_key": "media_state.expired",
+      "visibility": "show for expired downloads, sessions, or playback URLs"
+    },
+    {
+      "state": "transcode_unavailable",
+      "tone_token": "badge.tone.error",
+      "icon_hint": "settings_alert",
+      "label_key": "media_state.transcode_unavailable",
+      "visibility": "show when no playable stream path exists"
+    },
+    {
+      "state": "syncing",
+      "tone_token": "badge.tone.warning",
+      "icon_hint": "sync",
+      "label_key": "media_state.syncing",
+      "visibility": "show while offline events, library data, or surface rows refresh"
+    },
+    {
+      "state": "live",
+      "tone_token": "badge.tone.info",
+      "icon_hint": "live",
+      "label_key": "media_state.live",
+      "visibility": "reserved for future live or scheduled media surfaces"
+    },
+    {
+      "state": "upcoming",
+      "tone_token": "badge.tone.warning",
+      "icon_hint": "calendar",
+      "label_key": "media_state.upcoming",
+      "visibility": "reserved for upcoming or not-yet-available media"
+    }
+  ],
+  "requirements": [
+    "badges must include a text label or accessible name",
+    "badges must not rely on color alone",
+    "badge labels are client-owned localization keys",
+    "server denial details may appear beside badges but badge keys stay client-owned"
+  ]
+}

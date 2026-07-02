@@ -1,0 +1,313 @@
+{
+  "fixture": "design-tokens",
+  "format": "dtcg-compatible",
+  "updated": "2026-07-02",
+  "token_groups": {
+    "color": {
+      "background.deep": {
+        "$type": "color",
+        "$value": "#0e0f13",
+        "$description": "Foundational low-light charcoal app background."
+      },
+      "background.surface": {
+        "$type": "color",
+        "$value": "#16181f",
+        "$description": "Primary graphite surface."
+      },
+      "background.elevated": {
+        "$type": "color",
+        "$value": "#1e2129",
+        "$description": "Elevated cards, popovers, and player chrome."
+      },
+      "background.hover": {
+        "$type": "color",
+        "$value": "#262a35",
+        "$description": "Hover and focused surface fill."
+      },
+      "border.default": {
+        "$type": "color",
+        "$value": "#2e323d",
+        "$description": "Default component boundary."
+      },
+      "border.subtle": {
+        "$type": "color",
+        "$value": "#242832",
+        "$description": "Low-emphasis separators."
+      },
+      "text.primary": {
+        "$type": "color",
+        "$value": "#e8e4dc",
+        "$description": "Warm off-white primary text."
+      },
+      "text.secondary": {
+        "$type": "color",
+        "$value": "#9b9ba4",
+        "$description": "Secondary text."
+      },
+      "text.muted": {
+        "$type": "color",
+        "$value": "#6b6c75",
+        "$description": "Metadata and disabled text."
+      },
+      "accent.default": {
+        "$type": "color",
+        "$value": "#c8965a",
+        "$description": "Brass primary action and focus accent."
+      },
+      "accent.hover": {
+        "$type": "color",
+        "$value": "#d4a468",
+        "$description": "Hover action accent."
+      },
+      "success.default": {
+        "$type": "color",
+        "$value": "#6abf69",
+        "$description": "Healthy and complete state."
+      },
+      "warning.default": {
+        "$type": "color",
+        "$value": "#d4a644",
+        "$description": "Warning and in-progress state."
+      },
+      "error.default": {
+        "$type": "color",
+        "$value": "#c95c5c",
+        "$description": "Error, destructive, and revoked state."
+      },
+      "info.default": {
+        "$type": "color",
+        "$value": "#8aa4c8",
+        "$description": "Neutral informational state."
+      }
+    },
+    "typography": {
+      "family.sans": {
+        "$type": "fontFamily",
+        "$value": "Inter, system-ui, sans-serif",
+        "$description": "Readable client UI font stack."
+      },
+      "family.display": {
+        "$type": "fontFamily",
+        "$value": "Inter, system-ui, sans-serif",
+        "$description": "Restrained display stack for heroes and featured media."
+      },
+      "size.body": {
+        "$type": "dimension",
+        "$value": "16px",
+        "$description": "Default body text size."
+      },
+      "size.control": {
+        "$type": "dimension",
+        "$value": "14px",
+        "$description": "Compact control label size."
+      },
+      "size.tv_body": {
+        "$type": "dimension",
+        "$value": "24px",
+        "$description": "Default living-room body text target."
+      },
+      "weight.regular": {
+        "$type": "fontWeight",
+        "$value": 400,
+        "$description": "Body copy weight."
+      },
+      "weight.semibold": {
+        "$type": "fontWeight",
+        "$value": 600,
+        "$description": "Control and section label emphasis."
+      },
+      "line_height.body": {
+        "$type": "number",
+        "$value": 1.5,
+        "$description": "Default reading line height."
+      }
+    },
+    "spacing": {
+      "space.1": {
+        "$type": "dimension",
+        "$value": "4px",
+        "$description": "Smallest spacing step."
+      },
+      "space.2": {
+        "$type": "dimension",
+        "$value": "8px",
+        "$description": "Compact spacing step."
+      },
+      "space.3": {
+        "$type": "dimension",
+        "$value": "12px",
+        "$description": "Default dense spacing step."
+      },
+      "space.4": {
+        "$type": "dimension",
+        "$value": "16px",
+        "$description": "Default component spacing."
+      },
+      "space.6": {
+        "$type": "dimension",
+        "$value": "24px",
+        "$description": "Panel and section spacing."
+      },
+      "space.8": {
+        "$type": "dimension",
+        "$value": "32px",
+        "$description": "Large layout spacing."
+      },
+      "space.tv_row_gap": {
+        "$type": "dimension",
+        "$value": "40px",
+        "$description": "Living-room row gap target."
+      }
+    },
+    "radius": {
+      "radius.sm": {
+        "$type": "dimension",
+        "$value": "4px",
+        "$description": "Small controls and thumbnails."
+      },
+      "radius.md": {
+        "$type": "dimension",
+        "$value": "8px",
+        "$description": "Default cards and buttons."
+      },
+      "radius.lg": {
+        "$type": "dimension",
+        "$value": "12px",
+        "$description": "Large panels and player overlays."
+      }
+    },
+    "shadow": {
+      "shadow.card": {
+        "$type": "shadow",
+        "$value": "0 2px 8px rgba(0, 0, 0, 0.3)",
+        "$description": "Default card depth."
+      },
+      "shadow.elevated": {
+        "$type": "shadow",
+        "$value": "0 8px 24px rgba(0, 0, 0, 0.4)",
+        "$description": "Elevated overlay depth."
+      }
+    },
+    "motion": {
+      "duration.fast": {
+        "$type": "duration",
+        "$value": "150ms",
+        "$description": "Fast state transitions."
+      },
+      "duration.normal": {
+        "$type": "duration",
+        "$value": "250ms",
+        "$description": "Standard panel and focus transitions."
+      },
+      "easing.standard": {
+        "$type": "cubicBezier",
+        "$value": "ease",
+        "$description": "Default easing placeholder for platform mapping."
+      }
+    },
+    "focus": {
+      "ring.color": {
+        "$type": "color",
+        "$value": "#c8965a",
+        "$description": "Visible focus indicator color."
+      },
+      "ring.width": {
+        "$type": "dimension",
+        "$value": "2px",
+        "$description": "Minimum outline width for web and desktop clients."
+      },
+      "ring.offset": {
+        "$type": "dimension",
+        "$value": "2px",
+        "$description": "Minimum outline offset for web and desktop clients."
+      },
+      "tv.scale": {
+        "$type": "number",
+        "$value": 1.04,
+        "$description": "Optional TV focus scale hint when platform focus allows it."
+      }
+    },
+    "artwork": {
+      "poster.aspect_ratio": {
+        "$type": "number",
+        "$value": 0.6667,
+        "$description": "Poster width divided by height, representing 2:3."
+      },
+      "backdrop.aspect_ratio": {
+        "$type": "number",
+        "$value": 1.7778,
+        "$description": "Backdrop width divided by height, representing 16:9."
+      },
+      "thumbnail.aspect_ratio": {
+        "$type": "number",
+        "$value": 1.7778,
+        "$description": "Thumbnail width divided by height, representing 16:9."
+      },
+      "poster.default_size": {
+        "$type": "string",
+        "$value": "w342",
+        "$description": "Default client poster variant."
+      },
+      "backdrop.default_size": {
+        "$type": "string",
+        "$value": "w780",
+        "$description": "Default client backdrop variant."
+      },
+      "thumbnail.default_size": {
+        "$type": "string",
+        "$value": "w300",
+        "$description": "Default client thumbnail variant."
+      }
+    },
+    "badge": {
+      "tone.neutral": {
+        "$type": "color",
+        "$value": "#9b9ba4",
+        "$description": "Neutral metadata badge tone."
+      },
+      "tone.success": {
+        "$type": "color",
+        "$value": "#6abf69",
+        "$description": "Playable, offline-ready, and complete badge tone."
+      },
+      "tone.warning": {
+        "$type": "color",
+        "$value": "#d4a644",
+        "$description": "Downloading, syncing, and upcoming badge tone."
+      },
+      "tone.error": {
+        "$type": "color",
+        "$value": "#c95c5c",
+        "$description": "Unavailable, missing, revoked, or expired badge tone."
+      },
+      "tone.info": {
+        "$type": "color",
+        "$value": "#8aa4c8",
+        "$description": "Live or informational badge tone."
+      }
+    }
+  },
+  "css_mapping": {
+    "color.background.deep": "--color-bg-deep",
+    "color.background.surface": "--color-bg-surface",
+    "color.background.elevated": "--color-bg-elevated",
+    "color.background.hover": "--color-bg-hover",
+    "color.border.default": "--color-border",
+    "color.border.subtle": "--color-border-subtle",
+    "color.text.primary": "--color-text-primary",
+    "color.text.secondary": "--color-text-secondary",
+    "color.text.muted": "--color-text-muted",
+    "color.accent.default": "--color-accent",
+    "color.accent.hover": "--color-accent-hover",
+    "color.success.default": "--color-success",
+    "color.warning.default": "--color-warning",
+    "color.error.default": "--color-error",
+    "radius.radius.sm": "--radius-sm",
+    "radius.radius.md": "--radius-md",
+    "radius.radius.lg": "--radius-lg",
+    "shadow.shadow.card": "--shadow-card",
+    "shadow.shadow.elevated": "--shadow-elevated",
+    "typography.family.sans": "--font-sans",
+    "typography.family.display": "--font-display"
+  }
+}

@@ -1,0 +1,139 @@
+{
+  "fixture_pack": "duskcue-design-assets",
+  "version": 1,
+  "updated": "2026-07-02",
+  "purpose": "Reusable Phase 16d shared design asset, token, artwork, string ownership, and media-state badge fixtures for Duskcue clients.",
+  "design_doc": "docs/design/CLIENT_DESIGN_ASSETS.md",
+  "required_token_groups": [
+    "color",
+    "typography",
+    "spacing",
+    "radius",
+    "shadow",
+    "motion",
+    "focus",
+    "artwork",
+    "badge"
+  ],
+  "required_asset_roles": [
+    "app_icon_source",
+    "android_adaptive_icon_source",
+    "android_monochrome_icon_source",
+    "apple_icon_source",
+    "desktop_icon_source",
+    "tv_banner_source",
+    "poster_placeholder",
+    "backdrop_placeholder",
+    "thumbnail_placeholder",
+    "logo_placeholder"
+  ],
+  "required_artwork_rules": [
+    "authenticated_url",
+    "signed_url",
+    "cache_busting",
+    "fallback",
+    "offline",
+    "unavailable"
+  ],
+  "required_string_sections": [
+    "server_owned",
+    "client_owned",
+    "shared_key_reuse"
+  ],
+  "required_badge_states": [
+    "playable",
+    "downloading",
+    "offline_ready",
+    "unavailable",
+    "missing_file",
+    "metadata_incomplete",
+    "access_revoked",
+    "expired",
+    "transcode_unavailable",
+    "syncing",
+    "live",
+    "upcoming"
+  ],
+  "required_platforms": [
+    "web",
+    "tauri_desktop",
+    "flutter_mobile",
+    "android_tv",
+    "fire_tv",
+    "roku",
+    "samsung_tizen",
+    "lg_webos",
+    "apple_tvos",
+    "windows_xbox"
+  ],
+  "fixtures": [
+    {
+      "id": "design-tokens",
+      "file": "design-tokens.json",
+      "covers": [
+        "color",
+        "type",
+        "spacing",
+        "focus",
+        "artwork ratios",
+        "badge tones"
+      ]
+    },
+    {
+      "id": "asset-inventory",
+      "file": "asset-inventory.json",
+      "covers": [
+        "source SVG assets",
+        "platform icon derivation",
+        "placeholder artwork"
+      ]
+    },
+    {
+      "id": "artwork-rules",
+      "file": "artwork-rules.json",
+      "covers": [
+        "authenticated artwork",
+        "signed URLs",
+        "cache busting",
+        "fallbacks",
+        "offline states"
+      ]
+    },
+    {
+      "id": "string-ownership",
+      "file": "string-ownership.json",
+      "covers": [
+        "server-owned strings",
+        "client-owned catalogs",
+        "shared message key reuse"
+      ]
+    },
+    {
+      "id": "media-state-badges",
+      "file": "media-state-badges.json",
+      "covers": [
+        "badge states",
+        "tone tokens",
+        "icon hints",
+        "label keys"
+      ]
+    },
+    {
+      "id": "platform-mapping",
+      "file": "platform-mapping.json",
+      "covers": [
+        "platform token mapping",
+        "asset output expectations",
+        "native focus behavior"
+      ]
+    }
+  ],
+  "sources": [
+    "W3C Design Tokens Community Group",
+    "Design Tokens Format Module",
+    "Material Design 3 design tokens, typography, spacing, and states",
+    "Apple HIG app icons, SF Symbols, focus, and tvOS guidance",
+    "Android adaptive icons and Google Play icon design specifications",
+    "WCAG non-text contrast and focus appearance"
+  ]
+}
