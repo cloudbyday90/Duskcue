@@ -1,0 +1,119 @@
+{
+  "fixture": "client-log-schema",
+  "updated": "2026-07-02",
+  "severity_values": [
+    "trace",
+    "debug",
+    "info",
+    "warn",
+    "error",
+    "fatal"
+  ],
+  "fields": [
+    {
+      "name": "timestamp",
+      "type": "utc_rfc3339",
+      "required": true,
+      "privacy_classification": "operational"
+    },
+    {
+      "name": "client_version",
+      "type": "string",
+      "required": true,
+      "privacy_classification": "public"
+    },
+    {
+      "name": "platform",
+      "type": "enum",
+      "required": true,
+      "privacy_classification": "public"
+    },
+    {
+      "name": "route_or_screen",
+      "type": "bounded_string",
+      "required": true,
+      "privacy_classification": "operational"
+    },
+    {
+      "name": "request_id",
+      "type": "uuid_or_opaque_string",
+      "required": true,
+      "privacy_classification": "operational"
+    },
+    {
+      "name": "event_type",
+      "type": "snake_case_string",
+      "required": true,
+      "privacy_classification": "operational"
+    },
+    {
+      "name": "severity",
+      "type": "enum",
+      "required": true,
+      "privacy_classification": "operational"
+    },
+    {
+      "name": "privacy_classification",
+      "type": "enum",
+      "required": true,
+      "privacy_classification": "public"
+    },
+    {
+      "name": "server_origin_redacted",
+      "type": "host_only_or_hash",
+      "required": false,
+      "privacy_classification": "user_private"
+    },
+    {
+      "name": "user_id_hash",
+      "type": "stable_hash",
+      "required": false,
+      "privacy_classification": "user_private"
+    },
+    {
+      "name": "device_id_hash",
+      "type": "stable_hash",
+      "required": false,
+      "privacy_classification": "user_private"
+    },
+    {
+      "name": "error_code",
+      "type": "string",
+      "required": false,
+      "privacy_classification": "operational"
+    },
+    {
+      "name": "trace_id",
+      "type": "uuid_or_opaque_string",
+      "required": false,
+      "privacy_classification": "operational"
+    }
+  ],
+  "sample_records": [
+    {
+      "timestamp": "2026-07-02T12:00:00Z",
+      "client_version": "0.1.0+fixture",
+      "platform": "flutter_mobile",
+      "route_or_screen": "media_detail",
+      "request_id": "0197c540-0000-7000-8000-000000000901",
+      "event_type": "playback_start_failed",
+      "severity": "warn",
+      "privacy_classification": "operational",
+      "server_origin_redacted": "server.local",
+      "error_code": "PLAY_005",
+      "trace_id": "fixture-playback-start-failed"
+    },
+    {
+      "timestamp": "2026-07-02T12:01:00Z",
+      "client_version": "0.1.0+fixture",
+      "platform": "android_tv",
+      "route_or_screen": "tv_deep_link",
+      "request_id": "0197c540-0000-7000-8000-000000000902",
+      "event_type": "deep_link_revalidation_denied",
+      "severity": "info",
+      "privacy_classification": "operational",
+      "error_code": "TV_003",
+      "trace_id": "fixture-tv-revalidation-denied"
+    }
+  ]
+}

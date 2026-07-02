@@ -1,0 +1,146 @@
+{
+  "fixture": "redaction-rules",
+  "updated": "2026-07-02",
+  "forbidden_data": [
+    {
+      "id": "bearer_token",
+      "examples": [
+        "Authorization header",
+        "session cookie",
+        "refresh token",
+        "reauth code",
+        "device-link code",
+        "invite code",
+        "API key"
+      ],
+      "classification": "secret",
+      "bundle_action": "omit",
+      "log_action": "omit_or_fixed_placeholder"
+    },
+    {
+      "id": "password",
+      "examples": [
+        "password",
+        "password hash",
+        "passkey private material"
+      ],
+      "classification": "secret",
+      "bundle_action": "omit",
+      "log_action": "omit"
+    },
+    {
+      "id": "signed_media_url",
+      "examples": [
+        "playback URL with signature",
+        "package transfer URL",
+        "artwork signed URL"
+      ],
+      "classification": "secret",
+      "bundle_action": "strip_query_or_omit",
+      "log_action": "strip_query_or_omit"
+    },
+    {
+      "id": "private_path",
+      "examples": [
+        "server media path",
+        "client protected download path",
+        "app-private storage path"
+      ],
+      "classification": "user_private",
+      "bundle_action": "basename_omit_or_stable_hash",
+      "log_action": "omit"
+    },
+    {
+      "id": "push_token",
+      "examples": [
+        "FCM registration token",
+        "APNs device token",
+        "UnifiedPush endpoint"
+      ],
+      "classification": "secret",
+      "bundle_action": "omit",
+      "log_action": "omit"
+    },
+    {
+      "id": "raw_watch_history",
+      "examples": [
+        "full list of watched titles",
+        "timeline of viewing behavior",
+        "raw playback events"
+      ],
+      "classification": "consent_required",
+      "bundle_action": "aggregate_or_require_explicit_consent",
+      "log_action": "avoid"
+    },
+    {
+      "id": "private_filename",
+      "examples": [
+        "media filename",
+        "subtitle filename",
+        "package file name"
+      ],
+      "classification": "consent_required",
+      "bundle_action": "omit_unless_narrowly_consented",
+      "log_action": "omit"
+    }
+  ],
+  "allowed_transforms": [
+    {
+      "id": "host_only",
+      "input": "https://server.example.test:48027/api/v1/items",
+      "output": "server.example.test",
+      "allowed_for": [
+        "server_url_redacted"
+      ]
+    },
+    {
+      "id": "stable_hash",
+      "input": "internal identifier",
+      "output": "sha256:fixture-hash-prefix",
+      "allowed_for": [
+        "user_id",
+        "device_id",
+        "server_origin",
+        "private_path_when_consented"
+      ]
+    },
+    {
+      "id": "strip_query",
+      "input": "/api/v1/items/id/artwork/poster?size=w342",
+      "output": "/api/v1/items/id/artwork/poster",
+      "allowed_for": [
+        "non-secret API-relative URLs"
+      ]
+    },
+    {
+      "id": "error_code_only",
+      "input": "Problem Details with detail text",
+      "output": "PLAY_005",
+      "allowed_for": [
+        "playback_failure_summaries",
+        "recent_request_ids"
+      ]
+    },
+    {
+      "id": "bounded_title",
+      "input": "currently visible title",
+      "output": "user-visible title only after consent or when already visible in the exported screen summary",
+      "allowed_for": [
+        "user_consented_private_context"
+      ]
+    }
+  ],
+  "forbidden_patterns": [
+    "Authorization:",
+    "Bearer ",
+    "password=",
+    "token=",
+    "signature=",
+    "X-Api-Key",
+    "file://",
+    "C:\\\\",
+    "/Users/",
+    "/home/",
+    "/mnt/media/"
+  ]
+}

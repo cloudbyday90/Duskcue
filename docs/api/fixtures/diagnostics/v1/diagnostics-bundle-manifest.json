@@ -1,0 +1,123 @@
+{
+  "fixture": "diagnostics-bundle-manifest",
+  "updated": "2026-07-02",
+  "bundle_format": "json_directory_or_zip",
+  "default_time_window_hours": 24,
+  "manual_sharing_only": true,
+  "sections": [
+    {
+      "id": "app_logs",
+      "file": "app-logs.jsonl",
+      "required": true,
+      "privacy_classification": "operational",
+      "limit": {
+        "max_records": 1000,
+        "max_age_hours": 24
+      },
+      "contents": [
+        "client-log-schema records after redaction"
+      ]
+    },
+    {
+      "id": "device_capability_report",
+      "file": "device-capability.json",
+      "required": true,
+      "privacy_classification": "operational",
+      "contents": [
+        "platform",
+        "os_family",
+        "app_version",
+        "codec_support_summary",
+        "hls_support",
+        "hdr_audio_subtitle_summary"
+      ]
+    },
+    {
+      "id": "server_url_redacted",
+      "file": "server.json",
+      "required": true,
+      "privacy_classification": "user_private",
+      "redaction": "host_only_or_stable_hash",
+      "contents": [
+        "server_origin_host_only",
+        "network_mode_if_known",
+        "tls_present"
+      ]
+    },
+    {
+      "id": "playback_failure_summaries",
+      "file": "playback-failures.json",
+      "required": true,
+      "privacy_classification": "operational",
+      "contents": [
+        "playback_session_id",
+        "request_id",
+        "trace_id",
+        "error_code",
+        "stream_decision",
+        "bounded_failure_category"
+      ]
+    },
+    {
+      "id": "network_state",
+      "file": "network-state.json",
+      "required": true,
+      "privacy_classification": "operational",
+      "contents": [
+        "online",
+        "connection_class",
+        "metered_if_known",
+        "vpn_or_proxy_hint",
+        "last_reachability_error_code"
+      ]
+    },
+    {
+      "id": "recent_request_ids",
+      "file": "request-ids.json",
+      "required": true,
+      "privacy_classification": "operational",
+      "limit": {
+        "max_records": 100
+      },
+      "contents": [
+        "request_id",
+        "route_or_screen",
+        "timestamp",
+        "status_code"
+      ]
+    },
+    {
+      "id": "notification_ids",
+      "file": "notifications.json",
+      "required": false,
+      "privacy_classification": "operational",
+      "contents": [
+        "notification_id",
+        "category",
+        "request_id"
+      ]
+    },
+    {
+      "id": "download_package_ids",
+      "file": "downloads.json",
+      "required": false,
+      "privacy_classification": "operational",
+      "contents": [
+        "download_job_id",
+        "package_id",
+        "bounded_status",
+        "request_id"
+      ]
+    },
+    {
+      "id": "user_consented_private_context",
+      "file": "consented-private-context.json",
+      "required": false,
+      "privacy_classification": "consent_required",
+      "requires_explicit_consent": true,
+      "contents": [
+        "bounded media title or filename context only for the selected troubleshooting flow"
+      ]
+    }
+  ]
+}

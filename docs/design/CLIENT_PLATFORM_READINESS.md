@@ -112,6 +112,12 @@ W3C Design Tokens Community Group work and the Design Tokens Format Module provi
 
 **Decision:** Phase 16d Task 8 adds [CLIENT_DESIGN_ASSETS.md](CLIENT_DESIGN_ASSETS.md), `docs/api/fixtures/design/v1/manifest.json`, source SVGs under `docs/branding/assets`, and `scripts/verify-design-assets.mjs`. The pack defines shared token groups, app-icon and placeholder sources, poster/backdrop/thumbnail/logo sizing, authenticated and signed artwork loading rules, fallback/offline/unavailable behavior, string ownership, media-state badges, and per-platform mapping guidance. Platform phases must consume these assets and rules while mapping them into native UI systems instead of sharing one toolkit abstraction.
 
+### Diagnostics, Logging, And Support Bundles
+
+OpenTelemetry's log data model provides a useful structure for timestamped records with severity, body, attributes, resource metadata, and trace correlation. OWASP logging guidance reinforces that logs must be useful for investigation while excluding credentials and sensitive personal data. Apple, Google Play, Microsoft, and TV platform guidance make diagnostics a privacy and release-disclosure concern, not just an engineering convenience.
+
+**Decision:** Phase 16d Task 9 adds [CLIENT_DIAGNOSTICS.md](CLIENT_DIAGNOSTICS.md), `docs/api/fixtures/diagnostics/v1/manifest.json`, and `scripts/verify-client-diagnostics.mjs`. The pack defines required client log fields, privacy classifications, support bundle sections, forbidden data/redaction transforms, server-side correlation IDs, and platform export checklists. Platform phases must include request IDs and bounded domain IDs instead of raw request bodies, tokens, signed URLs, private paths, or raw watch history.
+
 ## Mandatory Gates for Phases 17-23
 
 The following outputs are mandatory before a downstream platform phase can claim implementation complete:
@@ -149,7 +155,7 @@ These are recommended but not release-blocking for the first platform implementa
 | 6. TV/deep-link conformance | `docs/api/fixtures/tv/v1`, TV/deep-link verifier, adapter mapping expectations |
 | 7. Accessibility/input baselines | `docs/design/CLIENT_ACCESSIBILITY_INPUT.md`, `docs/api/fixtures/accessibility/v1`, accessibility/input verifier |
 | 8. Shared design assets/tokens | `docs/design/CLIENT_DESIGN_ASSETS.md`, `docs/api/fixtures/design/v1`, source SVG assets, design verifier |
-| 9. Diagnostics/logging bundles | Log schema, bundle manifest, redaction rules |
+| 9. Diagnostics/logging bundles | `docs/design/CLIENT_DIAGNOSTICS.md`, `docs/api/fixtures/diagnostics/v1`, diagnostics verifier |
 | 10. Device lab matrix | Device/OS/media capability matrix and manual smoke scripts |
 | 11. Release/store readiness | Per-platform release checklist and CI placeholders |
 | 12. Client CI/smoke harness | Docker-backed seeded smoke harness and CI jobs |

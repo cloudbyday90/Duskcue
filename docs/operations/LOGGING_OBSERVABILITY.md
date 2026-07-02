@@ -569,6 +569,12 @@ The default log level is `info`. At this level, all personal information is sani
 
 The admin UI displays a notice when debug logging is active: "Debug logging is enabled. Log files may contain email addresses and IP addresses. Disable debug logging when troubleshooting is complete."
 
+### Client Diagnostics And Support Bundles
+
+Phase 16d Task 9 adds the cross-client diagnostics contract in [CLIENT_DIAGNOSTICS.md](../design/CLIENT_DIAGNOSTICS.md) plus machine-readable fixtures under [../api/fixtures/diagnostics/v1](../api/fixtures/diagnostics/v1/manifest.json). Platform clients should export bounded support bundles with app logs, device capability reports, redacted server URL data, playback failure summaries, network state, and recent request IDs. Bundles must omit bearer/session tokens, passwords, signed media URLs, push tokens, private paths, and raw watch history unless a narrow consent-gated section explicitly allows private context.
+
+Client bundles should capture `x-request-id`, Problem Details `trace_id`, playback session IDs, notification IDs, download job/package IDs, and TV surface event IDs so admins can correlate with the server logs and metrics described in this document without needing raw request bodies or secrets.
+
 ---
 
 ## Observability Dashboard

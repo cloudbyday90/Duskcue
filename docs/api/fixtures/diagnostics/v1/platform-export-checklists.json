@@ -1,0 +1,96 @@
+{
+  "fixture": "platform-export-checklists",
+  "updated": "2026-07-02",
+  "platforms": [
+    {
+      "id": "web",
+      "required_checks": [
+        "export JSON bundle from in-memory and app state only",
+        "omit cookies and storage secrets",
+        "include recent request IDs and API error codes",
+        "redact server origin to host-only or stable hash"
+      ]
+    },
+    {
+      "id": "tauri_desktop",
+      "required_checks": [
+        "exclude OS keyring values",
+        "include webview route and native shell version",
+        "include recent request IDs",
+        "write bundle only after user-selected export destination"
+      ]
+    },
+    {
+      "id": "flutter_mobile",
+      "required_checks": [
+        "exclude secure storage secrets",
+        "include permission and network state",
+        "include download and playback summaries without private paths",
+        "use platform share sheet only after redaction"
+      ]
+    },
+    {
+      "id": "android_tv",
+      "required_checks": [
+        "include remote/focus and playback launch context",
+        "exclude account/profile details from communal display",
+        "include TV surface event IDs where available",
+        "avoid signed artwork or playback URLs"
+      ]
+    },
+    {
+      "id": "fire_tv",
+      "required_checks": [
+        "include Fire OS and appstore build metadata",
+        "include Watch Activity or deep-link failure category",
+        "exclude Amazon account identifiers",
+        "avoid signed artwork or playback URLs"
+      ]
+    },
+    {
+      "id": "roku",
+      "required_checks": [
+        "provide bounded diagnostics for sideload/certification workflows",
+        "exclude registry secrets",
+        "include deep-link and playback launch status",
+        "include request IDs when HTTP stack exposes them"
+      ]
+    },
+    {
+      "id": "samsung_tizen",
+      "required_checks": [
+        "include Tizen version and AVPlay bounded error category",
+        "exclude local storage secrets",
+        "strip signed URL query parameters",
+        "include remote focus and launch parameter summary"
+      ]
+    },
+    {
+      "id": "lg_webos",
+      "required_checks": [
+        "include webOS version and media stack bounded error category",
+        "exclude local storage secrets",
+        "strip signed URL query parameters",
+        "include launch/relaunch parameter summary"
+      ]
+    },
+    {
+      "id": "apple_tvos",
+      "required_checks": [
+        "respect App Privacy diagnostics disclosures",
+        "include tvOS focus/playback summary",
+        "exclude Keychain and signed URL secrets",
+        "use user-initiated export or on-screen handoff"
+      ]
+    },
+    {
+      "id": "windows_xbox",
+      "required_checks": [
+        "align with Microsoft diagnostic-data transparency expectations",
+        "include controller/focus and media stack bounded errors",
+        "exclude credential locker secrets",
+        "include request IDs and playback session IDs"
+      ]
+    }
+  ]
+}

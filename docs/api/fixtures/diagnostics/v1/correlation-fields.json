@@ -1,0 +1,61 @@
+{
+  "fixture": "correlation-fields",
+  "updated": "2026-07-02",
+  "fields": [
+    {
+      "id": "request_id",
+      "source": "x-request-id response/request header",
+      "server_lookup": "HTTP tracing span request_id",
+      "privacy_classification": "operational",
+      "bundle_required": true
+    },
+    {
+      "id": "trace_id",
+      "source": "RFC 9457 Problem Details trace_id",
+      "server_lookup": "error boundary and request logs",
+      "privacy_classification": "operational",
+      "bundle_required": true
+    },
+    {
+      "id": "playback_session_id",
+      "source": "playback start/resume response or failure summary",
+      "server_lookup": "play_sessions and playback logs",
+      "privacy_classification": "operational",
+      "bundle_required": false
+    },
+    {
+      "id": "notification_id",
+      "source": "notification API/SSE payload",
+      "server_lookup": "notifications table and dispatch logs",
+      "privacy_classification": "operational",
+      "bundle_required": false
+    },
+    {
+      "id": "download_job_id",
+      "source": "download job API/SSE payload",
+      "server_lookup": "download_jobs and worker logs",
+      "privacy_classification": "operational",
+      "bundle_required": false
+    },
+    {
+      "id": "package_id",
+      "source": "download package manifest or inventory response",
+      "server_lookup": "download_packages and transfer logs",
+      "privacy_classification": "operational",
+      "bundle_required": false
+    },
+    {
+      "id": "tv_surface_event_id",
+      "source": "tv_surface_changed SSE payload or TV diagnostics",
+      "server_lookup": "TV surface refresh diagnostics",
+      "privacy_classification": "operational",
+      "bundle_required": false
+    }
+  ],
+  "rules": [
+    "prefer IDs over raw request bodies",
+    "include status code and route template, not full URL with query secrets",
+    "do not include Authorization headers, cookies, or signed URLs",
+    "Problem Details detail text may be reduced to error_code when private context is present"
+  ]
+}

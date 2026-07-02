@@ -12,6 +12,7 @@ The Phase 16d auth/session conformance pack starts at [fixtures/auth/v1/manifest
 The Phase 16d TV/deep-link conformance pack starts at [fixtures/tv/v1/manifest.json](fixtures/tv/v1/manifest.json).
 The Phase 16d accessibility/input baseline pack starts at [fixtures/accessibility/v1/manifest.json](fixtures/accessibility/v1/manifest.json).
 The Phase 16d design asset/token pack starts at [fixtures/design/v1/manifest.json](fixtures/design/v1/manifest.json).
+The Phase 16d diagnostics/support-bundle pack starts at [fixtures/diagnostics/v1/manifest.json](fixtures/diagnostics/v1/manifest.json).
 
 ## Decision
 
@@ -290,6 +291,27 @@ node scripts/verify-design-assets.mjs
 
 The verifier checks required token groups, hex color values, CSS mappings, source asset paths, required artwork rules, string ownership sections, platform mappings, badge states, label keys, and color-alone accessibility requirements.
 
+## Phase 16d Diagnostics And Support Bundles
+
+Phase 16d Task 9 adds [CLIENT_DIAGNOSTICS.md](../design/CLIENT_DIAGNOSTICS.md) plus a reusable diagnostics fixture pack under `docs/api/fixtures/diagnostics/v1`. The pack defines how platform clients should log and export troubleshooting evidence without leaking secrets or private media context.
+
+The pack covers:
+
+- required client log fields: timestamp, client version, platform, route/screen, request ID, event type, severity, and privacy classification;
+- privacy classes for public, operational, user-private, secret, and consent-required data;
+- support bundle sections for app logs, device capability report, redacted server URL, playback failure summaries, network state, and recent request IDs;
+- forbidden data and redaction transforms for bearer/session tokens, passwords, signed media URLs, private paths, push tokens, raw watch history, and filenames;
+- server-side correlation fields for `x-request-id`, Problem Details `trace_id`, playback sessions, notifications, downloads, packages, and TV surface events;
+- platform export checklists for web, Tauri, Flutter mobile, Android TV, Fire TV, Roku, Tizen, webOS, tvOS, Windows, and Xbox.
+
+Run:
+
+```bash
+node scripts/verify-client-diagnostics.mjs
+```
+
+The verifier checks log schema coverage, bundle section coverage, redaction rules, privacy classes, correlation IDs, platform checklists, and absence of fixture leak patterns outside the redaction policy fixture.
+
 Phase 16b added reusable TV surface fixtures ahead of full Phase 16d generation:
 
 ```bash
@@ -364,6 +386,16 @@ The TV verifier checks `docs/api/fixtures/tv` feed, resolve, diagnostics, unavai
 - Google Play icon design specifications: https://developer.android.com/distribute/google-play/resources/icon-design-specifications
 - WCAG non-text contrast: https://www.w3.org/WAI/WCAG21/Understanding/non-text-contrast.html
 - WCAG focus appearance: https://www.w3.org/WAI/WCAG22/Understanding/focus-appearance.html
+- OpenTelemetry Logs Data Model: https://opentelemetry.io/docs/specs/otel/logs/data-model/
+- OWASP Logging Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html
+- OWASP Secrets Management Cheat Sheet: https://cheatsheetseries.owasp.org/cheatsheets/Secrets_Management_Cheat_Sheet.html
+- Android declare your app's data use: https://developer.android.com/privacy-and-security/declare-data-use
+- Google Play Data safety section: https://support.google.com/googleplay/android-developer/answer/10787469
+- Apple App Privacy Details: https://developer.apple.com/app-store/app-privacy-details/
+- Apple User Privacy and Data Use: https://developer.apple.com/app-store/user-privacy-and-data-use/
+- Microsoft Privacy Statement: https://www.microsoft.com/en-us/privacy/privacystatement
+- Windows privacy compliance guide: https://learn.microsoft.com/en-us/windows/privacy/windows-privacy-compliance-guide
+- Roku certification criteria: https://developer.roku.com/dev/docs/certification
 - Dart JSON serialization: https://docs.flutter.dev/data-and-backend/serialization/json
 - Dart json_serializable: https://pub.dev/packages/json_serializable
 - Kotlin serialization: https://kotlinlang.org/docs/serialization.html

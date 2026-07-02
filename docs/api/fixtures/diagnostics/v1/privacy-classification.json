@@ -1,0 +1,62 @@
+{
+  "fixture": "privacy-classification",
+  "updated": "2026-07-02",
+  "classes": [
+    {
+      "id": "public",
+      "description": "Non-sensitive product or platform value.",
+      "export_behavior": "allow",
+      "examples": [
+        "client version",
+        "platform family",
+        "schema version"
+      ]
+    },
+    {
+      "id": "operational",
+      "description": "Troubleshooting data that is not user-identifying by itself.",
+      "export_behavior": "allow",
+      "examples": [
+        "request ID",
+        "trace ID",
+        "error code",
+        "stream decision",
+        "network reachability status"
+      ]
+    },
+    {
+      "id": "user_private",
+      "description": "Data that can identify a user, device, server, household, or private behavior.",
+      "export_behavior": "redact_or_hash",
+      "examples": [
+        "server host",
+        "user ID",
+        "device ID",
+        "IP address",
+        "email"
+      ]
+    },
+    {
+      "id": "secret",
+      "description": "Data that grants access or can impersonate a user, device, or server.",
+      "export_behavior": "never_export",
+      "examples": [
+        "bearer token",
+        "session cookie",
+        "push token",
+        "signed media URL",
+        "password"
+      ]
+    },
+    {
+      "id": "consent_required",
+      "description": "Useful but behaviorally sensitive data that needs explicit scoped consent.",
+      "export_behavior": "explicit_consent_only",
+      "examples": [
+        "raw watch history",
+        "private filename",
+        "bounded visible title context"
+      ]
+    }
+  ]
+}

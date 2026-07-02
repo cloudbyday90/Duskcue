@@ -1,0 +1,127 @@
+{
+  "fixture_pack": "duskcue-client-diagnostics",
+  "version": 1,
+  "updated": "2026-07-02",
+  "purpose": "Reusable Phase 16d diagnostics, logging, support bundle, redaction, and correlation fixtures for Duskcue clients.",
+  "design_doc": "docs/design/CLIENT_DIAGNOSTICS.md",
+  "required_log_fields": [
+    "timestamp",
+    "client_version",
+    "platform",
+    "route_or_screen",
+    "request_id",
+    "event_type",
+    "severity",
+    "privacy_classification"
+  ],
+  "required_privacy_classes": [
+    "public",
+    "operational",
+    "user_private",
+    "secret",
+    "consent_required"
+  ],
+  "required_bundle_sections": [
+    "app_logs",
+    "device_capability_report",
+    "server_url_redacted",
+    "playback_failure_summaries",
+    "network_state",
+    "recent_request_ids"
+  ],
+  "required_forbidden_data": [
+    "bearer_token",
+    "password",
+    "signed_media_url",
+    "private_path",
+    "push_token",
+    "raw_watch_history"
+  ],
+  "required_correlation_fields": [
+    "request_id",
+    "trace_id",
+    "playback_session_id",
+    "notification_id",
+    "download_job_id",
+    "package_id",
+    "tv_surface_event_id"
+  ],
+  "required_platforms": [
+    "web",
+    "tauri_desktop",
+    "flutter_mobile",
+    "android_tv",
+    "fire_tv",
+    "roku",
+    "samsung_tizen",
+    "lg_webos",
+    "apple_tvos",
+    "windows_xbox"
+  ],
+  "fixtures": [
+    {
+      "id": "client-log-schema",
+      "file": "client-log-schema.json",
+      "covers": [
+        "required log fields",
+        "severity values",
+        "sample records"
+      ]
+    },
+    {
+      "id": "diagnostics-bundle-manifest",
+      "file": "diagnostics-bundle-manifest.json",
+      "covers": [
+        "bundle sections",
+        "retention limits",
+        "export behavior"
+      ]
+    },
+    {
+      "id": "redaction-rules",
+      "file": "redaction-rules.json",
+      "covers": [
+        "forbidden data",
+        "redaction transforms",
+        "consent gates"
+      ]
+    },
+    {
+      "id": "correlation-fields",
+      "file": "correlation-fields.json",
+      "covers": [
+        "server request IDs",
+        "Problem Details trace IDs",
+        "domain IDs"
+      ]
+    },
+    {
+      "id": "privacy-classification",
+      "file": "privacy-classification.json",
+      "covers": [
+        "classification taxonomy",
+        "export behavior",
+        "examples"
+      ]
+    },
+    {
+      "id": "platform-export-checklists",
+      "file": "platform-export-checklists.json",
+      "covers": [
+        "per-platform export requirements",
+        "platform privacy expectations",
+        "manual sharing"
+      ]
+    }
+  ],
+  "sources": [
+    "OpenTelemetry Logs Data Model",
+    "OWASP Logging Cheat Sheet",
+    "OWASP Secrets Management Cheat Sheet",
+    "Android data-use declarations",
+    "Google Play Data safety",
+    "Apple App Privacy Details",
+    "Microsoft privacy guidance",
+    "Roku certification criteria"
+  ]
+}
