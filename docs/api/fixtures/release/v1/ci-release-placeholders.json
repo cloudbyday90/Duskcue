@@ -1,0 +1,130 @@
+{
+  "fixture": "ci-release-placeholders",
+  "policy": {
+    "secrets_rule": "Signing keys, certificates, provisioning profiles, app-store API credentials, package passwords, and notarization credentials must be stored only as CI secrets or secure key-vault references.",
+    "artifact_rule": "Every release-channel build must publish a named artifact, checksum, SBOM, and provenance record before release promotion.",
+    "manual_gate_rule": "Stable releases require manual approval plus release-required device evidence from the device lab pack."
+  },
+  "jobs": [
+    {
+      "platform": "android_mobile",
+      "artifact": "duskcue-android-mobile.aab",
+      "build_command": "flutter build appbundle --release",
+      "signing_hook": "android-upload-keystore-ci-secret",
+      "notarization_hook": "play-app-signing",
+      "sbom": "spdx-or-cyclonedx-android-mobile.json",
+      "provenance": "github-artifact-attestation",
+      "release_channel": "internal"
+    },
+    {
+      "platform": "ios_mobile",
+      "artifact": "duskcue-ios-mobile.ipa",
+      "build_command": "flutter build ipa --release",
+      "signing_hook": "apple-distribution-certificate-ci-secret",
+      "notarization_hook": "app-store-connect-processing",
+      "sbom": "spdx-or-cyclonedx-ios-mobile.json",
+      "provenance": "github-artifact-attestation",
+      "release_channel": "beta"
+    },
+    {
+      "platform": "windows_desktop",
+      "artifact": "duskcue-desktop-windows.msi",
+      "build_command": "npm run tauri build -- --target x86_64-pc-windows-msvc",
+      "signing_hook": "windows-code-signing-key-vault",
+      "notarization_hook": "microsoft-store-signing-or-direct-signing",
+      "sbom": "spdx-or-cyclonedx-windows-desktop.json",
+      "provenance": "github-artifact-attestation",
+      "release_channel": "internal"
+    },
+    {
+      "platform": "macos_desktop",
+      "artifact": "duskcue-desktop-macos.dmg",
+      "build_command": "npm run tauri build -- --target universal-apple-darwin",
+      "signing_hook": "developer-id-certificate-ci-secret",
+      "notarization_hook": "apple-notarytool",
+      "sbom": "spdx-or-cyclonedx-macos-desktop.json",
+      "provenance": "github-artifact-attestation",
+      "release_channel": "internal"
+    },
+    {
+      "platform": "linux_desktop",
+      "artifact": "duskcue-desktop-linux.AppImage",
+      "build_command": "npm run tauri build -- --target x86_64-unknown-linux-gnu",
+      "signing_hook": "release-detached-signature-secret",
+      "notarization_hook": "not-applicable-checksum-signature",
+      "sbom": "spdx-or-cyclonedx-linux-desktop.json",
+      "provenance": "github-artifact-attestation",
+      "release_channel": "internal"
+    },
+    {
+      "platform": "android_tv_google_tv",
+      "artifact": "duskcue-android-tv.aab",
+      "build_command": "gradle bundleRelease",
+      "signing_hook": "android-tv-upload-keystore-ci-secret",
+      "notarization_hook": "play-app-signing",
+      "sbom": "spdx-or-cyclonedx-android-tv.json",
+      "provenance": "github-artifact-attestation",
+      "release_channel": "internal"
+    },
+    {
+      "platform": "fire_tv",
+      "artifact": "duskcue-fire-tv.apk",
+      "build_command": "gradle assembleRelease",
+      "signing_hook": "fire-tv-upload-keystore-ci-secret",
+      "notarization_hook": "amazon-appstore-processing",
+      "sbom": "spdx-or-cyclonedx-fire-tv.json",
+      "provenance": "github-artifact-attestation",
+      "release_channel": "internal"
+    },
+    {
+      "platform": "roku",
+      "artifact": "duskcue-roku.pkg",
+      "build_command": "roku-package-channel",
+      "signing_hook": "roku-package-password-ci-secret",
+      "notarization_hook": "roku-certification-upload",
+      "sbom": "spdx-or-cyclonedx-roku.json",
+      "provenance": "github-artifact-attestation",
+      "release_channel": "beta"
+    },
+    {
+      "platform": "samsung_tizen",
+      "artifact": "duskcue-samsung-tizen.wgt",
+      "build_command": "tizen package --type wgt",
+      "signing_hook": "tizen-certificate-profile-ci-secret",
+      "notarization_hook": "samsung-seller-office-certification",
+      "sbom": "spdx-or-cyclonedx-samsung-tizen.json",
+      "provenance": "github-artifact-attestation",
+      "release_channel": "internal"
+    },
+    {
+      "platform": "lg_webos",
+      "artifact": "duskcue-lg-webos.ipk",
+      "build_command": "ares-package",
+      "signing_hook": "webos-signing-ci-secret",
+      "notarization_hook": "lg-app-approval",
+      "sbom": "spdx-or-cyclonedx-lg-webos.json",
+      "provenance": "github-artifact-attestation",
+      "release_channel": "internal"
+    },
+    {
+      "platform": "apple_tvos",
+      "artifact": "duskcue-tvos.ipa",
+      "build_command": "xcodebuild archive -scheme DuskcueTV",
+      "signing_hook": "apple-tvos-distribution-certificate-ci-secret",
+      "notarization_hook": "app-store-connect-processing",
+      "sbom": "spdx-or-cyclonedx-tvos.json",
+      "provenance": "github-artifact-attestation",
+      "release_channel": "beta"
+    },
+    {
+      "platform": "xbox",
+      "artifact": "duskcue-xbox.msixupload",
+      "build_command": "msbuild /p:Configuration=Release",
+      "signing_hook": "microsoft-store-package-identity",
+      "notarization_hook": "microsoft-store-certification-signing",
+      "sbom": "spdx-or-cyclonedx-xbox.json",
+      "provenance": "github-artifact-attestation",
+      "release_channel": "internal"
+    }
+  ]
+}

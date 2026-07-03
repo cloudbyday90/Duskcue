@@ -14,6 +14,7 @@ The Phase 16d accessibility/input baseline pack starts at [fixtures/accessibilit
 The Phase 16d design asset/token pack starts at [fixtures/design/v1/manifest.json](fixtures/design/v1/manifest.json).
 The Phase 16d diagnostics/support-bundle pack starts at [fixtures/diagnostics/v1/manifest.json](fixtures/diagnostics/v1/manifest.json).
 The Phase 16d device lab and compatibility pack starts at [fixtures/device-lab/v1/manifest.json](fixtures/device-lab/v1/manifest.json).
+The Phase 16d release/store-readiness pack starts at [fixtures/release/v1/manifest.json](fixtures/release/v1/manifest.json).
 
 ## Decision
 
@@ -333,6 +334,27 @@ node scripts/verify-device-lab.mjs
 ```
 
 The verifier checks required platform coverage, required capability fields, Docker port `48027`, smoke-step coverage, release-required/best-effort classifications, hardware-gap coverage, and fixture leak patterns.
+
+## Phase 16d Release And Store Readiness
+
+Phase 16d Task 11 adds [CLIENT_RELEASE_READINESS.md](../design/CLIENT_RELEASE_READINESS.md) plus a reusable release fixture pack under `docs/api/fixtures/release/v1`. The pack gives downstream platform phases a shared release checklist instead of leaving signing, store metadata, privacy labels, CI artifacts, and rollback posture to each client implementation.
+
+The pack covers:
+
+- app IDs, package names, bundle IDs, display names, store/distribution channels, signing identity placeholders, certificate/key placeholders, provisioning/profile placeholders, notarization or store-signing expectations, permission/capability declarations, privacy disclosures, age/content ratings, and review notes for all required Phase 16d platforms;
+- CI release placeholders for named artifacts, build commands, signing hooks, notarization/store-processing hooks, SBOM files, provenance/attestation outputs, and release-channel defaults;
+- versioning rules across server, web, desktop, Android, Apple, and TV clients;
+- local, internal, beta, and stable release-channel mapping;
+- release-blocking smoke tests against the Docker `:48027` deployment and per-platform rollback/update expectations;
+- privacy, permission, and review-note expectations for Duskcue's self-hosted/no-bundled-catalog posture.
+
+Run:
+
+```bash
+node scripts/verify-release-readiness.mjs
+```
+
+The verifier checks required platform coverage, identity/signing fields, certificate placeholder handling, CI artifact/SBOM/provenance fields, versioning targets, release-channel mapping, Docker smoke steps, rollback/update expectations, privacy/review-note coverage, and fixture leak patterns.
 
 Phase 16b added reusable TV surface fixtures ahead of full Phase 16d generation:
 

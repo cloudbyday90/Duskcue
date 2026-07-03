@@ -14,6 +14,7 @@ This document complements:
 - [TRUSTED_AUTOMATION_MANUAL_VALIDATION.md](TRUSTED_AUTOMATION_MANUAL_VALIDATION.md) — when release-blocking trusted-automation changes require a dedicated manual validation step before protected publication
 - [RELEASE_ARTIFACT_RETENTION.md](RELEASE_ARTIFACT_RETENTION.md) — durable release evidence, retention windows, and rollback-proof artifact rules
 - [CLIENT_PACKAGING.md](CLIENT_PACKAGING.md) — desktop/mobile package smoke, signing placeholders, privacy notes, and client release-gate checks
+- [CLIENT_RELEASE_READINESS.md](../design/CLIENT_RELEASE_READINESS.md) — cross-client app identity, signing, store metadata, privacy, versioning, SBOM/provenance, smoke, and rollback checklist
 
 ## Goals
 
@@ -105,6 +106,16 @@ Pre-release identifiers follow SemVer, e.g. `1.2.0-beta.1`, `1.2.0-rc.2`.
 ### Desktop and mobile package smoke
 
 Phase 16a adds a dedicated client packaging smoke workflow for the Tauri desktop shell and Flutter mobile app. These builds prove that platform package assembly still works, but debug CI artifacts are not durable release payloads. Public distribution still requires protected signing, notarization, store metadata, and privacy declarations as documented in [CLIENT_PACKAGING.md](CLIENT_PACKAGING.md).
+
+### Client release readiness
+
+Phase 16d adds the cross-platform release checklist in [CLIENT_RELEASE_READINESS.md](../design/CLIENT_RELEASE_READINESS.md) and the machine-readable fixture pack at `docs/api/fixtures/release/v1`. Downstream desktop, mobile, TV, and console phases must fill the platform-specific placeholders for app identity, package or bundle ID, signing/certificate/provisioning references, store metadata, privacy disclosures, age/content rating, review notes, release-channel naming, versioning rules, SBOM/provenance, smoke evidence, and rollback/update expectations before claiming beta or stable release readiness.
+
+Run:
+
+```bash
+node scripts/verify-release-readiness.mjs
+```
 
 ### Database compatibility
 

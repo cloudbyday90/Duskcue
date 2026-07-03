@@ -1,0 +1,95 @@
+{
+  "fixture_pack": "duskcue-client-release-readiness",
+  "version": 1,
+  "updated": "2026-07-02",
+  "purpose": "Phase 16d release and store-readiness contract for desktop, mobile, TV, and console clients.",
+  "required_platforms": [
+    "android_mobile",
+    "ios_mobile",
+    "windows_desktop",
+    "macos_desktop",
+    "linux_desktop",
+    "android_tv_google_tv",
+    "fire_tv",
+    "roku",
+    "samsung_tizen",
+    "lg_webos",
+    "apple_tvos",
+    "xbox"
+  ],
+  "required_identity_fields": [
+    "app_identifier",
+    "bundle_or_package_name",
+    "display_name",
+    "store_or_distribution",
+    "signing_identity",
+    "certificate_or_key_material",
+    "provisioning_or_profile",
+    "notarization_or_store_signing",
+    "permission_or_capability_declarations",
+    "privacy_disclosures",
+    "age_or_content_rating",
+    "review_notes"
+  ],
+  "required_ci_fields": [
+    "artifact",
+    "build_command",
+    "signing_hook",
+    "notarization_hook",
+    "sbom",
+    "provenance",
+    "release_channel"
+  ],
+  "required_smoke_steps": [
+    "install_or_launch",
+    "server_selection",
+    "auth_or_device_link",
+    "library_browse",
+    "playback_start",
+    "heartbeat_stop",
+    "diagnostics_export",
+    "update_or_rollback"
+  ],
+  "required_release_channels": [
+    "local",
+    "internal",
+    "beta",
+    "stable"
+  ],
+  "fixtures": [
+    {
+      "id": "platform-release-checklists",
+      "file": "platform-release-checklists.json"
+    },
+    {
+      "id": "ci-release-placeholders",
+      "file": "ci-release-placeholders.json"
+    },
+    {
+      "id": "versioning-policy",
+      "file": "versioning-policy.json"
+    },
+    {
+      "id": "release-channel-policy",
+      "file": "release-channel-policy.json"
+    },
+    {
+      "id": "smoke-rollback-policy",
+      "file": "smoke-rollback-policy.json"
+    },
+    {
+      "id": "privacy-permissions-review",
+      "file": "privacy-permissions-review.json"
+    }
+  ],
+  "official_source_themes": [
+    "Android app signing, versionCode/versionName, Play/Appstore metadata, and Data Safety disclosures",
+    "Apple bundle IDs, provisioning profiles, App Store privacy details, TestFlight/App Store metadata, and notarization for desktop distribution",
+    "Microsoft Store package identity, certification, privacy policy, age ratings, and Store signing for MSIX/AppX",
+    "Amazon Appstore submission metadata and Fire TV package/review requirements",
+    "Roku certification, public channel publishing, and deep-link certification requirements",
+    "Samsung TV Seller Office application IDs, certification, and launch checklist requirements",
+    "LG webOS app approval and self-checklist requirements",
+    "GitHub Actions artifact uploads, SBOM generation, and artifact attestations for provenance"
+  ]
+}

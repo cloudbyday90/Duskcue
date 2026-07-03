@@ -1,0 +1,140 @@
+{
+  "fixture": "release-channel-policy",
+  "channels": [
+    {
+      "id": "local",
+      "purpose": "Developer-only unsigned or debug builds.",
+      "allowed_artifacts": [
+        "debug APK",
+        "debug IPA simulator build",
+        "Tauri dev build",
+        "Roku sideload zip",
+        "Tizen/webOS dev package"
+      ],
+      "promotion_gate": "Never promoted directly to users.",
+      "rollback_expectation": "Delete local build and reinstall a fresh artifact."
+    },
+    {
+      "id": "internal",
+      "purpose": "Team and trusted tester builds.",
+      "allowed_artifacts": [
+        "signed Android internal app sharing or internal track",
+        "TestFlight internal build",
+        "signed desktop installer",
+        "TV private/beta package"
+      ],
+      "promotion_gate": "Contract, fixture, diagnostics, accessibility, and device-lab smoke checks pass.",
+      "rollback_expectation": "Previous internal artifact remains installable or downgrade path is documented."
+    },
+    {
+      "id": "beta",
+      "purpose": "External tester or store beta channel.",
+      "allowed_artifacts": [
+        "Google Play closed/open testing",
+        "TestFlight external testing",
+        "Roku beta/private channel",
+        "Amazon Live App Testing",
+        "desktop prerelease"
+      ],
+      "promotion_gate": "Internal gates plus release-required device evidence and privacy/review notes complete.",
+      "rollback_expectation": "Deactivate beta artifact or roll testers to previous build without data loss."
+    },
+    {
+      "id": "stable",
+      "purpose": "Public release channel.",
+      "allowed_artifacts": [
+        "production store release",
+        "public desktop release",
+        "public TV channel/app"
+      ],
+      "promotion_gate": "All platform release-blocking smoke tests, store metadata, signing, SBOM, provenance, and rollback expectations complete.",
+      "rollback_expectation": "Publish hotfix, staged rollout halt, store rollback where available, or documented user downgrade path."
+    }
+  ],
+  "platform_channel_map": [
+    {
+      "platform": "android_mobile",
+      "local": "debug APK",
+      "internal": "Play internal testing",
+      "beta": "Play closed/open testing",
+      "stable": "Play production"
+    },
+    {
+      "platform": "ios_mobile",
+      "local": "simulator/device debug build",
+      "internal": "TestFlight internal",
+      "beta": "TestFlight external",
+      "stable": "App Store"
+    },
+    {
+      "platform": "windows_desktop",
+      "local": "Tauri dev",
+      "internal": "signed prerelease installer",
+      "beta": "GitHub prerelease",
+      "stable": "GitHub release or Microsoft Store"
+    },
+    {
+      "platform": "macos_desktop",
+      "local": "Tauri dev",
+      "internal": "signed/notarized prerelease DMG",
+      "beta": "GitHub prerelease",
+      "stable": "GitHub release or Mac App Store"
+    },
+    {
+      "platform": "linux_desktop",
+      "local": "Tauri dev",
+      "internal": "signed prerelease package",
+      "beta": "GitHub prerelease",
+      "stable": "GitHub release"
+    },
+    {
+      "platform": "android_tv_google_tv",
+      "local": "ADB sideload debug APK",
+      "internal": "Play internal testing TV track",
+      "beta": "Play closed/open testing",
+      "stable": "Play production TV listing"
+    },
+    {
+      "platform": "fire_tv",
+      "local": "ADB sideload debug APK",
+      "internal": "Amazon Live App Testing",
+      "beta": "Amazon staged testing",
+      "stable": "Amazon Appstore production"
+    },
+    {
+      "platform": "roku",
+      "local": "developer sideload",
+      "internal": "private package",
+      "beta": "Roku beta/private channel",
+      "stable": "Roku Streaming Store public channel"
+    },
+    {
+      "platform": "samsung_tizen",
+      "local": "Tizen device install",
+      "internal": "Seller Office test package",
+      "beta": "limited distribution where available",
+      "stable": "Samsung Apps TV"
+    },
+    {
+      "platform": "lg_webos",
+      "local": "ares-install package",
+      "internal": "LG test package",
+      "beta": "limited distribution where available",
+      "stable": "LG Content Store"
+    },
+    {
+      "platform": "apple_tvos",
+      "local": "Xcode device build",
+      "internal": "TestFlight internal",
+      "beta": "TestFlight external",
+      "stable": "tvOS App Store"
+    },
+    {
+      "platform": "xbox",
+      "local": "Device Portal sideload",
+      "internal": "Partner Center flight",
+      "beta": "Store flight",
+      "stable": "Microsoft Store Xbox release"
+    }
+  ]
+}

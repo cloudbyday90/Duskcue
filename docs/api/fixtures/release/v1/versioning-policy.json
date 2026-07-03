@@ -1,0 +1,53 @@
+{
+  "fixture": "versioning-policy",
+  "policy": {
+    "human_version": "All Duskcue deliverables share the public SemVer-compatible server release train, for example 0.16.0.",
+    "build_metadata": "Client build metadata may append platform and CI run identifiers outside store-visible version names.",
+    "compatibility_rule": "A client release must declare the minimum compatible server API contract version and fail closed when required contract domains are missing.",
+    "downgrade_rule": "Clients may downgrade only across builds that keep the same local storage schema or run an explicit rollback migration."
+  },
+  "targets": [
+    {
+      "target": "server",
+      "version_source": "Cargo workspace package version and container image tag",
+      "monotonic_field": "container image digest",
+      "display_field": "server semantic version",
+      "rule": "Server image tags use vMAJOR.MINOR.PATCH and immutable digest pinning for releases."
+    },
+    {
+      "target": "web",
+      "version_source": "package version plus build commit",
+      "monotonic_field": "build commit SHA",
+      "display_field": "web client semantic version",
+      "rule": "Web is deployed with the server and must not claim compatibility beyond the bundled server contract."
+    },
+    {
+      "target": "desktop",
+      "version_source": "Tauri package version",
+      "monotonic_field": "platform package build number where supported",
+      "display_field": "desktop semantic version",
+      "rule": "Desktop shares the server release train but can publish patch builds for packaging/signing fixes."
+    },
+    {
+      "target": "mobile_android",
+      "version_source": "Flutter pubspec version plus Android versionCode",
+      "monotonic_field": "versionCode",
+      "display_field": "versionName",
+      "rule": "Android versionCode must increase monotonically for every uploaded artifact; versionName remains user-visible SemVer."
+    },
+    {
+      "target": "mobile_ios",
+      "version_source": "Flutter pubspec version plus CFBundleVersion",
+      "monotonic_field": "CFBundleVersion",
+      "display_field": "CFBundleShortVersionString",
+      "rule": "Apple CFBundleVersion build string must uniquely identify each uploaded build for a bundle ID and version."
+    },
+    {
+      "target": "tv_clients",
+      "version_source": "Platform package manifest",
+      "monotonic_field": "platform build number or package revision",
+      "display_field": "TV client semantic version",
+      "rule": "TV clients must declare supported server contract version and platform surface fixture version."
+    }
+  ]
+}

@@ -1,0 +1,266 @@
+{
+  "fixture": "platform-release-checklists",
+  "platforms": [
+    {
+      "platform": "android_mobile",
+      "app_identifier": "Duskcue Android Mobile",
+      "bundle_or_package_name": "app.duskcue.mobile",
+      "display_name": "Duskcue",
+      "store_or_distribution": "Google Play internal, closed, open, and production tracks; direct APK builds remain developer-only.",
+      "signing_identity": "Google Play App Signing app signing key plus CI upload key placeholder.",
+      "certificate_or_key_material": "Android upload keystore secret placeholder; never checked into repository.",
+      "provisioning_or_profile": "Play Console app record and release track configuration.",
+      "notarization_or_store_signing": "Play App Signing required for public Play distribution.",
+      "permission_or_capability_declarations": [
+        "Internet/network state",
+        "Local network discovery only when enabled by the Android client phase",
+        "Notifications only if mobile push is enabled",
+        "Foreground service/media permissions only if native playback requires them"
+      ],
+      "privacy_disclosures": [
+        "Declare account identifiers, diagnostics, device identifiers, push tokens, and playback activity where collected",
+        "Do not declare advertising or third-party tracking unless added later"
+      ],
+      "age_or_content_rating": "Complete Google Play content rating questionnaire for media playback app with user-owned catalog.",
+      "review_notes": "Explain self-hosted server selection, user-owned media library, local/VPN usage, and no bundled catalog."
+    },
+    {
+      "platform": "ios_mobile",
+      "app_identifier": "Duskcue iOS Mobile",
+      "bundle_or_package_name": "app.duskcue.mobile",
+      "display_name": "Duskcue",
+      "store_or_distribution": "TestFlight and App Store.",
+      "signing_identity": "Apple Distribution certificate placeholder.",
+      "certificate_or_key_material": "Apple signing certificate and App Store Connect API key placeholders; never checked into repository.",
+      "provisioning_or_profile": "App Store provisioning profile matching the bundle ID.",
+      "notarization_or_store_signing": "App Store signing and TestFlight processing.",
+      "permission_or_capability_declarations": [
+        "Local Network usage description when local server discovery is enabled",
+        "Push Notifications entitlement when APNs is enabled",
+        "Background modes only if native background audio/download scheduling is added"
+      ],
+      "privacy_disclosures": [
+        "App Privacy details for account identifiers, diagnostics, device identifiers, push tokens, and playback activity",
+        "Privacy Policy URL required"
+      ],
+      "age_or_content_rating": "Complete App Store age rating questionnaire for user-owned media playback.",
+      "review_notes": "Provide demo server or reviewer account instructions without secrets; explain self-hosted server entry and no bundled catalog."
+    },
+    {
+      "platform": "windows_desktop",
+      "app_identifier": "Duskcue Windows Desktop",
+      "bundle_or_package_name": "app.duskcue.desktop",
+      "display_name": "Duskcue",
+      "store_or_distribution": "GitHub release artifact first; Microsoft Store/MSIX optional.",
+      "signing_identity": "Windows code-signing certificate or Azure Key Vault signing placeholder.",
+      "certificate_or_key_material": "OV/EV certificate or Key Vault secret placeholder; never checked into repository.",
+      "provisioning_or_profile": "MSIX package identity if Microsoft Store distribution is enabled.",
+      "notarization_or_store_signing": "Microsoft Store signs accepted MSIX/AppX packages; direct downloads require project signing.",
+      "permission_or_capability_declarations": [
+        "Internet client",
+        "Private network client/server only if local discovery is enabled",
+        "Media playback"
+      ],
+      "privacy_disclosures": [
+        "Privacy policy required when personal information, diagnostics, or account data is transmitted",
+        "Diagnostics exports remain manual and redacted"
+      ],
+      "age_or_content_rating": "Complete Microsoft Store IARC age rating when Store distribution is enabled.",
+      "review_notes": "Explain self-hosted media server requirement and no third-party catalog."
+    },
+    {
+      "platform": "macos_desktop",
+      "app_identifier": "Duskcue macOS Desktop",
+      "bundle_or_package_name": "app.duskcue.desktop",
+      "display_name": "Duskcue",
+      "store_or_distribution": "Signed and notarized direct DMG first; Mac App Store optional.",
+      "signing_identity": "Developer ID Application or Apple Distribution certificate placeholder.",
+      "certificate_or_key_material": "Apple certificate, keychain profile, and notarization credential placeholders; never checked into repository.",
+      "provisioning_or_profile": "Developer ID direct distribution profile or Mac App Store provisioning profile.",
+      "notarization_or_store_signing": "Notarization required for direct macOS distribution; App Store signing for store distribution.",
+      "permission_or_capability_declarations": [
+        "Network client",
+        "Local Network usage when local server discovery is enabled",
+        "Keychain access for token storage"
+      ],
+      "privacy_disclosures": [
+        "Privacy Policy URL and App Privacy details when Mac App Store distribution is enabled",
+        "Manual diagnostics export with redaction"
+      ],
+      "age_or_content_rating": "Complete App Store age rating questionnaire if distributed through Mac App Store.",
+      "review_notes": "Explain Tauri shell around Duskcue web UI, self-hosted server entry, and no bundled media."
+    },
+    {
+      "platform": "linux_desktop",
+      "app_identifier": "Duskcue Linux Desktop",
+      "bundle_or_package_name": "app.duskcue.desktop",
+      "display_name": "Duskcue",
+      "store_or_distribution": "GitHub release artifacts; Flatpak/Snap/AppImage optional later.",
+      "signing_identity": "Release artifact signing key placeholder.",
+      "certificate_or_key_material": "Detached signature key placeholder; never checked into repository.",
+      "provisioning_or_profile": "Distribution package metadata for selected channel.",
+      "notarization_or_store_signing": "Not applicable; require detached checksums/signatures for release artifacts.",
+      "permission_or_capability_declarations": [
+        "Network client",
+        "Secret-service/keyring access",
+        "Portal permissions if Flatpak/Snap is added"
+      ],
+      "privacy_disclosures": [
+        "Privacy policy in release notes and repository",
+        "Manual diagnostics export with redaction"
+      ],
+      "age_or_content_rating": "Not store-gated for GitHub artifacts; complete store-specific rating if Flatpak/Snap store distribution is added.",
+      "review_notes": "Document distro packaging limitations and self-hosted server requirement."
+    },
+    {
+      "platform": "android_tv_google_tv",
+      "app_identifier": "Duskcue Android TV",
+      "bundle_or_package_name": "app.duskcue.tv.android",
+      "display_name": "Duskcue",
+      "store_or_distribution": "Google Play TV track.",
+      "signing_identity": "Google Play App Signing app signing key plus CI upload key placeholder.",
+      "certificate_or_key_material": "Android TV upload keystore secret placeholder; never checked into repository.",
+      "provisioning_or_profile": "Play Console TV app record and track configuration.",
+      "notarization_or_store_signing": "Play App Signing required for public Play distribution.",
+      "permission_or_capability_declarations": [
+        "Leanback launcher",
+        "Internet/network state",
+        "Media playback",
+        "Watch Next integration only after platform phase implements it"
+      ],
+      "privacy_disclosures": [
+        "Data Safety declarations for account, diagnostics, device, and playback activity data",
+        "No advertising or third-party tracking unless added later"
+      ],
+      "age_or_content_rating": "Complete Google Play TV content rating questionnaire for user-owned catalog playback.",
+      "review_notes": "Explain device-linking, remote-only navigation, self-hosted server, and no bundled catalog."
+    },
+    {
+      "platform": "fire_tv",
+      "app_identifier": "Duskcue Fire TV",
+      "bundle_or_package_name": "app.duskcue.tv.fire",
+      "display_name": "Duskcue",
+      "store_or_distribution": "Amazon Appstore Live App Testing and production.",
+      "signing_identity": "Amazon/Android signing key placeholder selected by Fire TV phase.",
+      "certificate_or_key_material": "Upload signing key placeholder; never checked into repository.",
+      "provisioning_or_profile": "Amazon Developer Console app record.",
+      "notarization_or_store_signing": "Amazon Appstore package processing and signing requirements.",
+      "permission_or_capability_declarations": [
+        "Internet/network state",
+        "Fire TV launcher and media playback declarations",
+        "Watch Activity or Content Personalization only where implemented"
+      ],
+      "privacy_disclosures": [
+        "Amazon Appstore privacy policy and data-use answers for account, diagnostics, device, push, and playback activity data"
+      ],
+      "age_or_content_rating": "Complete Amazon Appstore content rating for media playback app.",
+      "review_notes": "Explain self-hosted server, no bundled catalog, and account/device-link test path."
+    },
+    {
+      "platform": "roku",
+      "app_identifier": "Duskcue Roku",
+      "bundle_or_package_name": "duskcue",
+      "display_name": "Duskcue",
+      "store_or_distribution": "Roku developer dashboard beta/private channel first; public Streaming Store after certification.",
+      "signing_identity": "Roku channel package signing key placeholder.",
+      "certificate_or_key_material": "Roku package password/signing material placeholder; never checked into repository.",
+      "provisioning_or_profile": "Roku channel record and certification configuration.",
+      "notarization_or_store_signing": "Roku channel package signing and certification.",
+      "permission_or_capability_declarations": [
+        "Video app deep linking for supported media types",
+        "Roku Search feed only if public discovery is enabled",
+        "No account creation on TV unless platform phase explicitly supports it"
+      ],
+      "privacy_disclosures": [
+        "Privacy policy and certification answers for account, diagnostics, device, and playback activity data"
+      ],
+      "age_or_content_rating": "Complete Roku content rating and certification content answers.",
+      "review_notes": "Public video apps must pass deep-link and Direct to Play behavior; explain self-hosted catalog."
+    },
+    {
+      "platform": "samsung_tizen",
+      "app_identifier": "Duskcue Samsung TV",
+      "bundle_or_package_name": "app.duskcue.tv.samsung",
+      "display_name": "Duskcue",
+      "store_or_distribution": "Samsung TV Seller Office.",
+      "signing_identity": "Samsung Tizen author and distributor certificate placeholders.",
+      "certificate_or_key_material": "Tizen certificate profile placeholders; never checked into repository.",
+      "provisioning_or_profile": "Seller Office App ID and Tizen package profile.",
+      "notarization_or_store_signing": "Samsung certification and Seller Office release processing.",
+      "permission_or_capability_declarations": [
+        "Network access privilege",
+        "AVPlay/media privilege",
+        "Smart Hub Preview privileges only after implementation"
+      ],
+      "privacy_disclosures": [
+        "Seller Office privacy policy and credential handling answers for account, diagnostics, device, and playback activity data"
+      ],
+      "age_or_content_rating": "Complete Samsung Seller Office content policy and rating fields.",
+      "review_notes": "Explain self-hosted server, no bundled catalog, remote focus navigation, and reviewer device-link path."
+    },
+    {
+      "platform": "lg_webos",
+      "app_identifier": "Duskcue LG webOS",
+      "bundle_or_package_name": "app.duskcue.tv.lg",
+      "display_name": "Duskcue",
+      "store_or_distribution": "LG Content Store developer submission.",
+      "signing_identity": "webOS package signing key placeholder.",
+      "certificate_or_key_material": "webOS signing material placeholder; never checked into repository.",
+      "provisioning_or_profile": "LG app record and IPK package metadata.",
+      "notarization_or_store_signing": "LG app approval process and package validation.",
+      "permission_or_capability_declarations": [
+        "Network access",
+        "Media playback",
+        "Launch/relaunch parameter handling only after implementation"
+      ],
+      "privacy_disclosures": [
+        "LG privacy and credential-use checklist answers for account, diagnostics, device, and playback activity data"
+      ],
+      "age_or_content_rating": "Complete LG content review/rating fields.",
+      "review_notes": "Explain self-hosted server, no bundled catalog, and remote-only sign-in path."
+    },
+    {
+      "platform": "apple_tvos",
+      "app_identifier": "Duskcue tvOS",
+      "bundle_or_package_name": "app.duskcue.tvos",
+      "display_name": "Duskcue",
+      "store_or_distribution": "TestFlight and tvOS App Store.",
+      "signing_identity": "Apple Distribution certificate placeholder.",
+      "certificate_or_key_material": "Apple signing certificate and App Store Connect API key placeholders; never checked into repository.",
+      "provisioning_or_profile": "tvOS App Store provisioning profile matching bundle ID.",
+      "notarization_or_store_signing": "App Store signing and TestFlight processing.",
+      "permission_or_capability_declarations": [
+        "Associated Domains only when Universal Links are implemented",
+        "Top Shelf extension only when implemented",
+        "Local Network usage when local server discovery is enabled"
+      ],
+      "privacy_disclosures": [
+        "tvOS privacy policy text and App Privacy details for account, diagnostics, device, and playback activity data"
+      ],
+      "age_or_content_rating": "Complete App Store age rating questionnaire for user-owned media playback.",
+      "review_notes": "Provide reviewer device-link path and explain self-hosted catalog with no bundled media."
+    },
+    {
+      "platform": "xbox",
+      "app_identifier": "Duskcue Xbox",
+      "bundle_or_package_name": "Duskcue.Xbox",
+      "display_name": "Duskcue",
+      "store_or_distribution": "Microsoft Store Xbox app submission after UWP/Xbox path is selected.",
+      "signing_identity": "Microsoft Store package identity and signing placeholder.",
+      "certificate_or_key_material": "Store package signing credentials handled by Partner Center; local test certificate placeholder.",
+      "provisioning_or_profile": "Partner Center product identity and Xbox capability configuration.",
+      "notarization_or_store_signing": "Microsoft Store signs accepted MSIX/AppX packages.",
+      "permission_or_capability_declarations": [
+        "Internet client",
+        "Media playback",
+        "URI activation",
+        "Xbox media/control capabilities selected by platform phase"
+      ],
+      "privacy_disclosures": [
+        "Microsoft Store privacy policy and data-use answers for account, diagnostics, device, and playback activity data"
+      ],
+      "age_or_content_rating": "Complete Microsoft Store IARC age rating and Xbox policy answers.",
+      "review_notes": "Explain self-hosted server, no bundled catalog, controller navigation, and media playback scope."
+    }
+  ]
+}

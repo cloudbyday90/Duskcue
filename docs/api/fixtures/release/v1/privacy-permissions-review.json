@@ -1,0 +1,248 @@
+{
+  "fixture": "privacy-permissions-review",
+  "global_disclosures": [
+    {
+      "id": "self_hosted_server",
+      "requirement": "Store review notes must explain that users connect to their own Duskcue server and that the app ships no media catalog."
+    },
+    {
+      "id": "account_identity",
+      "requirement": "Privacy disclosures must cover account identifiers, selected server origin, and session/device identifiers where stored."
+    },
+    {
+      "id": "playback_activity",
+      "requirement": "Privacy disclosures must cover playback progress, watch state, QoE, and diagnostics when transmitted to the selected server."
+    },
+    {
+      "id": "no_ad_tracking",
+      "requirement": "Do not declare advertising or third-party tracking unless a future task adds those integrations."
+    },
+    {
+      "id": "diagnostics_redaction",
+      "requirement": "Review notes and support docs must state that diagnostics are manually exported and redacted."
+    }
+  ],
+  "platforms": [
+    {
+      "platform": "android_mobile",
+      "permission_descriptions": [
+        "Network access for selected server",
+        "Notifications for opted-in push alerts",
+        "Local network discovery only when enabled"
+      ],
+      "privacy_labels": [
+        "Account identifiers",
+        "Device identifiers",
+        "Diagnostics",
+        "Playback activity"
+      ],
+      "review_notes": [
+        "Provide demo server steps",
+        "Explain Data Safety answers",
+        "Explain no bundled catalog"
+      ]
+    },
+    {
+      "platform": "ios_mobile",
+      "permission_descriptions": [
+        "Local Network usage description",
+        "Push Notifications entitlement",
+        "Background mode only when implemented"
+      ],
+      "privacy_labels": [
+        "Account identifiers",
+        "Device identifiers",
+        "Diagnostics",
+        "Playback activity"
+      ],
+      "review_notes": [
+        "Provide reviewer account or device-link path",
+        "Explain App Privacy details",
+        "Explain no bundled catalog"
+      ]
+    },
+    {
+      "platform": "windows_desktop",
+      "permission_descriptions": [
+        "Network client",
+        "Private network capability only when enabled",
+        "Credential locker/keyring access"
+      ],
+      "privacy_labels": [
+        "Privacy policy URL",
+        "Diagnostics",
+        "Account/session data"
+      ],
+      "review_notes": [
+        "Explain self-hosted server requirement",
+        "Document Store capability declarations"
+      ]
+    },
+    {
+      "platform": "macos_desktop",
+      "permission_descriptions": [
+        "Network client",
+        "Local Network usage when enabled",
+        "Keychain access"
+      ],
+      "privacy_labels": [
+        "Privacy Policy URL",
+        "App Privacy details when store distributed",
+        "Diagnostics"
+      ],
+      "review_notes": [
+        "Explain notarization and Gatekeeper path",
+        "Explain self-hosted server requirement"
+      ]
+    },
+    {
+      "platform": "linux_desktop",
+      "permission_descriptions": [
+        "Network client",
+        "Secret-service/keyring access",
+        "Portal permissions for sandboxed packages"
+      ],
+      "privacy_labels": [
+        "Privacy policy in release notes",
+        "Diagnostics"
+      ],
+      "review_notes": [
+        "Document package format",
+        "Document no bundled catalog"
+      ]
+    },
+    {
+      "platform": "android_tv_google_tv",
+      "permission_descriptions": [
+        "Network access",
+        "TV launcher",
+        "Media playback",
+        "Watch Next when implemented"
+      ],
+      "privacy_labels": [
+        "Account identifiers",
+        "Device identifiers",
+        "Diagnostics",
+        "Playback activity"
+      ],
+      "review_notes": [
+        "Remote-only sign-in path",
+        "Data Safety answers",
+        "No bundled catalog"
+      ]
+    },
+    {
+      "platform": "fire_tv",
+      "permission_descriptions": [
+        "Network access",
+        "Media playback",
+        "Watch Activity when implemented"
+      ],
+      "privacy_labels": [
+        "Privacy policy",
+        "Account/session data",
+        "Diagnostics",
+        "Playback activity"
+      ],
+      "review_notes": [
+        "Live App Testing instructions",
+        "No bundled catalog"
+      ]
+    },
+    {
+      "platform": "roku",
+      "permission_descriptions": [
+        "Video app deep linking",
+        "Roku Search feed only when implemented",
+        "Authenticated app behavior"
+      ],
+      "privacy_labels": [
+        "Privacy policy",
+        "Device identifiers",
+        "Playback activity",
+        "Diagnostics"
+      ],
+      "review_notes": [
+        "Deep-link Direct to Play evidence",
+        "Self-hosted catalog explanation"
+      ]
+    },
+    {
+      "platform": "samsung_tizen",
+      "permission_descriptions": [
+        "Network privilege",
+        "AVPlay/media privilege",
+        "Smart Hub Preview when implemented"
+      ],
+      "privacy_labels": [
+        "Privacy policy",
+        "Credential handling",
+        "Diagnostics",
+        "Playback activity"
+      ],
+      "review_notes": [
+        "Seller Office App ID",
+        "Remote sign-in evidence",
+        "No bundled catalog"
+      ]
+    },
+    {
+      "platform": "lg_webos",
+      "permission_descriptions": [
+        "Network access",
+        "Media playback",
+        "Launch parameters when implemented"
+      ],
+      "privacy_labels": [
+        "Privacy policy",
+        "Credential information usage",
+        "Diagnostics",
+        "Playback activity"
+      ],
+      "review_notes": [
+        "LG self-checklist evidence",
+        "Remote sign-in evidence",
+        "No bundled catalog"
+      ]
+    },
+    {
+      "platform": "apple_tvos",
+      "permission_descriptions": [
+        "Local Network usage when enabled",
+        "Associated Domains when implemented",
+        "Top Shelf extension when implemented"
+      ],
+      "privacy_labels": [
+        "tvOS privacy policy text",
+        "App Privacy details",
+        "Diagnostics",
+        "Playback activity"
+      ],
+      "review_notes": [
+        "TestFlight reviewer path",
+        "No bundled catalog",
+        "Device-link sign-in"
+      ]
+    },
+    {
+      "platform": "xbox",
+      "permission_descriptions": [
+        "Internet client",
+        "Media playback",
+        "URI activation",
+        "Controller/media remote input"
+      ],
+      "privacy_labels": [
+        "Privacy policy",
+        "Account/session data",
+        "Diagnostics",
+        "Playback activity"
+      ],
+      "review_notes": [
+        "Partner Center flight instructions",
+        "Self-hosted server requirement",
+        "No bundled catalog"
+      ]
+    }
+  ]
+}

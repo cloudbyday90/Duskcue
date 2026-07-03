@@ -124,6 +124,12 @@ Official platform guidance consistently distinguishes emulator/simulator usefuln
 
 **Decision:** Phase 16d Task 10 adds [CLIENT_DEVICE_LAB.md](CLIENT_DEVICE_LAB.md), `docs/api/fixtures/device-lab/v1/manifest.json`, and `scripts/verify-device-lab.mjs`. The pack defines required platform IDs, minimum and representative devices, OS/runtime tracking, media capability categories, HLS/HDR/audio/subtitle expectations, remote/input behavior, storage constraints, known limitations, Docker `:48027` smoke scripts, release-required hardware, best-effort hardware, and allowed Phase 16d hardware gaps. Platform phases must close or explicitly defer their hardware gaps before claiming release readiness.
 
+### Release And Store Readiness
+
+Official release guidance makes signing, app identity, store metadata, privacy disclosures, age/content ratings, review notes, versioning, and rollout/rollback behavior platform-specific release gates. Android requires app-signing and monotonically increasing version codes. Apple platforms require bundle IDs, distribution signing, provisioning profiles, App Store privacy details, unique build strings, and notarization for direct macOS distribution. Microsoft, Amazon, Roku, Samsung, and LG each require their own package identity, certification/review checklist, privacy/content metadata, and platform-specific release evidence.
+
+**Decision:** Phase 16d Task 11 adds [CLIENT_RELEASE_READINESS.md](CLIENT_RELEASE_READINESS.md), `docs/api/fixtures/release/v1/manifest.json`, and `scripts/verify-release-readiness.mjs`. The pack defines per-platform app IDs/package names/bundle IDs, signing and certificate placeholders, provisioning/notarization/store-signing requirements, privacy labels/disclosures, permission/capability declarations, age/content rating expectations, review notes, CI artifact/signing/SBOM/provenance placeholders, release channel naming, versioning rules, release-blocking smoke tests, and rollback/update expectations. Platform phases must fill the placeholders with real secure-store/CI references and store evidence before beta or stable release claims.
+
 ## Mandatory Gates for Phases 17-23
 
 The following outputs are mandatory before a downstream platform phase can claim implementation complete:
@@ -135,7 +141,7 @@ The following outputs are mandatory before a downstream platform phase can claim
 - Accessibility/input checklist for the target device family.
 - Shared design asset/token pack for icon sources, placeholder artwork, artwork loading behavior, string ownership, and media-state badges.
 - Diagnostics bundle redaction checklist and request/playback/session correlation fields.
-- Release/store readiness checklist for app identity, package ID, signing placeholder, metadata, privacy labels/disclosures, permissions/capabilities, and platform smoke tests.
+- Release/store readiness checklist from [CLIENT_RELEASE_READINESS.md](CLIENT_RELEASE_READINESS.md) for app identity, package ID, signing placeholder, metadata, privacy labels/disclosures, permissions/capabilities, platform smoke tests, CI artifact/SBOM/provenance placeholders, versioning rules, and rollback/update expectations.
 - Device-lab entry from [CLIENT_DEVICE_LAB.md](CLIENT_DEVICE_LAB.md) for at least one representative target device or simulator/emulator, with release-required hardware, best-effort hardware, and documented hardware gaps.
 
 ## Advisory Outputs
@@ -163,7 +169,7 @@ These are recommended but not release-blocking for the first platform implementa
 | 8. Shared design assets/tokens | `docs/design/CLIENT_DESIGN_ASSETS.md`, `docs/api/fixtures/design/v1`, source SVG assets, design verifier |
 | 9. Diagnostics/logging bundles | `docs/design/CLIENT_DIAGNOSTICS.md`, `docs/api/fixtures/diagnostics/v1`, diagnostics verifier |
 | 10. Device lab matrix | `docs/design/CLIENT_DEVICE_LAB.md`, `docs/api/fixtures/device-lab/v1`, device lab verifier |
-| 11. Release/store readiness | Per-platform release checklist and CI placeholders |
+| 11. Release/store readiness | `docs/design/CLIENT_RELEASE_READINESS.md`, `docs/api/fixtures/release/v1`, release readiness verifier |
 | 12. Client CI/smoke harness | Docker-backed seeded smoke harness and CI jobs |
 
 ## Open Follow-Ups
@@ -188,3 +194,32 @@ These are recommended but not release-blocking for the first platform implementa
 - Flutter integration testing: https://docs.flutter.dev/testing/integration-tests
 - Windows Device Portal: https://learn.microsoft.com/en-us/windows/uwp/debug-test-perf/device-portal
 - Xbox Device Portal: https://learn.microsoft.com/en-us/xbox/gdk/docs/tools/tools-console/wdp/wdp
+
+## Task 11 Research Sources
+
+- Android app signing: https://developer.android.com/studio/publish/app-signing
+- Android app versioning: https://developer.android.com/studio/publish/versioning
+- Flutter Android deployment: https://docs.flutter.dev/deployment/android
+- Flutter iOS deployment: https://docs.flutter.dev/deployment/ios
+- Apple App Store provisioning profile: https://developer.apple.com/help/account/provisioning-profiles/create-an-app-store-provisioning-profile/
+- Apple Xcode distribution/versioning: https://developer.apple.com/documentation/xcode/preparing-your-app-for-distribution/
+- Apple App Store Connect app information: https://developer.apple.com/help/app-store-connect/reference/app-information/app-information/
+- Apple App Privacy Details: https://developer.apple.com/app-store/app-privacy-details/
+- Tauri macOS signing: https://v2.tauri.app/distribute/sign/macos/
+- Tauri Windows signing: https://v2.tauri.app/distribute/sign/windows/
+- Microsoft Store policies: https://learn.microsoft.com/en-us/windows/apps/publish/store-policies
+- Microsoft app certification process: https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/app-certification-process
+- Microsoft privacy/support info: https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/support-info
+- Microsoft age ratings: https://learn.microsoft.com/en-us/windows/apps/publish/publish-your-app/msix/age-ratings
+- Amazon Appstore submission FAQ: https://developer.amazon.com/docs/app-submission/faq-submission.html
+- Roku certification criteria: https://developer.roku.com/dev/docs/certification
+- Roku channel publishing: https://developer.roku.com/dev/docs/channel-publishing-guide
+- Roku deep linking: https://developer.roku.com/dev/docs/implementing-deep-linking
+- Samsung application publication process: https://developer.samsung.com/tv-seller-office/application-publication-process.html
+- Samsung launch checklist: https://developer.samsung.com/tv-seller-office/checklists-for-distribution/launch-checklist.html
+- LG app approval process: https://webostv.developer.lge.com/distribute/app-approval-process
+- LG app self checklist: https://webostv.developer.lge.com/distribute/app-self-checklist
+- GitHub artifact attestations: https://docs.github.com/actions/security-for-github-actions/using-artifact-attestations/using-artifact-attestations-to-establish-provenance-for-builds
+- GitHub workflow artifacts: https://docs.github.com/en/actions/tutorials/store-and-share-data
+- GitHub SBOM export: https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/export-dependencies-as-sbom
+- CycloneDX tool center: https://cyclonedx.org/tool-center/

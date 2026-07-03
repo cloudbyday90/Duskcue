@@ -1,0 +1,176 @@
+{
+  "fixture": "smoke-rollback-policy",
+  "docker_target": {
+    "default_port": 48027,
+    "readiness_url": "http://<server>:48027/health/ready",
+    "api_base_url": "http://<server>:48027/api/v1"
+  },
+  "common_release_blocking_steps": [
+    {
+      "id": "install_or_launch",
+      "expected_evidence": "Fresh install or clean launch succeeds on release-channel artifact."
+    },
+    {
+      "id": "server_selection",
+      "expected_evidence": "Client selects a Docker deployment at port 48027 without storing a private path or credential in diagnostics."
+    },
+    {
+      "id": "auth_or_device_link",
+      "expected_evidence": "User signs in or completes device linking, then session revocation is handled without stale playback."
+    },
+    {
+      "id": "library_browse",
+      "expected_evidence": "Library rows and media detail load from seeded representative data."
+    },
+    {
+      "id": "playback_start",
+      "expected_evidence": "Playback starts through the native platform player and emits first heartbeat."
+    },
+    {
+      "id": "heartbeat_stop",
+      "expected_evidence": "Progress heartbeat and stop/completion update server watch state."
+    },
+    {
+      "id": "diagnostics_export",
+      "expected_evidence": "Support bundle or diagnostics export omits credentials, signed URLs, and private paths."
+    },
+    {
+      "id": "update_or_rollback",
+      "expected_evidence": "Upgrade, rollback, or staged rollout halt path is documented for the release channel."
+    }
+  ],
+  "platforms": [
+    {
+      "platform": "android_mobile",
+      "release_blocking_smoke": [
+        "Install from Play internal track",
+        "Validate passkey/fallback auth",
+        "Start HLS playback and background/foreground once",
+        "Confirm push permission prompt copy when enabled"
+      ],
+      "rollback_expectation": "Halt staged rollout or publish higher versionCode hotfix; user downgrade is not assumed.",
+      "update_expectation": "versionCode increases for every Play upload."
+    },
+    {
+      "platform": "ios_mobile",
+      "release_blocking_smoke": [
+        "Install from TestFlight",
+        "Validate local-network permission path when enabled",
+        "Start AVPlayer playback and resume",
+        "Export redacted diagnostics"
+      ],
+      "rollback_expectation": "Expire TestFlight build or submit hotfix; App Store downgrade is not assumed.",
+      "update_expectation": "CFBundleVersion increases for each uploaded build."
+    },
+    {
+      "platform": "windows_desktop",
+      "release_blocking_smoke": [
+        "Install signed MSI/MSIX",
+        "Validate OS keyring token storage",
+        "Start playback in Tauri shell",
+        "Verify uninstaller preserves or clears expected user state"
+      ],
+      "rollback_expectation": "Previous signed installer remains available unless local storage schema changed.",
+      "update_expectation": "Installer version and package identity remain stable."
+    },
+    {
+      "platform": "macos_desktop",
+      "release_blocking_smoke": [
+        "Install signed and notarized DMG",
+        "Pass Gatekeeper launch",
+        "Validate keychain token storage",
+        "Start playback and export diagnostics"
+      ],
+      "rollback_expectation": "Previous notarized DMG remains available unless local storage schema changed.",
+      "update_expectation": "Bundle ID remains stable and build string is unique."
+    },
+    {
+      "platform": "linux_desktop",
+      "release_blocking_smoke": [
+        "Install release package on target distro",
+        "Validate secret-service/keyring fallback",
+        "Start playback",
+        "Verify checksums and detached signature"
+      ],
+      "rollback_expectation": "Previous signed package remains available.",
+      "update_expectation": "Package version and artifact checksum change together."
+    },
+    {
+      "platform": "android_tv_google_tv",
+      "release_blocking_smoke": [
+        "Install from Play TV internal track or ADB release artifact",
+        "Complete device linking by remote",
+        "Start playback and remote pause/seek",
+        "Validate Watch Next behavior when implemented"
+      ],
+      "rollback_expectation": "Halt staged rollout or publish higher versionCode hotfix.",
+      "update_expectation": "TV package identity and versionCode remain monotonic."
+    },
+    {
+      "platform": "fire_tv",
+      "release_blocking_smoke": [
+        "Install Amazon Live App Testing artifact",
+        "Complete device linking by remote",
+        "Start playback and remote pause/seek",
+        "Validate Watch Activity behavior when implemented"
+      ],
+      "rollback_expectation": "Deactivate Live App Testing build or publish hotfix.",
+      "update_expectation": "Package name remains immutable after live submission."
+    },
+    {
+      "platform": "roku",
+      "release_blocking_smoke": [
+        "Install signed package or beta channel",
+        "Complete device linking",
+        "Pass deep-link Direct to Play smoke",
+        "Run Roku pre-certification tools when public release is targeted"
+      ],
+      "rollback_expectation": "Retain previous channel package and revert public package when dashboard supports it.",
+      "update_expectation": "Channel version and package are tracked with certification evidence."
+    },
+    {
+      "platform": "samsung_tizen",
+      "release_blocking_smoke": [
+        "Install signed WGT on real TV or Remote Test Lab",
+        "Complete device linking by remote",
+        "Start AVPlay HLS playback",
+        "Run Seller Office launch checklist"
+      ],
+      "rollback_expectation": "Keep previous certified WGT available for re-submission or hotfix path.",
+      "update_expectation": "Seller Office App ID remains stable."
+    },
+    {
+      "platform": "lg_webos",
+      "release_blocking_smoke": [
+        "Install IPK on real TV or simulator plus real-device follow-up",
+        "Complete device linking by remote",
+        "Start HLS playback",
+        "Run LG app self-checklist"
+      ],
+      "rollback_expectation": "Keep previous approved IPK and document re-submission path.",
+      "update_expectation": "appinfo ID remains stable."
+    },
+    {
+      "platform": "apple_tvos",
+      "release_blocking_smoke": [
+        "Install from TestFlight on Apple TV",
+        "Complete device linking by remote",
+        "Start AVKit HLS playback",
+        "Validate Top Shelf or Universal Links when implemented"
+      ],
+      "rollback_expectation": "Expire TestFlight build or submit hotfix; App Store downgrade is not assumed.",
+      "update_expectation": "Bundle ID remains stable and CFBundleVersion is unique."
+    },
+    {
+      "platform": "xbox",
+      "release_blocking_smoke": [
+        "Install MSIX/AppX through Device Portal or Store flight",
+        "Complete device linking by controller",
+        "Start native media playback",
+        "Validate URI activation and SMTC when implemented"
+      ],
+      "rollback_expectation": "Retain previous Store flight or publish hotfix through Partner Center.",
+      "update_expectation": "Package identity remains stable and Store package version increases."
+    }
+  ]
+}
