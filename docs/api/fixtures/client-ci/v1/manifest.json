@@ -1,0 +1,103 @@
+{
+  "fixture_pack": "client-ci",
+  "version": 1,
+  "phase": "16d",
+  "task": 12,
+  "description": "Reusable client CI and Docker smoke harness baseline for downstream desktop, mobile, TV, and console phases.",
+  "docker_target": {
+    "compose_file": "docker-compose.yml",
+    "default_port": 48027,
+    "public_base_url": "http://127.0.0.1:48027",
+    "readiness_url": "http://127.0.0.1:48027/health/ready",
+    "liveness_url": "http://127.0.0.1:48027/health/live",
+    "sse_probe_url": "http://127.0.0.1:48027/api/v1/events"
+  },
+  "harness": {
+    "script": "scripts/client-smoke-harness.mjs",
+    "plan_command": "node scripts/client-smoke-harness.mjs --plan",
+    "run_command": "node scripts/client-smoke-harness.mjs --run",
+    "required_steps": [
+      "docker_compose_up",
+      "wait_for_readiness",
+      "seed_representative_data",
+      "public_surface_smoke",
+      "shared_contract_validation",
+      "fixture_drift_validation",
+      "binding_generation_readiness",
+      "conformance_validation",
+      "diagnostics_redaction_validation",
+      "accessibility_release_validation",
+      "docker_compose_down"
+    ]
+  },
+  "fixtures": [
+    {
+      "id": "harness-plan",
+      "file": "harness-plan.json"
+    },
+    {
+      "id": "ci-jobs",
+      "file": "ci-jobs.json"
+    },
+    {
+      "id": "downstream-consumption",
+      "file": "downstream-consumption.json"
+    },
+    {
+      "id": "manual-hardware-gates",
+      "file": "manual-hardware-gates.json"
+    },
+    {
+      "id": "seed-data-profile",
+      "file": "seed-data-profile.json"
+    }
+  ],
+  "required_ci_jobs": [
+    "shared_contract_validation",
+    "fixture_drift",
+    "binding_generation_readiness",
+    "desktop_tauri_smoke",
+    "mobile_flutter_smoke",
+    "tv_console_fixture_smoke",
+    "docker_smoke_plan",
+    "docker_smoke_run_manual"
+  ],
+  "required_verifiers": [
+    "scripts/verify-client-contracts.mjs",
+    "scripts/verify-client-bindings.mjs",
+    "scripts/verify-client-fixtures.mjs",
+    "scripts/verify-playback-conformance.mjs",
+    "scripts/verify-auth-conformance.mjs",
+    "scripts/verify-tv-deeplink-conformance.mjs",
+    "scripts/verify-tv-surface-fixtures.mjs",
+    "scripts/verify-accessibility-input.mjs",
+    "scripts/verify-design-assets.mjs",
+    "scripts/verify-client-diagnostics.mjs",
+    "scripts/verify-device-lab.mjs",
+    "scripts/verify-release-readiness.mjs",
+    "scripts/verify-client-ci-smoke.mjs"
+  ],
+  "required_downstream_phases": [
+    "phase17_android_tv",
+    "phase18_fire_tv",
+    "phase19_roku",
+    "phase20_samsung_tizen",
+    "phase21_lg_webos",
+    "phase22_tvos",
+    "phase23_xbox"
+  ],
+  "required_platforms": [
+    "android_mobile",
+    "ios_mobile",
+    "windows_desktop",
+    "macos_desktop",
+    "linux_desktop",
+    "android_tv_google_tv",
+    "fire_tv",
+    "roku",
+    "samsung_tizen",
+    "lg_webos",
+    "apple_tvos",
+    "xbox"
+  ]
+}

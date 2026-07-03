@@ -1,0 +1,83 @@
+{
+  "fixture": "downstream-consumption",
+  "required_before_phase_complete": [
+    "node scripts/client-smoke-harness.mjs --plan",
+    "node scripts/verify-client-ci-smoke.mjs",
+    "node scripts/verify-client-contracts.mjs",
+    "node scripts/verify-client-fixtures.mjs",
+    "node scripts/verify-client-bindings.mjs"
+  ],
+  "phases": [
+    {
+      "phase": "phase17_android_tv",
+      "must_consume": [
+        "TV/deep-link conformance pack",
+        "playback conformance pack",
+        "auth/session pack",
+        "device-lab Android TV entry",
+        "release-readiness Android TV placeholders"
+      ],
+      "release_gate": "Run the Docker smoke harness against :48027 plus Android TV emulator or Sony BRAVIA hardware validation."
+    },
+    {
+      "phase": "phase18_fire_tv",
+      "must_consume": [
+        "TV/deep-link conformance pack",
+        "Kotlin/Android binding target",
+        "Fire TV device-lab entry",
+        "release-readiness Fire TV placeholders"
+      ],
+      "release_gate": "Run the Docker smoke harness plus Fire TV device or simulator checks."
+    },
+    {
+      "phase": "phase19_roku",
+      "must_consume": [
+        "TV/deep-link conformance pack",
+        "fixture-first binding target",
+        "Roku device-lab entry",
+        "release-readiness Roku placeholders"
+      ],
+      "release_gate": "Run the Docker smoke harness plus Roku hardware deep-link and playback checks."
+    },
+    {
+      "phase": "phase20_samsung_tizen",
+      "must_consume": [
+        "TV/deep-link conformance pack",
+        "fixture-first web runtime target",
+        "Samsung Tizen device-lab entry",
+        "release-readiness Samsung placeholders"
+      ],
+      "release_gate": "Run the Docker smoke harness plus Samsung emulator or Remote Test Lab checks."
+    },
+    {
+      "phase": "phase21_lg_webos",
+      "must_consume": [
+        "TV/deep-link conformance pack",
+        "fixture-first web runtime target",
+        "LG webOS device-lab entry",
+        "release-readiness LG placeholders"
+      ],
+      "release_gate": "Run the Docker smoke harness plus LG emulator or physical-device checks."
+    },
+    {
+      "phase": "phase22_tvos",
+      "must_consume": [
+        "TV/deep-link conformance pack",
+        "Swift/tvOS binding target",
+        "Apple tvOS device-lab entry",
+        "release-readiness tvOS placeholders"
+      ],
+      "release_gate": "Run the Docker smoke harness plus tvOS simulator and Apple TV hardware checks."
+    },
+    {
+      "phase": "phase23_xbox",
+      "must_consume": [
+        "TV/deep-link conformance pack",
+        "fixture-first Windows/Xbox target",
+        "Xbox device-lab entry",
+        "release-readiness Xbox placeholders"
+      ],
+      "release_gate": "Run the Docker smoke harness plus Xbox Device Portal or console validation."
+    }
+  ]
+}

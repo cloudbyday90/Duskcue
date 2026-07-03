@@ -1,0 +1,105 @@
+{
+  "fixture": "manual-hardware-gates",
+  "policy": {
+    "ci_boundary": "CI may validate contracts, fixtures, generated-binding readiness, desktop/mobile build smoke paths, and Docker :48027 public-surface behavior.",
+    "manual_boundary": "Long-running playback, store review, signing, network-resume, remote-control, HDR, passthrough audio, and physical-device wake/resume checks remain manual or release-gate checks when hosted CI cannot run them truthfully."
+  },
+  "platforms": [
+    {
+      "platform": "android_mobile",
+      "manual_checks": [
+        "Physical install and protected-storage review",
+        "Offline package transfer and playback",
+        "Push-token provider delivery"
+      ]
+    },
+    {
+      "platform": "ios_mobile",
+      "manual_checks": [
+        "Physical install and protected-storage review",
+        "Offline package transfer and playback",
+        "APNs provider delivery"
+      ]
+    },
+    {
+      "platform": "windows_desktop",
+      "manual_checks": [
+        "Signed installer launch",
+        "Windows notification integration",
+        "Deep-link registration"
+      ]
+    },
+    {
+      "platform": "macos_desktop",
+      "manual_checks": [
+        "Notarized package launch",
+        "Keychain storage review",
+        "Deep-link registration"
+      ]
+    },
+    {
+      "platform": "linux_desktop",
+      "manual_checks": [
+        "AppImage or package launch",
+        "Secret-service storage review",
+        "Desktop notification integration"
+      ]
+    },
+    {
+      "platform": "android_tv_google_tv",
+      "manual_checks": [
+        "Google TV Watch Next behavior",
+        "Sony BRAVIA playback and standby/resume",
+        "Remote focus and voice/deep-link entry"
+      ]
+    },
+    {
+      "platform": "fire_tv",
+      "manual_checks": [
+        "Fire TV launcher integration",
+        "Remote focus and back behavior",
+        "Physical Fire OS playback validation"
+      ]
+    },
+    {
+      "platform": "roku",
+      "manual_checks": [
+        "Roku Search or Direct Publisher integration where available",
+        "Deep-link launch and access revalidation",
+        "Physical Roku playback validation"
+      ]
+    },
+    {
+      "platform": "samsung_tizen",
+      "manual_checks": [
+        "Samsung TV emulator or Remote Test Lab launch",
+        "Smart Hub preview behavior",
+        "Physical Tizen playback validation"
+      ]
+    },
+    {
+      "platform": "lg_webos",
+      "manual_checks": [
+        "LG emulator or physical device launch",
+        "webOS launch parameter handling",
+        "Physical webOS playback validation"
+      ]
+    },
+    {
+      "platform": "apple_tvos",
+      "manual_checks": [
+        "Top Shelf or Universal Links behavior",
+        "Siri Remote focus and playback controls",
+        "Physical Apple TV playback validation"
+      ]
+    },
+    {
+      "platform": "xbox",
+      "manual_checks": [
+        "Console install and launch",
+        "Gamepad focus and playback controls",
+        "Xbox Device Portal diagnostics capture"
+      ]
+    }
+  ]
+}

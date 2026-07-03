@@ -1,0 +1,106 @@
+{
+  "fixture": "harness-plan",
+  "mode": "docker_public_surface",
+  "default_base_url": "http://127.0.0.1:48027",
+  "steps": [
+    {
+      "id": "docker_compose_up",
+      "command": "docker compose up -d",
+      "environment": {
+        "DUSKCUE_HOST_BIND": "127.0.0.1",
+        "DUSKCUE_PORT": "48027"
+      },
+      "expected_evidence": "Container is running and compose healthcheck targets http://127.0.0.1:48027/health/ready."
+    },
+    {
+      "id": "wait_for_readiness",
+      "command": "GET http://127.0.0.1:48027/health/ready",
+      "expected_evidence": "HTTP 2xx readiness response before downstream client tests start."
+    },
+    {
+      "id": "seed_representative_data",
+      "command": "Create deterministic movie and episodic media fixture directories under ./media before the compose deployment reads them.",
+      "expected_evidence": "Movie and TV episode fixture paths exist without private host paths or credentials."
+    },
+    {
+      "id": "public_surface_smoke",
+      "command": "GET /health/live, GET /health/ready, and probe /api/v1/events against the public :48027 surface.",
+      "expected_evidence": "Health endpoints return 2xx and the SSE route never returns a 5xx."
+    },
+    {
+      "id": "shared_contract_validation",
+      "command": "node scripts/verify-client-contracts.mjs",
+      "expected_evidence": "Server route manifest, client helper coverage, and Phase 16d route metadata stay in sync."
+    },
+    {
+      "id": "fixture_drift_validation",
+      "command": "Run every Phase 16d fixture and conformance verifier.",
+      "expected_evidence": "Client, playback, auth, TV, accessibility, design, diagnostics, device-lab, release, and CI fixture packs pass."
+    },
+    {
+      "id": "binding_generation_readiness",
+      "command": "node scripts/verify-client-bindings.mjs",
+      "expected_evidence": "TypeScript, Dart, Kotlin, Swift, and fixture-first targets keep required domains and adapter requirements."
+    },
+    {
+      "id": "conformance_validation",
+      "command": "Run playback, auth/session, TV/deep-link, and TV-surface conformance verifiers.",
+      "expected_evidence": "Success and denial paths remain covered for downstream platform clients."
+    },
+    {
+      "id": "diagnostics_redaction_validation",
+      "command": "node scripts/verify-client-diagnostics.mjs",
+      "expected_evidence": "Client logs and support bundle fixtures omit tokens, signed URLs, and private media paths."
+    },
+    {
+      "id": "accessibility_release_validation",
+      "command": "Run accessibility/input, device-lab, and release-readiness verifiers.",
+      "expected_evidence": "Per-platform accessibility, hardware, artifact, SBOM/provenance, and rollback gates remain documented."
+    },
+    {
+      "id": "docker_compose_down",
+      "command": "docker compose down",
+      "expected_evidence": "The smoke deployment is removed unless the run explicitly keeps it for debugging."
+    }
+  ],
+  "public_surface_checks": [
+    {
+      "id": "ready",
+      "method": "GET",
+      "path": "/health/ready",
+      "allowed_status": [
+        200
+      ]
+    },
+    {
+      "id": "live",
+      "method": "GET",
+      "path": "/health/live",
+      "allowed_status": [
+        200
+      ]
+    },
+    {
+      "id": "events",
+      "method": "GET",
+      "path": "/api/v1/events",
+      "allowed_status_range": "100-499",
+      "forbidden_status_range": "500-599"
+    }
+  ],
+  "contract_verifier_commands": [
+    "node scripts/verify-client-contracts.mjs",
+    "node scripts/verify-client-bindings.mjs",
+    "node scripts/verify-client-fixtures.mjs",
+    "node scripts/verify-playback-conformance.mjs",
+    "node scripts/verify-auth-conformance.mjs",
+    "node scripts/verify-tv-deeplink-conformance.mjs",
+    "node scripts/verify-tv-surface-fixtures.mjs",
+    "node scripts/verify-accessibility-input.mjs",
+    "node scripts/verify-design-assets.mjs",
+    "node scripts/verify-client-diagnostics.mjs",
+    "node scripts/verify-device-lab.mjs",
+    "node scripts/verify-release-readiness.mjs",
+    "node scripts/verify-client-ci-smoke.mjs"
+  ]
+}

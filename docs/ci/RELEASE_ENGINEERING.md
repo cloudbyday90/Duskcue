@@ -15,6 +15,7 @@ This document complements:
 - [RELEASE_ARTIFACT_RETENTION.md](RELEASE_ARTIFACT_RETENTION.md) — durable release evidence, retention windows, and rollback-proof artifact rules
 - [CLIENT_PACKAGING.md](CLIENT_PACKAGING.md) — desktop/mobile package smoke, signing placeholders, privacy notes, and client release-gate checks
 - [CLIENT_RELEASE_READINESS.md](../design/CLIENT_RELEASE_READINESS.md) — cross-client app identity, signing, store metadata, privacy, versioning, SBOM/provenance, smoke, and rollback checklist
+- [CLIENT_CI_SMOKE_HARNESS.md](CLIENT_CI_SMOKE_HARNESS.md) — shared client contract, fixture, Docker `:48027`, and downstream platform smoke baseline
 
 ## Goals
 
@@ -115,6 +116,17 @@ Run:
 
 ```bash
 node scripts/verify-release-readiness.mjs
+```
+
+### Client CI and smoke baseline
+
+Phase 16d also adds [CLIENT_CI_SMOKE_HARNESS.md](CLIENT_CI_SMOKE_HARNESS.md) and the machine-readable fixture pack at `docs/api/fixtures/client-ci/v1`. Downstream platform phases must reuse this baseline before claiming verification complete. Pull requests run deterministic contract, fixture, binding-readiness, TV/console fixture, and harness-plan checks; release gates can manually run the full Docker `:48027` smoke harness.
+
+Run:
+
+```bash
+node scripts/client-smoke-harness.mjs --plan
+node scripts/verify-client-ci-smoke.mjs
 ```
 
 ### Database compatibility

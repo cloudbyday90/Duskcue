@@ -1,0 +1,49 @@
+{
+  "fixture": "seed-data-profile",
+  "profile": "client_smoke_seed_v1",
+  "purpose": "Deterministic representative data that the Docker smoke harness can create without credentials or private media.",
+  "media_roots": [
+    {
+      "id": "movies",
+      "relative_path": "media/movies/Client Smoke Movie (2026)",
+      "files": [
+        {
+          "name": "Client Smoke Movie (2026).mp4",
+          "content": "Duskcue client smoke placeholder movie file. Not real media."
+        },
+        {
+          "name": "Client Smoke Movie (2026).nfo",
+          "content": "<movie><title>Client Smoke Movie</title><year>2026</year></movie>"
+        }
+      ]
+    },
+    {
+      "id": "tv",
+      "relative_path": "media/tv/Client Smoke Show/Season 01",
+      "files": [
+        {
+          "name": "Client Smoke Show - S01E01 - Pilot.mkv",
+          "content": "Duskcue client smoke placeholder episode file. Not real media."
+        },
+        {
+          "name": "Client Smoke Show - S01E01 - Pilot.nfo",
+          "content": "<episodedetails><title>Pilot</title><season>1</season><episode>1</episode></episodedetails>"
+        }
+      ]
+    }
+  ],
+  "contract_cases": [
+    "server readiness",
+    "auth/session success and denial fixtures",
+    "library/media success and empty fixtures",
+    "playback start, heartbeat, stop, completion, and error fixtures",
+    "TV surface and deep-link success and denial fixtures",
+    "diagnostics redaction fixtures"
+  ],
+  "redaction_rules": [
+    "Do not include bearer tokens.",
+    "Do not include signed URL query material.",
+    "Do not include private host paths.",
+    "Do not include absolute paths; use relative repository paths only."
+  ]
+}

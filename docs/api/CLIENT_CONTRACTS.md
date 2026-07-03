@@ -15,6 +15,7 @@ The Phase 16d design asset/token pack starts at [fixtures/design/v1/manifest.jso
 The Phase 16d diagnostics/support-bundle pack starts at [fixtures/diagnostics/v1/manifest.json](fixtures/diagnostics/v1/manifest.json).
 The Phase 16d device lab and compatibility pack starts at [fixtures/device-lab/v1/manifest.json](fixtures/device-lab/v1/manifest.json).
 The Phase 16d release/store-readiness pack starts at [fixtures/release/v1/manifest.json](fixtures/release/v1/manifest.json).
+The Phase 16d client CI/smoke harness pack starts at [fixtures/client-ci/v1/manifest.json](fixtures/client-ci/v1/manifest.json).
 
 ## Decision
 
@@ -355,6 +356,29 @@ node scripts/verify-release-readiness.mjs
 ```
 
 The verifier checks required platform coverage, identity/signing fields, certificate placeholder handling, CI artifact/SBOM/provenance fields, versioning targets, release-channel mapping, Docker smoke steps, rollback/update expectations, privacy/review-note coverage, and fixture leak patterns.
+
+## Phase 16d Client CI And Smoke Harness
+
+Phase 16d Task 12 adds [CLIENT_CI_SMOKE_HARNESS.md](../ci/CLIENT_CI_SMOKE_HARNESS.md), a reusable client CI fixture pack under `docs/api/fixtures/client-ci/v1`, the executable `scripts/client-smoke-harness.mjs`, the drift gate `scripts/verify-client-ci-smoke.mjs`, and `.github/workflows/client-ci-smoke.yml`.
+
+The pack covers:
+
+- the Docker `:48027` public-surface target, readiness and liveness probes, SSE non-5xx probe, deterministic representative seed media, and the required harness steps;
+- always-on PR/main CI jobs for shared contract validation, fixture drift, binding-generation readiness, TV/console fixture smoke, and harness-plan validation;
+- manual workflow-dispatch jobs for the full Docker smoke run and heavier desktop/mobile platform smoke checks;
+- downstream Phase 17-23 consumption requirements so platform phases reuse the same baseline before declaring verification complete;
+- manual hardware/release-gate boundaries for checks that hosted CI cannot run truthfully.
+
+Run:
+
+```bash
+node scripts/client-smoke-harness.mjs --plan
+node scripts/verify-client-ci-smoke.mjs
+```
+
+Use `node scripts/client-smoke-harness.mjs --run` only when Docker is available and a maintainer wants release-gate evidence against the public `:48027` deployment.
+
+The verifier checks fixture coverage, required CI jobs, required contract/conformance verifier commands, downstream phase consumption, manual hardware gate coverage, seed-data redaction rules, workflow wiring, and harness script drift.
 
 Phase 16b added reusable TV surface fixtures ahead of full Phase 16d generation:
 

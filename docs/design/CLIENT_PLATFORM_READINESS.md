@@ -130,6 +130,12 @@ Official release guidance makes signing, app identity, store metadata, privacy d
 
 **Decision:** Phase 16d Task 11 adds [CLIENT_RELEASE_READINESS.md](CLIENT_RELEASE_READINESS.md), `docs/api/fixtures/release/v1/manifest.json`, and `scripts/verify-release-readiness.mjs`. The pack defines per-platform app IDs/package names/bundle IDs, signing and certificate placeholders, provisioning/notarization/store-signing requirements, privacy labels/disclosures, permission/capability declarations, age/content rating expectations, review notes, CI artifact/signing/SBOM/provenance placeholders, release channel naming, versioning rules, release-blocking smoke tests, and rollback/update expectations. Platform phases must fill the placeholders with real secure-store/CI references and store evidence before beta or stable release claims.
 
+## Client CI And Smoke Harness
+
+GitHub Actions supports path-filtered PR and mainline workflows, manual `workflow_dispatch` inputs, job dependencies, conditional jobs, and least-privilege workflow permissions. Docker Compose supports detached deployment and healthcheck readiness patterns. Flutter and Tauri both document CI/build smoke paths, while GitHub artifact-attestation and SBOM guidance belongs to release artifact jobs with elevated permissions rather than every PR smoke check.
+
+**Decision:** Phase 16d Task 12 adds [CLIENT_CI_SMOKE_HARNESS.md](../ci/CLIENT_CI_SMOKE_HARNESS.md), `.github/workflows/client-ci-smoke.yml`, `docs/api/fixtures/client-ci/v1/manifest.json`, `scripts/client-smoke-harness.mjs`, and `scripts/verify-client-ci-smoke.mjs`. Pull requests run deterministic contract, fixture, binding-readiness, TV/console fixture, and harness-plan checks. Maintainers can manually run the real Docker `:48027` smoke harness, which seeds representative media, starts `docker compose`, waits for readiness, probes the public surface, runs the Phase 16d conformance verifiers, and tears the deployment down. Platform build smoke lanes stay opt-in where they duplicate heavier packaging workflows, and hardware-only checks remain manual/release-gate evidence.
+
 ## Mandatory Gates for Phases 17-23
 
 The following outputs are mandatory before a downstream platform phase can claim implementation complete:
@@ -143,6 +149,7 @@ The following outputs are mandatory before a downstream platform phase can claim
 - Diagnostics bundle redaction checklist and request/playback/session correlation fields.
 - Release/store readiness checklist from [CLIENT_RELEASE_READINESS.md](CLIENT_RELEASE_READINESS.md) for app identity, package ID, signing placeholder, metadata, privacy labels/disclosures, permissions/capabilities, platform smoke tests, CI artifact/SBOM/provenance placeholders, versioning rules, and rollback/update expectations.
 - Device-lab entry from [CLIENT_DEVICE_LAB.md](CLIENT_DEVICE_LAB.md) for at least one representative target device or simulator/emulator, with release-required hardware, best-effort hardware, and documented hardware gaps.
+- Client CI/smoke harness baseline from [CLIENT_CI_SMOKE_HARNESS.md](../ci/CLIENT_CI_SMOKE_HARNESS.md), including `node scripts/client-smoke-harness.mjs --plan`, `node scripts/verify-client-ci-smoke.mjs`, and the relevant Phase 16d contract/fixture verifiers before platform-specific verification is declared complete.
 
 ## Advisory Outputs
 
@@ -170,12 +177,11 @@ These are recommended but not release-blocking for the first platform implementa
 | 9. Diagnostics/logging bundles | `docs/design/CLIENT_DIAGNOSTICS.md`, `docs/api/fixtures/diagnostics/v1`, diagnostics verifier |
 | 10. Device lab matrix | `docs/design/CLIENT_DEVICE_LAB.md`, `docs/api/fixtures/device-lab/v1`, device lab verifier |
 | 11. Release/store readiness | `docs/design/CLIENT_RELEASE_READINESS.md`, `docs/api/fixtures/release/v1`, release readiness verifier |
-| 12. Client CI/smoke harness | Docker-backed seeded smoke harness and CI jobs |
+| 12. Client CI/smoke harness | `docs/ci/CLIENT_CI_SMOKE_HARNESS.md`, `docs/api/fixtures/client-ci/v1`, `.github/workflows/client-ci-smoke.yml`, smoke harness, CI verifier |
 
 ## Open Follow-Ups
 
 - Decide in Task 1 whether to add JSON Schema files beside the manifest or embed schema snippets in the manifest first.
-- Decide in Task 12 whether the seeded Docker smoke harness owns its own fixture database or reuses migration/test seed scripts from existing server verification.
 
 ## Task 10 Research Sources
 
@@ -223,3 +229,16 @@ These are recommended but not release-blocking for the first platform implementa
 - GitHub workflow artifacts: https://docs.github.com/en/actions/tutorials/store-and-share-data
 - GitHub SBOM export: https://docs.github.com/en/code-security/how-tos/secure-your-supply-chain/establish-provenance-and-integrity/export-dependencies-as-sbom
 - CycloneDX tool center: https://cyclonedx.org/tool-center/
+
+## Task 12 Research Sources
+
+- GitHub Actions workflow syntax: https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax
+- GitHub Actions job variations: https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/run-job-variations
+- GitHub artifact attestations: https://docs.github.com/en/actions/how-tos/secure-your-work/use-artifact-attestations/use-artifact-attestations
+- Docker Compose startup order: https://docs.docker.com/compose/how-tos/startup-order/
+- Docker Compose up: https://docs.docker.com/reference/cli/docker/compose/up/
+- Flutter integration tests: https://docs.flutter.dev/testing/integration-tests
+- Flutter Android deployment: https://docs.flutter.dev/deployment/android
+- Flutter iOS deployment: https://docs.flutter.dev/deployment/ios
+- Android command-line tests: https://developer.android.com/studio/test/command-line
+- Tauri GitHub distribution pipeline: https://v2.tauri.app/distribute/pipelines/github/

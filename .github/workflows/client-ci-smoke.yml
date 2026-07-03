@@ -1,0 +1,256 @@
+name: Client CI and Smoke Harness
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/client-ci-smoke.yml
+      - docker-compose.yml
+      - docs/api/**
+      - docs/ci/**
+      - docs/design/CLIENT_PLATFORM_READINESS.md
+      - docs/design/CLIENT_ACCESSIBILITY_INPUT.md
+      - docs/design/CLIENT_DESIGN_ASSETS.md
+      - docs/design/CLIENT_DIAGNOSTICS.md
+      - docs/design/CLIENT_DEVICE_LAB.md
+      - docs/design/CLIENT_RELEASE_READINESS.md
+      - scripts/client-smoke-harness.mjs
+      - scripts/verify-client-*.mjs
+      - scripts/verify-playback-conformance.mjs
+      - scripts/verify-auth-conformance.mjs
+      - scripts/verify-tv-*.mjs
+      - scripts/verify-accessibility-input.mjs
+      - scripts/verify-design-assets.mjs
+      - scripts/verify-device-lab.mjs
+      - scripts/verify-release-readiness.mjs
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/client-ci-smoke.yml
+      - docker-compose.yml
+      - docs/api/**
+      - docs/ci/**
+      - docs/design/CLIENT_PLATFORM_READINESS.md
+      - docs/design/CLIENT_ACCESSIBILITY_INPUT.md
+      - docs/design/CLIENT_DESIGN_ASSETS.md
+      - docs/design/CLIENT_DIAGNOSTICS.md
+      - docs/design/CLIENT_DEVICE_LAB.md
+      - docs/design/CLIENT_RELEASE_READINESS.md
+      - scripts/client-smoke-harness.mjs
+      - scripts/verify-client-*.mjs
+      - scripts/verify-playback-conformance.mjs
+      - scripts/verify-auth-conformance.mjs
+      - scripts/verify-tv-*.mjs
+      - scripts/verify-accessibility-input.mjs
+      - scripts/verify-design-assets.mjs
+      - scripts/verify-device-lab.mjs
+      - scripts/verify-release-readiness.mjs
+  workflow_dispatch:
+    inputs:
+      run_docker_smoke:
+        description: Run the Docker :48027 smoke harness
+        required: true
+        default: false
+        type: boolean
+      run_platform_smoke:
+        description: Run heavier desktop/mobile platform smoke jobs
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  shared_contract_validation:
+    name: Shared Contract Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Show Node version
+        run: node --version
+
+      - name: Verify shared client contracts
+        run: node scripts/verify-client-contracts.mjs
+
+      - name: Verify binding generation readiness
+        run: node scripts/verify-client-bindings.mjs
+
+  fixture_drift:
+    name: Fixture Drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: shared_contract_validation
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Verify client fixtures
+        run: node scripts/verify-client-fixtures.mjs
+
+      - name: Verify playback conformance
+        run: node scripts/verify-playback-conformance.mjs
+
+      - name: Verify auth conformance
+        run: node scripts/verify-auth-conformance.mjs
+
+      - name: Verify TV deep-link conformance
+        run: node scripts/verify-tv-deeplink-conformance.mjs
+
+      - name: Verify TV surface fixtures
+        run: node scripts/verify-tv-surface-fixtures.mjs
+
+      - name: Verify accessibility and input fixtures
+        run: node scripts/verify-accessibility-input.mjs
+
+      - name: Verify design assets
+        run: node scripts/verify-design-assets.mjs
+
+      - name: Verify diagnostics fixtures
+        run: node scripts/verify-client-diagnostics.mjs
+
+      - name: Verify device lab fixtures
+        run: node scripts/verify-device-lab.mjs
+
+      - name: Verify release readiness fixtures
+        run: node scripts/verify-release-readiness.mjs
+
+      - name: Verify client CI smoke fixtures
+        run: node scripts/verify-client-ci-smoke.mjs
+
+  binding_generation_readiness:
+    name: Binding Generation Readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: shared_contract_validation
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Verify TypeScript Dart Kotlin Swift binding targets
+        run: node scripts/verify-client-bindings.mjs
+
+  tv_console_fixture_smoke:
+    name: TV and Console Fixture Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: fixture_drift
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Verify TV and device-lab baseline
+        run: |
+          node scripts/verify-tv-deeplink-conformance.mjs
+          node scripts/verify-tv-surface-fixtures.mjs
+          node scripts/verify-device-lab.mjs
+
+  docker_smoke_plan:
+    name: Docker Smoke Plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: fixture_drift
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Validate harness plan
+        run: node scripts/client-smoke-harness.mjs --plan
+
+      - name: Verify client CI smoke fixture pack
+        run: node scripts/verify-client-ci-smoke.mjs
+
+  docker_smoke_run_manual:
+    name: Docker Smoke Run Manual
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs: docker_smoke_plan
+    if: github.event_name == 'workflow_dispatch' && inputs.run_docker_smoke
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Run Docker public-surface smoke harness
+        run: node scripts/client-smoke-harness.mjs --run
+
+  desktop_tauri_smoke:
+    name: Desktop Tauri Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: github.event_name == 'workflow_dispatch' && inputs.run_platform_smoke
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install Linux Tauri prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            curl \
+            file \
+            libayatana-appindicator3-dev \
+            libgtk-3-dev \
+            librsvg2-dev \
+            libssl-dev \
+            libwebkit2gtk-4.1-dev \
+            libxdo-dev \
+            patchelf \
+            wget
+
+      - name: Install web dependencies
+        run: npm ci --prefix clients/web
+
+      - name: Install desktop dependencies
+        run: npm ci --prefix clients/desktop
+
+      - name: Build shared web UI for Tauri
+        run: npm --prefix clients/desktop run build
+
+  mobile_flutter_smoke:
+    name: Mobile Flutter Smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    if: github.event_name == 'workflow_dispatch' && inputs.run_platform_smoke
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Install Flutter SDK
+        run: |
+          curl -fsSL https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json -o "$RUNNER_TEMP/flutter-releases.json"
+          python3 - "$RUNNER_TEMP/flutter-releases.json" <<'PY' > "$RUNNER_TEMP/flutter-archive"
+          import json
+          import sys
+          data = json.load(open(sys.argv[1], encoding="utf-8"))
+          release = next(item for item in data["releases"] if item["channel"] == "stable")
+          print(release["archive"])
+          PY
+          archive="$(cat "$RUNNER_TEMP/flutter-archive")"
+          curl -fsSL "https://storage.googleapis.com/flutter_infra_release/releases/$archive" -o "$RUNNER_TEMP/flutter.tar.xz"
+          tar -xf "$RUNNER_TEMP/flutter.tar.xz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+
+      - name: Show Flutter version
+        run: |
+          flutter config --no-analytics
+          flutter --version
+
+      - name: Resolve Flutter dependencies
+        working-directory: clients/mobile
+        run: flutter pub get
+
+      - name: Analyze mobile client
+        working-directory: clients/mobile
+        run: flutter analyze
+
+      - name: Run mobile tests
+        working-directory: clients/mobile
+        run: flutter test
+
+      - name: Build Android debug APK
+        working-directory: clients/mobile
+        run: flutter build apk --debug

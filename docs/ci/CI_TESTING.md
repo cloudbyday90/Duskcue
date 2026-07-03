@@ -21,6 +21,7 @@ This document complements:
 - [PROJECT_STRUCTURE.md](../design/PROJECT_STRUCTURE.md) - repository layout for server and clients
 - [API_SECURITY.md](../security/API_SECURITY.md) - dependency auditing, SBOM generation, and API-layer safeguards
 - [CLIENT_PACKAGING.md](CLIENT_PACKAGING.md) - desktop/mobile packaging smoke workflow, signing placeholders, and store-readiness notes
+- [CLIENT_CI_SMOKE_HARNESS.md](CLIENT_CI_SMOKE_HARNESS.md) - shared client contract, fixture, Docker `:48027`, and downstream platform smoke baseline
 
 ## Goals
 
@@ -235,6 +236,8 @@ Additional jobs beyond PR:
 - SBOM generation
 
 The desktop/mobile packaging smoke implementation is `client-packaging.yml`; detailed artifact, signing, and privacy placeholders are documented in [CLIENT_PACKAGING.md](CLIENT_PACKAGING.md).
+
+The Phase 16d cross-client contract and smoke baseline is `client-ci-smoke.yml`; detailed harness behavior and downstream platform consumption are documented in [CLIENT_CI_SMOKE_HARNESS.md](CLIENT_CI_SMOKE_HARNESS.md). Its PR/main lanes run deterministic contract, fixture, binding-readiness, TV/console fixture, and harness-plan checks. The real Docker `:48027` smoke run and heavier desktop/mobile smoke jobs are manual workflow-dispatch lanes so release-gate evidence does not slow every pull request.
 
 ### 3. `restore-drill.yml`
 
@@ -519,6 +522,7 @@ Required green checks:
 5. Web browser/component smoke.
 6. Playwright smoke E2E.
 7. Flutter unit/widget suite.
+8. Phase 16d client contract, fixture, binding-readiness, and smoke-harness plan checks when client contracts or fixtures change.
 
 ### Mainline gate
 
@@ -617,3 +621,6 @@ The release evidence bundle should contain:
 - Vitest browser mode: https://vitest.dev/guide/browser/
 - Flutter testing overview: https://docs.flutter.dev/testing/overview
 - Flutter integration tests: https://docs.flutter.dev/testing/integration-tests
+- Docker Compose startup order: https://docs.docker.com/compose/how-tos/startup-order/
+- Docker Compose up: https://docs.docker.com/reference/cli/docker/compose/up/
+- Tauri GitHub distribution pipeline: https://v2.tauri.app/distribute/pipelines/github/
