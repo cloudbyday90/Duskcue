@@ -62,7 +62,7 @@ metrics-exporter-prometheus = "0.18"
 ipnet = "2"
 sysinfo = "0.34"
 rand = "0.9"
-webauthn-rs = { version = "0.6.1-dev", features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
+webauthn-rs = { version = "0.6.1-dev", default-features = false, features = ["danger-allow-state-serialisation", "danger-credential-internals"] }
 dashmap = "5.5"
 url = "2"
 base64 = "0.22"
@@ -72,7 +72,7 @@ regex = "1"
 croner = "3"
 notify = "8"
 notify-debouncer-full = "0.7"
-quick-xml = "0.40"
+quick-xml = "0.41"
 async-trait = "0.1"
 urlencoding = "2"
 flate2 = "1"
@@ -88,3 +88,7 @@ fluent-templates = "0.14"
 fluent-bundle = "0.16"
 fluent-langneg = "0.13"
 unic-langid = "0.9"
+
+[patch.crates-io]
+# Remove after plist publishes a release that depends on quick-xml >= 0.41.
+plist = { path = "vendor/plist-1.9.0" }
