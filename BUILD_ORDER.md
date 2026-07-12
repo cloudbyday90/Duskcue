@@ -4413,10 +4413,12 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
    - `storyboards.file_hash` is nullable to match `media_files.file_hash`; legacy empty sentinel values migrate to null and nullable hashes compare as values in the candidate filter.
    - Each completed storyboard stores a normalized output fingerprint, so a changed effective interval, width, quality, keyframe mode, or grid triggers regeneration even when the source hash is unchanged.
    - Server and web configuration validation now enforce the documented mode, interval, width, quality, and grid bounds.
-5. Honor configured cache storage, reconcile orphaned artifacts, and make item-level generation/deletion semantics explicit for every media-file version.
+5. ~~Honor configured cache storage and reconcile orphaned artifacts~~ **DONE — `85b7a1f`**
+   - Storyboard handlers and workers now use `BootstrapConfig.cache_dir`, honoring the configured cache root.
+   - Post-generation reconciliation locks each media-file directory before removing unreferenced artifact directories, obsolete legacy files, or directories with no storyboard row; active generation staging is skipped safely.
 6. Return scheduled generation failures to the scheduler, validate task configuration, add Storyboards fixtures/integration coverage, and finish seek-preview accessibility/performance hardening.
 
-**Context for Task 5:** Storyboard paths still derive from `BootstrapConfig.data_dir.join("cache")`, old artifact directories are retained after atomic publication, and item-level mutation applies only to the primary media file. Task 5 must honor the configured cache root, reconcile unreferenced artifacts safely, and make multi-version item behavior explicit.
+**Context for Task 6:** The scheduler still reports per-library failure as success, accepts malformed Storyboards task configuration, and item-level generation/deletion still applies only to the primary version. Task 6 must complete those mutation semantics, fixture/integration coverage, and seek-preview accessibility/performance hardening.
 
 ---
 
