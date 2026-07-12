@@ -2432,7 +2432,10 @@ The original Phase 11 work delivered the Trakt domain and worker. The audit foun
    - ~~Make `/admin/trakt` the canonical editor for masked operator credentials and redirect the retired System integrations link~~
    - ~~Make `/settings/trakt` the user-scoped device-code, sync, and status surface without exposing unsupported watchlist controls~~
    - ~~Document all twelve server routes and named web helpers in `client-contracts.v1.json`~~
-3. Implement or remove unsupported watchlist, rating-push, and collection-push settings; add deliberate request pacing. **NEXT**
+3. ~~Implement or remove unsupported watchlist, rating-push, and collection-push settings; add deliberate request pacing.~~ **DONE**
+   - ~~Remove watchlist from public account/sync-setting DTOs and disable the retained database column~~
+   - ~~Keep ratings and collection explicitly pull-only in the product contract~~
+   - ~~Pace sync GETs at 350ms and sync POSTs at one second process-wide while retaining Trakt `Retry-After` handling~~
 4. Replace the process-local lock if multi-instance deployment is supported and add the documented Trakt metrics. **PENDING**
 
 **What was built for Task 9:**
@@ -2685,7 +2688,7 @@ The original Phase 11 work delivered the Trakt domain and worker. The audit foun
 
 **Verification:** Play sessions generate analytics data visible in dashboard. Trakt-linked users sync watch state. Impossible travel alerts appear in admin dashboard for suspicious logins.
 
-**Phase 11 status:** The original 9 tasks are complete. Post-Phase 11 Trakt follow-up is in progress; Tasks 1–2 are complete and Task 3 is next.
+**Phase 11 status:** The original 9 tasks are complete. Post-Phase 11 Trakt follow-up is in progress; Tasks 1–3 are complete and Task 4 is next.
 
 ---
 

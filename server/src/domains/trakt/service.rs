@@ -114,7 +114,7 @@ pub async fn get_sync_settings(
     user_id: Uuid,
 ) -> Result<SyncSettingsResponse, TraktError> {
     let row = sqlx::query(
-        "SELECT sync_enabled, sync_watched, sync_watchlist, sync_collection, sync_ratings \
+        "SELECT sync_enabled, sync_watched, sync_collection, sync_ratings \
          FROM trakt_accounts WHERE user_id = $1",
     )
     .bind(user_id)
@@ -126,14 +126,12 @@ pub async fn get_sync_settings(
         Some(r) => SyncSettingsResponse {
             sync_enabled: r.get("sync_enabled"),
             sync_watched: r.get("sync_watched"),
-            sync_watchlist: r.get("sync_watchlist"),
             sync_collection: r.get("sync_collection"),
             sync_ratings: r.get("sync_ratings"),
         },
         None => SyncSettingsResponse {
             sync_enabled: false,
             sync_watched: false,
-            sync_watchlist: false,
             sync_collection: false,
             sync_ratings: false,
         },
@@ -149,17 +147,15 @@ pub async fn update_sync_settings(
         "UPDATE trakt_accounts SET \
             sync_enabled = COALESCE($2, sync_enabled), \
             sync_watched = COALESCE($3, sync_watched), \
-            sync_watchlist = COALESCE($4, sync_watchlist), \
-            sync_collection = COALESCE($5, sync_collection), \
-            sync_ratings = COALESCE($6, sync_ratings), \
+            sync_collection = COALESCE($4, sync_collection), \
+            sync_ratings = COALESCE($5, sync_ratings), \
             updated_at = now() \
          WHERE user_id = $1 \
-         RETURNING sync_enabled, sync_watched, sync_watchlist, sync_collection, sync_ratings",
+         RETURNING sync_enabled, sync_watched, sync_collection, sync_ratings",
     )
     .bind(user_id)
     .bind(settings.sync_enabled)
     .bind(settings.sync_watched)
-    .bind(settings.sync_watchlist)
     .bind(settings.sync_collection)
     .bind(settings.sync_ratings)
     .fetch_optional(pool)
@@ -170,7 +166,6 @@ pub async fn update_sync_settings(
         Some(r) => SyncSettingsResponse {
             sync_enabled: r.get("sync_enabled"),
             sync_watched: r.get("sync_watched"),
-            sync_watchlist: r.get("sync_watchlist"),
             sync_collection: r.get("sync_collection"),
             sync_ratings: r.get("sync_ratings"),
         },
@@ -734,7 +729,7 @@ async fn load_account(pool: &PgPool, user_id: Uuid) -> Result<Option<TraktAccoun
         SELECT id, user_id, trakt_username, trakt_user_id,
                access_token, refresh_token, token_expires_at, token_scope,
                last_full_sync_at, last_sync_attempt_at, last_sync_error,
-               sync_enabled, sync_watched, sync_watchlist,
+               sync_enabled, sync_watched,
                sync_collection, sync_ratings, created_at, updated_at
         FROM trakt_accounts
         WHERE user_id = $1
@@ -766,9 +761,9 @@ async fn upsert_account(
         INSERT INTO trakt_accounts (
             user_id, trakt_username, trakt_user_id,
             access_token, refresh_token, token_expires_at, token_scope,
-            sync_enabled, sync_watched, sync_watchlist, sync_collection, sync_ratings
+            sync_enabled, sync_watched, sync_collection, sync_ratings
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, true, true, true, true, true)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, true, true, true, true)
         ON CONFLICT (user_id) DO UPDATE SET
             trakt_username = EXCLUDED.trakt_username,
             trakt_user_id = EXCLUDED.trakt_user_id,
@@ -780,7 +775,7 @@ async fn upsert_account(
         RETURNING id, user_id, trakt_username, trakt_user_id,
                   access_token, refresh_token, token_expires_at, token_scope,
                   last_full_sync_at, last_sync_attempt_at, last_sync_error,
-                  sync_enabled, sync_watched, sync_watchlist,
+                  sync_enabled, sync_watched,
                   sync_collection, sync_ratings, created_at, updated_at
         "#,
     )
@@ -960,7 +955,6 @@ fn row_to_account(row: &sqlx::postgres::PgRow) -> TraktAccountRow {
         last_sync_error: row.get("last_sync_error"),
         sync_enabled: row.get("sync_enabled"),
         sync_watched: row.get("sync_watched"),
-        sync_watchlist: row.get("sync_watchlist"),
         sync_collection: row.get("sync_collection"),
         sync_ratings: row.get("sync_ratings"),
         created_at: row.get("created_at"),
@@ -977,7 +971,6 @@ fn account_to_response(account: Option<TraktAccountRow>) -> TraktAccountResponse
             token_expires_at: Some(a.token_expires_at),
             sync_enabled: a.sync_enabled,
             sync_watched: a.sync_watched,
-            sync_watchlist: a.sync_watchlist,
             sync_collection: a.sync_collection,
             sync_ratings: a.sync_ratings,
             last_full_sync_at: a.last_full_sync_at,
@@ -991,7 +984,6 @@ fn account_to_response(account: Option<TraktAccountRow>) -> TraktAccountResponse
             token_expires_at: None,
             sync_enabled: false,
             sync_watched: false,
-            sync_watchlist: false,
             sync_collection: false,
             sync_ratings: false,
             last_full_sync_at: None,

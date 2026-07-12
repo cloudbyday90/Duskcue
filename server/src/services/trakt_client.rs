@@ -21,16 +21,23 @@
 //! refresh; this module only performs HTTP calls and maps failures to
 //! [`TraktError`](crate::domains::trakt::TraktError).
 
+use std::sync::OnceLock;
 use std::time::Duration;
 
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Client, StatusCode};
 use serde::Deserialize;
+use tokio::sync::Mutex;
+use tokio::time::{Instant, sleep};
 
 use crate::domains::trakt::error::TraktError;
 use crate::domains::trakt::types::DeviceCodeResponse;
 
 const BASE_URL: &str = "https://api.trakt.tv";
+const SYNC_GET_INTERVAL: Duration = Duration::from_millis(350);
+const SYNC_POST_INTERVAL: Duration = Duration::from_secs(1);
+static SYNC_GET_PACER: OnceLock<Mutex<Instant>> = OnceLock::new();
+static SYNC_POST_PACER: OnceLock<Mutex<Instant>> = OnceLock::new();
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct TraktTokenResponse {
@@ -427,6 +434,7 @@ impl TraktClient {
         let mut page: u32 = 1;
         loop {
             let url = format!("{BASE_URL}{path}?page={page}&limit={PAGE_LIMIT}");
+            wait_for_sync_request_slot(&SYNC_GET_PACER, SYNC_GET_INTERVAL).await;
             let response = self
                 .http
                 .get(&url)
@@ -474,6 +482,7 @@ impl TraktClient {
         body: &serde_json::Value,
     ) -> Result<TraktSyncPostResponse, TraktError> {
         let url = format!("{BASE_URL}{path}");
+        wait_for_sync_request_slot(&SYNC_POST_PACER, SYNC_POST_INTERVAL).await;
         let response = self
             .http
             .post(&url)
@@ -500,6 +509,30 @@ impl TraktClient {
             .await
             .or_else(|_| Ok(TraktSyncPostResponse::default()))
     }
+}
+
+async fn wait_for_sync_request_slot(pacer: &'static OnceLock<Mutex<Instant>>, interval: Duration) {
+    let pacer = pacer.get_or_init(|| Mutex::new(Instant::now()));
+    let mut next_allowed_at = pacer.lock().await;
+    let now = Instant::now();
+    let (delay, next_slot) = next_sync_request_slot(now, *next_allowed_at, interval);
+    if !delay.is_zero() {
+        sleep(delay).await;
+    }
+    *next_allowed_at = next_slot;
+}
+
+fn next_sync_request_slot(
+    now: Instant,
+    next_allowed_at: Instant,
+    interval: Duration,
+) -> (Duration, Instant) {
+    let scheduled_at = if next_allowed_at > now {
+        next_allowed_at
+    } else {
+        now
+    };
+    (scheduled_at - now, scheduled_at + interval)
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -735,6 +768,19 @@ mod tests {
     fn client_constructs_with_empty_creds() {
         let client = TraktClient::new(String::new(), String::new(), String::new());
         assert_eq!(client.client_id(), "");
+    }
+
+    #[test]
+    fn sync_request_slots_preserve_the_required_spacing() {
+        let now = Instant::now();
+        let (initial_delay, initial_next) = next_sync_request_slot(now, now, SYNC_POST_INTERVAL);
+        assert!(initial_delay.is_zero());
+        assert_eq!(initial_next - now, SYNC_POST_INTERVAL);
+
+        let future = now + Duration::from_secs(2);
+        let (delay, next) = next_sync_request_slot(now, future, SYNC_GET_INTERVAL);
+        assert_eq!(delay, Duration::from_secs(2));
+        assert_eq!(next - future, SYNC_GET_INTERVAL);
     }
 
     #[test]

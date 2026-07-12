@@ -33,7 +33,6 @@ pub struct TraktAccountRow {
     pub last_sync_error: Option<String>,
     pub sync_enabled: bool,
     pub sync_watched: bool,
-    pub sync_watchlist: bool,
     pub sync_collection: bool,
     pub sync_ratings: bool,
     pub created_at: DateTime<Utc>,
@@ -75,7 +74,6 @@ pub struct PollDeviceCodeRequest {
 pub struct UpdateSyncSettingsRequest {
     pub sync_enabled: Option<bool>,
     pub sync_watched: Option<bool>,
-    pub sync_watchlist: Option<bool>,
     pub sync_collection: Option<bool>,
     pub sync_ratings: Option<bool>,
 }
@@ -88,7 +86,6 @@ pub struct TraktAccountResponse {
     pub token_expires_at: Option<DateTime<Utc>>,
     pub sync_enabled: bool,
     pub sync_watched: bool,
-    pub sync_watchlist: bool,
     pub sync_collection: bool,
     pub sync_ratings: bool,
     pub last_full_sync_at: Option<DateTime<Utc>>,
@@ -110,7 +107,6 @@ pub struct DeviceCodeResponse {
 pub struct SyncSettingsResponse {
     pub sync_enabled: bool,
     pub sync_watched: bool,
-    pub sync_watchlist: bool,
     pub sync_collection: bool,
     pub sync_ratings: bool,
 }

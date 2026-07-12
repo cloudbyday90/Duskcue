@@ -675,7 +675,7 @@ CREATE TABLE trakt_accounts (
     sync_enabled BOOLEAN NOT NULL DEFAULT true,
 
     sync_watched BOOLEAN NOT NULL DEFAULT true,
-    sync_watchlist BOOLEAN NOT NULL DEFAULT true,
+    sync_watchlist BOOLEAN NOT NULL DEFAULT false,
     sync_collection BOOLEAN NOT NULL DEFAULT true,
     sync_ratings BOOLEAN NOT NULL DEFAULT true,
 
@@ -730,6 +730,8 @@ CREATE INDEX idx_trakt_sync_state_watchlist ON trakt_sync_state (user_id) WHERE 
 ```
 
 `trakt_id` is nullable because Trakt accepts TMDB, IMDb, and TVDB identifiers on sync writes. A row may therefore represent a confirmed local item even when the source `media_items` row has no numeric Trakt identifier.
+
+`sync_watchlist` is retained for migration compatibility but defaults to `false` and is no longer part of the public account or sync-settings contract until watchlist sync is implemented.
 
 ---
 

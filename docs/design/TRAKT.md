@@ -27,7 +27,7 @@ All routes are under `/api/v1/trakt/*` per [API_CONVENTIONS.md](API_CONVENTIONS.
 
 | Method | Route | Purpose |
 |---|---|---|
-| `GET` | `/api/v1/trakt/settings` | Get per-category sync toggles (watched, watchlist, collection, ratings) |
+| `GET` | `/api/v1/trakt/settings` | Get supported category toggles (watched, collection, ratings) |
 | `PUT` | `/api/v1/trakt/settings` | Update per-category sync toggles |
 
 ### Sync Operations
@@ -233,7 +233,8 @@ The worker iterates all `trakt_accounts` where `sync_enabled = true`, performing
 | Watched sync engine (pull + confirmed push), ratings/collection pull | ✅ Implemented | Phase 11 Task 5 + reliability follow-up |
 | Watchlist sync and ratings/collection push | ⏳ Not implemented | Trakt follow-up |
 | Sync worker (scheduled task iteration and global failure result) | ✅ Implemented | Phase 11 Task 6 + reliability follow-up |
-| Cross-instance sync lock, explicit pacing, and Trakt metrics | ⏳ Not implemented | Trakt follow-up |
+| Process-wide sync request pacing | ✅ Implemented | Trakt follow-up |
+| Cross-instance sync lock and Trakt metrics | ⏳ Not implemented | Trakt follow-up |
 | Dedicated admin credentials and personal Trakt settings surfaces | ✅ Implemented | Trakt follow-up |
 
 ### Reliability Follow-up Implementation Notes
@@ -244,6 +245,7 @@ The worker iterates all `trakt_accounts` where `sync_enabled = true`, performing
 - **Durable sync outcomes** — successful runs clear `last_sync_error` and write both timestamps; failed runs write a safe error code and attempt timestamp. The user-facing account and status responses expose these values without exposing tokens.
 - **Honest task outcomes** — global Trakt failures now return an error to the scheduler rather than being recorded as a successful task. A manual sync response is completed synchronously and includes its summary.
 - **Canonical web ownership** — `/admin/trakt` is the only operator credential editor; it keeps the stored secret masked unless replaced. `/settings/trakt` is user-scoped and drives device-code linking, supported category controls, manual sync, and status. The retired System integrations deep link redirects to the Admin surface.
+- **Constrained category contract and pacing** — watchlist is not in public account or sync-settings responses, cannot be updated, and defaults to disabled in retained database rows. Sync GETs are paced globally at one request every 350ms and sync POSTs at one request per second; a Trakt 429 still stops the run and preserves `Retry-After`.
 
 ### Task 4 — OAuth Implementation Notes
 
@@ -259,7 +261,7 @@ The worker iterates all `trakt_accounts` where `sync_enabled = true`, performing
 - **Pull granularity = leaf items (movies + episodes)** — Duskcue tracks `is_watched` at the leaf level (`media_items.type IN ('movie','episode')`). Series/season are containers, so Duskcue pulls `/sync/watched/movies` and the new `/sync/watched/episodes` type (live since April 2026 per #775) directly, avoiding the expensive `shows` → `seasons` → `episodes` flattening. `user_item_data` propagation only touches movie/episode rows.
 - **In-memory matcher** — one query loads all `media_items` carrying any external ID (`SELECT id, type, trakt_id, tmdb_id, imdb_id, tvdb_id ...`), then four `HashMap<(MediaType, i64/String), Uuid>` maps answer matches in O(1). Priority order on collision: `trakt` → `tmdb` → `imdb` → `tvdb`. No title/year fuzzy matching for automated watched-state writes.
 - **Pagination loop** — every sync GET iterates `page=1..` with `limit=250` until the response is an empty array. The page count is not parsed from headers (the `X-Pagination-*` headers are inconsistently present on sync endpoints per the OpenAPI spec); the empty-array stop is authoritative.
-- **Rate limiting** — a `Retry-After` 429 maps to `TraktError::RateLimited`, preserves the retry value in the API response, and aborts the sync. Explicit client-side pacing remains follow-up work.
+- **Rate limiting** — sync GETs are process-wide paced to one request every 350ms and sync POSTs to one request per second. A `Retry-After` 429 maps to `TraktError::RateLimited`, preserves the retry value in the API response, and aborts the sync.
 - **`run_sync(state, user_id)` is the single entry point** — performs pull → merge → watched push inside one logical operation, guarded by a per-process `DashMap` lock with a 15-minute TTL that returns `TraktError::SyncInProgress`. A PostgreSQL advisory lock is follow-up work for multi-instance deployments. `trigger_sync` calls it inline and returns a completed summary.
 - **POST response shapes** — all three sync POSTs return `added` as an object `{movies, episodes, shows, seasons}` (per the OpenAPI spec — not a flat integer, even for ratings). For the implemented watched push, a non-empty `not_found` response fails the run and leaves local rows unconfirmed. `existing`/`updated` appear only on collection.
 - **Conservative rating merge** — pull applies a Trakt rating to `user_item_data.user_rating` only when that column is NULL (no local rating timestamp exists to do timestamp-based override). Documented above in Merge Strategy.
