@@ -60,7 +60,7 @@ pub async fn poll_device_code(
 
     let settings = client.get_user_settings(&token.access_token).await?;
 
-    let account = upsert_account(&state.pool, user_id, &token, &settings).await?;
+    let account = upsert_account(state, user_id, &token, &settings).await?;
 
     Ok(account_to_response(Some(account)))
 }
@@ -78,25 +78,35 @@ pub async fn ensure_valid_token(
     state: &AppState,
     user_id: Uuid,
 ) -> Result<(String, TraktAccountRow), TraktError> {
-    let account = load_account(&state.pool, user_id)
+    let mut account = load_account(&state.pool, user_id)
         .await?
         .ok_or(TraktError::AccountNotLinked)?;
 
-    let buffer_ago = Utc::now() - TOKEN_REFRESH_BUFFER;
-    if account.token_expires_at > buffer_ago {
-        return Ok((account.access_token.clone(), account));
+    let (mut access_token, mut refresh_token, needs_storage_upgrade) =
+        decrypt_account_tokens(state, &account)?;
+    if needs_storage_upgrade {
+        upgrade_legacy_token_storage(state, &account, &access_token, &refresh_token).await?;
+        account = load_account(&state.pool, user_id)
+            .await?
+            .ok_or(TraktError::AccountNotLinked)?;
+        (access_token, refresh_token, _) = decrypt_account_tokens(state, &account)?;
+    }
+
+    if !needs_token_refresh(account.token_expires_at, Utc::now()) {
+        return Ok((access_token, account));
     }
 
     let client = trakt_client(state)?;
-    let refreshed = client.refresh_token_pair(&account.refresh_token).await?;
+    let refreshed = client.refresh_token_pair(&refresh_token).await?;
 
     let new_expires_at = token_expires_at(&refreshed);
-    update_tokens(&state.pool, user_id, &refreshed, new_expires_at).await?;
+    update_tokens(state, user_id, &refreshed, new_expires_at).await?;
 
     let updated = load_account(&state.pool, user_id)
         .await?
         .ok_or(TraktError::AccountNotLinked)?;
-    Ok((updated.access_token.clone(), updated))
+    let (access_token, _, _) = decrypt_account_tokens(state, &updated)?;
+    Ok((access_token, updated))
 }
 
 pub async fn get_sync_settings(
@@ -174,7 +184,7 @@ pub async fn trigger_sync(
 ) -> Result<SyncTriggerResponse, TraktError> {
     let summary = run_sync(state, user_id).await?;
     Ok(SyncTriggerResponse {
-        queued: true,
+        completed: summary.completed,
         message: format!(
             "Sync complete — pulled {} watched, {} ratings, {} collection; pushed {} watched; {} unmatched",
             summary.pulled_watched,
@@ -183,6 +193,7 @@ pub async fn trigger_sync(
             summary.pushed_watched,
             summary.unmatched,
         ),
+        summary,
     })
 }
 
@@ -200,6 +211,11 @@ pub async fn run_sync(state: &AppState, user_id: Uuid) -> Result<SyncSummary, Tr
 
     let result = run_sync_inner(state, user_id, &account).await;
     state.trakt_sync_locks.remove(&user_id);
+
+    if let Err(error) = &result {
+        record_sync_failure(&state.pool, user_id, error).await?;
+    }
+
     result
 }
 
@@ -226,11 +242,9 @@ async fn run_sync_inner(
         .await
         {
             Ok(()) => {}
-            Err(TraktError::RateLimited { .. }) => {
+            Err(error @ TraktError::RateLimited { .. }) => {
                 tracing::warn!(user_id = %user_id, "Trakt rate limited during watched pull; aborting sync");
-                return Err(TraktError::RateLimited {
-                    retry_after_secs: None,
-                });
+                return Err(error);
             }
             Err(e) => return Err(e),
         }
@@ -263,15 +277,21 @@ async fn run_sync_inner(
     if account.sync_watched {
         match push_local_watched(&state.pool, &client, &access_token, user_id).await {
             Ok(pushed) => summary.pushed_watched = pushed,
-            Err(TraktError::RateLimited { .. }) => {
-                tracing::warn!(user_id = %user_id, "Trakt rate limited during watched push; push skipped");
+            Err(error @ TraktError::RateLimited { .. }) => {
+                tracing::warn!(user_id = %user_id, "Trakt rate limited during watched push; aborting sync");
+                return Err(error);
             }
             Err(e) => return Err(e),
         }
     }
 
     sqlx::query(
-        "UPDATE trakt_accounts SET last_full_sync_at = now(), updated_at = now() WHERE user_id = $1",
+        "UPDATE trakt_accounts SET \
+            last_full_sync_at = now(), \
+            last_sync_attempt_at = now(), \
+            last_sync_error = NULL, \
+            updated_at = now() \
+         WHERE user_id = $1",
     )
     .bind(user_id)
     .execute(&state.pool)
@@ -496,9 +516,10 @@ async fn push_local_watched(
         "Pushed local watched state to Trakt"
     );
     if let Some(nf) = resp.not_found
-        && !nf.is_null()
+        && has_not_found_items(&nf)
     {
         tracing::warn!(user_id = %user_id, not_found = %nf, "Trakt add_to_history reported not_found entries");
+        return Err(TraktError::SyncIncomplete);
     }
 
     mark_pushed_as_synced(pool, user_id, &pushed_ids).await?;
@@ -509,16 +530,24 @@ pub async fn get_sync_status(
     pool: &PgPool,
     user_id: Uuid,
 ) -> Result<SyncStatusResponse, TraktError> {
-    let account = sqlx::query("SELECT last_full_sync_at FROM trakt_accounts WHERE user_id = $1")
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await
-        .map_err(TraktError::Database)?;
+    let account = sqlx::query(
+        "SELECT last_full_sync_at, last_sync_attempt_at, last_sync_error \
+         FROM trakt_accounts WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .map_err(TraktError::Database)?;
 
-    let last_full_sync_at = match account {
-        Some(r) => r
-            .try_get::<Option<DateTime<Utc>>, _>("last_full_sync_at")
-            .unwrap_or(None),
+    let (last_full_sync_at, last_sync_attempt_at, last_error) = match account {
+        Some(r) => (
+            r.try_get::<Option<DateTime<Utc>>, _>("last_full_sync_at")
+                .unwrap_or(None),
+            r.try_get::<Option<DateTime<Utc>>, _>("last_sync_attempt_at")
+                .unwrap_or(None),
+            r.try_get::<Option<String>, _>("last_sync_error")
+                .unwrap_or(None),
+        ),
         None => return Err(TraktError::AccountNotLinked),
     };
 
@@ -543,7 +572,8 @@ pub async fn get_sync_status(
         watchlist_count: row.get("watchlist"),
         collection_count: row.get("collection"),
         rated_count: row.get("rated"),
-        last_error: None,
+        last_error,
+        last_sync_attempt_at,
     })
 }
 
@@ -703,7 +733,8 @@ async fn load_account(pool: &PgPool, user_id: Uuid) -> Result<Option<TraktAccoun
         r#"
         SELECT id, user_id, trakt_username, trakt_user_id,
                access_token, refresh_token, token_expires_at, token_scope,
-               last_full_sync_at, sync_enabled, sync_watched, sync_watchlist,
+               last_full_sync_at, last_sync_attempt_at, last_sync_error,
+               sync_enabled, sync_watched, sync_watchlist,
                sync_collection, sync_ratings, created_at, updated_at
         FROM trakt_accounts
         WHERE user_id = $1
@@ -718,12 +749,17 @@ async fn load_account(pool: &PgPool, user_id: Uuid) -> Result<Option<TraktAccoun
 }
 
 async fn upsert_account(
-    pool: &PgPool,
+    state: &AppState,
     user_id: Uuid,
     token: &TraktTokenResponse,
     settings: &TraktUserSettings,
 ) -> Result<TraktAccountRow, TraktError> {
     let expires_at = token_expires_at(token);
+    let (access_token, refresh_token) = encrypt_token_pair(
+        &state.encryption_key,
+        &token.access_token,
+        &token.refresh_token,
+    )?;
 
     let row = sqlx::query(
         r#"
@@ -743,18 +779,19 @@ async fn upsert_account(
             updated_at = now()
         RETURNING id, user_id, trakt_username, trakt_user_id,
                   access_token, refresh_token, token_expires_at, token_scope,
-                  last_full_sync_at, sync_enabled, sync_watched, sync_watchlist,
+                  last_full_sync_at, last_sync_attempt_at, last_sync_error,
+                  sync_enabled, sync_watched, sync_watchlist,
                   sync_collection, sync_ratings, created_at, updated_at
         "#,
     )
     .bind(user_id)
     .bind(&settings.user.username)
     .bind(settings.account.id)
-    .bind(&token.access_token)
-    .bind(&token.refresh_token)
+    .bind(access_token)
+    .bind(refresh_token)
     .bind(expires_at)
     .bind(token.scope.as_deref().filter(|s| !s.is_empty()))
-    .fetch_one(pool)
+    .fetch_one(&state.pool)
     .await
     .map_err(TraktError::Database)?;
 
@@ -762,11 +799,17 @@ async fn upsert_account(
 }
 
 async fn update_tokens(
-    pool: &PgPool,
+    state: &AppState,
     user_id: Uuid,
     token: &TraktTokenResponse,
     expires_at: DateTime<Utc>,
 ) -> Result<(), TraktError> {
+    let (access_token, refresh_token) = encrypt_token_pair(
+        &state.encryption_key,
+        &token.access_token,
+        &token.refresh_token,
+    )?;
+
     sqlx::query(
         r#"
         UPDATE trakt_accounts SET
@@ -779,11 +822,11 @@ async fn update_tokens(
         "#,
     )
     .bind(user_id)
-    .bind(&token.access_token)
-    .bind(&token.refresh_token)
+    .bind(access_token)
+    .bind(refresh_token)
     .bind(expires_at)
     .bind(token.scope.as_deref().filter(|s| !s.is_empty()))
-    .execute(pool)
+    .execute(&state.pool)
     .await
     .map_err(TraktError::Database)?;
     Ok(())
@@ -791,6 +834,115 @@ async fn update_tokens(
 
 fn token_expires_at(token: &TraktTokenResponse) -> DateTime<Utc> {
     Utc::now() + Duration::seconds(token.expires_in.max(0))
+}
+
+fn needs_token_refresh(expires_at: DateTime<Utc>, now: DateTime<Utc>) -> bool {
+    expires_at <= now + TOKEN_REFRESH_BUFFER
+}
+
+fn encrypt_token_pair(
+    key: &crate::services::encryption::EncryptionKey,
+    access_token: &str,
+    refresh_token: &str,
+) -> Result<(String, String), TraktError> {
+    let access_token = key
+        .encrypt(access_token)
+        .map_err(|_| TraktError::TokenStorage)?;
+    let refresh_token = key
+        .encrypt(refresh_token)
+        .map_err(|_| TraktError::TokenStorage)?;
+    Ok((access_token, refresh_token))
+}
+
+fn decrypt_account_tokens(
+    state: &AppState,
+    account: &TraktAccountRow,
+) -> Result<(String, String, bool), TraktError> {
+    let access_is_encrypted = account
+        .access_token
+        .starts_with(crate::services::encryption::ENCRYPTED_PREFIX);
+    let refresh_is_encrypted = account
+        .refresh_token
+        .starts_with(crate::services::encryption::ENCRYPTED_PREFIX);
+    let access_token = if access_is_encrypted {
+        state
+            .encryption_key
+            .decrypt(&account.access_token)
+            .map_err(|_| TraktError::TokenStorage)?
+    } else {
+        account.access_token.clone()
+    };
+    let refresh_token = if refresh_is_encrypted {
+        state
+            .encryption_key
+            .decrypt(&account.refresh_token)
+            .map_err(|_| TraktError::TokenStorage)?
+    } else {
+        account.refresh_token.clone()
+    };
+    Ok((
+        access_token,
+        refresh_token,
+        !access_is_encrypted || !refresh_is_encrypted,
+    ))
+}
+
+async fn upgrade_legacy_token_storage(
+    state: &AppState,
+    account: &TraktAccountRow,
+    access_token: &str,
+    refresh_token: &str,
+) -> Result<(), TraktError> {
+    let (encrypted_access, encrypted_refresh) =
+        encrypt_token_pair(&state.encryption_key, access_token, refresh_token)?;
+    sqlx::query(
+        "UPDATE trakt_accounts SET access_token = $2, refresh_token = $3, updated_at = now() \
+         WHERE id = $1 AND access_token = $4 AND refresh_token = $5",
+    )
+    .bind(account.id)
+    .bind(encrypted_access)
+    .bind(encrypted_refresh)
+    .bind(&account.access_token)
+    .bind(&account.refresh_token)
+    .execute(&state.pool)
+    .await
+    .map_err(TraktError::Database)?;
+    Ok(())
+}
+
+async fn record_sync_failure(
+    pool: &PgPool,
+    user_id: Uuid,
+    error: &TraktError,
+) -> Result<(), TraktError> {
+    sqlx::query(
+        "UPDATE trakt_accounts SET last_sync_attempt_at = now(), last_sync_error = $2, updated_at = now() \
+         WHERE user_id = $1",
+    )
+    .bind(user_id)
+    .bind(sync_error_code(error))
+    .execute(pool)
+    .await
+    .map_err(TraktError::Database)?;
+    Ok(())
+}
+
+fn sync_error_code(error: &TraktError) -> &'static str {
+    match error {
+        TraktError::AccountNotLinked => "TRAKT_001",
+        TraktError::RateLimited { .. } => "TRAKT_002",
+        TraktError::TokenExpired => "TRAKT_003",
+        TraktError::ServiceUnavailable => "TRAKT_004",
+        TraktError::Timeout => "TRAKT_005",
+        TraktError::SyncIncomplete => "TRAKT_006",
+        TraktError::TokenStorage => "TRAKT_007",
+        TraktError::DeviceCodeExpired => "DEVICE_CODE_EXPIRED",
+        TraktError::DeviceCodePending => "DEVICE_CODE_PENDING",
+        TraktError::DeviceCodeDenied => "DEVICE_CODE_DENIED",
+        TraktError::SyncInProgress => "SYNC_IN_PROGRESS",
+        TraktError::NotConfigured => "NOT_CONFIGURED",
+        TraktError::Database(_) => "DATABASE_ERROR",
+    }
 }
 
 fn row_to_account(row: &sqlx::postgres::PgRow) -> TraktAccountRow {
@@ -804,6 +956,8 @@ fn row_to_account(row: &sqlx::postgres::PgRow) -> TraktAccountRow {
         token_expires_at: row.get("token_expires_at"),
         token_scope: row.get("token_scope"),
         last_full_sync_at: row.get("last_full_sync_at"),
+        last_sync_attempt_at: row.get("last_sync_attempt_at"),
+        last_sync_error: row.get("last_sync_error"),
         sync_enabled: row.get("sync_enabled"),
         sync_watched: row.get("sync_watched"),
         sync_watchlist: row.get("sync_watchlist"),
@@ -827,6 +981,8 @@ fn account_to_response(account: Option<TraktAccountRow>) -> TraktAccountResponse
             sync_collection: a.sync_collection,
             sync_ratings: a.sync_ratings,
             last_full_sync_at: a.last_full_sync_at,
+            last_sync_attempt_at: a.last_sync_attempt_at,
+            last_sync_error: a.last_sync_error,
         },
         None => TraktAccountResponse {
             linked: false,
@@ -839,6 +995,8 @@ fn account_to_response(account: Option<TraktAccountRow>) -> TraktAccountResponse
             sync_collection: false,
             sync_ratings: false,
             last_full_sync_at: None,
+            last_sync_attempt_at: None,
+            last_sync_error: None,
         },
     }
 }
@@ -1106,10 +1264,19 @@ fn row_ids_to_value(row: &sqlx::postgres::PgRow) -> serde_json::Value {
     ids.to_id_object()
 }
 
+fn has_not_found_items(value: &serde_json::Value) -> bool {
+    match value {
+        serde_json::Value::Array(items) => !items.is_empty(),
+        serde_json::Value::Object(items) => items.values().any(has_not_found_items),
+        serde_json::Value::Null => false,
+        _ => true,
+    }
+}
+
 fn row_to_history_item(row: &sqlx::postgres::PgRow) -> TraktHistoryItem {
     TraktHistoryItem {
         media_item_id: row.get("media_item_id"),
-        trakt_id: row.get("trakt_id"),
+        trakt_id: row.try_get::<Option<i64>, _>("trakt_id").unwrap_or(None),
         is_watched: row.get("is_watched"),
         watched_at: row.get("watched_at"),
         plays: row.get("plays"),
@@ -1135,5 +1302,60 @@ fn try_acquire_sync_lock(locks: &dashmap::DashMap<Uuid, Instant>, user_id: Uuid)
             entry.insert(now);
             true
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::Duration;
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn token_refreshes_before_the_expiry_buffer_elapses() {
+        let now = Utc::now();
+
+        assert!(needs_token_refresh(now - Duration::seconds(1), now));
+        assert!(needs_token_refresh(now + TOKEN_REFRESH_BUFFER, now));
+        assert!(needs_token_refresh(
+            now + TOKEN_REFRESH_BUFFER - Duration::seconds(1),
+            now
+        ));
+        assert!(!needs_token_refresh(
+            now + TOKEN_REFRESH_BUFFER + Duration::seconds(1),
+            now
+        ));
+    }
+
+    #[test]
+    fn token_pair_encryption_round_trips_both_tokens() {
+        let (key, _) = crate::services::encryption::EncryptionKey::generate();
+        let (access, refresh) = encrypt_token_pair(&key, "access-token", "refresh-token")
+            .expect("token encryption should succeed");
+
+        assert!(access.starts_with(crate::services::encryption::ENCRYPTED_PREFIX));
+        assert!(refresh.starts_with(crate::services::encryption::ENCRYPTED_PREFIX));
+        assert_eq!(key.decrypt(&access).unwrap(), "access-token");
+        assert_eq!(key.decrypt(&refresh).unwrap(), "refresh-token");
+    }
+
+    #[test]
+    fn not_found_detection_requires_an_unconfirmed_item() {
+        assert!(!has_not_found_items(&json!(null)));
+        assert!(!has_not_found_items(&json!({"movies": [], "shows": []})));
+        assert!(has_not_found_items(
+            &json!({"movies": [{"title": "Missing"}]})
+        ));
+    }
+
+    #[test]
+    fn sync_error_codes_are_safe_to_persist() {
+        assert_eq!(sync_error_code(&TraktError::SyncIncomplete), "TRAKT_006");
+        assert_eq!(sync_error_code(&TraktError::TokenStorage), "TRAKT_007");
+        assert_eq!(
+            sync_error_code(&TraktError::Database(sqlx::Error::PoolClosed)),
+            "DATABASE_ERROR"
+        );
     }
 }

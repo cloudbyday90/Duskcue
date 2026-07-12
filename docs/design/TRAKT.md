@@ -6,7 +6,7 @@ This document is the authoritative design for the Trakt.tv integration domain (`
 
 ## Overview
 
-Trakt.tv is a first-class, per-user integration — not a plugin. Each Duskcue user can link their own Trakt account to sync watched history, watchlist, collection, and ratings bidirectionally. This supports local users, remote users, and shared users equally — each with their own Trakt identity.
+Trakt.tv is a first-class, per-user integration — not a plugin. Each Duskcue user can link their own Trakt account. Watched history sync is bidirectional; ratings and collection are currently pull-only. Watchlist remains a persisted preference without a sync implementation and is tracked as follow-up work. This supports local users, remote users, and shared users equally — each with their own Trakt identity.
 
 The integration is a user-scoped resource: every endpoint requires `AuthenticatedUser`, and all queries are scoped to the requesting user's `user_id`. No admin capability is needed to manage one's own Trakt link.
 
@@ -96,12 +96,12 @@ Bidirectional sync between Duskcue's `user_item_data` and Trakt's sync endpoints
 
 ### Push (Duskcue → Trakt)
 
-When a user marks an item watched, rates it, or adds it to a collection, the change is pushed to Trakt. Duskcue batches a full push into **one POST per category** (the endpoints accept arrays), which respects the 1 req/sec POST limit naturally:
+The current implementation pushes watched history. Ratings and collection push, along with watchlist pull/push, remain follow-up work. Duskcue batches the watched push into one POST; the available Trakt endpoints support one POST per category:
 - **Watched** → `POST /sync/history` with `{ movies: [{ ids, watched_at }], episodes: [...] }` → 201 `{ added: { movies, episodes, shows, seasons }, not_found: { movies: [...], ... } }`
 - **Ratings** → `POST /sync/ratings` with `{ movies: [{ ids, rating, rated_at }], ... }` → 201 `{ added: { ... }, not_found: { ... } }`
 - **Collection** → `POST /sync/collection` with `{ movies: [{ ids, collected_at }], ... }` → 201 `{ added: {...}, existing: {...}, updated: {...}, not_found: {...} }`
 
-**All three POST responses return `added` as an object** with per-type integer counts (movies/shows/seasons/episodes), not a flat integer. `existing`/`updated` appear **only** on the collection response. `watched_at`/`rated_at`/`collected_at` are optional in the request body (server uses the current time if omitted), but Duskcue always includes them to preserve the original timestamp. The `ids` object may use any ID namespace Trakt matches (trakt/imdb/tmdb/tvdb in that order), so Duskcue pushes whichever IDs the `media_item` has (`trakt_id` preferred, falling back to `tmdb_id`/`imdb_id`/`tvdb_id`). The `not_found` arrays are logged at WARN for operator visibility but never fail the sync.
+**All three POST responses return `added` as an object** with per-type integer counts (movies/shows/seasons/episodes), not a flat integer. `existing`/`updated` appear **only** on the collection response. `watched_at`/`rated_at`/`collected_at` are optional in the request body (server uses the current time if omitted), but Duskcue always includes them to preserve the original timestamp. The `ids` object may use any ID namespace Trakt matches (trakt/imdb/tmdb/tvdb in that order), so Duskcue pushes whichever IDs the `media_item` has (`trakt_id` preferred, falling back to `tmdb_id`/`imdb_id`/`tvdb_id`). A non-empty `not_found` response is logged and fails the sync; affected local rows are not marked as confirmed, so a later run can retry safely.
 
 ### Pull (Trakt → Duskcue)
 
@@ -147,7 +147,7 @@ Per [DATABASE.md](DATABASE.md) Trakt API summary:
 - **POST**: 1 request/second (authed) — sync pushes throttled to 1/sec
 - **GET**: 1000 requests/5 minutes (authed) — sync pulls can burst
 - Respect `Retry-After` header on 429 responses
-- The sync worker uses a `governor` rate limiter (1 req/sec for POST, burst-controlled for GET)
+- A 429 maps to `TraktError::RateLimited`; the API response preserves Trakt's `Retry-After` value when present and the scheduled worker stops the affected batch
 
 ## Error Handling
 
@@ -160,6 +160,8 @@ Per [ERROR_HANDLING.md](ERROR_HANDLING.md) TRAKT section:
 | `TRAKT_003` | 409 | Trakt token expired (needs re-link) |
 | `TRAKT_004` | 503 | Trakt API unavailable |
 | `TRAKT_005` | 504 | Trakt API timeout |
+| `TRAKT_006` | 409 | Trakt could not confirm every submitted item |
+| `TRAKT_007` | 500 | Trakt token storage could not be secured |
 
 Additional domain-specific variants (mapped to existing error codes, following the Segment/Storyboard precedent):
 - `DeviceCodeExpired` → 400 BAD_REQUEST (OAuth device code expired)
@@ -211,7 +213,7 @@ Per [DATABASE.md](DATABASE.md) scheduled tasks table:
 - **Timeout**: 30 min
 - **Config**: `{}` (empty — per-user sync settings come from `trakt_accounts` rows)
 
-The worker iterates all `trakt_accounts` where `sync_enabled = true` and `token_expires_at > now()`, performing bidirectional sync for each user. Task 6 implements the worker; Task 3 (this scaffolding) registers the domain structure only.
+The worker iterates all `trakt_accounts` where `sync_enabled = true`, performing the supported sync categories for each user. It deliberately does not filter by access-token expiry because `ensure_valid_token()` refreshes valid refresh tokens before the sync proceeds.
 
 ## Implementation Status
 
@@ -219,10 +221,20 @@ The worker iterates all `trakt_accounts` where `sync_enabled = true` and `token_
 |---|---|---|
 | Domain scaffolding (five-file pattern) | ✅ Implemented | Phase 11 Task 3 |
 | OAuth device code flow | ✅ Implemented | Phase 11 Task 4 |
-| Token refresh (proactive, with write-back) | ✅ Implemented | Phase 11 Task 4 |
+| Token refresh and encrypted account-token storage | ✅ Implemented | Phase 11 Task 4 + reliability follow-up |
 | Sync settings / status / history / ratings views | ✅ Implemented | Phase 11 Task 5 |
-| Bidirectional sync engine (push/pull/merge) | ✅ Implemented | Phase 11 Task 5 |
-| Sync worker (scheduled task iteration) | ✅ Implemented | Phase 11 Task 6 |
+| Watched sync engine (pull + confirmed push), ratings/collection pull | ✅ Implemented | Phase 11 Task 5 + reliability follow-up |
+| Watchlist sync and ratings/collection push | ⏳ Not implemented | Trakt follow-up |
+| Sync worker (scheduled task iteration and global failure result) | ✅ Implemented | Phase 11 Task 6 + reliability follow-up |
+| Cross-instance sync lock, explicit pacing, and Trakt metrics | ⏳ Not implemented | Trakt follow-up |
+
+### Reliability Follow-up Implementation Notes
+
+- **Account-token encryption and compatibility migration** — `access_token` and `refresh_token` are now AES-256-GCM encrypted at write time. Existing plaintext rows are atomically upgraded on first use, so upgrades do not require an operator export or a forced re-link.
+- **Refresh boundary corrected** — token refresh begins when expiry is at or within the five-minute safety buffer. Refreshed access and rotated refresh tokens are persisted together before another Trakt call can use them.
+- **Fallback identifier persistence** — `trakt_sync_state.trakt_id` is nullable. This preserves sync state for media matched and submitted with TMDB, IMDb, or TVDB identifiers when Trakt's numeric identifier is unavailable.
+- **Durable sync outcomes** — successful runs clear `last_sync_error` and write both timestamps; failed runs write a safe error code and attempt timestamp. The user-facing account and status responses expose these values without exposing tokens.
+- **Honest task outcomes** — global Trakt failures now return an error to the scheduler rather than being recorded as a successful task. A manual sync response is completed synchronously and includes its summary.
 
 ### Task 4 — OAuth Implementation Notes
 
@@ -238,9 +250,9 @@ The worker iterates all `trakt_accounts` where `sync_enabled = true` and `token_
 - **Pull granularity = leaf items (movies + episodes)** — Duskcue tracks `is_watched` at the leaf level (`media_items.type IN ('movie','episode')`). Series/season are containers, so Duskcue pulls `/sync/watched/movies` and the new `/sync/watched/episodes` type (live since April 2026 per #775) directly, avoiding the expensive `shows` → `seasons` → `episodes` flattening. `user_item_data` propagation only touches movie/episode rows.
 - **In-memory matcher** — one query loads all `media_items` carrying any external ID (`SELECT id, type, trakt_id, tmdb_id, imdb_id, tvdb_id ...`), then four `HashMap<(MediaType, i64/String), Uuid>` maps answer matches in O(1). Priority order on collision: `trakt` → `tmdb` → `imdb` → `tvdb`. No title/year fuzzy matching for automated watched-state writes.
 - **Pagination loop** — every sync GET iterates `page=1..` with `limit=250` until the response is an empty array. The page count is not parsed from headers (the `X-Pagination-*` headers are inconsistently present on sync endpoints per the OpenAPI spec); the empty-array stop is authoritative.
-- **Rate limiting** — push is one POST per category (batched array), naturally within the 1 req/sec POST limit. Pull GETs are burst-tolerant (1000/5min) so no artificial throttling between pages; a `Retry-After` 429 maps to `TraktError::RateLimited` and aborts the sync (the worker retries next interval).
-- **`run_sync(state, user_id)` is the single entry point** — performs pull → merge → push inside one logical operation, guarded against concurrent execution by a per-user advisory lock (`pg_try_advisory_xact_lock`) that returns `TraktError::SyncInProgress`. `trigger_sync` (manual `POST /api/v1/trakt/sync`) calls it inline and returns a summary; Task 6 will reuse it from the scheduled worker that iterates all `sync_enabled` users.
-- **POST response shapes** — all three sync POSTs return `added` as an object `{movies, episodes, shows, seasons}` (per the OpenAPI spec — not a flat integer, even for ratings). `not_found` arrays are logged at WARN and never fail the sync. `existing`/`updated` appear only on collection.
+- **Rate limiting** — a `Retry-After` 429 maps to `TraktError::RateLimited`, preserves the retry value in the API response, and aborts the sync. Explicit client-side pacing remains follow-up work.
+- **`run_sync(state, user_id)` is the single entry point** — performs pull → merge → watched push inside one logical operation, guarded by a per-process `DashMap` lock with a 15-minute TTL that returns `TraktError::SyncInProgress`. A PostgreSQL advisory lock is follow-up work for multi-instance deployments. `trigger_sync` calls it inline and returns a completed summary.
+- **POST response shapes** — all three sync POSTs return `added` as an object `{movies, episodes, shows, seasons}` (per the OpenAPI spec — not a flat integer, even for ratings). For the implemented watched push, a non-empty `not_found` response fails the run and leaves local rows unconfirmed. `existing`/`updated` appear only on collection.
 - **Conservative rating merge** — pull applies a Trakt rating to `user_item_data.user_rating` only when that column is NULL (no local rating timestamp exists to do timestamp-based override). Documented above in Merge Strategy.
 - **`trakt_sync_state` upsert** — `INSERT ... ON CONFLICT (user_id, media_item_id) DO UPDATE` per matched item, keyed by the UNIQUE constraint. Stores the Trakt-side view (`trakt_id`, `is_watched`, `plays`, `rating`, `is_in_collection`, timestamps) so the next push can diff against it for incremental sends.
 - **No new workspace dependencies** — sync uses the existing `reqwest`, `serde`, `sqlx`, `chrono`, `uuid` stack already wired in Task 4.
@@ -248,7 +260,7 @@ The worker iterates all `trakt_accounts` where `sync_enabled = true` and `token_
 ### Task 6 — Sync Worker Implementation Notes
 
 - **Scheduled iteration over `run_sync`** — `workers/trakt_sync.rs::run_trakt_sync(state, task_id, config)` is a thin orchestration layer mirroring `subtitle_auto_fetch`, `segment_analysis`, and `storyboard_generation`: query candidate users → call `run_sync` per user → aggregate results. All pull/merge/push logic, token refresh, and per-user locking live in `run_sync` (Task 5); the worker adds only iteration, per-user error isolation, and aggregate logging.
-- **Error classification: global abort vs per-user skip** — `NotConfigured`, `RateLimited`, `ServiceUnavailable`, and `Timeout` are global failures (every subsequent user would fail identically), so the worker aborts the batch and lets the scheduler retry the whole task next interval. `AccountNotLinked`, `TokenExpired`, `SyncInProgress`, and `Database` are per-user; the worker logs and continues. `RateLimited` abort is explicit per the Task 5 design ("a `Retry-After` 429 maps to `TraktError::RateLimited` and aborts the sync; the worker retries next interval").
+- **Error classification: global abort vs per-user skip** — `NotConfigured`, `RateLimited`, `ServiceUnavailable`, and `Timeout` are global failures, so the worker aborts the batch and returns an error to the scheduler. `AccountNotLinked`, `TokenExpired`, `SyncInProgress`, `SyncIncomplete`, `TokenStorage`, and `Database` are recorded per user while iteration continues.
 - **`token_expires_at > now()` guard intentionally omitted** — §Scheduled Task specifies `WHERE sync_enabled = true AND token_expires_at > now()`. The `token_expires_at` filter is NOT applied. `token_expires_at` tracks the *access* token (90-day TTL), but `ensure_valid_token` refreshes expired access tokens via the long-lived *refresh* token. A user whose access token lapsed but whose refresh token is valid would be incorrectly skipped forever. The candidate query filters only on `sync_enabled = true`; unrecoverable tokens surface as `TokenExpired` and are skipped per-user. This deviation is documented in the worker's module docs.
 - **`ORDER BY last_full_sync_at ASC NULLS FIRST`** — users who have never synced (or synced longest ago) are processed first, so a backlog after server downtime clears fairly rather than always favoring the most-recently-synced user.
 - **Optional `config.user_id` for single-user sync** — mirrors `segment_detector`'s `library_id` and `storyboard_generator`'s `library_id`. Enables targeted admin triggers and testing without iterating all users.

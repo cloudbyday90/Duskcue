@@ -2419,6 +2419,19 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
    - ~~Notification-first response (admin dashboard alert, no auto-blocking)~~
  9. ~~Implement `server/src/workers/geoip_updater.rs` — weekly MMDB download~~ **DONE**
 
+### Post-Phase 11 Trakt Follow-up
+
+The original Phase 11 work delivered the Trakt domain and worker. The audit found that its completion notes overstated implemented sync categories and a few reliability guarantees. The following work is tracked separately so the product contract remains accurate.
+
+1. ~~Harden token storage, sync state, and task outcomes~~ **DONE**
+   - ~~Encrypt account tokens at rest and atomically migrate plaintext legacy rows on use~~
+   - ~~Refresh at the five-minute expiry boundary and persist the rotated pair together~~
+   - ~~Permit non-Trakt external-ID state, retain failed push rows, and persist safe sync outcomes~~
+   - ~~Return global worker failures to the scheduler and expose completed manual-sync summaries~~
+2. Build dedicated admin credentials and personal account/sync UI, including the typed web client contract. **NEXT**
+3. Implement or remove unsupported watchlist, rating-push, and collection-push settings; add deliberate request pacing. **PENDING**
+4. Replace the process-local lock if multi-instance deployment is supported and add the documented Trakt metrics. **PENDING**
+
 **What was built for Task 9:**
 
 | File | Purpose |
@@ -2571,7 +2584,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - The `TraktAccountRow` and `TraktSyncStateRow` types match the DB schema exactly — Task 4 (OAuth) will use `TraktAccountRow` for INSERT/SELECT on `trakt_accounts`; Task 5 (sync) will use `TraktSyncStateRow` for upserts on `trakt_sync_state`
 - `TraktError::NotConfigured` is reserved for Task 4 — when `IntegrationsConfig` lacks Trakt `client_id`/`client_secret`, the OAuth endpoints will return this error. Task 4 will expand `IntegrationsConfig` (similar to how Phase 9 Task 8 added subtitle provider config)
 - `DeviceCodeResponse` matches the Trakt `/oauth/device/code` response shape — Task 4 will call Trakt's API and map directly into this struct
-- `SyncTriggerResponse.queued` follows the segments/storyboards pattern (synchronous API + scheduled iteration); Task 6 will register the `trakt_sync` executor on the scheduler
+- `SyncTriggerResponse` reports a completed inline sync and includes its summary; the scheduled worker separately iterates sync-enabled accounts
 
 **What was built for Task 5:**
 
@@ -2587,7 +2600,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 - **Pull granularity = leaf items (movies + episodes)** — Duskcue tracks `is_watched` at the leaf level, so it pulls `/sync/watched/movies` and the new `/sync/watched/episodes` type directly (episodes confirmed live per #775 maintainer reply, April 2026), avoiding the expensive `shows`→`seasons`→`episodes` flattening. Series/season containers are not propagated to `user_item_data`.
 - **In-memory matcher over per-item SQL** — one query loads all `media_items` carrying external IDs into four `HashMap`s keyed by `(type, id)`; matches resolve in O(1) with priority order trakt→tmdb→imdb→tvdb. No title/year fuzzy matching for automated watched-state writes (too error-prone).
-- **All POST responses return `added` as an object** — confirmed via the OpenAPI spec; `add_to_history`, `add_to_ratings`, `add_to_collection` all return `{added:{movies,shows,seasons,episodes}, not_found:{...}}`. `existing`/`updated` appear only on collection. `not_found` arrays are logged at WARN, never fail the sync.
+- **All POST responses return `added` as an object** — confirmed via the OpenAPI spec; `add_to_history`, `add_to_ratings`, `add_to_collection` all return `{added:{movies,shows,seasons,episodes}, not_found:{...}}`. `existing`/`updated` appear only on collection. For the implemented watched push, a non-empty `not_found` response fails the run and leaves rows unconfirmed for retry.
 - **Merge strategy implementation** — pull: `is_watched`=OR, `play_count`=GREATEST, `last_played_at`=GREATEST, `resume_position_ms`=0 when watched (mirrors playback `upsert_user_item_data_stop`). Rating is applied to `user_item_data.user_rating` **only when NULL** (no local `rated_at` column exists for timestamp-based override; conservative — documented as a known limitation in TRAKT.md). Push is incremental: only `user_item_data.is_watched=true` rows where `trakt_sync_state.is_watched IS DISTINCT FROM true`.
 - **Trakt type → media_items type mapping** — `movie`→`movie`, `show`→`series`, `episode`→`episode`, `season`→`season` (Trakt uses "show"; Duskcue's `media_items.type` uses "series").
 - **Pagination stop = empty array, not headers** — the `X-Pagination-*` headers are inconsistently present on sync endpoints (per OpenAPI spec); Duskcue loops pages until `[]` with a 1000-page hard cap to guard against the ignored-pagination bug reported in #775.
@@ -2669,7 +2682,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
 **Verification:** Play sessions generate analytics data visible in dashboard. Trakt-linked users sync watch state. Impossible travel alerts appear in admin dashboard for suspicious logins.
 
-**Phase 11 status:** All 9 tasks complete.
+**Phase 11 status:** The original 9 tasks are complete. Post-Phase 11 Trakt follow-up is in progress; Task 1 is complete and Task 2 is next.
 
 ---
 

@@ -388,7 +388,7 @@ All API errors return [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) Problem
 
 ### Retry-After Header
 
-503 and 504 responses include a `Retry-After` header (in seconds) when the retry interval is known. Clients SHOULD respect this header and not retry until the interval elapses.
+503 and 504 responses include a `Retry-After` header (in seconds) when the retry interval is known. Trakt 429 responses preserve Trakt's `Retry-After` value when supplied. Clients SHOULD respect this header and not retry until the interval elapses.
 
 ## Error Code Registry
 
@@ -515,6 +515,8 @@ All API errors return [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) Problem
 | `TRAKT_003` | 409 | Trakt token expired (needs re-link) |
 | `TRAKT_004` | 503 | Trakt API unavailable |
 | `TRAKT_005` | 504 | Trakt API timeout |
+| `TRAKT_006` | 409 | Trakt could not confirm every submitted item |
+| `TRAKT_007` | 500 | Trakt token storage could not be secured |
 
 ### SYS — System & Scheduled Tasks
 

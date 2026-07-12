@@ -29,6 +29,8 @@ pub struct TraktAccountRow {
     pub token_expires_at: DateTime<Utc>,
     pub token_scope: Option<String>,
     pub last_full_sync_at: Option<DateTime<Utc>>,
+    pub last_sync_attempt_at: Option<DateTime<Utc>>,
+    pub last_sync_error: Option<String>,
     pub sync_enabled: bool,
     pub sync_watched: bool,
     pub sync_watchlist: bool,
@@ -42,7 +44,7 @@ pub struct TraktSyncStateRow {
     pub id: Uuid,
     pub user_id: Uuid,
     pub media_item_id: Uuid,
-    pub trakt_id: i64,
+    pub trakt_id: Option<i64>,
     pub trakt_history_id: Option<i64>,
     pub is_watched: bool,
     pub watched_at: Option<DateTime<Utc>>,
@@ -90,6 +92,8 @@ pub struct TraktAccountResponse {
     pub sync_collection: bool,
     pub sync_ratings: bool,
     pub last_full_sync_at: Option<DateTime<Utc>>,
+    pub last_sync_attempt_at: Option<DateTime<Utc>>,
+    pub last_sync_error: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -113,8 +117,9 @@ pub struct SyncSettingsResponse {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SyncTriggerResponse {
-    pub queued: bool,
+    pub completed: bool,
     pub message: String,
+    pub summary: SyncSummary,
 }
 
 #[derive(Debug, Clone, Default, Serialize)]
@@ -131,6 +136,7 @@ pub struct SyncSummary {
 #[derive(Debug, Clone, Serialize)]
 pub struct SyncStatusResponse {
     pub last_full_sync_at: Option<DateTime<Utc>>,
+    pub last_sync_attempt_at: Option<DateTime<Utc>>,
     pub total_items: i64,
     pub watched_count: i64,
     pub watchlist_count: i64,
@@ -142,7 +148,7 @@ pub struct SyncStatusResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct TraktHistoryItem {
     pub media_item_id: Uuid,
-    pub trakt_id: i64,
+    pub trakt_id: Option<i64>,
     pub is_watched: bool,
     pub watched_at: Option<DateTime<Utc>>,
     pub plays: i32,

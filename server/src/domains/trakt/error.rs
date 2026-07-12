@@ -45,6 +45,12 @@ pub enum TraktError {
     #[error("a sync is already in progress for this user")]
     SyncInProgress,
 
+    #[error("Trakt sync could not confirm every submitted item")]
+    SyncIncomplete,
+
+    #[error("Trakt token storage could not be secured")]
+    TokenStorage,
+
     #[error("Trakt integration not configured — admin must set client_id and client_secret")]
     NotConfigured,
 

@@ -336,20 +336,26 @@ impl IntoResponse for AppError {
             AppError::RateLimited { .. }
                 | AppError::ServiceUnavailable(_)
                 | AppError::GatewayTimeout(_)
+                | AppError::Trakt(crate::domains::trakt::TraktError::RateLimited { .. })
                 | AppError::Trakt(crate::domains::trakt::TraktError::ServiceUnavailable)
                 | AppError::Trakt(crate::domains::trakt::TraktError::Timeout)
         );
 
         if wants_retry_after {
             let retry_seconds = match &self {
-                AppError::RateLimited { .. } => "0",
-                AppError::GatewayTimeout(_) => "30",
-                AppError::ServiceUnavailable(_) => "60",
-                AppError::Trakt(crate::domains::trakt::TraktError::Timeout) => "30",
-                AppError::Trakt(crate::domains::trakt::TraktError::ServiceUnavailable) => "60",
-                _ => "60",
+                AppError::RateLimited { .. } => "0".to_string(),
+                AppError::GatewayTimeout(_) => "30".to_string(),
+                AppError::ServiceUnavailable(_) => "60".to_string(),
+                AppError::Trakt(crate::domains::trakt::TraktError::RateLimited {
+                    retry_after_secs,
+                }) => retry_after_secs.unwrap_or(0).to_string(),
+                AppError::Trakt(crate::domains::trakt::TraktError::Timeout) => "30".to_string(),
+                AppError::Trakt(crate::domains::trakt::TraktError::ServiceUnavailable) => {
+                    "60".to_string()
+                }
+                _ => "60".to_string(),
             };
-            if let Ok(value) = HeaderValue::from_str(retry_seconds) {
+            if let Ok(value) = HeaderValue::from_str(&retry_seconds) {
                 response.headers_mut().insert("retry-after", value);
             }
         }
@@ -464,6 +470,16 @@ fn trakt_error_to_http(
             StatusCode::CONFLICT,
             "CONFLICT",
             "A sync is already in progress".into(),
+        ),
+        TraktError::SyncIncomplete => (
+            StatusCode::CONFLICT,
+            "TRAKT_006",
+            "Trakt sync could not confirm every submitted item".into(),
+        ),
+        TraktError::TokenStorage => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "TRAKT_007",
+            "Trakt token storage could not be secured".into(),
         ),
         TraktError::NotConfigured => (
             StatusCode::INTERNAL_SERVER_ERROR,

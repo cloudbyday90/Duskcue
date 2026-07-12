@@ -485,11 +485,9 @@ async fn main() {
                     .await;
                 }
             })
-            .register_executor("trakt_sync", move |_pool, task_id, config| {
+            .register_fallible_executor("trakt_sync", move |_pool, task_id, config| {
                 let state = trakt_state.clone();
-                async move {
-                    duskcue::workers::trakt_sync::run_trakt_sync(&state, task_id, config).await;
-                }
+                async move { duskcue::workers::trakt_sync::run_trakt_sync(&state, task_id, config).await }
             })
             .register_executor("geoip_database_update", move |_pool, task_id, config| {
                 let state = geoip_state.clone();

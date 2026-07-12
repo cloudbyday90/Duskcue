@@ -611,7 +611,7 @@ CREATE INDEX idx_artwork_media_item_id ON artwork (media_item_id);
 
 #### Trakt.tv Integration (Native)
 
-Trakt.tv is a first-class integration, not a plugin. Each user can link their own Trakt account to sync watched history, watchlist, collection, ratings, and favorites. This supports local users, remote users, and shared users equally — each with their own Trakt identity.
+Trakt.tv is a first-class integration, not a plugin. Each user can link their own Trakt account. Watched history is bidirectional today; ratings and collection are pulled into Duskcue, while watchlist sync and additional push categories remain follow-up work.
 
 ##### API Summary (as of May 2026)
 
@@ -619,11 +619,11 @@ Trakt.tv is a first-class integration, not a plugin. Each user can link their ow
 |---|---|
 | **Base URL** | `https://api.trakt.tv` |
 | **Auth** | OAuth2 (standard + device code flow for headless clients) |
-| **Access token** | 7-day expiry, refreshable |
+| **Access token** | 90-day expiry, refreshable |
 | **Rate limits** | POST: 1/sec authed; GET: 1000/5min authed; GET: 1000/5min unauthed |
 | **Pagination** | Required on most endpoints; max page size reducing to 250 on June 15, 2026 |
 | **Media IDs** | `trakt` (int), `slug` (text), `tmdb` (int), `imdb` (text), `tvdb` (int) |
-| **Sync categories** | watched history, watchlist, collection, ratings, favorites, playback progress |
+| **Trakt API categories** | watched history, watchlist, collection, ratings, favorites, playback progress |
 | **User limits** | Free: 100K history, 250 watchlist, 1K digital library; VIP: higher caps |
 
 ##### Design Decisions
@@ -670,6 +670,8 @@ CREATE TABLE trakt_accounts (
     token_scope TEXT,
 
     last_full_sync_at TIMESTAMPTZ,
+    last_sync_attempt_at TIMESTAMPTZ,
+    last_sync_error TEXT,
     sync_enabled BOOLEAN NOT NULL DEFAULT true,
 
     sync_watched BOOLEAN NOT NULL DEFAULT true,
@@ -697,7 +699,7 @@ CREATE TABLE trakt_sync_state (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     media_item_id UUID NOT NULL REFERENCES media_items(id) ON DELETE CASCADE,
 
-    trakt_id BIGINT NOT NULL,
+    trakt_id BIGINT,
     trakt_history_id BIGINT,
 
     is_watched BOOLEAN NOT NULL DEFAULT false,
@@ -726,6 +728,8 @@ CREATE INDEX idx_trakt_sync_state_synced_at ON trakt_sync_state (synced_at DESC)
 CREATE INDEX idx_trakt_sync_state_watched ON trakt_sync_state (user_id) WHERE is_watched = true;
 CREATE INDEX idx_trakt_sync_state_watchlist ON trakt_sync_state (user_id) WHERE is_in_watchlist = true;
 ```
+
+`trakt_id` is nullable because Trakt accepts TMDB, IMDb, and TVDB identifiers on sync writes. A row may therefore represent a confirmed local item even when the source `media_items` row has no numeric Trakt identifier.
 
 ---
 

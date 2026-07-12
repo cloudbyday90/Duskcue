@@ -74,7 +74,11 @@ use crate::domains::trakt::TraktError;
 use crate::domains::trakt::service::run_sync;
 use crate::state::AppState;
 
-pub async fn run_trakt_sync(state: &AppState, task_id: Uuid, config: serde_json::Value) {
+pub async fn run_trakt_sync(
+    state: &AppState,
+    task_id: Uuid,
+    config: serde_json::Value,
+) -> Result<(), String> {
     tracing::info!(task_id = %task_id, "Starting Trakt sync task");
 
     let user_ids: Vec<Uuid> = if let Some(id) = config
@@ -92,14 +96,14 @@ pub async fn run_trakt_sync(state: &AppState, task_id: Uuid, config: serde_json:
                     error = %e,
                     "Failed to fetch users with Trakt sync enabled"
                 );
-                return;
+                return Err(e.to_string());
             }
         }
     };
 
     if user_ids.is_empty() {
         tracing::info!(task_id = %task_id, "No users with Trakt sync enabled, nothing to do");
-        return;
+        return Ok(());
     }
 
     tracing::info!(
@@ -109,6 +113,7 @@ pub async fn run_trakt_sync(state: &AppState, task_id: Uuid, config: serde_json:
     );
 
     let mut total = AggregateResult::default();
+    let mut global_error = None;
     for user_id in &user_ids {
         match run_sync(state, *user_id).await {
             Ok(summary) => {
@@ -137,6 +142,7 @@ pub async fn run_trakt_sync(state: &AppState, task_id: Uuid, config: serde_json:
                         "Global Trakt failure — aborting remaining users (will retry next interval)"
                     );
                     total.global_abort = true;
+                    global_error = Some(e.to_string());
                     break;
                 }
                 let level =
@@ -169,6 +175,11 @@ pub async fn run_trakt_sync(state: &AppState, task_id: Uuid, config: serde_json:
         unmatched = total.unmatched,
         "Trakt sync task completed"
     );
+
+    match global_error {
+        Some(error) => Err(error),
+        None => Ok(()),
+    }
 }
 
 async fn fetch_sync_enabled_users(pool: &sqlx::PgPool) -> Result<Vec<Uuid>, sqlx::Error> {

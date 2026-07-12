@@ -325,7 +325,7 @@ Access control: the `/metrics` endpoint is **not** behind auth (Prometheus scrap
 | **Library** | `library.items.total`, `library.scan.duration`, `library.files.total_size_bytes` | Gauge + Histogram + Counter |
 | **Database** | `db.pool.connections.active`, `db.pool.connections.idle`, `db.query.duration` | Gauge + Histogram |
 | **System** | `system.uptime_seconds`, `system.memory.usage_bytes`, `system.memory.total_bytes`, `system.memory.usage_percent`, `system.memory.pressure_events`, `system.memory.pressure_stall_percent`, `system.cpu.usage_percent`, `system.cpu.usage_average_percent`, `system.cpu.pressure_events`, `system.cpu.thermal_celsius`, `system.cpu.cores_total`, `system.cpu.big_cores`, `system.cpu.hw_accel`, `transcode.rejections_total`, `transcode.ffmpeg_threads` | Gauge + Counter |
-| **Trakt** | `trakt.sync.operations.total`, `trakt.sync.duration`, `trakt.sync.errors.total` | Counter + Histogram |
+| **Trakt (planned)** | `trakt.sync.operations.total`, `trakt.sync.duration`, `trakt.sync.errors.total` | Counter + Histogram |
 | **Transcode** | `transcode.jobs.active`, `transcode.jobs.duration`, `transcode.hardware.accel.used`, `transcode.rejections_total`, `transcode.kill_total`, `transcode.zombie_reaped_total` | Gauge + Histogram + Counter |
 | **Analytics** | `analytics.geoip.lookups_total`, `analytics.geoip.lookup_duration`, `analytics.geoip.database_age_hours`, `analytics.trust.events_total`, `analytics.trust.events_suppressed_total`, `analytics.trust.score_average`, `analytics.trust.score_minimum` | Counter + Histogram + Gauge |
 | **Real-time events** | `sse_connections`, `sse_connected_users`, `sse_events_published_total` | Gauge + Counter |
