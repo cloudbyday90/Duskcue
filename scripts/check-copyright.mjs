@@ -7,11 +7,13 @@
  * See LICENSE file for details.
  */
 
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const EXPECTED_PATTERN = `2026-${CURRENT_YEAR}`;
 const COPYRIGHT_RE = /Copyright \(C\) (\d{4}|\d{4}-\d{4}) Duskcue Contributors/g;
+const LEGACY_MIGRATION_MAX_VERSION = 20260701050000n;
 
 const FILE_PATTERNS = [
   'server/src/**/*.rs',
@@ -30,7 +32,32 @@ const FILE_PATTERNS = [
 
 const IGNORE_SEGMENTS = ['node_modules', 'dist', 'build', 'coverage', 'target'];
 
-const isIgnored = (path) => IGNORE_SEGMENTS.some(seg => path.includes(seg));
+const normalizePath = (filePath) => filePath.replaceAll('\\', '/');
+
+const isIgnored = (filePath) => {
+  const normalizedPath = normalizePath(filePath);
+
+  return IGNORE_SEGMENTS.some(segment => normalizedPath.includes(segment));
+};
+
+const isLegacyMigration = (filePath) => {
+  const normalizedPath = normalizePath(filePath);
+  const match = normalizedPath.match(/^server\/migrations\/(\d+)_/);
+
+  return match !== null && BigInt(match[1]) <= LEGACY_MIGRATION_MAX_VERSION;
+};
+
+const trackedFiles = new Set(
+  execFileSync('git', ['ls-files'], { encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean)
+    .map(normalizePath)
+);
+
+const sourceFiles = () =>
+  FILE_PATTERNS.flatMap(pattern => fs.globSync(pattern, { exclude: isIgnored }))
+    .filter(filePath => trackedFiles.has(normalizePath(filePath)))
+    .filter(filePath => !isLegacyMigration(filePath));
 
 function checkFile(filePath) {
   const content = fs.readFileSync(filePath, 'utf8');
@@ -53,9 +80,7 @@ function checkFile(filePath) {
 }
 
 function main() {
-  const files = FILE_PATTERNS.flatMap(pattern =>
-    fs.globSync(pattern, { exclude: isIgnored })
-  );
+  const files = sourceFiles();
   const errors = [];
 
   files.forEach(file => {
