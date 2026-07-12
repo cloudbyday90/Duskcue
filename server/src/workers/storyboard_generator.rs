@@ -87,7 +87,7 @@ const STORYBOARDS_SUBDIR: &str = "storyboards";
 pub async fn run_storyboard_generation(state: &AppState, task_id: Uuid, config: serde_json::Value) {
     tracing::info!(task_id = %task_id, "Starting storyboard generation task");
 
-    let cache_dir = state.bootstrap.data_dir.join("cache");
+    let cache_dir = state.bootstrap.cache_dir.clone();
     let interval_mode_override = config
         .get("interval_mode")
         .and_then(|v| v.as_str())
@@ -117,6 +117,7 @@ pub async fn run_storyboard_generation(state: &AppState, task_id: Uuid, config: 
 
     if library_ids.is_empty() {
         tracing::info!(task_id = %task_id, "No libraries to generate storyboards for");
+        reconcile_storyboard_cache(pool, &cache_dir).await;
         return;
     }
 
@@ -163,6 +164,7 @@ pub async fn run_storyboard_generation(state: &AppState, task_id: Uuid, config: 
         errors = total.errors,
         "Storyboard generation task completed"
     );
+    reconcile_storyboard_cache(pool, &cache_dir).await;
 }
 
 /// Synchronous per-library generation entry point — services the admin
@@ -180,8 +182,11 @@ pub async fn generate_for_library_one(
     library_id: Uuid,
     requesting_user_id: Option<Uuid>,
 ) -> Result<LibraryGenerationResult, sqlx::Error> {
-    let cache_dir = state.bootstrap.data_dir.join("cache");
-    generate_for_library(state, library_id, &cache_dir, None, requesting_user_id).await
+    let cache_dir = state.bootstrap.cache_dir.clone();
+    let result =
+        generate_for_library(state, library_id, &cache_dir, None, requesting_user_id).await?;
+    reconcile_storyboard_cache(&state.pool, &cache_dir).await;
+    Ok(result)
 }
 
 /// Synchronous per-item generation entry point — services the admin
@@ -198,7 +203,7 @@ pub async fn generate_for_item_one(
     requesting_user_id: Option<Uuid>,
 ) -> Result<LibraryGenerationResult, StoryboardError> {
     let pool = &state.pool;
-    let cache_dir = state.bootstrap.data_dir.join("cache");
+    let cache_dir = state.bootstrap.cache_dir.clone();
 
     let media_file_id = resolve_primary_media_file(pool, media_item_id)
         .await?
@@ -258,6 +263,7 @@ pub async fn generate_for_item_one(
             0,
             1,
         );
+        reconcile_storyboard_cache(pool, &cache_dir).await;
         return Ok(result);
     }
 
@@ -326,6 +332,7 @@ pub async fn generate_for_item_one(
         }
     }
 
+    reconcile_storyboard_cache(pool, &cache_dir).await;
     Ok(result)
 }
 
@@ -976,6 +983,195 @@ fn storyboard_dir(cache_dir: &Path, media_file_id: Uuid, artifact_id: Uuid) -> s
         .join(artifact_id.to_string())
 }
 
+#[derive(Debug, Default)]
+struct ArtifactReconcileResult {
+    removed_dirs: u64,
+    removed_files: u64,
+    skipped_locked: u64,
+    errors: u64,
+}
+
+async fn reconcile_storyboard_cache(pool: &PgPool, cache_dir: &Path) {
+    let root = cache_dir.join(STORYBOARDS_SUBDIR);
+    let mut media_dirs = match tokio::fs::read_dir(&root).await {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+        Err(error) => {
+            tracing::warn!(error = %error, root = %root.display(), "failed to read storyboard cache root");
+            return;
+        }
+    };
+
+    let mut result = ArtifactReconcileResult::default();
+    loop {
+        let entry = match media_dirs.next_entry().await {
+            Ok(Some(entry)) => entry,
+            Ok(None) => break,
+            Err(error) => {
+                tracing::warn!(error = %error, root = %root.display(), "failed while reading storyboard cache root");
+                result.errors += 1;
+                break;
+            }
+        };
+        let Ok(file_type) = entry.file_type().await else {
+            result.errors += 1;
+            continue;
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else {
+            continue;
+        };
+        let Ok(media_file_id) = Uuid::parse_str(name) else {
+            continue;
+        };
+
+        let mut tx = match pool.begin().await {
+            Ok(tx) => tx,
+            Err(error) => {
+                tracing::warn!(error = %error, "failed to begin storyboard cache reconciliation transaction");
+                result.errors += 1;
+                continue;
+            }
+        };
+        let locked: bool = match sqlx::query_scalar("SELECT pg_try_advisory_xact_lock($1)")
+            .bind(storyboard_lock_key(media_file_id))
+            .fetch_one(&mut *tx)
+            .await
+        {
+            Ok(locked) => locked,
+            Err(error) => {
+                tracing::warn!(media_file_id = %media_file_id, error = %error, "failed to lock storyboard cache directory for reconciliation");
+                result.errors += 1;
+                continue;
+            }
+        };
+        if !locked {
+            result.skipped_locked += 1;
+            continue;
+        }
+
+        let active_artifact = match sqlx::query(
+            "SELECT artifact_id FROM storyboards WHERE media_file_id = $1",
+        )
+        .bind(media_file_id)
+        .fetch_optional(&mut *tx)
+        .await
+        {
+            Ok(row) => row.map(|row| row.get::<Option<Uuid>, _>("artifact_id")),
+            Err(error) => {
+                tracing::warn!(media_file_id = %media_file_id, error = %error, "failed to resolve active storyboard artifact for reconciliation");
+                result.errors += 1;
+                continue;
+            }
+        };
+
+        reconcile_storyboard_media_dir(&entry.path(), active_artifact, &mut result).await;
+        if let Err(error) = tx.commit().await {
+            tracing::warn!(media_file_id = %media_file_id, error = %error, "failed to complete storyboard cache reconciliation transaction");
+            result.errors += 1;
+        }
+    }
+
+    if result.removed_dirs > 0
+        || result.removed_files > 0
+        || result.skipped_locked > 0
+        || result.errors > 0
+    {
+        tracing::info!(
+            removed_dirs = result.removed_dirs,
+            removed_files = result.removed_files,
+            skipped_locked = result.skipped_locked,
+            errors = result.errors,
+            "storyboard cache reconciliation complete"
+        );
+    }
+}
+
+async fn reconcile_storyboard_media_dir(
+    media_dir: &Path,
+    active_artifact: Option<Option<Uuid>>,
+    result: &mut ArtifactReconcileResult,
+) {
+    if active_artifact.is_none() {
+        remove_storyboard_cache_dir(media_dir, result).await;
+        return;
+    }
+
+    let active_artifact = active_artifact.flatten();
+    let mut entries = match tokio::fs::read_dir(media_dir).await {
+        Ok(entries) => entries,
+        Err(error) => {
+            tracing::warn!(error = %error, dir = %media_dir.display(), "failed to read storyboard media cache directory");
+            result.errors += 1;
+            return;
+        }
+    };
+
+    loop {
+        let entry = match entries.next_entry().await {
+            Ok(Some(entry)) => entry,
+            Ok(None) => break,
+            Err(error) => {
+                tracing::warn!(error = %error, dir = %media_dir.display(), "failed while reading storyboard media cache directory");
+                result.errors += 1;
+                break;
+            }
+        };
+        let Ok(file_type) = entry.file_type().await else {
+            result.errors += 1;
+            continue;
+        };
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        if !should_remove_storyboard_entry(active_artifact, &name, file_type.is_dir()) {
+            continue;
+        }
+
+        if file_type.is_dir() {
+            remove_storyboard_cache_dir(&entry.path(), result).await;
+        } else {
+            remove_storyboard_cache_file(&entry.path(), result).await;
+        }
+    }
+}
+
+fn should_remove_storyboard_entry(
+    active_artifact: Option<Uuid>,
+    name: &str,
+    is_directory: bool,
+) -> bool {
+    match active_artifact {
+        Some(active_artifact) => !is_directory || name != active_artifact.to_string(),
+        None => is_directory,
+    }
+}
+
+async fn remove_storyboard_cache_dir(path: &Path, result: &mut ArtifactReconcileResult) {
+    match tokio::fs::remove_dir_all(path).await {
+        Ok(()) => result.removed_dirs += 1,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            tracing::warn!(error = %error, path = %path.display(), "failed to remove orphaned storyboard cache directory");
+            result.errors += 1;
+        }
+    }
+}
+
+async fn remove_storyboard_cache_file(path: &Path, result: &mut ArtifactReconcileResult) {
+    match tokio::fs::remove_file(path).await {
+        Ok(()) => result.removed_files += 1,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            tracing::warn!(error = %error, path = %path.display(), "failed to remove orphaned storyboard cache file");
+            result.errors += 1;
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -1076,6 +1272,63 @@ mod tests {
             storyboard_lock_key(Uuid::nil()),
             storyboard_lock_key(Uuid::from_u128(1 << 120))
         );
+    }
+
+    #[test]
+    fn artifact_reconciliation_preserves_only_the_active_version() {
+        let active = Uuid::from_u128(1);
+        assert!(!should_remove_storyboard_entry(
+            Some(active),
+            &active.to_string(),
+            true
+        ));
+        assert!(should_remove_storyboard_entry(
+            Some(active),
+            "00000000-0000-0000-0000-000000000002",
+            true
+        ));
+        assert!(should_remove_storyboard_entry(
+            Some(active),
+            "index.vtt",
+            false
+        ));
+    }
+
+    #[test]
+    fn artifact_reconciliation_preserves_legacy_root_files() {
+        assert!(!should_remove_storyboard_entry(None, "index.vtt", false));
+        assert!(should_remove_storyboard_entry(
+            None,
+            "00000000-0000-0000-0000-000000000001",
+            true
+        ));
+    }
+
+    #[tokio::test]
+    async fn artifact_reconciliation_removes_unreferenced_artifacts() {
+        let root = std::env::temp_dir().join(format!("duskcue-storyboard-{}", Uuid::now_v7()));
+        let active = Uuid::from_u128(1);
+        let stale = Uuid::from_u128(2);
+        let media_dir = root.join(Uuid::nil().to_string());
+        tokio::fs::create_dir_all(media_dir.join(active.to_string()))
+            .await
+            .unwrap();
+        tokio::fs::create_dir_all(media_dir.join(stale.to_string()))
+            .await
+            .unwrap();
+        tokio::fs::write(media_dir.join("index.vtt"), "legacy")
+            .await
+            .unwrap();
+
+        let mut result = ArtifactReconcileResult::default();
+        reconcile_storyboard_media_dir(&media_dir, Some(Some(active)), &mut result).await;
+
+        assert!(media_dir.join(active.to_string()).exists());
+        assert!(!media_dir.join(stale.to_string()).exists());
+        assert!(!media_dir.join("index.vtt").exists());
+        assert_eq!(result.removed_dirs, 1);
+        assert_eq!(result.removed_files, 1);
+        let _ = tokio::fs::remove_dir_all(root).await;
     }
 
     #[test]

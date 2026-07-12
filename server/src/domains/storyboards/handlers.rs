@@ -45,7 +45,7 @@ pub async fn get_storyboard_index(
     Query(query): Query<StoryboardQuery>,
 ) -> Result<Response, AppError> {
     assert_media_profile_access(&state, &user, item_id).await?;
-    let cache_dir = state.bootstrap.data_dir.join("cache");
+    let cache_dir = state.bootstrap.cache_dir.clone();
     let content =
         service::get_storyboard_index(&state.pool, item_id, query.media_file_id, &cache_dir)
             .await?;
@@ -65,7 +65,7 @@ pub async fn get_storyboard_sprite(
     Query(query): Query<StoryboardQuery>,
 ) -> Result<Response, AppError> {
     assert_media_profile_access(&state, &user, item_id).await?;
-    let cache_dir = state.bootstrap.data_dir.join("cache");
+    let cache_dir = state.bootstrap.cache_dir.clone();
     let data = service::get_storyboard_sprite(
         &state.pool,
         item_id,
@@ -123,7 +123,7 @@ pub async fn delete_storyboard(
     _auth: Require<CanManageLibraries>,
     Path(item_id): Path<Uuid>,
 ) -> Result<Json<DeleteStoryboardResponse>, AppError> {
-    let cache_dir = state.bootstrap.data_dir.join("cache");
+    let cache_dir = state.bootstrap.cache_dir.clone();
     service::delete_storyboard(&state.pool, item_id, &cache_dir).await?;
     Ok(Json(DeleteStoryboardResponse {
         deleted: true,
