@@ -2436,7 +2436,10 @@ The original Phase 11 work delivered the Trakt domain and worker. The audit foun
    - ~~Remove watchlist from public account/sync-setting DTOs and disable the retained database column~~
    - ~~Keep ratings and collection explicitly pull-only in the product contract~~
    - ~~Pace sync GETs at 350ms and sync POSTs at one second process-wide while retaining Trakt `Retry-After` handling~~
-4. Replace the process-local lock if multi-instance deployment is supported and add the documented Trakt metrics. **PENDING**
+4. ~~Keep the single-instance lock boundary explicit and add the documented Trakt metrics.~~ **DONE**
+   - ~~Record bounded success/skipped/failure operation and duration metrics from the shared sync entry point~~
+   - ~~Record safe sync error-code counters and publish their Prometheus names~~
+   - ~~Retain the process-local lock as the deliberate boundary for Duskcue's single-active-instance deployment model~~
 
 **What was built for Task 9:**
 
@@ -2688,7 +2691,7 @@ The original Phase 11 work delivered the Trakt domain and worker. The audit foun
 
 **Verification:** Play sessions generate analytics data visible in dashboard. Trakt-linked users sync watch state. Impossible travel alerts appear in admin dashboard for suspicious logins.
 
-**Phase 11 status:** The original 9 tasks are complete. Post-Phase 11 Trakt follow-up is in progress; Tasks 1–3 are complete and Task 4 is next.
+**Phase 11 status:** The original 9 tasks and all four Post-Phase 11 Trakt follow-up tasks are complete.
 
 ---
 

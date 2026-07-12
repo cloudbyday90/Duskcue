@@ -193,6 +193,13 @@ pub async fn trigger_sync(
 }
 
 pub async fn run_sync(state: &AppState, user_id: Uuid) -> Result<SyncSummary, TraktError> {
+    let started_at = Instant::now();
+    let result = run_sync_once(state, user_id).await;
+    record_sync_metrics(&result, started_at.elapsed());
+    result
+}
+
+async fn run_sync_once(state: &AppState, user_id: Uuid) -> Result<SyncSummary, TraktError> {
     let account = load_account(&state.pool, user_id)
         .await?
         .ok_or(TraktError::AccountNotLinked)?;
@@ -212,6 +219,24 @@ pub async fn run_sync(state: &AppState, user_id: Uuid) -> Result<SyncSummary, Tr
     }
 
     result
+}
+
+fn record_sync_metrics(result: &Result<SyncSummary, TraktError>, duration: std::time::Duration) {
+    let outcome = sync_metric_outcome(result);
+    metrics::counter!("trakt_sync_operations_total", "outcome" => outcome).increment(1);
+    metrics::histogram!("trakt_sync_duration_seconds", "outcome" => outcome)
+        .record(duration.as_secs_f64());
+    if let Err(error) = result {
+        metrics::counter!("trakt_sync_errors_total", "code" => sync_error_code(error)).increment(1);
+    }
+}
+
+fn sync_metric_outcome(result: &Result<SyncSummary, TraktError>) -> &'static str {
+    match result {
+        Ok(_) => "success",
+        Err(TraktError::SyncInProgress | TraktError::AccountNotLinked) => "skipped",
+        Err(_) => "failure",
+    }
 }
 
 async fn run_sync_inner(
@@ -1348,6 +1373,21 @@ mod tests {
         assert_eq!(
             sync_error_code(&TraktError::Database(sqlx::Error::PoolClosed)),
             "DATABASE_ERROR"
+        );
+    }
+
+    #[test]
+    fn sync_metric_outcomes_remain_low_cardinality() {
+        assert_eq!(sync_metric_outcome(&Ok(SyncSummary::default())), "success");
+        assert_eq!(
+            sync_metric_outcome(&Err(TraktError::SyncInProgress)),
+            "skipped"
+        );
+        assert_eq!(
+            sync_metric_outcome(&Err(TraktError::RateLimited {
+                retry_after_secs: None
+            })),
+            "failure"
         );
     }
 }

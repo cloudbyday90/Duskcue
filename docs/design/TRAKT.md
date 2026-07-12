@@ -234,7 +234,7 @@ The worker iterates all `trakt_accounts` where `sync_enabled = true`, performing
 | Watchlist sync and ratings/collection push | ⏳ Not implemented | Trakt follow-up |
 | Sync worker (scheduled task iteration and global failure result) | ✅ Implemented | Phase 11 Task 6 + reliability follow-up |
 | Process-wide sync request pacing | ✅ Implemented | Trakt follow-up |
-| Cross-instance sync lock and Trakt metrics | ⏳ Not implemented | Trakt follow-up |
+| Single-instance lock boundary and Trakt metrics | ✅ Implemented | Trakt follow-up |
 | Dedicated admin credentials and personal Trakt settings surfaces | ✅ Implemented | Trakt follow-up |
 
 ### Reliability Follow-up Implementation Notes
@@ -246,6 +246,7 @@ The worker iterates all `trakt_accounts` where `sync_enabled = true`, performing
 - **Honest task outcomes** — global Trakt failures now return an error to the scheduler rather than being recorded as a successful task. A manual sync response is completed synchronously and includes its summary.
 - **Canonical web ownership** — `/admin/trakt` is the only operator credential editor; it keeps the stored secret masked unless replaced. `/settings/trakt` is user-scoped and drives device-code linking, supported category controls, manual sync, and status. The retired System integrations deep link redirects to the Admin surface.
 - **Constrained category contract and pacing** — watchlist is not in public account or sync-settings responses, cannot be updated, and defaults to disabled in retained database rows. Sync GETs are paced globally at one request every 350ms and sync POSTs at one request per second; a Trakt 429 still stops the run and preserves `Retry-After`.
+- **Locking and observability boundary** — Duskcue is deployed as one active application instance, so the per-process lock is the intended concurrency boundary rather than an incomplete multi-instance guarantee. Every `run_sync()` outcome emits bounded operation, duration, and error-code metrics for Prometheus.
 
 ### Task 4 — OAuth Implementation Notes
 
@@ -262,7 +263,7 @@ The worker iterates all `trakt_accounts` where `sync_enabled = true`, performing
 - **In-memory matcher** — one query loads all `media_items` carrying any external ID (`SELECT id, type, trakt_id, tmdb_id, imdb_id, tvdb_id ...`), then four `HashMap<(MediaType, i64/String), Uuid>` maps answer matches in O(1). Priority order on collision: `trakt` → `tmdb` → `imdb` → `tvdb`. No title/year fuzzy matching for automated watched-state writes.
 - **Pagination loop** — every sync GET iterates `page=1..` with `limit=250` until the response is an empty array. The page count is not parsed from headers (the `X-Pagination-*` headers are inconsistently present on sync endpoints per the OpenAPI spec); the empty-array stop is authoritative.
 - **Rate limiting** — sync GETs are process-wide paced to one request every 350ms and sync POSTs to one request per second. A `Retry-After` 429 maps to `TraktError::RateLimited`, preserves the retry value in the API response, and aborts the sync.
-- **`run_sync(state, user_id)` is the single entry point** — performs pull → merge → watched push inside one logical operation, guarded by a per-process `DashMap` lock with a 15-minute TTL that returns `TraktError::SyncInProgress`. A PostgreSQL advisory lock is follow-up work for multi-instance deployments. `trigger_sync` calls it inline and returns a completed summary.
+- **`run_sync(state, user_id)` is the single entry point** — performs pull → merge → watched push inside one logical operation, guarded by a per-process `DashMap` lock with a 15-minute TTL that returns `TraktError::SyncInProgress`. This is intentional for Duskcue's single-active-instance deployment model. `trigger_sync` calls it inline and returns a completed summary.
 - **POST response shapes** — all three sync POSTs return `added` as an object `{movies, episodes, shows, seasons}` (per the OpenAPI spec — not a flat integer, even for ratings). For the implemented watched push, a non-empty `not_found` response fails the run and leaves local rows unconfirmed. `existing`/`updated` appear only on collection.
 - **Conservative rating merge** — pull applies a Trakt rating to `user_item_data.user_rating` only when that column is NULL (no local rating timestamp exists to do timestamp-based override). Documented above in Merge Strategy.
 - **`trakt_sync_state` upsert** — `INSERT ... ON CONFLICT (user_id, media_item_id) DO UPDATE` per matched item, keyed by the UNIQUE constraint. Stores the Trakt-side view (`trakt_id`, `is_watched`, `plays`, `rating`, `is_in_collection`, timestamps) so the next push can diff against it for incremental sends.
