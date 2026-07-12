@@ -1069,15 +1069,16 @@ tvOS and future platform behavior should be handled over the same server API.
 
 ## Data Model Impact
 
-No schema change is required for the first server feed because Duskcue already has:
+Household Profiles add a profile identity layer to the first server feed:
 
-- `user_item_data` for resume and watched state
-- `play_sessions` and `play_events` for playback activity
+- `user_profiles` and `user_sessions.active_profile_id` for the selected household identity
+- `user_item_data.profile_id` for per-profile resume and watched state
+- `play_sessions.profile_id` and `playback_mode` for profile-aware interactive telemetry
 - `series`, `seasons`, and `episodes` for next-up resolution
 - `artwork` for posters and backdrops
 - user/library access tables for authorization
 
-Add tables only when a platform adapter needs durable server-side synchronization state. Android Watch Next program IDs should remain local to the Android client unless multi-device Android TV synchronization proves necessary. Fire TV and Roku content IDs should be deterministic strings derived from Duskcue IDs, so they do not need a database table for the first implementation.
+The TV feed uses the active profile's history and applies its media policy before returning an item. A Kids profile therefore cannot receive a launcher tile, deep-link resolution, or resume point for content that its library/rating policy denies. See [PROFILES_AND_AMBIENT_CHANNELS.md](PROFILES_AND_AMBIENT_CHANNELS.md). Android Watch Next program IDs should remain local to the Android client unless multi-device Android TV synchronization proves necessary. Fire TV and Roku content IDs should be deterministic strings derived from Duskcue IDs, so they do not need a database table for the first implementation.
 
 ## Security
 

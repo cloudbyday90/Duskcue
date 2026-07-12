@@ -29,18 +29,20 @@ use crate::state::AppState;
 
 pub async fn get_storyboard(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     Path(item_id): Path<Uuid>,
 ) -> Result<Json<StoryboardResponse>, AppError> {
+    assert_media_profile_access(&state, &user, item_id).await?;
     let result = service::get_storyboard(&state.pool, item_id).await?;
     Ok(Json(result))
 }
 
 pub async fn get_storyboard_index(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     Path(item_id): Path<Uuid>,
 ) -> Result<Response, AppError> {
+    assert_media_profile_access(&state, &user, item_id).await?;
     let cache_dir = state.bootstrap.data_dir.join("cache");
     let content = service::get_storyboard_index(&state.pool, item_id, &cache_dir).await?;
 
@@ -54,9 +56,10 @@ pub async fn get_storyboard_index(
 
 pub async fn get_storyboard_sprite(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     Path((item_id, sprite)): Path<(Uuid, String)>,
 ) -> Result<Response, AppError> {
+    assert_media_profile_access(&state, &user, item_id).await?;
     let cache_dir = state.bootstrap.data_dir.join("cache");
     let data = service::get_storyboard_sprite(&state.pool, item_id, &sprite, &cache_dir).await?;
 
@@ -66,6 +69,22 @@ pub async fn get_storyboard_sprite(
         .header(header::CACHE_CONTROL, "public, max-age=86400, immutable")
         .body(Body::from(data))
         .unwrap())
+}
+
+async fn assert_media_profile_access(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    item_id: Uuid,
+) -> Result<(), AppError> {
+    let scope = crate::domains::profiles::service::load_profile_scope(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+    )
+    .await?;
+    crate::domains::profiles::service::assert_media_access(&state.pool, &scope, item_id).await?;
+    Ok(())
 }
 
 pub async fn generate_library_storyboards(

@@ -129,6 +129,9 @@ pub enum AppError {
     Playback(#[from] crate::domains::playback::PlaybackError),
 
     #[error(transparent)]
+    Profiles(#[from] crate::domains::profiles::ProfilesError),
+
+    #[error(transparent)]
     Quality(#[from] crate::domains::quality::QualityError),
 
     #[error(transparent)]
@@ -206,6 +209,10 @@ impl IntoResponse for AppError {
             }
             AppError::Playback(e) => {
                 let (s, c, d) = playback_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Profiles(e) => {
+                let (s, c, d) = profiles_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
             AppError::Quality(e) => {
@@ -1379,6 +1386,11 @@ fn playback_error_to_http(
             "PLAY_006",
             format!("Invalid seek position: {}", r),
         ),
+        PlaybackError::InvalidPlaybackMode(r) => (
+            StatusCode::BAD_REQUEST,
+            "PLAY_006",
+            format!("Invalid playback mode: {}", r),
+        ),
         PlaybackError::InvalidByteRange(r) => (
             StatusCode::RANGE_NOT_SATISFIABLE,
             "PLAY_007",
@@ -1490,6 +1502,61 @@ fn playback_error_to_http(
             format!("Invalid visibility: {}", v),
         ),
         PlaybackError::Database(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL",
+            "Internal server error".into(),
+        ),
+    }
+}
+
+fn profiles_error_to_http(
+    err: &crate::domains::profiles::ProfilesError,
+) -> (StatusCode, &'static str, String) {
+    use crate::domains::profiles::ProfilesError;
+    use axum::http::StatusCode;
+
+    match err {
+        ProfilesError::NotFound | ProfilesError::ChannelNotFound => (
+            StatusCode::NOT_FOUND,
+            "PROFILE_001",
+            "Profile or channel not found".into(),
+        ),
+        ProfilesError::AccessDenied => (
+            StatusCode::FORBIDDEN,
+            "PROFILE_002",
+            "Profile access denied".into(),
+        ),
+        ProfilesError::ContentNotAllowed => (
+            StatusCode::NOT_FOUND,
+            "PROFILE_003",
+            "Content is unavailable for this profile".into(),
+        ),
+        ProfilesError::FeatureDisabled => (
+            StatusCode::FORBIDDEN,
+            "PROFILE_004",
+            "This feature is disabled by parental controls".into(),
+        ),
+        ProfilesError::CannotDelete => (
+            StatusCode::CONFLICT,
+            "PROFILE_005",
+            "This profile cannot be deleted while it is default or active".into(),
+        ),
+        ProfilesError::InvalidProfileType(_) | ProfilesError::InvalidContentRating(_) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALID_001",
+            "Profile configuration is invalid".into(),
+        ),
+        ProfilesError::ChannelUnavailable => (
+            StatusCode::NOT_FOUND,
+            "PROFILE_006",
+            "Ambient channel is unavailable for this profile".into(),
+        ),
+        ProfilesError::ChannelEmpty => (
+            StatusCode::CONFLICT,
+            "PROFILE_007",
+            "Ambient channel has no playable items for this profile".into(),
+        ),
+        ProfilesError::Database(_) => (
             StatusCode::INTERNAL_SERVER_ERROR,
             "INTERNAL",
             "Internal server error".into(),

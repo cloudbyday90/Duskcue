@@ -43,7 +43,7 @@ pub struct ListMediaItemsQuery {
 
 pub async fn list_media_items(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     Query(query): Query<ListMediaItemsQuery>,
 ) -> Result<Json<MediaItemListResponse>, AppError> {
     let limit = query.limit.unwrap_or(20).clamp(1, 100);
@@ -53,7 +53,7 @@ pub async fn list_media_items(
         service::validate_media_type(t)?;
     }
 
-    let response = service::list_media_items(
+    let mut response = service::list_media_items(
         &state.pool,
         query.library_id,
         query.r#type.as_deref(),
@@ -63,24 +63,57 @@ pub async fn list_media_items(
     )
     .await?;
 
+    let scope = crate::domains::profiles::service::load_profile_scope(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+    )
+    .await?;
+    response.items.retain(|item| {
+        crate::domains::profiles::service::is_media_allowed(
+            &scope,
+            item.library_id,
+            item.content_rating.as_deref(),
+        )
+    });
+
     Ok(Json(response))
 }
 
 pub async fn get_media_item(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     axum::extract::Path(item_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<MediaItemResponse>, AppError> {
+    let scope = crate::domains::profiles::service::load_profile_scope(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+    )
+    .await?;
+    crate::domains::profiles::service::assert_media_access(&state.pool, &scope, item_id).await?;
     let response = service::get_media_item(&state.pool, item_id).await?;
     Ok(Json(response))
 }
 
 pub async fn update_media_item(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     axum::extract::Path(item_id): axum::extract::Path<Uuid>,
     Json(req): Json<UpdateMediaItemRequest>,
 ) -> Result<Json<MediaItemResponse>, AppError> {
+    let scope = crate::domains::profiles::service::load_profile_scope(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+    )
+    .await?;
+    if crate::domains::profiles::service::is_kids(&scope) {
+        return Err(crate::domains::profiles::ProfilesError::FeatureDisabled.into());
+    }
     req.validate().map_err(|e| AppError::Validation {
         errors: e
             .field_errors()
@@ -130,27 +163,53 @@ pub async fn update_media_item(
 
 pub async fn delete_media_item(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     axum::extract::Path(item_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    let scope = crate::domains::profiles::service::load_profile_scope(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+    )
+    .await?;
+    if crate::domains::profiles::service::is_kids(&scope) {
+        return Err(crate::domains::profiles::ProfilesError::FeatureDisabled.into());
+    }
     service::delete_media_item(&state.pool, item_id).await?;
     Ok(Json(serde_json::json!({ "status": "deleted" })))
 }
 
 pub async fn list_media_files(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     axum::extract::Path(item_id): axum::extract::Path<Uuid>,
 ) -> Result<Json<Vec<MediaFileResponse>>, AppError> {
+    let scope = crate::domains::profiles::service::load_profile_scope(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+    )
+    .await?;
+    crate::domains::profiles::service::assert_media_access(&state.pool, &scope, item_id).await?;
     let files = service::list_media_files(&state.pool, item_id).await?;
     Ok(Json(files))
 }
 
 pub async fn get_media_file(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     axum::extract::Path((item_id, file_id)): axum::extract::Path<(Uuid, Uuid)>,
 ) -> Result<Json<MediaFileResponse>, AppError> {
+    let scope = crate::domains::profiles::service::load_profile_scope(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+    )
+    .await?;
+    crate::domains::profiles::service::assert_media_access(&state.pool, &scope, item_id).await?;
     let file = service::get_media_file(&state.pool, item_id, file_id).await?;
     Ok(Json(file))
 }
@@ -162,10 +221,18 @@ pub struct ArtworkQuery {
 
 pub async fn get_artwork(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     Path((item_id, artwork_type)): Path<(Uuid, String)>,
     Query(query): Query<ArtworkQuery>,
 ) -> Result<Response, AppError> {
+    let scope = crate::domains::profiles::service::load_profile_scope(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+    )
+    .await?;
+    crate::domains::profiles::service::assert_media_access(&state.pool, &scope, item_id).await?;
     let category = ArtworkCategory::from_db_str(&artwork_type)
         .ok_or_else(|| AppError::BadRequest(format!("unknown artwork type: {artwork_type}")))?;
 

@@ -15,6 +15,7 @@
     import { notifications } from '$lib/stores/notifications.js';
     import { events } from '$lib/stores/events.js';
     import { getSetupStatus } from '$lib/api/auth.js';
+    import { listProfiles, switchProfile } from '$lib/api/profiles.js';
     import { startDesktopBridge, stopDesktopBridge } from '$lib/desktop/tauri.js';
     import NotificationToast from '$lib/components/NotificationToast.svelte';
     import NotificationBell from '$lib/components/NotificationBell.svelte';
@@ -26,6 +27,9 @@
     let setupRequired = $state(false);
     let userMenuOpen = $state(false);
     let mobileMenuOpen = $state(false);
+    let profiles = $state([]);
+    let switchingProfileId = $state(null);
+    let activeProfile = $derived(profiles.find((profile) => profile.id === $currentUser?.active_profile_id));
     let canAccessAdmin = $derived(
         userHasAnyCapability($currentUser, ['can_manage_server', 'can_manage_users', 'can_manage_libraries']),
     );
@@ -39,6 +43,7 @@
 
     onMount(() => {
         auth.init();
+        loadProfiles();
         startDesktopBridge(goto);
         getSetupStatus()
             .then((status) => {
@@ -82,6 +87,30 @@
 
     function toggleUserMenu() {
         userMenuOpen = !userMenuOpen;
+    }
+
+    async function loadProfiles() {
+        try {
+            const response = await listProfiles();
+            profiles = response?.items || [];
+        } catch {
+            profiles = [];
+        }
+    }
+
+    async function selectProfile(profile) {
+        if (profile.id === $currentUser?.active_profile_id || switchingProfileId) return;
+        switchingProfileId = profile.id;
+        try {
+            const response = await switchProfile(profile.id);
+            const activeProfile = response?.active_profile || profile;
+            auth.setUser({ ...$currentUser, active_profile_id: activeProfile.id });
+            profiles = profiles.map((item) => item.id === activeProfile.id ? activeProfile : item);
+            closeUserMenu();
+            goto('/dashboard');
+        } finally {
+            switchingProfileId = null;
+        }
     }
 
     function closeUserMenu() {
@@ -144,9 +173,9 @@
                             aria-expanded={userMenuOpen}
                         >
                             <span class="user-avatar">
-                                {$currentUser?.display_name?.[0]?.toUpperCase() || 'U'}
+                                {activeProfile?.name?.[0]?.toUpperCase() || $currentUser?.display_name?.[0]?.toUpperCase() || 'U'}
                             </span>
-                            <span class="user-name">{$currentUser?.display_name || 'User'}</span>
+                            <span class="user-name">{activeProfile?.name || $currentUser?.display_name || 'User'}</span>
                         </button>
 
                         {#if userMenuOpen}
@@ -159,6 +188,24 @@
                                 aria-label={m.routes_layout_close_menu()}
                             ></div>
                             <div class="user-dropdown">
+                                <div class="profile-picker" aria-label="Choose profile">
+                                    <span class="profile-picker-title">Who’s watching?</span>
+                                    <div class="profile-list">
+                                        {#each profiles as profile}
+                                            <button
+                                                class="profile-option"
+                                                class:active-profile={profile.id === $currentUser?.active_profile_id}
+                                                onclick={() => selectProfile(profile)}
+                                                disabled={switchingProfileId === profile.id}
+                                            >
+                                                <span class="profile-option-avatar">{profile.name?.[0]?.toUpperCase() || 'P'}</span>
+                                                <span>{profile.name}</span>
+                                                {#if profile.profile_type === 'kids'}<small>Kids</small>{/if}
+                                            </button>
+                                        {/each}
+                                    </div>
+                                    <a href="/settings/profiles" class="manage-profiles" onclick={closeUserMenu}>Manage profiles</a>
+                                </div>
                                 <a href="/settings" class="dropdown-item" onclick={closeUserMenu}>
                                     Settings
                                 </a>
@@ -228,6 +275,9 @@
                 </a>
                 <a href="/settings" class="drawer-link" onclick={closeMobileMenu}>
                     Settings
+                </a>
+                <a href="/settings/profiles" class="drawer-link" onclick={closeMobileMenu}>
+                    Profiles
                 </a>
                 {#if canAccessAdmin}
                     <a href="/admin" class="drawer-link" onclick={closeMobileMenu}>
@@ -373,6 +423,73 @@
         box-shadow: var(--shadow-elevated);
         z-index: 100;
         overflow: hidden;
+    }
+
+    .profile-picker {
+        padding: 0.75rem;
+        border-bottom: 1px solid var(--color-border-subtle);
+    }
+
+    .profile-picker-title {
+        display: block;
+        margin: 0 0 0.5rem;
+        color: var(--color-text-muted);
+        font-size: 0.7rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+    }
+
+    .profile-list {
+        display: grid;
+        gap: 0.25rem;
+    }
+
+    .profile-option {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        width: 100%;
+        border: 1px solid transparent;
+        border-radius: var(--radius-sm);
+        padding: 0.35rem;
+        color: var(--color-text-secondary);
+        text-align: start;
+    }
+
+    .profile-option:hover,
+    .profile-option.active-profile {
+        background-color: var(--color-bg-hover);
+        color: var(--color-text-primary);
+    }
+
+    .profile-option.active-profile {
+        border-color: var(--color-accent-muted);
+    }
+
+    .profile-option-avatar {
+        display: grid;
+        width: 26px;
+        height: 26px;
+        place-items: center;
+        border-radius: 50%;
+        background-color: var(--color-accent-muted);
+        color: var(--color-accent);
+        font-size: 0.75rem;
+        font-weight: 700;
+    }
+
+    .profile-option small {
+        margin-inline-start: auto;
+        color: var(--color-text-muted);
+        font-size: 0.7rem;
+    }
+
+    .manage-profiles {
+        display: block;
+        margin-top: 0.625rem;
+        color: var(--color-accent);
+        font-size: 0.8rem;
     }
 
     .dropdown-item {

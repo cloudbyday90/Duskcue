@@ -4446,3 +4446,27 @@ Phase 8: Web Client Core (COMPLETE — 6 tasks) ←─── (consumes all above
 ```
 
 Phases 9–13a can be built in any order after Phase 8, since they are independent domains. Phase 13b depends on Phase 10 (SSE EventBus) + Phase 13a (server_config API). Phase 14 depends on Phase 13a only (not 13b). Phase 15 is complete and provides the stable Docker deployment URL/base URL behavior used by Phase 16a and later client phases. Phase 16b follows Phase 16a so TV clients can reuse client-auth, playback, and device-quality lessons from desktop/mobile. Phase 16c follows Phase 16a but is not a prerequisite for Phase 16b, Phase 16d, or TV platform work; it can run in parallel with TV/client-readiness work after the mobile client foundation exists. Phase 16d follows Phase 16a and Phase 16b as a shared contract, QA, diagnostics, accessibility, and release-readiness gate for Phases 17–23. Phases 17–23 are platform-specific implementation phases with their own Task 0 research/design/enrichment step. Phase 24 handles partner-gated platforms only after platform access confirms viability. See [PHASE_13_SPLIT.md](docs/design/PHASE_13_SPLIT.md) for the Phase 13 dependency analysis.
+
+---
+
+## Post-Phase 16d — Household Profiles, Kids Mode, and Ambient Channels (COMPLETE)
+
+**Committed:** `2fdc5c3` on `main`
+
+**Authoritative document:** [PROFILES_AND_AMBIENT_CHANNELS.md](docs/design/PROFILES_AND_AMBIENT_CHANNELS.md)
+
+**What was built:**
+
+- Household-owned, Netflix-style selectable profiles backed by `user_profiles`, with a default standard profile backfilled for every existing account.
+- Session-scoped profile switching; profile-specific history, resume, favorites, ratings, subtitle preferences, offline playback sync, TV surface state, and direct stream/transcode authorization.
+- Server-enforced Kids policy: explicit library allowlist, canonical maximum content rating, deny-on-unknown rating behavior, and controls for search, downloads, external links, ambient channels, and privileged capability routes.
+- Ordered adult and Kids ambient channels. Their queue resolution rechecks profile policy, while `playback_mode = ambient` persists diagnostic session/events but never modifies user history, resume, play count, TV surfaces, or Trakt export.
+- Web profile picker and management page for standard/Kids profile creation and parental policies.
+
+**Key decisions:**
+
+- The authenticated `users` record remains the authorization and external-integration owner; `user_profiles` owns household experience state.
+- Native background playback is a client responsibility. Android consumes this contract through Media3 `MediaSessionService`; Apple clients use AVQueuePlayer and the appropriate background media configuration. A web tab is not represented as native background playback.
+- Parental PIN entry, timed parent unlock, and profile-specific Trakt linking are intentionally deferred rather than storing an unprotected or client-side hashed PIN.
+
+**Verification:** `cargo check -p duskcue` and `npm run build` in `clients/web` pass. Database-backed integration tests require a PostgreSQL environment and remain the next verification step.

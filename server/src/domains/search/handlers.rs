@@ -29,6 +29,26 @@ pub async fn search(
     Query(query): Query<SearchQuery>,
 ) -> Result<Json<SearchResponse>, AppError> {
     let params = service::validate_search_query(query)?;
-    let response = service::search_media(&state.pool, &user, params).await?;
+    let mut response = service::search_media(&state.pool, &user, params).await?;
+    let scope = crate::domains::profiles::service::load_profile_scope(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+    )
+    .await?;
+    if !scope.allow_search {
+        return Err(crate::domains::profiles::ProfilesError::FeatureDisabled.into());
+    }
+    response.items.retain(|item| {
+        crate::domains::profiles::service::is_media_allowed(
+            &scope,
+            item.library_id,
+            item.content_rating.as_deref(),
+        )
+    });
+    if crate::domains::profiles::service::is_kids(&scope) {
+        response.facets = super::types::SearchFacets::default();
+    }
     Ok(Json(response))
 }

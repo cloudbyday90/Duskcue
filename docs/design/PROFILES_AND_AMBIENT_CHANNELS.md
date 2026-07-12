@@ -1,0 +1,81 @@
+# Household Profiles, Kids Mode, and Ambient Channels
+
+## Outcome
+
+Duskcue has a Netflix-style household model: one authenticated Duskcue user owns one or more selectable profiles. A profile, rather than the authenticated account, owns viewing history, resume points, favorites, ratings, and TV-surface personalization.
+
+The first implementation establishes the server contract and data model for three distinct experiences:
+
+- standard profiles for independent household viewing history;
+- Kids profiles with parent-selected library and age-rating limits enforced by the server; and
+- ambient channels: continuous, curated playback that is observable for operational diagnostics but never changes a profile's watch history, resume position, play count, recommendations, or Trakt state.
+
+## Research and Decisions
+
+| Topic | Finding | Decision |
+|---|---|---|
+| Parent unlock secret | OWASP recommends a deliberately slow password-hashing function, with Argon2id preferred, for password-equivalent secrets. | A parental PIN is never stored or returned. The future parent-unlock endpoint will hash and verify it server-side with Argon2id; profile creation and switching never expose a PIN value in a response. |
+| Children's data | COPPA focuses on online collection from children under 13. A local-first server should still minimize child data and put control with the parent. | A Kids profile stores only a display name, avatar choice, and policy. It does not need an email, birth date, advertising identity, or external-service account. Unknown ratings are denied in Kids mode. |
+| Android background media | Android Media3 documents a `MediaSessionService` for playback that continues outside the activity. | Android clients consume the ambient queue contract through a native Media3 player/service in the Android/TV phases; web playback is a functional fallback, not a substitute for native background playback. |
+| Apple background media | AVFoundation supports queue-based playback and application background audiovisual configuration. | Apple clients consume the same queue contract with `AVQueuePlayer` and the appropriate audio-session/background capability in the iOS/tvOS phases. |
+
+Sources: [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html), [FTC COPPA guidance](https://www.ftc.gov/business-guidance/resources/complying-coppa-frequently-asked-questions), [Android Media3 background playback](https://developer.android.com/media/media3/session/background-playback), [Apple AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer), and [Apple media playback configuration](https://developer.apple.com/documentation/avfoundation/configuring-your-app-for-media-playback?changes=la_4__5).
+
+## Data Model
+
+`users` remains the authenticated account, authorization owner, and Trakt owner. `user_profiles` is the household-facing identity.
+
+```text
+users ──< user_profiles ──< profile_library_access
+  │            │
+  │            ├──< user_item_data
+  │            └──< play_sessions
+  └──< user_sessions (active_profile_id)
+
+ambient_channels ──< ambient_channel_items >── media_items
+```
+
+Each account receives one default standard profile during migration. Existing user-item data is assigned to that default profile, preserving present history. A session has exactly one active profile, and a switch updates that session only.
+
+Kids policies use an allowlist of libraries plus a canonical maximum rating. The first rating ladder is `TV-Y`, `TV-Y7`, `G`, `TV-G`, `PG`, `TV-PG`, `PG-13`, `TV-14`, `R`, `TV-MA`, `NC-17`; the server normalizes known aliases. Ratings that cannot be normalized are inaccessible to a Kids profile. Parent-controlled flags additionally control search, downloads, external links, and ambient-channel access.
+
+## Access Rules
+
+Profile selection is an authorization boundary, not merely a client preference.
+
+1. Every authenticated request resolves the profile from `user_sessions.active_profile_id` and verifies its owner.
+2. A Kids profile may only enumerate, resolve, stream, or receive artwork for permitted libraries and normalized ratings at or below its limit.
+3. Direct media routes and playback starts perform the same policy check; a copied media ID cannot bypass the browse UI.
+4. Standard profiles inherit the authenticated account's library authorization. Kids profiles can only narrow that scope.
+5. The owner configures profiles and channels. A later shared-TV unlock screen may require a parental PIN before leaving Kids mode; this never replaces normal account authentication for remote/API access.
+
+## Ambient Channel Contract
+
+An ambient channel is a named, ordered list of media items with an audience of `standard` or `kids`. `GET /api/v1/ambient-channels` presents only channels allowed by the active profile. `POST /api/v1/ambient-channels/{id}/next` chooses the next eligible item and returns an ambient playback request.
+
+The client starts that item with `playback_mode: "ambient"` and the channel ID. The server records a `play_sessions` row for diagnostics with `playback_mode = 'ambient'`, but heartbeat, seek, and stop never write `user_item_data` or publish personal TV-surface updates. Ambient sessions are excluded from Trakt export. A Kids channel is filtered through the same library/rating policy before a queue item is returned.
+
+The channel resolver is intentionally deterministic: it advances past the caller's previous item in channel order and wraps. It does not use a random catalog query, so parents can audit exactly what a Kids channel can play.
+
+## Native Client Handoff
+
+The API is player-agnostic: a native client owns the actual background service/session and calls the normal playback start, heartbeat, seek, stop, and channel-next APIs. Android's Media3 `MediaSessionService` and Apple `AVQueuePlayer` are the target native implementations. The server never pretends a browser tab is a native background player.
+
+## Implementation Status
+
+Implemented in the initial server slice:
+
+- profile-aware session identity and profile CRUD/switch APIs;
+- default-profile migration and per-profile personal playback data;
+- server-side Kids policy checks for media listing/detail, search, TV surfaces, direct streams, and playback starts;
+- ordered standard/Kids ambient channels, with parent-controlled creation and profile-filtered queue resolution;
+- ambient playback accounting that does not update profile history or TV surfaces.
+
+Deferred follow-up:
+
+- parental PIN entry/unlock flow and attempt throttling;
+- profile-specific Trakt account linking/export selection;
+- native Android/iOS background-player implementations and offline ambient queue prefetch;
+- time windows, daily limits, and child-safe metadata editorial review.
+
+Related documents: [DATABASE.md](DATABASE.md), [TV_PLATFORM_SURFACES.md](TV_PLATFORM_SURFACES.md), [CLIENT_PLATFORM_READINESS.md](CLIENT_PLATFORM_READINESS.md), and [SECURITY.md](../security/SECURITY.md).

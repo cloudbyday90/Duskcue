@@ -33,18 +33,20 @@ use validator::Validate;
 
 pub async fn list_subtitles(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     Path(item_id): Path<Uuid>,
 ) -> Result<Json<SubtitleListResponse>, AppError> {
+    assert_media_profile_access(&state, &user, item_id).await?;
     let result = service::list_subtitles(&state.pool, item_id).await?;
     Ok(Json(result))
 }
 
 pub async fn get_subtitle(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     Path((item_id, subtitle_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<SubtitleFileResponse>, AppError> {
+    assert_media_profile_access(&state, &user, item_id).await?;
     let result = service::get_subtitle(&state.pool, item_id, subtitle_id).await?;
     Ok(Json(result))
 }
@@ -55,7 +57,9 @@ pub async fn get_subtitle_content(
     Path((item_id, subtitle_id)): Path<(Uuid, Uuid)>,
     Query(query): Query<SubtitleContentQuery>,
 ) -> Result<Response, AppError> {
-    let user_offset_ms = get_user_subtitle_offset(&state.pool, user.user_id, item_id).await;
+    assert_media_profile_access(&state, &user, item_id).await?;
+    let user_offset_ms =
+        get_user_subtitle_offset(&state.pool, user.user_id, user.profile_id, item_id).await;
 
     let (content, content_type) = service::get_subtitle_content(
         &state.pool,
@@ -76,10 +80,11 @@ pub async fn get_subtitle_content(
 
 pub async fn fetch_subtitles(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     Path(item_id): Path<Uuid>,
     Json(req): Json<FetchSubtitlesRequest>,
 ) -> Result<Json<FetchSubtitlesResponse>, AppError> {
+    assert_media_profile_access(&state, &user, item_id).await?;
     let result = service::fetch_subtitles(&state, item_id, &req).await?;
     Ok(Json(result))
 }
@@ -90,9 +95,11 @@ pub async fn set_subtitle_offset(
     Path((item_id, subtitle_id)): Path<(Uuid, Uuid)>,
     Json(req): Json<SetSubtitleOffsetRequest>,
 ) -> Result<Json<SubtitleOffsetResponse>, AppError> {
+    assert_media_profile_access(&state, &user, item_id).await?;
     let result = service::set_subtitle_offset(
         &state.pool,
         user.user_id,
+        user.profile_id,
         item_id,
         subtitle_id,
         req.offset_ms,
@@ -103,10 +110,11 @@ pub async fn set_subtitle_offset(
 
 pub async fn trigger_ocr(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     Path((item_id, subtitle_id)): Path<(Uuid, Uuid)>,
     Json(req): Json<TriggerOcrRequest>,
 ) -> Result<Json<SubtitleOcrResult>, AppError> {
+    assert_media_profile_access(&state, &user, item_id).await?;
     let result =
         service::trigger_ocr(&state.pool, item_id, subtitle_id, req.engine.as_deref()).await?;
     Ok(Json(result))
@@ -114,18 +122,20 @@ pub async fn trigger_ocr(
 
 pub async fn get_subtitle_sync_data(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     Path((item_id, subtitle_id)): Path<(Uuid, Uuid)>,
 ) -> Result<Json<SubtitleSyncDataResponse>, AppError> {
+    assert_media_profile_access(&state, &user, item_id).await?;
     let result = service::get_subtitle_sync_data(&state.pool, item_id, subtitle_id).await?;
     Ok(Json(result))
 }
 
 pub async fn delete_subtitle(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     Path((item_id, subtitle_id)): Path<(Uuid, Uuid)>,
 ) -> Result<axum::http::StatusCode, AppError> {
+    assert_media_profile_access(&state, &user, item_id).await?;
     service::delete_subtitle(&state.pool, item_id, subtitle_id).await?;
     Ok(axum::http::StatusCode::NO_CONTENT)
 }
@@ -203,14 +213,16 @@ pub async fn update_subtitle_provider_settings(
 async fn get_user_subtitle_offset(
     pool: &sqlx::PgPool,
     user_id: Uuid,
+    profile_id: Uuid,
     media_item_id: Uuid,
 ) -> Option<i32> {
     let row = sqlx::query(
         "SELECT metadata->>'subtitle_offset_ms' AS offset_ms \
          FROM user_item_data \
-         WHERE user_id = $1 AND media_item_id = $2",
+         WHERE user_id = $1 AND profile_id = $2 AND media_item_id = $3",
     )
     .bind(user_id)
+    .bind(profile_id)
     .bind(media_item_id)
     .fetch_optional(pool)
     .await
@@ -221,4 +233,20 @@ async fn get_user_subtitle_offset(
         .ok()
         .flatten()
         .and_then(|s| s.parse::<i32>().ok())
+}
+
+async fn assert_media_profile_access(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    item_id: Uuid,
+) -> Result<(), AppError> {
+    let scope = crate::domains::profiles::service::load_profile_scope(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+    )
+    .await?;
+    crate::domains::profiles::service::assert_media_access(&state.pool, &scope, item_id).await?;
+    Ok(())
 }

@@ -66,7 +66,8 @@ pub async fn start_playback(
         &state.pool,
         &state.transcode_manager,
         user.user_id,
-        &user.role,
+        user.profile_id,
+        user.has_all_library_access,
         &req,
         &config,
         &state.bootstrap.data_dir,
@@ -74,16 +75,18 @@ pub async fn start_playback(
     .await?;
     drop(config);
 
-    tv_service::publish_tv_surface_changed(
-        &state.event_bus,
-        user.user_id,
-        "playback_started",
-        vec![TvSurfaceSectionType::Continue],
-        Some(result.media_item_id),
-        None,
-        None,
-        5,
-    );
+    if result.playback_mode == "interactive" {
+        tv_service::publish_tv_surface_changed(
+            &state.event_bus,
+            user.user_id,
+            "playback_started",
+            vec![TvSurfaceSectionType::Continue],
+            Some(result.media_item_id),
+            None,
+            None,
+            5,
+        );
+    }
 
     let client_ip = crate::middleware::extract_client_ip(&headers, Some(&connect_info));
     let enrichment_state = state.clone();
@@ -152,7 +155,9 @@ pub async fn heartbeat(
     )
     .await?;
 
-    tv_service::publish_tv_resume_changed(&state.event_bus, user.user_id, None);
+    if result.playback_mode == "interactive" {
+        tv_service::publish_tv_resume_changed(&state.event_bus, user.user_id, None);
+    }
 
     Ok(Json(result))
 }
@@ -210,21 +215,23 @@ pub async fn stop_playback(
     } else {
         "playback_stopped"
     };
-    tv_service::publish_tv_surface_changed(
-        &state.event_bus,
-        user.user_id,
-        reason,
-        vec![
-            TvSurfaceSectionType::Continue,
-            TvSurfaceSectionType::NextUp,
-            TvSurfaceSectionType::NewEpisodes,
-            TvSurfaceSectionType::Recommended,
-        ],
-        Some(result.media_item_id),
-        None,
-        None,
-        0,
-    );
+    if result.playback_mode == "interactive" {
+        tv_service::publish_tv_surface_changed(
+            &state.event_bus,
+            user.user_id,
+            reason,
+            vec![
+                TvSurfaceSectionType::Continue,
+                TvSurfaceSectionType::NextUp,
+                TvSurfaceSectionType::NewEpisodes,
+                TvSurfaceSectionType::Recommended,
+            ],
+            Some(result.media_item_id),
+            None,
+            None,
+            0,
+        );
+    }
 
     Ok(Json(result))
 }
@@ -290,7 +297,9 @@ pub async fn seek(
     )
     .await?;
 
-    tv_service::publish_tv_resume_changed(&state.event_bus, user.user_id, None);
+    if result.playback_mode == "interactive" {
+        tv_service::publish_tv_resume_changed(&state.event_bus, user.user_id, None);
+    }
 
     Ok(Json(result))
 }
@@ -316,7 +325,16 @@ pub async fn get_watch_data(
     user: AuthenticatedUser,
     Path(item_id): Path<uuid::Uuid>,
 ) -> Result<Json<UserItemDataResponse>, AppError> {
-    let result = service::get_user_item_data(&state.pool, user.user_id, item_id).await?;
+    let scope = crate::domains::profiles::service::load_profile_scope(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+    )
+    .await?;
+    crate::domains::profiles::service::assert_media_access(&state.pool, &scope, item_id).await?;
+    let result =
+        service::get_user_item_data(&state.pool, user.user_id, user.profile_id, item_id).await?;
     Ok(Json(result))
 }
 
@@ -348,7 +366,17 @@ pub async fn update_watch_data(
         }
     })?;
 
-    let result = service::update_user_item_data(&state.pool, user.user_id, item_id, &req).await?;
+    let scope = crate::domains::profiles::service::load_profile_scope(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+    )
+    .await?;
+    crate::domains::profiles::service::assert_media_access(&state.pool, &scope, item_id).await?;
+    let result =
+        service::update_user_item_data(&state.pool, user.user_id, user.profile_id, item_id, &req)
+            .await?;
     tv_service::publish_tv_surface_changed(
         &state.event_bus,
         user.user_id,
@@ -556,10 +584,20 @@ pub async fn remove_playlist_item(
 
 pub async fn stream_file(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     Path(media_file_id): Path<uuid::Uuid>,
     headers: HeaderMap,
 ) -> Result<Response, AppError> {
+    let media_item_id = service::get_media_item_id_for_file(&state.pool, media_file_id).await?;
+    let scope = crate::domains::profiles::service::load_profile_scope(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+    )
+    .await?;
+    crate::domains::profiles::service::assert_media_access(&state.pool, &scope, media_item_id)
+        .await?;
     let file_path = service::get_media_file_path(&state.pool, media_file_id).await?;
     let file_size = service::get_media_file_size(&state.pool, media_file_id).await?;
 
@@ -612,9 +650,10 @@ pub async fn stream_file(
 
 pub async fn get_transcode_manifest(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     Path(session_id): Path<uuid::Uuid>,
 ) -> Result<Response, AppError> {
+    assert_transcode_profile_access(&state, &user, session_id).await?;
     let content = service::get_transcode_manifest(&state.transcode_manager, session_id).await?;
 
     Ok(Response::builder()
@@ -627,9 +666,10 @@ pub async fn get_transcode_manifest(
 
 pub async fn get_transcode_playlist(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     Path((session_id, rendition)): Path<(uuid::Uuid, String)>,
 ) -> Result<Response, AppError> {
+    assert_transcode_profile_access(&state, &user, session_id).await?;
     let content =
         service::get_transcode_playlist(&state.transcode_manager, session_id, &rendition).await?;
 
@@ -643,9 +683,10 @@ pub async fn get_transcode_playlist(
 
 pub async fn get_transcode_segment(
     State(state): State<AppState>,
-    _user: AuthenticatedUser,
+    user: AuthenticatedUser,
     Path((session_id, rendition, segment)): Path<(uuid::Uuid, String, String)>,
 ) -> Result<Response, AppError> {
+    assert_transcode_profile_access(&state, &user, session_id).await?;
     let data =
         service::get_transcode_segment(&state.transcode_manager, session_id, &rendition, &segment)
             .await?;
@@ -665,6 +706,26 @@ pub async fn get_transcode_segment(
         .header(header::CACHE_CONTROL, "max-age=3600")
         .body(Body::from(data))
         .unwrap())
+}
+
+async fn assert_transcode_profile_access(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    session_id: uuid::Uuid,
+) -> Result<(), AppError> {
+    let media_item_id =
+        service::get_session_media_item_id(&state.pool, user.user_id, user.profile_id, session_id)
+            .await?;
+    let scope = crate::domains::profiles::service::load_profile_scope(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+    )
+    .await?;
+    crate::domains::profiles::service::assert_media_access(&state.pool, &scope, media_item_id)
+        .await?;
+    Ok(())
 }
 
 pub async fn list_streaming_policies(

@@ -114,6 +114,21 @@
         </a>
     </section>
 
+    <section class="settings-section" aria-labelledby="profiles-heading">
+        <h2 id="profiles-heading" class="section-title">Profiles</h2>
+        <a href="/settings/profiles" class="settings-link">
+            <div class="link-icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />
+                </svg>
+            </div>
+            <div>
+                <span class="link-label">Manage profiles</span>
+                <span class="link-description">Create household profiles and configure Kids controls.</span>
+            </div>
+        </a>
+    </section>
+
     <section class="settings-section" aria-labelledby="connections-heading">
         <h2 id="connections-heading" class="section-title">Connections</h2>
         <a href="/settings/trakt" class="settings-link">

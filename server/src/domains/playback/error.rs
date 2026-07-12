@@ -36,6 +36,9 @@ pub enum PlaybackError {
     #[error("invalid seek position: {0}")]
     InvalidSeekPosition(String),
 
+    #[error("invalid playback mode: {0}")]
+    InvalidPlaybackMode(String),
+
     #[error("invalid byte range for direct stream: {0}")]
     InvalidByteRange(String),
 

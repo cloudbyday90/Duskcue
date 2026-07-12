@@ -21,6 +21,7 @@ use validator::Validate;
 
 pub static VALID_STREAM_DECISIONS: &[&str] = &["direct_play", "direct_stream", "transcode"];
 pub static VALID_PLAYBACK_STATES: &[&str] = &["playing", "paused", "buffering", "stopped"];
+pub static VALID_PLAYBACK_MODES: &[&str] = &["interactive", "ambient"];
 pub static VALID_PLAYLIST_VISIBILITIES: &[&str] = &["private", "shared", "public"];
 pub static VALID_TRANSCODE_RESOLUTIONS: &[&str] = &["480p", "720p", "1080p", "4k"];
 
@@ -106,6 +107,8 @@ pub struct StartPlaybackRequest {
     pub force_transcode: Option<bool>,
     pub device_profile: Option<serde_json::Value>,
     pub quality_mode: Option<String>,
+    pub playback_mode: Option<String>,
+    pub ambient_channel_id: Option<Uuid>,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
@@ -188,6 +191,7 @@ pub struct PlaybackStartResponse {
     pub target_video_codec: Option<String>,
     pub target_audio_codec: Option<String>,
     pub transcode_session_id: Option<Uuid>,
+    pub playback_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -206,6 +210,7 @@ pub struct PlaybackInfoResponse {
 pub struct HeartbeatResponse {
     pub session_id: Uuid,
     pub position_ms: i32,
+    pub playback_mode: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
@@ -223,6 +228,7 @@ pub struct StopPlaybackResponse {
     pub percent_complete: Option<f32>,
     pub is_watched: bool,
     pub play_count: i32,
+    pub playback_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -231,6 +237,7 @@ pub struct SeekResponse {
     pub position_ms: i32,
     pub stream_url: Option<String>,
     pub transcode_session_id: Option<Uuid>,
+    pub playback_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize)]

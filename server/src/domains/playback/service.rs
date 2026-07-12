@@ -33,12 +33,45 @@ pub async fn start_playback(
     pool: &PgPool,
     transcode_manager: &TranscodeManager,
     user_id: Uuid,
-    _user_role: &str,
+    profile_id: Uuid,
+    has_all_library_access: bool,
     req: &StartPlaybackRequest,
     config: &RuntimeConfig,
     data_dir: &Path,
 ) -> Result<PlaybackStartResponse, PlaybackError> {
     let media_item_id = req.media_item_id.ok_or(PlaybackError::MediaNotFound)?;
+    let playback_mode = req.playback_mode.as_deref().unwrap_or("interactive");
+    if !VALID_PLAYBACK_MODES.contains(&playback_mode) {
+        return Err(PlaybackError::InvalidPlaybackMode(
+            playback_mode.to_string(),
+        ));
+    }
+    let profile_scope = crate::domains::profiles::service::load_profile_scope(
+        pool,
+        user_id,
+        profile_id,
+        has_all_library_access,
+    )
+    .await
+    .map_err(|_| PlaybackError::AccessDenied)?;
+    crate::domains::profiles::service::assert_media_access(pool, &profile_scope, media_item_id)
+        .await
+        .map_err(|_| PlaybackError::AccessDenied)?;
+    if playback_mode == "ambient" {
+        let channel_id = req.ambient_channel_id.ok_or_else(|| {
+            PlaybackError::InvalidPlaybackMode(
+                "ambient playback requires ambient_channel_id".to_string(),
+            )
+        })?;
+        crate::domains::profiles::service::assert_ambient_playback_allowed(
+            pool,
+            &profile_scope,
+            channel_id,
+            media_item_id,
+        )
+        .await
+        .map_err(|_| PlaybackError::AccessDenied)?;
+    }
 
     let item_row =
         sqlx::query("SELECT id, library_id FROM media_items WHERE id = $1 AND deleted_at IS NULL")
@@ -134,6 +167,7 @@ pub async fn start_playback(
     let play_session_id = create_play_session(
         pool,
         user_id,
+        profile_id,
         media_item_id,
         library_id,
         stream_decision_str,
@@ -141,6 +175,8 @@ pub async fn start_playback(
         Some(media_file_details.id),
         req.quality_mode.as_deref(),
         req.max_streaming_bitrate,
+        playback_mode,
+        req.ambient_channel_id,
     )
     .await?;
 
@@ -155,6 +191,7 @@ pub async fn start_playback(
         target_video_codec: decision.target_video_codec,
         target_audio_codec: decision.target_audio_codec,
         transcode_session_id,
+        playback_mode: playback_mode.to_string(),
     })
 }
 
@@ -493,6 +530,7 @@ fn max_resolution_for_manual_bitrate(bitrate_bps: u64) -> (u32, u32) {
 async fn create_play_session(
     pool: &PgPool,
     user_id: Uuid,
+    profile_id: Uuid,
     media_item_id: Uuid,
     library_id: Uuid,
     stream_decision: &str,
@@ -500,6 +538,8 @@ async fn create_play_session(
     media_file_id: Option<Uuid>,
     quality_mode: Option<&str>,
     max_streaming_bitrate: Option<u64>,
+    playback_mode: &str,
+    ambient_channel_id: Option<Uuid>,
 ) -> Result<Uuid, PlaybackError> {
     let session_id = Uuid::now_v7();
 
@@ -510,17 +550,20 @@ async fn create_play_session(
         "current_position_ms": 0,
         "quality_mode": quality_mode,
         "max_streaming_bitrate": max_streaming_bitrate,
+        "ambient_channel_id": ambient_channel_id,
     });
 
     sqlx::query(
-        "INSERT INTO play_sessions (id, user_id, media_item_id, library_id, \
+        "INSERT INTO play_sessions (id, user_id, profile_id, media_item_id, library_id, playback_mode, \
          started_at, client_name, stream_decision, metadata) \
-         VALUES ($1, $2, $3, $4, now(), 'duskcue-web', $5, $6)",
+         VALUES ($1, $2, $3, $4, $5, $6, now(), 'duskcue-web', $7, $8)",
     )
     .bind(session_id)
     .bind(user_id)
+    .bind(profile_id)
     .bind(media_item_id)
     .bind(library_id)
+    .bind(playback_mode)
     .bind(stream_decision)
     .bind(&metadata)
     .execute(pool)
@@ -539,7 +582,7 @@ pub async fn heartbeat(
     is_buffering: Option<bool>,
 ) -> Result<HeartbeatResponse, PlaybackError> {
     let row = sqlx::query(
-        "SELECT id, user_id, media_item_id, metadata \
+        "SELECT id, user_id, profile_id, playback_mode, media_item_id, metadata \
          FROM play_sessions \
          WHERE id = $1 AND stopped_at IS NULL",
     )
@@ -555,6 +598,12 @@ pub async fn heartbeat(
         return Err(PlaybackError::SessionNotFound);
     }
 
+    let profile_id: Uuid = row
+        .try_get("profile_id")
+        .map_err(|_| PlaybackError::SessionNotFound)?;
+    let playback_mode: String = row
+        .try_get("playback_mode")
+        .unwrap_or_else(|_| "interactive".to_string());
     let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
     let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
 
@@ -616,10 +665,11 @@ pub async fn heartbeat(
 
     merge_session_metadata(pool, session_id, merge).await?;
 
-    if position_ms.is_some() {
+    if position_ms.is_some() && playback_mode == "interactive" {
         upsert_user_item_data_heartbeat(
             pool,
             user_id,
+            profile_id,
             media_item_id,
             effective_position,
             media_file_id,
@@ -640,6 +690,7 @@ pub async fn heartbeat(
     Ok(HeartbeatResponse {
         session_id,
         position_ms: effective_position,
+        playback_mode,
     })
 }
 
@@ -651,7 +702,7 @@ pub async fn stop_playback(
     final_position_ms: Option<i32>,
 ) -> Result<StopPlaybackResponse, PlaybackError> {
     let row = sqlx::query(
-        "SELECT id, user_id, media_item_id, started_at, metadata \
+        "SELECT id, user_id, profile_id, playback_mode, media_item_id, started_at, metadata \
          FROM play_sessions WHERE id = $1",
     )
     .bind(session_id)
@@ -666,6 +717,12 @@ pub async fn stop_playback(
         return Err(PlaybackError::SessionNotFound);
     }
 
+    let profile_id: Uuid = row
+        .try_get("profile_id")
+        .map_err(|_| PlaybackError::SessionNotFound)?;
+    let playback_mode: String = row
+        .try_get("playback_mode")
+        .unwrap_or_else(|_| "interactive".to_string());
     let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
     let started_at: chrono::DateTime<chrono::Utc> = row.try_get("started_at").unwrap_or_default();
     let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
@@ -745,23 +802,33 @@ pub async fn stop_playback(
     )
     .await?;
 
-    let play_count = upsert_user_item_data_stop(
-        pool,
-        user_id,
-        media_item_id,
-        is_watched,
-        resume_position,
-        media_file_id,
-    )
-    .await?;
+    let play_count = if playback_mode == "interactive" {
+        upsert_user_item_data_stop(
+            pool,
+            user_id,
+            profile_id,
+            media_item_id,
+            is_watched,
+            resume_position,
+            media_file_id,
+        )
+        .await?
+    } else {
+        0
+    };
 
     Ok(StopPlaybackResponse {
         session_id,
         media_item_id,
         duration_seconds,
         percent_complete,
-        is_watched,
+        is_watched: if playback_mode == "interactive" {
+            is_watched
+        } else {
+            false
+        },
         play_count,
+        playback_mode,
     })
 }
 
@@ -780,7 +847,7 @@ pub async fn seek(
     }
 
     let row = sqlx::query(
-        "SELECT id, user_id, media_item_id, metadata \
+        "SELECT id, user_id, profile_id, playback_mode, media_item_id, metadata \
          FROM play_sessions \
          WHERE id = $1 AND stopped_at IS NULL",
     )
@@ -796,6 +863,12 @@ pub async fn seek(
         return Err(PlaybackError::SessionNotFound);
     }
 
+    let profile_id: Uuid = row
+        .try_get("profile_id")
+        .map_err(|_| PlaybackError::SessionNotFound)?;
+    let playback_mode: String = row
+        .try_get("playback_mode")
+        .unwrap_or_else(|_| "interactive".to_string());
     let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
     let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
 
@@ -829,17 +902,20 @@ pub async fn seek(
         (None, None)
     };
 
-    upsert_user_item_data_heartbeat(
-        pool,
-        user_id,
-        media_item_id,
-        position_ms,
-        metadata
-            .get("media_file_id")
-            .and_then(|f| f.as_str())
-            .and_then(|s| Uuid::parse_str(s).ok()),
-    )
-    .await?;
+    if playback_mode == "interactive" {
+        upsert_user_item_data_heartbeat(
+            pool,
+            user_id,
+            profile_id,
+            media_item_id,
+            position_ms,
+            metadata
+                .get("media_file_id")
+                .and_then(|f| f.as_str())
+                .and_then(|s| Uuid::parse_str(s).ok()),
+        )
+        .await?;
+    }
 
     emit_play_event(
         pool,
@@ -856,6 +932,7 @@ pub async fn seek(
         position_ms,
         stream_url: new_stream_url,
         transcode_session_id: new_transcode_session_id,
+        playback_mode,
     })
 }
 
@@ -942,14 +1019,16 @@ pub async fn get_playback_info(
 pub async fn get_user_item_data(
     pool: &PgPool,
     user_id: Uuid,
+    profile_id: Uuid,
     media_item_id: Uuid,
 ) -> Result<UserItemDataResponse, PlaybackError> {
     let row = sqlx::query(
         "SELECT id, is_watched, play_count, last_played_at, resume_position_ms, \
          is_favorite, user_rating \
-         FROM user_item_data WHERE user_id = $1 AND media_item_id = $2",
+         FROM user_item_data WHERE user_id = $1 AND profile_id = $2 AND media_item_id = $3",
     )
     .bind(user_id)
+    .bind(profile_id)
     .bind(media_item_id)
     .fetch_optional(pool)
     .await?;
@@ -981,25 +1060,27 @@ pub async fn get_user_item_data(
 pub async fn update_user_item_data(
     pool: &PgPool,
     user_id: Uuid,
+    profile_id: Uuid,
     media_item_id: Uuid,
     req: &UpdateWatchDataRequest,
 ) -> Result<UserItemDataResponse, PlaybackError> {
     let row = sqlx::query(
         "INSERT INTO user_item_data \
-         (id, user_id, media_item_id, is_favorite, user_rating, \
+         (id, user_id, profile_id, media_item_id, is_favorite, user_rating, \
           audio_stream_index, subtitle_stream_index) \
-         VALUES (uuidv7(), $1, $2, $3, $4, $5, $6) \
-         ON CONFLICT (user_id, media_item_id) \
+         VALUES (uuidv7(), $1, $2, $3, $4, $5, $6, $7) \
+         ON CONFLICT (profile_id, media_item_id) \
          DO UPDATE SET \
-            is_favorite = COALESCE($3, user_item_data.is_favorite), \
-            user_rating = COALESCE($4, user_item_data.user_rating), \
-            audio_stream_index = COALESCE($5, user_item_data.audio_stream_index), \
-            subtitle_stream_index = COALESCE($6, user_item_data.subtitle_stream_index), \
+            is_favorite = COALESCE($4, user_item_data.is_favorite), \
+            user_rating = COALESCE($5, user_item_data.user_rating), \
+            audio_stream_index = COALESCE($6, user_item_data.audio_stream_index), \
+            subtitle_stream_index = COALESCE($7, user_item_data.subtitle_stream_index), \
             updated_at = now() \
          RETURNING id, is_watched, play_count, last_played_at, resume_position_ms, \
                    is_favorite, user_rating",
     )
     .bind(user_id)
+    .bind(profile_id)
     .bind(media_item_id)
     .bind(req.is_favorite)
     .bind(req.user_rating)
@@ -1060,19 +1141,21 @@ async fn merge_session_metadata(
 async fn upsert_user_item_data_heartbeat(
     pool: &PgPool,
     user_id: Uuid,
+    profile_id: Uuid,
     media_item_id: Uuid,
     position_ms: i32,
     media_file_id: Option<Uuid>,
 ) -> Result<(), PlaybackError> {
     sqlx::query(
-        "INSERT INTO user_item_data (id, user_id, media_item_id, resume_position_ms, last_played_media_file_id) \
-         VALUES (uuidv7(), $1, $2, $3, $4) \
-         ON CONFLICT (user_id, media_item_id) \
-         DO UPDATE SET resume_position_ms = $3, \
-                       last_played_media_file_id = COALESCE($4, user_item_data.last_played_media_file_id), \
+        "INSERT INTO user_item_data (id, user_id, profile_id, media_item_id, resume_position_ms, last_played_media_file_id) \
+         VALUES (uuidv7(), $1, $2, $3, $4, $5) \
+         ON CONFLICT (profile_id, media_item_id) \
+         DO UPDATE SET resume_position_ms = $4, \
+                       last_played_media_file_id = COALESCE($5, user_item_data.last_played_media_file_id), \
                        updated_at = now()"
     )
     .bind(user_id)
+    .bind(profile_id)
     .bind(media_item_id)
     .bind(position_ms)
     .bind(media_file_id)
@@ -1084,15 +1167,16 @@ async fn upsert_user_item_data_heartbeat(
 async fn upsert_user_item_data_stop(
     pool: &PgPool,
     user_id: Uuid,
+    profile_id: Uuid,
     media_item_id: Uuid,
     is_watched: bool,
     resume_position_ms: i32,
     media_file_id: Option<Uuid>,
 ) -> Result<i32, PlaybackError> {
     let row = sqlx::query(
-        "INSERT INTO user_item_data (id, user_id, media_item_id, is_watched, play_count, last_played_at, resume_position_ms, last_played_media_file_id) \
-         VALUES (uuidv7(), $1, $2, $3, 1, now(), $4, $5) \
-         ON CONFLICT (user_id, media_item_id) \
+        "INSERT INTO user_item_data (id, user_id, profile_id, media_item_id, is_watched, play_count, last_played_at, resume_position_ms, last_played_media_file_id) \
+         VALUES (uuidv7(), $1, $2, $3, $4, 1, now(), $5, $6) \
+         ON CONFLICT (profile_id, media_item_id) \
          DO UPDATE SET play_count = user_item_data.play_count + 1, \
                        last_played_at = now(), \
                        is_watched = user_item_data.is_watched OR $3, \
@@ -1102,6 +1186,7 @@ async fn upsert_user_item_data_stop(
          RETURNING play_count"
     )
     .bind(user_id)
+    .bind(profile_id)
     .bind(media_item_id)
     .bind(is_watched)
     .bind(resume_position_ms)
@@ -1523,6 +1608,34 @@ pub async fn get_media_file_path(
         .try_get("file_path")
         .map_err(|_| PlaybackError::FileNotFound)?;
     Ok(PathBuf::from(file_path))
+}
+
+pub async fn get_media_item_id_for_file(
+    pool: &PgPool,
+    media_file_id: Uuid,
+) -> Result<Uuid, PlaybackError> {
+    sqlx::query_scalar("SELECT media_item_id FROM media_files WHERE id = $1")
+        .bind(media_file_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(PlaybackError::FileNotFound)
+}
+
+pub async fn get_session_media_item_id(
+    pool: &PgPool,
+    user_id: Uuid,
+    profile_id: Uuid,
+    session_id: Uuid,
+) -> Result<Uuid, PlaybackError> {
+    sqlx::query_scalar(
+        "SELECT media_item_id FROM play_sessions WHERE id = $1 AND user_id = $2 AND profile_id = $3",
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .bind(profile_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(PlaybackError::SessionNotFound)
 }
 
 pub async fn get_media_file_size(pool: &PgPool, media_file_id: Uuid) -> Result<u64, PlaybackError> {

@@ -484,6 +484,7 @@ async fn push_local_watched(
         "SELECT uid.media_item_id, mi.type, mi.trakt_id, mi.tmdb_id, mi.imdb_id, mi.tvdb_id, uid.last_played_at \
          FROM user_item_data uid \
          JOIN media_items mi ON mi.id = uid.media_item_id \
+         JOIN user_profiles profile ON profile.id = uid.profile_id AND profile.is_default = true \
          LEFT JOIN trakt_sync_state tss ON tss.user_id = uid.user_id AND tss.media_item_id = uid.media_item_id \
          WHERE uid.user_id = $1 AND uid.is_watched = true \
          AND (tss.is_watched IS DISTINCT FROM true) \
@@ -1140,9 +1141,9 @@ async fn apply_uid_watched(
         .map(|d| d.with_timezone(&Utc));
     sqlx::query(
         "INSERT INTO user_item_data \
-            (id, user_id, media_item_id, is_watched, play_count, last_played_at, resume_position_ms) \
-         VALUES (uuidv7(), $1, $2, true, $3, $4, 0) \
-         ON CONFLICT (user_id, media_item_id) DO UPDATE SET \
+            (id, user_id, profile_id, media_item_id, is_watched, play_count, last_played_at, resume_position_ms) \
+         VALUES (uuidv7(), $1, (SELECT id FROM user_profiles WHERE owner_user_id = $1 AND is_default = true), $2, true, $3, $4, 0) \
+         ON CONFLICT (profile_id, media_item_id) DO UPDATE SET \
             is_watched = true, \
             play_count = GREATEST(user_item_data.play_count, EXCLUDED.play_count), \
             last_played_at = GREATEST(user_item_data.last_played_at, EXCLUDED.last_played_at), \
@@ -1199,9 +1200,9 @@ async fn apply_uid_rating(
     rating: i32,
 ) -> Result<(), TraktError> {
     sqlx::query(
-        "INSERT INTO user_item_data (id, user_id, media_item_id, user_rating) \
-         VALUES (uuidv7(), $1, $2, $3) \
-         ON CONFLICT (user_id, media_item_id) DO UPDATE SET \
+        "INSERT INTO user_item_data (id, user_id, profile_id, media_item_id, user_rating) \
+         VALUES (uuidv7(), $1, (SELECT id FROM user_profiles WHERE owner_user_id = $1 AND is_default = true), $2, $3) \
+         ON CONFLICT (profile_id, media_item_id) DO UPDATE SET \
             user_rating = COALESCE(user_item_data.user_rating, EXCLUDED.user_rating), \
             updated_at = now()",
     )

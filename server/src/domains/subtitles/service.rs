@@ -591,6 +591,7 @@ async fn insert_fetched_subtitle(
 pub async fn set_subtitle_offset(
     pool: &PgPool,
     user_id: Uuid,
+    profile_id: Uuid,
     media_item_id: Uuid,
     subtitle_id: Uuid,
     offset_ms: i32,
@@ -605,13 +606,14 @@ pub async fn set_subtitle_offset(
     let patch = serde_json::json!({ "subtitle_offset_ms": offset_ms });
 
     sqlx::query(
-        r#"INSERT INTO user_item_data (id, user_id, media_item_id, metadata)
-           VALUES (uuidv7(), $1, $2, $3::jsonb)
-           ON CONFLICT (user_id, media_item_id)
-           DO UPDATE SET metadata = COALESCE(user_item_data.metadata, '{}'::jsonb) || $3::jsonb,
+        r#"INSERT INTO user_item_data (id, user_id, profile_id, media_item_id, metadata)
+           VALUES (uuidv7(), $1, $2, $3, $4::jsonb)
+           ON CONFLICT (profile_id, media_item_id)
+           DO UPDATE SET metadata = COALESCE(user_item_data.metadata, '{}'::jsonb) || $4::jsonb,
                          updated_at = now()"#,
     )
     .bind(user_id)
+    .bind(profile_id)
     .bind(media_item_id)
     .bind(&patch)
     .execute(pool)

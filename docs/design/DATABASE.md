@@ -3646,6 +3646,12 @@ ORDER BY changed_at DESC;
 - Plex Continue Watching/On Deck behavior analysis (Plex Forums, February 2024)
 - YouTube "Up Next" recommendation system architecture — two-stage candidate generation + ranking model (Google Brain, 2016)
 
+### Household Profiles and Ambient Channels
+
+The profile schema is implemented by `20260712080000_create_profiles_and_ambient_channels.sql` and fully described in [PROFILES_AND_AMBIENT_CHANNELS.md](PROFILES_AND_AMBIENT_CHANNELS.md). `user_profiles` belongs to the authenticated `users` record; `user_sessions.active_profile_id`, `user_item_data.profile_id`, and `play_sessions.profile_id` make active identity, viewing state, and analytics profile-aware. Existing state is backfilled to each user’s default standard profile.
+
+`ambient_channels` and ordered `ambient_channel_items` provide an auditable, deterministic queue. `play_sessions.playback_mode` distinguishes ambient operational telemetry from interactive personal playback. Ambient sessions retain system diagnostics but must not update `user_item_data`, recommendations, or external watch sync.
+
 ### User & Authentication Domain
 - Google — Introduction to Server-Side Passkey Implementation (May 2025): https://developers.google.com/identity/passkeys/developer-guides/server-introduction
 - OWASP Authentication Cheat Sheet (2024): https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html

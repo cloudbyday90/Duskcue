@@ -310,23 +310,30 @@ async fn import_single_matched_item(
     let resume_position_ms =
         import_resume_position_ms(row.source_is_watched, row.source_resume_position_ms);
     let play_count = row.source_play_count.max(i32::from(row.source_is_watched));
+    let profile_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM user_profiles WHERE owner_user_id = $1 AND is_default = true",
+    )
+    .bind(user_id)
+    .fetch_one(&state.pool)
+    .await?;
 
     let mut tx = state.pool.begin().await?;
     let previous_user_item_data =
-        load_previous_user_item_data(&mut tx, user_id, media_item_id).await?;
+        load_previous_user_item_data(&mut tx, user_id, profile_id, media_item_id).await?;
     let user_item_data_id: Uuid = sqlx::query(
         r#"
         INSERT INTO user_item_data (
             id,
             user_id,
+            profile_id,
             media_item_id,
             is_watched,
             play_count,
             last_played_at,
             resume_position_ms
         )
-        VALUES (uuidv7(), $1, $2, $3, $4, $5, $6)
-        ON CONFLICT (user_id, media_item_id) DO UPDATE SET
+        VALUES (uuidv7(), $1, $2, $3, $4, $5, $6, $7)
+        ON CONFLICT (profile_id, media_item_id) DO UPDATE SET
             is_watched = user_item_data.is_watched OR EXCLUDED.is_watched,
             play_count = GREATEST(user_item_data.play_count, EXCLUDED.play_count),
             last_played_at = CASE
@@ -343,6 +350,7 @@ async fn import_single_matched_item(
         "#,
     )
     .bind(user_id)
+    .bind(profile_id)
     .bind(media_item_id)
     .bind(row.source_is_watched)
     .bind(play_count)
@@ -383,6 +391,7 @@ async fn import_single_matched_item(
 async fn load_previous_user_item_data(
     tx: &mut Transaction<'_, Postgres>,
     user_id: Uuid,
+    profile_id: Uuid,
     media_item_id: Uuid,
 ) -> Result<Option<Value>, MigrationError> {
     let row = sqlx::query(
@@ -392,11 +401,13 @@ async fn load_previous_user_item_data(
                audio_stream_index, subtitle_stream_index, metadata
         FROM user_item_data
         WHERE user_id = $1
-          AND media_item_id = $2
+          AND profile_id = $2
+          AND media_item_id = $3
         FOR UPDATE
         "#,
     )
     .bind(user_id)
+    .bind(profile_id)
     .bind(media_item_id)
     .fetch_optional(&mut **tx)
     .await?;

@@ -33,12 +33,29 @@ fn can_edit_segment(user: &AuthenticatedUser) -> bool {
             .any(|c| c == "can_manage_libraries")
 }
 
+async fn assert_media_profile_access(
+    state: &AppState,
+    user: &AuthenticatedUser,
+    item_id: Uuid,
+) -> Result<(), AppError> {
+    let scope = crate::domains::profiles::service::load_profile_scope(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+    )
+    .await?;
+    crate::domains::profiles::service::assert_media_access(&state.pool, &scope, item_id).await?;
+    Ok(())
+}
+
 pub async fn list_segments(
     State(state): State<AppState>,
     user: AuthenticatedUser,
     Path(item_id): Path<Uuid>,
     Query(query): Query<SegmentListQuery>,
 ) -> Result<Json<SegmentListResponse>, AppError> {
+    assert_media_profile_access(&state, &user, item_id).await?;
     let can_edit = can_edit_segment(&user);
     let result =
         service::list_segments(&state.pool, item_id, query.r#type.as_deref(), can_edit).await?;

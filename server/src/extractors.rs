@@ -35,6 +35,7 @@ const MAX_PAGE_SIZE: u32 = 100;
 pub struct AuthenticatedUser {
     pub user_id: Uuid,
     pub session_id: Uuid,
+    pub profile_id: Uuid,
     pub capabilities: Vec<String>,
     pub role: String,
     pub has_all_library_access: bool,
@@ -80,6 +81,7 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
         Ok(AuthenticatedUser {
             user_id: validated.user_id,
             session_id: validated.session.id,
+            profile_id: validated.active_profile_id,
             capabilities: validated.capabilities,
             role: validated.role,
             has_all_library_access: validated.has_all_library_access,
@@ -135,6 +137,25 @@ impl<C: RequiredCapability> FromRequestParts<AppState> for Require<C> {
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         let user = AuthenticatedUser::from_request_parts(parts, state).await?;
+        let profile_scope = crate::domains::profiles::service::load_profile_scope(
+            &state.pool,
+            user.user_id,
+            user.profile_id,
+            user.has_all_library_access,
+        )
+        .await?;
+        if crate::domains::profiles::service::is_kids(&profile_scope)
+            && C::CAPABILITY != "play_media"
+        {
+            return Err(AppError::Forbidden(
+                "This feature is unavailable in Kids mode".into(),
+            ));
+        }
+        if C::CAPABILITY == "can_download" && !profile_scope.allow_downloads {
+            return Err(AppError::Forbidden(
+                "Downloads are disabled by parental controls".into(),
+            ));
+        }
         auth::service::check_capability(&user.role, &user.capabilities, C::CAPABILITY)?;
         Ok(Require {
             user,

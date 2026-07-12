@@ -1555,9 +1555,10 @@ async fn load_sync_package_context(
     let user_item_row = sqlx::query(
         "SELECT is_watched, updated_at \
          FROM user_item_data \
-         WHERE user_id = $1 AND media_item_id = $2",
+         WHERE user_id = $1 AND profile_id = $2 AND media_item_id = $3",
     )
     .bind(user.user_id)
+    .bind(user.profile_id)
     .bind(media_item_id)
     .fetch_optional(&state.pool)
     .await?;
@@ -1788,22 +1789,23 @@ async fn apply_offline_playback_event(
         let resume_position_ms = if watched { 0 } else { position_ms };
         sqlx::query(
             "INSERT INTO user_item_data \
-             (id, user_id, media_item_id, is_watched, play_count, last_played_at, \
+             (id, user_id, profile_id, media_item_id, is_watched, play_count, last_played_at, \
               resume_position_ms, last_played_media_file_id, updated_at) \
-             VALUES (uuidv7(), $1, $2, $3, 1, $4, $5, $6, $4) \
-             ON CONFLICT (user_id, media_item_id) \
+             VALUES (uuidv7(), $1, $2, $3, $4, 1, $5, $6, $7, $5) \
+             ON CONFLICT (profile_id, media_item_id) \
              DO UPDATE SET play_count = user_item_data.play_count + 1, \
-                           last_played_at = COALESCE(GREATEST(user_item_data.last_played_at, $4), user_item_data.last_played_at, $4), \
-                           is_watched = user_item_data.is_watched OR $3, \
+                           last_played_at = COALESCE(GREATEST(user_item_data.last_played_at, $5), user_item_data.last_played_at, $5), \
+                           is_watched = user_item_data.is_watched OR $4, \
                            resume_position_ms = CASE \
-                               WHEN user_item_data.is_watched OR $3 THEN 0 \
-                               WHEN user_item_data.updated_at <= $4 THEN $5 \
+                               WHEN user_item_data.is_watched OR $4 THEN 0 \
+                               WHEN user_item_data.updated_at <= $5 THEN $6 \
                                ELSE user_item_data.resume_position_ms \
                            END, \
-                           last_played_media_file_id = COALESCE($6, user_item_data.last_played_media_file_id), \
-                           updated_at = GREATEST(user_item_data.updated_at, $4)",
+                           last_played_media_file_id = COALESCE($7, user_item_data.last_played_media_file_id), \
+                           updated_at = GREATEST(user_item_data.updated_at, $5)",
         )
         .bind(user.user_id)
+        .bind(user.profile_id)
         .bind(context.media_item_id)
         .bind(watched)
         .bind(event.occurred_at)
@@ -1814,18 +1816,19 @@ async fn apply_offline_playback_event(
     } else {
         sqlx::query(
             "INSERT INTO user_item_data \
-             (id, user_id, media_item_id, resume_position_ms, last_played_media_file_id, updated_at) \
-             VALUES (uuidv7(), $1, $2, $3, $4, $5) \
-             ON CONFLICT (user_id, media_item_id) \
+             (id, user_id, profile_id, media_item_id, resume_position_ms, last_played_media_file_id, updated_at) \
+             VALUES (uuidv7(), $1, $2, $3, $4, $5, $6) \
+             ON CONFLICT (profile_id, media_item_id) \
              DO UPDATE SET resume_position_ms = CASE \
                                WHEN user_item_data.is_watched THEN 0 \
-                               WHEN user_item_data.updated_at <= $5 THEN $3 \
+                               WHEN user_item_data.updated_at <= $6 THEN $4 \
                                ELSE user_item_data.resume_position_ms \
                            END, \
-                           last_played_media_file_id = COALESCE($4, user_item_data.last_played_media_file_id), \
-                           updated_at = GREATEST(user_item_data.updated_at, $5)",
+                           last_played_media_file_id = COALESCE($5, user_item_data.last_played_media_file_id), \
+                           updated_at = GREATEST(user_item_data.updated_at, $6)",
         )
         .bind(user.user_id)
+        .bind(user.profile_id)
         .bind(context.media_item_id)
         .bind(position_ms)
         .bind(context.media_file_id)

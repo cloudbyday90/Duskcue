@@ -26,6 +26,7 @@ pub mod notifications;
 pub mod overlays;
 pub mod playback;
 pub mod posters;
+pub mod profiles;
 pub mod quality;
 pub mod search;
 pub mod segments;

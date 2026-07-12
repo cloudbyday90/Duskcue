@@ -80,8 +80,10 @@ pub struct TvSurfaceSettingsUpdate {
 #[derive(Debug, Clone)]
 pub struct TvAccessScope {
     pub user_id: Uuid,
+    pub profile_id: Uuid,
     pub has_all_library_access: bool,
     pub library_ids: Vec<Uuid>,
+    pub profile_scope: crate::domains::profiles::types::ProfileScope,
 }
 
 impl TvAccessScope {
@@ -94,6 +96,14 @@ pub async fn load_tv_access_scope(
     pool: &sqlx::PgPool,
     user: &AuthenticatedUser,
 ) -> Result<TvAccessScope, TvError> {
+    let profile_scope = crate::domains::profiles::service::load_profile_scope(
+        pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+    )
+    .await
+    .map_err(|_| TvError::AccessDenied)?;
     let library_ids = if user.has_all_library_access {
         Vec::new()
     } else {
@@ -109,15 +119,18 @@ pub async fn load_tv_access_scope(
 
     Ok(TvAccessScope {
         user_id: user.user_id,
+        profile_id: user.profile_id,
         has_all_library_access: user.has_all_library_access,
         library_ids,
+        profile_scope,
     })
 }
 
 const LOOKUP_PLATFORM_CONTENT_SQL: &str = r#"
 SELECT mi.id,
        mi.type,
-       mi.library_id
+       mi.library_id,
+       mi.content_rating
 FROM media_items mi
 JOIN libraries l ON l.id = mi.library_id
 WHERE mi.id = $1 AND l.deleted_at IS NULL
@@ -126,6 +139,8 @@ WHERE mi.id = $1 AND l.deleted_at IS NULL
 const RESOLVE_PLATFORM_CONTENT_SQL: &str = r#"
 SELECT mi.id,
        mi.type,
+       mi.library_id,
+       mi.content_rating,
        mi.title,
        mi.overview,
        mi.premiere_date,
@@ -142,7 +157,7 @@ SELECT mi.id,
 FROM media_items mi
 JOIN libraries l ON l.id = mi.library_id
 LEFT JOIN user_item_data uid
-       ON uid.user_id = $2 AND uid.media_item_id = mi.id
+       ON uid.profile_id = $2 AND uid.media_item_id = mi.id
 LEFT JOIN episodes ep ON ep.id = mi.id
 LEFT JOIN seasons sn ON sn.id = ep.season_id
 LEFT JOIN media_items series_mi ON series_mi.id = ep.series_id
@@ -173,6 +188,8 @@ WHERE ula.user_id = $1 AND l.deleted_at IS NULL
 const CONTINUE_WATCHING_SQL: &str = r#"
 SELECT mi.id,
        mi.type,
+       mi.library_id,
+       mi.content_rating,
        mi.title,
        mi.overview,
        mi.premiere_date,
@@ -194,7 +211,7 @@ LEFT JOIN LATERAL (
     FROM media_files mf
     WHERE mf.media_item_id = mi.id AND mf.is_healthy = true
 ) mf ON true
-WHERE uid.user_id = $1
+WHERE uid.profile_id = $1
   AND mi.type IN ('movie', 'episode')
   AND l.deleted_at IS NULL
   AND uid.is_watched = false
@@ -222,7 +239,7 @@ WITH latest_watched AS (
     JOIN seasons sn ON sn.id = ep.season_id
     JOIN media_items mi ON mi.id = uid.media_item_id
     JOIN libraries l ON l.id = mi.library_id
-    WHERE uid.user_id = $1
+    WHERE uid.profile_id = $1
       AND uid.is_watched = true
       AND l.deleted_at IS NULL
       AND ($2::bool OR mi.library_id = ANY($3::uuid[]))
@@ -248,7 +265,7 @@ next_episode AS (
         JOIN media_items mi ON mi.id = ep.id
         JOIN libraries l ON l.id = mi.library_id
         LEFT JOIN user_item_data uid_next
-               ON uid_next.user_id = $1 AND uid_next.media_item_id = ep.id
+               ON uid_next.profile_id = $1 AND uid_next.media_item_id = ep.id
         WHERE ep.series_id = lw.series_id
           AND l.deleted_at IS NULL
           AND COALESCE(uid_next.is_watched, false) = false
@@ -273,6 +290,8 @@ next_episode AS (
 )
 SELECT mi.id,
        mi.type,
+       mi.library_id,
+       mi.content_rating,
        mi.title,
        mi.overview,
        mi.premiere_date,
@@ -302,12 +321,14 @@ WITH started_series AS (
     SELECT DISTINCT ep.series_id
     FROM user_item_data uid
     JOIN episodes ep ON ep.id = uid.media_item_id
-    WHERE uid.user_id = $1
+    WHERE uid.profile_id = $1
 ),
 latest_per_series AS (
     SELECT DISTINCT ON (ep.series_id)
            mi.id,
            mi.type,
+           mi.library_id,
+           mi.content_rating,
            mi.title,
            mi.overview,
            mi.premiere_date,
@@ -325,7 +346,7 @@ latest_per_series AS (
     JOIN libraries l ON l.id = mi.library_id
     JOIN media_items series_mi ON series_mi.id = ep.series_id
     LEFT JOIN user_item_data uid_seen
-           ON uid_seen.user_id = $1 AND uid_seen.media_item_id = mi.id
+           ON uid_seen.profile_id = $1 AND uid_seen.media_item_id = mi.id
     LEFT JOIN LATERAL (
         SELECT count(*) AS file_count
         FROM media_files mf
@@ -357,7 +378,7 @@ WITH recent_items AS (
     FROM user_item_data uid
     JOIN media_items mi ON mi.id = uid.media_item_id
     JOIN libraries l ON l.id = mi.library_id
-    WHERE uid.user_id = $1
+    WHERE uid.profile_id = $1
       AND uid.last_played_at IS NOT NULL
       AND mi.type IN ('movie', 'episode')
       AND l.deleted_at IS NULL
@@ -428,6 +449,8 @@ candidate_scores AS (
 )
 SELECT mi.id,
        mi.type,
+       mi.library_id,
+       mi.content_rating,
        mi.title,
        mi.overview,
        mi.premiere_date,
@@ -446,7 +469,7 @@ LEFT JOIN episodes ep ON ep.id = mi.id
 LEFT JOIN seasons sn ON sn.id = ep.season_id
 LEFT JOIN media_items series_mi ON series_mi.id = ep.series_id
 LEFT JOIN user_item_data uid_seen
-       ON uid_seen.user_id = $1 AND uid_seen.media_item_id = mi.id
+       ON uid_seen.profile_id = $1 AND uid_seen.media_item_id = mi.id
 LEFT JOIN LATERAL (
     SELECT count(*) AS file_count
     FROM media_files mf
@@ -906,7 +929,7 @@ async fn fetch_surface_items(
     };
 
     let rows = sqlx::query(sql)
-        .bind(access_scope.user_id)
+        .bind(access_scope.profile_id)
         .bind(access_scope.has_all_library_access)
         .bind(&access_scope.library_ids)
         .bind(limit as i64)
@@ -914,6 +937,19 @@ async fn fetch_surface_items(
         .await?;
 
     rows.iter()
+        .filter(|row| {
+            let library_id: Result<Uuid, sqlx::Error> = row.try_get("library_id");
+            let content_rating: Option<String> = row.try_get("content_rating").ok().flatten();
+            library_id
+                .map(|library_id| {
+                    crate::domains::profiles::service::is_media_allowed(
+                        &access_scope.profile_scope,
+                        library_id,
+                        content_rating.as_deref(),
+                    )
+                })
+                .unwrap_or(false)
+        })
         .map(|row| row_to_surface_item(row, section_type))
         .collect()
 }
@@ -1155,7 +1191,13 @@ pub async fn lookup_platform_content(
     }
 
     let library_id: Uuid = row.try_get("library_id")?;
-    let has_access = access_scope.can_access_library(library_id);
+    let content_rating: Option<String> = row.try_get("content_rating").ok().flatten();
+    let has_access = access_scope.can_access_library(library_id)
+        && crate::domains::profiles::service::is_media_allowed(
+            &access_scope.profile_scope,
+            library_id,
+            content_rating.as_deref(),
+        );
     let access_status = if has_access {
         TvContentAccessStatus::Accessible
     } else {
@@ -1188,7 +1230,7 @@ pub async fn resolve_platform_content(
 
     let row = sqlx::query(RESOLVE_PLATFORM_CONTENT_SQL)
         .bind(lookup.media_item_id)
-        .bind(user.user_id)
+        .bind(user.profile_id)
         .fetch_optional(pool)
         .await?
         .ok_or(TvError::UnavailableContent)?;
@@ -1931,13 +1973,41 @@ mod tests {
         let denied = Uuid::now_v7();
         let restricted = TvAccessScope {
             user_id: Uuid::now_v7(),
+            profile_id: Uuid::now_v7(),
             has_all_library_access: false,
             library_ids: vec![allowed],
+            profile_scope: crate::domains::profiles::types::ProfileScope {
+                profile_id: Uuid::now_v7(),
+                owner_user_id: Uuid::now_v7(),
+                profile_type: "standard".to_string(),
+                max_content_rating: "NC-17".to_string(),
+                allow_search: true,
+                allow_downloads: true,
+                allow_external_links: true,
+                allow_ambient_channels: true,
+                library_ids: Vec::new(),
+                user_library_ids: vec![allowed],
+                has_all_library_access: false,
+            },
         };
         let unrestricted = TvAccessScope {
             user_id: Uuid::now_v7(),
+            profile_id: Uuid::now_v7(),
             has_all_library_access: true,
             library_ids: Vec::new(),
+            profile_scope: crate::domains::profiles::types::ProfileScope {
+                profile_id: Uuid::now_v7(),
+                owner_user_id: Uuid::now_v7(),
+                profile_type: "standard".to_string(),
+                max_content_rating: "NC-17".to_string(),
+                allow_search: true,
+                allow_downloads: true,
+                allow_external_links: true,
+                allow_ambient_channels: true,
+                library_ids: Vec::new(),
+                user_library_ids: Vec::new(),
+                has_all_library_access: true,
+            },
         };
 
         assert!(restricted.can_access_library(allowed));

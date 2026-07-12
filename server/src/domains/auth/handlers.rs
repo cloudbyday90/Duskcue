@@ -131,7 +131,7 @@ pub async fn setup(
         instance: Some("/api/v1/setup".to_string()),
     })?;
 
-    let (user_id, token) =
+    let (user_id, token, active_profile_id) =
         service::setup_owner(pool, req.username, req.display_name, req.password).await?;
 
     let body = SessionResponse {
@@ -146,6 +146,7 @@ pub async fn setup(
                 .map(|s| s.to_string())
                 .collect(),
             has_all_library_access: true,
+            active_profile_id,
         },
     };
 
@@ -224,7 +225,7 @@ pub async fn auth_login(
 
     service::verify_password_hash(&password_hash, &req.password)?;
 
-    let (token, _session) =
+    let (token, session) =
         service::create_session(&state.pool, &state, user.id, &device_info).await?;
 
     service::reset_login_failures(&state.pool, user.id).await?;
@@ -240,6 +241,7 @@ pub async fn auth_login(
             role: user.role,
             capabilities,
             has_all_library_access: user.has_all_library_access,
+            active_profile_id: session.active_profile_id,
         },
     };
 

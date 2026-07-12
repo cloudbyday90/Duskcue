@@ -33,6 +33,7 @@ pub struct UserSummary {
     pub role: String,
     pub capabilities: Vec<String>,
     pub has_all_library_access: bool,
+    pub active_profile_id: Uuid,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
@@ -257,6 +258,7 @@ pub struct ChangePasswordRequest {
 pub struct UserSession {
     pub id: Uuid,
     pub user_id: Uuid,
+    pub active_profile_id: Uuid,
     pub token_hash: String,
     pub device_id: Option<String>,
     pub device_name: Option<String>,
@@ -287,6 +289,7 @@ pub struct ValidatedSession {
     pub role: String,
     pub capabilities: Vec<String>,
     pub has_all_library_access: bool,
+    pub active_profile_id: Uuid,
 }
 
 #[derive(Debug, Clone, Serialize)]

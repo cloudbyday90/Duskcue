@@ -36,7 +36,7 @@ pub async fn validate_session(
 
     let row = sqlx::query(
         r#"
-        SELECT id, user_id, token_hash, device_id, device_name,
+        SELECT id, user_id, active_profile_id, token_hash, device_id, device_name,
             client_name, client_version, client_platform,
             ip_address::text as ip_address, user_agent, is_secure,
             expires_at, last_active_at
@@ -70,6 +70,7 @@ pub async fn validate_session(
     let has_all_library_access: bool = user.get("has_all_library_access");
 
     let capabilities = resolve_capabilities(pool, user_id, &role).await?;
+    let active_profile_id = session.active_profile_id;
 
     Ok(ValidatedSession {
         session,
@@ -79,6 +80,7 @@ pub async fn validate_session(
         role,
         capabilities,
         has_all_library_access,
+        active_profile_id,
     })
 }
 
@@ -135,6 +137,7 @@ pub async fn create_session(
     user_id: Uuid,
     device_info: &DeviceInfo,
 ) -> Result<(String, UserSession), AuthError> {
+    let active_profile_id = ensure_default_profile(pool, user_id).await?;
     let token = generate_session_token();
     let token_hash = sha256_hex(&token);
 
@@ -145,14 +148,15 @@ pub async fn create_session(
     let row = sqlx::query(
         r#"
         INSERT INTO user_sessions (
-            user_id, token_hash, device_id, device_name,
+            user_id, active_profile_id, token_hash, device_id, device_name,
             client_name, client_version, client_platform,
             ip_address, user_agent, is_secure, expires_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8::inet, $9, $10, now() + ($11 || ' days')::interval)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::inet, $10, $11, now() + ($12 || ' days')::interval)
         RETURNING id, expires_at, last_active_at
         "#,
     )
     .bind(user_id)
+    .bind(active_profile_id)
     .bind(&token_hash)
     .bind(&device_info.device_id)
     .bind(&device_info.device_name)
@@ -173,6 +177,7 @@ pub async fn create_session(
     let session = UserSession {
         id: session_id,
         user_id,
+        active_profile_id,
         token_hash,
         device_id: device_info.device_id.clone(),
         device_name: device_info.device_name.clone(),
@@ -194,7 +199,7 @@ pub async fn setup_owner(
     username: String,
     display_name: String,
     password: Option<String>,
-) -> Result<(Uuid, String), AuthError> {
+) -> Result<(Uuid, String, Uuid), AuthError> {
     let password_hash = match password {
         Some(pw) => Some(hash_password(&pw)?),
         None => None,
@@ -214,6 +219,7 @@ pub async fn setup_owner(
     .await?;
 
     let user_id: Uuid = row.get("id");
+    let active_profile_id = ensure_default_profile(pool, user_id).await?;
 
     sqlx::query(r#"UPDATE server_config SET auth = jsonb_set(auth, '{setup_complete}', 'true')"#)
         .execute(pool)
@@ -223,14 +229,15 @@ pub async fn setup_owner(
     let token_hash = sha256_hex(&token);
 
     sqlx::query(
-        r#"INSERT INTO user_sessions (user_id, token_hash, is_secure, expires_at) VALUES ($1, $2, false, now() + '90 days'::interval)"#,
+        r#"INSERT INTO user_sessions (user_id, active_profile_id, token_hash, is_secure, expires_at) VALUES ($1, $2, $3, false, now() + '90 days'::interval)"#,
     )
     .bind(user_id)
+    .bind(active_profile_id)
     .bind(&token_hash)
     .execute(pool)
     .await?;
 
-    Ok((user_id, token))
+    Ok((user_id, token, active_profile_id))
 }
 
 pub async fn is_setup_complete(pool: &sqlx::PgPool) -> Result<bool, AuthError> {
@@ -278,7 +285,7 @@ pub async fn list_user_sessions(
 ) -> Result<Vec<UserSession>, AuthError> {
     let rows = sqlx::query(
         r#"
-        SELECT id, user_id, token_hash, device_id, device_name,
+        SELECT id, user_id, active_profile_id, token_hash, device_id, device_name,
             client_name, client_version, client_platform,
             ip_address::text as ip_address, user_agent, is_secure,
             expires_at, last_active_at
@@ -391,7 +398,7 @@ pub async fn authenticate_invite_code(
         .execute(pool)
         .await?;
 
-    let (token, _session) = create_session(pool, state, user_id, device_info).await?;
+    let (token, session) = create_session(pool, state, user_id, device_info).await?;
 
     let user = sqlx::query(
         r#"SELECT id, username, display_name, role, has_all_library_access FROM users WHERE id = $1"#,
@@ -415,6 +422,7 @@ pub async fn authenticate_invite_code(
         role: db_role,
         capabilities,
         has_all_library_access: db_has_all,
+        active_profile_id: session.active_profile_id,
     };
 
     Ok((user_id, token, summary))
@@ -475,6 +483,7 @@ fn row_to_session(row: &sqlx::postgres::PgRow) -> UserSession {
     UserSession {
         id: row.get("id"),
         user_id: row.get("user_id"),
+        active_profile_id: row.get("active_profile_id"),
         token_hash: row.get("token_hash"),
         device_id: row.try_get("device_id").ok(),
         device_name: row.try_get("device_name").ok(),
@@ -487,6 +496,31 @@ fn row_to_session(row: &sqlx::postgres::PgRow) -> UserSession {
         expires_at: row.get("expires_at"),
         last_active_at: row.get("last_active_at"),
     }
+}
+
+async fn ensure_default_profile(pool: &sqlx::PgPool, user_id: Uuid) -> Result<Uuid, AuthError> {
+    if let Some(profile_id) = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM user_profiles WHERE owner_user_id = $1 AND is_default = true",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await?
+    {
+        return Ok(profile_id);
+    }
+
+    let display_name: String = sqlx::query_scalar("SELECT display_name FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_one(pool)
+        .await?;
+    let profile_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO user_profiles (owner_user_id, name, profile_type, is_default) VALUES ($1, $2, 'standard', true) RETURNING id",
+    )
+    .bind(user_id)
+    .bind(display_name)
+    .fetch_one(pool)
+    .await?;
+    Ok(profile_id)
 }
 
 pub fn generate_session_token() -> String {
@@ -829,7 +863,7 @@ pub async fn finish_passkey_authentication(
     .execute(&state.pool)
     .await?;
 
-    let (token, _session) = create_session(&state.pool, state, user_id, device_info).await?;
+    let (token, session) = create_session(&state.pool, state, user_id, device_info).await?;
 
     let capabilities = resolve_capabilities(&state.pool, user_id, &role).await?;
 
@@ -840,6 +874,7 @@ pub async fn finish_passkey_authentication(
         role,
         capabilities,
         has_all_library_access,
+        active_profile_id: session.active_profile_id,
     };
 
     Ok((token, summary))
@@ -1227,7 +1262,7 @@ pub async fn poll_device_linking_token(
         is_secure: false,
     };
 
-    let (token, _session) = create_session(pool, state, approved_by_user_id, &device_info).await?;
+    let (token, session) = create_session(pool, state, approved_by_user_id, &device_info).await?;
 
     let user = sqlx::query(
         r#"SELECT id, username, display_name, role, has_all_library_access FROM users WHERE id = $1 AND deleted_at IS NULL"#,
@@ -1259,6 +1294,7 @@ pub async fn poll_device_linking_token(
             role,
             capabilities,
             has_all_library_access,
+            active_profile_id: session.active_profile_id,
         },
     })
 }
@@ -1645,13 +1681,13 @@ pub async fn authenticate_reauth_code(
         return Err(AuthError::ReauthCodeInvalid);
     }
 
-    let (token, _session) = create_session(pool, state, user_id, device_info).await?;
+    let (token, session) = create_session(pool, state, user_id, device_info).await?;
 
     sqlx::query(
         r#"UPDATE reauth_codes SET is_used = true, used_at = now(), resulting_session_id = $2 WHERE id = $1"#,
     )
     .bind(reauth_id)
-    .bind(_session.id)
+    .bind(session.id)
     .execute(pool)
     .await?;
 
@@ -1672,6 +1708,7 @@ pub async fn authenticate_reauth_code(
             role,
             capabilities,
             has_all_library_access,
+            active_profile_id: session.active_profile_id,
         },
     ))
 }
