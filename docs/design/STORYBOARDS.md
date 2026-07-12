@@ -263,9 +263,9 @@ Admins can manually trigger storyboard generation per library or per item:
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `GET` | `/api/v1/items/{id}/storyboard` | Get storyboard metadata for a media item (sprite URLs, dimensions, interval) |
-| `GET` | `/api/v1/items/{id}/storyboard/index.vtt` | Serve the WebVTT index file |
-| `GET` | `/api/v1/items/{id}/storyboard/{sprite}` | Serve a sprite sheet image |
+| `GET` | `/api/v1/items/{id}/storyboard?media_file_id={id}` | Get storyboard metadata for the playback file; omitting the optional query uses the primary healthy file |
+| `GET` | `/api/v1/items/{id}/storyboard/index.vtt?media_file_id={id}` | Serve the WebVTT index for the playback file |
+| `GET` | `/api/v1/items/{id}/storyboard/{sprite}?media_file_id={id}` | Serve a sprite sheet image for the playback file |
 | `POST` | `/api/v1/libraries/{id}/generate-storyboards` | Trigger storyboard generation for a library |
 | `POST` | `/api/v1/items/{id}/generate-storyboards` | Trigger storyboard generation for a specific item |
 | `DELETE` | `/api/v1/items/{id}/storyboard` | Delete cached storyboard data for an item |
@@ -280,7 +280,7 @@ Admins can manually trigger storyboard generation per library or per item:
     "height": 180,
     "sprite_count": 4,
     "total_thumbnails": 720,
-    "index_url": "/api/v1/items/{id}/storyboard/index.vtt",
+    "index_url": "/api/v1/items/{id}/storyboard/index.vtt?media_file_id={media_file_id}",
     "sprites": [
         {
             "url": "/api/v1/items/{id}/storyboard/sprite_001.webp",
@@ -295,23 +295,24 @@ Admins can manually trigger storyboard generation per library or per item:
 
 ### Integration with Playback
 
-When a client starts playback, the server includes storyboard metadata in the playback start response:
+After playback starts, the client fetches storyboard metadata with the exact
+`media_file_id` selected for that stream:
 
 ```json
 {
-    "session_id": "uuid",
-    "stream_url": "/api/v1/stream/...",
-    "storyboard": {
-        "index_url": "/api/v1/items/{id}/storyboard/index.vtt",
-        "interval_seconds": 10,
-        "width": 320,
-        "height": 180
-    },
-    "segments": [...]
+    "index_url": "/api/v1/items/{id}/storyboard/index.vtt?media_file_id={media_file_id}",
+    "interval_seconds": 10,
+    "width": 320,
+    "height": 180
 }
 ```
 
-The client loads the WebVTT index once and caches it for the session. Thumbnails are fetched on demand as the user scrubs the seek bar.
+The server validates that the requested file belongs to the item and is healthy.
+It rewrites WebVTT sprite references with that same file ID, so the index and
+sprites cannot drift to a different cut or rendition. The client loads the
+WebVTT index once for the player session; the HTTP responses use
+`Cache-Control: private, no-store` because profile access can change during a
+shared browser session.
 
 ### hls.js Integration
 
@@ -459,9 +460,9 @@ Storyboard retrieval, serving, generation-trigger, and deletion API surface impl
 
 - **Error code mapping confirmed** — The "Storyboard API errors use existing error codes" rule is honored. `StoryboardError` variants map: `MediaItemNotFound` → `MEDIA_001` (404); `MediaFileNotFound` → `MEDIA_002` (404); `StoryboardNotFound` → `MEDIA_007` (404, already registered in the error code table); `LibraryNotFound` → `LIB_001` (404); `GenerationAlreadyInProgress` → `SYS_002` (409, the scheduled-task-already-running code); `InvalidSpriteFilename` → `VALID_001` (422); `Database` → `INTERNAL` (500). No new error codes registered.
 - **Binary-serving endpoints follow playback domain pattern** — `get_storyboard_index` and `get_storyboard_sprite` return `Result<Response, AppError>` (not `Json<T>`) because they serve non-JSON content: `text/vtt; charset=utf-8` for the WebVTT index, `image/webp` for sprite sheets. This mirrors the playback domain's `stream_file` / `get_transcode_segment` handlers that serve HLS manifests and fMP4 segments.
-- **Cache headers per content type** — WebVTT index: `Cache-Control: public, max-age=3600` (regenerable, may change if storyboard is re-generated). Sprite sheets: `Cache-Control: public, max-age=86400, immutable` (immutable once written — sprite filenames are stable per generation since they're keyed by `media_file_id` which doesn't change). This differs from the playback HLS pattern (`no-cache` for live transcode manifests) because storyboards are static derived data, not live session state.
+- **Profile-safe cache headers** — Metadata, WebVTT indexes, and sprite sheets all use `Cache-Control: private, no-store`. They are protected media representations, and a shared browser can switch from an adult profile to a Kids profile without changing its session cookie. Reusing a public or private cached preview across that switch could disclose restricted imagery.
 - **`index.vtt` static route coexists with `{sprite}` capture** — Axum's matchit router prioritizes static path segments over dynamic captures at the same depth, so `GET /storyboard/index.vtt` routes to the index handler and `GET /storyboard/sprite_001.webp` routes to the sprite handler without conflict. No explicit disambiguation needed.
-- **Authorization splits retrieval from mutation** — Retrieval endpoints (`GET storyboard`, `GET index.vtt`, `GET sprite`) require `AuthenticatedUser` only — any logged-in user can view seek previews during playback. Generation and deletion endpoints (`POST generate-storyboards`, `DELETE storyboard`) require `Require<CanManageLibraries>` — storyboard generation is CPU-intensive and cache eviction is an administrative action. This matches the segments domain convention where `analyze-segments` is admin-only but segment retrieval is open to all authenticated users.
+- **Authorization splits retrieval from mutation** — Retrieval endpoints (`GET storyboard`, `GET index.vtt`, `GET sprite`) require `AuthenticatedUser` and enforce the active profile's media scope before serving previews. Generation and deletion endpoints (`POST generate-storyboards`, `DELETE storyboard`) require `Require<CanManageLibraries>` — storyboard generation is CPU-intensive and cache eviction is an administrative action. This matches the segments domain convention where `analyze-segments` is admin-only but segment retrieval is open to all authenticated users.
 - **`cache_dir` from `BootstrapConfig.data_dir`** — Handlers construct `state.bootstrap.data_dir.join("cache")` and pass as `&Path` to service functions. Storyboards live in `{data_dir}/cache/storyboards/{media_file_id}/` per the Storage Path spec. Service signatures use `&Path` (not `&PathBuf`) per clippy `ptr_arg` convention.
 - **`GenerateStoryboardsResponse` is scope-agnostic** — Single response type `{ queued: bool, message: String }` serves both library and item trigger endpoints. The route context (`/libraries/{id}/` vs `/items/{id}/`) tells the client which scope was triggered. Follows the segments domain's `AnalyzeSegmentsResponse` minimal shape; avoids type duplication for two endpoints with identical response semantics.
 - **`InvalidSpriteFilename` reserved for path traversal protection** — Task 4 service implementation will validate sprite filenames against the expected `sprite_NNN.webp` pattern before constructing disk paths, rejecting names containing `..`, `/`, `\`, or non-matching patterns. Mapped to `VALID_001` (422) — matches the playback domain's segment filename validation approach (`validate_segment_filename` rejects `..`, `/`, `\`, names >64 chars, non-`seg_` prefixed).
@@ -496,7 +497,7 @@ The generation pipeline (FFmpeg frame extraction, WebP sprite assembly, WebVTT i
 - **Sprite filename validation enforces 1-based 1-4 digit numbers** — `sprite_NNN.webp` where NNN is `[1-9999]`. 3-digit zero-padding matches the WebVTT cue examples in this design doc; the validator accepts up to 4 digits so a 4-hour movie at 5s interval (~288 sheets) and pathological longer content still parse. `sprite_000` is rejected (1-based). Path separators (`/`, `\`), `..` traversal attempts, non-`.webp` suffixes, and non-`sprite_` prefixes all rejected with descriptive error strings. Mapped to `VALID_001` (422) at the HTTP boundary.
 - **WebP RIFF header parser replaces image-library dependency** — The design stores thumbnail `height` in the DB row (computed from source aspect ratio). Rather than add a Rust image-library dependency, `inspect_sprite_height()` parses the WebP container directly: VP8 lossy (`b"VP8 "`) reads 16-bit LE width/height at byte offsets 26/28; VP8 lossless (`b"VP8L"`) reads the 14-bit packed width/height from bytes 22-24; falls back to 180px (16:9 at 320 wide) for unparseable headers. Same approach as services/subtitles.rs OCR engine detection — avoid heavy dependencies for trivial parsing.
 - **Grid shape recovered from `metadata.columns`/`metadata.rows` JSONB** — The `storyboards` table has no explicit columns/rows fields, but `SpriteResponse` includes them per the design's Response Format. The worker (Task 6) writes `metadata.columns` and `metadata.rows` when creating the row; the domain service's `read_grid_shape()` recovers them, defaulting to the design's 10×20 when missing (handles externally-authored or future-config rows). Validation rejects zero/negative so a malformed metadata payload cannot break URL construction.
-- **`resolve_primary_media_file` mirrors playback domain** — Same query (`is_healthy=true ORDER BY file_size DESC LIMIT 1`) as `domains::playback::service::resolve_media_file`. Storyboards correspond to the file the user will actually stream; keeping the selection identical means the storyboard is always for the right file. Multi-version items (4K + 1080p) get one storyboard for the primary file, matching the "media_file_id" rationale in the Storage Path section.
+- **Playback file selection takes precedence** — When a player has selected an explicit healthy `media_file_id`, every storyboard endpoint resolves that exact file. When absent, the primary-file fallback remains `is_healthy=true ORDER BY file_size DESC LIMIT 1`. Multi-version items therefore keep previews aligned with the rendition or cut actually being watched.
 - **Delete is idempotent + best-effort disk cleanup** — DB deletion via `DELETE ... RETURNING` is the source of truth; if no row exists, returns `StoryboardNotFound` *after* still attempting on-disk cleanup (handles crashed-generation drift). On-disk `remove_dir_all` failures (except NotFound) are logged at WARN but do not invalidate the committed DB deletion — derived data can always regenerate.
 
 ### Phase 10 Task 6 — Background Worker (Complete)

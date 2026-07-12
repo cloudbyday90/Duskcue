@@ -16,9 +16,9 @@
 
 use axum::Json;
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{StatusCode, header};
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use uuid::Uuid;
 
 use crate::domains::storyboards::service;
@@ -31,25 +31,29 @@ pub async fn get_storyboard(
     State(state): State<AppState>,
     user: AuthenticatedUser,
     Path(item_id): Path<Uuid>,
-) -> Result<Json<StoryboardResponse>, AppError> {
+    Query(query): Query<StoryboardQuery>,
+) -> Result<Response, AppError> {
     assert_media_profile_access(&state, &user, item_id).await?;
-    let result = service::get_storyboard(&state.pool, item_id).await?;
-    Ok(Json(result))
+    let result = service::get_storyboard(&state.pool, item_id, query.media_file_id).await?;
+    Ok(([(header::CACHE_CONTROL, "private, no-store")], Json(result)).into_response())
 }
 
 pub async fn get_storyboard_index(
     State(state): State<AppState>,
     user: AuthenticatedUser,
     Path(item_id): Path<Uuid>,
+    Query(query): Query<StoryboardQuery>,
 ) -> Result<Response, AppError> {
     assert_media_profile_access(&state, &user, item_id).await?;
     let cache_dir = state.bootstrap.data_dir.join("cache");
-    let content = service::get_storyboard_index(&state.pool, item_id, &cache_dir).await?;
+    let content =
+        service::get_storyboard_index(&state.pool, item_id, query.media_file_id, &cache_dir)
+            .await?;
 
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "text/vtt; charset=utf-8")
-        .header(header::CACHE_CONTROL, "public, max-age=3600")
+        .header(header::CACHE_CONTROL, "private, no-store")
         .body(Body::from(content))
         .unwrap())
 }
@@ -58,15 +62,23 @@ pub async fn get_storyboard_sprite(
     State(state): State<AppState>,
     user: AuthenticatedUser,
     Path((item_id, sprite)): Path<(Uuid, String)>,
+    Query(query): Query<StoryboardQuery>,
 ) -> Result<Response, AppError> {
     assert_media_profile_access(&state, &user, item_id).await?;
     let cache_dir = state.bootstrap.data_dir.join("cache");
-    let data = service::get_storyboard_sprite(&state.pool, item_id, &sprite, &cache_dir).await?;
+    let data = service::get_storyboard_sprite(
+        &state.pool,
+        item_id,
+        query.media_file_id,
+        &sprite,
+        &cache_dir,
+    )
+    .await?;
 
     Ok(Response::builder()
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, "image/webp")
-        .header(header::CACHE_CONTROL, "public, max-age=86400, immutable")
+        .header(header::CACHE_CONTROL, "private, no-store")
         .body(Body::from(data))
         .unwrap())
 }

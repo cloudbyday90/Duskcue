@@ -97,7 +97,7 @@
                 segments = [];
             }
             try {
-                storyboard = await getStoryboard(itemId);
+                storyboard = await getStoryboard(itemId, mediaFileId || $player?.mediaFileId);
             } catch {
                 storyboard = null;
             }

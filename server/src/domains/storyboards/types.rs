@@ -15,11 +15,16 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use chrono::{DateTime, Utc};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub static VALID_STORYBOARD_WIDTHS: &[u32] = &[160, 320, 640];
 pub static VALID_INTERVAL_MODES: &[&str] = &["adaptive", "fixed"];
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct StoryboardQuery {
+    pub media_file_id: Option<Uuid>,
+}
 
 pub struct StoryboardRow {
     pub id: Uuid,

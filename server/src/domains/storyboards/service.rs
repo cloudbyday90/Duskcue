@@ -49,9 +49,8 @@ const STORYBOARDS_SUBDIR: &str = "storyboards";
 
 /// Get storyboard metadata for a media item.
 ///
-/// Resolves the primary `media_files` row for the item (largest healthy
-/// file, matching the playback domain's convention), loads the matching
-/// `storyboards` row, and builds the response with sprite URLs.
+/// Resolves the requested healthy media file or the primary fallback, loads
+/// the matching `storyboards` row, and builds the response with sprite URLs.
 ///
 /// Returns `StoryboardNotFound` (MEDIA_007) when no storyboard has been
 /// generated yet for this item, and `MediaItemNotFound` (MEDIA_001) when
@@ -59,10 +58,10 @@ const STORYBOARDS_SUBDIR: &str = "storyboards";
 pub async fn get_storyboard(
     pool: &PgPool,
     media_item_id: Uuid,
+    requested_media_file_id: Option<Uuid>,
 ) -> Result<StoryboardResponse, StoryboardError> {
-    let media_file_id = resolve_primary_media_file(pool, media_item_id)
-        .await?
-        .ok_or(StoryboardError::MediaItemNotFound { media_item_id })?;
+    let media_file_id =
+        resolve_media_file_for_storyboard(pool, media_item_id, requested_media_file_id).await?;
 
     let row = sqlx::query(
         "SELECT id, media_file_id, file_hash, interval_seconds, width, height, \
@@ -100,7 +99,7 @@ pub async fn get_storyboard(
             total_thumbnails,
         );
         sprites.push(SpriteResponse {
-            url: sprite_url_for(media_item_id, sheet_index as u32),
+            url: sprite_url_for(media_item_id, media_file_id, sheet_index as u32),
             thumbnails: thumbnails_in_sheet,
             columns,
             rows,
@@ -114,7 +113,7 @@ pub async fn get_storyboard(
         height,
         sprite_count,
         total_thumbnails,
-        index_url: index_url_for(media_item_id),
+        index_url: index_url_for(media_item_id, media_file_id),
         sprites,
         generated_at,
     })
@@ -127,15 +126,21 @@ pub async fn get_storyboard(
 pub async fn get_storyboard_index(
     pool: &PgPool,
     media_item_id: Uuid,
+    requested_media_file_id: Option<Uuid>,
     cache_dir: &Path,
 ) -> Result<String, StoryboardError> {
-    let media_file_id = resolve_media_file_for_storyboard(pool, media_item_id).await?;
+    let media_file_id =
+        resolve_media_file_for_storyboard(pool, media_item_id, requested_media_file_id).await?;
 
     let path = storyboard_dir(cache_dir, media_file_id).join("index.vtt");
     let content = tokio::fs::read_to_string(&path)
         .await
         .map_err(|e| map_index_read_error(e, media_item_id))?;
-    Ok(content)
+    Ok(rewrite_vtt_sprite_urls(
+        &content,
+        media_item_id,
+        media_file_id,
+    ))
 }
 
 /// Read a WebP sprite sheet image for a media item's storyboard.
@@ -148,6 +153,7 @@ pub async fn get_storyboard_index(
 pub async fn get_storyboard_sprite(
     pool: &PgPool,
     media_item_id: Uuid,
+    requested_media_file_id: Option<Uuid>,
     sprite_filename: &str,
     cache_dir: &Path,
 ) -> Result<Vec<u8>, StoryboardError> {
@@ -156,7 +162,8 @@ pub async fn get_storyboard_sprite(
     let sheet_number = sb_svc::validate_sprite_filename(sprite_filename)
         .map_err(StoryboardError::InvalidSpriteFilename)?;
 
-    let media_file_id = resolve_media_file_for_storyboard(pool, media_item_id).await?;
+    let media_file_id =
+        resolve_media_file_for_storyboard(pool, media_item_id, requested_media_file_id).await?;
 
     // Bounds-check the requested sheet against what was generated. The
     // `storyboards.sprite_count` column is authoritative.
@@ -250,7 +257,7 @@ pub async fn delete_storyboard(
     media_item_id: Uuid,
     cache_dir: &Path,
 ) -> Result<(), StoryboardError> {
-    let media_file_id = resolve_media_file_for_storyboard(pool, media_item_id).await?;
+    let media_file_id = resolve_media_file_for_storyboard(pool, media_item_id, None).await?;
 
     // DB row first — guarantees the HTTP 404 path is consistent even if the
     // disk directory is in a weird state. `RETURNING` keeps it atomic.
@@ -329,16 +336,32 @@ async fn verify_library_exists(pool: &PgPool, library_id: Uuid) -> Result<(), St
     Ok(())
 }
 
-/// Resolve the media file that owns a storyboard, *requiring* that a
-/// storyboard DB row exists. Used by index/sprite/delete handlers — they
-/// can only operate on a storyboard that has been generated.
+/// Resolve the requested healthy media file or the primary fallback,
+/// requiring that its storyboard DB row exists.
 async fn resolve_media_file_for_storyboard(
     pool: &PgPool,
     media_item_id: Uuid,
+    requested_media_file_id: Option<Uuid>,
 ) -> Result<Uuid, StoryboardError> {
-    let media_file_id = resolve_primary_media_file(pool, media_item_id)
-        .await?
-        .ok_or(StoryboardError::MediaItemNotFound { media_item_id })?;
+    let media_file_id = if let Some(media_file_id) = requested_media_file_id {
+        let is_requested_file_healthy: bool = sqlx::query_scalar(
+            "SELECT EXISTS(SELECT 1 FROM media_files WHERE id = $1 AND media_item_id = $2 AND is_healthy = true)",
+        )
+        .bind(media_file_id)
+        .bind(media_item_id)
+        .fetch_one(pool)
+        .await?;
+
+        if !is_requested_file_healthy {
+            return Err(StoryboardError::MediaFileNotFound { media_file_id });
+        }
+
+        media_file_id
+    } else {
+        resolve_primary_media_file(pool, media_item_id)
+            .await?
+            .ok_or(StoryboardError::MediaItemNotFound { media_item_id })?
+    };
 
     // Confirm a storyboard row exists. We deliberately don't load the full
     // row here — callers (index/sprite/delete) only need the path, which is
@@ -371,16 +394,44 @@ fn storyboard_dir(cache_dir: &Path, media_file_id: Uuid) -> PathBuf {
 
 /// Build the relative URL for a sprite sheet, served by the sprite HTTP
 /// handler at `/api/v1/items/{item_id}/storyboard/{sprite}`.
-fn sprite_url_for(media_item_id: Uuid, sheet_index: u32) -> String {
+fn sprite_url_for(media_item_id: Uuid, media_file_id: Uuid, sheet_index: u32) -> String {
+    let sprite_filename = sb_svc::sprite_filename(sheet_index);
+    sprite_url_for_filename(media_item_id, media_file_id, &sprite_filename)
+}
+
+fn sprite_url_for_filename(
+    media_item_id: Uuid,
+    media_file_id: Uuid,
+    sprite_filename: &str,
+) -> String {
     format!(
-        "/api/v1/items/{media_item_id}/storyboard/{}",
-        sb_svc::sprite_filename(sheet_index)
+        "/api/v1/items/{media_item_id}/storyboard/{sprite_filename}?media_file_id={media_file_id}"
     )
 }
 
 /// Build the relative URL for the WebVTT index file.
-fn index_url_for(media_item_id: Uuid) -> String {
-    format!("/api/v1/items/{media_item_id}/storyboard/index.vtt")
+fn index_url_for(media_item_id: Uuid, media_file_id: Uuid) -> String {
+    format!("/api/v1/items/{media_item_id}/storyboard/index.vtt?media_file_id={media_file_id}")
+}
+
+fn rewrite_vtt_sprite_urls(content: &str, media_item_id: Uuid, media_file_id: Uuid) -> String {
+    content
+        .lines()
+        .map(|line| {
+            let Some((sprite_filename, fragment)) = line.split_once("#xywh=") else {
+                return line.to_owned();
+            };
+            if sb_svc::validate_sprite_filename(sprite_filename).is_err() {
+                return line.to_owned();
+            }
+            format!(
+                "{}#xywh={fragment}",
+                sprite_url_for_filename(media_item_id, media_file_id, sprite_filename)
+            )
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+        + if content.ends_with('\n') { "\n" } else { "" }
 }
 
 /// Read the per-generation grid shape from the storyboard row's metadata
@@ -482,20 +533,33 @@ mod tests {
 
     #[test]
     fn sprite_url_format() {
-        let url = sprite_url_for(Uuid::nil(), 0);
+        let url = sprite_url_for(Uuid::nil(), Uuid::from_u128(1), 0);
         assert_eq!(
             url,
-            "/api/v1/items/00000000-0000-0000-0000-000000000000/storyboard/sprite_001.webp"
+            "/api/v1/items/00000000-0000-0000-0000-000000000000/storyboard/sprite_001.webp?media_file_id=00000000-0000-0000-0000-000000000001"
         );
     }
 
     #[test]
     fn index_url_format() {
-        let url = index_url_for(Uuid::nil());
+        let url = index_url_for(Uuid::nil(), Uuid::from_u128(1));
         assert_eq!(
             url,
-            "/api/v1/items/00000000-0000-0000-0000-000000000000/storyboard/index.vtt"
+            "/api/v1/items/00000000-0000-0000-0000-000000000000/storyboard/index.vtt?media_file_id=00000000-0000-0000-0000-000000000001"
         );
+    }
+
+    #[test]
+    fn vtt_sprite_urls_include_the_selected_media_file() {
+        let media_item_id = Uuid::nil();
+        let media_file_id = Uuid::from_u128(1);
+        let content = "WEBVTT\n\n00:00:00.000 --> 00:00:10.000\nsprite_001.webp#xywh=0,0,320,180\n";
+        let rewritten = rewrite_vtt_sprite_urls(&content, media_item_id, media_file_id);
+
+        assert!(rewritten.contains(
+            "/api/v1/items/00000000-0000-0000-0000-000000000000/storyboard/sprite_001.webp?media_file_id=00000000-0000-0000-0000-000000000001#xywh=0,0,320,180"
+        ));
+        assert!(rewritten.ends_with('\n'));
     }
 
     #[test]

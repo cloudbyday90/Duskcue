@@ -18,16 +18,20 @@
 
 import { get, post, del, buildApiUrl } from './core.js';
 
-export async function getStoryboard(itemId) {
-    return get(`/items/${itemId}/storyboard`);
+function mediaFileParams(mediaFileId) {
+    return mediaFileId ? { media_file_id: mediaFileId } : {};
 }
 
-export function storyboardIndexUrl(itemId) {
-    return buildApiUrl(`/items/${itemId}/storyboard/index.vtt`);
+export async function getStoryboard(itemId, mediaFileId = null) {
+    return get(`/items/${itemId}/storyboard`, mediaFileParams(mediaFileId));
 }
 
-export function storyboardSpriteUrl(itemId, spriteName) {
-    return buildApiUrl(`/items/${itemId}/storyboard/${spriteName}`);
+export function storyboardIndexUrl(itemId, mediaFileId = null) {
+    return buildApiUrl(`/items/${itemId}/storyboard/index.vtt`, mediaFileParams(mediaFileId));
+}
+
+export function storyboardSpriteUrl(itemId, spriteName, mediaFileId = null) {
+    return buildApiUrl(`/items/${itemId}/storyboard/${spriteName}`, mediaFileParams(mediaFileId));
 }
 
 export async function generateLibraryStoryboards(libraryId) {

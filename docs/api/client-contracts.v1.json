@@ -1857,7 +1857,7 @@
           "contract": {
             "success": {
               "response_schema": "StoryboardResponse",
-              "cache_profile": "private_json",
+              "cache_profile": "no_store_read",
               "pagination": "none"
             },
             "validation": {
@@ -1867,7 +1867,13 @@
                   "required": true
                 }
               ],
-              "query_params": [],
+              "query_params": [
+                {
+                  "name": "media_file_id",
+                  "required": false,
+                  "validation": "UUID of a healthy media file belonging to item_id"
+                }
+              ],
               "request_schema": null
             },
             "errors": {
@@ -1887,7 +1893,7 @@
         {
           "method": "GET",
           "path": "/api/v1/items/{item_id}/storyboard/index.vtt",
-          "auth": "signed_or_user",
+          "auth": "user",
           "response": "WebVtt",
           "web_helpers": [
             "storyboardIndexUrl"
@@ -1895,7 +1901,7 @@
           "contract": {
             "success": {
               "response_schema": "WebVtt",
-              "cache_profile": "private_json",
+              "cache_profile": "no_store_read",
               "pagination": "none"
             },
             "validation": {
@@ -1905,7 +1911,61 @@
                   "required": true
                 }
               ],
-              "query_params": [],
+              "query_params": [
+                {
+                  "name": "media_file_id",
+                  "required": false,
+                  "validation": "UUID of a healthy media file belonging to item_id"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/items/{item_id}/storyboard/{sprite}",
+          "auth": "user",
+          "response": "StoryboardSprite",
+          "web_helpers": [
+            "storyboardSpriteUrl"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "StoryboardSprite",
+              "cache_profile": "no_store_read",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "item_id",
+                  "required": true
+                },
+                {
+                  "name": "sprite",
+                  "required": true
+                }
+              ],
+              "query_params": [
+                {
+                  "name": "media_file_id",
+                  "required": false,
+                  "validation": "UUID of a healthy media file belonging to item_id"
+                }
+              ],
               "request_schema": null
             },
             "errors": {
