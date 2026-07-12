@@ -251,7 +251,11 @@ fn prepare_update_value(
                 });
             }
             let existing_group = existing.get(group);
-            prepare_json_group_for_storage(state, value, existing_group)
+            let prepared = prepare_json_group_for_storage(state, value, existing_group)?;
+            if group == "transcoding" {
+                validate_storyboard_transcoding_config(&prepared)?;
+            }
+            Ok(prepared)
         }
         _ => Err(SystemError::InvalidConfigKey(key.to_string())),
     }
@@ -300,6 +304,94 @@ fn validate_port(field: &str, value: Value, nullable: bool) -> Result<Value, Sys
         });
     }
     Ok(json!(port as i32))
+}
+
+fn validate_storyboard_transcoding_config(value: &Value) -> Result<(), SystemError> {
+    let fields = value
+        .as_object()
+        .ok_or_else(|| SystemError::InvalidConfigValue {
+            field: "transcoding".to_string(),
+            message: "expected object".to_string(),
+        })?;
+
+    validate_optional_bool(fields, "storyboards_enabled")?;
+    validate_optional_bool(fields, "storyboard_keyframe_only")?;
+
+    if let Some(mode) = fields.get("storyboard_interval_mode") {
+        let mode = mode.as_str().ok_or_else(|| {
+            invalid_storyboard_config("storyboard_interval_mode", "expected string")
+        })?;
+        if !matches!(mode, "adaptive" | "fixed") {
+            return Err(invalid_storyboard_config(
+                "storyboard_interval_mode",
+                "must be adaptive or fixed",
+            ));
+        }
+    }
+
+    validate_optional_u64_range(fields, "storyboard_fixed_interval_seconds", 2, 120)?;
+    validate_optional_allowed_u64(fields, "storyboard_width", &[160, 320, 640])?;
+    validate_optional_u64_range(fields, "storyboard_quality", 50, 100)?;
+    validate_optional_u64_range(fields, "storyboard_sprite_columns", 1, 20)?;
+    validate_optional_u64_range(fields, "storyboard_sprite_rows", 1, 40)?;
+    Ok(())
+}
+
+fn validate_optional_bool(fields: &Map<String, Value>, field: &str) -> Result<(), SystemError> {
+    if let Some(value) = fields.get(field)
+        && !value.is_boolean()
+    {
+        return Err(invalid_storyboard_config(field, "expected boolean"));
+    }
+    Ok(())
+}
+
+fn validate_optional_u64_range(
+    fields: &Map<String, Value>,
+    field: &str,
+    min: u64,
+    max: u64,
+) -> Result<(), SystemError> {
+    let Some(value) = fields.get(field) else {
+        return Ok(());
+    };
+    let number = value
+        .as_u64()
+        .ok_or_else(|| invalid_storyboard_config(field, "expected integer"))?;
+    if !(min..=max).contains(&number) {
+        return Err(invalid_storyboard_config(
+            field,
+            &format!("must be between {min} and {max}"),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_optional_allowed_u64(
+    fields: &Map<String, Value>,
+    field: &str,
+    allowed: &[u64],
+) -> Result<(), SystemError> {
+    let Some(value) = fields.get(field) else {
+        return Ok(());
+    };
+    let number = value
+        .as_u64()
+        .ok_or_else(|| invalid_storyboard_config(field, "expected integer"))?;
+    if !allowed.contains(&number) {
+        return Err(invalid_storyboard_config(
+            field,
+            "must be one of 160, 320, or 640",
+        ));
+    }
+    Ok(())
+}
+
+fn invalid_storyboard_config(field: &str, message: &str) -> SystemError {
+    SystemError::InvalidConfigValue {
+        field: format!("transcoding.{field}"),
+        message: message.to_string(),
+    }
 }
 
 fn prepare_json_group_for_storage(
@@ -695,5 +787,45 @@ impl From<ScheduledTaskRunRow> for ScheduledTaskRunResponse {
             error_details: row.error_details,
             stats: row.stats,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn accepts_valid_storyboard_transcoding_config() {
+        let config = json!({
+            "storyboards_enabled": true,
+            "storyboard_interval_mode": "fixed",
+            "storyboard_fixed_interval_seconds": 10,
+            "storyboard_width": 320,
+            "storyboard_quality": 75,
+            "storyboard_keyframe_only": true,
+            "storyboard_sprite_columns": 10,
+            "storyboard_sprite_rows": 20,
+        });
+        assert!(validate_storyboard_transcoding_config(&config).is_ok());
+    }
+
+    #[test]
+    fn rejects_invalid_storyboard_width() {
+        let error =
+            validate_storyboard_transcoding_config(&json!({"storyboard_width": 480})).unwrap_err();
+        assert!(matches!(
+            error,
+            SystemError::InvalidConfigValue { field, .. } if field == "transcoding.storyboard_width"
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_storyboard_grid() {
+        let error = validate_storyboard_transcoding_config(&json!({"storyboard_sprite_rows": 41}))
+            .unwrap_err();
+        assert!(matches!(
+            error,
+            SystemError::InvalidConfigValue { field, .. } if field == "transcoding.storyboard_sprite_rows"
+        ));
     }
 }

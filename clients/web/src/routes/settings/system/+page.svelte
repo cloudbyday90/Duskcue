@@ -160,9 +160,9 @@
                 number('segment_analysis.silence_min_duration_ms', 'Silence Min Duration', 250, 10000, 250, 'ms'),
                 toggle('storyboards_enabled', 'Storyboards'),
                 select('storyboard_interval_mode', 'Storyboard Interval Mode', ['adaptive', 'fixed']),
-                number('storyboard_fixed_interval_seconds', 'Fixed Storyboard Interval', 1, 120, 1, 'seconds'),
-                number('storyboard_width', 'Storyboard Width', 160, 640, 10, 'px'),
-                number('storyboard_quality', 'Storyboard Quality', 1, 100, 1),
+                number('storyboard_fixed_interval_seconds', 'Fixed Storyboard Interval', 2, 120, 1, 'seconds'),
+                selectNumber('storyboard_width', 'Storyboard Width', [160, 320, 640], 'px'),
+                number('storyboard_quality', 'Storyboard Quality', 50, 100, 1),
                 toggle('storyboard_keyframe_only', 'Keyframe-only Storyboards'),
                 number('storyboard_sprite_columns', 'Sprite Columns', 1, 20, 1),
                 number('storyboard_sprite_rows', 'Sprite Rows', 1, 40, 1),
@@ -400,6 +400,10 @@
 
     function select(path, label, options, hint = '') {
         return { path, label, type: 'select', options, hint };
+    }
+
+    function selectNumber(path, label, options, unit = '', hint = '') {
+        return { path, label, type: 'select-number', options, unit, hint };
     }
 
     function text(path, label, hint = '') {

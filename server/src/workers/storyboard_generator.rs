@@ -50,9 +50,9 @@
 //!
 //! ## Incremental generation
 //!
-//! Files with an existing `storyboards` row whose `file_hash` matches the
-//! current `media_files.file_hash` are skipped. This makes subsequent runs
-//! fast — only new or modified files (re-muxed, re-encoded) are processed.
+//! Files with an existing `storyboards` row whose nullable `file_hash` and
+//! normalized generation fingerprint match are skipped. This makes subsequent
+//! runs fast while still regenerating when output-affecting settings change.
 
 use std::path::Path;
 
@@ -220,11 +220,12 @@ pub async fn generate_for_item_one(
         0,
     );
 
-    let cfg = resolve_generation_config(state, None, None).await;
+    let cfg = resolve_generation_config(state, None).await;
     let runtime_seconds = file.runtime_seconds.max(0) as u32;
+    let runtime_config = state.runtime_config.load();
     let interval = resolve_interval(
         &cfg,
-        &state.runtime_config.load().transcoding,
+        &runtime_config.transcoding.storyboard_interval_mode,
         runtime_seconds,
     );
 
@@ -385,10 +386,14 @@ async fn generate_for_library(
 
     // Resolve the effective generation config (server-wide + per-library
     // overrides for width and fixed-interval).
-    let cfg = resolve_generation_config(state, Some(&library_meta), interval_mode_override).await;
+    let cfg = resolve_generation_config(state, Some(&library_meta)).await;
+    let server_cfg = state.runtime_config.load();
+    let interval_mode = normalized_interval_mode(
+        interval_mode_override.unwrap_or(&server_cfg.transcoding.storyboard_interval_mode),
+    );
 
     // Fetch incremental candidates.
-    let candidates = fetch_files_needing_storyboards(pool, library_id).await?;
+    let candidates = fetch_files_needing_storyboards(pool, library_id, &cfg, interval_mode).await?;
     if candidates.is_empty() {
         tracing::debug!(library_id = %library_id, "No files need storyboard generation");
         return Ok(result);
@@ -407,12 +412,9 @@ async fn generate_for_library(
         0,
     );
 
-    let server_cfg = state.runtime_config.load();
-    let server_transcoding = &server_cfg.transcoding;
-
     for file in &candidates {
         let runtime_seconds = file.runtime_seconds.max(0) as u32;
-        let interval = resolve_interval(&cfg, server_transcoding, runtime_seconds);
+        let interval = resolve_interval(&cfg, interval_mode, runtime_seconds);
 
         let mut cfg_for_file = cfg.clone();
         cfg_for_file.interval_seconds = interval;
@@ -614,6 +616,8 @@ struct FileCandidate {
     file_path: String,
     file_hash: Option<String>,
     runtime_seconds: i32,
+    storyboard_file_hash: Option<String>,
+    storyboard_config_fingerprint: Option<String>,
 }
 
 #[derive(Debug)]
@@ -678,14 +682,9 @@ fn is_storyboards_enabled_for_library(metadata: &serde_json::Value) -> bool {
 /// - `storyboard_width` overrides server width
 /// - `storyboard_fixed_interval_seconds` overrides server fixed interval
 ///
-/// `interval_mode_override` (from task config) replaces the server-wide
-/// mode when present. The interval value itself is resolved per-file by
-/// [`resolve_interval`] because adaptive mode depends on the file's
-/// runtime.
 async fn resolve_generation_config(
     state: &AppState,
     library_metadata: Option<&serde_json::Value>,
-    interval_mode_override: Option<&str>,
 ) -> GenerationConfig {
     let cfg = state.runtime_config.load();
     let transcoding = &cfg.transcoding;
@@ -708,8 +707,6 @@ async fn resolve_generation_config(
         }
     }
 
-    let _ = interval_mode_override;
-
     GenerationConfig {
         width,
         interval_seconds: fixed_interval,
@@ -723,27 +720,29 @@ async fn resolve_generation_config(
 /// Resolve the per-file interval. Adaptive mode uses
 /// [`sb_svc::adaptive_interval`] keyed on the file's runtime; fixed mode
 /// uses the config's interval_seconds directly.
-fn resolve_interval(
-    cfg: &GenerationConfig,
-    server_transcoding: &crate::state::TranscodingConfig,
-    runtime_seconds: u32,
-) -> u32 {
-    let mode = &server_transcoding.storyboard_interval_mode;
-    if mode == "adaptive" {
+fn resolve_interval(cfg: &GenerationConfig, interval_mode: &str, runtime_seconds: u32) -> u32 {
+    if normalized_interval_mode(interval_mode) == "adaptive" {
         sb_svc::adaptive_interval(runtime_seconds)
     } else {
         cfg.interval_seconds
     }
 }
 
-/// Incremental candidate query: media files in the library that have no
-/// storyboard row OR whose storyboard row's `file_hash` differs from the
-/// current `media_files.file_hash`. Filters to movie/episode types
-/// (containers like series/season have no direct media_files) and healthy
-/// files only.
+fn normalized_interval_mode(interval_mode: &str) -> &str {
+    match interval_mode {
+        "fixed" => "fixed",
+        _ => "adaptive",
+    }
+}
+
+/// Incremental candidate query: loads each healthy movie/episode file with
+/// its optional storyboard row so nullable source hashes and the effective
+/// per-file generation fingerprint can be compared in Rust.
 async fn fetch_files_needing_storyboards(
     pool: &PgPool,
     library_id: Uuid,
+    cfg: &GenerationConfig,
+    interval_mode: &str,
 ) -> Result<Vec<FileCandidate>, sqlx::Error> {
     let rows = sqlx::query(
         r#"
@@ -751,17 +750,15 @@ async fn fetch_files_needing_storyboards(
             mf.id           AS media_file_id,
             mf.file_path    AS file_path,
             mf.file_hash    AS file_hash,
-            mf.runtime_seconds AS runtime_seconds
+            mf.runtime_seconds AS runtime_seconds,
+            sb.file_hash AS storyboard_file_hash,
+            sb.config_fingerprint AS storyboard_config_fingerprint
         FROM media_files mf
         JOIN media_items mi ON mi.id = mf.media_item_id
+        LEFT JOIN storyboards sb ON sb.media_file_id = mf.id
         WHERE mi.library_id = $1
           AND mi.type IN ('movie', 'episode')
           AND mf.is_healthy = true
-          AND NOT EXISTS (
-              SELECT 1 FROM storyboards sb
-              WHERE sb.media_file_id = mf.id
-                AND sb.file_hash = mf.file_hash
-          )
         ORDER BY mi.created_at ASC
         "#,
     )
@@ -776,6 +773,14 @@ async fn fetch_files_needing_storyboards(
             file_path: r.get("file_path"),
             file_hash: r.get("file_hash"),
             runtime_seconds: r.get("runtime_seconds"),
+            storyboard_file_hash: r.get("storyboard_file_hash"),
+            storyboard_config_fingerprint: r.get("storyboard_config_fingerprint"),
+        })
+        .filter(|file| {
+            let mut cfg_for_file = cfg.clone();
+            cfg_for_file.interval_seconds =
+                resolve_interval(cfg, interval_mode, file.runtime_seconds.max(0) as u32);
+            storyboard_needs_regeneration(file, &cfg_for_file)
         })
         .collect())
 }
@@ -824,6 +829,8 @@ async fn load_single_file_for_generation(
         file_path: r.get("file_path"),
         file_hash: r.get("file_hash"),
         runtime_seconds: r.get("runtime_seconds"),
+        storyboard_file_hash: None,
+        storyboard_config_fingerprint: None,
     }))
 }
 
@@ -863,7 +870,7 @@ async fn generate_and_publish_storyboard(
     if let Err(error) = persist_storyboard_row(
         &mut tx,
         file.media_file_id,
-        file.file_hash.as_deref().unwrap_or(""),
+        file.file_hash.as_deref(),
         artifact_id,
         cfg,
         &result,
@@ -884,7 +891,7 @@ async fn generate_and_publish_storyboard(
 async fn persist_storyboard_row(
     tx: &mut Transaction<'_, Postgres>,
     media_file_id: Uuid,
-    file_hash: &str,
+    file_hash: Option<&str>,
     artifact_id: Uuid,
     cfg: &GenerationConfig,
     result: &sb_svc::GenerationResult,
@@ -899,8 +906,8 @@ async fn persist_storyboard_row(
         INSERT INTO storyboards
             (media_file_id, file_hash, interval_seconds, width, height,
              sprite_count, total_thumbnails, total_size_bytes, keyframe_only,
-             quality, generation_duration_ms, metadata, artifact_id)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+             quality, generation_duration_ms, metadata, artifact_id, config_fingerprint)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         ON CONFLICT (media_file_id) DO UPDATE
         SET file_hash = EXCLUDED.file_hash,
             interval_seconds = EXCLUDED.interval_seconds,
@@ -915,6 +922,7 @@ async fn persist_storyboard_row(
             generation_duration_ms = EXCLUDED.generation_duration_ms,
             metadata = EXCLUDED.metadata,
             artifact_id = EXCLUDED.artifact_id,
+            config_fingerprint = EXCLUDED.config_fingerprint,
             updated_at = now()
         "#,
     )
@@ -931,9 +939,28 @@ async fn persist_storyboard_row(
     .bind(result.generation_duration_ms as i32)
     .bind(&metadata)
     .bind(artifact_id)
+    .bind(generation_config_fingerprint(cfg))
     .execute(&mut **tx)
     .await?;
     Ok(())
+}
+
+fn generation_config_fingerprint(cfg: &GenerationConfig) -> String {
+    format!(
+        "v1:i={}:w={}:q={}:k={}:c={}:r={}",
+        cfg.interval_seconds,
+        cfg.width,
+        cfg.quality,
+        u8::from(cfg.keyframe_only),
+        cfg.sprite_columns,
+        cfg.sprite_rows,
+    )
+}
+
+fn storyboard_needs_regeneration(file: &FileCandidate, cfg: &GenerationConfig) -> bool {
+    let config_fingerprint = generation_config_fingerprint(cfg);
+    file.storyboard_file_hash != file.file_hash
+        || file.storyboard_config_fingerprint.as_deref() != Some(config_fingerprint.as_str())
 }
 
 fn storyboard_lock_key(media_file_id: Uuid) -> i64 {
@@ -1049,5 +1076,34 @@ mod tests {
             storyboard_lock_key(Uuid::nil()),
             storyboard_lock_key(Uuid::from_u128(1 << 120))
         );
+    }
+
+    #[test]
+    fn null_file_hash_is_fresh_when_the_config_matches() {
+        let cfg = GenerationConfig::default();
+        let file = FileCandidate {
+            media_file_id: Uuid::nil(),
+            file_path: "/media/example.mkv".to_string(),
+            file_hash: None,
+            runtime_seconds: 600,
+            storyboard_file_hash: None,
+            storyboard_config_fingerprint: Some(generation_config_fingerprint(&cfg)),
+        };
+        assert!(!storyboard_needs_regeneration(&file, &cfg));
+    }
+
+    #[test]
+    fn changed_generation_config_requires_regeneration() {
+        let cfg = GenerationConfig::default();
+        let file = FileCandidate {
+            media_file_id: Uuid::nil(),
+            file_path: "/media/example.mkv".to_string(),
+            file_hash: Some("hash".to_string()),
+            runtime_seconds: 600,
+            storyboard_file_hash: Some("hash".to_string()),
+            storyboard_config_fingerprint: Some(generation_config_fingerprint(&cfg)),
+        };
+        let changed = GenerationConfig { width: 640, ..cfg };
+        assert!(storyboard_needs_regeneration(&file, &changed));
     }
 }

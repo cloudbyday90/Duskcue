@@ -55,6 +55,7 @@ async fn validate_media_query_contract(pool: &PgPool) -> anyhow::Result<()> {
         "SELECT id, tmdb_id FROM media_items WHERE type = 'movie' AND match_state = 'confirmed' AND tmdb_id IS NOT NULL AND tmdb_id IN (NULL::bigint)",
         "SELECT mi.id FROM media_items mi WHERE mi.type IN ('movie', 'episode') AND EXISTS (SELECT 1 FROM media_files mf WHERE mf.media_item_id = mi.id AND mf.is_healthy = true) LIMIT 0",
         "SELECT artifact_id FROM storyboards LIMIT 0",
+        "SELECT config_fingerprint FROM storyboards LIMIT 0",
     ];
 
     for query in queries {

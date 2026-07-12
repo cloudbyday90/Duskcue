@@ -32,10 +32,10 @@
                     {field.label}
                     {#if field.unit}<span class="field-unit">({field.unit})</span>{/if}
                 </span>
-                {#if field.type === 'select'}
+                {#if field.type === 'select' || field.type === 'select-number'}
                     <select
                         value={valueFor(field)}
-                        onchange={(event) => onchange(field, event.currentTarget.value)}
+                        onchange={(event) => onchange(field, field.type === 'select-number' ? Number(event.currentTarget.value) : event.currentTarget.value)}
                     >
                         {#each field.options as option}
                             <option value={option}>{option}</option>

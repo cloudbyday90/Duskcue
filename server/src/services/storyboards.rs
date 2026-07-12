@@ -105,15 +105,15 @@ impl GenerationConfig {
                 self.interval_seconds
             ));
         }
-        if self.quality > 100 {
+        if !(50..=100).contains(&self.quality) {
             return Err(format!(
-                "storyboard quality must be 0-100 (got {})",
+                "storyboard quality must be 50-100 (got {})",
                 self.quality
             ));
         }
-        if self.sprite_columns == 0 || self.sprite_rows == 0 {
+        if !(1..=20).contains(&self.sprite_columns) || !(1..=40).contains(&self.sprite_rows) {
             return Err(format!(
-                "sprite columns/rows must be >0 (got {}x{})",
+                "sprite columns/rows must be 1-20 by 1-40 (got {}x{})",
                 self.sprite_columns, self.sprite_rows
             ));
         }
@@ -1031,6 +1031,24 @@ mod tests {
     fn config_rejects_zero_grid() {
         let c = GenerationConfig {
             sprite_columns: 0,
+            ..Default::default()
+        };
+        assert!(c.validate().is_err());
+    }
+
+    #[test]
+    fn config_rejects_quality_below_supported_range() {
+        let c = GenerationConfig {
+            quality: 49,
+            ..Default::default()
+        };
+        assert!(c.validate().is_err());
+    }
+
+    #[test]
+    fn config_rejects_grid_above_supported_range() {
+        let c = GenerationConfig {
+            sprite_columns: 21,
             ..Default::default()
         };
         assert!(c.validate().is_err());
