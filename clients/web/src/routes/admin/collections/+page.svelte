@@ -374,7 +374,7 @@
 <div class="collections-page">
     <div class="page-header">
         <div>
-            <a href="/settings" class="back-link">{m.routes_settings_collections_page_settings()}</a>
+            <a href="/admin" class="back-link">{m.routes_admin_page_admin()}</a>
             <h1 class="page-title">{m.routes_settings_collections_page_collections()}</h1>
             <p class="page-subtitle">{m.routes_settings_collections_page_static_dynamic_and_smart_media_collections()}</p>
         </div>

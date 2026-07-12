@@ -274,6 +274,10 @@ The web client implements a responsive layout with a two-breakpoint system cover
 
 All responsive behavior is pure CSS media queries — no JavaScript viewport detection, resize observers, or breakpoint utility libraries. Each Svelte component uses scoped `<style>` media queries, maintaining Svelte's CSS encapsulation. Existing responsive components (`NotificationToast` at 480px, `SearchBar` at 768px, `Player` at 640px) were implemented in Phase 8 Task 4 and left unchanged.
 
+### Admin Settings Refinement (July 12, 2026)
+
+The web client now distinguishes personal Settings from capability-filtered Admin work. `/settings` retains personal language and notification/device controls, while `/admin` contains task-oriented server, library, access, delivery, and migration links. The implementation follows [ADMIN_SETTINGS.md](ADMIN_SETTINGS.md), which defines ownership, accessibility, canonical-route, and future shared-component rules for the full cleanup.
+
 ## Official Sources
 
 - Microsoft Learn: Recommendations for following design standards - https://learn.microsoft.com/en-us/power-platform/well-architected/experience-optimization/design-standards

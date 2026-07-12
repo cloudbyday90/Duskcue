@@ -45,6 +45,13 @@ pub struct SetupRequest {
     pub password: Option<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct SetupStatusResponse {
+    pub setup_complete: bool,
+    pub user_count: i64,
+    pub setup_required: bool,
+}
+
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct InviteAuthRequest {
     #[validate(length(min = 1, max = 200))]

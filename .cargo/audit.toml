@@ -1,0 +1,12 @@
+[advisories]
+ignore = [
+  # RUSTSEC-2023-0071 / CVE-2023-49092 / GHSA-c38w-74pg-36hr:
+  # `rsa` is pulled in transitively by `webauthn-rs` through `crypto-glue`.
+  # As of 2026-07-04, RustSec lists no patched stable `rsa` version and
+  # `webauthn-rs` does not expose a feature path that removes this dependency.
+  # Duskcue uses `webauthn-rs` for WebAuthn/passkey public-key assertion
+  # verification and ceremony handling; it does not use this dependency for
+  # network-observable RSA private-key decryption or signing. Revisit when
+  # `webauthn-rs`, `crypto-glue`, or stable `rsa` ships a patched path.
+  "RUSTSEC-2023-0071",
+]

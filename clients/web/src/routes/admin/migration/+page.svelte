@@ -770,7 +770,7 @@
 <div class="migration-settings">
     <div class="page-header">
         <div>
-            <a href="/settings" class="back-link">{m.routes_settings_migration_page_settings()}</a>
+            <a href="/admin" class="back-link">{m.routes_admin_page_admin()}</a>
             <h1 class="page-title">{m.routes_settings_migration_page_platform_migration()}</h1>
         </div>
         {#if !loading && canManage}

@@ -31,6 +31,8 @@ const HOP_BY_HOP_HEADERS = new Set([
     'transfer-encoding',
     'upgrade',
 ]);
+const REQUEST_PROXY_STRIP_HEADERS = new Set(['accept-encoding']);
+const RESPONSE_PROXY_STRIP_HEADERS = new Set(['content-encoding', 'content-length']);
 
 const isBackendRoute = (pathname) =>
     pathname === '/api' ||
@@ -38,10 +40,14 @@ const isBackendRoute = (pathname) =>
     pathname === '/health' ||
     PROXY_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
-const filteredHeaders = (headers) => {
+const filteredHeaders = (headers, extraHeaders = new Set()) => {
     const next = new Headers(headers);
 
     for (const header of HOP_BY_HOP_HEADERS) {
+        next.delete(header);
+    }
+
+    for (const header of extraHeaders) {
         next.delete(header);
     }
 
@@ -50,7 +56,7 @@ const filteredHeaders = (headers) => {
 
 const proxyBackend = async (event) => {
     const target = new URL(`${event.url.pathname}${event.url.search}`, API_URL);
-    const headers = filteredHeaders(event.request.headers);
+    const headers = filteredHeaders(event.request.headers, REQUEST_PROXY_STRIP_HEADERS);
     headers.set('x-forwarded-host', event.url.host);
     headers.set('x-forwarded-proto', event.url.protocol.replace(':', ''));
     headers.set('x-forwarded-for', event.getClientAddress());
@@ -70,7 +76,7 @@ const proxyBackend = async (event) => {
     return new Response(response.body, {
         status: response.status,
         statusText: response.statusText,
-        headers: filteredHeaders(response.headers),
+        headers: filteredHeaders(response.headers, RESPONSE_PROXY_STRIP_HEADERS),
     });
 };
 

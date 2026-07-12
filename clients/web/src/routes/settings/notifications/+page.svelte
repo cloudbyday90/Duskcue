@@ -21,9 +21,7 @@
         updateNotificationPreference,
         listPushDevices,
         deletePushDevice,
-        sendTestNotification,
     } from '$lib/api/notifications.js';
-    import { hasCapability } from '$lib/stores/auth.js';
     import { notifications as toastStore } from '$lib/stores/notifications.js';
 
     const CATEGORY_META = {
@@ -50,14 +48,6 @@
     let loadingDevices = $state(false);
     let devicesError = $state(null);
     let revokingId = $state(null);
-
-    let canManage = $state(false);
-    let sendingTest = $state(false);
-
-    $effect(() => {
-        const unsub = hasCapability('can_manage_server').subscribe((v) => (canManage = v));
-        return unsub;
-    });
 
     onMount(async () => {
         await Promise.all([
@@ -175,24 +165,6 @@
         }
     }
 
-    async function sendTest() {
-        sendingTest = true;
-        try {
-            const resp = await sendTestNotification({});
-            const status = resp?.delivery_status || {};
-            const channels = Object.entries(status)
-                .map(([k, v]) => `${k}: ${v}`)
-                .join(', ');
-            toastStore.success(`Test dispatched (${channels})`);
-            await new Promise((r) => setTimeout(r, 600));
-            await loadFeed();
-        } catch (err) {
-            toastStore.error(err.detail || err.message || 'Failed to send test notification');
-        } finally {
-            sendingTest = false;
-        }
-    }
-
     async function handleMarkRead(n) {
         if (n.is_read) return;
         try {
@@ -283,13 +255,12 @@
         </div>
     </div>
 
-    <div class="tabs" role="tablist">
+    <div class="tabs" aria-label={m.routes_settings_page_notifications()}>
         <button
             class="tab"
             class:active={tab === 'feed'}
             onclick={() => (tab = 'feed')}
-            role="tab"
-            aria-selected={tab === 'feed'}
+            aria-pressed={tab === 'feed'}
         >
             Feed
             {#if $unreadCount > 0}
@@ -300,8 +271,7 @@
             class="tab"
             class:active={tab === 'preferences'}
             onclick={() => (tab = 'preferences')}
-            role="tab"
-            aria-selected={tab === 'preferences'}
+            aria-pressed={tab === 'preferences'}
         >
             Preferences
             {#if anyPrefDirty}<span class="tab-dot"></span>{/if}
@@ -310,8 +280,7 @@
             class="tab"
             class:active={tab === 'devices'}
             onclick={() => (tab = 'devices')}
-            role="tab"
-            aria-selected={tab === 'devices'}
+            aria-pressed={tab === 'devices'}
         >
             Push Devices
             {#if devices.length > 0}<span class="tab-count">{devices.length}</span>{/if}
@@ -603,25 +572,6 @@
             </div>
         </section>
 
-        {#if canManage}
-            <section class="card admin-card">
-                <div class="card-head">
-                    <div>
-                        <h2 class="card-title">{m.routes_settings_notifications_page_test_notification()}</h2>
-                        <p class="card-sub">{m.routes_settings_notifications_page_send_a_test_notification_to_yourself_to_verify_t()}</p>
-                    </div>
-                </div>
-                <div class="test-body">
-                    <p class="test-desc">
-                        Dispatches a <code>{m.routes_settings_notifications_page_server_alert()}</code> notification through the standard pipeline
-                        (in-app + SSE + webhook + push). Check the Feed tab and your configured webhook/push destination.
-                    </p>
-                    <button class="btn-primary" onclick={sendTest} disabled={sendingTest}>
-                        {sendingTest ? 'Sending…' : 'Send Test Notification'}
-                    </button>
-                </div>
-            </section>
-        {/if}
     {/if}
 </div>
 
@@ -806,25 +756,6 @@
         background-color: var(--color-bg-hover);
     }
 
-    .btn-primary {
-        padding: 0.5rem 1.125rem;
-        font-size: 0.8125rem;
-        font-weight: 600;
-        color: var(--color-bg-deep);
-        background-color: var(--color-accent);
-        border-radius: var(--radius-sm);
-        transition: background-color var(--transition-fast);
-    }
-
-    .btn-primary:hover:not(:disabled) {
-        background-color: var(--color-accent-hover);
-    }
-
-    .btn-primary:disabled {
-        opacity: 0.6;
-        cursor: default;
-    }
-
     .btn-small {
         padding: 0.25rem 0.625rem;
         font-size: 0.6875rem;
@@ -841,8 +772,7 @@
 
     .feed-body,
     .prefs-body,
-    .devices-body,
-    .test-body {
+    .devices-body {
         padding: 0.5rem 0;
     }
 
@@ -1194,30 +1124,6 @@
         font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
         font-size: 0.625rem;
         letter-spacing: 0.02em;
-    }
-
-    .admin-card {
-        margin-top: 1rem;
-    }
-
-    .test-body {
-        padding: 1.25rem;
-    }
-
-    .test-desc {
-        font-size: 0.8125rem;
-        color: var(--color-text-secondary);
-        margin-bottom: 1rem;
-        line-height: 1.5;
-    }
-
-    .test-desc code {
-        font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
-        font-size: 0.75rem;
-        background-color: var(--color-bg-elevated);
-        padding: 0.0625rem 0.375rem;
-        border-radius: var(--radius-sm);
-        color: var(--color-accent);
     }
 
     @media (max-width: 640px) {

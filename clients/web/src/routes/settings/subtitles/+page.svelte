@@ -7,7 +7,6 @@
 -->
 <script>
     import { m } from '$lib/paraglide/messages.js';
-    import { onMount } from 'svelte';
     import { subtitleSettings } from '$lib/stores/subtitles.js';
     import { hasCapability } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
@@ -15,6 +14,7 @@
     let loading = $state(true);
     let canManage = $state(false);
     let loadError = $state(null);
+    let loadedOnce = $state(false);
 
     let form = $state(defaultForm());
     let original = $state(snapshotForm(defaultForm()));
@@ -27,12 +27,14 @@
         return unsub;
     });
 
-    onMount(async () => {
+    $effect(() => {
         if (!canManage) {
             loading = false;
             return;
         }
-        await load();
+        if (loadedOnce) return;
+        loadedOnce = true;
+        load();
     });
 
     async function load() {
@@ -202,7 +204,7 @@
 <div class="sub-settings">
     <div class="page-header">
         <div>
-            <a href="/settings" class="back-link">{m.routes_settings_subtitles_page_settings()}</a>
+            <a href="/admin" class="back-link">{m.routes_admin_page_admin()}</a>
             <h1 class="page-title">{m.routes_settings_subtitles_page_subtitles()}</h1>
         </div>
     </div>

@@ -4187,14 +4187,22 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 **Tasks:**
 
 0. Research, design, and phase enrichment — verify 2026 Android TV, Google TV, Media3, Watch Next, Google Play, and Sony BRAVIA guidance from official sources; update docs and this phase before implementation.
-1. Create Android TV client shell — `clients/tv/android/` native Kotlin app with login/device-linking, server selection, library browsing minimum, and HLS playback.
-2. Implement Android playback stack — Media3 ExoPlayer, Media3 `MediaSession`, remote-control handling, progress heartbeat, completion reporting, and cross-device resume.
-3. Implement Android deep links — `duskcue://play/{type}/{id}` routes validate auth/access, fetch latest resume state, and enter playback directly.
-4. Implement Android TV Watch Next adapter — fetch TV surface feed, map eligible items to AndroidX `WatchNextProgram`, persist local `media_item_id` to platform `program_id` mappings, update/remove stale entries.
-5. Add Android TV artwork handling — choose poster/backdrop dimensions per platform guidance, use authenticated/signed artwork URLs, and refresh entries after artwork changes.
-6. Validate Sony as Android TV / Google TV hardware — test Sony BRAVIA Google TV and Android TV devices for Google Play install visibility, Watch Next behavior, HLS playback, HDR, audio passthrough/downmix, subtitles, remote focus, standby/resume, and voice/deep-link entry.
+1. Create Android TV project foundation — `clients/tv/android/` native Kotlin app using Compose for TV unless Task 0 finds a blocking reason to use Leanback; add Gradle module, package ID, debug signing, `LEANBACK_LAUNCHER` manifest activity, TV banner/icon placeholders, min/target SDK policy, local config, and app identity placeholders aligned with Phase 16d release readiness.
+2. Add shared contract/API client integration — implement a fixture-backed Kotlin client for the Phase 16d contract surface with base URL selection, bearer-token injection, timeout/retry policy, RFC 9457 Problem Details mapping, pagination/cache helpers, private ETag handling, SSE refresh hint handling where useful, diagnostics redaction, and typed adapter boundaries for later Fire TV reuse.
+3. Implement TV auth, server selection, and profile switching — device-linking login, saved server selection, re-auth/session-expired handling, logout/logout-all behavior, user/profile visibility, profile switching, and cleanup of local TV rows, Watch Next mappings, tokens, diagnostics identifiers, and cached server/user data when identity or server changes.
+4. Build living-room home, browse, detail, search, and settings — consume `GET /api/v1/users/me/tv-surface` for Continue Watching, Next Up, New Episodes, and Recommendations; add app-local Search, Libraries, Collections, media detail/pre-playback, user/profile/server settings, TV publication settings, and bounded empty/error states from the shared TV UX contract.
+5. Implement Android playback stack — Media3 ExoPlayer with HLS/direct/direct-stream/transcode handoff, `MediaSession`, remote/media-button handling, lifecycle pause/resume, progress heartbeat, seek/stop/completion reporting, cross-device resume refresh, audio/subtitle track selection, captions, segment skip controls, quality mode/status display, QoE telemetry, and playback-error reporting.
+6. Implement Android deep links and launch revalidation — `duskcue://play/{type}/{id}` and any Task 0-approved HTTPS/app-link path validate auth/access, refresh latest resume state, handle stale launcher tiles, resume after device-link auth, and enter playback directly without exposing raw IDs, tokens, or unavailable media details.
+7. Implement Android TV Watch Next adapter — fetch TV surface feed, map eligible continue/next-up/new-episode items to AndroidX `WatchNextProgram`, persist local `media_item_id` to platform `program_id` mappings, update only changed items, remove completed/revoked/stale rows, enforce one-item-per-series guidance, keep user/profile privacy boundaries, and react to `tv_surface_changed` refresh hints.
+8. Add Android TV artwork and media metadata handling — choose poster/backdrop/thumbnail/logo dimensions per Android TV and Watch Next requirements, load authenticated/signed artwork without leaking credentials, respect cache headers/ETags, refresh after artwork changes, provide deterministic title-tile fallbacks, and populate TV Provider metadata fields with stable `platform_content_id` values.
+9. Add accessibility, input, and Android TV quality checks — D-pad and gamepad focus traversal, Back behavior, overscan safety, 10-foot typography, visible focus/pressed/disabled states, TalkBack labels, captions/subtitle access, reduced-motion behavior, remote-control shortcuts, app startup/load error behavior, and Android TV app quality checklist coverage.
+10. Add diagnostics and privacy-safe support evidence — client log schema, request/playback/session correlation IDs, playback diagnostics, Watch Next publication diagnostics, support bundle/export path where practical, redaction of tokens/signed URLs/private media paths, and user-visible troubleshooting that does not expose server internals.
+11. Add Android TV CI and conformance harness — Gradle lint/unit tests, fixture-backed API tests, TV/deep-link/playback/auth/accessibility/diagnostics verifier consumption, `node scripts/client-smoke-harness.mjs --plan`, `node scripts/verify-client-ci-smoke.mjs`, Android TV emulator smoke where feasible, and explicit manual/release-gate hardware checks where CI cannot run the device path.
+12. Add Android TV release and Google Play readiness — Android TV form-factor track/readiness notes, target API policy, app bundle/APK artifact placeholders, package/versioning rules, Play signing placeholders, Data Safety/privacy disclosures, content rating, TV screenshots/banner/icon assets, reviewer test credentials/runbook, SBOM/provenance placeholders, rollback/update expectations, and Android TV quality checklist evidence.
+13. Validate NVIDIA SHIELD TV as the high-capability Android TV reference device — test SHIELD TV and SHIELD TV Pro where available for Google Play visibility, Ethernet/Wi-Fi behavior, 4K HDR/HDR10/Dolby Vision mode behavior, Dolby Atmos/TrueHD/DTS passthrough and fallback, HLS/direct/direct-stream/transcode decisions, subtitles/captions, AI-upscaling/display-mode interactions, remote/gamepad controls, standby/resume, Watch Next behavior, and diagnostics capture.
+14. Validate Sony as Android TV / Google TV hardware — test Sony BRAVIA Google TV and Android TV devices for Google Play install visibility, Watch Next behavior, HLS playback, HDR, Dolby Vision/HDR10 behavior where supported, audio passthrough/downmix, subtitles, remote focus, standby/resume, voice/deep-link entry, and differences between Google TV and older Android TV BRAVIA models.
 
-**Verification:** Start a movie on web, stop midway, see it appear in Android TV Watch Next, select the tile, and resume in the Android TV app at the latest server position. Complete an episode and verify the next episode replaces it. Validate the same flow on representative Sony BRAVIA hardware.
+**Verification:** Start a movie on web, stop midway, see it appear in Android TV Watch Next, select the tile, and resume in the Android TV app at the latest server position. Complete an episode and verify the next episode replaces it. Run the Phase 16d client CI/smoke harness and Android TV conformance checks, then validate the same flow on NVIDIA SHIELD TV and representative Sony BRAVIA hardware with HDR/audio/subtitle, remote, standby/resume, and diagnostics evidence.
 
 ---
 
@@ -4322,6 +4330,39 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 6. Queue future platform research — operator set-top ecosystems and Apple Vision Pro / visionOS; prioritize only if user demand or distribution feasibility changes.
 
 **Verification:** Partner-gated platforms are either promoted into a dedicated implementation phase with confirmed access and requirements, or explicitly left as blocked/deferred with documented reasons.
+
+---
+
+## Post-Phase 16d — Admin Settings Refactor (COMPLETE — pending final commit)
+
+**Goal:** Replace the flat Settings surface with a personal Settings area and capability-filtered Admin experience, give each configuration field a canonical editor, and move operational workflows out of generic settings pages.
+
+**Authoritative documents:** [ADMIN_SETTINGS.md](docs/branding/ADMIN_SETTINGS.md), [UI_FOUNDATIONS.md](docs/branding/UI_FOUNDATIONS.md), [CLIENT_ACCESSIBILITY_INPUT.md](docs/design/CLIENT_ACCESSIBILITY_INPUT.md), [AUTH.md](docs/design/AUTH.md).
+
+**Tasks:**
+
+1. ~~Separate personal Settings from Admin navigation and retire stale placeholder destinations~~ **DONE**
+   - Added `/admin`, capability-filtered by the same owner-bypass rules used by page authorization.
+   - Reduced `/settings` to personal language preferences, notifications/devices, and a conditional Admin entry.
+   - Redirected `/settings/quality`, `/settings/security`, and `/settings/storage` to their implemented System groups.
+   - Made System group selection shareable through `?group=…` and represented it as native navigation rather than an incomplete tab widget.
+   - Added fully localized labels to every reviewed web locale.
+2. ~~Consolidate subtitle configuration ownership and shrink the generic System editor~~ **DONE**
+   - Dedicated Subtitles now owns `server_config.subtitles` and `integrations.subtitle_providers`; legacy System deep links redirect to the canonical page.
+   - Extracted the data-driven configuration controls into `ConfigGroupForm.svelte` and grouped the remaining System links by task area.
+   - Corrected delayed capability-load behavior in System, Subtitles, Backups, and Downloads.
+3. **Deferred after evidence review:** the only repeated complex control was configuration-group editing, which is now shared through `ConfigGroupForm.svelte` and `configForms.js`. Page, card, async-state, metric, and table abstractions would currently hide meaningful workflow differences rather than reduce proven duplication.
+4. ~~Move and simplify the Backups, Notifications, Migration, Collections, Overlays, and Downloads workflows~~ **DONE**
+   - **Downloads complete:** Downloads now owns its server policy and its package-inventory operations; the System Downloads group redirects to this canonical surface.
+   - **Backups complete:** readiness and actions remain visible by default; scheduled-task and evidence detail is progressively disclosed.
+   - **Notifications complete:** personal feed/preferences/devices remain in Settings; server test dispatch is isolated under Admin and the personal segmented controls no longer claim incomplete tab semantics.
+   - **Collections, Overlays, and Migration complete:** canonical routes now live under `/admin`; legacy Settings paths redirect permanently.
+
+**Admin settings refactor status:** The high-value IA, configuration-ownership, and operational-workflow tasks are complete; the broader primitive-extraction item is deliberately deferred pending demonstrated duplication. Final project-wide verification, documentation audit, and one intentional commit/push remain.
+
+**Verification:** `npm run build` and `npx svelte-check --tsconfig ./jsconfig.json` pass with no errors or warnings.
+
+**Context for Task 2:** Dedicated domain pages remain canonical for rich behavior. In particular, Subtitles and subtitle-provider configuration must not stay duplicated between its specialized editor and generic System configuration.
 
 ---
 

@@ -154,6 +154,20 @@ pub async fn setup(
     Ok(response)
 }
 
+pub async fn setup_status(
+    State(state): State<AppState>,
+) -> Result<Json<SetupStatusResponse>, AppError> {
+    let pool = &state.pool;
+    let setup_complete = service::is_setup_complete(pool).await?;
+    let user_count = service::user_count(pool).await?;
+
+    Ok(Json(SetupStatusResponse {
+        setup_complete,
+        user_count,
+        setup_required: !setup_complete && user_count == 0,
+    }))
+}
+
 pub async fn auth_invite(
     State(state): State<AppState>,
     headers: HeaderMap,

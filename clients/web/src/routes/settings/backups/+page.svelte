@@ -7,7 +7,6 @@
 -->
 <script>
     import { m } from '$lib/paraglide/messages.js';
-    import { onMount } from 'svelte';
     import { getBackupStatus, checkWalGStatus, triggerPgDump, verifyBackups } from '$lib/api/backups.js';
     import { listScheduledTasks, triggerScheduledTask, listScheduledTaskRuns } from '$lib/api/settings.js';
     import { hasCapability } from '$lib/stores/auth.js';
@@ -20,10 +19,21 @@
     let scheduledTasks = $state([]);
     let recoveryDrillRuns = $state([]);
     let action = $state(null);
+    let loadedOnce = $state(false);
 
     $effect(() => {
         const unsub = hasCapability('can_manage_server').subscribe((value) => (canManage = value));
         return unsub;
+    });
+
+    $effect(() => {
+        if (!canManage) {
+            loading = false;
+            return;
+        }
+        if (loadedOnce) return;
+        loadedOnce = true;
+        load();
     });
 
     let lastBackupRun = $derived(latestRun(['backup_database']));
@@ -33,14 +43,6 @@
         scheduledTasks.find((task) => task.task_type === 'backup_recovery_drill' || task.task_type === 'recovery_drill'),
     );
     let lastRecoveryDrill = $derived(recoveryDrillRuns[0] || null);
-
-    onMount(async () => {
-        if (!canManage) {
-            loading = false;
-            return;
-        }
-        await load();
-    });
 
     async function load() {
         loading = true;
@@ -140,7 +142,7 @@
 <div class="backup-settings">
     <div class="page-header">
         <div>
-            <a href="/settings" class="back-link">{m.routes_settings_backups_page_settings()}</a>
+            <a href="/admin" class="back-link">{m.routes_admin_page_admin()}</a>
             <h1 class="page-title">{m.routes_settings_backups_page_backup_and_recovery()}</h1>
         </div>
         {#if !loading && canManage}
@@ -237,10 +239,10 @@
             </div>
         </section>
 
-        <section class="settings-card">
-            <div class="card-header">
-                <h2 class="card-title">{m.routes_settings_backups_page_scheduled_tasks()}</h2>
-            </div>
+        <details class="settings-card disclosure">
+            <summary class="disclosure-summary">
+                <span class="card-title">{m.routes_settings_backups_page_scheduled_tasks()}</span>
+            </summary>
             <div class="table-wrap">
                 <table>
                     <thead>
@@ -268,12 +270,12 @@
                     </tbody>
                 </table>
             </div>
-        </section>
+        </details>
 
-        <section class="settings-card">
-            <div class="card-header">
-                <h2 class="card-title">{m.routes_settings_backups_page_recent_backup_evidence()}</h2>
-            </div>
+        <details class="settings-card disclosure">
+            <summary class="disclosure-summary">
+                <span class="card-title">{m.routes_settings_backups_page_recent_backup_evidence()}</span>
+            </summary>
             <div class="table-wrap">
                 <table>
                     <thead>
@@ -309,13 +311,13 @@
                     </tbody>
                 </table>
             </div>
-        </section>
+        </details>
 
-        <section class="settings-card">
-            <div class="card-header">
-                <h2 class="card-title">{m.routes_settings_backups_page_recovery_drill_evidence()}</h2>
+        <details class="settings-card disclosure">
+            <summary class="disclosure-summary">
+                <span class="card-title">{m.routes_settings_backups_page_recovery_drill_evidence()}</span>
                 {#if !recoveryDrillTask}<span class="phase-badge">{m.routes_settings_backups_page_worker_pending()}</span>{/if}
-            </div>
+            </summary>
             <div class="card-body">
                 {#if lastRecoveryDrill}
                     <div class="evidence-grid">
@@ -331,7 +333,7 @@
                     </p>
                 {/if}
             </div>
-        </section>
+        </details>
     {/if}
 </div>
 
@@ -406,6 +408,36 @@
 
     .settings-card {
         overflow: hidden;
+    }
+
+    .disclosure-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+        padding: 1rem 1.25rem;
+        cursor: pointer;
+        list-style: none;
+    }
+
+    .disclosure-summary::-webkit-details-marker {
+        display: none;
+    }
+
+    .disclosure-summary::after {
+        content: '›';
+        color: var(--color-text-muted);
+        font-size: 1.25rem;
+        line-height: 1;
+        transition: transform var(--transition-fast);
+    }
+
+    .disclosure[open] .disclosure-summary {
+        border-bottom: 1px solid var(--color-border-subtle);
+    }
+
+    .disclosure[open] .disclosure-summary::after {
+        transform: rotate(90deg);
     }
 
     .card-header {
