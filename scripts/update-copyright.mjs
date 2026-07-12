@@ -7,10 +7,12 @@
  * See LICENSE file for details.
  */
 
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const COPYRIGHT_YEAR = `2026-${CURRENT_YEAR}`;
+const LEGACY_MIGRATION_MAX_VERSION = 20260701050000n;
 
 const FILE_PATTERNS = [
   'server/src/**/*.rs',
@@ -29,7 +31,32 @@ const FILE_PATTERNS = [
 
 const IGNORE_SEGMENTS = ['node_modules', 'dist', 'build', 'coverage', 'target'];
 
-const isIgnored = (path) => IGNORE_SEGMENTS.some(seg => path.includes(seg));
+const normalizePath = (filePath) => filePath.replaceAll('\\', '/');
+
+const isIgnored = (filePath) => {
+  const normalizedPath = normalizePath(filePath);
+
+  return IGNORE_SEGMENTS.some(segment => normalizedPath.includes(segment));
+};
+
+const isLegacyMigration = (filePath) => {
+  const normalizedPath = normalizePath(filePath);
+  const match = normalizedPath.match(/^server\/migrations\/(\d+)_/);
+
+  return match !== null && BigInt(match[1]) <= LEGACY_MIGRATION_MAX_VERSION;
+};
+
+const trackedFiles = new Set(
+  execFileSync('git', ['ls-files'], { encoding: 'utf8' })
+    .split('\n')
+    .filter(Boolean)
+    .map(normalizePath)
+);
+
+const sourceFiles = () =>
+  FILE_PATTERNS.flatMap(pattern => fs.globSync(pattern, { exclude: isIgnored }))
+    .filter(filePath => trackedFiles.has(normalizePath(filePath)))
+    .filter(filePath => !isLegacyMigration(filePath));
 
 const FULL_HEADER_LICENSE = `GNU Affero General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
@@ -209,9 +236,7 @@ function processFile(filePath) {
 function main() {
   console.log(`\nUpdating copyright headers to ${COPYRIGHT_YEAR}...\n`);
 
-  const files = FILE_PATTERNS.flatMap(pattern =>
-    fs.globSync(pattern, { exclude: isIgnored })
-  );
+  const files = sourceFiles();
 
   let added = 0;
   let updated = 0;
