@@ -4396,7 +4396,7 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 **Tasks:**
 
-1. ~~Repair the media-item schema contract~~ **DONE — commit pending**
+1. ~~Repair the media-item schema contract~~ **DONE — `bcab31b`**
    - Kept `media_items` as a hard-delete table, as specified in DATABASE.md, rather than adding an undocumented `deleted_at` lifecycle.
    - Removed stale `media_items.deleted_at` predicates from profile access, playback, subtitle candidate selection, and metadata refresh.
    - Corrected metadata refresh to use the canonical CTI parent fields (`media_items.type` and `media_items.tmdb_id`) rather than nonexistent child-table fields.
