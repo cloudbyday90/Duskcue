@@ -4451,7 +4451,7 @@ Phases 9–13a can be built in any order after Phase 8, since they are independe
 
 ## Post-Phase 16d — Household Profiles, Kids Mode, and Ambient Channels (COMPLETE)
 
-**Committed:** `00d631b` on `main`
+**Committed:** `00d631b` and `d4e37ba` on `main`
 
 **Authoritative document:** [PROFILES_AND_AMBIENT_CHANNELS.md](docs/design/PROFILES_AND_AMBIENT_CHANNELS.md)
 
@@ -4462,11 +4462,13 @@ Phases 9–13a can be built in any order after Phase 8, since they are independe
 - Server-enforced Kids policy: explicit library allowlist, canonical maximum content rating, deny-on-unknown rating behavior, and controls for search, downloads, external links, ambient channels, and privileged capability routes.
 - Ordered adult and Kids ambient channels. Their queue resolution rechecks profile policy, while `playback_mode = ambient` persists diagnostic session/events but never modifies user history, resume, play count, TV surfaces, or Trakt export.
 - Web profile picker and management page for standard/Kids profile creation and parental policies.
+- Opt-in remembered-profile mapping per account/device, resolved only after normal authentication and cleared on sign-out or session revocation.
 
 **Key decisions:**
 
 - The authenticated `users` record remains the authorization and external-integration owner; `user_profiles` owns household experience state.
 - Native background playback is a client responsibility. Android consumes this contract through Media3 `MediaSessionService`; Apple clients use AVQueuePlayer and the appropriate background media configuration. A web tab is not represented as native background playback.
 - Parental PIN entry, timed parent unlock, and profile-specific Trakt linking are intentionally deferred rather than storing an unprotected or client-side hashed PIN.
+- A remembered profile is a device convenience setting, not an account credential or a Kids exit lock; profile PIN work remains required before making a shared-TV lock claim.
 
-**Verification:** `cargo check -p duskcue` and `npm run build` in `clients/web` pass. Database-backed integration tests require a PostgreSQL environment and remain the next verification step.
+**Verification:** `cargo check -p duskcue`, focused profile unit tests, `npm run build` in `clients/web`, `node scripts/verify-client-contracts.mjs`, and `scripts/verify-migrations.ps1` against disposable PostgreSQL 18 pass.
