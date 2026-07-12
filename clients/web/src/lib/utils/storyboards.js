@@ -29,7 +29,7 @@ export function parseTimecodeToMs(tc) {
     return ((h * 60 + min) * 60 + s) * 1000 + ms;
 }
 
-export function parseStoryboardVtt(vttText, baseUrl) {
+export function parseStoryboardVtt(vttText) {
     const cues = [];
     const blocks = vttText.replace(/\r\n/g, '\n').split('\n\n');
 
@@ -59,12 +59,13 @@ export function parseStoryboardVtt(vttText, baseUrl) {
         const spriteRef = payload.split('#')[0];
         if (!spriteRef) continue;
 
-        const spriteUrl = resolveUrl(spriteRef, baseUrl);
+        const spriteName = spriteNameFromReference(spriteRef);
+        if (!spriteName) continue;
 
         cues.push({
             startMs,
             endMs,
-            spriteUrl,
+            spriteName,
             x: parseInt(xywh[1], 10),
             y: parseInt(xywh[2], 10),
             w: parseInt(xywh[3], 10),
@@ -102,11 +103,12 @@ export function findCueForTime(cues, timeMs) {
     return cues[cues.length - 1];
 }
 
-function resolveUrl(ref, baseUrl) {
-    if (!baseUrl) return ref;
+function spriteNameFromReference(ref) {
     try {
-        return new URL(ref, baseUrl).href;
+        const pathname = new URL(ref, 'https://storyboards.invalid').pathname;
+        const spriteName = pathname.slice(pathname.lastIndexOf('/') + 1);
+        return spriteName ? decodeURIComponent(spriteName) : null;
     } catch {
-        return ref;
+        return null;
     }
 }

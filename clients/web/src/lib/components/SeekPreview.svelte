@@ -6,14 +6,18 @@
   See LICENSE file for details.
 -->
 <script>
+    import { onDestroy } from 'svelte';
     import { fade } from 'svelte/transition';
+    import { getStoryboardIndex, getStoryboardSprite } from '../api/storyboards.js';
     import { parseStoryboardVtt, findCueForTime } from '../utils/storyboards.js';
     import { formatTimestamp } from '../utils/format.js';
 
     const DEFAULT_DISPLAY_WIDTH = 160;
     const FALLBACK_GRID = { columns: 10, rows: 20 };
+    const MAX_SPRITE_URLS = 6;
 
     let {
+        mediaItemId = null,
         storyboard = null,
         visible = false,
         positionMs = 0,
@@ -23,36 +27,50 @@
 
     let cues = $state([]);
     let loadedKey = null;
-    let fetchId = 0;
+    let sourceKey = null;
+    let spriteUrls = $state(new Map());
+    let pendingSpriteKey = null;
 
     $effect(() => {
         const sb = storyboard;
-        if (!sb || !sb.index_url) {
-            cues = [];
-            loadedKey = null;
+        const key = sb && mediaItemId ? `${mediaItemId}:${sb.media_file_id || ''}` : null;
+        if (sourceKey === key) return;
+
+        sourceKey = key;
+        loadedKey = null;
+        cues = [];
+        clearSpriteUrls();
+    });
+
+    $effect(() => {
+        const sb = storyboard;
+        const itemId = mediaItemId;
+        if (!visible || !sb || !itemId) {
             return;
         }
 
-        const key = sb.media_file_id || sb.index_url;
+        const key = `${itemId}:${sb.media_file_id || ''}`;
         if (loadedKey === key) return;
-        loadedKey = key;
 
-        const currentFetchId = ++fetchId;
-        const absoluteBase = resolveAbsoluteUrl(sb.index_url);
+        const controller = new AbortController();
+        let active = true;
 
-        fetch(sb.index_url, { credentials: 'same-origin' })
-            .then((res) => {
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                return res.text();
-            })
+        getStoryboardIndex(itemId, sb.media_file_id, { signal: controller.signal })
             .then((text) => {
-                if (currentFetchId !== fetchId) return;
-                cues = parseStoryboardVtt(text, absoluteBase);
+                if (!active) return;
+                cues = parseStoryboardVtt(text);
+                loadedKey = key;
             })
-            .catch(() => {
-                if (currentFetchId !== fetchId) return;
+            .catch((error) => {
+                if (!active || error?.name === 'AbortError') return;
                 cues = [];
+                loadedKey = key;
             });
+
+        return () => {
+            active = false;
+            controller.abort();
+        };
     });
 
     let currentCue = $derived.by(() => {
@@ -86,10 +104,61 @@
         };
     });
 
+    let currentSpriteKey = $derived.by(() => {
+        const cue = currentCue;
+        const sb = storyboard;
+        if (!cue || !sb || !mediaItemId) return null;
+        return `${mediaItemId}:${sb.media_file_id || ''}:${cue.spriteName}`;
+    });
+
+    $effect(() => {
+        const cue = currentCue;
+        const sb = storyboard;
+        const itemId = mediaItemId;
+        const key = currentSpriteKey;
+        if (!visible || !cue || !sb || !itemId || !key || spriteUrls.has(key) || pendingSpriteKey === key) {
+            return;
+        }
+
+        const controller = new AbortController();
+        let active = true;
+        pendingSpriteKey = key;
+
+        getStoryboardSprite(itemId, cue.spriteName, sb.media_file_id, { signal: controller.signal })
+            .then((blob) => {
+                if (!active) return;
+                const url = URL.createObjectURL(blob);
+                const next = new Map(spriteUrls);
+                next.set(key, url);
+                while (next.size > MAX_SPRITE_URLS) {
+                    const oldestKey = next.keys().next().value;
+                    const oldestUrl = next.get(oldestKey);
+                    next.delete(oldestKey);
+                    URL.revokeObjectURL(oldestUrl);
+                }
+                spriteUrls = next;
+            })
+            .catch(() => {})
+            .finally(() => {
+                if (active && pendingSpriteKey === key) {
+                    pendingSpriteKey = null;
+                }
+            });
+
+        return () => {
+            active = false;
+            controller.abort();
+            if (pendingSpriteKey === key) {
+                pendingSpriteKey = null;
+            }
+        };
+    });
+
     let thumbnailStyle = $derived.by(() => {
         const cue = currentCue;
         const sb = storyboard;
-        if (!cue || !sb) return '';
+        const spriteUrl = currentSpriteKey ? spriteUrls.get(currentSpriteKey) : null;
+        if (!cue || !sb || !spriteUrl) return '';
 
         const nativeW = sb.width || cue.w;
         const nativeH = sb.height || cue.h;
@@ -102,7 +171,7 @@
         const bgY = -(cue.y * scale);
 
         return [
-            `background-image: url('${cue.spriteUrl}')`,
+            `background-image: url('${spriteUrl}')`,
             `background-position: ${bgX}px ${bgY}px`,
             `background-size: ${sheetWidth}px ${sheetHeight}px`,
         ].join('; ');
@@ -110,14 +179,15 @@
 
     let timeLabel = $derived(formatTimestamp(positionMs));
 
-    function resolveAbsoluteUrl(relativeUrl) {
-        if (typeof window === 'undefined') return relativeUrl;
-        try {
-            return new URL(relativeUrl, window.location.href).href;
-        } catch {
-            return relativeUrl;
+    function clearSpriteUrls() {
+        for (const url of spriteUrls.values()) {
+            URL.revokeObjectURL(url);
         }
+        spriteUrls = new Map();
+        pendingSpriteKey = null;
     }
+
+    onDestroy(clearSpriteUrls);
 </script>
 
 {#if visible && currentCue}

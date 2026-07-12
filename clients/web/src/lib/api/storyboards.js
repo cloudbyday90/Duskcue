@@ -16,7 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { get, post, del, buildApiUrl } from './core.js';
+import { get, post, del } from './core.js';
 
 function mediaFileParams(mediaFileId) {
     return mediaFileId ? { media_file_id: mediaFileId } : {};
@@ -26,12 +26,26 @@ export async function getStoryboard(itemId, mediaFileId = null) {
     return get(`/items/${itemId}/storyboard`, mediaFileParams(mediaFileId));
 }
 
-export function storyboardIndexUrl(itemId, mediaFileId = null) {
-    return buildApiUrl(`/items/${itemId}/storyboard/index.vtt`, mediaFileParams(mediaFileId));
+export async function getStoryboardIndex(itemId, mediaFileId = null, options = {}) {
+    return get(`/items/${itemId}/storyboard/index.vtt`, mediaFileParams(mediaFileId), {
+        ...options,
+        headers: {
+            Accept: 'text/vtt',
+            ...options.headers,
+        },
+        responseType: 'text',
+    });
 }
 
-export function storyboardSpriteUrl(itemId, spriteName, mediaFileId = null) {
-    return buildApiUrl(`/items/${itemId}/storyboard/${spriteName}`, mediaFileParams(mediaFileId));
+export async function getStoryboardSprite(itemId, spriteName, mediaFileId = null, options = {}) {
+    return get(`/items/${itemId}/storyboard/${encodeURIComponent(spriteName)}`, mediaFileParams(mediaFileId), {
+        ...options,
+        headers: {
+            Accept: 'image/webp',
+            ...options.headers,
+        },
+        responseType: 'blob',
+    });
 }
 
 export async function generateLibraryStoryboards(libraryId) {

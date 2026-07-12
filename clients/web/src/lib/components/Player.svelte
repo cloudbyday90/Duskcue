@@ -549,6 +549,7 @@
         >
             {#if storyboard}
                 <SeekPreview
+                    mediaItemId={mediaItem?.id || $currentMediaItem?.id}
                     storyboard={storyboard}
                     visible={seekPreviewVisible}
                     positionMs={seekPreviewMs}

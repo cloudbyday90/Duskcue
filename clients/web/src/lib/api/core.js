@@ -200,6 +200,12 @@ export async function request(method, path, options = {}) {
     }
 
     const contentType = response.headers.get('Content-Type') || '';
+    if (options.responseType === 'text') {
+        return response.text();
+    }
+    if (options.responseType === 'blob') {
+        return response.blob();
+    }
     if (contentType.includes('application/json')) {
         return response.json();
     }
