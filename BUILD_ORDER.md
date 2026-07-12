@@ -4409,11 +4409,14 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
    - Added text/blob response support to the shared API client, preserving its bearer header and selected server-origin behavior.
    - Seek previews lazily fetch protected VTT and WebP routes, then render only bounded `blob:` object URLs; abort and revocation prevent stale requests and retained image memory.
    - Parsed VTT references supply sprite filenames only; credential-bearing or server-relative URLs are never used as CSS image URLs.
-4. Correct null-hash freshness behavior, validate Storyboards configuration, and regenerate artifacts when the normalized generation configuration changes.
+4. ~~Correct null-hash freshness behavior, validate Storyboards configuration, and regenerate artifacts when the normalized generation configuration changes~~ **DONE — `9f45fee`**
+   - `storyboards.file_hash` is nullable to match `media_files.file_hash`; legacy empty sentinel values migrate to null and nullable hashes compare as values in the candidate filter.
+   - Each completed storyboard stores a normalized output fingerprint, so a changed effective interval, width, quality, keyframe mode, or grid triggers regeneration even when the source hash is unchanged.
+   - Server and web configuration validation now enforce the documented mode, interval, width, quality, and grid bounds.
 5. Honor configured cache storage, reconcile orphaned artifacts, and make item-level generation/deletion semantics explicit for every media-file version.
 6. Return scheduled generation failures to the scheduler, validate task configuration, add Storyboards fixtures/integration coverage, and finish seek-preview accessibility/performance hardening.
 
-**Context for Task 3:** The protected VTT and sprite routes require normal bearer authentication, while the web seek-preview component currently uses direct URL fetches and CSS sprite URLs that cannot attach an `Authorization` header. Task 3 must use authenticated loaders and short-lived in-memory object URLs without exposing credentials in query strings or fragments.
+**Context for Task 5:** Storyboard paths still derive from `BootstrapConfig.data_dir.join("cache")`, old artifact directories are retained after atomic publication, and item-level mutation applies only to the primary media file. Task 5 must honor the configured cache root, reconcile unreferenced artifacts safely, and make multi-version item behavior explicit.
 
 ---
 

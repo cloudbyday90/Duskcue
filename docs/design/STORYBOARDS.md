@@ -215,8 +215,9 @@ For each library with storyboards enabled:
 
   1. Resolve files needing storyboards:
      - New files (no storyboard entry) → generate
-     - Changed files (file_hash differs) → regenerate
-     - Existing storyboards → skip (cached)
+      - Changed files (`file_hash` differs with null-safe comparison) → regenerate
+      - Changed normalized generation configuration → regenerate
+      - Matching source + configuration fingerprint → skip (cached)
 
   2. For each file to process:
      a. Determine interval (adaptive or fixed from config)
@@ -237,18 +238,17 @@ For each library with storyboards enabled:
 ### Incremental Generation
 
 ```sql
-SELECT mf.id, mf.media_item_id, mf.file_path, mf.file_hash, mf.runtime_seconds
+SELECT mf.id, mf.media_item_id, mf.file_path, mf.file_hash, mf.runtime_seconds,
+       sb.file_hash AS storyboard_file_hash,
+       sb.config_fingerprint
 FROM media_files mf
 JOIN media_items mi ON mf.media_item_id = mi.id
+LEFT JOIN storyboards sb ON sb.media_file_id = mf.id
 WHERE mi.library_id = $1
-AND NOT EXISTS (
-    SELECT 1 FROM storyboards sb
-    WHERE sb.media_file_id = mf.id
-    AND sb.file_hash = mf.file_hash
-);
+AND mf.is_healthy = true;
 ```
 
-Only files without storyboards (or with changed hashes) are processed. This makes subsequent runs fast.
+The worker calculates the effective per-file interval, then compares nullable source hashes as values and compares the normalized `v1` generation fingerprint (interval, width, quality, keyframe mode, and grid). Ordinary PostgreSQL equality yields unknown for null operands, so this deliberately avoids a `file_hash = file_hash` freshness predicate; [PostgreSQL's comparison-predicate documentation](https://www.postgresql.org/docs/current/functions-comparison.html) describes the required null-safe semantics. A null hash is valid when both the source and stored row are null; legacy empty hashes are migrated to null. A missing fingerprint causes exactly one regeneration, so settings changes do not silently retain old sprites.
 
 ### Manual Trigger
 
@@ -367,8 +367,8 @@ Stored in `server_config.transcoding` JSONB (existing column):
 | `storyboard_width` | u32 | `320` | Thumbnail width in pixels; valid: 160, 320, 640 |
 | `storyboard_quality` | u32 | `75` | WebP quality (lossy); range: 50-100 |
 | `storyboard_keyframe_only` | bool | `true` | Use keyframe-only extraction (100x faster, less frame-accurate) |
-| `storyboard_sprite_columns` | u32 | `10` | Thumbnails per row in sprite sheet |
-| `storyboard_sprite_rows` | u32 | `20` | Thumbnails per column in sprite sheet |
+| `storyboard_sprite_columns` | u32 | `10` | Thumbnails per row in sprite sheet; range: 1-20 |
+| `storyboard_sprite_rows` | u32 | `20` | Thumbnails per column in sprite sheet; range: 1-40 |
 
 ### Per-Library Storyboard Config
 
@@ -539,8 +539,9 @@ at 04:00, and FFmpeg invocations are sandboxed on Linux.
 - **Per-library enablement is respected (Jellyfin bug #14558 lesson)** — The worker checks three gates before processing a library: (1) global `TranscodingConfig.storyboards_enabled` must be `true`; (2) the library must be non-deleted with `scan_enabled = true`; (3) per-library `libraries.metadata->>'storyboards_enabled'` must NOT be `"false"` (defaults to enabled when the key is absent). This avoids the Jellyfin user complaint where the scheduled task ran despite per-library disable.
 - **Per-library config overrides via `libraries.metadata` JSONB** — The worker reads `metadata->>'storyboard_width'`, `metadata->>'storyboard_fixed_interval_seconds'`, and `metadata->>'storyboards_enabled'` and overrides the server-wide config for that library. This allows different resolutions or intervals for different library types (e.g., 640px for a 4K movie library, 160px for a TV show library) per the design's "Per-Library Storyboard Config" section. Missing keys fall back to server-wide config (graceful degradation — no per-library override means use defaults).
 - **Adaptive interval resolved at file time, not config time** — When `interval_mode = "adaptive"`, the worker calls `services::storyboards::adaptive_interval(runtime_seconds)` per-file using the file's actual runtime from `media_files.runtime_seconds`. This means a TV library with 22-min episodes and 100-min movies gets 5s intervals for episodes and 10s intervals for movies, even though they share a library. When `interval_mode = "fixed"`, the worker uses `storyboard_fixed_interval_seconds` from config. Task config `interval_mode` overrides server-wide config (enables one-off runs with a different mode).
-- **Incremental candidate query with file_hash change detection** — `fetch_files_needing_storyboards` uses `NOT EXISTS (SELECT 1 FROM storyboards WHERE media_file_id = mf.id AND file_hash = mf.file_hash)` — files without a storyboard OR with a changed hash (re-muxed, re-encoded) are candidates. This makes subsequent runs fast: only new or modified files are processed. Validated by r/jellyfin user reports that daily runs take "less than 10 mins" after the initial backlog is cleared.
-- **DB row upsert with `ON CONFLICT (media_file_id) DO UPDATE`** — `persist_storyboard_row` upserts the storyboards row on each successful generation. The `media_file_id` UNIQUE constraint is the conflict target. On update, all fields are refreshed (interval, width, height, sprite_count, total_thumbnails, total_size_bytes, keyframe_only, quality, generated_at, generation_duration_ms, metadata, file_hash, artifact_id). This handles both first-time generation and forced regeneration cleanly.
+- **Validated normalized generation settings** — The system config endpoint validates interval mode, 2-120 second fixed interval, allowed widths, 50-100 quality, booleans, and the 1-20 by 1-40 grid bounds before a transcoding group is stored. The web settings page uses the same bounds and offers only supported widths. `GenerationConfig::validate` applies the same limits before FFmpeg is invoked.
+- **Incremental candidate query with null-safe source and configuration freshness** — `fetch_files_needing_storyboards` loads the storyboard row with each healthy file, resolves the actual per-file interval, and compares nullable source hashes plus a normalized generation fingerprint. This avoids PostgreSQL's ordinary `NULL = NULL` unknown result and regenerates when the output-affecting effective configuration changes. A matching null source hash is cacheable; a missing fingerprint makes legacy rows regenerate once.
+- **DB row upsert with `ON CONFLICT (media_file_id) DO UPDATE`** — `persist_storyboard_row` upserts the storyboards row on each successful generation. The `media_file_id` UNIQUE constraint is the conflict target. On update, all fields are refreshed (interval, width, height, sprite_count, total_thumbnails, total_size_bytes, keyframe_only, quality, generated_at, generation_duration_ms, metadata, file_hash, artifact_id, config_fingerprint). This handles both first-time generation and forced regeneration cleanly.
 - **Grid shape stored in `metadata.columns` and `metadata.rows`** — The worker writes `metadata = jsonb_build_object('columns', $N, 'rows', $N)` when creating the row so `domains::storyboards::service::read_grid_shape()` can recover the per-generation grid. This closes the loop with the Task 4 design decision.
 - **Atomic forced regeneration for per-item trigger** — `trigger_item_generation` calls `generate_for_item_one`, which locks the selected media file with `pg_try_advisory_xact_lock`, generates an unreferenced UUIDv7 artifact directory, and switches `storyboards.artifact_id` in the same transaction only after successful generation. A concurrent manual trigger returns `SYS_002`; scheduled work counts the file as skipped. Existing previews remain available when generation or persistence fails.
 - **Sandbox applied via `pre_exec` on each FFmpeg invocation** — `services::storyboards::invoke_ffmpeg_for_sheet` now uses `command.pre_exec(move || apply_sandbox(&SandboxConfig { media_path, transcode_dir: output_dir }))` on Linux, matching the `services::transcoding::spawn_ffmpeg` pattern. The sandbox restricts FFmpeg to read-only access on `/usr`, `/lib`, `/etc`, `/dev/dri`, and the source media path; read-write access on the per-file storyboard output directory and `/tmp`. Seccomp filters to a 62-syscall allow-list with `KillProcess` on violation. Sandbox failures are non-fatal (logged at WARN, FFmpeg continues without sandbox) per SECURITY.md graceful degradation model. Non-Linux platforms are no-ops.
