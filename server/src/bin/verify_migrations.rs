@@ -40,6 +40,7 @@ async fn main() -> anyhow::Result<()> {
 
     sqlx::migrate!().run(&pool).await?;
     validate_media_query_contract(&pool).await?;
+    validate_storyboard_lock_contract(&pool).await?;
     pool.close().await;
 
     println!("Duskcue migrations verified successfully");
@@ -53,11 +54,44 @@ async fn validate_media_query_contract(pool: &PgPool) -> anyhow::Result<()> {
         "SELECT id, library_id FROM media_items WHERE id = NULL::uuid",
         "SELECT id, tmdb_id FROM media_items WHERE type = 'movie' AND match_state = 'confirmed' AND tmdb_id IS NOT NULL AND tmdb_id IN (NULL::bigint)",
         "SELECT mi.id FROM media_items mi WHERE mi.type IN ('movie', 'episode') AND EXISTS (SELECT 1 FROM media_files mf WHERE mf.media_item_id = mi.id AND mf.is_healthy = true) LIMIT 0",
+        "SELECT artifact_id FROM storyboards LIMIT 0",
     ];
 
     for query in queries {
         sqlx::query(query).execute(pool).await?;
     }
 
+    Ok(())
+}
+
+async fn validate_storyboard_lock_contract(pool: &PgPool) -> anyhow::Result<()> {
+    let key = 5_284_919_i64;
+    let mut first = pool.begin().await?;
+    let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock($1)")
+        .bind(key)
+        .fetch_one(&mut *first)
+        .await?;
+    anyhow::ensure!(acquired, "could not acquire storyboard advisory lock");
+
+    let mut second = pool.begin().await?;
+    let acquired_while_held: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock($1)")
+        .bind(key)
+        .fetch_one(&mut *second)
+        .await?;
+    anyhow::ensure!(
+        !acquired_while_held,
+        "storyboard advisory lock was not exclusive"
+    );
+
+    first.rollback().await?;
+    let acquired_after_release: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock($1)")
+        .bind(key)
+        .fetch_one(&mut *second)
+        .await?;
+    anyhow::ensure!(
+        acquired_after_release,
+        "storyboard advisory lock was not released with its transaction"
+    );
+    second.rollback().await?;
     Ok(())
 }

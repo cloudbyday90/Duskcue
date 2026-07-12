@@ -30,8 +30,8 @@ pub enum StoryboardError {
     #[error("library not found: {library_id}")]
     LibraryNotFound { library_id: uuid::Uuid },
 
-    #[error("storyboard generation already in progress for library {library_id}")]
-    GenerationAlreadyInProgress { library_id: uuid::Uuid },
+    #[error("storyboard generation already in progress for media file {media_file_id}")]
+    GenerationAlreadyInProgress { media_file_id: uuid::Uuid },
 
     #[error("invalid sprite filename: {0}")]
     InvalidSpriteFilename(String),

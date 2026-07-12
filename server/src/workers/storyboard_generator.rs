@@ -56,7 +56,7 @@
 
 use std::path::Path;
 
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
 use crate::domains::storyboards::StoryboardError;
@@ -187,9 +187,8 @@ pub async fn generate_for_library_one(
 /// Synchronous per-item generation entry point — services the admin
 /// `POST /api/v1/items/{id}/generate-storyboards` endpoint.
 ///
-/// Forces regeneration: any existing `storyboards` row and on-disk directory
-/// are deleted before generating fresh. This matches the design's "force
-/// regen" semantics for the per-item endpoint.
+/// Forces regeneration while preserving the current artifacts until the
+/// replacement generation has completed and its database pointer commits.
 ///
 /// `requesting_user_id` — when `Some`, emits `storyboard_progress` events
 /// to the user's SSE channel.
@@ -221,8 +220,6 @@ pub async fn generate_for_item_one(
         0,
     );
 
-    delete_existing_storyboard(pool, media_file_id, &cache_dir).await;
-
     let cfg = resolve_generation_config(state, None, None).await;
     let runtime_seconds = file.runtime_seconds.max(0) as u32;
     let interval = resolve_interval(
@@ -234,7 +231,6 @@ pub async fn generate_for_item_one(
     let mut cfg_with_interval = cfg.clone();
     cfg_with_interval.interval_seconds = interval;
 
-    let output_dir = storyboard_dir(&cache_dir, media_file_id);
     let source_path = Path::new(&file.file_path);
 
     let mut result = LibraryGenerationResult {
@@ -264,31 +260,17 @@ pub async fn generate_for_item_one(
         return Ok(result);
     }
 
-    match sb_svc::generate_storyboard(
+    match generate_and_publish_storyboard(
+        pool,
+        &cache_dir,
+        &file,
         source_path,
-        &output_dir,
         runtime_seconds,
         &cfg_with_interval,
     )
     .await
     {
-        Ok(gen_result) => {
-            persist_storyboard_row(
-                pool,
-                media_file_id,
-                file.file_hash.as_deref().unwrap_or(""),
-                &cfg_with_interval,
-                &gen_result,
-            )
-            .await
-            .map_err(|e| {
-                tracing::warn!(
-                    media_file_id = %media_file_id,
-                    error = %e,
-                    "Failed to persist storyboard row"
-                );
-                StoryboardError::Database(e)
-            })?;
+        Ok(PublishedStoryboard::Published(gen_result)) => {
             result.generated = 1;
             tracing::info!(
                 media_item_id = %media_item_id,
@@ -309,7 +291,19 @@ pub async fn generate_for_item_one(
                 0,
             );
         }
-        Err(e) => {
+        Ok(PublishedStoryboard::AlreadyRunning) => {
+            return Err(StoryboardError::GenerationAlreadyInProgress { media_file_id });
+        }
+        Err(GenerationPublishError::Database(e)) => {
+            tracing::warn!(
+                media_item_id = %media_item_id,
+                media_file_id = %media_file_id,
+                error = %e,
+                "Failed to publish storyboard artifacts"
+            );
+            return Err(StoryboardError::Database(e));
+        }
+        Err(GenerationPublishError::Pipeline(e)) => {
             tracing::warn!(
                 media_item_id = %media_item_id,
                 media_file_id = %media_file_id,
@@ -423,7 +417,6 @@ async fn generate_for_library(
         let mut cfg_for_file = cfg.clone();
         cfg_for_file.interval_seconds = interval;
 
-        let output_dir = storyboard_dir(cache_dir, file.media_file_id);
         let source_path = Path::new(&file.file_path);
 
         if !source_path.exists() {
@@ -434,49 +427,54 @@ async fn generate_for_library(
                 "Source file missing, skipping"
             );
             result.errors += 1;
+            publish_progress(
+                state,
+                requesting_user_id,
+                file.media_file_id,
+                None,
+                ProgressPhase::Progress,
+                result.candidates,
+                result.generated + result.skipped + result.errors,
+                result.generated,
+                result.errors,
+            );
             continue;
         }
 
-        match sb_svc::generate_storyboard(source_path, &output_dir, runtime_seconds, &cfg_for_file)
-            .await
+        match generate_and_publish_storyboard(
+            pool,
+            cache_dir,
+            file,
+            source_path,
+            runtime_seconds,
+            &cfg_for_file,
+        )
+        .await
         {
-            Ok(gen_result) => {
-                match persist_storyboard_row(
-                    pool,
-                    file.media_file_id,
-                    file.file_hash.as_deref().unwrap_or(""),
-                    &cfg_for_file,
-                    &gen_result,
-                )
-                .await
-                {
-                    Ok(()) => {
-                        result.generated += 1;
-                        tracing::debug!(
-                            library_id = %library_id,
-                            media_file_id = %file.media_file_id,
-                            sprite_count = gen_result.sprite_count,
-                            duration_ms = gen_result.generation_duration_ms,
-                            "Storyboard generated"
-                        );
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            library_id = %library_id,
-                            media_file_id = %file.media_file_id,
-                            error = %e,
-                            "Failed to persist storyboard row"
-                        );
-                        result.errors += 1;
-                    }
-                }
+            Ok(PublishedStoryboard::Published(gen_result)) => {
+                result.generated += 1;
+                tracing::debug!(
+                    library_id = %library_id,
+                    media_file_id = %file.media_file_id,
+                    sprite_count = gen_result.sprite_count,
+                    duration_ms = gen_result.generation_duration_ms,
+                    "Storyboard generated"
+                );
             }
-            Err(e) => {
+            Ok(PublishedStoryboard::AlreadyRunning) => {
+                result.skipped += 1;
+                tracing::debug!(
+                    library_id = %library_id,
+                    media_file_id = %file.media_file_id,
+                    "Storyboard generation already in progress"
+                );
+            }
+            Err(error) => {
                 tracing::warn!(
                     library_id = %library_id,
                     media_file_id = %file.media_file_id,
-                    error = %e,
-                    "Storyboard generation failed"
+                    error = ?error,
+                    "Storyboard generation or publication failed"
                 );
                 result.errors += 1;
             }
@@ -489,7 +487,7 @@ async fn generate_for_library(
             None,
             ProgressPhase::Progress,
             result.candidates,
-            result.generated + result.errors,
+            result.generated + result.skipped + result.errors,
             result.generated,
             result.errors,
         );
@@ -502,7 +500,7 @@ async fn generate_for_library(
         None,
         ProgressPhase::Completed,
         result.candidates,
-        result.generated + result.errors,
+        result.generated + result.skipped + result.errors,
         result.generated,
         result.errors,
     );
@@ -616,6 +614,18 @@ struct FileCandidate {
     file_path: String,
     file_hash: Option<String>,
     runtime_seconds: i32,
+}
+
+#[derive(Debug)]
+enum PublishedStoryboard {
+    Published(sb_svc::GenerationResult),
+    AlreadyRunning,
+}
+
+#[derive(Debug)]
+enum GenerationPublishError {
+    Pipeline(sb_svc::StoryboardPipelineError),
+    Database(sqlx::Error),
 }
 
 /// Fetch all non-deleted, scan-enabled libraries. Used by the scheduled
@@ -817,15 +827,65 @@ async fn load_single_file_for_generation(
     }))
 }
 
-/// Upsert the `storyboards` row after a successful generation. On conflict
-/// over `media_file_id`, all fields are refreshed — handles both first-time
-/// generation and forced regeneration. The grid shape (`columns`, `rows`)
-/// is stored in `metadata` so the domain service can recover it when
-/// building sprite URLs.
-async fn persist_storyboard_row(
+async fn generate_and_publish_storyboard(
     pool: &PgPool,
+    cache_dir: &Path,
+    file: &FileCandidate,
+    source_path: &Path,
+    runtime_seconds: u32,
+    cfg: &GenerationConfig,
+) -> Result<PublishedStoryboard, GenerationPublishError> {
+    let artifact_id = Uuid::now_v7();
+    let output_dir = storyboard_dir(cache_dir, file.media_file_id, artifact_id);
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(GenerationPublishError::Database)?;
+    let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock($1)")
+        .bind(storyboard_lock_key(file.media_file_id))
+        .fetch_one(&mut *tx)
+        .await
+        .map_err(GenerationPublishError::Database)?;
+
+    if !acquired {
+        return Ok(PublishedStoryboard::AlreadyRunning);
+    }
+
+    let result =
+        match sb_svc::generate_storyboard(source_path, &output_dir, runtime_seconds, cfg).await {
+            Ok(result) => result,
+            Err(error) => {
+                let _ = tokio::fs::remove_dir_all(&output_dir).await;
+                return Err(GenerationPublishError::Pipeline(error));
+            }
+        };
+
+    if let Err(error) = persist_storyboard_row(
+        &mut tx,
+        file.media_file_id,
+        file.file_hash.as_deref().unwrap_or(""),
+        artifact_id,
+        cfg,
+        &result,
+    )
+    .await
+    {
+        let _ = tokio::fs::remove_dir_all(&output_dir).await;
+        return Err(GenerationPublishError::Database(error));
+    }
+
+    tx.commit()
+        .await
+        .map_err(GenerationPublishError::Database)?;
+
+    Ok(PublishedStoryboard::Published(result))
+}
+
+async fn persist_storyboard_row(
+    tx: &mut Transaction<'_, Postgres>,
     media_file_id: Uuid,
     file_hash: &str,
+    artifact_id: Uuid,
     cfg: &GenerationConfig,
     result: &sb_svc::GenerationResult,
 ) -> Result<(), sqlx::Error> {
@@ -839,8 +899,8 @@ async fn persist_storyboard_row(
         INSERT INTO storyboards
             (media_file_id, file_hash, interval_seconds, width, height,
              sprite_count, total_thumbnails, total_size_bytes, keyframe_only,
-             quality, generation_duration_ms, metadata)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+             quality, generation_duration_ms, metadata, artifact_id)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         ON CONFLICT (media_file_id) DO UPDATE
         SET file_hash = EXCLUDED.file_hash,
             interval_seconds = EXCLUDED.interval_seconds,
@@ -854,6 +914,7 @@ async fn persist_storyboard_row(
             generated_at = now(),
             generation_duration_ms = EXCLUDED.generation_duration_ms,
             metadata = EXCLUDED.metadata,
+            artifact_id = EXCLUDED.artifact_id,
             updated_at = now()
         "#,
     )
@@ -869,39 +930,23 @@ async fn persist_storyboard_row(
     .bind(cfg.quality as i32)
     .bind(result.generation_duration_ms as i32)
     .bind(&metadata)
-    .execute(pool)
+    .bind(artifact_id)
+    .execute(&mut **tx)
     .await?;
     Ok(())
 }
 
-/// Delete any existing storyboard row and on-disk directory for a media
-/// file. Used by the per-item "force regen" path before generating fresh.
-/// Best-effort: missing rows/files are not errors.
-async fn delete_existing_storyboard(pool: &PgPool, media_file_id: Uuid, cache_dir: &Path) {
-    let _ = sqlx::query("DELETE FROM storyboards WHERE media_file_id = $1")
-        .bind(media_file_id)
-        .execute(pool)
-        .await;
-
-    let dir = storyboard_dir(cache_dir, media_file_id);
-    if let Err(e) = tokio::fs::remove_dir_all(&dir).await
-        && e.kind() != std::io::ErrorKind::NotFound
-    {
-        tracing::warn!(
-            media_file_id = %media_file_id,
-            dir = %dir.display(),
-            error = %e,
-            "Failed to clean up existing storyboard directory before regeneration"
-        );
-    }
+fn storyboard_lock_key(media_file_id: Uuid) -> i64 {
+    let mut bytes = [0; 8];
+    bytes.copy_from_slice(&media_file_id.as_bytes()[..8]);
+    i64::from_be_bytes(bytes)
 }
 
-/// The on-disk directory holding one media file's storyboard artifacts.
-/// Layout: `{cache_dir}/storyboards/{media_file_id}/` per STORYBOARDS.md.
-fn storyboard_dir(cache_dir: &Path, media_file_id: Uuid) -> std::path::PathBuf {
+fn storyboard_dir(cache_dir: &Path, media_file_id: Uuid, artifact_id: Uuid) -> std::path::PathBuf {
     cache_dir
         .join(STORYBOARDS_SUBDIR)
         .join(media_file_id.to_string())
+        .join(artifact_id.to_string())
 }
 
 // ---------------------------------------------------------------------------
@@ -988,12 +1033,21 @@ mod tests {
     fn storyboard_dir_layout() {
         let cache = Path::new("/var/cache/duskcue");
         let id = Uuid::nil();
-        let dir = storyboard_dir(cache, id);
+        let dir = storyboard_dir(cache, id, Uuid::from_u128(1));
         assert_eq!(
             dir,
             std::path::Path::new(
-                "/var/cache/duskcue/storyboards/00000000-0000-0000-0000-000000000000"
+                "/var/cache/duskcue/storyboards/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000001"
             )
+        );
+    }
+
+    #[test]
+    fn storyboard_lock_key_is_stable() {
+        assert_eq!(storyboard_lock_key(Uuid::nil()), 0);
+        assert_ne!(
+            storyboard_lock_key(Uuid::nil()),
+            storyboard_lock_key(Uuid::from_u128(1 << 120))
         );
     }
 }

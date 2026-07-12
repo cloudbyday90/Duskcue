@@ -1861,7 +1861,7 @@ fn storyboard_error_to_http(
         StoryboardError::GenerationAlreadyInProgress { .. } => (
             StatusCode::CONFLICT,
             "SYS_002",
-            "Storyboard generation already in progress for this library".into(),
+            "Storyboard generation already in progress for this media file".into(),
         ),
         StoryboardError::InvalidSpriteFilename(f) => (
             StatusCode::UNPROCESSABLE_ENTITY,

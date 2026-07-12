@@ -27,8 +27,9 @@
 //! (mirroring `subtitle_auto_fetch` from Phase 9 Task 7 and
 //! `segment_analysis` from Phase 10 Task 5).
 //!
-//! Storyboard files are stored under `{data_dir}/cache/storyboards/{media_file_id}/`
-//! per STORYBOARDS.md — `data_dir` comes from `BootstrapConfig` via `AppState`.
+//! Storyboard files are stored under
+//! `{data_dir}/cache/storyboards/{media_file_id}/{artifact_id}/` per
+//! STORYBOARDS.md — `data_dir` comes from `BootstrapConfig` via `AppState`.
 //!
 //! All queries use runtime `sqlx::query` (not compile-time `query!`)
 //! consistent with the auth/users/segments/etc. domain convention — no
@@ -47,6 +48,11 @@ use crate::state::AppState;
 /// Subdirectory under `cache_dir` that holds all storyboard artifacts.
 const STORYBOARDS_SUBDIR: &str = "storyboards";
 
+struct StoryboardArtifact {
+    media_file_id: Uuid,
+    artifact_id: Option<Uuid>,
+}
+
 /// Get storyboard metadata for a media item.
 ///
 /// Resolves the requested healthy media file or the primary fallback, loads
@@ -60,8 +66,9 @@ pub async fn get_storyboard(
     media_item_id: Uuid,
     requested_media_file_id: Option<Uuid>,
 ) -> Result<StoryboardResponse, StoryboardError> {
-    let media_file_id =
+    let artifact =
         resolve_media_file_for_storyboard(pool, media_item_id, requested_media_file_id).await?;
+    let media_file_id = artifact.media_file_id;
 
     let row = sqlx::query(
         "SELECT id, media_file_id, file_hash, interval_seconds, width, height, \
@@ -129,17 +136,18 @@ pub async fn get_storyboard_index(
     requested_media_file_id: Option<Uuid>,
     cache_dir: &Path,
 ) -> Result<String, StoryboardError> {
-    let media_file_id =
+    let artifact =
         resolve_media_file_for_storyboard(pool, media_item_id, requested_media_file_id).await?;
 
-    let path = storyboard_dir(cache_dir, media_file_id).join("index.vtt");
+    let path =
+        storyboard_dir(cache_dir, artifact.media_file_id, artifact.artifact_id).join("index.vtt");
     let content = tokio::fs::read_to_string(&path)
         .await
         .map_err(|e| map_index_read_error(e, media_item_id))?;
     Ok(rewrite_vtt_sprite_urls(
         &content,
         media_item_id,
-        media_file_id,
+        artifact.media_file_id,
     ))
 }
 
@@ -162,8 +170,9 @@ pub async fn get_storyboard_sprite(
     let sheet_number = sb_svc::validate_sprite_filename(sprite_filename)
         .map_err(StoryboardError::InvalidSpriteFilename)?;
 
-    let media_file_id =
+    let artifact =
         resolve_media_file_for_storyboard(pool, media_item_id, requested_media_file_id).await?;
+    let media_file_id = artifact.media_file_id;
 
     // Bounds-check the requested sheet against what was generated. The
     // `storyboards.sprite_count` column is authoritative.
@@ -180,7 +189,8 @@ pub async fn get_storyboard_sprite(
         )));
     }
 
-    let path = storyboard_dir(cache_dir, media_file_id).join(sprite_filename);
+    let path = storyboard_dir(cache_dir, artifact.media_file_id, artifact.artifact_id)
+        .join(sprite_filename);
     let bytes = tokio::fs::read(&path)
         .await
         .map_err(|e| map_sprite_read_error(e, media_item_id, sprite_filename))?;
@@ -257,7 +267,8 @@ pub async fn delete_storyboard(
     media_item_id: Uuid,
     cache_dir: &Path,
 ) -> Result<(), StoryboardError> {
-    let media_file_id = resolve_media_file_for_storyboard(pool, media_item_id, None).await?;
+    let artifact = resolve_media_file_for_storyboard(pool, media_item_id, None).await?;
+    let media_file_id = artifact.media_file_id;
 
     // DB row first — guarantees the HTTP 404 path is consistent even if the
     // disk directory is in a weird state. `RETURNING` keeps it atomic.
@@ -272,7 +283,7 @@ pub async fn delete_storyboard(
         // No DB row — but a stray on-disk directory may still exist (e.g.
         // from a crashed generation). Clean it up so the delete is fully
         // idempotent, but return NotFound to mirror the row's absence.
-        let dir = storyboard_dir(cache_dir, media_file_id);
+        let dir = storyboard_media_dir(cache_dir, media_file_id);
         let _ = tokio::fs::remove_dir_all(&dir).await;
         return Err(StoryboardError::StoryboardNotFound { media_item_id });
     }
@@ -280,7 +291,7 @@ pub async fn delete_storyboard(
     // On-disk cleanup. Best-effort: a missing or read-only directory does
     // not invalidate the (already-committed) DB deletion. Logged at warn so
     // operators notice disk-state drift.
-    let dir = storyboard_dir(cache_dir, media_file_id);
+    let dir = storyboard_media_dir(cache_dir, media_file_id);
     if let Err(e) = tokio::fs::remove_dir_all(&dir).await
         && e.kind() != std::io::ErrorKind::NotFound
     {
@@ -342,7 +353,7 @@ async fn resolve_media_file_for_storyboard(
     pool: &PgPool,
     media_item_id: Uuid,
     requested_media_file_id: Option<Uuid>,
-) -> Result<Uuid, StoryboardError> {
+) -> Result<StoryboardArtifact, StoryboardError> {
     let media_file_id = if let Some(media_file_id) = requested_media_file_id {
         let is_requested_file_healthy: bool = sqlx::query_scalar(
             "SELECT EXISTS(SELECT 1 FROM media_files WHERE id = $1 AND media_item_id = $2 AND is_healthy = true)",
@@ -363,33 +374,30 @@ async fn resolve_media_file_for_storyboard(
             .ok_or(StoryboardError::MediaItemNotFound { media_item_id })?
     };
 
-    // Confirm a storyboard row exists. We deliberately don't load the full
-    // row here — callers (index/sprite/delete) only need the path, which is
-    // derived from media_file_id. The sprite handler does its own
-    // sprite_count bounds check.
-    let exists: bool =
-        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM storyboards WHERE media_file_id = $1)")
-            .bind(media_file_id)
-            .fetch_one(pool)
-            .await?;
+    let row = sqlx::query("SELECT artifact_id FROM storyboards WHERE media_file_id = $1")
+        .bind(media_file_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(StoryboardError::StoryboardNotFound { media_item_id })?;
 
-    if !exists {
-        return Err(StoryboardError::StoryboardNotFound { media_item_id });
-    }
-
-    Ok(media_file_id)
+    Ok(StoryboardArtifact {
+        media_file_id,
+        artifact_id: row.get("artifact_id"),
+    })
 }
 
-/// The on-disk directory holding one media file's storyboard artifacts.
-///
-/// Layout: `{cache_dir}/storyboards/{media_file_id}/` per STORYBOARDS.md
-/// "Storage Path" spec. `media_file_id` (not `media_item_id`) is used
-/// because multi-version items (e.g. 4K + 1080p) may have different aspect
-/// ratios, requiring separate storyboards per file.
-fn storyboard_dir(cache_dir: &Path, media_file_id: Uuid) -> PathBuf {
+fn storyboard_media_dir(cache_dir: &Path, media_file_id: Uuid) -> PathBuf {
     cache_dir
         .join(STORYBOARDS_SUBDIR)
         .join(media_file_id.to_string())
+}
+
+fn storyboard_dir(cache_dir: &Path, media_file_id: Uuid, artifact_id: Option<Uuid>) -> PathBuf {
+    let dir = storyboard_media_dir(cache_dir, media_file_id);
+    match artifact_id {
+        Some(artifact_id) => dir.join(artifact_id.to_string()),
+        None => dir,
+    }
 }
 
 /// Build the relative URL for a sprite sheet, served by the sprite HTTP
@@ -521,13 +529,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn storyboard_dir_layout() {
+    fn storyboard_legacy_dir_layout() {
         let cache = Path::new("/var/cache/duskcue");
         let id = Uuid::nil();
-        let dir = storyboard_dir(cache, id);
+        let dir = storyboard_dir(cache, id, None);
         assert_eq!(
             dir,
             Path::new("/var/cache/duskcue/storyboards/00000000-0000-0000-0000-000000000000")
+        );
+    }
+
+    #[test]
+    fn storyboard_artifact_dir_layout() {
+        let cache = Path::new("/var/cache/duskcue");
+        let dir = storyboard_dir(cache, Uuid::nil(), Some(Uuid::from_u128(1)));
+        assert_eq!(
+            dir,
+            Path::new(
+                "/var/cache/duskcue/storyboards/00000000-0000-0000-0000-000000000000/00000000-0000-0000-0000-000000000001"
+            )
         );
     }
 
