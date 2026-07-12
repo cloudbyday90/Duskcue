@@ -4451,7 +4451,7 @@ Phases 9–13a can be built in any order after Phase 8, since they are independe
 
 ## Post-Phase 16d — Household Profiles, Kids Mode, and Ambient Channels (COMPLETE)
 
-**Committed:** `2fdc5c3` on `main`
+**Committed:** `00d631b` on `main`
 
 **Authoritative document:** [PROFILES_AND_AMBIENT_CHANNELS.md](docs/design/PROFILES_AND_AMBIENT_CHANNELS.md)
 
