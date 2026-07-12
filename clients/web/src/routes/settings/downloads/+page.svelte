@@ -6,10 +6,18 @@
   See LICENSE file for details.
 -->
 <script>
-    import { onMount } from 'svelte';
-    import { listDownloadAdminInventory } from '$lib/api/settings.js';
+    import { getConfigGroup, listDownloadAdminInventory, updateConfigGroup } from '$lib/api/settings.js';
     import { hasCapability } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
+    import ConfigGroupForm from '$lib/components/ConfigGroupForm.svelte';
+    import {
+        cloneConfig,
+        getConfigPath,
+        hydrateConfigGroup,
+        isConfigGroupDirty,
+        serializeConfigGroup,
+        updateConfigField,
+    } from '$lib/admin/configForms.js';
 
     let canManage = $state(false);
     let loading = $state(true);
@@ -17,22 +25,55 @@
     let statusFilter = $state('');
     let deviceFilter = $state('');
     let inventory = $state({ items: [], summary: {} });
+    let loadedOnce = $state(false);
+    let policy = $state({});
+    let originalPolicy = $state({});
+    let policyError = $state('');
+    let savingPolicy = $state(false);
+
+    const policyFields = [
+        { path: 'enabled', label: 'Enable offline downloads', type: 'boolean', hint: '' },
+        { path: 'max_quality_resolution', label: 'Max Quality Resolution', type: 'select', options: ['480p', '720p', '1080p', '1440p', '2160p'], hint: '' },
+        { path: 'max_bytes_per_user', label: 'Max Bytes per User', type: 'number', min: 1073741824, max: 10995116277760, step: 1073741824, unit: 'bytes', nullable: false },
+        { path: 'max_bytes_per_device', label: 'Max Bytes per Device', type: 'number', min: 1073741824, max: 5497558138880, step: 1073741824, unit: 'bytes', nullable: false },
+        { path: 'max_active_jobs_per_user', label: 'Max Active Jobs per User', type: 'number', min: 1, max: 50, step: 1, unit: '', nullable: false },
+        { path: 'max_active_jobs_per_device', label: 'Max Active Jobs per Device', type: 'number', min: 1, max: 25, step: 1, unit: '', nullable: false },
+        { path: 'max_retained_packages_per_user', label: 'Max Retained Packages per User', type: 'number', min: 1, max: 500, step: 1, unit: '', nullable: false },
+        { path: 'max_retained_packages_per_device', label: 'Max Retained Packages per Device', type: 'number', min: 1, max: 250, step: 1, unit: '', nullable: false },
+        { path: 'allow_lan_downloads', label: 'Allow LAN Downloads', type: 'boolean', hint: '' },
+        { path: 'allow_remote_downloads', label: 'Allow Remote Downloads', type: 'boolean', hint: '' },
+        { path: 'allow_transcoded_downloads', label: 'Allow Transcoded Downloads', type: 'boolean', hint: '' },
+        { path: 'default_package_expiry_days', label: 'Default Package Expiry', type: 'number', min: 1, max: 365, step: 1, unit: 'days', nullable: false },
+        { path: 'ready_package_retention_days', label: 'Ready Package Retention', type: 'number', min: 1, max: 90, step: 1, unit: 'days', nullable: false },
+        { path: 'user_overrides', label: 'User Overrides JSON', type: 'json', hint: 'Map user UUIDs to partial download policy overrides.' },
+        { path: 'library_overrides', label: 'Library Overrides JSON', type: 'json', hint: 'Map library UUIDs to partial download policy overrides.' },
+    ];
+
+    let policyDirty = $derived(isConfigGroupDirty(policy, originalPolicy, policyFields));
 
     $effect(() => {
         const unsub = hasCapability('can_manage_server').subscribe((value) => (canManage = value));
         return unsub;
     });
 
-    onMount(async () => {
+    $effect(() => {
         if (!canManage) {
             loading = false;
             return;
         }
-        await loadInventory();
+        if (loadedOnce) return;
+        loadedOnce = true;
+        load();
     });
 
-    async function loadInventory() {
+    async function load() {
         loading = true;
+        await Promise.all([loadInventory({ quiet: true }), loadPolicy()]);
+        loading = false;
+    }
+
+    async function loadInventory(options = {}) {
+        if (!options.quiet) loading = true;
         loadError = '';
         try {
             inventory = await listDownloadAdminInventory({
@@ -44,7 +85,44 @@
             loadError = err.detail || err.message || 'Failed to load download inventory';
             notifications.error(loadError);
         } finally {
-            loading = false;
+            if (!options.quiet) loading = false;
+        }
+    }
+
+    async function loadPolicy() {
+        policyError = '';
+        try {
+            const response = await getConfigGroup('downloads');
+            policy = hydrateConfigGroup(response.value, policyFields);
+            originalPolicy = cloneConfig(policy);
+        } catch (err) {
+            policyError = err.detail || err.message || 'Failed to load download policy';
+        }
+    }
+
+    function policyValue(field) {
+        const value = getConfigPath(policy, field.path);
+        if (field.type === 'boolean') return Boolean(value);
+        return value === undefined || value === null ? '' : value;
+    }
+
+    function updatePolicyField(field, value) {
+        policy = updateConfigField(policy, field, value);
+    }
+
+    async function savePolicy() {
+        savingPolicy = true;
+        policyError = '';
+        try {
+            const response = await updateConfigGroup('downloads', serializeConfigGroup(policy, policyFields));
+            policy = hydrateConfigGroup(response.value, policyFields);
+            originalPolicy = cloneConfig(policy);
+            notifications.success('Download policy saved');
+        } catch (err) {
+            policyError = err.detail || err.message || 'Failed to save download policy';
+            notifications.error(policyError);
+        } finally {
+            savingPolicy = false;
         }
     }
 
@@ -74,11 +152,11 @@
 <div class="downloads-settings">
     <div class="page-header">
         <div>
-            <a href="/settings" class="back-link">Settings</a>
+            <a href="/admin" class="back-link">Admin</a>
             <h1 class="page-title">Downloads</h1>
         </div>
         {#if canManage}
-            <button class="btn-primary" onclick={loadInventory} disabled={loading}>
+            <button class="btn-primary" onclick={load} disabled={loading}>
                 {loading ? 'Refreshing…' : 'Refresh'}
             </button>
         {/if}
@@ -91,9 +169,27 @@
     {:else if loadError}
         <div class="empty-state">
             <p class="error-text">{loadError}</p>
-            <button class="btn-secondary" onclick={loadInventory}>Retry</button>
+            <button class="btn-secondary" onclick={load}>Retry</button>
         </div>
     {:else}
+        <section class="policy-panel">
+            <div class="panel-header">
+                <div>
+                    <h2 class="panel-title">Download Policy</h2>
+                    <p class="panel-desc">Control offline package eligibility, limits, retention, and network access.</p>
+                </div>
+                <button class="btn-primary" onclick={savePolicy} disabled={!policyDirty || savingPolicy}>
+                    {savingPolicy ? 'Saving…' : 'Save Policy'}
+                </button>
+            </div>
+            <div class="policy-body">
+                {#if policyError}
+                    <p class="error-text">{policyError}</p>
+                {/if}
+                <ConfigGroupForm fields={policyFields} valueFor={policyValue} onchange={updatePolicyField} />
+            </div>
+        </section>
+
         <section class="summary-grid">
             <div class="metric">
                 <span class="metric-label">Packages</span>
@@ -227,7 +323,8 @@
     }
 
     .metric,
-    .inventory-panel {
+    .inventory-panel,
+    .policy-panel {
         background-color: var(--color-bg-surface);
         border: 1px solid var(--color-border-subtle);
         border-radius: var(--radius-md);
@@ -263,9 +360,17 @@
         overflow: hidden;
     }
 
+    .policy-panel {
+        overflow: hidden;
+    }
+
     .panel-header {
         padding: 1rem 1.25rem;
         border-bottom: 1px solid var(--color-border-subtle);
+    }
+
+    .policy-body {
+        padding: 1.25rem;
     }
 
     .panel-title {

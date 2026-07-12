@@ -11,9 +11,10 @@
     import { onMount } from 'svelte';
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
-    import { auth, isAuthenticated, currentUser } from '$lib/stores/auth.js';
+    import { auth, isAuthenticated, currentUser, userHasAnyCapability } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
     import { events } from '$lib/stores/events.js';
+    import { getSetupStatus } from '$lib/api/auth.js';
     import { startDesktopBridge, stopDesktopBridge } from '$lib/desktop/tauri.js';
     import NotificationToast from '$lib/components/NotificationToast.svelte';
     import NotificationBell from '$lib/components/NotificationBell.svelte';
@@ -22,8 +23,12 @@
     let { children } = $props();
 
     let authChecked = $state(false);
+    let setupRequired = $state(false);
     let userMenuOpen = $state(false);
     let mobileMenuOpen = $state(false);
+    let canAccessAdmin = $derived(
+        userHasAnyCapability($currentUser, ['can_manage_server', 'can_manage_users', 'can_manage_libraries']),
+    );
 
     const AUTH_ROUTES = ['/auth/login', '/auth/setup'];
 
@@ -35,7 +40,16 @@
     onMount(() => {
         auth.init();
         startDesktopBridge(goto);
-        authChecked = true;
+        getSetupStatus()
+            .then((status) => {
+                setupRequired = !!status?.setup_required;
+            })
+            .catch(() => {
+                setupRequired = false;
+            })
+            .finally(() => {
+                authChecked = true;
+            });
 
         return () => stopDesktopBridge();
     });
@@ -44,7 +58,12 @@
         if (!authChecked) return;
         const path = $page.url.pathname;
         const isAuthRoute = AUTH_ROUTES.some((r) => path.startsWith(r));
-        if (!$isAuthenticated && !isAuthRoute) {
+        const isSetupRoute = path.startsWith('/auth/setup');
+        if (setupRequired && !$isAuthenticated && !isSetupRoute) {
+            goto('/auth/setup');
+        } else if (!setupRequired && !$isAuthenticated && isSetupRoute) {
+            goto('/auth/login');
+        } else if (!$isAuthenticated && !isAuthRoute) {
             goto('/auth/login');
         } else if ($isAuthenticated && isAuthRoute) {
             goto('/dashboard');
@@ -143,6 +162,11 @@
                                 <a href="/settings" class="dropdown-item" onclick={closeUserMenu}>
                                     Settings
                                 </a>
+                                {#if canAccessAdmin}
+                                    <a href="/admin" class="dropdown-item" onclick={closeUserMenu}>
+                                        {m.routes_admin_page_admin()}
+                                    </a>
+                                {/if}
                                 <button class="dropdown-item dropdown-danger" onclick={handleLogout}>
                                     Sign Out
                                 </button>
@@ -205,6 +229,11 @@
                 <a href="/settings" class="drawer-link" onclick={closeMobileMenu}>
                     Settings
                 </a>
+                {#if canAccessAdmin}
+                    <a href="/admin" class="drawer-link" onclick={closeMobileMenu}>
+                        {m.routes_admin_page_admin()}
+                    </a>
+                {/if}
                 <button class="drawer-link drawer-danger" onclick={handleLogout}>
                     Sign Out
                 </button>

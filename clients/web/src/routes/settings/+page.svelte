@@ -7,30 +7,22 @@
 -->
 <script>
     import { m } from '$lib/paraglide/messages.js';
-    import { setLocale } from '$lib/paraglide/runtime.js';
     import { onMount } from 'svelte';
-    import { getHealth } from '$lib/api/settings.js';
+    import { setLocale } from '$lib/paraglide/runtime.js';
     import { getUserPreferences, updateUserPreferences } from '$lib/api/users.js';
-    import { auth, currentUser } from '$lib/stores/auth.js';
+    import { auth, currentUser, userHasAnyCapability } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
 
-    let loading = $state(true);
-    let health = $state(null);
+    const ADMIN_CAPABILITIES = ['can_manage_server', 'can_manage_users', 'can_manage_libraries'];
+
     let preferencesLoading = $state(true);
     let preferences = $state(null);
     let selectedLocale = $state('en');
     let savingLocale = $state(false);
     let preferencesError = $state('');
+    let canAccessAdmin = $derived(userHasAnyCapability($currentUser, ADMIN_CAPABILITIES));
 
-    onMount(async () => {
-        loadPreferences();
-        try {
-            health = await getHealth();
-        } catch {
-        } finally {
-            loading = false;
-        }
-    });
+    onMount(loadPreferences);
 
     async function loadPreferences() {
         preferencesLoading = true;
@@ -67,129 +59,77 @@
             savingLocale = false;
         }
     }
-
-    const settingsLinks = [
-        { href: '/settings/system', label: m.routes_settings_page_system(), icon: 'M4 7h16M4 12h16M4 17h16', desc: m.routes_settings_page_server_configuration_and_operations() },
-        { href: '/settings/users', label: m.routes_settings_page_users(), icon: 'M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2M9 7a4 4 0 1 0 0 .01', desc: m.routes_settings_page_manage_user_accounts_and_invitations() },
-        { href: '/settings/libraries', label: m.routes_settings_page_libraries(), icon: 'M2 3h20v18H2zM2 8h20', desc: m.routes_settings_page_configure_media_libraries_and_scan_paths() },
-        { href: '/settings/quality', label: m.routes_settings_page_quality(), icon: 'M3 3v18h18', desc: m.routes_settings_page_streaming_quality_and_transcoding(), soon: true },
-        { href: '/settings/downloads', label: 'Downloads', icon: 'M12 3v12m0 0l-5-5m5 5l5-5M4 19h16', desc: 'Offline download policy and package inventory' },
-        { href: '/settings/subtitles', label: m.routes_settings_page_subtitles(), icon: 'M4 4h16v16H4z', desc: m.routes_settings_page_subtitle_preferences_and_providers() },
-        { href: '/settings/overlays', label: m.routes_settings_page_overlays(), icon: 'M3 3h18v18H3z', desc: m.routes_settings_page_artwork_overlays_and_posters() },
-        { href: '/settings/collections', label: m.routes_settings_page_collections(), icon: 'M3 3h18v18H3z', desc: m.routes_settings_page_collection_management() },
-        { href: '/settings/notifications', label: m.routes_settings_page_notifications(), icon: 'M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0', desc: m.routes_settings_page_notification_feed_preferences_and_push_devices() },
-        { href: '/settings/backups', label: m.routes_settings_page_backups(), icon: 'M21 8v13H3V8M1 3h22v5H1z', desc: m.routes_settings_page_backup_and_recovery() },
-        { href: '/settings/migration', label: m.routes_settings_page_migration(), icon: 'M3 12h18M3 6h18M3 18h18', desc: m.routes_settings_page_import_from_other_platforms() },
-        { href: '/settings/security', label: m.routes_settings_page_security(), icon: 'M12 2l8 4v6c0 5-3.5 9-8 10-4.5-1-8-5-8-10V6z', desc: m.routes_settings_page_security_settings(), soon: true },
-        { href: '/settings/storage', label: m.routes_settings_page_storage(), icon: 'M3 3h18v18H3z', desc: m.routes_settings_page_cache_and_storage_management(), soon: true },
-    ];
 </script>
 
 <div class="settings-page">
-    <h1 class="page-title">{m.routes_settings_page_settings()}</h1>
+    <header class="page-header">
+        <h1 class="page-title">{m.routes_settings_page_settings()}</h1>
+        <p class="page-description">{m.routes_settings_page_manage_your_preferences()}</p>
+    </header>
 
-    <div class="settings-grid">
-        <section class="settings-section">
-            <h2 class="section-title">{m.routes_settings_page_server_status()}</h2>
-            {#if loading}
-                <div class="status-loading">{m.routes_settings_page_checking_server_health()}</div>
-            {:else if health}
-                <div class="status-grid">
-                    <div class="status-item">
-                        <span class="status-label">{m.routes_settings_page_status()}</span>
-                        <span class="status-value status-{$health.status || 'unknown'}">
-                            {$health.status || 'Unknown'}
-                        </span>
-                    </div>
-                    <div class="status-item">
-                        <span class="status-label">{m.routes_settings_page_version()}</span>
-                        <span class="status-value">{$health.version || '—'}</span>
-                    </div>
-                    <div class="status-item">
-                        <span class="status-label">{m.routes_settings_page_database()}</span>
-                        <span class="status-value">{$health.database || '—'}</span>
-                    </div>
-                    <div class="status-item">
-                        <span class="status-label">{m.routes_settings_page_uptime()}</span>
-                        <span class="status-value">
-                            {$health.uptime_seconds
-                                ? Math.floor($health.uptime_seconds / 3600) + 'h ' +
-                                  Math.floor(($health.uptime_seconds % 3600) / 60) + 'm'
-                                : '—'}
-                        </span>
-                    </div>
-                </div>
-                {#if health.hardware_acceleration}
-                    <div class="hw-accel">
-                        <span class="status-label">{m.routes_settings_page_hardware_acceleration()}</span>
-                        <div class="hw-badge">{$health.hardware_acceleration.method}</div>
-                    </div>
-                {/if}
+    <section class="settings-section" aria-labelledby="personal-heading">
+        <h2 id="personal-heading" class="section-title">{m.routes_settings_page_personal()}</h2>
+        <div class="settings-card preference-card">
+            <div class="preference-copy">
+                <span class="preference-label">{m.routes_settings_page_language()}</span>
+                <span class="preference-description">{m.routes_settings_page_language_selector_reviewed_locales_only()}</span>
+            </div>
+            {#if preferencesLoading}
+                <span class="state-copy">{m.routes_settings_page_loading_preferences()}</span>
+            {:else if preferences}
+                <select
+                    class="language-select"
+                    value={selectedLocale}
+                    onchange={handleLocaleChange}
+                    disabled={savingLocale || preferences.available_locales.length <= 1}
+                    aria-label={m.routes_settings_page_language()}
+                >
+                    {#each preferences.available_locales as locale}
+                        <option value={locale.tag}>{locale.name}</option>
+                    {/each}
+                </select>
             {:else}
-                <div class="status-error">{m.routes_settings_page_unable_to_fetch_server_status()}</div>
+                <button class="btn-secondary" onclick={loadPreferences}>
+                    {m.routes_settings_page_retry()}
+                </button>
             {/if}
-        </section>
+        </div>
+        {#if preferencesError}
+            <p class="error-copy">{preferencesError}</p>
+        {/if}
+    </section>
 
-        <section class="settings-section">
-            <h2 class="section-title">{m.routes_settings_page_preferences()}</h2>
-            <div class="preference-row">
-                <div class="preference-copy">
-                    <span class="preference-label">{m.routes_settings_page_language()}</span>
-                    <span class="preference-desc">{m.routes_settings_page_language_selector_reviewed_locales_only()}</span>
+    <section class="settings-section" aria-labelledby="notifications-heading">
+        <h2 id="notifications-heading" class="section-title">{m.routes_settings_page_notifications()}</h2>
+        <a href="/settings/notifications" class="settings-link">
+            <div class="link-icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9M13.73 21a2 2 0 0 1-3.46 0" />
+                </svg>
+            </div>
+            <div>
+                <span class="link-label">{m.routes_settings_page_notifications()}</span>
+                <span class="link-description">{m.routes_settings_page_notification_feed_preferences_and_push_devices()}</span>
+            </div>
+        </a>
+    </section>
+
+    {#if canAccessAdmin}
+        <section class="settings-section" aria-labelledby="admin-heading">
+            <h2 id="admin-heading" class="section-title">{m.routes_settings_page_admin()}</h2>
+            <a href="/admin" class="settings-link">
+                <div class="link-icon" aria-hidden="true">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M4 7h16M4 12h16M4 17h16" />
+                    </svg>
                 </div>
-                {#if preferencesLoading}
-                    <div class="status-loading">{m.routes_settings_page_loading_preferences()}</div>
-                {:else if preferences}
-                    <select
-                        class="language-select"
-                        value={selectedLocale}
-                        onchange={handleLocaleChange}
-                        disabled={savingLocale || preferences.available_locales.length <= 1}
-                        aria-label={m.routes_settings_page_language()}
-                    >
-                        {#each preferences.available_locales as locale}
-                            <option value={locale.tag}>
-                                {locale.name}
-                            </option>
-                        {/each}
-                    </select>
-                {:else}
-                    <button class="retry-button" onclick={loadPreferences}>
-                        {m.routes_settings_page_retry()}
-                    </button>
-                {/if}
-            </div>
-            {#if preferencesError}
-                <div class="status-error">{preferencesError}</div>
-            {/if}
+                <div>
+                    <span class="link-label">{m.routes_settings_page_admin()}</span>
+                    <span class="link-description">{m.routes_settings_page_manage_server()}</span>
+                </div>
+            </a>
         </section>
-
-        <section class="settings-section">
-            <h2 class="section-title">{m.routes_settings_page_management()}</h2>
-            <div class="links-grid">
-                {#each settingsLinks as link}
-                    <a
-                        href={link.soon ? undefined : link.href}
-                        class="settings-link"
-                        class:disabled={link.soon}
-                    >
-                        <div class="link-icon">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                                <path d={link.icon} />
-                            </svg>
-                        </div>
-                        <div class="link-text">
-                            <span class="link-label">
-                                {link.label}
-                                {#if link.soon}<span class="soon-tag">{m.routes_settings_page_soon()}</span>{/if}
-                            </span>
-                            <span class="link-desc">{link.desc}</span>
-                        </div>
-                    </a>
-                {/each}
-            </div>
-        </section>
-    </div>
+    {/if}
 </div>
 
 <style>
@@ -197,7 +137,13 @@
         display: flex;
         flex-direction: column;
         gap: 2rem;
-        max-width: 900px;
+        max-width: 720px;
+    }
+
+    .page-header {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
     }
 
     .page-title {
@@ -206,150 +152,73 @@
         color: var(--color-text-primary);
     }
 
-    .settings-grid {
-        display: flex;
-        flex-direction: column;
-        gap: 2rem;
+    .page-description {
+        color: var(--color-text-secondary);
     }
 
     .settings-section {
         display: flex;
         flex-direction: column;
-        gap: 1rem;
-    }
-
-    .section-title {
-        font-size: 1rem;
-        font-weight: 600;
-        color: var(--color-text-secondary);
-        text-transform: uppercase;
-        font-size: 0.75rem;
-        letter-spacing: 0.05em;
-    }
-
-    .status-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
         gap: 0.75rem;
     }
 
-    .status-item {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-        padding: 0.875rem 1rem;
-        background-color: var(--color-bg-surface);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: var(--radius-sm);
-    }
-
-    .status-label {
-        font-size: 0.6875rem;
-        font-weight: 500;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--color-text-muted);
-    }
-
-    .status-value {
-        font-size: 0.9375rem;
-        font-weight: 600;
-        color: var(--color-text-primary);
-    }
-
-    .status-healthy {
-        color: var(--color-success);
-    }
-
-    .status-degraded {
-        color: var(--color-warning);
-    }
-
-    .status-loading,
-    .status-error {
-        font-size: 0.8125rem;
-        color: var(--color-text-muted);
-        padding: 0.875rem 1rem;
-    }
-
-    .status-error {
-        color: var(--color-error);
-    }
-
-    .hw-accel {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0.875rem 1rem;
-        background-color: var(--color-bg-surface);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: var(--radius-sm);
-    }
-
-    .hw-badge {
+    .section-title {
         font-size: 0.75rem;
         font-weight: 600;
+        letter-spacing: 0.05em;
         text-transform: uppercase;
-        color: var(--color-accent);
-        background-color: var(--color-accent-muted);
-        padding: 0.25rem 0.625rem;
-        border-radius: var(--radius-sm);
+        color: var(--color-text-secondary);
     }
 
-    .preference-row {
+    .settings-card,
+    .settings-link {
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-sm);
+        background: var(--color-bg-surface);
+    }
+
+    .preference-card {
         display: flex;
         align-items: center;
         justify-content: space-between;
         gap: 1rem;
         padding: 0.875rem 1rem;
-        background-color: var(--color-bg-surface);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: var(--radius-sm);
     }
 
     .preference-copy {
         display: flex;
+        min-width: 0;
         flex-direction: column;
         gap: 0.125rem;
-        min-width: 0;
     }
 
-    .preference-label {
+    .preference-label,
+    .link-label {
         font-size: 0.875rem;
         font-weight: 600;
         color: var(--color-text-primary);
     }
 
-    .preference-desc {
+    .preference-description,
+    .link-description,
+    .state-copy {
         font-size: 0.75rem;
         color: var(--color-text-muted);
     }
 
-    .language-select {
+    .language-select,
+    .btn-secondary {
+        flex: 0 0 auto;
         min-width: 180px;
         padding: 0.5rem 0.75rem;
-        color: var(--color-text-primary);
-        background-color: var(--color-bg-elevated);
         border: 1px solid var(--color-border);
         border-radius: var(--radius-sm);
+        color: var(--color-text-primary);
+        background-color: var(--color-bg-elevated);
     }
 
     .language-select:disabled {
         opacity: 0.65;
-    }
-
-    .retry-button {
-        padding: 0.5rem 0.875rem;
-        color: var(--color-text-primary);
-        background-color: var(--color-bg-elevated);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
-    }
-
-    .links-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-        gap: 0.75rem;
     }
 
     .settings-link {
@@ -357,87 +226,48 @@
         align-items: center;
         gap: 0.75rem;
         padding: 0.875rem 1rem;
-        background-color: var(--color-bg-surface);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: var(--radius-sm);
         transition: border-color var(--transition-fast), background-color var(--transition-fast);
     }
 
-    .settings-link:hover:not(.disabled) {
+    .settings-link:hover {
         border-color: var(--color-accent);
-        background-color: var(--color-bg-elevated);
-    }
-
-    .settings-link.disabled {
-        opacity: 0.5;
-        cursor: default;
+        background: var(--color-bg-elevated);
     }
 
     .link-icon {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 36px;
-        height: 36px;
-        background-color: var(--color-bg-elevated);
+        display: grid;
+        flex: 0 0 auto;
+        width: 2.25rem;
+        height: 2.25rem;
+        place-items: center;
         border-radius: var(--radius-sm);
         color: var(--color-text-secondary);
-        flex-shrink: 0;
+        background: var(--color-bg-elevated);
     }
 
-    .settings-link:hover:not(.disabled) .link-icon {
+    .settings-link:hover .link-icon {
         color: var(--color-accent);
     }
 
-    .link-text {
-        display: flex;
-        flex-direction: column;
-        gap: 0.125rem;
-        min-width: 0;
+    .link-description {
+        display: block;
+        margin-top: 0.125rem;
     }
 
-    .link-label {
-        font-size: 0.875rem;
-        font-weight: 600;
-        color: var(--color-text-primary);
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
+    .error-copy {
+        font-size: 0.8125rem;
+        color: var(--color-error);
     }
 
-    .soon-tag {
-        font-size: 0.5625rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--color-text-muted);
-        background-color: var(--color-bg-hover);
-        padding: 0.0625rem 0.375rem;
-        border-radius: 3px;
-    }
-
-    .link-desc {
-        font-size: 0.75rem;
-        color: var(--color-text-muted);
-    }
-
-    @media (max-width: 768px) {
-        .page-title {
-            font-size: 1.25rem;
-        }
-
-        .preference-row {
+    @media (max-width: 640px) {
+        .preference-card {
             align-items: stretch;
             flex-direction: column;
         }
 
         .language-select,
-        .retry-button {
+        .btn-secondary {
             width: 100%;
-        }
-
-        .links-grid {
-            grid-template-columns: 1fr;
         }
     }
 </style>

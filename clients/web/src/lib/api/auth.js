@@ -22,6 +22,10 @@ export async function setup(data) {
     return post('/setup', data);
 }
 
+export async function getSetupStatus() {
+    return get('/setup/status');
+}
+
 export async function loginWithInvite(data) {
     return post('/auth/invite', data);
 }
@@ -125,4 +129,3 @@ export async function resendInvitation(invitationId) {
 export async function listCapabilities() {
     return get('/auth/capabilities');
 }
-

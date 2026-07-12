@@ -7,10 +7,19 @@
 -->
 <script>
     import { m } from '$lib/paraglide/messages.js';
-    import { onMount } from 'svelte';
+    import { page } from '$app/stores';
     import { getServerConfig, updateConfigGroup } from '$lib/api/settings.js';
     import { hasCapability } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
+    import ConfigGroupForm from '$lib/components/ConfigGroupForm.svelte';
+    import {
+        cloneConfig,
+        getConfigPath,
+        hydrateConfigGroup,
+        isConfigGroupDirty,
+        serializeConfigGroup,
+        updateConfigField,
+    } from '$lib/admin/configForms.js';
 
     let loading = $state(true);
     let canManage = $state(false);
@@ -19,10 +28,21 @@
     let activeGroup = $state('auth');
     let config = $state({});
     let original = $state({});
+    let loadedOnce = $state(false);
 
     $effect(() => {
         const unsub = hasCapability('can_manage_server').subscribe((value) => (canManage = value));
         return unsub;
+    });
+
+    $effect(() => {
+        if (!canManage) {
+            loading = false;
+            return;
+        }
+        if (loadedOnce) return;
+        loadedOnce = true;
+        load();
     });
 
     const groupSchemas = [
@@ -108,28 +128,6 @@
                 toggle('audio_passthrough_enabled', 'Audio Passthrough'),
                 select('subtitle_burn_in_policy', 'Subtitle Burn-in Policy', ['never', 'last_resort', 'always']),
                 select('default_quality_mode', 'Default Quality Mode', ['auto', 'direct', 'transcode']),
-            ],
-        },
-        {
-            key: 'downloads',
-            title: 'Downloads',
-            desc: 'Offline package policy, retention, quota, and network controls.',
-            fields: [
-                toggle('enabled', 'Enable offline downloads'),
-                select('max_quality_resolution', 'Max Quality Resolution', ['480p', '720p', '1080p', '1440p', '2160p']),
-                number('max_bytes_per_user', 'Max Bytes per User', 1073741824, 10995116277760, 1073741824, 'bytes'),
-                number('max_bytes_per_device', 'Max Bytes per Device', 1073741824, 5497558138880, 1073741824, 'bytes'),
-                number('max_active_jobs_per_user', 'Max Active Jobs per User', 1, 50, 1),
-                number('max_active_jobs_per_device', 'Max Active Jobs per Device', 1, 25, 1),
-                number('max_retained_packages_per_user', 'Max Retained Packages per User', 1, 500, 1),
-                number('max_retained_packages_per_device', 'Max Retained Packages per Device', 1, 250, 1),
-                toggle('allow_lan_downloads', 'Allow LAN Downloads'),
-                toggle('allow_remote_downloads', 'Allow Remote Downloads'),
-                toggle('allow_transcoded_downloads', 'Allow Transcoded Downloads'),
-                number('default_package_expiry_days', 'Default Package Expiry', 1, 365, 1, 'days'),
-                number('ready_package_retention_days', 'Ready Package Retention', 1, 90, 1, 'days'),
-                jsonField('user_overrides', 'User Overrides JSON', 'Map user UUIDs to partial download policy overrides.'),
-                jsonField('library_overrides', 'Library Overrides JSON', 'Map library UUIDs to partial download policy overrides.'),
             ],
         },
         {
@@ -314,40 +312,13 @@
             fields: [list('allowed_metrics_subnets', 'Allowed Metrics Subnets')],
         },
         {
-            key: 'subtitles',
-            title: m.routes_settings_system_page_subtitles(),
-            desc: m.routes_settings_system_page_global_subtitle_defaults_provider_credentials_ar(),
-            fields: [
-                toggle('ocr_enabled', 'Enable OCR'),
-                select('ocr_engine', 'OCR Engine', ['paddleocr', 'tesseract']),
-                number('ocr_confidence_threshold', 'OCR Confidence Threshold', 0, 1, 0.05),
-                toggle('voice_activity_analysis', 'Voice Activity Analysis'),
-                text('voice_activity_schedule', 'Voice Activity Schedule'),
-                select('default_subtitle_mode', 'Default Subtitle Mode', ['default', 'always', 'forced_only', 'none']),
-                text('default_subtitle_language', 'Default Subtitle Language'),
-                toggle('auto_fetch_enabled', 'Auto-fetch Subtitles'),
-                list('auto_fetch_languages', 'Auto-fetch Languages'),
-            ],
-        },
-        {
             key: 'integrations',
             title: m.routes_settings_system_page_integrations(),
-            desc: m.routes_settings_system_page_trakt_and_subtitle_provider_credentials(),
+            desc: m.routes_settings_system_page_trakt_integration_credentials(),
             fields: [
                 text('trakt.client_id', 'Trakt Client ID'),
                 password('trakt.client_secret', 'Trakt Client Secret'),
                 text('trakt.redirect_uri', 'Trakt Redirect URI'),
-                toggle('subtitle_providers.subdl.enabled', 'SubDL Enabled'),
-                password('subtitle_providers.subdl.api_key', 'SubDL API Key'),
-                toggle('subtitle_providers.subdl.auto_fetch_enabled', 'SubDL Auto-fetch'),
-                list('subtitle_providers.subdl.auto_fetch_languages', 'SubDL Languages'),
-                toggle('subtitle_providers.subdl.prefer_hearing_impaired', 'SubDL Prefer Hearing-impaired'),
-                toggle('subtitle_providers.opensubtitles.enabled', 'OpenSubtitles Enabled'),
-                password('subtitle_providers.opensubtitles.api_key', 'OpenSubtitles API Key'),
-                password('subtitle_providers.opensubtitles.api_token', 'OpenSubtitles API Token'),
-                toggle('subtitle_providers.opensubtitles.auto_fetch_enabled', 'OpenSubtitles Auto-fetch'),
-                list('subtitle_providers.opensubtitles.auto_fetch_languages', 'OpenSubtitles Languages'),
-                toggle('subtitle_providers.opensubtitles.prefer_hearing_impaired', 'OpenSubtitles Prefer Hearing-impaired'),
             ],
         },
         {
@@ -400,15 +371,33 @@
         },
     ];
 
+    const navigationSections = [
+        {
+            label: m.routes_admin_page_server(),
+            keys: ['auth', 'security', 'backup', 'storage', 'maintenance', 'resource_limits', 'cpu', 'network', 'logging'],
+        },
+        {
+            label: m.routes_admin_page_access_and_delivery(),
+            keys: ['quality', 'transcoding', 'notifications'],
+        },
+        {
+            label: m.routes_admin_page_library_management(),
+            keys: ['metadata'],
+        },
+        {
+            label: m.routes_admin_page_advanced(),
+            keys: ['integrations', 'analytics'],
+        },
+    ];
+
     let activeSchema = $derived(groupSchemas.find((group) => group.key === activeGroup) || groupSchemas[0]);
     let activeDirty = $derived(isGroupDirty(activeGroup));
 
-    onMount(async () => {
-        if (!canManage) {
-            loading = false;
-            return;
+    $effect(() => {
+        const group = $page.url.searchParams.get('group');
+        if (groupSchemas.some((item) => item.key === group)) {
+            activeGroup = group;
         }
-        await load();
     });
 
     function toggle(path, label, hint = '') {
@@ -435,10 +424,6 @@
         return { path, label, type: 'list', hint };
     }
 
-    function jsonField(path, label, hint = '') {
-        return { path, label, type: 'json', hint };
-    }
-
     async function load() {
         loading = true;
         loadError = null;
@@ -446,28 +431,15 @@
             const response = await getServerConfig();
             const next = {};
             for (const group of groupSchemas) {
-                next[group.key] = hydrateGroup(response.config?.[group.key] || {}, group);
+                next[group.key] = hydrateConfigGroup(response.config?.[group.key] || {}, group.fields);
             }
             config = next;
-            original = clone(next);
+            original = cloneConfig(next);
         } catch (err) {
             loadError = err.detail || err.message || m.routes_settings_system_page_failed_to_load_server_configuration();
         } finally {
             loading = false;
         }
-    }
-
-    function hydrateGroup(value, group) {
-        const next = clone(value && typeof value === 'object' && !Array.isArray(value) ? value : {});
-        for (const field of group.fields) {
-            const current = getPath(next, field.path);
-            if (field.type === 'list' && Array.isArray(current)) {
-                setPath(next, field.path, current.join(', '));
-            } else if (field.type === 'json') {
-                setPath(next, field.path, JSON.stringify(current ?? {}, null, 2));
-            }
-        }
-        return next;
     }
 
     function serializeGroup(groupKey) {
@@ -476,25 +448,13 @@
 
     function serializeGroupFrom(groupKey, source) {
         const group = groupSchemas.find((item) => item.key === groupKey);
-        const next = clone(source[groupKey] || {});
-        for (const field of group?.fields || []) {
-            const current = getPath(next, field.path);
-            if (field.type === 'list') {
-                setPath(next, field.path, parseList(current));
-            } else if (field.type === 'number') {
-                setPath(next, field.path, parseNumber(current, field));
-            } else if (field.type === 'json') {
-                setPath(next, field.path, parseJson(current));
-            } else if (field.type === 'text' || field.type === 'password') {
-                setPath(next, field.path, current === '' && field.nullable ? null : current);
-            }
-        }
-        return next;
+        return serializeConfigGroup(source[groupKey] || {}, group?.fields || []);
     }
 
     function isGroupDirty(groupKey) {
-        if (!config[groupKey] || !original[groupKey]) return false;
-        return JSON.stringify(serializeGroupFrom(groupKey, config)) !== JSON.stringify(serializeGroupFrom(groupKey, original));
+        const group = groupSchemas.find((item) => item.key === groupKey);
+        if (!group || !config[groupKey] || !original[groupKey]) return false;
+        return isConfigGroupDirty(config[groupKey], original[groupKey], group.fields);
     }
 
     async function saveActiveGroup() {
@@ -503,8 +463,8 @@
             const payload = serializeGroup(activeGroup);
             const response = await updateConfigGroup(activeGroup, payload);
             const group = activeSchema;
-            config[activeGroup] = hydrateGroup(response.value || payload, group);
-            original[activeGroup] = clone(config[activeGroup]);
+            config[activeGroup] = hydrateConfigGroup(response.value || payload, group.fields);
+            original[activeGroup] = cloneConfig(config[activeGroup]);
             notifications.success(`${group.title} settings saved`);
         } catch (err) {
             notifications.error(err.detail || err.message || m.routes_settings_system_page_failed_to_save_settings());
@@ -513,71 +473,26 @@
         }
     }
 
-    function clone(value) {
-        return JSON.parse(JSON.stringify(value ?? {}));
-    }
-
-    function getPath(root, path) {
-        return path.split('.').reduce((value, part) => value?.[part], root);
-    }
-
-    function setPath(root, path, value) {
-        const parts = path.split('.');
-        let target = root;
-        for (let index = 0; index < parts.length - 1; index += 1) {
-            const part = parts[index];
-            if (!target[part] || typeof target[part] !== 'object' || Array.isArray(target[part])) {
-                target[part] = {};
-            }
-            target = target[part];
-        }
-        target[parts[parts.length - 1]] = value;
-    }
-
     function fieldValue(field) {
-        const value = getPath(config[activeGroup] || {}, field.path);
+        const value = getConfigPath(config[activeGroup] || {}, field.path);
         if (field.type === 'boolean') return Boolean(value);
         if (value === undefined || value === null) return '';
         return value;
     }
 
     function updateField(field, value) {
-        const next = clone(config[activeGroup] || {});
-        setPath(next, field.path, value);
-        config[activeGroup] = next;
+        config[activeGroup] = updateConfigField(config[activeGroup] || {}, field, value);
     }
 
-    function parseList(value) {
-        if (Array.isArray(value)) return value;
-        return String(value || '')
-            .split(',')
-            .map((item) => item.trim())
-            .filter((item) => item.length > 0);
-    }
-
-    function parseNumber(value, field) {
-        if ((value === '' || value === null || value === undefined) && field.nullable) return null;
-        const parsed = Number(value);
-        if (Number.isNaN(parsed)) return field.nullable ? null : 0;
-        if (Number.isInteger(field.step)) return Math.trunc(parsed);
-        return parsed;
-    }
-
-    function parseJson(value) {
-        if (!value || String(value).trim() === '') return {};
-        try {
-            const parsed = JSON.parse(value);
-            return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
-        } catch {
-            return {};
-        }
+    function schemaFor(key) {
+        return groupSchemas.find((group) => group.key === key);
     }
 </script>
 
 <div class="system-settings">
     <div class="page-header">
         <div>
-            <a href="/settings" class="back-link">{m.routes_settings_system_page_settings()}</a>
+            <a href="/admin" class="back-link">{m.routes_admin_page_admin()}</a>
             <h1 class="page-title">{m.routes_settings_system_page_system_configuration()}</h1>
         </div>
         {#if !loading && canManage && !loadError}
@@ -599,14 +514,23 @@
     {:else}
         <div class="settings-layout">
             <nav class="group-nav" aria-label={m.routes_settings_system_page_configuration_groups()}>
-                {#each groupSchemas as group}
-                    <button
-                        class:active={activeGroup === group.key}
-                        onclick={() => (activeGroup = group.key)}
-                    >
-                        <span>{group.title}</span>
-                        {#if isGroupDirty(group.key)}<span class="dirty-dot"></span>{/if}
-                    </button>
+                {#each navigationSections as section}
+                    <div class="group-nav-section">
+                        <span class="group-nav-label">{section.label}</span>
+                        {#each section.keys as key}
+                            {@const group = schemaFor(key)}
+                            {#if group}
+                                <a
+                                    href={`/settings/system?group=${group.key}`}
+                                    class:active={activeGroup === group.key}
+                                    aria-current={activeGroup === group.key ? 'page' : undefined}
+                                >
+                                    <span>{group.title}</span>
+                                    {#if isGroupDirty(group.key)}<span class="dirty-dot"></span>{/if}
+                                </a>
+                            {/if}
+                        {/each}
+                    </div>
                 {/each}
             </nav>
 
@@ -622,76 +546,11 @@
                 </div>
 
                 <div class="card-body">
-                    <div class="form-grid">
-                        {#each activeSchema.fields as field}
-                            {#if field.type === 'boolean'}
-                                <label class="toggle-row">
-                                    <input
-                                        type="checkbox"
-                                        checked={fieldValue(field)}
-                                        onchange={(event) => updateField(field, event.currentTarget.checked)}
-                                    />
-                                    <span class="toggle-text">
-                                        <span class="toggle-title">{field.label}</span>
-                                        {#if field.hint}<span class="field-hint">{field.hint}</span>{/if}
-                                    </span>
-                                </label>
-                            {:else}
-                                <label
-                                    class="field"
-                                    class:field-wide={field.type === 'list' || field.type === 'password' || field.type === 'json'}
-                                >
-                                    <span class="field-label">
-                                        {field.label}
-                                        {#if field.unit}<span class="field-unit">({field.unit})</span>{/if}
-                                    </span>
-                                    {#if field.type === 'select'}
-                                        <select
-                                            value={fieldValue(field)}
-                                            onchange={(event) => updateField(field, event.currentTarget.value)}
-                                        >
-                                            {#each field.options as option}
-                                                <option value={option}>{option}</option>
-                                            {/each}
-                                        </select>
-                                    {:else if field.type === 'number'}
-                                        <div class="number-input">
-                                            <input
-                                                type="range"
-                                                min={field.min}
-                                                max={field.max}
-                                                step={field.step}
-                                                value={fieldValue(field) === '' ? field.min : fieldValue(field)}
-                                                oninput={(event) => updateField(field, event.currentTarget.value)}
-                                            />
-                                            <input
-                                                type="number"
-                                                min={field.min}
-                                                max={field.max}
-                                                step={field.step}
-                                                value={fieldValue(field)}
-                                                oninput={(event) => updateField(field, event.currentTarget.value)}
-                                                placeholder={field.nullable ? 'default' : ''}
-                                            />
-                                        </div>
-                                    {:else if field.type === 'json'}
-                                        <textarea
-                                            value={fieldValue(field)}
-                                            oninput={(event) => updateField(field, event.currentTarget.value)}
-                                            rows="6"
-                                        ></textarea>
-                                    {:else}
-                                        <input
-                                            type={field.type === 'password' ? 'password' : 'text'}
-                                            value={fieldValue(field)}
-                                            oninput={(event) => updateField(field, event.currentTarget.value)}
-                                        />
-                                    {/if}
-                                    {#if field.hint}<span class="field-hint">{field.hint}</span>{/if}
-                                </label>
-                            {/if}
-                        {/each}
-                    </div>
+                    <ConfigGroupForm
+                        fields={activeSchema.fields}
+                        valueFor={fieldValue}
+                        onchange={updateField}
+                    />
                 </div>
             </section>
         </div>
@@ -735,12 +594,27 @@
     .group-nav {
         display: flex;
         flex-direction: column;
-        gap: 0.25rem;
+        gap: 1rem;
         position: sticky;
         top: 1rem;
     }
 
-    .group-nav button {
+    .group-nav-section {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .group-nav-label {
+        padding: 0 0.75rem;
+        font-size: 0.625rem;
+        font-weight: 600;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--color-text-muted);
+    }
+
+    .group-nav a {
         display: flex;
         align-items: center;
         justify-content: space-between;
@@ -754,8 +628,8 @@
         text-align: start;
     }
 
-    .group-nav button:hover,
-    .group-nav button.active {
+    .group-nav a:hover,
+    .group-nav a.active {
         color: var(--color-text-primary);
         background-color: var(--color-bg-surface);
         border-color: var(--color-border-subtle);
@@ -799,104 +673,6 @@
 
     .card-body {
         padding: 1.25rem;
-    }
-
-    .form-grid {
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 1rem;
-    }
-
-    .field,
-    .toggle-row {
-        display: flex;
-        flex-direction: column;
-        gap: 0.25rem;
-        min-width: 0;
-    }
-
-    .toggle-row {
-        flex-direction: row;
-        align-items: flex-start;
-        gap: 0.625rem;
-        padding: 0.625rem 0;
-    }
-
-    .toggle-row input[type='checkbox'] {
-        margin-top: 0.1875rem;
-        width: auto;
-    }
-
-    .toggle-text {
-        display: flex;
-        flex-direction: column;
-        gap: 0.125rem;
-        min-width: 0;
-    }
-
-    .toggle-title {
-        font-size: 0.8125rem;
-        font-weight: 500;
-        color: var(--color-text-primary);
-    }
-
-    .field-wide {
-        grid-column: 1 / -1;
-    }
-
-    .field-label {
-        font-size: 0.75rem;
-        font-weight: 500;
-        color: var(--color-text-secondary);
-    }
-
-    .field-unit {
-        color: var(--color-text-muted);
-        margin-inline-start: 0.25rem;
-    }
-
-    .field-hint {
-        font-size: 0.6875rem;
-        color: var(--color-text-muted);
-    }
-
-    input,
-    select,
-    textarea {
-        width: 100%;
-        min-width: 0;
-        padding: 0.5rem 0.625rem;
-        background-color: var(--color-bg-elevated);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
-        color: var(--color-text-primary);
-        font-size: 0.8125rem;
-    }
-
-    textarea {
-        resize: vertical;
-        font-family: var(--font-mono, monospace);
-        line-height: 1.4;
-    }
-
-    input[type='range'] {
-        padding: 0;
-        border: none;
-        background-color: transparent;
-    }
-
-    input:focus,
-    select:focus,
-    textarea:focus {
-        outline: none;
-        border-color: var(--color-accent);
-    }
-
-    .number-input {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) 110px;
-        gap: 0.75rem;
-        align-items: center;
     }
 
     .status-badge {
@@ -981,8 +757,15 @@
 
         .group-nav {
             position: static;
+        }
+
+        .group-nav-section {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+        }
+
+        .group-nav-label {
+            grid-column: 1 / -1;
         }
     }
 
@@ -993,9 +776,5 @@
             align-items: flex-start;
         }
 
-        .form-grid,
-        .number-input {
-            grid-template-columns: 1fr;
-        }
     }
 </style>

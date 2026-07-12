@@ -405,7 +405,7 @@
 <div class="overlays-page">
     <div class="page-header">
         <div>
-            <a href="/settings" class="back-link">{m.routes_settings_overlays_page_settings()}</a>
+            <a href="/admin" class="back-link">{m.routes_admin_page_admin()}</a>
             <h1 class="page-title">{m.routes_settings_overlays_page_overlays()}</h1>
             <p class="page-subtitle">{m.routes_settings_overlays_page_artwork_overlay_compositing_engine_and_poster_ma()}</p>
         </div>

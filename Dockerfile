@@ -26,6 +26,7 @@ RUN case "$TARGETARCH" in amd64|arm64) ;; *) echo "Unsupported TARGETARCH: $TARG
         pkgconf \
         protobuf-dev
 COPY Cargo.toml Cargo.lock ./
+COPY vendor ./vendor
 COPY crates ./crates
 COPY server ./server
 COPY clients/desktop/src-tauri ./clients/desktop/src-tauri

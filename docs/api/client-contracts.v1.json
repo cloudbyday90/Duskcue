@@ -94,6 +94,35 @@
       "phase16a_priority": "required",
       "routes": [
         {
+          "method": "GET",
+          "path": "/api/v1/setup/status",
+          "auth": "none",
+          "request": null,
+          "response": "SetupStatusResponse",
+          "web_helpers": [
+            "getSetupStatus"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "SetupStatusResponse",
+              "cache_profile": "no_store_read",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
           "method": "POST",
           "path": "/api/v1/setup",
           "auth": "none",
@@ -3536,6 +3565,7 @@
       "private_json": "Authenticated JSON; clients must not public-cache and should revalidate on foreground/resume unless a route declares ETag semantics",
       "private_etag_json": "Authenticated JSON with private ETag/If-None-Match support where route implementation exposes it",
       "private_binary": "Authenticated binary or media bytes; clients must not persist signed URLs or bearer-bearing request metadata",
+      "no_store_read": "Unauthenticated or authenticated read response that exposes setup/auth state and must not be cached",
       "no_store_action": "Mutation/action response; clients must not cache"
     },
     "pagination_profiles": {

@@ -189,10 +189,16 @@ export const userRole = derived(auth, ($auth) => $auth.user?.role || null);
 
 export const userCapabilities = derived(auth, ($auth) => $auth.user?.capabilities || []);
 
+export function userHasCapability(user, capability) {
+    if (!user) return false;
+    if (user.role === 'owner') return true;
+    return (user.capabilities || []).includes(capability);
+}
+
+export function userHasAnyCapability(user, capabilities) {
+    return capabilities.some((capability) => userHasCapability(user, capability));
+}
+
 export function hasCapability(capability) {
-    return derived(auth, ($auth) => {
-        if (!$auth.user) return false;
-        if ($auth.user.role === 'owner') return true;
-        return ($auth.user.capabilities || []).includes(capability);
-    });
+    return derived(auth, ($auth) => userHasCapability($auth.user, capability));
 }

@@ -28,7 +28,11 @@ use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
-        .route("/api/v1/setup", post(handlers::setup))
+        .route(
+            "/api/v1/setup",
+            get(handlers::setup_status).post(handlers::setup),
+        )
+        .route("/api/v1/setup/status", get(handlers::setup_status))
         .route("/api/v1/auth/invite", post(handlers::auth_invite))
         .route("/api/v1/auth/login", post(handlers::auth_login))
         .route("/api/v1/auth/logout", post(handlers::auth_logout))
