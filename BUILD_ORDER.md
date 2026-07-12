@@ -4405,7 +4405,10 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
    - Added nullable `storyboards.artifact_id` so legacy rows retain their existing per-file layout until regeneration.
    - Generation now holds a transaction-scoped PostgreSQL advisory lock per media file, writes a unique UUIDv7 artifact directory, and atomically switches the row pointer only after FFmpeg output and persistence succeed.
    - Manual contention returns `SYS_002`; scheduled contention is skipped; disposable-database migration verification proves lock exclusivity and transaction-end release.
-3. Deliver protected VTT and sprite assets through bearer-authenticated client loaders without credentials in URLs.
+3. ~~Deliver protected VTT and sprite assets through bearer-authenticated client loaders without credentials in URLs~~ **DONE — `dbcf0ce`**
+   - Added text/blob response support to the shared API client, preserving its bearer header and selected server-origin behavior.
+   - Seek previews lazily fetch protected VTT and WebP routes, then render only bounded `blob:` object URLs; abort and revocation prevent stale requests and retained image memory.
+   - Parsed VTT references supply sprite filenames only; credential-bearing or server-relative URLs are never used as CSS image URLs.
 4. Correct null-hash freshness behavior, validate Storyboards configuration, and regenerate artifacts when the normalized generation configuration changes.
 5. Honor configured cache storage, reconcile orphaned artifacts, and make item-level generation/deletion semantics explicit for every media-file version.
 6. Return scheduled generation failures to the scheduler, validate task configuration, add Storyboards fixtures/integration coverage, and finish seek-preview accessibility/performance hardening.
