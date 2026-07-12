@@ -114,6 +114,21 @@
         </a>
     </section>
 
+    <section class="settings-section" aria-labelledby="connections-heading">
+        <h2 id="connections-heading" class="section-title">Connections</h2>
+        <a href="/settings/trakt" class="settings-link">
+            <div class="link-icon" aria-hidden="true">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M8 12a4 4 0 0 1 4-4h5a3 3 0 0 1 0 6h-1M16 12a4 4 0 0 1-4 4H7a3 3 0 0 1 0-6h1" />
+                </svg>
+            </div>
+            <div>
+                <span class="link-label">Trakt</span>
+                <span class="link-description">Link your Trakt account and manage your sync preferences.</span>
+            </div>
+        </a>
+    </section>
+
     {#if canAccessAdmin}
         <section class="settings-section" aria-labelledby="admin-heading">
             <h2 id="admin-heading" class="section-title">{m.routes_settings_page_admin()}</h2>

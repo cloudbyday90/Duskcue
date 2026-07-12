@@ -16,3 +16,52 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { del, get, post, put } from './core.js';
+
+export async function getTraktAccount() {
+    return get('/trakt/account');
+}
+
+export async function startTraktLink() {
+    return post('/trakt/account/link');
+}
+
+export async function pollTraktLink(deviceCode) {
+    return post('/trakt/account/poll', { device_code: deviceCode });
+}
+
+export async function unlinkTraktAccount() {
+    return del('/trakt/account');
+}
+
+export async function getTraktSyncSettings() {
+    return get('/trakt/settings');
+}
+
+export async function updateTraktSyncSettings(settings) {
+    return put('/trakt/settings', settings);
+}
+
+export async function triggerTraktSync() {
+    return post('/trakt/sync');
+}
+
+export async function getTraktSyncStatus() {
+    return get('/trakt/sync/status');
+}
+
+export async function listTraktHistory(params = {}) {
+    return get('/trakt/history', params);
+}
+
+export async function listTraktRatings(params = {}) {
+    return get('/trakt/ratings', params);
+}
+
+export async function getTraktIntegrationSettings() {
+    return get('/settings/trakt');
+}
+
+export async function updateTraktIntegrationSettings(settings) {
+    return put('/settings/trakt', settings);
+}

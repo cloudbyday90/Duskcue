@@ -32,3 +32,4 @@ export * from './notifications.js';
 export * from './backups.js';
 export * from './migrations.js';
 export * from './tv.js';
+export * from './trakt.js';

@@ -297,7 +297,8 @@ project/
 │   │   │   │   ├── play/
 │   │   │   │   │   └── [id]/+page.svelte          # Full-screen player
 │   │   │   │   ├── settings/
-│   │   │   │   │   ├── +page.svelte           # Server overview
+│   │   │   │   │   ├── +page.svelte           # Personal preferences and connections
+│   │   │   │   │   ├── trakt/+page.svelte     # Personal Trakt linking and sync preferences
 │   │   │   │   │   ├── users/+page.svelte
 │   │   │   │   │   ├── libraries/+page.svelte
 │   │   │   │   │   ├── backups/+page.svelte
@@ -308,6 +309,7 @@ project/
 │   │   │   │   │   ├── migration/+page.svelte  # Migration wizard
 │   │   │   │   │   ├── security/+page.svelte
 │   │   │   │   │   └── storage/+page.svelte
+│   │   │   │   ├── admin/trakt/+page.svelte   # Operator Trakt application credentials
 │   │   │   │   ├── dashboard/+page.svelte
 │   │   │   │   ├── analytics/+page.svelte
 │   │   │   │   ├── search/+page.svelte
@@ -323,7 +325,7 @@ project/
 │   │   │   │   │   ├── media.js
 │   │   │   │   │   ├── playback.js
 │   │   │   │   │   ├── analytics.js
-│   │   │   │   │   ├── trakt.js
+│   │   │   │   │   ├── trakt.js   # User sync/account plus admin credential API helpers
 │   │   │   │   │   ├── settings.js
 │   │   │   │   │   ├── search.js
 │   │   │   │   │   ├── subtitles.js

@@ -312,16 +312,6 @@
             fields: [list('allowed_metrics_subnets', 'Allowed Metrics Subnets')],
         },
         {
-            key: 'integrations',
-            title: m.routes_settings_system_page_integrations(),
-            desc: m.routes_settings_system_page_trakt_integration_credentials(),
-            fields: [
-                text('trakt.client_id', 'Trakt Client ID'),
-                password('trakt.client_secret', 'Trakt Client Secret'),
-                text('trakt.redirect_uri', 'Trakt Redirect URI'),
-            ],
-        },
-        {
             key: 'analytics',
             title: m.routes_settings_system_page_analytics(),
             desc: m.routes_settings_system_page_geoip_and_impossible_travel_trust_event_threshol(),
@@ -386,7 +376,7 @@
         },
         {
             label: m.routes_admin_page_advanced(),
-            keys: ['integrations', 'analytics'],
+            keys: ['analytics'],
         },
     ];
 

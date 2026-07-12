@@ -2428,8 +2428,11 @@ The original Phase 11 work delivered the Trakt domain and worker. The audit foun
    - ~~Refresh at the five-minute expiry boundary and persist the rotated pair together~~
    - ~~Permit non-Trakt external-ID state, retain failed push rows, and persist safe sync outcomes~~
    - ~~Return global worker failures to the scheduler and expose completed manual-sync summaries~~
-2. Build dedicated admin credentials and personal account/sync UI, including the typed web client contract. **NEXT**
-3. Implement or remove unsupported watchlist, rating-push, and collection-push settings; add deliberate request pacing. **PENDING**
+2. ~~Build dedicated admin credentials and personal account/sync UI, including the typed web client contract.~~ **DONE**
+   - ~~Make `/admin/trakt` the canonical editor for masked operator credentials and redirect the retired System integrations link~~
+   - ~~Make `/settings/trakt` the user-scoped device-code, sync, and status surface without exposing unsupported watchlist controls~~
+   - ~~Document all twelve server routes and named web helpers in `client-contracts.v1.json`~~
+3. Implement or remove unsupported watchlist, rating-push, and collection-push settings; add deliberate request pacing. **NEXT**
 4. Replace the process-local lock if multi-instance deployment is supported and add the documented Trakt metrics. **PENDING**
 
 **What was built for Task 9:**
@@ -2682,7 +2685,7 @@ The original Phase 11 work delivered the Trakt domain and worker. The audit foun
 
 **Verification:** Play sessions generate analytics data visible in dashboard. Trakt-linked users sync watch state. Impossible travel alerts appear in admin dashboard for suspicious logins.
 
-**Phase 11 status:** The original 9 tasks are complete. Post-Phase 11 Trakt follow-up is in progress; Task 1 is complete and Task 2 is next.
+**Phase 11 status:** The original 9 tasks are complete. Post-Phase 11 Trakt follow-up is in progress; Tasks 1–2 are complete and Task 3 is next.
 
 ---
 

@@ -103,6 +103,13 @@
             title: m.routes_admin_page_advanced(),
             items: [
                 {
+                    href: '/admin/trakt',
+                    label: 'Trakt Integration',
+                    desc: 'Configure the server credentials used for personal Trakt account linking.',
+                    capability: 'can_manage_server',
+                    icon: 'M4 4h16v16H4zM8 8h8M8 12h5',
+                },
+                {
                     href: '/admin/migration',
                     label: m.routes_settings_page_migration(),
                     desc: m.routes_settings_page_import_from_other_platforms(),

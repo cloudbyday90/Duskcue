@@ -129,6 +129,12 @@ The web client uses shared Admin primitives for page framing, headers, cards, as
 - Deferred generic page, card, metric, async-state, and table wrappers: the reviewed operational pages have materially different state, actions, and evidence layouts, so a generic layer would currently obscure behavior instead of simplifying it.
 - Updated the Admin hub and page back actions to keep authoring and one-time migration flows within the Admin hierarchy.
 
+### July 12, 2026 — Trakt ownership and personal connection
+
+- Made `/admin/trakt` the sole editor for operator-owned Trakt application credentials. It exposes only the client ID, a masked/replaceable client secret, and redirect URI; the generic System configuration editor no longer duplicates those fields.
+- Added `/settings/trakt` as the personal connection surface. It drives the OAuth device-code flow, presents only implemented sync categories, supports an inline manual sync, and shows the persisted safe sync status without exposing token material.
+- Added a permanent redirect from the retired `?group=integrations` System deep link to `/admin/trakt`, an Admin hub card for credentials, and a personal Settings connection link.
+
 ## Sources
 
 - Svelte: [{#snippet ...}](https://svelte.dev/docs/svelte/snippet)

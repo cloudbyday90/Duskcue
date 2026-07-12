@@ -25,4 +25,7 @@ export function load({ url }) {
     if (url.searchParams.get('group') === 'downloads') {
         throw redirect(308, '/settings/downloads');
     }
+    if (url.searchParams.get('group') === 'integrations') {
+        throw redirect(308, '/admin/trakt');
+    }
 }

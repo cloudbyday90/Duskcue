@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-07-01",
+  "updated": "2026-07-12",
   "base_origin": "http(s)://<server>:48027",
   "base_api_path": "/api/v1",
   "source_of_truth": {
@@ -3356,6 +3356,160 @@
                 "INTERNAL"
               ]
             }
+          }
+        }
+      ],
+      "phase16d_priority": "required"
+    },
+    {
+      "name": "trakt",
+      "phase16a_priority": "required",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/v1/trakt/account",
+          "auth": "user",
+          "response": "TraktAccountResponse",
+          "web_helpers": ["getTraktAccount"],
+          "contract": {
+            "success": { "response_schema": "TraktAccountResponse", "cache_profile": "private_json", "pagination": "none" },
+            "validation": { "path_params": [], "query_params": [], "request_schema": null },
+            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "TRAKT_001", "RATE_LIMITED", "INTERNAL"] }
+          }
+        },
+        {
+          "method": "DELETE",
+          "path": "/api/v1/trakt/account",
+          "auth": "user",
+          "response": "TraktUnlinkResponse",
+          "web_helpers": ["unlinkTraktAccount"],
+          "contract": {
+            "success": { "response_schema": "TraktUnlinkResponse", "cache_profile": "no_store_action", "pagination": "none" },
+            "validation": { "path_params": [], "query_params": [], "request_schema": null },
+            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "RATE_LIMITED", "INTERNAL"] }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/trakt/account/link",
+          "auth": "user",
+          "response": "DeviceCodeResponse",
+          "web_helpers": ["startTraktLink"],
+          "contract": {
+            "success": { "response_schema": "DeviceCodeResponse", "cache_profile": "no_store_action", "pagination": "none" },
+            "validation": { "path_params": [], "query_params": [], "request_schema": null },
+            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "RATE_LIMITED", "INTERNAL"] }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/trakt/account/poll",
+          "auth": "user",
+          "request": "PollDeviceCodeRequest",
+          "response": "TraktAccountResponse",
+          "web_helpers": ["pollTraktLink"],
+          "contract": {
+            "success": { "response_schema": "TraktAccountResponse", "cache_profile": "no_store_action", "pagination": "none" },
+            "validation": { "path_params": [], "query_params": [], "request_schema": "PollDeviceCodeRequest" },
+            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "VALID_001", "RATE_LIMITED", "TRAKT_003", "INTERNAL"] }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/trakt/settings",
+          "auth": "user",
+          "response": "SyncSettingsResponse",
+          "web_helpers": ["getTraktSyncSettings"],
+          "contract": {
+            "success": { "response_schema": "SyncSettingsResponse", "cache_profile": "private_json", "pagination": "none" },
+            "validation": { "path_params": [], "query_params": [], "request_schema": null },
+            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "RATE_LIMITED", "INTERNAL"] }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/trakt/settings",
+          "auth": "user",
+          "request": "UpdateSyncSettingsRequest",
+          "response": "SyncSettingsResponse",
+          "web_helpers": ["updateTraktSyncSettings"],
+          "contract": {
+            "success": { "response_schema": "SyncSettingsResponse", "cache_profile": "no_store_action", "pagination": "none" },
+            "validation": { "path_params": [], "query_params": [], "request_schema": "UpdateSyncSettingsRequest" },
+            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "TRAKT_001", "VALID_001", "RATE_LIMITED", "INTERNAL"] }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/trakt/sync",
+          "auth": "user",
+          "response": "SyncTriggerResponse",
+          "web_helpers": ["triggerTraktSync"],
+          "contract": {
+            "success": { "response_schema": "SyncTriggerResponse", "cache_profile": "no_store_action", "pagination": "none" },
+            "validation": { "path_params": [], "query_params": [], "request_schema": null },
+            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "TRAKT_001", "TRAKT_002", "TRAKT_003", "TRAKT_004", "TRAKT_005", "TRAKT_006", "TRAKT_007", "RATE_LIMITED", "INTERNAL"] }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/trakt/sync/status",
+          "auth": "user",
+          "response": "SyncStatusResponse",
+          "web_helpers": ["getTraktSyncStatus"],
+          "contract": {
+            "success": { "response_schema": "SyncStatusResponse", "cache_profile": "private_json", "pagination": "none" },
+            "validation": { "path_params": [], "query_params": [], "request_schema": null },
+            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "TRAKT_001", "RATE_LIMITED", "INTERNAL"] }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/trakt/history",
+          "auth": "user",
+          "response": "TraktHistoryResponse",
+          "web_helpers": ["listTraktHistory"],
+          "contract": {
+            "success": { "response_schema": "TraktHistoryResponse", "cache_profile": "private_json", "pagination": "offset" },
+            "validation": { "path_params": [], "query_params": [{ "name": "page", "required": false }, { "name": "page_size", "required": false }], "request_schema": null },
+            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "RATE_LIMITED", "INTERNAL"] }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/trakt/ratings",
+          "auth": "user",
+          "response": "TraktHistoryResponse",
+          "web_helpers": ["listTraktRatings"],
+          "contract": {
+            "success": { "response_schema": "TraktHistoryResponse", "cache_profile": "private_json", "pagination": "offset" },
+            "validation": { "path_params": [], "query_params": [{ "name": "page", "required": false }, { "name": "page_size", "required": false }], "request_schema": null },
+            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "RATE_LIMITED", "INTERNAL"] }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/settings/trakt",
+          "auth": "admin",
+          "response": "TraktSettingsResponse",
+          "web_helpers": ["getTraktIntegrationSettings"],
+          "contract": {
+            "success": { "response_schema": "TraktSettingsResponse", "cache_profile": "private_json", "pagination": "none" },
+            "validation": { "path_params": [], "query_params": [], "request_schema": null },
+            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "AUTH_007", "RATE_LIMITED", "INTERNAL"] }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/settings/trakt",
+          "auth": "admin",
+          "request": "UpdateTraktSettingsRequest",
+          "response": "TraktSettingsResponse",
+          "web_helpers": ["updateTraktIntegrationSettings"],
+          "contract": {
+            "success": { "response_schema": "TraktSettingsResponse", "cache_profile": "no_store_action", "pagination": "none" },
+            "validation": { "path_params": [], "query_params": [], "request_schema": "UpdateTraktSettingsRequest" },
+            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "AUTH_007", "VALID_001", "RATE_LIMITED", "INTERNAL"] }
           }
         }
       ],

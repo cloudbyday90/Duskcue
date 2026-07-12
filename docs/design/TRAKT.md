@@ -44,6 +44,13 @@ All routes are under `/api/v1/trakt/*` per [API_CONVENTIONS.md](API_CONVENTIONS.
 | `GET` | `/api/v1/trakt/history` | List items in `trakt_sync_state` with pagination (offset) |
 | `GET` | `/api/v1/trakt/ratings` | List rated items from `trakt_sync_state` where `rating IS NOT NULL` |
 
+### Operator Configuration
+
+| Method | Route | Purpose |
+|---|---|---|
+| `GET` | `/api/v1/settings/trakt` | Get masked Trakt application credentials (server administrators only) |
+| `PUT` | `/api/v1/settings/trakt` | Update the client ID, client secret, or redirect URI (server administrators only) |
+
 ## OAuth Device Code Flow
 
 The device code flow (RFC 8628) is the primary linking method for Duskcue because the server runs headless and the user authenticates via a separate device (phone/laptop browser). This is the same pattern used by the auth domain's device linking ([AUTH.md](AUTH.md)).
@@ -227,6 +234,7 @@ The worker iterates all `trakt_accounts` where `sync_enabled = true`, performing
 | Watchlist sync and ratings/collection push | ⏳ Not implemented | Trakt follow-up |
 | Sync worker (scheduled task iteration and global failure result) | ✅ Implemented | Phase 11 Task 6 + reliability follow-up |
 | Cross-instance sync lock, explicit pacing, and Trakt metrics | ⏳ Not implemented | Trakt follow-up |
+| Dedicated admin credentials and personal Trakt settings surfaces | ✅ Implemented | Trakt follow-up |
 
 ### Reliability Follow-up Implementation Notes
 
@@ -235,6 +243,7 @@ The worker iterates all `trakt_accounts` where `sync_enabled = true`, performing
 - **Fallback identifier persistence** — `trakt_sync_state.trakt_id` is nullable. This preserves sync state for media matched and submitted with TMDB, IMDb, or TVDB identifiers when Trakt's numeric identifier is unavailable.
 - **Durable sync outcomes** — successful runs clear `last_sync_error` and write both timestamps; failed runs write a safe error code and attempt timestamp. The user-facing account and status responses expose these values without exposing tokens.
 - **Honest task outcomes** — global Trakt failures now return an error to the scheduler rather than being recorded as a successful task. A manual sync response is completed synchronously and includes its summary.
+- **Canonical web ownership** — `/admin/trakt` is the only operator credential editor; it keeps the stored secret masked unless replaced. `/settings/trakt` is user-scoped and drives device-code linking, supported category controls, manual sync, and status. The retired System integrations deep link redirects to the Admin surface.
 
 ### Task 4 — OAuth Implementation Notes
 
