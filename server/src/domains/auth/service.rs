@@ -137,7 +137,11 @@ pub async fn create_session(
     user_id: Uuid,
     device_info: &DeviceInfo,
 ) -> Result<(String, UserSession), AuthError> {
-    let active_profile_id = ensure_default_profile(pool, user_id).await?;
+    let default_profile_id = ensure_default_profile(pool, user_id).await?;
+    let active_profile_id =
+        remembered_profile_for_device(pool, user_id, device_info.device_id.as_deref())
+            .await?
+            .unwrap_or(default_profile_id);
     let token = generate_session_token();
     let token_hash = sha256_hex(&token);
 
@@ -257,25 +261,55 @@ pub async fn revoke_session(
     session_id: Uuid,
     user_id: Uuid,
 ) -> Result<(), AuthError> {
-    let result = sqlx::query("DELETE FROM user_sessions WHERE id = $1 AND user_id = $2")
+    let mut transaction = pool.begin().await?;
+    let row = sqlx::query(
+        "SELECT device_id FROM user_sessions WHERE id = $1 AND user_id = $2 FOR UPDATE",
+    )
+    .bind(session_id)
+    .bind(user_id)
+    .fetch_optional(&mut *transaction)
+    .await?;
+
+    let Some(row) = row else {
+        return Err(AuthError::SessionExpired);
+    };
+    let device_id: Option<String> = row.try_get("device_id")?;
+
+    sqlx::query("DELETE FROM user_sessions WHERE id = $1 AND user_id = $2")
         .bind(session_id)
         .bind(user_id)
-        .execute(pool)
+        .execute(&mut *transaction)
         .await?;
 
-    if result.rows_affected() == 0 {
-        return Err(AuthError::SessionExpired);
+    if let Some(device_id) = device_id
+        && let Some(device_id) =
+            crate::domains::profiles::service::normalized_device_id(Some(&device_id))
+    {
+        sqlx::query(
+            "DELETE FROM profile_device_preferences WHERE owner_user_id = $1 AND device_id = $2",
+        )
+        .bind(user_id)
+        .bind(device_id)
+        .execute(&mut *transaction)
+        .await?;
     }
 
+    transaction.commit().await?;
     Ok(())
 }
 
 pub async fn revoke_all_sessions(pool: &sqlx::PgPool, user_id: Uuid) -> Result<u64, AuthError> {
+    let mut transaction = pool.begin().await?;
+    sqlx::query("DELETE FROM profile_device_preferences WHERE owner_user_id = $1")
+        .bind(user_id)
+        .execute(&mut *transaction)
+        .await?;
     let result = sqlx::query("DELETE FROM user_sessions WHERE user_id = $1")
         .bind(user_id)
-        .execute(pool)
+        .execute(&mut *transaction)
         .await?;
 
+    transaction.commit().await?;
     Ok(result.rows_affected())
 }
 
@@ -496,6 +530,26 @@ fn row_to_session(row: &sqlx::postgres::PgRow) -> UserSession {
         expires_at: row.get("expires_at"),
         last_active_at: row.get("last_active_at"),
     }
+}
+
+async fn remembered_profile_for_device(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    device_id: Option<&str>,
+) -> Result<Option<Uuid>, AuthError> {
+    let Some(device_id) = crate::domains::profiles::service::normalized_device_id(device_id) else {
+        return Ok(None);
+    };
+
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        "SELECT p.id FROM profile_device_preferences preference \
+         JOIN user_profiles p ON p.id = preference.profile_id AND p.owner_user_id = preference.owner_user_id \
+         WHERE preference.owner_user_id = $1 AND preference.device_id = $2",
+    )
+    .bind(user_id)
+    .bind(device_id)
+    .fetch_optional(pool)
+    .await?)
 }
 
 async fn ensure_default_profile(pool: &sqlx::PgPool, user_id: Uuid) -> Result<Uuid, AuthError> {

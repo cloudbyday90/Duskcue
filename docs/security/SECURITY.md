@@ -461,6 +461,10 @@ Phase 16a server selection stores only non-secret server origins and labels in t
 
 Phase 16a auth/session clients separate non-secret connection state from bearer-token state. Desktop stores bearer tokens through the OS credential store via the Rust `keyring` crate and keys entries by normalized server origin. Mobile stores the session token, cached user summary, and stable client device identifier through `flutter_secure_storage`, backed by Android Keystore/iOS Keychain. When the API reports `401`, mobile clears the bearer token and cached user before returning to the auth flow.
 
+### Remembered Household Profiles
+
+A remembered household profile is a non-secret, server-side preference keyed by the authenticated account and a stable device ID. It can select the active profile for a newly authenticated session, but it never authenticates a request, extends a session, or replaces a password, passkey, bearer token, cookie, or future parental PIN. The server verifies the profile/account relationship on every lookup and removes the preference on explicit sign-out, remote session revocation, or sign-out everywhere. Browser clients may persist only the opaque device ID needed for this preference; bearer tokens and parental secrets remain prohibited from browser storage. This preference does not lock a Kids profile; a parental unlock flow remains a separate security control.
+
 ---
 
 ## CORS Configuration

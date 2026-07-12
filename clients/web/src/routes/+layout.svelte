@@ -29,6 +29,10 @@
     let mobileMenuOpen = $state(false);
     let profiles = $state([]);
     let switchingProfileId = $state(null);
+    let rememberedProfileId = $state(null);
+    let deviceCanRememberProfile = $state(false);
+    let rememberProfileOnDevice = $state(false);
+    let profileLoadUserId = $state(null);
     let activeProfile = $derived(profiles.find((profile) => profile.id === $currentUser?.active_profile_id));
     let canAccessAdmin = $derived(
         userHasAnyCapability($currentUser, ['can_manage_server', 'can_manage_users', 'can_manage_libraries']),
@@ -43,7 +47,6 @@
 
     onMount(() => {
         auth.init();
-        loadProfiles();
         startDesktopBridge(goto);
         getSetupStatus()
             .then((status) => {
@@ -76,6 +79,20 @@
     });
 
     $effect(() => {
+        const userId = $currentUser?.id;
+        if ($isAuthenticated && userId && profileLoadUserId !== userId) {
+            profileLoadUserId = userId;
+            loadProfiles();
+        } else if (!$isAuthenticated) {
+            profiles = [];
+            rememberedProfileId = null;
+            deviceCanRememberProfile = false;
+            rememberProfileOnDevice = false;
+            profileLoadUserId = null;
+        }
+    });
+
+    $effect(() => {
         if (!authChecked) return;
         if ($isAuthenticated) {
             events.connect();
@@ -93,8 +110,14 @@
         try {
             const response = await listProfiles();
             profiles = response?.items || [];
+            rememberedProfileId = response?.remembered_profile_id || null;
+            deviceCanRememberProfile = !!response?.device_can_remember_profile;
+            rememberProfileOnDevice = rememberedProfileId === $currentUser?.active_profile_id;
         } catch {
             profiles = [];
+            rememberedProfileId = null;
+            deviceCanRememberProfile = false;
+            rememberProfileOnDevice = false;
         }
     }
 
@@ -106,8 +129,31 @@
             const activeProfile = response?.active_profile || profile;
             auth.setUser({ ...$currentUser, active_profile_id: activeProfile.id });
             profiles = profiles.map((item) => item.id === activeProfile.id ? activeProfile : item);
+            rememberedProfileId = response?.remembered_profile_id || null;
+            deviceCanRememberProfile = !!response?.device_can_remember_profile;
+            rememberProfileOnDevice = rememberedProfileId === activeProfile.id;
             closeUserMenu();
             goto('/dashboard');
+        } finally {
+            switchingProfileId = null;
+        }
+    }
+
+    async function updateRememberedProfile() {
+        const profile = activeProfile;
+        if (!profile || switchingProfileId) return;
+
+        switchingProfileId = profile.id;
+        try {
+            const response = await switchProfile(profile.id, {
+                remember_on_device: rememberProfileOnDevice,
+            });
+            rememberedProfileId = response?.remembered_profile_id || null;
+            deviceCanRememberProfile = !!response?.device_can_remember_profile;
+            rememberProfileOnDevice = rememberedProfileId === profile.id;
+        } catch (err) {
+            rememberProfileOnDevice = rememberedProfileId === profile.id;
+            notifications.error(err.detail || err.message || 'Could not update this device preference');
         } finally {
             switchingProfileId = null;
         }
@@ -204,6 +250,17 @@
                                             </button>
                                         {/each}
                                     </div>
+                                    {#if deviceCanRememberProfile && activeProfile}
+                                        <label class="remember-profile">
+                                            <input
+                                                type="checkbox"
+                                                bind:checked={rememberProfileOnDevice}
+                                                onchange={updateRememberedProfile}
+                                                disabled={!!switchingProfileId}
+                                            />
+                                            <span>Remember this profile on this device</span>
+                                        </label>
+                                    {/if}
                                     <a href="/settings/profiles" class="manage-profiles" onclick={closeUserMenu}>Manage profiles</a>
                                 </div>
                                 <a href="/settings" class="dropdown-item" onclick={closeUserMenu}>
@@ -490,6 +547,22 @@
         margin-top: 0.625rem;
         color: var(--color-accent);
         font-size: 0.8rem;
+    }
+
+    .remember-profile {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+        color: var(--color-text-secondary);
+        font-size: 0.75rem;
+        cursor: pointer;
+    }
+
+    .remember-profile input {
+        width: 1rem;
+        height: 1rem;
+        accent-color: var(--color-accent);
     }
 
     .dropdown-item {

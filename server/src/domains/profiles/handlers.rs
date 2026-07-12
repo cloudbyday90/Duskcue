@@ -31,7 +31,13 @@ pub async fn list_profiles(
     user: AuthenticatedUser,
 ) -> Result<Json<ProfileListResponse>, AppError> {
     Ok(Json(
-        service::list_profiles(&state.pool, user.user_id, user.profile_id).await?,
+        service::list_profiles(
+            &state.pool,
+            user.user_id,
+            user.profile_id,
+            user.device_id.as_deref(),
+        )
+        .await?,
     ))
 }
 
@@ -73,10 +79,20 @@ pub async fn switch_profile(
     State(state): State<AppState>,
     user: AuthenticatedUser,
     Path(profile_id): Path<uuid::Uuid>,
+    req: Option<Json<SwitchProfileRequest>>,
 ) -> Result<Json<SwitchProfileResponse>, AppError> {
-    let active_profile =
-        service::switch_profile(&state.pool, user.user_id, user.session_id, profile_id).await?;
-    Ok(Json(SwitchProfileResponse { active_profile }))
+    let remember_on_device = req.and_then(|Json(req)| req.remember_on_device);
+    Ok(Json(
+        service::switch_profile(
+            &state.pool,
+            user.user_id,
+            user.session_id,
+            user.device_id.as_deref(),
+            profile_id,
+            remember_on_device,
+        )
+        .await?,
+    ))
 }
 
 pub async fn list_ambient_channels(

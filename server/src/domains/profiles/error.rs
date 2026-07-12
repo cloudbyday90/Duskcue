@@ -33,6 +33,9 @@ pub enum ProfilesError {
     #[error("profile cannot be deleted")]
     CannotDelete,
 
+    #[error("a stable device identifier is required to remember a profile")]
+    DeviceIdentityRequired,
+
     #[error("content is not available for this profile")]
     ContentNotAllowed,
 

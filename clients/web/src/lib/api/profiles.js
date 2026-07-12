@@ -34,8 +34,8 @@ export async function deleteProfile(profileId) {
     return del(`/profiles/${profileId}`);
 }
 
-export async function switchProfile(profileId) {
-    return post(`/profiles/${profileId}/switch`);
+export async function switchProfile(profileId, data = {}) {
+    return post(`/profiles/${profileId}/switch`, data);
 }
 
 export async function listAmbientChannels() {

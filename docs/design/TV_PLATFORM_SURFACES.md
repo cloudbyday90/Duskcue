@@ -1072,6 +1072,7 @@ tvOS and future platform behavior should be handled over the same server API.
 Household Profiles add a profile identity layer to the first server feed:
 
 - `user_profiles` and `user_sessions.active_profile_id` for the selected household identity
+- `profile_device_preferences` for an opt-in account/device default after normal authentication
 - `user_item_data.profile_id` for per-profile resume and watched state
 - `play_sessions.profile_id` and `playback_mode` for profile-aware interactive telemetry
 - `series`, `seasons`, and `episodes` for next-up resolution
@@ -1086,6 +1087,7 @@ The TV feed uses the active profile's history and applies its media policy befor
 - Every item must pass the same BOLA checks as media detail/playback APIs.
 - Deep links must revalidate auth and access before playback; `scripts/verify-tv-deeplink-conformance.mjs` defines the shared launch-time cases downstream clients must satisfy.
 - Platform clients must not cache bearer tokens in plaintext.
+- A remembered profile is a non-secret convenience preference, not a TV authentication or Kids exit-lock mechanism. tvOS must honor `TVUserManager.shouldStorePreferencesForCurrentUser`; platforms without a stable permitted device ID must show profile selection instead.
 - Artwork URLs should use existing authenticated or signed artwork delivery rules.
 
 ## Phase Placement

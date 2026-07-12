@@ -24,6 +24,7 @@ pub async fn list_profiles(
     pool: &PgPool,
     owner_user_id: Uuid,
     active_profile_id: Uuid,
+    device_id: Option<&str>,
 ) -> Result<ProfileListResponse, ProfilesError> {
     let rows = sqlx::query(
         "SELECT id, owner_user_id, name, avatar, profile_type, is_default, max_content_rating, \
@@ -41,6 +42,8 @@ pub async fn list_profiles(
 
     Ok(ProfileListResponse {
         active_profile_id,
+        remembered_profile_id: remembered_profile_id(pool, owner_user_id, device_id).await?,
+        device_can_remember_profile: normalized_device_id(device_id).is_some(),
         items,
     })
 }
@@ -168,9 +171,37 @@ pub async fn switch_profile(
     pool: &PgPool,
     owner_user_id: Uuid,
     session_id: Uuid,
+    device_id: Option<&str>,
     profile_id: Uuid,
-) -> Result<ProfileResponse, ProfilesError> {
+    remember_on_device: Option<bool>,
+) -> Result<SwitchProfileResponse, ProfilesError> {
     let profile = get_owned_profile(pool, owner_user_id, profile_id).await?;
+    if let Some(remember) = remember_on_device {
+        let device_id = normalized_device_id(device_id);
+        if remember {
+            let device_id = device_id.ok_or(ProfilesError::DeviceIdentityRequired)?;
+            sqlx::query(
+                "INSERT INTO profile_device_preferences (owner_user_id, device_id, profile_id) \
+                 VALUES ($1, $2, $3) \
+                 ON CONFLICT (owner_user_id, device_id) \
+                 DO UPDATE SET profile_id = EXCLUDED.profile_id, updated_at = now()",
+            )
+            .bind(owner_user_id)
+            .bind(device_id)
+            .bind(profile_id)
+            .execute(pool)
+            .await?;
+        } else if let Some(device_id) = device_id {
+            sqlx::query(
+                "DELETE FROM profile_device_preferences WHERE owner_user_id = $1 AND device_id = $2",
+            )
+            .bind(owner_user_id)
+            .bind(device_id)
+            .execute(pool)
+            .await?;
+        }
+    }
+
     let changed = sqlx::query(
         "UPDATE user_sessions SET active_profile_id = $3, last_active_at = now() WHERE id = $1 AND user_id = $2",
     )
@@ -182,7 +213,37 @@ pub async fn switch_profile(
     if changed.rows_affected() == 0 {
         return Err(ProfilesError::AccessDenied);
     }
-    profile_response(pool, profile).await
+    Ok(SwitchProfileResponse {
+        active_profile: profile_response(pool, profile).await?,
+        remembered_profile_id: remembered_profile_id(pool, owner_user_id, device_id).await?,
+        device_can_remember_profile: normalized_device_id(device_id).is_some(),
+    })
+}
+
+pub fn normalized_device_id(device_id: Option<&str>) -> Option<&str> {
+    device_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty() && value.chars().count() <= 200)
+}
+
+pub async fn remembered_profile_id(
+    pool: &PgPool,
+    owner_user_id: Uuid,
+    device_id: Option<&str>,
+) -> Result<Option<Uuid>, ProfilesError> {
+    let Some(device_id) = normalized_device_id(device_id) else {
+        return Ok(None);
+    };
+
+    Ok(sqlx::query_scalar::<_, Uuid>(
+        "SELECT p.id FROM profile_device_preferences preference \
+         JOIN user_profiles p ON p.id = preference.profile_id AND p.owner_user_id = preference.owner_user_id \
+         WHERE preference.owner_user_id = $1 AND preference.device_id = $2",
+    )
+    .bind(owner_user_id)
+    .bind(device_id)
+    .fetch_optional(pool)
+    .await?)
 }
 
 pub async fn load_profile_scope(
@@ -797,5 +858,15 @@ mod tests {
 
         assert!(is_media_allowed(&scope, allowed_library, Some("TV-Y7")));
         assert!(!is_media_allowed(&scope, Uuid::now_v7(), Some("TV-Y7")));
+    }
+
+    #[test]
+    fn device_id_normalization_accepts_only_bounded_nonempty_values() {
+        assert_eq!(
+            normalized_device_id(Some("  living-room-tv  ")),
+            Some("living-room-tv")
+        );
+        assert_eq!(normalized_device_id(Some("   ")), None);
+        assert_eq!(normalized_device_id(Some(&"a".repeat(201))), None);
     }
 }

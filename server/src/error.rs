@@ -1541,6 +1541,11 @@ fn profiles_error_to_http(
             "PROFILE_005",
             "This profile cannot be deleted while it is default or active".into(),
         ),
+        ProfilesError::DeviceIdentityRequired => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "PROFILE_008",
+            "A stable device identifier is required to remember a profile".into(),
+        ),
         ProfilesError::InvalidProfileType(_) | ProfilesError::InvalidContentRating(_) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             "VALID_001",

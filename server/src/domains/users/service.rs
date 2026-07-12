@@ -360,6 +360,11 @@ pub async fn soft_delete_user(
         .execute(pool)
         .await;
 
+    let _ = sqlx::query("DELETE FROM profile_device_preferences WHERE owner_user_id = $1")
+        .bind(user_id)
+        .execute(pool)
+        .await;
+
     Ok(())
 }
 

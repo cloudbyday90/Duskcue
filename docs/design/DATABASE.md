@@ -3648,7 +3648,7 @@ ORDER BY changed_at DESC;
 
 ### Household Profiles and Ambient Channels
 
-The profile schema is implemented by `20260712080000_create_profiles_and_ambient_channels.sql` and fully described in [PROFILES_AND_AMBIENT_CHANNELS.md](PROFILES_AND_AMBIENT_CHANNELS.md). `user_profiles` belongs to the authenticated `users` record; `user_sessions.active_profile_id`, `user_item_data.profile_id`, and `play_sessions.profile_id` make active identity, viewing state, and analytics profile-aware. Existing state is backfilled to each user’s default standard profile.
+The profile schema is implemented by `20260712080000_create_profiles_and_ambient_channels.sql` and `20260712080100_add_profile_device_preferences.sql`, and is fully described in [PROFILES_AND_AMBIENT_CHANNELS.md](PROFILES_AND_AMBIENT_CHANNELS.md). `user_profiles` belongs to the authenticated `users` record; `user_sessions.active_profile_id`, `user_item_data.profile_id`, and `play_sessions.profile_id` make active identity, viewing state, and analytics profile-aware. Existing state is backfilled to each user’s default standard profile. `profile_device_preferences` stores one non-secret remembered profile per account and stable device ID, with a composite foreign key that prevents cross-account profile references.
 
 `ambient_channels` and ordered `ambient_channel_items` provide an auditable, deterministic queue. `play_sessions.playback_mode` distinguishes ambient operational telemetry from interactive personal playback. Ambient sessions retain system diagnostics but must not update `user_item_data`, recommendations, or external watch sync.
 

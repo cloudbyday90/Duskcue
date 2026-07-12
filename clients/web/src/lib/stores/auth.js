@@ -27,8 +27,22 @@ import {
     logoutAll as apiLogoutAll,
     listSessions as apiListSessions,
 } from '../api/auth.js';
+import { getDeviceIdentity } from '../device/identity.js';
 
 const USER_STORAGE_KEY = 'duskcue_user';
+
+function withWebDeviceIdentity(data) {
+    const deviceId = getDeviceIdentity();
+    if (!deviceId) return data;
+
+    return {
+        ...data,
+        device_id: data.device_id ?? deviceId,
+        device_name: data.device_name ?? 'Web Browser',
+        client_name: data.client_name ?? 'Duskcue Web',
+        client_platform: data.client_platform ?? 'web',
+    };
+}
 
 function createAuthStore() {
     const { subscribe, set, update } = writable({
@@ -109,7 +123,7 @@ function createAuthStore() {
         async loginWithInvite(data) {
             update((s) => ({ ...s, loading: true, error: null }));
             try {
-                const result = await apiLoginInvite(data);
+                const result = await apiLoginInvite(withWebDeviceIdentity(data));
                 handleSessionResult(result);
                 return result;
             } catch (err) {
@@ -121,7 +135,7 @@ function createAuthStore() {
         async loginWithPassword(data) {
             update((s) => ({ ...s, loading: true, error: null }));
             try {
-                const result = await apiLoginPassword(data);
+                const result = await apiLoginPassword(withWebDeviceIdentity(data));
                 handleSessionResult(result);
                 return result;
             } catch (err) {
@@ -137,7 +151,10 @@ function createAuthStore() {
                 const challengeId = startResult.challenge_id;
                 const options = startResult.public_key_options || startResult;
                 const credential = await getCredential(options);
-                const result = await apiFinishWebauthnAuth(credential, challengeId);
+                const result = await apiFinishWebauthnAuth(
+                    withWebDeviceIdentity({ credential }),
+                    challengeId,
+                );
                 handleSessionResult(result);
                 return result;
             } catch (err) {

@@ -105,6 +105,8 @@ Phase 16a mobile/desktop auth requests include stable client metadata where the 
 
 Mobile generates and secure-stores a stable `device_id` through `flutter_secure_storage`. Desktop uses the selected server origin as the key for OS-keyring token storage and sends client metadata from the reused web/native bridge flows as those screens are wired.
 
+The household-profile contract uses the same non-secret `device_id` for an opt-in remembered profile. `GET /api/v1/profiles` returns `remembered_profile_id` and `device_can_remember_profile`; `POST /api/v1/profiles/{id}/switch` accepts optional `remember_on_device`. Clients must treat this as a convenience preference only: they may store an opaque device ID, but never a session token, password, parent PIN, or a standalone profile-login credential. A missing or disallowed device preference must fall back to normal post-auth profile selection.
+
 ## Bearer Token Semantics
 
 Desktop/Tauri webview keeps compatibility with `clients/web/src/lib/api/core.js`:

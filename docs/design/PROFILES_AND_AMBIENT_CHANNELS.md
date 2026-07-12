@@ -16,10 +16,11 @@ The first implementation establishes the server contract and data model for thre
 |---|---|---|
 | Parent unlock secret | OWASP recommends a deliberately slow password-hashing function, with Argon2id preferred, for password-equivalent secrets. | A parental PIN is never stored or returned. The future parent-unlock endpoint will hash and verify it server-side with Argon2id; profile creation and switching never expose a PIN value in a response. |
 | Children's data | COPPA focuses on online collection from children under 13. A local-first server should still minimize child data and put control with the parent. | A Kids profile stores only a display name, avatar choice, and policy. It does not need an email, birth date, advertising identity, or external-service account. Unknown ratings are denied in Kids mode. |
+| Remembered profile | Apple TV exposes a platform decision for whether a shared device should retain the current user selection; OWASP treats session credentials as authentication secrets, not preference data. | Remember a selected profile only as a server-side, account-scoped mapping to a stable device ID. It is opt-in, revocable, and never a cached session token, password, or parental PIN. |
 | Android background media | Android Media3 documents a `MediaSessionService` for playback that continues outside the activity. | Android clients consume the ambient queue contract through a native Media3 player/service in the Android/TV phases; web playback is a functional fallback, not a substitute for native background playback. |
 | Apple background media | AVFoundation supports queue-based playback and application background audiovisual configuration. | Apple clients consume the same queue contract with `AVQueuePlayer` and the appropriate audio-session/background capability in the iOS/tvOS phases. |
 
-Sources: [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html), [FTC COPPA guidance](https://www.ftc.gov/business-guidance/resources/complying-coppa-frequently-asked-questions), [Android Media3 background playback](https://developer.android.com/media/media3/session/background-playback), [Apple AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer), and [Apple media playback configuration](https://developer.apple.com/documentation/avfoundation/configuring-your-app-for-media-playback?changes=la_4__5).
+Sources: [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html), [OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html), [FTC COPPA guidance](https://www.ftc.gov/business-guidance/resources/complying-coppa-frequently-asked-questions), [Apple TV user preference guidance](https://developer.apple.com/documentation/TVServices/TVUserManager/shouldStorePreferencesForCurrentUser), [Android Media3 background playback](https://developer.android.com/media/media3/session/background-playback), [Apple AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer), and [Apple media playback configuration](https://developer.apple.com/documentation/avfoundation/configuring-your-app-for-media-playback?changes=la_4__5).
 
 ## Data Model
 
@@ -30,7 +31,8 @@ users ──< user_profiles ──< profile_library_access
   │            │
   │            ├──< user_item_data
   │            └──< play_sessions
-  └──< user_sessions (active_profile_id)
+  ├──< user_sessions (active_profile_id)
+  └──< profile_device_preferences >── user_profiles
 
 ambient_channels ──< ambient_channel_items >── media_items
 ```
@@ -49,6 +51,16 @@ Profile selection is an authorization boundary, not merely a client preference.
 4. Standard profiles inherit the authenticated account's library authorization. Kids profiles can only narrow that scope.
 5. The owner configures profiles and channels. A later shared-TV unlock screen may require a parental PIN before leaving Kids mode; this never replaces normal account authentication for remote/API access.
 
+## Remembered Profile on a Device
+
+`profile_device_preferences` stores one explicit profile choice per authenticated account and stable device ID. Its composite foreign key guarantees that the selected profile belongs to the account. A normal password, invite, passkey, device-link, or re-auth session uses this preference only after its account authentication succeeds; without a valid preference, the session starts on the account's default profile.
+
+`POST /api/v1/profiles/{id}/switch` accepts an optional `{ "remember_on_device": true | false }` body. `true` creates or replaces the mapping for the current device, `false` removes it, and an omitted value changes only the current session. `GET /api/v1/profiles` and switch responses expose the current device's remembered profile and whether a usable device ID is available, so clients can render an honest opt-in control.
+
+An explicit sign-out or remote session revocation removes that device's remembered mapping. Signing out everywhere and soft-deleting a user remove every mapping for the account. Deleting a profile cascades its mappings. Browser storage contains only a generated opaque device ID; session credentials remain in the normal cookie/bearer-token mechanism, and neither a profile choice nor a future parent-unlock secret is stored on the client.
+
+This is a convenience default, not a parental-control lock or authentication substitute. In particular, remembering a Kids profile does not prevent a holder of the authenticated session from selecting another profile. The parent-PIN unlock flow remains the necessary follow-up before a shared TV can claim a locked Kids exit path. tvOS clients must follow the platform's `shouldStorePreferencesForCurrentUser` decision before retaining a profile selection; shared-device clients should default to showing the picker when that capability or a stable device ID is unavailable.
+
 ## Ambient Channel Contract
 
 An ambient channel is a named, ordered list of media items with an audience of `standard` or `kids`. `GET /api/v1/ambient-channels` presents only channels allowed by the active profile. `POST /api/v1/ambient-channels/{id}/next` chooses the next eligible item and returns an ambient playback request.
@@ -66,6 +78,7 @@ The API is player-agnostic: a native client owns the actual background service/s
 Implemented in the initial server slice:
 
 - profile-aware session identity and profile CRUD/switch APIs;
+- opt-in, per-device remembered profiles with login-time defaulting and sign-out/revocation cleanup;
 - default-profile migration and per-profile personal playback data;
 - server-side Kids policy checks for media listing/detail, search, TV surfaces, direct streams, and playback starts;
 - ordered standard/Kids ambient channels, with parent-controlled creation and profile-filtered queue resolution;
@@ -73,7 +86,7 @@ Implemented in the initial server slice:
 
 Deferred follow-up:
 
-- parental PIN entry/unlock flow and attempt throttling;
+- parental PIN entry/unlock flow and attempt throttling; until it exists, a Kids profile is content-filtered but does not provide a locked shared-TV profile exit;
 - profile-specific Trakt account linking/export selection;
 - native Android/iOS background-player implementations and offline ambient queue prefetch;
 - time windows, daily limits, and child-safe metadata editorial review.

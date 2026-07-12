@@ -101,12 +101,21 @@ pub struct ProfileResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct ProfileListResponse {
     pub active_profile_id: Uuid,
+    pub remembered_profile_id: Option<Uuid>,
+    pub device_can_remember_profile: bool,
     pub items: Vec<ProfileResponse>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SwitchProfileRequest {
+    pub remember_on_device: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SwitchProfileResponse {
     pub active_profile: ProfileResponse,
+    pub remembered_profile_id: Option<Uuid>,
+    pub device_can_remember_profile: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
