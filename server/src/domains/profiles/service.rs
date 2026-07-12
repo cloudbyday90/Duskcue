@@ -318,7 +318,7 @@ pub async fn assert_media_access(
     let row = sqlx::query(
         "SELECT mi.library_id, mi.content_rating FROM media_items mi \
          JOIN libraries l ON l.id = mi.library_id \
-         WHERE mi.id = $1 AND mi.deleted_at IS NULL AND l.deleted_at IS NULL",
+         WHERE mi.id = $1 AND l.deleted_at IS NULL",
     )
     .bind(media_item_id)
     .fetch_optional(pool)
@@ -490,12 +490,11 @@ pub async fn replace_channel_items(
         .execute(&mut *tx)
         .await?;
     for (position, media_item_id) in unique.iter().enumerate() {
-        let exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS(SELECT 1 FROM media_items WHERE id = $1 AND deleted_at IS NULL)",
-        )
-        .bind(media_item_id)
-        .fetch_one(&mut *tx)
-        .await?;
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM media_items WHERE id = $1)")
+                .bind(media_item_id)
+                .fetch_one(&mut *tx)
+                .await?;
         if !exists {
             return Err(ProfilesError::ContentNotAllowed);
         }

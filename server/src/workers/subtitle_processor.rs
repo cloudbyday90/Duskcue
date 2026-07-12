@@ -222,8 +222,7 @@ async fn find_items_missing_subtitles(
         r#"
         SELECT mi.id
         FROM media_items mi
-        WHERE mi.deleted_at IS NULL
-          AND mi.type IN ('movie', 'episode')
+        WHERE mi.type IN ('movie', 'episode')
           AND EXISTS (
               SELECT 1 FROM media_files mf
               WHERE mf.media_item_id = mi.id AND mf.is_healthy = true

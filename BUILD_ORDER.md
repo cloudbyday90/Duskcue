@@ -4388,6 +4388,29 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 ---
 
+## Post-Phase 10 — Storyboards Hardening (IN PROGRESS)
+
+**Goal:** Make Storyboards reliable across fresh databases, concurrent generation, authenticated clients, and configurable cache/storage environments.
+
+**Authoritative documents:** [STORYBOARDS.md](docs/design/STORYBOARDS.md), [DATABASE.md](docs/design/DATABASE.md), [MIGRATION_STRATEGY.md](docs/design/MIGRATION_STRATEGY.md), [CLIENT_PLATFORM_READINESS.md](docs/design/CLIENT_PLATFORM_READINESS.md).
+
+**Tasks:**
+
+1. ~~Repair the media-item schema contract~~ **DONE — commit pending**
+   - Kept `media_items` as a hard-delete table, as specified in DATABASE.md, rather than adding an undocumented `deleted_at` lifecycle.
+   - Removed stale `media_items.deleted_at` predicates from profile access, playback, subtitle candidate selection, and metadata refresh.
+   - Corrected metadata refresh to use the canonical CTI parent fields (`media_items.type` and `media_items.tmdb_id`) rather than nonexistent child-table fields.
+   - Extended disposable-database migration verification with representative media/profile/playback/worker query preparation.
+2. Publish complete storyboard artifact sets atomically and serialize each media-file generation with a database-backed lock.
+3. Deliver protected VTT and sprite assets through bearer-authenticated client loaders without credentials in URLs.
+4. Correct null-hash freshness behavior, validate Storyboards configuration, and regenerate artifacts when the normalized generation configuration changes.
+5. Honor configured cache storage, reconcile orphaned artifacts, and make item-level generation/deletion semantics explicit for every media-file version.
+6. Return scheduled generation failures to the scheduler, validate task configuration, add Storyboards fixtures/integration coverage, and finish seek-preview accessibility/performance hardening.
+
+**Context for Task 2:** The current worker writes directly into the live artifact directory and force regeneration deletes the prior assets before a replacement is validated. Task 2 must establish staging, promotion, and locking before further generation behavior changes.
+
+---
+
 ## Dependency Graph
 
 ```

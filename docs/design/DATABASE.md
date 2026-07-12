@@ -3294,7 +3294,6 @@ SELECT mi.title, mi.overview,
         'StartSel=<mark>, StopSel=</mark>, MaxWords=35, MinWords=15') AS snippet
 FROM media_items mi, websearch_to_tsquery('english', 'inception nolan') query
 WHERE mi.search_vector @@ query
-    AND mi.deleted_at IS NULL
 ORDER BY rank DESC
 LIMIT 20;
 ```

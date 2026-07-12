@@ -439,6 +439,15 @@ Generation failures are logged and tracked in `scheduled_task_runs` — they don
 
 ## Implementation Notes
 
+### Post-Phase 10 Hardening Task 1 — Media Schema Contract (Complete)
+
+`media_items` intentionally uses hard deletion. The profile, playback,
+metadata-refresh, subtitle, and ambient-channel queries now rely on the
+canonical parent-table schema and use library soft-delete state where needed.
+The disposable migration verifier prepares representative media queries after
+applying migrations so a stale column or CTI field reference fails before
+release.
+
 ### Phase 10 Task 3 — Domain Scaffolding (Complete)
 
 Storyboard retrieval, serving, generation-trigger, and deletion API surface implemented. The generation pipeline itself (FFmpeg frame extraction, WebP sprite assembly, WebVTT index authoring) lands in Task 4 (`services/storyboards.rs`) and Task 6 (`workers/storyboard_generator.rs`).

@@ -232,7 +232,7 @@ Real-time sync from PostgreSQL to Meilisearch via the existing trigger infrastru
 1. **Modify `rebuild_media_search_vector()` trigger** — after updating `search_vector` in PG, also `NOTIFY` a channel (`media_item_changed`) with the affected `media_item_id`
 2. **`workers/search_indexer.rs`** — long-running task that `LISTEN`s on `media_item_changed`, fetches the full document from PG, and `PUT /indexes/media_items/documents` to Meilisearch. Batches updates with a 500ms debounce for bulk-scan scenarios.
 3. **Initial backfill** — when Meilisearch is first enabled, the worker iterates `media_items` in batches of 1000, sends to Meilisearch's `/indexes/media_items/documents?primaryKey=id` batch endpoint. Marks the index as "ready" once backfill + catch-up (drain of NOTIFY backlog) completes.
-4. **Soft delete handling** — when `media_items.deleted_at` is set, the worker sends `DELETE /indexes/media_items/documents/{id}` to Meilisearch.
+4. **Hard delete handling** — when a media item is deleted, the worker sends `DELETE /indexes/media_items/documents/{id}` to Meilisearch.
 5. **Failure recovery** — if Meilisearch is unreachable, NOTIFY events queue in PG (up to `wal_sender_timeout` / slot size). Worker catches up on reconnect. If queue overflows, full backfill is triggered.
 
 ### Search API Abstraction
@@ -278,7 +278,7 @@ ORDER BY rank DESC LIMIT 20;
 SELECT g.name, COUNT(*) FROM media_items mi
 JOIN media_genres mg ON mg.media_item_id = mi.id
 JOIN genres g ON g.id = mg.genre_id
-WHERE mi.search_vector @@ query AND mi.deleted_at IS NULL
+WHERE mi.search_vector @@ query
 GROUP BY g.name ORDER BY COUNT(*) DESC;
 
 -- Decade facet
@@ -343,7 +343,7 @@ A Phase 14 migration importing 10k+ items triggers 10k+ `rebuild_media_search_ve
 
 ### Library Soft-Delete
 
-When a library is soft-deleted (`libraries.deleted_at` set), all its `media_items` should disappear from search results. The search query filters `JOIN libraries l ON mi.library_id = l.id WHERE l.deleted_at IS NULL`. Alternatively, a cascade sets `media_items.deleted_at` on library delete (existing DB behavior) — search filters on `mi.deleted_at IS NULL` directly.
+When a library is soft-deleted (`libraries.deleted_at` set), all its `media_items` disappear from search results because search queries join the library and require `l.deleted_at IS NULL`. Media items themselves use hard deletion.
 
 ### Re-scan After Metadata Refresh
 

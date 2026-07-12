@@ -303,17 +303,9 @@ async fn find_matching_items(
         return Ok(Vec::new());
     }
 
-    let ext_table = if item_type == "movie" {
-        "movies"
-    } else {
-        "series"
-    };
-
-    let mut builder = sqlx::QueryBuilder::new(
-        "SELECT mi.id, (e.metadata->>'tmdb_id')::bigint AS tmdb_id FROM media_items mi JOIN ",
-    );
-    builder.push(ext_table);
-    builder.push(" e ON e.media_item_id = mi.id WHERE mi.deleted_at IS NULL AND mi.match_state = 'confirmed' AND e.metadata->>'tmdb_id' IS NOT NULL AND (e.metadata->>'tmdb_id')::bigint IN (");
+    let mut builder = sqlx::QueryBuilder::new("SELECT id, tmdb_id FROM media_items WHERE type = ");
+    builder.push_bind(item_type);
+    builder.push(" AND match_state = 'confirmed' AND tmdb_id IS NOT NULL AND tmdb_id IN (");
 
     let mut separated = builder.separated(", ");
     for id in changed_tmdb_ids {

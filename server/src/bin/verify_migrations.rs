@@ -17,7 +17,7 @@
 use std::time::Duration;
 
 use clap::Parser;
-use sqlx::postgres::PgPoolOptions;
+use sqlx::postgres::{PgPool, PgPoolOptions};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -39,8 +39,25 @@ async fn main() -> anyhow::Result<()> {
         .await?;
 
     sqlx::migrate!().run(&pool).await?;
+    validate_media_query_contract(&pool).await?;
     pool.close().await;
 
     println!("Duskcue migrations verified successfully");
+    Ok(())
+}
+
+async fn validate_media_query_contract(pool: &PgPool) -> anyhow::Result<()> {
+    let queries = [
+        "SELECT mi.library_id, mi.content_rating FROM media_items mi JOIN libraries l ON l.id = mi.library_id WHERE mi.id = NULL::uuid AND l.deleted_at IS NULL",
+        "SELECT EXISTS(SELECT 1 FROM media_items WHERE id = NULL::uuid)",
+        "SELECT id, library_id FROM media_items WHERE id = NULL::uuid",
+        "SELECT id, tmdb_id FROM media_items WHERE type = 'movie' AND match_state = 'confirmed' AND tmdb_id IS NOT NULL AND tmdb_id IN (NULL::bigint)",
+        "SELECT mi.id FROM media_items mi WHERE mi.type IN ('movie', 'episode') AND EXISTS (SELECT 1 FROM media_files mf WHERE mf.media_item_id = mi.id AND mf.is_healthy = true) LIMIT 0",
+    ];
+
+    for query in queries {
+        sqlx::query(query).execute(pool).await?;
+    }
+
     Ok(())
 }

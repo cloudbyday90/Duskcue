@@ -548,6 +548,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 | Phase 8: Web Client Core | **Complete** (Tasks 1–6) | `9f0c88d` |
 | Phase 9: Subtitles | **Complete** (Tasks 1–8) | — |
 | Phase 10: Segments & Storyboards | **Complete** (Tasks 1–12: 8 core + SSE + image pipeline + artwork endpoint + events store) | — |
+| Post-Phase 10: Storyboards Hardening | **In progress** (Task 1 complete: media-item schema contract) | Pending |
 | Phase 11: Analytics & Trakt | **Complete** (Tasks 1–9: analytics + dashboard + trakt scaffolding + trakt OAuth + trakt sync engine + trakt sync worker + GeoIP service + impossible travel detection + GeoIP database updater) | — |
 | Phase 12: Kometa-Like System | **Complete** (Tasks 1–11 complete: overlays, compositing, conditions, clean art, collections, overlay worker, poster management, asset-directory scan, community imports, overlays admin UI + definition CRUD, collections admin UI + collection CRUD/items/templates) | — |
 | Phase 13a: System Operations Core | **Complete** (Tasks 2-10 all complete: server_config API, scheduled-task management, backup domain + coordination + scheduled runner, reindex maintenance, disk-space check, recovery drill runner, admin settings UI slice) | — |

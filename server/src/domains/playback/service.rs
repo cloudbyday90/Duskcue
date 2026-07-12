@@ -73,12 +73,11 @@ pub async fn start_playback(
         .map_err(|_| PlaybackError::AccessDenied)?;
     }
 
-    let item_row =
-        sqlx::query("SELECT id, library_id FROM media_items WHERE id = $1 AND deleted_at IS NULL")
-            .bind(media_item_id)
-            .fetch_optional(pool)
-            .await?
-            .ok_or(PlaybackError::MediaNotFound)?;
+    let item_row = sqlx::query("SELECT id, library_id FROM media_items WHERE id = $1")
+        .bind(media_item_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(PlaybackError::MediaNotFound)?;
 
     let library_id: Uuid = item_row.try_get("library_id").unwrap_or_default();
 
