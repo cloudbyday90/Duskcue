@@ -1896,7 +1896,7 @@
           "auth": "user",
           "response": "WebVtt",
           "web_helpers": [
-            "storyboardIndexUrl"
+            "getStoryboardIndex"
           ],
           "contract": {
             "success": {
@@ -1940,7 +1940,7 @@
           "auth": "user",
           "response": "StoryboardSprite",
           "web_helpers": [
-            "storyboardSpriteUrl"
+            "getStoryboardSprite"
           ],
           "contract": {
             "success": {

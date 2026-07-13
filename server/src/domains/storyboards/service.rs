@@ -37,7 +37,7 @@
 
 use std::path::{Path, PathBuf};
 
-use sqlx::{PgPool, Row};
+use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
 use crate::domains::storyboards::error::StoryboardError;
@@ -229,11 +229,10 @@ pub async fn trigger_library_generation(
 
 /// Trigger storyboard generation for a specific media item (force regen).
 ///
-/// Resolves the item's primary media file and runs the worker on it. Unlike
-/// the library endpoint this forces regeneration even if a storyboard
-/// already exists (the worker deletes and regenerates). Returns
-/// `MediaItemNotFound` when the item or its primary media file does not
-/// exist.
+/// Regenerates every healthy media-file version for the item. Unlike the
+/// library endpoint this forces regeneration even if a storyboard already
+/// exists. Returns `MediaItemNotFound` when the item has no healthy media
+/// file.
 ///
 /// `requesting_user_id` — when `Some`, emits `storyboard_progress` SSE
 /// events to the admin's channel.
@@ -267,41 +266,45 @@ pub async fn delete_storyboard(
     media_item_id: Uuid,
     cache_dir: &Path,
 ) -> Result<(), StoryboardError> {
-    let artifact = resolve_media_file_for_storyboard(pool, media_item_id, None).await?;
-    let media_file_id = artifact.media_file_id;
+    let rows = sqlx::query("SELECT id FROM media_files WHERE media_item_id = $1")
+        .bind(media_item_id)
+        .fetch_all(pool)
+        .await?;
+    let mut media_file_ids: Vec<Uuid> = rows.iter().map(|row| row.get("id")).collect();
+    if media_file_ids.is_empty() {
+        return Err(StoryboardError::MediaItemNotFound { media_item_id });
+    }
+    media_file_ids.sort_unstable();
 
-    // DB row first — guarantees the HTTP 404 path is consistent even if the
-    // disk directory is in a weird state. `RETURNING` keeps it atomic.
-    let deleted: Option<Uuid> = sqlx::query_scalar(
-        "DELETE FROM storyboards WHERE media_file_id = $1 RETURNING media_file_id",
-    )
-    .bind(media_file_id)
-    .fetch_optional(pool)
-    .await?;
+    let mut tx = pool.begin().await?;
+    lock_storyboard_media_files(&mut tx, &media_file_ids).await?;
 
-    if deleted.is_none() {
-        // No DB row — but a stray on-disk directory may still exist (e.g.
-        // from a crashed generation). Clean it up so the delete is fully
-        // idempotent, but return NotFound to mirror the row's absence.
-        let dir = storyboard_media_dir(cache_dir, media_file_id);
-        let _ = tokio::fs::remove_dir_all(&dir).await;
+    let mut deleted = 0;
+    for media_file_id in &media_file_ids {
+        deleted += sqlx::query("DELETE FROM storyboards WHERE media_file_id = $1")
+            .bind(*media_file_id)
+            .execute(&mut *tx)
+            .await?
+            .rows_affected();
+    }
+
+    for media_file_id in &media_file_ids {
+        let dir = storyboard_media_dir(cache_dir, *media_file_id);
+        if let Err(error) = tokio::fs::remove_dir_all(&dir).await
+            && error.kind() != std::io::ErrorKind::NotFound
+        {
+            tracing::warn!(
+                error = %error,
+                dir = %dir.display(),
+                "failed to remove storyboard cache directory; DB deletion is pending"
+            );
+        }
+    }
+
+    tx.commit().await?;
+    if deleted == 0 {
         return Err(StoryboardError::StoryboardNotFound { media_item_id });
     }
-
-    // On-disk cleanup. Best-effort: a missing or read-only directory does
-    // not invalidate the (already-committed) DB deletion. Logged at warn so
-    // operators notice disk-state drift.
-    let dir = storyboard_media_dir(cache_dir, media_file_id);
-    if let Err(e) = tokio::fs::remove_dir_all(&dir).await
-        && e.kind() != std::io::ErrorKind::NotFound
-    {
-        tracing::warn!(
-            error = %e,
-            dir = %dir.display(),
-            "failed to remove storyboard cache directory; DB row was deleted"
-        );
-    }
-
     Ok(())
 }
 
@@ -390,6 +393,30 @@ fn storyboard_media_dir(cache_dir: &Path, media_file_id: Uuid) -> PathBuf {
     cache_dir
         .join(STORYBOARDS_SUBDIR)
         .join(media_file_id.to_string())
+}
+
+async fn lock_storyboard_media_files(
+    tx: &mut Transaction<'_, Postgres>,
+    media_file_ids: &[Uuid],
+) -> Result<(), StoryboardError> {
+    for media_file_id in media_file_ids {
+        let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock($1)")
+            .bind(storyboard_lock_key(*media_file_id))
+            .fetch_one(&mut **tx)
+            .await?;
+        if !acquired {
+            return Err(StoryboardError::GenerationAlreadyInProgress {
+                media_file_id: *media_file_id,
+            });
+        }
+    }
+    Ok(())
+}
+
+fn storyboard_lock_key(media_file_id: Uuid) -> i64 {
+    let mut bytes = [0; 8];
+    bytes.copy_from_slice(&media_file_id.as_bytes()[..8]);
+    i64::from_be_bytes(bytes)
 }
 
 fn storyboard_dir(cache_dir: &Path, media_file_id: Uuid, artifact_id: Option<Uuid>) -> PathBuf {

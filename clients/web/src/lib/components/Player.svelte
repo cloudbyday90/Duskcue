@@ -54,6 +54,7 @@
     let segments = $state([]);
     let storyboard = $state(null);
     let isSeekHovering = $state(false);
+    let isKeyboardSeeking = $state(false);
     let seekHoverRatio = $state(0);
     let seekHoverMs = $state(0);
 
@@ -268,15 +269,20 @@
 
     function handleSeekInput(event) {
         seekValue = parseFloat(event.target.value);
+        if (!isSeeking) {
+            isKeyboardSeeking = true;
+        }
     }
 
     function handleSeekStart() {
         isSeeking = true;
+        isKeyboardSeeking = false;
         seekValue = $player?.positionMs || 0;
     }
 
     function handleSeekEnd() {
         isSeeking = false;
+        isKeyboardSeeking = false;
         const positionMs = seekValue;
         const decision = $streamDecision;
 
@@ -374,6 +380,9 @@
     }
 
     function handleKeydown(event) {
+        if (event.target?.matches?.('input[type="range"]')) {
+            return;
+        }
         switch (event.key) {
             case ' ':
             case 'k':
@@ -467,7 +476,7 @@
         }
     }
 
-    let seekDisplayValue = $derived(isSeeking ? seekValue : ($player?.positionMs || 0));
+    let seekDisplayValue = $derived((isSeeking || isKeyboardSeeking) ? seekValue : ($player?.positionMs || 0));
     let durationMs = $derived($player?.durationMs || 0);
     let positionDisplay = $derived(formatTimestamp(seekDisplayValue));
     let durationDisplay = $derived(formatTimestamp(durationMs));
@@ -476,8 +485,8 @@
         return secs ? formatDuration(secs) : null;
     });
 
-    let seekPreviewVisible = $derived((isSeekHovering || isSeeking) && !!storyboard);
-    let seekPreviewMs = $derived(isSeeking ? seekValue : seekHoverMs);
+    let seekPreviewVisible = $derived((isSeekHovering || isSeeking || isKeyboardSeeking) && !!storyboard);
+    let seekPreviewMs = $derived((isSeeking || isKeyboardSeeking) ? seekValue : seekHoverMs);
     let seekPreviewRatio = $derived(durationMs > 0 ? Math.max(0, Math.min(1, seekPreviewMs / durationMs)) : 0);
 </script>
 
@@ -572,6 +581,9 @@
                 ontouchstart={handleSeekStart}
                 onmouseup={handleSeekEnd}
                 ontouchend={handleSeekEnd}
+                onblur={() => {
+                    if (isKeyboardSeeking) handleSeekEnd();
+                }}
                 aria-label={m.lib_components_player_seek()}
                 aria-valuetext="{positionDisplay} of {durationDisplay}"
             />
@@ -763,7 +775,7 @@
 
     .seek-bar-wrapper {
         position: relative;
-        height: 20px;
+        height: 44px;
         margin-bottom: 0.375rem;
         cursor: pointer;
     }

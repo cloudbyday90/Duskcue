@@ -84,23 +84,29 @@ const STORYBOARDS_SUBDIR: &str = "storyboards";
 /// Honors the global `storyboards_enabled` gate and per-library
 /// `metadata.storyboards_enabled` override. Libraries that fail any gate are
 /// silently skipped (logged at debug).
-pub async fn run_storyboard_generation(state: &AppState, task_id: Uuid, config: serde_json::Value) {
+pub async fn run_storyboard_generation(
+    state: &AppState,
+    task_id: Uuid,
+    config: serde_json::Value,
+) -> Result<(), String> {
     tracing::info!(task_id = %task_id, "Starting storyboard generation task");
 
     let cache_dir = state.bootstrap.cache_dir.clone();
-    let interval_mode_override = config
-        .get("interval_mode")
-        .and_then(|v| v.as_str())
-        .map(|s| s.to_string());
+    let task_config = parse_storyboard_task_config(config)?;
 
     let pool = &state.pool;
 
-    let library_ids: Vec<Uuid> = if let Some(id) = config
-        .get("library_id")
-        .and_then(|v| v.as_str())
-        .and_then(|s| Uuid::parse_str(s).ok())
-    {
-        vec![id]
+    let library_ids: Vec<Uuid> = if let Some(library_id) = task_config.library_id {
+        if fetch_library_metadata(pool, library_id)
+            .await
+            .map_err(|error| error.to_string())?
+            .is_none()
+        {
+            return Err(format!(
+                "configured storyboard library {library_id} does not exist, is disabled, or is deleted"
+            ));
+        }
+        vec![library_id]
     } else {
         match fetch_enabled_libraries(pool).await {
             Ok(ids) => ids,
@@ -110,7 +116,7 @@ pub async fn run_storyboard_generation(state: &AppState, task_id: Uuid, config: 
                     error = %e,
                     "Failed to fetch libraries for storyboard generation"
                 );
-                return;
+                return Err(e.to_string());
             }
         }
     };
@@ -118,16 +124,17 @@ pub async fn run_storyboard_generation(state: &AppState, task_id: Uuid, config: 
     if library_ids.is_empty() {
         tracing::info!(task_id = %task_id, "No libraries to generate storyboards for");
         reconcile_storyboard_cache(pool, &cache_dir).await;
-        return;
+        return Ok(());
     }
 
     let mut total = AggregateResult::default();
+    let mut library_failures = Vec::new();
     for library_id in &library_ids {
         match generate_for_library(
             state,
             *library_id,
             &cache_dir,
-            interval_mode_override.as_deref(),
+            task_config.interval_mode.as_deref(),
             None,
         )
         .await
@@ -142,6 +149,12 @@ pub async fn run_storyboard_generation(state: &AppState, task_id: Uuid, config: 
                     errors = result.errors,
                     "Library storyboard generation complete"
                 );
+                if result.errors > 0 {
+                    library_failures.push(format!(
+                        "{library_id}: {} file generation failure(s)",
+                        result.errors
+                    ));
+                }
                 total.add(&result);
             }
             Err(e) => {
@@ -151,6 +164,7 @@ pub async fn run_storyboard_generation(state: &AppState, task_id: Uuid, config: 
                     error = %e,
                     "Library storyboard generation failed"
                 );
+                library_failures.push(format!("{library_id}: {e}"));
             }
         }
     }
@@ -165,6 +179,15 @@ pub async fn run_storyboard_generation(state: &AppState, task_id: Uuid, config: 
         "Storyboard generation task completed"
     );
     reconcile_storyboard_cache(pool, &cache_dir).await;
+    if library_failures.is_empty() {
+        Ok(())
+    } else {
+        Err(format!(
+            "storyboard generation failed for {} library or libraries: {}",
+            library_failures.len(),
+            library_failures.join("; ")
+        ))
+    }
 }
 
 /// Synchronous per-library generation entry point — services the admin
@@ -205,134 +228,120 @@ pub async fn generate_for_item_one(
     let pool = &state.pool;
     let cache_dir = state.bootstrap.cache_dir.clone();
 
-    let media_file_id = resolve_primary_media_file(pool, media_item_id)
-        .await?
-        .ok_or(StoryboardError::MediaItemNotFound { media_item_id })?;
-
-    let file = load_single_file_for_generation(pool, media_file_id)
-        .await?
-        .ok_or(StoryboardError::MediaFileNotFound { media_file_id })?;
+    let files = load_files_for_item_generation(pool, media_item_id).await?;
+    if files.is_empty() {
+        return Err(StoryboardError::MediaItemNotFound { media_item_id });
+    }
 
     publish_progress(
         state,
         requesting_user_id,
-        media_file_id,
+        Uuid::nil(),
         Some(media_item_id),
         ProgressPhase::Started,
-        1,
+        files.len() as u64,
         0,
         0,
         0,
     );
 
     let cfg = resolve_generation_config(state, None).await;
-    let runtime_seconds = file.runtime_seconds.max(0) as u32;
     let runtime_config = state.runtime_config.load();
-    let interval = resolve_interval(
-        &cfg,
-        &runtime_config.transcoding.storyboard_interval_mode,
-        runtime_seconds,
-    );
-
-    let mut cfg_with_interval = cfg.clone();
-    cfg_with_interval.interval_seconds = interval;
-
-    let source_path = Path::new(&file.file_path);
-
     let mut result = LibraryGenerationResult {
-        candidates: 1,
+        candidates: files.len() as u64,
         ..Default::default()
     };
+    let mut first_locked_media_file_id = None;
 
-    if !source_path.exists() {
-        tracing::warn!(
-            media_item_id = %media_item_id,
-            media_file_id = %media_file_id,
-            path = %file.file_path,
-            "Source file missing, skipping storyboard generation"
+    for file in &files {
+        let runtime_seconds = file.runtime_seconds.max(0) as u32;
+        let mut cfg_with_interval = cfg.clone();
+        cfg_with_interval.interval_seconds = resolve_interval(
+            &cfg,
+            &runtime_config.transcoding.storyboard_interval_mode,
+            runtime_seconds,
         );
-        result.errors = 1;
+        let source_path = Path::new(&file.file_path);
+
+        if !source_path.exists() {
+            tracing::warn!(
+                media_item_id = %media_item_id,
+                media_file_id = %file.media_file_id,
+                path = %file.file_path,
+                "Source file missing, skipping storyboard generation"
+            );
+            result.errors += 1;
+        } else {
+            match generate_and_publish_storyboard(
+                pool,
+                &cache_dir,
+                file,
+                source_path,
+                runtime_seconds,
+                &cfg_with_interval,
+            )
+            .await
+            {
+                Ok(PublishedStoryboard::Published(gen_result)) => {
+                    result.generated += 1;
+                    tracing::info!(
+                        media_item_id = %media_item_id,
+                        media_file_id = %file.media_file_id,
+                        sprite_count = gen_result.sprite_count,
+                        duration_ms = gen_result.generation_duration_ms,
+                        "Storyboard generated"
+                    );
+                }
+                Ok(PublishedStoryboard::AlreadyRunning) => {
+                    result.skipped += 1;
+                    first_locked_media_file_id.get_or_insert(file.media_file_id);
+                }
+                Err(GenerationPublishError::Database(error)) => {
+                    reconcile_storyboard_cache(pool, &cache_dir).await;
+                    return Err(StoryboardError::Database(error));
+                }
+                Err(GenerationPublishError::Pipeline(error)) => {
+                    tracing::warn!(
+                        media_item_id = %media_item_id,
+                        media_file_id = %file.media_file_id,
+                        error = %error,
+                        "Storyboard generation failed"
+                    );
+                    result.errors += 1;
+                }
+            }
+        }
+
         publish_progress(
             state,
             requesting_user_id,
-            media_file_id,
+            file.media_file_id,
             Some(media_item_id),
-            ProgressPhase::Completed,
-            1,
-            0,
-            0,
-            1,
+            ProgressPhase::Progress,
+            result.candidates,
+            result.generated + result.skipped + result.errors,
+            result.generated,
+            result.errors,
         );
-        reconcile_storyboard_cache(pool, &cache_dir).await;
-        return Ok(result);
     }
 
-    match generate_and_publish_storyboard(
-        pool,
-        &cache_dir,
-        &file,
-        source_path,
-        runtime_seconds,
-        &cfg_with_interval,
-    )
-    .await
-    {
-        Ok(PublishedStoryboard::Published(gen_result)) => {
-            result.generated = 1;
-            tracing::info!(
-                media_item_id = %media_item_id,
-                media_file_id = %media_file_id,
-                sprite_count = gen_result.sprite_count,
-                duration_ms = gen_result.generation_duration_ms,
-                "Storyboard generated"
-            );
-            publish_progress(
-                state,
-                requesting_user_id,
-                media_file_id,
-                Some(media_item_id),
-                ProgressPhase::Completed,
-                1,
-                1,
-                1,
-                0,
-            );
-        }
-        Ok(PublishedStoryboard::AlreadyRunning) => {
-            return Err(StoryboardError::GenerationAlreadyInProgress { media_file_id });
-        }
-        Err(GenerationPublishError::Database(e)) => {
-            tracing::warn!(
-                media_item_id = %media_item_id,
-                media_file_id = %media_file_id,
-                error = %e,
-                "Failed to publish storyboard artifacts"
-            );
-            return Err(StoryboardError::Database(e));
-        }
-        Err(GenerationPublishError::Pipeline(e)) => {
-            tracing::warn!(
-                media_item_id = %media_item_id,
-                media_file_id = %media_file_id,
-                error = %e,
-                "Storyboard generation failed"
-            );
-            result.errors = 1;
-            publish_progress(
-                state,
-                requesting_user_id,
-                media_file_id,
-                Some(media_item_id),
-                ProgressPhase::Completed,
-                1,
-                1,
-                0,
-                1,
-            );
-        }
-    }
-
+    publish_progress(
+        state,
+        requesting_user_id,
+        Uuid::nil(),
+        Some(media_item_id),
+        ProgressPhase::Completed,
+        result.candidates,
+        result.generated + result.skipped + result.errors,
+        result.generated,
+        result.errors,
+    );
     reconcile_storyboard_cache(pool, &cache_dir).await;
+    if result.generated == 0 && result.errors == 0 && result.skipped == result.candidates {
+        return Err(StoryboardError::GenerationAlreadyInProgress {
+            media_file_id: first_locked_media_file_id.unwrap_or(Uuid::nil()),
+        });
+    }
     Ok(result)
 }
 
@@ -627,6 +636,12 @@ struct FileCandidate {
     storyboard_config_fingerprint: Option<String>,
 }
 
+#[derive(Debug, Default)]
+struct StoryboardTaskConfig {
+    library_id: Option<Uuid>,
+    interval_mode: Option<String>,
+}
+
 #[derive(Debug)]
 enum PublishedStoryboard {
     Published(sb_svc::GenerationResult),
@@ -662,13 +677,63 @@ async fn fetch_library_metadata(
     let row = sqlx::query(
         r#"
         SELECT metadata FROM libraries
-        WHERE id = $1 AND deleted_at IS NULL
+        WHERE id = $1 AND deleted_at IS NULL AND scan_enabled = true
         "#,
     )
     .bind(library_id)
     .fetch_optional(pool)
     .await?;
     Ok(row.map(|r| r.get::<serde_json::Value, _>("metadata")))
+}
+
+fn parse_storyboard_task_config(config: serde_json::Value) -> Result<StoryboardTaskConfig, String> {
+    let fields = config
+        .as_object()
+        .ok_or_else(|| "storyboard task config must be an object".to_string())?;
+
+    for key in fields.keys() {
+        if !matches!(
+            key.as_str(),
+            "library_id" | "interval_mode" | "max_concurrent_analyses"
+        ) {
+            return Err(format!("unsupported storyboard task config field: {key}"));
+        }
+    }
+
+    let library_id = match fields.get("library_id") {
+        Some(value) => Some(
+            value
+                .as_str()
+                .ok_or_else(|| "storyboard task library_id must be a UUID string".to_string())
+                .and_then(|value| {
+                    Uuid::parse_str(value)
+                        .map_err(|_| "storyboard task library_id must be a UUID string".to_string())
+                })?,
+        ),
+        None => None,
+    };
+    let interval_mode = match fields.get("interval_mode") {
+        Some(value) => {
+            let value = value.as_str().ok_or_else(|| {
+                "storyboard task interval_mode must be adaptive or fixed".to_string()
+            })?;
+            if !matches!(value, "adaptive" | "fixed") {
+                return Err("storyboard task interval_mode must be adaptive or fixed".to_string());
+            }
+            Some(value.to_string())
+        }
+        None => None,
+    };
+    if let Some(value) = fields.get("max_concurrent_analyses")
+        && value.as_u64() != Some(1)
+    {
+        return Err("storyboard task max_concurrent_analyses must be 1".to_string());
+    }
+
+    Ok(StoryboardTaskConfig {
+        library_id,
+        interval_mode,
+    })
 }
 
 /// Gate 3: per-library enablement check. Returns `false` only when
@@ -792,32 +857,11 @@ async fn fetch_files_needing_storyboards(
         .collect())
 }
 
-/// Resolve the primary media file for an item (largest healthy file).
-/// Mirrors the playback and storyboards domain's selection.
-async fn resolve_primary_media_file(
+async fn load_files_for_item_generation(
     pool: &PgPool,
     media_item_id: Uuid,
-) -> Result<Option<Uuid>, sqlx::Error> {
-    let row = sqlx::query(
-        "SELECT mf.id \
-         FROM media_files mf \
-         JOIN media_items mi ON mi.id = mf.media_item_id \
-         WHERE mf.media_item_id = $1 AND mf.is_healthy = true \
-         ORDER BY mf.file_size DESC LIMIT 1",
-    )
-    .bind(media_item_id)
-    .fetch_optional(pool)
-    .await?;
-    Ok(row.map(|r| r.get::<Uuid, _>("id")))
-}
-
-/// Load a single media file's path, hash, and runtime for forced
-/// per-item regeneration.
-async fn load_single_file_for_generation(
-    pool: &PgPool,
-    media_file_id: Uuid,
-) -> Result<Option<FileCandidate>, sqlx::Error> {
-    let row = sqlx::query(
+) -> Result<Vec<FileCandidate>, sqlx::Error> {
+    let rows = sqlx::query(
         r#"
         SELECT
             mf.id           AS media_file_id,
@@ -825,20 +869,24 @@ async fn load_single_file_for_generation(
             mf.file_hash    AS file_hash,
             mf.runtime_seconds AS runtime_seconds
         FROM media_files mf
-        WHERE mf.id = $1 AND mf.is_healthy = true
+        WHERE mf.media_item_id = $1 AND mf.is_healthy = true
+        ORDER BY mf.file_size DESC, mf.id ASC
         "#,
     )
-    .bind(media_file_id)
-    .fetch_optional(pool)
+    .bind(media_item_id)
+    .fetch_all(pool)
     .await?;
-    Ok(row.map(|r| FileCandidate {
-        media_file_id: r.get("media_file_id"),
-        file_path: r.get("file_path"),
-        file_hash: r.get("file_hash"),
-        runtime_seconds: r.get("runtime_seconds"),
-        storyboard_file_hash: None,
-        storyboard_config_fingerprint: None,
-    }))
+    Ok(rows
+        .iter()
+        .map(|r| FileCandidate {
+            media_file_id: r.get("media_file_id"),
+            file_path: r.get("file_path"),
+            file_hash: r.get("file_hash"),
+            runtime_seconds: r.get("runtime_seconds"),
+            storyboard_file_hash: None,
+            storyboard_config_fingerprint: None,
+        })
+        .collect())
 }
 
 async fn generate_and_publish_storyboard(
@@ -1358,5 +1406,25 @@ mod tests {
         };
         let changed = GenerationConfig { width: 640, ..cfg };
         assert!(storyboard_needs_regeneration(&file, &changed));
+    }
+
+    #[test]
+    fn storyboard_task_config_accepts_supported_values() {
+        let config = parse_storyboard_task_config(json!({
+            "library_id": "00000000-0000-0000-0000-000000000001",
+            "interval_mode": "fixed",
+            "max_concurrent_analyses": 1,
+        }))
+        .unwrap();
+        assert_eq!(config.library_id, Some(Uuid::from_u128(1)));
+        assert_eq!(config.interval_mode.as_deref(), Some("fixed"));
+    }
+
+    #[test]
+    fn storyboard_task_config_rejects_invalid_values() {
+        assert!(parse_storyboard_task_config(json!({"library_id": "not-a-uuid"})).is_err());
+        assert!(parse_storyboard_task_config(json!({"interval_mode": "hourly"})).is_err());
+        assert!(parse_storyboard_task_config(json!({"max_concurrent_analyses": 2})).is_err());
+        assert!(parse_storyboard_task_config(json!({"unexpected": true})).is_err());
     }
 }

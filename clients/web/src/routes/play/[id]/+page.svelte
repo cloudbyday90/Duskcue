@@ -31,13 +31,13 @@
             ]);
             item = itemData;
             const files = filesData.items || filesData || [];
-            if (!files.length) {
+            const healthyFiles = files.filter((file) => file.is_healthy !== false);
+            if (!healthyFiles.length) {
                 notifications.error(m.routes_play_id_page_no_playable_files_found());
                 goto(`/media/${itemId}`);
                 return;
             }
-            const selected =
-                files.find((f) => f.id === queryFileId) || files[0];
+            const selected = healthyFiles.find((file) => file.id === queryFileId) || healthyFiles[0];
             mediaFileId = selected.id;
 
             try {

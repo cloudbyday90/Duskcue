@@ -6,7 +6,7 @@
   See LICENSE file for details.
 -->
 <script>
-    import { onDestroy } from 'svelte';
+    import { onDestroy, onMount } from 'svelte';
     import { fade } from 'svelte/transition';
     import { getStoryboardIndex, getStoryboardSprite } from '../api/storyboards.js';
     import { parseStoryboardVtt, findCueForTime } from '../utils/storyboards.js';
@@ -30,6 +30,17 @@
     let sourceKey = null;
     let spriteUrls = $state(new Map());
     let pendingSpriteKey = null;
+    let reduceMotion = $state(false);
+
+    onMount(() => {
+        const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)');
+        const update = () => {
+            reduceMotion = mediaQuery.matches;
+        };
+        update();
+        mediaQuery.addEventListener('change', update);
+        return () => mediaQuery.removeEventListener('change', update);
+    });
 
     $effect(() => {
         const sb = storyboard;
@@ -194,7 +205,8 @@
     <div
         class="seek-preview"
         style="--hover-ratio: {hoverRatio}; --thumb-width: {resolvedDisplayWidth}px; --thumb-height: {displayHeight}px;"
-        transition:fade={{ duration: 100 }}
+        aria-hidden="true"
+        transition:fade={{ duration: reduceMotion ? 0 : 100 }}
     >
         <div class="preview-thumbnail" style={thumbnailStyle}></div>
         <div class="preview-time">{timeLabel}</div>

@@ -45,6 +45,7 @@
     "playback-start-resume-success",
     "playback-heartbeat-stop-success",
     "subtitles-storyboard-artwork-success",
+    "storyboard-preview-authenticated",
     "quality-device-success",
     "downloads-inventory-sync-success",
     "notifications-settings-success",
@@ -195,6 +196,20 @@
         "segments",
         "storyboard metadata",
         "artwork variants"
+      ]
+    },
+    {
+      "id": "storyboard-preview-authenticated",
+      "file": "storyboard-preview-authenticated.json",
+      "domains": [
+        "segments_storyboards",
+        "playback"
+      ],
+      "covers": [
+        "storyboard metadata",
+        "bearer-authenticated VTT",
+        "bearer-authenticated sprite blob",
+        "no credentials in URLs"
       ]
     },
     {

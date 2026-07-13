@@ -476,13 +476,13 @@ async fn main() {
                     .await;
                 }
             })
-            .register_executor("storyboard_generation", move |_pool, task_id, config| {
+            .register_fallible_executor("storyboard_generation", move |_pool, task_id, config| {
                 let state = storyboard_state.clone();
                 async move {
                     duskcue::workers::storyboard_generator::run_storyboard_generation(
                         &state, task_id, config,
                     )
-                    .await;
+                    .await
                 }
             })
             .register_fallible_executor("trakt_sync", move |_pool, task_id, config| {
