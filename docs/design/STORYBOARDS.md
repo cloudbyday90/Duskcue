@@ -409,7 +409,11 @@ Storyboard generation runs after media scanning and segment analysis complete. N
 
 ### Streaming (STREAMING.md)
 
-The playback start endpoint (`POST /api/v1/playback/start`) includes storyboard metadata in the response alongside stream URLs and segment data. The client uses this to load thumbnail previews on the seek bar.
+After playback chooses a healthy media-file version, the client requests that
+version's storyboard metadata through the authenticated storyboard endpoint,
+then loads the protected VTT and sprite assets for seek previews. Keeping the
+preview request separate from playback start avoids embedding media URLs or
+credentials in the playback response.
 
 ### Scheduled Tasks (DATABASE.md — System Domain)
 
@@ -435,7 +439,10 @@ New error code:
 |---|---|---|
 | `MEDIA_007` | 404 | Storyboard not found (not yet generated for this item) |
 
-Generation failures are logged and tracked in `scheduled_task_runs` — they don't produce API errors since generation is a background task.
+Per-file generation failures are logged while the worker continues with other
+files. A scheduled run returns a failure after cleanup when any targeted
+library or file failed, so `scheduled_task_runs` can retry and surface the
+real outcome. Manual triggers return their generated/skipped/error summary.
 
 ---
 
@@ -484,7 +491,9 @@ Storyboard retrieval, serving, generation-trigger, and deletion API surface impl
 - ~~All six service functions are `todo!()` stubs~~ — Task 4 implements `get_storyboard`, `get_storyboard_index`, `get_storyboard_sprite`, and `delete_storyboard` (DB queries + disk reads); Task 6 (`workers/storyboard_generator.rs`) implements the generation triggers (`trigger_library_generation`, `trigger_item_generation`) by enqueuing work on the scheduler.
 - ~~FFmpeg two-phase pipeline (frame extraction → sprite assembly)~~ — Task 4 (`services/storyboards.rs`) implements the generation library using a refined single-command-per-sheet filtergraph (see Task 4 notes below); Task 6 wires it into a scheduled task worker.
 - ~~Adaptive interval selection~~ — `adaptive_interval()` function per the Generation Pipeline spec; landed in `services/storyboards.rs` (Task 4).
-- Storyboard metadata in playback start response — When `start_playback` is updated to include the storyboard block per the "Integration with Playback" spec, the playback service will call `storyboards::service::get_storyboard` and embed the result in `PlaybackStartResponse`.
+- Playback-start embedding — intentionally not used. The player requests
+  storyboard metadata after selecting its healthy media-file version, which
+  keeps protected preview assets independent from playback-session startup.
 - `storyboard_generation` scheduled task already seeded (migration `20260530070000_seed_default_data.sql`, daily 04:00) — Task 6 registers the executor on the scheduler in `main.rs`.
 
 ### Phase 10 Task 4 — Generation Library + Domain Service Implementation (Complete)
@@ -543,20 +552,18 @@ at 04:00, and FFmpeg invocations are sandboxed on Linux.
 - **Incremental candidate query with null-safe source and configuration freshness** — `fetch_files_needing_storyboards` loads the storyboard row with each healthy file, resolves the actual per-file interval, and compares nullable source hashes plus a normalized generation fingerprint. This avoids PostgreSQL's ordinary `NULL = NULL` unknown result and regenerates when the output-affecting effective configuration changes. A matching null source hash is cacheable; a missing fingerprint makes legacy rows regenerate once.
 - **DB row upsert with `ON CONFLICT (media_file_id) DO UPDATE`** — `persist_storyboard_row` upserts the storyboards row on each successful generation. The `media_file_id` UNIQUE constraint is the conflict target. On update, all fields are refreshed (interval, width, height, sprite_count, total_thumbnails, total_size_bytes, keyframe_only, quality, generated_at, generation_duration_ms, metadata, file_hash, artifact_id, config_fingerprint). This handles both first-time generation and forced regeneration cleanly.
 - **Grid shape stored in `metadata.columns` and `metadata.rows`** — The worker writes `metadata = jsonb_build_object('columns', $N, 'rows', $N)` when creating the row so `domains::storyboards::service::read_grid_shape()` can recover the per-generation grid. This closes the loop with the Task 4 design decision.
-- **Atomic forced regeneration for per-item trigger** — `trigger_item_generation` calls `generate_for_item_one`, which locks the selected media file with `pg_try_advisory_xact_lock`, generates an unreferenced UUIDv7 artifact directory, and switches `storyboards.artifact_id` in the same transaction only after successful generation. A concurrent manual trigger returns `SYS_002`; scheduled work counts the file as skipped. Existing previews remain available when generation or persistence fails.
+- **Atomic forced regeneration for every healthy item version** — `trigger_item_generation` calls `generate_for_item_one`, which processes every healthy media-file version in deterministic order. Each version uses `pg_try_advisory_xact_lock`, generates an unreferenced UUIDv7 artifact directory, and switches `storyboards.artifact_id` in the same transaction only after successful generation. A manual request returns `SYS_002` only when all versions are already locked; scheduled work counts locked versions as skipped. Existing previews remain available when generation or persistence fails. Deletion obtains the same locks and removes every version's row and cache directory together.
 - **Sandbox applied via `pre_exec` on each FFmpeg invocation** — `services::storyboards::invoke_ffmpeg_for_sheet` now uses `command.pre_exec(move || apply_sandbox(&SandboxConfig { media_path, transcode_dir: output_dir }))` on Linux, matching the `services::transcoding::spawn_ffmpeg` pattern. The sandbox restricts FFmpeg to read-only access on `/usr`, `/lib`, `/etc`, `/dev/dri`, and the source media path; read-write access on the per-file storyboard output directory and `/tmp`. Seccomp filters to a 62-syscall allow-list with `KillProcess` on violation. Sandbox failures are non-fatal (logged at WARN, FFmpeg continues without sandbox) per SECURITY.md graceful degradation model. Non-Linux platforms are no-ops.
-- **Per-file error isolation** — `generate_for_library` catches per-file errors and continues to the next file (matching the segment detector's per-file error pattern). Failed files are counted in `LibraryGenerationResult.errors` and logged at WARN but do not abort the library run. This is critical for large libraries where a single corrupt file should not prevent the rest from processing.
+- **Per-file error isolation with truthful scheduler status** — `generate_for_library` catches per-file errors and continues to the next file (matching the segment detector's per-file error pattern). Failed files are counted and logged at WARN so one corrupt file does not prevent useful work. The scheduled wrapper aggregates those errors after all libraries and returns an error to the scheduler, preserving retries and accurate run history.
 - **Movie/episode-only filtering** — The candidate query filters `mi.type IN ('movie', 'episode')` (same as the segment detector) because series and seasons are container types without direct `media_files`; storyboards correspond to actual video files.
 - **Healthy media_files required** — `mf.is_healthy = true` guard ensures we only generate storyboards for files that exist on disk and are playable. Without this, the worker would spawn FFmpeg on missing files and every invocation would fail.
-- **4-hour timeout stored but not enforced** — The existing scheduler executor wrapper uses a hardcoded 3600s timeout; the `timeout_seconds` column (14400 for storyboard_generation) is stored but not yet enforced. This is a pre-existing scheduler limitation noted in Task 5; large library generation may hit the 3600s wrapper timeout first.
+- **Configured task timeout is honored** — The scheduler derives its timeout from each task's `timeout_seconds` value (the Storyboards default is 14400 seconds), so large libraries use their declared four-hour budget rather than a hidden one-hour wrapper.
 - **No new workspace dependencies** — All functionality uses existing `sqlx`, `serde_json`, `tokio::process::Command`, and the already-built `services::storyboards` and `services::sandbox` modules.
 
 **Not yet implemented (deferred to later tasks/phases):**
 
 - ~~Web client `SeekPreview.svelte` — Task 8 consumes the `/storyboard/index.vtt` endpoint via hls.js or a custom seek-bar component~~ — **Complete (Task 8)**
-- Storyboard metadata in playback start response — When `start_playback` is updated to include the storyboard block per the "Integration with Playback" spec, the playback service will call `storyboards::service::get_storyboard` and embed the result in `PlaybackStartResponse`
 - Prometheus metrics from the Metrics table (`storyboard_files_processed_total`, `storyboard_generation_duration_seconds`, etc.) — deferred to Pre-v1.0 Hardening
-- Per-task timeout enforcement — the scheduler executor uses a hardcoded 3600s timeout; the `timeout_seconds` column is stored but not enforced
 - `outro` segment type via silence-gap detection — unrelated to Task 6; deferred to a follow-up of Task 5
 
 ### Phase 10 Task 8 — Seek Preview Component (Complete)

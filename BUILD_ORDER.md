@@ -4388,7 +4388,7 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 ---
 
-## Post-Phase 10 — Storyboards Hardening (IN PROGRESS)
+## Post-Phase 10 — Storyboards Hardening (COMPLETE)
 
 **Goal:** Make Storyboards reliable across fresh databases, concurrent generation, authenticated clients, and configurable cache/storage environments.
 
@@ -4416,9 +4416,14 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 5. ~~Honor configured cache storage and reconcile orphaned artifacts~~ **DONE — `85b7a1f`**
    - Storyboard handlers and workers now use `BootstrapConfig.cache_dir`, honoring the configured cache root.
    - Post-generation reconciliation locks each media-file directory before removing unreferenced artifact directories, obsolete legacy files, or directories with no storyboard row; active generation staging is skipped safely.
-6. Return scheduled generation failures to the scheduler, validate task configuration, add Storyboards fixtures/integration coverage, and finish seek-preview accessibility/performance hardening.
+6. ~~Return scheduled generation failures to the scheduler, validate task configuration, add Storyboards fixtures/integration coverage, and finish seek-preview accessibility/performance hardening~~ **DONE — `4cddce0`**
+   - The registered executor is fallible. Malformed task configuration, unavailable configured libraries, and any per-library or per-file generation failure are returned to the scheduler after the worker completes safe cleanup.
+   - Task configuration accepts only a UUID `library_id`, `adaptive`/`fixed` interval mode, and the serialized single-worker concurrency setting; unknown or invalid values fail fast.
+   - Forced item generation and deletion now operate on every healthy media-file version under the same advisory-lock discipline, avoiding a stale alternate rendition after an admin action.
+   - The client contract fixture pack now covers bearer-authenticated storyboard metadata, VTT, and WebP blob retrieval with private no-store caching and no credentials in URLs.
+   - Seek previews honor reduced-motion preference, stay hidden from the accessibility tree, work with keyboard range input, and retain a 44px seek target. Playback declines unhealthy requested files.
 
-**Context for Task 6:** The scheduler still reports per-library failure as success, accepts malformed Storyboards task configuration, and item-level generation/deletion still applies only to the primary version. Task 6 must complete those mutation semantics, fixture/integration coverage, and seek-preview accessibility/performance hardening.
+**Outcome:** All six hardening tasks are complete. Verification for Task 6: `cargo fmt --check`, `cargo test -p duskcue` (753 tests), `npx svelte-check`, `npm run build`, client fixture and contract verifiers, and disposable PostgreSQL migration verification.
 
 ---
 
