@@ -4391,9 +4391,9 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 ---
 
-## Post-Phase 10 — Storyboards Hardening (COMPLETE)
+## Post-Phase 10 — Storyboards Hardening & Observability (COMPLETE)
 
-**Goal:** Make Storyboards reliable across fresh databases, concurrent generation, authenticated clients, and configurable cache/storage environments.
+**Goal:** Make Storyboards reliable and observable across fresh databases, concurrent generation, authenticated clients, and configurable cache/storage environments.
 
 **Authoritative documents:** [STORYBOARDS.md](docs/design/STORYBOARDS.md), [DATABASE.md](docs/design/DATABASE.md), [MIGRATION_STRATEGY.md](docs/design/MIGRATION_STRATEGY.md), [CLIENT_PLATFORM_READINESS.md](docs/design/CLIENT_PLATFORM_READINESS.md).
 
@@ -4425,8 +4425,12 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
    - Forced item generation and deletion now operate on every healthy media-file version under the same advisory-lock discipline, avoiding a stale alternate rendition after an admin action.
    - The client contract fixture pack now covers bearer-authenticated storyboard metadata, VTT, and WebP blob retrieval with private no-store caching and no credentials in URLs.
    - Seek previews honor reduced-motion preference, stay hidden from the accessibility tree, work with keyboard range input, and retain a 44px seek target. Playback declines unhealthy requested files.
+7. ~~Add bounded Storyboard generation, storage, and serving telemetry~~ **DONE — `09668d4`**
+   - The existing Prometheus endpoint now exposes outcome-bounded generation attempts and errors, successful FFmpeg duration and sprite counts, authenticated index/sprite read outcomes, and the reconciled cache byte size.
+   - Library IDs, media IDs, file paths, and raw error text remain in structured logs, task history, and SSE progress rather than Prometheus labels; each label vocabulary is fixed and privacy-safe.
+   - Cache measurement runs off the async worker, sums the actual VTT/WebP cache tree, and ignores symlinks so telemetry cannot traverse outside the configured cache root.
 
-**Outcome:** All six hardening tasks are complete. Verification for Task 6: `cargo fmt --check`, `cargo test -p duskcue` (753 tests), `npx svelte-check`, `npm run build`, client fixture and contract verifiers, and disposable PostgreSQL migration verification.
+**Outcome:** All seven hardening and observability tasks are complete. Verification for Task 7: `cargo fmt --all -- --check`, `cargo test -p duskcue` (763 tests), `node scripts/verify-storyboard-metrics.mjs`, `node scripts/verify-client-contracts.mjs`, and `node scripts/verify-playback-conformance.mjs`. A strict full-crate clippy run remains blocked by 11 pre-existing diagnostics in download, playback, TV, notification, and metadata-refresh modules; the Storyboard implementation adds none.
 
 ---
 
