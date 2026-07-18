@@ -1,6 +1,7 @@
 package com.duskcue.tv.ui
 
 import com.duskcue.tv.TvApplicationRuntime
+import com.duskcue.tv.TvDeepLink
 import com.duskcue.tv.api.ApiResult
 import com.duskcue.tv.api.ProfileListResponse
 import com.duskcue.tv.api.ServerOrigin
@@ -106,6 +107,8 @@ class TvAppController(
 ) {
     private val mutableState = MutableStateFlow(TvAppState())
     val state: StateFlow<TvAppState> = mutableState.asStateFlow()
+    private var pendingDeepLink: TvDeepLink.Playback? = null
+    private var pendingDeepLinkFailure = false
 
     fun bootstrap() {
         scope.launch {
@@ -124,6 +127,22 @@ class TvAppController(
     }
 
     fun updateOrigin(value: String) = mutableState.update { it.copy(originInput = value, message = null) }
+
+    fun handleDeepLink(rawUri: String?) {
+        when (val deepLink = TvDeepLink.parse(rawUri)) {
+            TvDeepLink.Absent -> Unit
+            TvDeepLink.Invalid -> {
+                pendingDeepLink = null
+                pendingDeepLinkFailure = true
+                openPendingDeepLink()
+            }
+            is TvDeepLink.Playback -> {
+                pendingDeepLink = deepLink
+                pendingDeepLinkFailure = false
+                openPendingDeepLink()
+            }
+        }
+    }
 
     fun beginDeviceLink() {
         scope.launch {
@@ -518,8 +537,95 @@ class TvAppController(
                 profiles = profiles,
                 rememberProfile = profiles.remembered_profile_id != null,
             )
-            refreshHome()
+            if (!openPendingDeepLink()) {
+                refreshHome()
+            }
         }
+    }
+
+    private fun openPendingDeepLink(): Boolean {
+        if (state.value.phase != TvAppPhase.SignedIn) return false
+        if (pendingDeepLinkFailure) {
+            pendingDeepLinkFailure = false
+            showDeepLinkUnavailable()
+            return true
+        }
+        val deepLink = pendingDeepLink ?: return false
+        scope.launch {
+            val session = runtime.activeSession() ?: return@launch showServerSetup("Link this TV to continue.")
+            if (session.profileSelectionRequired) return@launch openProfiles()
+            mutableState.update { it.copy(busy = true, message = null, prePlayback = null) }
+            val resolve = withContext(Dispatchers.IO) {
+                runtime.client(session.origin).resolveTvItem(deepLink.platformContentId)
+            }
+            if (resolve is ApiResult.Failure && resolve.status == 401) {
+                withContext(Dispatchers.IO) { runtime.authentication.handleSessionKicked() }
+                showServerSetup("Link this TV to continue.")
+                return@launch
+            }
+            val resolved = (resolve as? ApiResult.Success)?.value
+            if (resolved == null ||
+                !resolved.access_revalidated ||
+                resolved.availability != "playable" ||
+                resolved.playback_action != "start_playback"
+            ) {
+                pendingDeepLink = null
+                showDeepLinkUnavailable()
+                return@launch
+            }
+            val start = withContext(Dispatchers.IO) {
+                runtime.client(session.origin).startTvPlayback(
+                    StartTvPlaybackRequest(
+                        media_item_id = resolved.media_item_id,
+                        device_profile = TvDeviceProfile.androidTv(),
+                    ),
+                )
+            }
+            if (start is ApiResult.Failure && start.status == 401) {
+                withContext(Dispatchers.IO) { runtime.authentication.handleSessionKicked() }
+                showServerSetup("Link this TV to continue.")
+                return@launch
+            }
+            val playback = (start as? ApiResult.Success)?.value
+            if (playback == null) {
+                pendingDeepLink = null
+                showDeepLinkUnavailable()
+                return@launch
+            }
+            val started = runtime.startInteractivePlayback(
+                sessionId = playback.session_id,
+                streamUrl = playback.stream_url,
+                mediaItemId = playback.media_item_id,
+                title = "Duskcue",
+                startPositionMs = resolved.resume_position_ms,
+                qualityMode = "auto",
+                audioLanguage = null,
+                subtitleLanguage = null,
+            )
+            if (!started) {
+                mutableState.update { it.copy(busy = false, message = "Choose a profile before playback starts.") }
+                return@launch
+            }
+            pendingDeepLink = null
+            mutableState.update {
+                it.copy(
+                    route = TvRoute.Player,
+                    detail = null,
+                    playback = playback,
+                    busy = false,
+                    message = null,
+                )
+            }
+        }
+        return true
+    }
+
+    private fun showDeepLinkUnavailable() {
+        if (state.value.route == TvRoute.Player) {
+            runtime.stopPlayback()
+            TvPlaybackService.clearPlaybackUi()
+        }
+        mutableState.update { it.copy(route = TvRoute.Home, busy = false, message = "This item is unavailable.") }
     }
 
     private fun refreshHome() {

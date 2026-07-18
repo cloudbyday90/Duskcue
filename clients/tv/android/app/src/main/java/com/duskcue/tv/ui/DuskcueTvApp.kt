@@ -54,6 +54,7 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.duskcue.tv.R
+import com.duskcue.tv.TvDeepLinkRequest
 import com.duskcue.tv.TvApplicationRuntime
 import com.duskcue.tv.api.ApiResult
 import com.duskcue.tv.api.ProfileListResponse
@@ -76,13 +77,17 @@ private val TvError = Color(0xFFC95C5C)
 private val TvSuccess = Color(0xFF6ABF69)
 
 @Composable
-fun DuskcueTvApp(runtime: TvApplicationRuntime) {
+fun DuskcueTvApp(runtime: TvApplicationRuntime, deepLinkRequest: TvDeepLinkRequest) {
     val scope = rememberCoroutineScope()
     val controller = remember(runtime) { TvAppController(runtime, scope) }
     val state by controller.state.collectAsState()
 
     LaunchedEffect(controller) {
         controller.bootstrap()
+    }
+
+    LaunchedEffect(deepLinkRequest.sequence) {
+        controller.handleDeepLink(deepLinkRequest.uri)
     }
 
     MaterialTheme {

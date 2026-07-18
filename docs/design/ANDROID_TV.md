@@ -6,7 +6,7 @@ This document is the implementation authority for Phase 17. It turns the shared 
 
 ## Status
 
-Phase 17 Tasks 0–4 are complete as of July 18, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, 16:9 placeholder banner/icon, Compose for TV entry point, device linking and profile lifecycle, profile-gated home/browse/detail/search/settings screens, debug APK build, fixture-backed contract unit tests, and Android lint verification. It is intentionally separate from the Flutter phone/tablet client.
+Phase 17 Tasks 0–6 are complete as of July 18, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, 16:9 placeholder banner/icon, Compose for TV entry point, device linking and profile lifecycle, profile-gated home/browse/detail/search/settings screens, an in-memory Media3 playback service, strict playback deep-link revalidation, debug APK build, fixture-backed contract unit tests, and Android lint verification. It is intentionally separate from the Flutter phone/tablet client.
 
 ## Research Outcome
 
@@ -114,9 +114,15 @@ The TV player is now an app-internal `MediaSessionService` owning one ExoPlayer,
 
 Audio and caption choices are fetched from the profile-authorized media-file endpoint while a detail view is active. The scanner now stores every source audio stream in `media_files.additional_streams.audio` alongside subtitle streams, so a library rescan upgrades existing media metadata. `POST /api/v1/playback/start` validates an explicitly selected source index and returns `VALID_001` with a field-level `unavailable` error for a missing audio or subtitle stream. The selected audio stream drives the decision engine and FFmpeg map; a selected subtitle is retained in direct play or rendered into the HLS conversion when container conversion is required. The player observes profile-authorized segment windows once per second and exposes a focusable Skip Intro/Credits action that uses the segment's server-provided `skip_to_ms`. The native direct-play preference is language-based, so exact selection among duplicate same-language streams remains a physical-device validation item rather than a completed release claim.
 
-The Android test/lint/debug-build gate and Rust `cargo check -p duskcue` pass after this implementation. Deep-link launch revalidation, Watch Next, artwork, CI, and device evidence remain separate tasks.
+The Android test/lint/debug-build gate and Rust `cargo check -p duskcue` pass after this implementation. Watch Next, artwork, CI, and device evidence remain separate tasks.
 
 `duskcue://play/{type}/{id}` is an app route, not a capability URL. The activity accepts only recognized type/ID paths, shows no private item details until server resolution succeeds, and falls back to device linking or a bounded unavailable/access-denied state. It never persists signed stream URLs, bearer tokens, parent PINs, or parent-unlock expiry. Future Google TV Live integrations must additionally respect the documented `exit_on_back` direct-back behavior; it is not claimed by the initial on-demand client.
+
+#### Task 6 Implementation
+
+`MainActivity` converts both the initial activity intent and every `onNewIntent` delivery into an in-memory launch request. The parser accepts exactly `duskcue://play/{movie|episode}/{canonical UUID}`; it rejects a different authority, type, path shape, query, fragment, user-info, or port before any API call. The raw URI is never written to storage, rendered, logged, or included in an error message. Task 0 approved this custom-scheme route only, so this implementation intentionally does not claim an HTTPS App Link or register an unverified deployment-specific host.
+
+A valid request remains pending through device linking and required profile selection. Once the authenticated profile gate opens, the client converts it to the canonical `duskcue:{type}:{id}` server identity, calls TV resolve, requires a fresh playable/access-revalidated response, and only then starts a new server playback session at the returned current resume position. It does not trust the launcher’s title, availability, prior resume position, stream URL, or track state. Revoked, deleted, malformed, unavailable, or otherwise stale entries produce the same bounded `This item is unavailable.` outcome; a 401 clears the local session and returns to device linking while retaining only the in-memory non-secret target for the renewed session. This is direct-to-play once access is established, with no title or resume/start-over interstitial.
 
 ### Watch Next Adapter
 
