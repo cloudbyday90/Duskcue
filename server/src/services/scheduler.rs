@@ -307,7 +307,7 @@ impl Scheduler {
         let task_name = task.name.clone();
         let task_type = task.task_type.clone();
         let config = task.config.clone();
-        let timeout = Duration::from_secs(task.timeout_seconds.max(1) as u64);
+        let timeout = task_timeout_duration(task.timeout_seconds);
         let max_retries = task.max_retries;
         let retry_delay = task.retry_delay_seconds as u64;
         let consecutive_failures = task.consecutive_failures;
@@ -889,6 +889,10 @@ fn compute_next_run(
     *from + chrono::Duration::hours(1)
 }
 
+fn task_timeout_duration(timeout_seconds: i32) -> Duration {
+    Duration::from_secs(timeout_seconds.max(1) as u64)
+}
+
 pub async fn seed_default_tasks(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> {
     let existing: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM scheduled_tasks")
         .fetch_one(pool)
@@ -1043,4 +1047,81 @@ pub async fn seed_default_tasks(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> 
 
     tracing::info!("Default scheduled tasks seeded");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use sqlx::postgres::PgPoolOptions;
+
+    use super::*;
+
+    fn test_pool() -> sqlx::PgPool {
+        PgPoolOptions::new()
+            .connect_lazy("postgres://localhost/duskcue")
+            .unwrap()
+    }
+
+    #[test]
+    fn task_timeout_duration_uses_the_configured_value_and_clamps_invalid_values() {
+        assert_eq!(task_timeout_duration(14_400), Duration::from_secs(14_400));
+        assert_eq!(task_timeout_duration(0), Duration::from_secs(1));
+        assert_eq!(task_timeout_duration(-1), Duration::from_secs(1));
+    }
+
+    #[tokio::test]
+    async fn fallible_executor_timeout_drops_the_pending_work() {
+        let completed = Arc::new(AtomicBool::new(false));
+        let handler_completed = Arc::clone(&completed);
+        let pool = test_pool();
+        let scheduler = Scheduler::new(pool.clone()).register_fallible_executor(
+            "test_timeout",
+            move |_pool, _task_id, _config| {
+                let completed = Arc::clone(&handler_completed);
+                async move {
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    completed.store(true, Ordering::Release);
+                    Ok::<(), &'static str>(())
+                }
+            },
+        );
+        let executor = Arc::clone(&scheduler.executors[0].1);
+        let handle = executor(
+            pool,
+            Uuid::nil(),
+            serde_json::json!({}),
+            Duration::from_millis(10),
+            CancellationToken::new(),
+        );
+
+        assert!(matches!(handle.await.unwrap(), TaskRunOutcome::Timeout));
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        assert!(!completed.load(Ordering::Acquire));
+    }
+
+    #[tokio::test]
+    async fn fallible_executor_cancellation_wins_before_the_handler_starts() {
+        let pool = test_pool();
+        let scheduler = Scheduler::new(pool.clone()).register_fallible_executor(
+            "test_cancellation",
+            move |_pool, _task_id, _config| async move {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                Ok::<(), &'static str>(())
+            },
+        );
+        let executor = Arc::clone(&scheduler.executors[0].1);
+        let cancellation = CancellationToken::new();
+        cancellation.cancel();
+        let handle = executor(
+            pool,
+            Uuid::nil(),
+            serde_json::json!({}),
+            Duration::from_secs(1),
+            cancellation,
+        );
+
+        assert!(matches!(handle.await.unwrap(), TaskRunOutcome::Cancelled));
+    }
 }
