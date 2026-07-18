@@ -4493,7 +4493,7 @@ Phases 9–13a can be built in any order after Phase 8, since they are independe
 
 ## Post-Phase 16d — Household Profiles, Kids Mode, and Ambient Channels (Core Complete; Hardening Follow-up Active)
 
-**Committed:** `00d631b` and `d4e37ba` on `main`
+**Committed:** `00d631b`, `d4e37ba`, and `c53dabe` on `main`
 
 **Authoritative document:** [PROFILES_AND_AMBIENT_CHANNELS.md](docs/design/PROFILES_AND_AMBIENT_CHANNELS.md)
 
@@ -4505,6 +4505,7 @@ Phases 9–13a can be built in any order after Phase 8, since they are independe
 - Ordered adult and Kids ambient channels. Their queue resolution rechecks profile policy, while `playback_mode = ambient` persists diagnostic session/events but never modifies user history, resume, play count, TV surfaces, or Trakt export.
 - Web profile picker and management page for standard/Kids profile creation and parental policies.
 - Opt-in remembered-profile mapping per account/device, resolved only after normal authentication and cleared on sign-out or session revocation.
+- Server-issued first-use selection state for new multi-profile sessions, plus a web profile gate that blocks profile-scoped routes until an explicit choice is made.
 
 **Key decisions:**
 
@@ -4513,8 +4514,8 @@ Phases 9–13a can be built in any order after Phase 8, since they are independe
 - Parental PIN entry, timed parent unlock, and profile-specific Trakt linking are intentionally deferred rather than storing an unprotected or client-side hashed PIN.
 - A remembered profile is a device convenience setting, not an account credential or a Kids exit lock; profile PIN work remains required before making a shared-TV lock claim.
 
-**Shared-TV preference clarification (2026-07-18):** A remembered profile is a per-account, per-installation mapping keyed by a random opaque device ID. Separate TVs deliberately get separate mappings, and deleting app/browser data creates a new identity rather than cloning a household preference. A valid mapping is applied only after account authentication. A first-use shared TV must show its profile picker before it requests or publishes profile-scoped rows; the current server default-profile fallback is retained for API compatibility, so enforcing that first-use picker is a required native-client follow-up. Every profile switch must clear profile-scoped caches and launcher rows before the new profile is rendered or published. See [PROFILES_AND_AMBIENT_CHANNELS.md](docs/design/PROFILES_AND_AMBIENT_CHANNELS.md), [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md), and [CLIENT_CONTRACTS.md](docs/api/CLIENT_CONTRACTS.md).
+**Shared-TV selection hardening (2026-07-18, `c53dabe`):** A remembered profile is a per-account, per-installation mapping keyed by a random opaque device ID. Separate TVs deliberately get separate mappings, and deleting app/browser data creates a new identity rather than cloning a household preference. A valid mapping is applied only after account authentication. A new session with multiple profiles and no valid mapping is explicitly marked `profile_selection_required`; the server retains its default-profile fallback for API compatibility, while the web shell blocks profile-scoped routes until the user switches explicitly. That switch clears the flag atomically with a requested remember/forget mutation. Web invalidates in-flight profile-scoped calls, remounts profile-scoped UI, resets local playback, and revalidates same-origin tabs through BroadcastChannel with a storage-event fallback. Native TV clients must implement the same gate and clear previews, artwork, queue, and launcher state before publishing replacement rows. See [PROFILES_AND_AMBIENT_CHANNELS.md](docs/design/PROFILES_AND_AMBIENT_CHANNELS.md), [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md), and [CLIENT_CONTRACTS.md](docs/api/CLIENT_CONTRACTS.md).
 
 **Hardening order after Link:** (1) enforce first-use shared-TV profile selection and remembered-profile lifecycle on native clients, (2) add a server-verifiable parent PIN and timed parent-unlock boundary for Kids profiles, and (3) consume the already-defined ambient-channel contract in native background players without contributing personal playback activity.
 
-**Verification:** `cargo check -p duskcue`, focused profile unit tests, `npm run build` in `clients/web`, `node scripts/verify-client-contracts.mjs`, and `scripts/verify-migrations.ps1` against disposable PostgreSQL 18 pass.
+**Verification:** `cargo check -p duskcue`, focused profile-selection unit test, `npm run build` in `clients/web`, `node scripts/verify-profile-selection-integration.mjs`, `node scripts/verify-auth-conformance.mjs`, `node scripts/verify-client-contracts.mjs`, and `scripts/verify-migrations.ps1` against disposable PostgreSQL 18 pass.

@@ -17,10 +17,21 @@ The first implementation establishes the server contract and data model for thre
 | Parent unlock secret | OWASP recommends a deliberately slow password-hashing function, with Argon2id preferred, for password-equivalent secrets. | A parental PIN is never stored or returned. The future parent-unlock endpoint will hash and verify it server-side with Argon2id; profile creation and switching never expose a PIN value in a response. |
 | Children's data | COPPA focuses on online collection from children under 13. A local-first server should still minimize child data and put control with the parent. | A Kids profile stores only a display name, avatar choice, and policy. It does not need an email, birth date, advertising identity, or external-service account. Unknown ratings are denied in Kids mode. |
 | Remembered profile | Apple TV exposes a platform decision for whether a shared device should retain the current user selection; OWASP treats session credentials as authentication secrets, not preference data. | Remember a selected profile only as a server-side, account-scoped mapping to a stable per-installation device ID. It is opt-in, revocable, and never a cached session token, password, parental PIN, hardware identifier, or standalone profile credential. |
+| First-use selection and tab consistency | Apple directs tvOS apps to show a picker when there is no saved selection or when it cannot store one. The HTML Broadcast Channel API and Web Storage `storage` event provide same-origin notification only. | Record whether a new session requires a selection, block the web shell from mounting profile-scoped routes until the user chooses, and propagate a minimal profile-change signal to other same-origin tabs. |
 | Android background media | Android Media3 documents a `MediaSessionService` for playback that continues outside the activity. | Android clients consume the ambient queue contract through a native Media3 player/service in the Android/TV phases; web playback is a functional fallback, not a substitute for native background playback. |
 | Apple background media | AVFoundation supports queue-based playback and application background audiovisual configuration. | Apple clients consume the same queue contract with `AVQueuePlayer` and the appropriate audio-session/background capability in the iOS/tvOS phases. |
 
 Sources: [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html), [OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html), [FTC COPPA guidance](https://www.ftc.gov/business-guidance/resources/complying-coppa-frequently-asked-questions), [Apple TV user preference guidance](https://developer.apple.com/documentation/tvservices/tvusermanager), [RFC 8628 device authorization](https://www.rfc-editor.org/rfc/rfc8628), [Android Media3 background playback](https://developer.android.com/media/media3/session/background-playback), [Apple AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer), and [Apple media playback configuration](https://developer.apple.com/documentation/avfoundation/configuring-your-app-for-media-playback?changes=la_4__5). The Apple, OWASP, and RFC sources were rechecked on 2026-07-18.
+
+### First-Use Gate Research (2026-07-18)
+
+| Option | Advantages | Limitations | Decision |
+|---|---|---|---|
+| Rely only on the default active profile | No session/schema change. | A first-use shared client can mount personalized rows before the person chooses; it cannot state whether the default is a deliberate selection. | Rejected. |
+| Store the selected profile only in browser storage | Simple local handoff. | It can drift from server session state, cannot safely replace the account-scoped mapping, and does not give native clients an API contract. | Rejected. |
+| Server session selection flag plus same-origin client notification | Distinguishes a compatibility default from an explicit current-session choice; lets web and native clients apply the same gate; BroadcastChannel offers direct tab notification and `storage` is a fallback. | Existing sessions are not retroactively made pending, and clients still must implement the gate. | Selected. |
+
+Apple's current `TVUserManager` guidance says to show the picker when preferences cannot be retained or no saved selection exists. The WHATWG HTML Standard defines BroadcastChannel for unrelated same-origin browsing contexts; the Web Storage `storage` event reaches the other same-origin contexts. Duskcue therefore sends only `{ owner_user_id, profile_id, revision }` through those mechanisms—never credentials, PINs, device IDs, media state, or profile policy—and each receiving tab revalidates through the server before rendering profile-scoped data. Sources: [Apple TVUserManager](https://developer.apple.com/documentation/tvservices/tvusermanager), [WHATWG BroadcastChannel](https://html.spec.whatwg.org/multipage/web-messaging.html#broadcasting-to-other-browsing-contexts), [MDN Broadcast Channel API](https://developer.mozilla.org/en-US/docs/Web/API/Broadcast_Channel_API), and [MDN storage event](https://developer.mozilla.org/en-US/docs/Web/API/Window/storage_event).
 
 ## Data Model
 
@@ -65,9 +76,9 @@ This is a convenience default, not a parental-control lock or authentication sub
 
 A remembered mapping is intentionally per account and per app installation. Each TV app installation, browser profile, or native client installation generates a random opaque `device_id`; it must not derive the value from a hardware serial number, advertising identifier, network address, or a household-wide identifier. Clearing app data, resetting the TV app, or deleting browser storage creates a new device identity and therefore does not inherit a remembered profile. This gives separate TVs independent defaults even when they use the same Duskcue account.
 
-On a device with a valid mapping, the server selects that profile at normal account-session creation and the TV can enter the mapped profile without another picker. On a device without one, the server's compatibility fallback is the account default profile. A shared-TV client must show a “Who’s watching?” picker before it fetches, displays, or publishes profile-scoped rows for a first-use device, and it must call the existing switch endpoint after the user chooses a profile. Selecting “remember on this TV” creates the mapping; selecting “forget this TV” removes it. This client-side first-use gate is a required follow-up for native TV phases—the current server session model has no `profile_selection_pending` state.
+On a device with a valid mapping, the server selects that profile at normal account-session creation and the TV can enter the mapped profile without another picker. When an account has more than one profile but the new session has no mapping, the server starts on the compatibility default and marks the session `profile_selection_required`. A shared-TV client must show a “Who’s watching?” picker before it fetches, displays, or publishes profile-scoped rows, and it must call the existing switch endpoint after the user chooses a profile. Selecting “remember on this TV” creates the mapping; selecting “forget this TV” removes it. A successful switch clears the current session's selection-required flag even if the choice is deliberately not remembered.
 
-Profile changes are privacy-sensitive cache boundaries. Every client must abort in-flight profile-scoped requests and clear active playback previews, Blob/object URLs, artwork and TV-feed caches, platform row mappings, ambient queue state, and client-side profile summaries before it renders the new profile. A browser must propagate this invalidation to its other open tabs; a native TV must clear it before publishing launcher rows. Server authorization remains authoritative for every subsequent request.
+Profile changes are privacy-sensitive cache boundaries. Every client must abort in-flight profile-scoped requests and clear active playback previews, Blob/object URLs, artwork and TV-feed caches, platform row mappings, ambient queue state, and client-side profile summaries before it renders the new profile. A browser must propagate a minimal same-origin invalidation signal to other open tabs, which must revalidate their own server session before rendering profile-scoped data; a native TV must clear the same state before publishing launcher rows. Server authorization remains authoritative for every subsequent request.
 
 ## Ambient Channel Contract
 
@@ -92,10 +103,18 @@ Implemented in the initial server slice:
 - ordered standard/Kids ambient channels, with parent-controlled creation and profile-filtered queue resolution;
 - ambient playback accounting that does not update profile history or TV surfaces.
 
+Implemented in the shared-TV hardening follow-up (`c53dabe`):
+
+- `user_sessions.profile_selection_required`, set for an unremembered multi-profile session while retaining the default-profile compatibility fallback;
+- atomic switch/remember/forget behavior that clears the selection requirement only after an explicit profile choice;
+- a web shell gate that does not mount profile-scoped routes before the choice, plus explicit “forget this device” UI;
+- profile-scoped request cancellation, routed-subtree remounting, local playback reset, and same-origin tab revalidation through BroadcastChannel with a Web Storage fallback; and
+- an auth fixture and cross-layer integration verifier for the selection state, transactional switch, migration, web gate, and synchronization contract.
+
 Deferred follow-up:
 
 - parental PIN entry/unlock flow and attempt throttling; until it exists, a Kids profile is content-filtered but does not provide a locked shared-TV profile exit;
-- first-use shared-TV picker enforcement and cross-tab/native profile-cache invalidation; the server supports remembered-profile resolution, but native clients must apply the picker and cache-boundary rules above before claiming the shared-TV experience;
+- native shared-TV picker enforcement and platform cache invalidation; web applies the session flag and same-origin invalidation contract, while each native TV client must apply the same picker and cache-boundary rules before claiming the shared-TV experience;
 - profile-specific Trakt account linking/export selection;
 - native Android/iOS background-player implementations and offline ambient queue prefetch;
 - time windows, daily limits, and child-safe metadata editorial review.
