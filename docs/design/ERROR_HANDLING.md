@@ -218,7 +218,9 @@ impl IntoResponse for AppError {
                 AuthError::InviteCodeUseLimitExceeded => (StatusCode::UNAUTHORIZED, "AUTH_011", "Invite code use limit exceeded"),
                 AuthError::RateLimited => (StatusCode::TOO_MANY_REQUESTS, "AUTH_012", "Too many failed attempts"),
                 AuthError::DeviceLinkingExpired => (StatusCode::BAD_REQUEST, "AUTH_013", "Device linking code expired"),
-                AuthError::DeviceLinkingDenied => (StatusCode::BAD_REQUEST, "AUTH_014", "Device linking denied by user"),
+                AuthError::DeviceLinkingDenied => (StatusCode::FORBIDDEN, "AUTH_014", "Device linking denied by user"),
+                AuthError::DeviceLinkingPending => (StatusCode::PRECONDITION_REQUIRED, "AUTH_023", "Authorization pending"),
+                AuthError::DeviceLinkingSlowDown { .. } => (StatusCode::TOO_MANY_REQUESTS, "AUTH_024", "Slow down"),
                 AuthError::ReauthCodeInvalid => (StatusCode::UNAUTHORIZED, "AUTH_015", "Re-authentication code invalid or expired"),
                 AuthError::ReauthRateLimited => (StatusCode::TOO_MANY_REQUESTS, "AUTH_016", "Too many re-auth code requests"),
                 AuthError::Database(_) => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "Internal server error"),
@@ -411,9 +413,11 @@ All API errors return [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) Problem
 | `AUTH_011` | 401 | Invite code use limit exceeded |
 | `AUTH_012` | 429 | Too many failed attempts (rate limited) |
 | `AUTH_013` | 400 | Device linking code expired |
-| `AUTH_014` | 400 | Device linking denied by user |
+| `AUTH_014` | 403 | Device linking denied by user |
 | `AUTH_015` | 401 | Re-authentication code invalid or expired |
 | `AUTH_016` | 429 | Too many re-auth code requests (rate limited) |
+| `AUTH_023` | 428 | Device linking authorization pending |
+| `AUTH_024` | 429 | Device linking polling interval must increase |
 
 ### USER — User Management
 

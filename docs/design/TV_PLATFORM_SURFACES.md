@@ -177,9 +177,12 @@ Playback controls:
 Profile, server, and device-linking behavior:
 
 - A TV device is commonly shared. Clients must make the active Duskcue user/profile visible in Settings and any profile switcher.
+- A remembered Duskcue profile is an opt-in, server-side mapping of `owner_user_id + device_id` to a profile. It is resolved only after normal account authentication; it is not a profile password, a session credential, or a Kids-mode exit lock.
+- A first-use TV with no valid mapping must show “Who’s watching?” before it fetches, renders, or publishes profile-scoped rows. After an explicit choice, the client may offer “Remember on this TV”; removing that choice returns the TV to the picker on its next authenticated launch.
+- Device IDs must be random opaque identifiers per app installation, not hardware, advertising, or household identifiers. On tvOS, the app must honor `TVUserManager.shouldStorePreferencesForCurrentUser`; if the OS does not permit per-user preference storage, it must not reuse a Duskcue remembered-profile mapping across Apple TV users.
 - Launcher, Top Shelf, Watch Next, Smart Hub Preview, and app-local rows are scoped to the authenticated Duskcue user whose settings enabled publication.
 - Device-linking must resume the original deep link or platform tile after authentication succeeds.
-- Switching user/profile or server must clear platform-local launcher mappings and cached TV rows for the old identity before publishing new rows.
+- Switching user/profile or server must abort profile-scoped requests and clear platform-local launcher mappings, cached TV rows, artwork, preview images, queue state, and user summaries for the old identity before publishing new rows.
 
 Privacy rules:
 
@@ -573,7 +576,7 @@ All adapters consume:
 
 ### Storage Rules
 
-- Local storage is allowed for server list, selected server, active user summary, device ID, last fetched TV feed, artwork cache, platform row/program/tile IDs, and platform-specific content ID mappings.
+- Local storage is allowed for server list, selected server, active user summary, non-secret random device ID, last fetched TV feed, artwork cache, platform row/program/tile IDs, and platform-specific content ID mappings. A device ID is per app installation and must never be a hardware, advertising, or network identifier.
 - Durable server-side adapter tables are required only when a mapping must be shared across devices, reconciled by background server jobs, audited centrally, or used by a server-hosted metadata feed.
 - Platform-local caches must be cleared on logout, server switch, user/profile switch, publication opt-out, or access revocation.
 - Cached TV feed data must be treated as private per Duskcue user and platform profile.

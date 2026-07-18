@@ -105,7 +105,9 @@ Phase 16a mobile/desktop auth requests include stable client metadata where the 
 
 Mobile generates and secure-stores a stable `device_id` through `flutter_secure_storage`. Desktop uses the selected server origin as the key for OS-keyring token storage and sends client metadata from the reused web/native bridge flows as those screens are wired.
 
-The household-profile contract uses the same non-secret `device_id` for an opt-in remembered profile. `GET /api/v1/profiles` returns `remembered_profile_id` and `device_can_remember_profile`; `POST /api/v1/profiles/{id}/switch` accepts optional `remember_on_device`. Clients must treat this as a convenience preference only: they may store an opaque device ID, but never a session token, password, parent PIN, or a standalone profile-login credential. A missing or disallowed device preference must fall back to normal post-auth profile selection.
+The household-profile contract uses the same non-secret `device_id` for an opt-in remembered profile. `GET /api/v1/profiles` returns `remembered_profile_id` and `device_can_remember_profile`; `POST /api/v1/profiles/{id}/switch` accepts optional `remember_on_device`. Clients must treat this as a convenience preference only: they may store a random opaque per-installation device ID, but never a session token, password, parent PIN, hardware identifier, advertising identifier, or standalone profile-login credential.
+
+After account authentication, the server activates a valid remembered profile or falls back to the account default profile. Shared-TV clients without a valid mapping must show a profile picker before requesting, rendering, or publishing profile-scoped media. The selected profile is remembered only after an explicit opt-in; `remember_on_device: false` removes the mapping. On every profile change, clients must abort profile-scoped requests and clear profile-scoped caches, previews/object URLs, artwork, queue state, launcher mappings, and user summaries before rendering the replacement profile. Browser clients must propagate that invalidation to other open tabs.
 
 ## Bearer Token Semantics
 
@@ -234,6 +236,20 @@ node scripts/verify-auth-conformance.mjs
 ```
 
 The verifier checks required auth flows, required session lifecycle cases, storage classifications, plaintext-storage prohibitions, switching behavior, Problem Details shape, API-relative request paths, UTC timestamps, stable UUIDs where applicable, and redaction of real tokens, signatures, and private paths.
+
+### Device-Linking Hardening Contract
+
+The device-code response uses a canonical `/auth/link` `verification_uri`, plus `verification_uri_complete` with `?code=` for QR/NFC handoff. Clients must continue to display the text URI and user code, and must not display the internal `device_code` after issuance. `POST /api/v1/device/token` returns `AUTH_023` while authorization is pending, `AUTH_024` with `Retry-After` when polled too quickly, `AUTH_014` after an explicit denial, and `AUTH_013` after expiry or one-time consumption.
+
+An authenticated browser first uses `GET /api/v1/device/verify?user_code=…` to display only the pending device's non-secret metadata. It then sends `POST /api/v1/device/verify` with an explicit `approve` boolean. If sign-in is required, web clients preserve only a local `/auth/link?...` return target and return to the review step; they never auto-approve a prefilled code.
+
+Run:
+
+```bash
+node scripts/verify-device-linking-integration.mjs
+```
+
+The verifier binds the Rust route/service/migration safeguards, web handoff, client helper, versioned contract, and auth fixture into one compatibility check.
 
 ## Phase 16d TV And Deep-Link Conformance
 

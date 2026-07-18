@@ -2070,13 +2070,19 @@ CREATE TABLE device_linking_codes (
     is_approved BOOLEAN NOT NULL DEFAULT false,
     approved_by_user_id UUID REFERENCES users(id) ON DELETE CASCADE,
     approved_at TIMESTAMPTZ,
+    is_denied BOOLEAN NOT NULL DEFAULT false,
+    denied_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    denied_at TIMESTAMPTZ,
+
+    last_polled_at TIMESTAMPTZ,
+    poll_interval_seconds INTEGER NOT NULL DEFAULT 5 CHECK (poll_interval_seconds > 0),
 
     resulting_session_id UUID REFERENCES user_sessions(id) ON DELETE SET NULL
 );
 
 CREATE INDEX idx_device_linking_user_code ON device_linking_codes (user_code);
 CREATE INDEX idx_device_linking_device_code ON device_linking_codes (device_code);
-CREATE INDEX idx_device_linking_expires ON device_linking_codes (expires_at) WHERE is_approved = false;
+CREATE INDEX idx_device_linking_expires ON device_linking_codes (expires_at) WHERE is_approved = false AND is_denied = false;
 ```
 
 `user_code` — short 8-character code displayed to the user. Base-20 character set (`BCDFGHJKLMNPQRSTVWXZ`), formatted as `WDJB-MJHT`. Per RFC 8628 Section 6.1.
@@ -2085,17 +2091,21 @@ CREATE INDEX idx_device_linking_expires ON device_linking_codes (expires_at) WHE
 
 `expires_at` — 15 minutes from creation. Short lifetime limits phishing viability per RFC 8628 Section 5.4.
 
+`is_denied`, `denied_by_user_id`, and `denied_at` — terminal explicit-denial state. A denied code remains until expiry/cleanup so its polling device receives an unambiguous terminal result.
+
+`last_polled_at` and `poll_interval_seconds` — durable RFC 8628 polling state. The token endpoint locks the row, increases an early poll's interval by five seconds up to 60 seconds, and returns the updated retry delay.
+
 **Device linking flow (RFC 8628 adapted):**
 
 1. Device app calls `POST /api/v1/device/code` with client info
 2. Server generates `user_code` (8 chars, base-20) and `device_code` (32 bytes, hex)
-3. Server returns: `{ "user_code": "WDJB-MJHT", "verification_uri": "https://media.example.com/link", "expires_in": 900, "interval": 5 }`
-4. Device displays: "Visit `media.example.com/link` and enter code: `WDJB-MJHT`"
+3. Server returns: `{ "user_code": "WDJB-MJHT", "verification_uri": "https://media.example.com/auth/link", "verification_uri_complete": "https://media.example.com/auth/link?code=WDJB-MJHT", "expires_in": 900, "interval": 5 }`
+4. Device displays: "Visit `media.example.com/auth/link` and enter code: `WDJB-MJHT`"
 5. Device starts polling `POST /api/v1/device/token` with `device_code` every 5 seconds
-6. User opens their authenticated browser/app, visits `/link`, enters `WDJB-MJHT`
-7. Server shows device info (client name, platform), user approves
-8. Server creates a `user_sessions` row, links it to `resulting_session_id`
-9. Next poll returns the session token — device is now authenticated
+6. User opens their authenticated browser/app, visits `/auth/link`, enters `WDJB-MJHT`
+7. Server shows device info (client name, platform), and the user explicitly approves or denies
+8. Approval and token exchange each lock the code row; the successful exchange creates one `user_sessions` row and deletes the consumed code in the same transaction
+9. Next compliant poll returns the session token — device is now authenticated
 
 **Polling responses** (per RFC 8628 Section 3.5):
 - `authorization_pending` — user hasn't approved yet, continue polling

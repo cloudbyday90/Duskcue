@@ -36,7 +36,7 @@ IPv6 support must preserve the same security model as IPv4:
 
 - Public IPv6 addresses are treated as remote/exposed addresses, not as LAN by default.
 - Loopback `::1/128`, ULA `fc00::/7`, link-local `fe80::/10`, and IPv4-mapped IPv6 addresses are classified explicitly by the network and analytics layers.
-- Trusted proxy and metrics allowlists accept IPv6 CIDRs, but forwarded client IP headers are ignored unless the immediate peer is trusted.
+- Forwarded client-IP headers are accepted only when the immediate peer is the loopback internal proxy; direct peers cannot select their own rate-limit or audit IP with `X-Forwarded-For` or `X-Real-IP`. A configurable non-loopback trusted-proxy CIDR allowlist remains deferred, so external reverse proxies must forward through the local Duskcue web proxy.
 - Generated URLs containing IPv6 literals must use bracket notation, for example `https://[2001:db8::10]:48027`.
 - Exposed IPv6 deployments require the same controls as exposed IPv4 deployments: TLS, authentication, signed streaming URLs, strict security headers, and correctly configured trusted proxies.
 

@@ -12,9 +12,10 @@
           "expect": {
             "device_code": "fixture-device-code",
             "user_code": "ABCD-EFGH",
-            "verification_uri": "https://duskcue.example.test/link",
-            "expires_at": "2026-07-01T12:10:00Z",
-            "poll_interval_seconds": 5
+            "verification_uri": "https://duskcue.example.test/auth/link",
+            "verification_uri_complete": "https://duskcue.example.test/auth/link?code=ABCD-EFGH",
+            "expires_in": 600,
+            "interval": 5
           }
         },
         {
@@ -24,7 +25,7 @@
           },
           "expect_pending": {
             "status": 428,
-            "title": "AUTH_007"
+            "title": "AUTH_023"
           }
         },
         {
@@ -33,14 +34,16 @@
             "path": "/api/v1/device/token"
           },
           "expect_success": {
-            "session_id": "abababab-abab-4bab-8bab-abababababab",
             "token_placeholder": "fixture-token-not-secret",
-            "device_id": "fixture-tv-device-01"
+            "user_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "active_profile_id": "abababab-abab-4bab-8bab-abababababab"
           }
         }
       ],
       "client_requirements": [
         "poll no faster than interval_seconds",
+        "increase the interval by five seconds after AUTH_024 and honor Retry-After",
+        "show verification_uri_complete only as a shortcut while still displaying user_code",
         "resume original deep link after success",
         "do not display device_code as a reusable secret"
       ]

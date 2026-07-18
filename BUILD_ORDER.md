@@ -479,21 +479,24 @@ These documents apply to every phase. Consult them when making implementation de
 
 | File | Purpose |
 |---|---|
-| `server/src/domains/auth/service.rs` | Added 6 device linking functions: `generate_device_user_code`, `format_user_code`, `create_device_linking_code`, `poll_device_linking_token`, `verify_device_linking_code`; `CreateDeviceCodeParams` struct |
-| `server/src/domains/auth/handlers.rs` | Replaced `todo!()` stubs with working handlers: `device_code`, `device_token`, `device_verify` |
+| `server/src/domains/auth/service.rs` | Device-code generation, normalized user-code lookup, request review, explicit decisions, and atomic token exchange; `CreateDeviceCodeParams` struct |
+| `server/src/domains/auth/handlers.rs` | Working `device_code`, `device_token`, review, and approve-or-deny handlers |
 
 **Key decisions from Task 6:**
 
-- **RFC 8628 device code flow** — Three endpoints: `POST /api/v1/device/code` (device initiates), `POST /api/v1/device/token` (device polls), `POST /api/v1/device/verify` (user approves). All routes and DTOs already existed from Task 1.
+- **RFC 8628 device code flow** — `POST /api/v1/device/code` initiates, `POST /api/v1/device/token` polls, authenticated `GET /api/v1/device/verify` reviews non-secret device metadata, and authenticated `POST /api/v1/device/verify` explicitly approves or denies.
 - **Device code hashed at rest** — The internal `device_code` (32 random bytes, hex-encoded, 256-bit) is SHA-256 hashed before storage in the `device_linking_codes.device_code` column, consistent with session token pattern. Raw code sent to device once, never stored.
-- **User code stored raw** — The 8-char base-20 user code is stored without formatting in `device_linking_codes.user_code`. Dashes are stripped from user input before lookup, so `WDJBMJHT` and `WDJB-MJHT` both match.
-- **Verification URI from config** — Built from `RuntimeConfig.base_url + "/link"`, falling back to request `Host` header, then `http://localhost:48027/link`.
-- **No explicit denial** — The schema has no `is_denied` column. Users deny by simply not approving; the code expires after `device_linking_code_expiry_seconds` (default 900 = 15 minutes). `DeviceLinkingDenied` and `DeviceLinkingSlowDown` error variants exist for future use.
-- **Token exchange cleanup** — After successful token exchange, the `device_linking_codes` row is deleted. This prevents reuse and serves as implicit cleanup. Expired codes are also cleaned on access (delete on poll if expired).
+- **User code stored raw** — The 8-char base-20 user code is stored without formatting in `device_linking_codes.user_code`. Lookup normalizes case and removes non-alphanumeric formatting, so `wdjb mjht` and `WDJB-MJHT` both match.
+- **Canonical verification URI and browser handoff** — Commit `b3da901` returns `/auth/link` from the configured canonical base URL and `verification_uri_complete` for QR/NFC use. Exposed deployments reject issuance without a canonical public URL and never trust the request `Host` header. Sign-in preserves only a local `/auth/link?...` return target and the browser always requires a separate review and explicit decision.
+- **Explicit, terminal denial** — Migration `20260718100000_harden_device_linking.sql` records denial separately from approval. A denied device receives `AUTH_014` / HTTP 403 and cannot later be approved.
+- **Atomic token exchange and cleanup** — Approval/denial and token exchange lock the linking row. Successful exchange creates the session and deletes the code in one transaction, preventing concurrent polls from minting multiple sessions. Expired codes are deleted when observed.
+- **Persisted polling protection** — The linking row records `last_polled_at` and the active interval. Early polls return `AUTH_024` / HTTP 429 with `Retry-After`, increasing the interval by five seconds up to 60. Issuance and review/decision use the auth IP limiter; token polling deliberately uses the persisted per-code rule because a compliant five-second poll exceeds the generic 10-per-minute budget.
 - **Session creation uses stored device metadata** — When the device polls and finds `is_approved = true`, a session is created for `approved_by_user_id` using the `client_name`, `client_platform`, `client_version`, `ip_address`, and `user_agent` from the original device code request.
 - **`CreateDeviceCodeParams` struct** — Introduced to satisfy clippy `too_many_arguments` (8 params → 3 params); same pattern as `CreateInvitationParams` from Task 3.
 - **No new workspace dependencies** — device code generation uses existing `rand` 0.9 and `BASE20_CHARS`; hashing uses existing `sha256_hex`.
 - **Configurable parameters** — `AuthConfig.device_linking_code_length` (default 8), `device_linking_code_expiry_seconds` (default 900), `device_linking_poll_interval_seconds` (default 5) — all from `AuthConfig` defaults in `state.rs`.
+
+**Device-linking hardening outcome (2026-07-18):** Commit `b3da901` adds the canonical browser flow, explicit decisions, transactional single-use consumption, per-code polling cadence, loopback-only forwarded-IP trust, versioned contract/fixture coverage, and `scripts/verify-device-linking-integration.mjs`. `cargo check -p duskcue`, focused Rust tests, `npm run build`, contract/auth/device-linking verifiers, and disposable PostgreSQL migration verification pass. Configurable non-loopback trusted-proxy CIDRs remain a separate reverse-proxy hardening follow-up.
 
 **What was built for Task 7:**
 
@@ -4488,7 +4491,7 @@ Phases 9–13a can be built in any order after Phase 8, since they are independe
 
 ---
 
-## Post-Phase 16d — Household Profiles, Kids Mode, and Ambient Channels (COMPLETE)
+## Post-Phase 16d — Household Profiles, Kids Mode, and Ambient Channels (Core Complete; Hardening Follow-up Active)
 
 **Committed:** `00d631b` and `d4e37ba` on `main`
 
@@ -4509,5 +4512,9 @@ Phases 9–13a can be built in any order after Phase 8, since they are independe
 - Native background playback is a client responsibility. Android consumes this contract through Media3 `MediaSessionService`; Apple clients use AVQueuePlayer and the appropriate background media configuration. A web tab is not represented as native background playback.
 - Parental PIN entry, timed parent unlock, and profile-specific Trakt linking are intentionally deferred rather than storing an unprotected or client-side hashed PIN.
 - A remembered profile is a device convenience setting, not an account credential or a Kids exit lock; profile PIN work remains required before making a shared-TV lock claim.
+
+**Shared-TV preference clarification (2026-07-18):** A remembered profile is a per-account, per-installation mapping keyed by a random opaque device ID. Separate TVs deliberately get separate mappings, and deleting app/browser data creates a new identity rather than cloning a household preference. A valid mapping is applied only after account authentication. A first-use shared TV must show its profile picker before it requests or publishes profile-scoped rows; the current server default-profile fallback is retained for API compatibility, so enforcing that first-use picker is a required native-client follow-up. Every profile switch must clear profile-scoped caches and launcher rows before the new profile is rendered or published. See [PROFILES_AND_AMBIENT_CHANNELS.md](docs/design/PROFILES_AND_AMBIENT_CHANNELS.md), [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md), and [CLIENT_CONTRACTS.md](docs/api/CLIENT_CONTRACTS.md).
+
+**Hardening order after Link:** (1) enforce first-use shared-TV profile selection and remembered-profile lifecycle on native clients, (2) add a server-verifiable parent PIN and timed parent-unlock boundary for Kids profiles, and (3) consume the already-defined ambient-channel contract in native background players without contributing personal playback activity.
 
 **Verification:** `cargo check -p duskcue`, focused profile unit tests, `npm run build` in `clients/web`, `node scripts/verify-client-contracts.mjs`, and `scripts/verify-migrations.ps1` against disposable PostgreSQL 18 pass.

@@ -458,7 +458,7 @@
               "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
               "problem_codes": [
                 "VALID_001",
-                "RATE_LIMITED",
+                "RATE_002",
                 "INTERNAL"
               ]
             }
@@ -488,7 +488,43 @@
               "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
               "problem_codes": [
                 "VALID_001",
-                "RATE_LIMITED",
+                "AUTH_013",
+                "AUTH_014",
+                "AUTH_023",
+                "AUTH_024",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/device/verify",
+          "auth": "user",
+          "response": "DeviceLinkingRequestResponse",
+          "web_helpers": [
+            "getDeviceLinkingRequest"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "DeviceLinkingRequestResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                "user_code"
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_013",
+                "AUTH_014",
+                "RATE_002",
+                "VALID_001",
                 "INTERNAL"
               ]
             }
@@ -520,8 +556,10 @@
                 "AUTH_001",
                 "AUTH_003",
                 "AUTH_007",
+                "AUTH_013",
+                "AUTH_014",
                 "VALID_001",
-                "RATE_LIMITED",
+                "RATE_002",
                 "NOT_FOUND",
                 "INTERNAL"
               ]

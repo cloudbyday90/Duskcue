@@ -76,10 +76,10 @@
         "path": "/api/v1/device/token"
       },
       "problem": {
-        "type": "/errors/auth_008",
-        "title": "AUTH_008",
+        "type": "/errors/auth_014",
+        "title": "AUTH_014",
         "status": 403,
-        "detail": "Device linking request denied",
+        "detail": "Device linking denied by user",
         "instance": "/api/v1/device/token",
         "trace_id": "fixture-device-linking-denied",
         "errors": null

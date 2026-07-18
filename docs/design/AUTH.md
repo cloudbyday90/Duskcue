@@ -196,12 +196,13 @@ This follows the RFC 8628 Device Authorization Grant pattern, adapted for our se
       │  { client_name, client_platform }        │
       │─────────────────────────────────────────>│
       │                                          │
-      │  { user_code, device_code,               │
-      │    verification_uri, expires_in,         │
-      │    interval }                            │
+       │  { user_code, device_code,               │
+       │    verification_uri,                     │
+       │    verification_uri_complete,            │
+       │    expires_in, interval }                │
       │<─────────────────────────────────────────│
       │                                          │
-      │  Display: "Visit media.example.com/link" │
+      │  Display: "Visit media.example.com/auth/link" │
       │  Display: "Enter code: WDJB-MJHT"        │
       │                                          │
       │  Start polling (every 5 seconds)         │
@@ -215,7 +216,7 @@ This follows the RFC 8628 Device Authorization Grant pattern, adapted for our se
       │                   ┌──────────────────┐    │
       │                   │  User's Phone    │    │
       │                   │                  │    │
-      │                   │  Visit /link     │    │
+      │                   │  Visit /auth/link │    │
       │                   │  Enter WDJB-MJHT │    │
       │                   │  Approve device  │    │
       │                   └──────────────────┘    │
@@ -236,18 +237,18 @@ Per RFC 8628 Section 3.5:
 
 | Response | Action |
 |---|---|
-| `authorization_pending` | Continue polling at interval |
-| `slow_down` | Increase polling interval by 5 seconds |
-| `access_denied` | Stop polling — user denied |
-| `expired_token` | Stop polling — code expired, request new code |
+| `AUTH_023` / HTTP 428 | Continue polling at the advertised interval |
+| `AUTH_024` / HTTP 429 | Increase the interval by 5 seconds and honor `Retry-After` |
+| `AUTH_014` / HTTP 403 | Stop polling — the user explicitly denied the request |
+| `AUTH_013` / HTTP 400 | Stop polling — the code expired or was consumed; request a new code |
 
-The device must use exponential backoff on connection timeouts. The default polling interval is 5 seconds.
+The server persists the current per-code polling interval and last-poll timestamp. A poll that arrives too soon receives `AUTH_024`; its next interval is increased by five seconds, capped at 60 seconds. The device must use exponential backoff on connection timeouts. The default polling interval is 5 seconds.
 
 ### Security Considerations
 
 Per RFC 8628 Section 5:
 
-- **User code brute forcing (Section 5.1)**: 8-char base-20 = ~34.5 bits entropy. With rate-limiting (5 attempts per 15 minutes), brute-force probability = 2^-32. Adequate for a Duskcue.
+- **User code brute forcing (Section 5.1)**: 8-char base-20 = ~34.5 bits entropy. Device-code issuance and the authenticated review/decision endpoints use the per-IP auth limiter; token polling additionally has persisted per-code cadence enforcement.
 - **Device code brute forcing (Section 5.2)**: 256-bit internal code — infeasible to brute-force.
 - **Remote phishing (Section 5.4)**: 15-minute expiry limits phishing viability. Server displays device info during approval.
 - **Session spying (Section 5.5)**: User should confirm the code on the TV matches the code they're entering on their phone.
@@ -506,7 +507,8 @@ For API conventions (versioning, pagination, rate limiting, authentication heade
 |---|---|---|---|
 | `POST` | `/api/v1/device/code` | No | Request device linking codes (device initiates) |
 | `POST` | `/api/v1/device/token` | No | Poll for device authorization (device polls) |
-| `POST` | `/api/v1/device/verify` | Yes | Enter user_code to approve device (user approves) |
+| `GET` | `/api/v1/device/verify?user_code=WDJB-MJHT` | Yes | Review a pending device's non-secret metadata before a decision |
+| `POST` | `/api/v1/device/verify` | Yes | Approve or deny a device with `user_code` and optional `approve` (defaults to `true`) |
 
 ### Invite Management (Admin)
 
@@ -623,9 +625,11 @@ Auth error codes are defined in [ERROR_HANDLING.md](ERROR_HANDLING.md):
 | `AUTH_011` | 401 | Invite code use limit exceeded |
 | `AUTH_012` | 429 | Too many failed attempts (rate limited) |
 | `AUTH_013` | 400 | Device linking code expired |
-| `AUTH_014` | 400 | Device linking denied by user |
+| `AUTH_014` | 403 | Device linking denied by user |
 | `AUTH_015` | 401 | Re-authentication code invalid or expired |
 | `AUTH_016` | 429 | Too many re-auth code requests (rate limited) |
+| `AUTH_023` | 428 | Device linking authorization pending |
+| `AUTH_024` | 429 | Device linking polling interval must increase |
 
 ## Implementation Notes (Phase 4, Task 1)
 
@@ -724,19 +728,25 @@ Task 5 implements the Capability Evaluation rules from the "Capability-Based Acc
 
 Task 6 implements the RFC 8628 Device Authorization Grant flow from the "Device Linking (RFC 8628 Device Authorization Grant)" section above. Prior to Task 6, the three device endpoints (`POST /api/v1/device/code`, `POST /api/v1/device/token`, `POST /api/v1/device/verify`) were `todo!()` stubs with all routes, DTOs, and error variants already in place from Task 1.
 
-**Device code flow:** The device (TV/console/mobile client) calls `POST /api/v1/device/code` with optional `device_id`, `client_name`, `client_platform`, and `client_version`. The server generates a `user_code` (8 base-20 chars, formatted as `XXXX-XXXX`) and a `device_code` (32 random bytes, hex-encoded, 256 bits). The device displays the `user_code` and `verification_uri`, then polls `POST /api/v1/device/token` every `interval` seconds. The authenticated user visits the verification URI and calls `POST /api/v1/device/verify` with the `user_code` to approve. The next poll returns a session token.
+**Device code flow:** The device (TV/console/mobile client) calls `POST /api/v1/device/code` with optional `device_id`, `client_name`, `client_platform`, and `client_version`. The server generates a `user_code` (8 base-20 chars, formatted as `XXXX-XXXX`) and a `device_code` (32 random bytes, hex-encoded, 256 bits). It returns `verification_uri` and `verification_uri_complete`; clients may use the latter for QR/NFC handoff but must still display the former and the code. The authenticated user first calls `GET /api/v1/device/verify?user_code=…` to review non-secret device metadata, then explicitly posts `{ "user_code": "…", "approve": true|false }`. The next compliant poll returns a session token after approval; a denial returns `AUTH_014` and ends polling.
 
 **Device code hashed at rest:** The internal `device_code` is SHA-256 hashed before storage in `device_linking_codes.device_code`, consistent with the session token pattern. The raw code is sent to the device once in the initial response and never stored.
 
 **User code lookup normalization:** The 8-char base-20 user code is stored raw (no dashes) in the database. User input has dashes stripped before lookup, so both `WDJBMJHT` and `WDJB-MJHT` match. Code generation uses the same `BASE20_CHARS` set as invite codes.
 
-**Verification URI construction:** Built from `RuntimeConfig.base_url + "/link"`. Falls back to the request `Host` header (`http://{host}/link`), then `http://localhost:48027/link`.
+**Verification URI construction:** The canonical browser route is `/auth/link`. Device-code responses use the configured canonical public base URL plus `/auth/link`; exposed mode rejects code issuance until that base URL is configured and never uses an untrusted request `Host` header. Local mode falls back only to its configured local listener port. `verification_uri_complete` adds the formatted user code as `?code=…` for QR/NFC handoff, but the approval UI still displays the code and asks the user to confirm the device before granting it, as RFC 8628 recommends.
 
-**No explicit denial mechanism:** The schema lacks an `is_denied` column. Users deny by simply not approving — the code expires after `device_linking_code_expiry_seconds` (default 900 = 15 minutes). The `DeviceLinkingDenied` and `DeviceLinkingSlowDown` error variants exist in `AuthError` for future use but are not actively triggered.
+**Approval handoff:** If the browser reaches `/auth/link` without an authenticated Duskcue session, sign-in must preserve the pending code or `verification_uri_complete` return target. After sign-in, the browser returns to the approval screen, displays the device metadata and code, and requires an explicit approve or deny action; it must not silently grant the device.
+
+**Explicit decisions and one-time consumption:** The device-linking row records either approval or denial. Approval and denial lock the pending row with `FOR UPDATE`, so concurrent browser actions cannot overwrite one another. Token exchange locks that same row, creates the session and deletes the linking code in one transaction, so concurrent polls cannot mint more than one session. Denied rows remain available for the device to receive `AUTH_014`; expired rows are deleted when observed.
+
+**Polling enforcement:** `last_polled_at` and `poll_interval_seconds` are persisted with the linking request. A too-fast token poll updates the per-code interval by five seconds (up to 60 seconds), returns `AUTH_024` and a matching `Retry-After`, and does not create a session.
 
 **Token exchange cleanup:** After a successful token exchange, the `device_linking_codes` row is deleted. This prevents the same device code from creating multiple sessions and serves as implicit cleanup. Expired codes are also cleaned on access (deleted when a poll finds an expired code).
 
 **Session creation uses stored device metadata:** When the device polls and finds `is_approved = true`, a session is created for `approved_by_user_id` using the `device_id`, `client_name`, `client_platform`, `client_version`, `ip_address`, and `user_agent` stored from the original device code request.
+
+**Web handoff:** `/auth/link` is an auth route rather than a dashboard route. An unauthenticated browser preserves its local-only `return_to=/auth/link?code=…` target through password, invite, or passkey sign-in, then returns to the review screen. The browser accepts both `code` and `user_code` query parameters, but does not submit either automatically; it loads the device metadata and requires an approve or deny click.
 
 **`CreateDeviceCodeParams` struct:** Introduced to satisfy clippy `too_many_arguments` (8 params → 3), following the same pattern as `CreateInvitationParams` from Task 3.
 
@@ -750,6 +760,7 @@ Phase 16a Task 4 adds client-side consumption of the existing auth/session APIs:
 - Mobile uses `flutter_secure_storage` for the bearer token, cached user summary, saved server metadata, and stable `device_id`.
 - Mobile sends `device_id`, `device_name`, `client_name = Duskcue Mobile`, `client_version`, and `client_platform` with password, invite, re-auth, WebAuthn finish, and device-linking requests.
 - The server now accepts `device_id` on those DTOs and stores it in `user_sessions.device_id`; `device_linking_codes.device_id` is added by migration `20260630090000_add_device_id_to_device_linking.sql` so device-linking sessions retain the initiating device identifier.
+- Device IDs are random opaque identifiers per local installation, not hardware, advertising, or household identifiers. They can select an opt-in remembered household profile only after account authentication; they are not credentials and cannot grant profile access by themselves. See [PROFILES_AND_AMBIENT_CHANNELS.md](PROFILES_AND_AMBIENT_CHANNELS.md) for the shared-TV policy and cache-invalidation requirement.
 - Mobile clears secure local credentials and returns to auth on `401`/`authExpired`; `session_kicked` will call the same clear path when Phase 16a foreground SSE lands.
 - Native passkey bodies are surfaced behind a Flutter method channel named `com.duskcue.mobile/passkeys`; Android Credential Manager and iOS AuthenticationServices implementations are the platform side of that channel.
 

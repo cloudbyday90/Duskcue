@@ -418,11 +418,13 @@ Uses PostgreSQL `websearch_to_tsquery()` with field-weighted GIN index. Document
 | Tier | Scope | Limit | Burst | Applies To |
 |---|---|---|---|---|
 | **Global** | Per IP | 100 req/min | 50 | All unauthenticated endpoints |
-| **Auth** | Per IP | 10 req/min | 5 | `/api/v1/auth/*` (login, register, passkey, TOTP) |
+| **Auth** | Per IP | 10 req/min | 5 | setup, login/invite/passkey/TOTP/reauth, device-code issuance, and authenticated device review/decision |
 | **Authenticated** | Per user | 300 req/min | 100 | All authenticated API endpoints |
 | **Streaming** | Per session | 600 req/min | 50 | `/api/v1/stream/*` (segment requests ~1/6s) |
 | **Admin** | Per user | 1,000 req/min | 200 | `/api/v1/server/config`, `/api/v1/scheduled-tasks`, backups |
-| **Device linking** | Per IP | 5 req/15min | 3 | `/api/v1/auth/device-link` |
+| **Device linking poll** | Per linking code | advertised interval | n/a | `POST /api/v1/device/token`; persisted `last_polled_at` and interval return `AUTH_024` plus `Retry-After` when the device polls early |
+
+The auth limiter is route-scoped as `RATE_002`; token polling is intentionally excluded because a compliant five-second RFC 8628 poll exceeds the general 10-per-minute auth budget. Device-token polling is instead protected by the per-code cadence rule above and the global per-IP limiter.
 
 ### Response Headers
 
