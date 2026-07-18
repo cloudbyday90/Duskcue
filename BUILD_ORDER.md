@@ -111,7 +111,7 @@ These documents apply to every phase. Consult them when making implementation de
 - All migrations use idempotent patterns (`IF NOT EXISTS`, `DO $$ ... $$`) per MIGRATION_STRATEGY.md
 - `users` created as minimal stub in migration 2 (trakt dependency), expanded to full auth schema via idempotent `ALTER TABLE` in migration 5 — `DO $$` blocks check `information_schema.columns` before each ADD COLUMN
 - `streaming_policies` created before `users` ALTER in migration 5 because `users.streaming_policy_id` references it
-- `play_sessions` and `play_events` include June/July 2026 initial partitions; `audit_log` includes same; application-level partition management creates future partitions
+- `play_sessions` and `play_events` include June/July 2026 initial partitions; `audit_log` includes same; application-level partition management now creates the current partition plus a bounded future horizon for all three tables, persists per-partition task stats, and fails/retries safely on creation errors (`88d2295`). Destructive retention detach/drop remains a separately scoped maintenance follow-up.
 - `user_item_data` includes `fillfactor = 85` directly in `CREATE TABLE` (not a separate ALTER) for clean initial creation
 - Autovacuum tuning applied in migration 11 alongside `user_location_history` (both are analytics security concerns from DATABASE_MAINTENANCE.md)
 - `artwork` ALTER (`is_locked`, `source_type`) placed in overlay migration 14 since those columns serve the overlay compositing engine

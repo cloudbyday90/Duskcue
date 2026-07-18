@@ -36,7 +36,7 @@ No artificial "Phase 8.5" or dedicated "refactoring sprint" is created. The rese
 | 10 | **Paraglide JS adoption** (web client string extraction + initial `en.json`) | [I18N.md](I18N.md) | 3-5 days | **Pre-v1.0 hardening** | Community translation onboarding | ✅ Pre-v1.0 Task 2 |
 | 11 | **Faceted search UI** (genre/year/rating filter pills on search results page) | [SEARCH.md](SEARCH.md) | 2-3 days | **Pre-v1.0 hardening** | Nothing blocks; quality feature | ✅ Pre-v1.0 Task 3 |
 | 12 | **Prometheus metrics for new infrastructure** (SSE connections, image pipeline, search latency, push delivery) | Cross-cutting (all 8 decisions) | 2-3 days | **Pre-v1.0 hardening** | SEARCH.md trigger threshold measurement | ✅ Pre-v1.0 Task 4 |
-| 13 | **Database partition management executor** (scheduled task that creates future partitions for `play_sessions`, `play_events`, `audit_log`) | Phase 2 operational requirement | 1 day | **Immediate** (before current partitions age out) | Data insertion for analytics tables | Not started |
+| 13 | **Database partition management executor** (scheduled task that creates future partitions for `play_sessions`, `play_events`, `audit_log`) | Phase 2 operational requirement | 1 day | **Immediate** (before current partitions age out) | Data insertion for analytics tables | ✅ Completed — `88d2295`; creation is complete, while destructive retention detach/drop remains a separately scoped follow-up |
 
 **Total estimated effort: ~25-40 days** (range depends on integration complexity and testing depth).
 
@@ -128,7 +128,7 @@ Each strategic design doc includes an "Implementation Status" table. This docume
 | [MULTI_INSTANCE.md](MULTI_INSTANCE.md) — Single-instance via lockfile | ✅ Implemented (Phase 3) | Done |
 | [REVERSE_PROXY.md](REVERSE_PROXY.md) — Built-in TLS + trusted proxies | ✅ Implemented (Phase 3) | Done |
 | [MOBILE_PUSH.md](MOBILE_PUSH.md) — Multi-channel dispatch + push | Spec only → **Phase 13** | Phase 13 |
-| **Partition management** — Future partition creation | Not started → **Immediate** | Before Phase 10 |
+| **Partition management** — Future partition creation | ✅ Completed (`88d2295`) | Current + bounded future horizon created; retention remains separately scoped |
 
 ## Key Decisions
 
@@ -137,7 +137,7 @@ Each strategic design doc includes an "Implementation Status" table. This docume
 3. **Phase 10 absorbs SSE + image pipeline + artwork endpoint + events store (4 items, ~10-13 days)** — Storyboards are WebP images (needs `image_pipeline.rs`), their generation is a background task (needs SSE for progress), and the player needs real-time updates (needs `events.js`). Natural fit.
 4. **Phase 13 absorbs Fluent + dispatch pipeline + push devices + webhook (4 items, ~8-13 days)** — Already the convergence point for i18n + push + notifications. Makes the convergence explicit rather than implicit.
 5. **Pre-v1.0 hardening handles quality items (4 items, ~8-13 days)** — ETag/Cache-Control, Paraglide migration, faceted search UI, cross-cutting Prometheus metrics, preview translations, RTL review, and reviewed-locale activation infrastructure are complete. None block features; all improve v1.0 quality.
-6. **Database partition management is immediate** — Operational time bomb: Phase 2 partitions through June/July 2026; `partition_management` executor not wired up. ~1 day of work; do before Phase 10.
+6. **Database partition management creation is complete** — The scheduled `partition_management` executor creates current and bounded future partitions for all three partitioned tables and records run stats (`88d2295`). Destructive retention detach/drop is intentionally separate because it needs its own safety and recovery contract.
 7. **Phase 13 split contingency pre-documented** — If 15 tasks make Phase 13 a bottleneck, split into 13a (system/backup/maintenance) + 13b (notifications/i18n/push). Phase 14+ can proceed after 13a without waiting for 13b.
 8. **Debt is Deliberate + Prudent per Fowler's quadrant** — Every deferral was a conscious design decision with a documented exit plan (the strategic MD). This is the most desirable debt category. The risk is letting it drift to Reckless by never implementing — this document prevents that by assigning every item to a specific phase.
 9. **Effort estimates are ranges (25-40 days total)** — Reflects uncertainty in integration complexity. Phase 10 items skew higher because SSE + EventBus is new infrastructure; Phase 13 items skew lower because notification dispatch builds on existing patterns (scheduler, worker tasks).

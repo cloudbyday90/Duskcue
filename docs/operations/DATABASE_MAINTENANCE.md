@@ -426,7 +426,7 @@ When `autovacuum_tuning_enabled` is toggled off, the server resets all per-table
 
 ## New Scheduled Tasks
 
-Two new task types added to the `scheduled_tasks` table:
+The scheduled task registry includes the following maintenance task types:
 
 ### partition_management
 
