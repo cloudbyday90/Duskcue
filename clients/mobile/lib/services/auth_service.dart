@@ -18,6 +18,7 @@ import 'dart:convert';
 
 import 'package:duskcue_mobile/models/auth_models.dart';
 import 'package:duskcue_mobile/models/server_profile.dart';
+import 'package:duskcue_mobile/services/ambient_playback_service.dart';
 import 'package:duskcue_mobile/services/api_client.dart';
 import 'package:duskcue_mobile/services/device_identity_service.dart';
 import 'package:duskcue_mobile/services/native_passkey_service.dart';
@@ -27,17 +28,20 @@ import 'package:duskcue_mobile/services/secure_storage_service.dart';
 class AuthService {
   const AuthService({
     required DuskcueApiClient apiClient,
+    required AmbientPlaybackService ambientPlayback,
     required SecureStorageService storage,
     required DeviceIdentityService deviceIdentity,
     required NativePasskeyService passkeys,
     required ProtectedDownloadStorageService protectedDownloads,
   }) : _apiClient = apiClient,
+       _ambientPlayback = ambientPlayback,
        _storage = storage,
        _deviceIdentity = deviceIdentity,
        _passkeys = passkeys,
        _protectedDownloads = protectedDownloads;
 
   final DuskcueApiClient _apiClient;
+  final AmbientPlaybackService _ambientPlayback;
   final SecureStorageService _storage;
   final DeviceIdentityService _deviceIdentity;
   final NativePasskeyService _passkeys;
@@ -261,6 +265,9 @@ class AuthService {
   }
 
   Future<void> clearLocalSession() async {
+    try {
+      await _ambientPlayback.clear();
+    } catch (_) {}
     _apiClient.clearBearerToken();
     try {
       await _protectedDownloads.deleteAllProtectedDownloads();

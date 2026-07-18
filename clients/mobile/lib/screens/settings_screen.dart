@@ -312,6 +312,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 ),
               ),
               const SizedBox(height: 12),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.live_tv_outlined),
+                  title: const Text('Ambient channels'),
+                  subtitle: const Text(
+                    'Start a set-and-forget channel without changing watch history.',
+                  ),
+                  enabled: session.isProfileScopeReady,
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: session.isProfileScopeReady
+                      ? () => context.go('/ambient')
+                      : null,
+                ),
+              ),
+              const SizedBox(height: 12),
               ExpansionTile(
                 leading: const Icon(Icons.devices),
                 title: const Text('Sessions'),

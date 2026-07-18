@@ -308,6 +308,9 @@ class _ProfileSelectionScreenState
   }
 
   Future<void> _clearProfileScopedCaches() async {
+    try {
+      await ref.read(ambientPlaybackServiceProvider).clear();
+    } catch (_) {}
     ref.read(downloadManagerProvider.notifier).clearForProfileChange();
     PaintingBinding.instance.imageCache.clear();
     PaintingBinding.instance.imageCache.clearLiveImages();

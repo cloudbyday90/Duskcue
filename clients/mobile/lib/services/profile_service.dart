@@ -54,4 +54,13 @@ class ProfileService {
       Map<String, Object?>.from(response.data ?? const {}),
     );
   }
+
+  Future<AmbientChannelListResponse> listAmbientChannels() async {
+    final response = await _apiClient.get<Map<String, Object?>>(
+      '/api/v1/ambient-channels',
+    );
+    return AmbientChannelListResponse.fromJson(
+      Map<String, Object?>.from(response.data ?? const {}),
+    );
+  }
 }

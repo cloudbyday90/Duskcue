@@ -17,6 +17,8 @@
 import 'package:duskcue_mobile/screens/collection_detail_screen.dart';
 import 'package:duskcue_mobile/screens/collections_screen.dart';
 import 'package:duskcue_mobile/screens/auth_screen.dart';
+import 'package:duskcue_mobile/screens/ambient_channels_screen.dart';
+import 'package:duskcue_mobile/screens/ambient_player_screen.dart';
 import 'package:duskcue_mobile/screens/dashboard_screen.dart';
 import 'package:duskcue_mobile/screens/downloads_screen.dart';
 import 'package:duskcue_mobile/screens/libraries_screen.dart';
@@ -78,6 +80,14 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => ProfileSelectionScreen(
           allowManualSelection: state.uri.queryParameters['switch'] == 'true',
         ),
+      ),
+      GoRoute(
+        path: '/ambient',
+        builder: (context, state) => const AmbientChannelsScreen(),
+      ),
+      GoRoute(
+        path: '/ambient/player',
+        builder: (context, state) => const AmbientPlayerScreen(),
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>

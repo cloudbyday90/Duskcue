@@ -16,6 +16,7 @@
 
 import 'dart:async';
 
+import 'package:duskcue_mobile/services/ambient_playback_service.dart';
 import 'package:duskcue_mobile/services/auth_service.dart';
 import 'package:duskcue_mobile/services/api_client.dart';
 import 'package:duskcue_mobile/services/content_service.dart';
@@ -67,9 +68,14 @@ final nativePasskeyProvider = Provider<NativePasskeyService>((ref) {
   return const NativePasskeyService();
 });
 
+final ambientPlaybackServiceProvider = Provider<AmbientPlaybackService>((ref) {
+  return AmbientPlaybackService(apiClient: ref.watch(apiClientProvider));
+});
+
 final authServiceProvider = Provider<AuthService>((ref) {
   return AuthService(
     apiClient: ref.watch(apiClientProvider),
+    ambientPlayback: ref.watch(ambientPlaybackServiceProvider),
     storage: ref.watch(secureStorageProvider),
     deviceIdentity: ref.watch(deviceIdentityProvider),
     passkeys: ref.watch(nativePasskeyProvider),

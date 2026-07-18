@@ -53,4 +53,29 @@ void main() {
     expect(response.rememberedProfileId, 'profile-parent');
     expect(response.parentUnlockRequired, isFalse);
   });
+
+  test('ambient channel availability requires enabled items', () {
+    final channels = AmbientChannelListResponse.fromJson({
+      'items': [
+        {
+          'id': 'channel-1',
+          'name': 'Kids science',
+          'audience': 'kids',
+          'is_enabled': true,
+          'item_count': 2,
+        },
+        {
+          'id': 'channel-2',
+          'name': 'Disabled',
+          'audience': 'standard',
+          'is_enabled': false,
+          'item_count': 3,
+        },
+      ],
+    });
+
+    expect(channels.items.first.isKids, isTrue);
+    expect(channels.items.first.isPlayable, isTrue);
+    expect(channels.items.last.isPlayable, isFalse);
+  });
 }

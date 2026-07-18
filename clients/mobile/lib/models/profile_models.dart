@@ -130,3 +130,88 @@ class ParentUnlockResponse {
     );
   }
 }
+
+class AmbientChannelSummary {
+  const AmbientChannelSummary({
+    required this.id,
+    required this.name,
+    required this.audience,
+    required this.isEnabled,
+    required this.itemCount,
+  });
+
+  final String id;
+  final String name;
+  final String audience;
+  final bool isEnabled;
+  final int itemCount;
+
+  bool get isKids => audience == 'kids';
+  bool get isPlayable => isEnabled && itemCount > 0;
+
+  factory AmbientChannelSummary.fromJson(Map<String, Object?> json) {
+    final itemCount = json['item_count'];
+    return AmbientChannelSummary(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? 'Ambient channel',
+      audience: json['audience'] as String? ?? 'standard',
+      isEnabled: json['is_enabled'] as bool? ?? false,
+      itemCount: itemCount is num
+          ? itemCount.toInt()
+          : int.tryParse(itemCount?.toString() ?? '') ?? 0,
+    );
+  }
+}
+
+class AmbientChannelListResponse {
+  const AmbientChannelListResponse({required this.items});
+
+  final List<AmbientChannelSummary> items;
+
+  factory AmbientChannelListResponse.fromJson(Map<String, Object?> json) {
+    final rawItems = (json['items'] as List? ?? const []).whereType<Map>();
+    return AmbientChannelListResponse(
+      items: rawItems
+          .map(
+            (item) =>
+                AmbientChannelSummary.fromJson(Map<String, Object?>.from(item)),
+          )
+          .toList(growable: false),
+    );
+  }
+}
+
+class NativeAmbientPlaybackStatus {
+  const NativeAmbientPlaybackStatus({
+    required this.isActive,
+    this.channelId,
+    this.channelName,
+    this.mediaItemId,
+    this.positionMs = 0,
+    this.isPlaying = false,
+    this.error,
+  });
+
+  final bool isActive;
+  final String? channelId;
+  final String? channelName;
+  final String? mediaItemId;
+  final int positionMs;
+  final bool isPlaying;
+  final String? error;
+
+  factory NativeAmbientPlaybackStatus.fromJson(Map<Object?, Object?> json) {
+    final position = json['position_ms'];
+    return NativeAmbientPlaybackStatus(
+      isActive: json['is_active'] == true,
+      channelId: json['channel_id'] as String?,
+      channelName: json['channel_name'] as String?,
+      mediaItemId: json['media_item_id'] as String?,
+      positionMs: position is num
+          ? position.toInt()
+          : int.tryParse(position?.toString() ?? '') ?? 0,
+      isPlaying: json['is_playing'] == true,
+      error: json['error'] as String?,
+    );
+  }
+}

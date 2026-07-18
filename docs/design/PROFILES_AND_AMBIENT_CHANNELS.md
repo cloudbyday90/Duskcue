@@ -45,6 +45,18 @@ Native state is deliberately bounded and non-secret: a client may retain the act
 
 Flutter's navigation guidance supports declarative routing, while `WidgetsBindingObserver` provides lifecycle notification for the existing foreground client. Duskcue's Flutter client therefore enters `/profiles` after every successful authentication or restoration, calls `GET /api/v1/profiles`, and only releases normal routes after the server reports the active scope. When `profile_selection_required` is set, the screen remains a blocking picker; a manually opened picker can also switch profiles later. A successful switch clears native profile-scoped state before navigation continues: active download inventory, protected package root selection, decoded image memory/disk cache, and current route state. Offline download scope expands from `(server_origin, user_id, device_identifier)` to include `profile_id`, preventing one household profile from discovering another profile's local package inventory. Sources: [Flutter navigation and routing](https://docs.flutter.dev/ui/navigation), [Flutter `WidgetsBindingObserver`](https://api.flutter.dev/flutter/widgets/WidgetsBindingObserver-class.html), and [Apple TVUserManager](https://developer.apple.com/documentation/tvservices/tvusermanager). These official sources were rechecked on 2026-07-18.
 
+### Flutter Native Ambient Player Research (2026-07-18)
+
+| Option | Advantages | Limitations | Decision |
+|---|---|---|---|
+| Continue using the foreground-only `video_player` controller | Reuses the existing playback screen. | The controller pauses when the Flutter activity backgrounds and exposes neither an Android media session nor iOS background-audio lifecycle. It cannot own continuous channel advancement. | Rejected. |
+| Adopt a generic Flutter background-audio package | Reduces host-language code. | It obscures the required Media3/AVFoundation ownership boundary, does not supply the needed authenticated HLS/channel-revision workflow, and makes a native video surface handoff indirect. | Rejected. |
+| Native queue owner with a small Flutter platform bridge | Android can run one `ExoPlayer`/`MediaSession` in a `MediaSessionService`; iOS can run one `AVQueuePlayer` with an active playback audio session. Flutter remains the channel picker and visible player surface. | Requires deliberately small Kotlin and Swift implementations plus platform-specific device verification. | Selected. |
+
+The selected implementation starts a channel from Flutter, but the native queue owns `next`, revision-checked ambient start, heartbeat, stop, and advancement after an item ends. Android uses Media3 1.10.1 with a `mediaPlayback` foreground service; iOS uses `AVQueuePlayer`, `AVAudioSession.Category.playback`, and the `audio` background mode. A Flutter platform view attaches only to that same native player while the channel screen is visible, so foreground video and background media controls share one playback authority.
+
+The queue receives the server origin, bearer token, and stream URL only as in-memory runtime values. It persists nothing: a service/process restart, sign-out, profile switch, or explicit stop releases the player, clears its runtime, and requires an authenticated Flutter session to start a fresh `next` request. Android deliberately does not advertise system media-button resumption because it would require persisted queue/credential state. A `PLAY_019` response discards the attempted item and immediately resolves `next` again; repeated failure stops playback rather than retrying indefinitely. Sources: [Android Media3 background playback](https://developer.android.com/media/media3/session/background-playback), [Android Media3 releases](https://developer.android.com/jetpack/androidx/releases/media3), [Android MediaSessionService API](https://developer.android.com/reference/androidx/media3/session/MediaSessionService), [Apple AVAudioSession](https://developer.apple.com/documentation/avfaudio/avaudiosession), [Apple playback audio category](https://developer.apple.com/documentation/avfaudio/avaudiosession/category-swift.struct/playback), [Apple AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer), and [Flutter platform channels](https://docs.flutter.dev/platform-integration/platform-channels). These official sources were rechecked on 2026-07-18.
+
 ### First-Use Gate Research (2026-07-18)
 
 | Option | Advantages | Limitations | Decision |
@@ -168,11 +180,18 @@ Implemented in the Flutter native profile-gate follow-up (2026-07-18):
 - a successful switch clears the in-memory and disk artwork caches plus the active download-manager state before it publishes the replacement session scope; and
 - local offline inventory, protected package, and download-settings namespaces now include `profile_id`, preserving old profile data only in its former inaccessible namespace rather than deleting another profile's packages.
 
+Implemented in the Flutter native ambient-player follow-up (2026-07-18):
+
+- the Flutter channel picker loads only profile-authorized ambient channels and hands the selected channel to a platform-specific in-memory runtime; its visible player surface attaches to that native runtime rather than creating a second `video_player` session;
+- Android uses one Media3 1.10.1 `ExoPlayer`/`MediaSessionService`, declares the required `mediaPlayback` foreground-service capability, sends authenticated `next`/start/heartbeat/stop requests, stops every completed session before advancing, and leaves media resumption disabled;
+- iOS uses one `AVQueuePlayer`, an active playback/movie audio session, the `audio` background mode, system now-playing/play-pause controls, and the same revision-safe completion and error lifecycle; and
+- sign-out, profile switch, server change, explicit stop, and process/service loss clear native runtime values. `PLAY_019` invalidates the pending selection and performs one fresh `next` resolution rather than reusing a stream URL.
+
 Deferred follow-up:
 
 - native shared-TV picker enforcement and platform cache invalidation; Flutter Android/iOS now supplies the reusable native implementation, while each dedicated native TV client must apply the same picker and cache-boundary rules before claiming the shared-TV experience;
 - profile-specific Trakt account linking/export selection;
-- native Android/iOS background-player implementations and offline ambient queue prefetch, consuming the revision handshake rather than retaining stream URLs;
+- offline ambient queue prefetch, provided it preserves the no-stream-URL/no-credential restoration boundary;
 - time windows, daily limits, and child-safe metadata editorial review.
 
 Related documents: [DATABASE.md](DATABASE.md), [TV_PLATFORM_SURFACES.md](TV_PLATFORM_SURFACES.md), [CLIENT_PLATFORM_READINESS.md](CLIENT_PLATFORM_READINESS.md), and [SECURITY.md](../security/SECURITY.md).
