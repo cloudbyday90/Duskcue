@@ -508,13 +508,45 @@ Segment detection metrics are exposed via the existing Prometheus `/metrics` end
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
-| `segment_analysis_files_total` | counter | library, method (chapter/chromaprint/blackframe/silence) | Files analyzed by method |
-| `segment_analysis_duration_seconds` | histogram | library | Time to analyze one library |
-| `segment_segments_created_total` | counter | library, type (intro/credits/etc), source | Segments created by type and source |
-| `segment_segments_active` | gauge | library, type | Currently stored segments by type |
-| `segment_skip_total` | counter | type, auto (true/false) | Skip button presses |
-| `segment_low_confidence_total` | counter | library | Low-confidence detections (not shown to users) |
-| `segment_analysis_errors_total` | counter | library, method | Analysis failures by method |
+| `segment_analysis_files_total` | counter | `method` (`chapter`, `chromaprint`, `blackframe`, `silence`) | Detector invocations by bounded method |
+| `segment_analysis_duration_seconds` | histogram | — | End-to-end time for one library analysis, including incomplete runs |
+| `segment_segments_created_total` | counter | `type` (`intro`, `credits`, `recap`, `preview`, `outro`), `source` (`chapter`, `chromaprint`, `blackframe`, `silence`, `combined`) | Persisted detector-created segments by type and source |
+| `segment_segments_active` | gauge | `type` (`intro`, `credits`, `recap`, `preview`, `outro`) | Currently stored manual and detector-created segments by type |
+| `segment_low_confidence_total` | counter | — | Persisted detector candidates below the active surfaced-confidence threshold |
+| `segment_analysis_errors_total` | counter | `stage` (`database`, `chapter`, `chromaprint`, `blackframe`, `silence`) | Failures by bounded processing stage |
+
+`segment_skip_total` remains deferred. The web player currently seeks locally and
+does not send a trustworthy, authenticated skip event to the server. It will be
+introduced with a playback telemetry contract rather than emitting a client-side
+counter that the protected Prometheus endpoint cannot collect.
+
+### Observability Decision (2026-07-18)
+
+| Option | Advantages | Limitations | Decision |
+|---|---|---|---|
+| Label every series with a library ID, media ID, file path, user, or raw operational error | A dashboard could directly identify one object. | Each new object or error creates a private, unbounded Prometheus time series. | Rejected. |
+| Export only aggregate success counts | Minimal implementation. | Cannot separate a quiet no-op from detector work, failures, low-confidence output, or growing stored state. | Rejected. |
+| Use fixed method/type/source/stage vocabularies and retain object details in structured logs and scheduled-task history | Supports rate, failure, duration, confidence, and inventory dashboards without exposing private identifiers or unbounded labels. | Per-library investigation remains a log/task-history operation. | Selected. |
+
+Each analysis method is counted when the worker actually invokes it. Segment
+creation and low-confidence counters advance only after the database insert
+succeeds, avoiding misleading output from duplicate or failed writes. The active
+gauge is refreshed from the database after a library pass and includes manual
+segments because it represents the playable stored inventory, not just detector
+output. The duration histogram has no library label so it remains aggregateable
+across long-lived instances.
+
+Prometheus recommends a single meaning and base unit per metric and cautions
+that every unique label combination is a new time series. The Rust `metrics`
+facade supplies the matching counter, gauge, and histogram primitives. Sources
+rechecked on 2026-07-18: [Prometheus metric and label naming](https://prometheus.io/docs/practices/naming/),
+[Prometheus histograms](https://prometheus.io/docs/practices/histograms/), and
+[Rust `metrics` metric types](https://docs.rs/metrics/latest/metrics/).
+
+Implemented in the Segment Analysis worker: method invocations, per-library
+duration, persisted creations, active inventory, low-confidence candidates,
+and bounded failures. `scripts/verify-segment-metrics.mjs` protects the
+document-to-code contract and rejects a `library` metric label.
 
 ---
 
@@ -670,16 +702,15 @@ The orchestration worker that ties the detection library (`services/segments.rs`
 - **`media_item_id` on `RecurringMatch`** — The `find_recurring_segments` function built a `HashMap<Uuid, RecurringMatch>` internally but discarded the keys on `into_values()`. The worker needs to know which episode each recurring intro belongs to. Added `media_item_id: Uuid` to `RecurringMatch`, populated before collecting. Non-breaking: existing tests don't construct `RecurringMatch` directly; `chromaprint_match_to_segment` ignores the new field.
 - **Chapter extraction always runs** — Even for files with cached fingerprints. Chapter data lives in `media_files.additional_streams` JSONB and may change without the audio stream changing (e.g., re-muxing with updated chapter metadata). The fingerprint cache only skips the expensive FFmpeg audio extraction + chromaprint calculation, not the cheap chapter regex match.
 - **Credits detection supplementary** — Items resolved by chapter markers are excluded from credits detection (passed via `chapter_resolved` list). Items already having a `credits` segment are also excluded. This prevents redundant FFmpeg `blackframe` + `silencedetect` invocations on files that already have credits markers from a prior pass.
-- **`outro` segment deferred** — The design notes outro detection requires reading existing `credits` segments (chicken-and-egg within a single pass). The worker leaves this as a follow-up: a second pass after credits are established across the library would detect silence gaps between content end and credits start.
+- **Hash-aware outro pass** — After credits detection, the worker selects healthy primary files with a credits marker whose stored outro-analysis hash differs from the current file hash. It accepts only a silence gap touching that credits boundary, records the analysis evidence on the credits marker, and persists the bounded post-silence tail at confidence `0.6`; that is intentionally below the default surfaced threshold.
 - **Task enabled by default** — Unlike `subtitle_auto_fetch` (disabled by default because it consumes external API quota), segment analysis uses only local FFmpeg + CPU. Safe and expected behavior for a media server. The daily 03:00 schedule matches the design's "after the daily library scan" intent.
-- **Per-task timeout stored but not enforced** — Migration seeds `timeout_seconds = 14400` (4 hours) per the design. The current scheduler executor wrapper uses a hardcoded `tokio::time::timeout(Duration::from_secs(3600), ...)` — the DB column is not yet consulted. Large library analysis may hit the 3600s wrapper before the 14400s column value. This is a pre-existing scheduler limitation.
+- **Configured per-task timeout** — Migration seeds `timeout_seconds = 14400` (4 hours), and the scheduler executor reads that value for the task timeout. Cancellation drops active FFmpeg child commands, which use `kill_on_drop(true)`.
+- **Bounded Segment Analysis metrics** — The worker emits only fixed method/type/source/stage labels, records duration without a library label, refreshes the active inventory after each library pass, and counts creations only after a successful insert. Candidate resolution now keeps fingerprint-cached files in the cheap chapter pass while avoiding the expensive chromaprint calculation for them.
 
 **Not yet implemented (deferred):**
 
-- `outro` segment type via silence-gap detection after credits — requires a second pass after credits are established across the library.
 - Movie intro detection via chromaprint — design specifies chromaprint for TV episodes (≥2 episodes in a season for comparison); movies fall through to chapters + blackframe only.
-- Prometheus metrics from the Metrics table (`segment_analysis_files_total`, `segment_segments_created_total`, etc.) — deferred to Pre-v1.0 Hardening.
-- Per-task timeout enforcement in the scheduler executor wrapper.
+- `segment_skip_total` — requires an authenticated playback telemetry contract because the current web client seeks locally.
 
 ### Phase 10 Task 7 — Web Client Skip Button (Complete)
 

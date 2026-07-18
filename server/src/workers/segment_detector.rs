@@ -31,14 +31,14 @@
 //!
 //! ## Incremental analysis
 //!
-//! Files with a matching `media_fingerprints` row (same `file_hash`) are
-//! skipped entirely. This makes subsequent runs fast — only newly added or
-//! modified files are re-fingerprinted. Segments from chapter markers are
-//! always re-evaluated because chapter data lives in `media_files` and may
-//! change without a fingerprint change.
+//! Files with a matching `media_fingerprints` row (same `file_hash`) skip
+//! expensive audio fingerprinting. All healthy files still enter the cheap
+//! chapter pass because chapter data lives in `media_files` and may change
+//! without a fingerprint change.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Instant;
 
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
@@ -144,6 +144,26 @@ async fn analyze_library(
     safety: &SafetyConfig,
     analysis_cfg: &SegmentAnalysisConfig,
 ) -> Result<LibraryAnalysisResult, sqlx::Error> {
+    let started = Instant::now();
+    let result = analyze_library_inner(pool, library_id, safety, analysis_cfg).await;
+    metrics::histogram!("segment_analysis_duration_seconds")
+        .record(started.elapsed().as_secs_f64());
+    if let Err(error) = record_active_segments(pool).await {
+        record_analysis_error(SegmentAnalysisErrorStage::Database);
+        tracing::warn!(library_id = %library_id, error = %error, "Failed to refresh active segment metrics");
+    }
+    if result.is_err() {
+        record_analysis_error(SegmentAnalysisErrorStage::Database);
+    }
+    result
+}
+
+async fn analyze_library_inner(
+    pool: &PgPool,
+    library_id: Uuid,
+    safety: &SafetyConfig,
+    analysis_cfg: &SegmentAnalysisConfig,
+) -> Result<LibraryAnalysisResult, sqlx::Error> {
     let mut result = LibraryAnalysisResult::default();
 
     let candidates = match fetch_candidates(pool, library_id).await {
@@ -175,6 +195,7 @@ async fn analyze_library(
     let mut needs_fingerprint: Vec<&Candidate> = Vec::new();
 
     for candidate in &candidates {
+        record_analysis_file(SegmentAnalysisMethod::Chapter);
         let chapters = seg::extract_chapters(&candidate.additional_streams);
         let matched =
             apply_chapter_segments(pool, candidate, &chapters, safety, candidate.is_movie).await;
@@ -192,6 +213,7 @@ async fn analyze_library(
             Ok(FingerprintOutcome::Computed) => result.fingerprints_computed += 1,
             Ok(FingerprintOutcome::Reused) => result.fingerprints_reused += 1,
             Err(e) => {
+                record_analysis_error(SegmentAnalysisErrorStage::Chromaprint);
                 tracing::warn!(
                     media_item_id = %candidate.media_item_id,
                     media_file_id = %candidate.media_file_id,
@@ -213,6 +235,7 @@ async fn analyze_library(
     {
         Ok(n) => n,
         Err(e) => {
+            record_analysis_error(SegmentAnalysisErrorStage::Chromaprint);
             tracing::warn!(library_id = %library_id, error = %e, "Cross-episode chromaprint comparison failed");
             0
         }
@@ -232,6 +255,7 @@ async fn analyze_library(
     {
         Ok(n) => n,
         Err(e) => {
+            record_analysis_error(SegmentAnalysisErrorStage::Database);
             tracing::warn!(library_id = %library_id, error = %e, "Credits detection failed");
             0
         }
@@ -241,6 +265,7 @@ async fn analyze_library(
     let outro_segments = match detect_outros(pool, library_id, &silence_params, safety).await {
         Ok(n) => n,
         Err(e) => {
+            record_analysis_error(SegmentAnalysisErrorStage::Database);
             tracing::warn!(library_id = %library_id, error = %e, "Outro detection failed");
             0
         }
@@ -306,11 +331,98 @@ struct Candidate {
     runtime_seconds: i32,
     additional_streams: serde_json::Value,
     is_movie: bool,
+    fingerprint_cached: bool,
 }
 
 enum FingerprintOutcome {
     Computed,
     Reused,
+}
+
+#[derive(Clone, Copy)]
+enum SegmentAnalysisMethod {
+    Chapter,
+    Chromaprint,
+    Blackframe,
+    Silence,
+}
+
+impl SegmentAnalysisMethod {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Chapter => "chapter",
+            Self::Chromaprint => "chromaprint",
+            Self::Blackframe => "blackframe",
+            Self::Silence => "silence",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum SegmentAnalysisErrorStage {
+    Database,
+    Chapter,
+    Chromaprint,
+    Blackframe,
+    Silence,
+}
+
+impl SegmentAnalysisErrorStage {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Database => "database",
+            Self::Chapter => "chapter",
+            Self::Chromaprint => "chromaprint",
+            Self::Blackframe => "blackframe",
+            Self::Silence => "silence",
+        }
+    }
+}
+
+fn record_analysis_file(method: SegmentAnalysisMethod) {
+    metrics::counter!("segment_analysis_files_total", "method" => method.as_str()).increment(1);
+}
+
+fn record_analysis_error(stage: SegmentAnalysisErrorStage) {
+    metrics::counter!("segment_analysis_errors_total", "stage" => stage.as_str()).increment(1);
+}
+
+fn record_segment_created(detected: &seg::DetectedSegment) {
+    metrics::counter!(
+        "segment_segments_created_total",
+        "type" => detected.segment_type.as_str(),
+        "source" => detected.source.as_str()
+    )
+    .increment(1);
+    if detected
+        .metadata
+        .get("surfaced")
+        .and_then(|value| value.as_bool())
+        == Some(false)
+    {
+        metrics::counter!("segment_low_confidence_total").increment(1);
+    }
+}
+
+async fn record_active_segments(pool: &PgPool) -> Result<(), sqlx::Error> {
+    let rows = sqlx::query(
+        r#"
+        SELECT segment_type, COUNT(*)::BIGINT AS count
+        FROM media_segments
+        GROUP BY segment_type
+        "#,
+    )
+    .fetch_all(pool)
+    .await?;
+    let counts: HashMap<String, i64> = rows
+        .iter()
+        .map(|row| (row.get("segment_type"), row.get("count")))
+        .collect();
+    for segment_type in seg::VALID_SEGMENT_TYPES {
+        metrics::gauge!("segment_segments_active", "type" => *segment_type)
+            .set(counts.get(*segment_type).copied().unwrap_or_default() as f64);
+    }
+    Ok(())
 }
 
 fn resolve_config(state: &AppState) -> (SafetyConfig, SegmentAnalysisConfig, bool) {
@@ -358,7 +470,15 @@ async fn fetch_candidates(pool: &PgPool, library_id: Uuid) -> Result<Vec<Candida
             mf.file_hash       AS file_hash,
             mf.runtime_seconds AS runtime_seconds,
             mf.additional_streams AS additional_streams,
-            (mi.type = 'movie') AS is_movie
+            (mi.type = 'movie') AS is_movie,
+            EXISTS (
+                SELECT 1
+                FROM media_fingerprints fp
+                WHERE fp.media_file_id = mf.id
+                  AND fp.file_hash = mf.file_hash
+                  AND mf.file_hash IS NOT NULL
+                  AND mf.file_hash <> ''
+            ) AS fingerprint_cached
         FROM media_files mf
         JOIN media_items mi ON mf.media_item_id = mi.id
         WHERE mi.library_id = $1
@@ -371,49 +491,19 @@ async fn fetch_candidates(pool: &PgPool, library_id: Uuid) -> Result<Vec<Candida
     .fetch_all(pool)
     .await?;
 
-    let mut out = Vec::with_capacity(rows.len());
-    for r in &rows {
-        let file_hash: Option<String> = r.get("file_hash");
-        let needs_fingerprint = match file_hash.as_deref() {
-            Some(h) if !h.is_empty() => {
-                !has_cached_fingerprint(pool, r.get::<Uuid, _>("media_file_id"), h)
-                    .await
-                    .unwrap_or(false)
-            }
-            _ => true,
-        };
-        if !needs_fingerprint {
-            continue;
-        }
-        out.push(Candidate {
+    Ok(rows
+        .iter()
+        .map(|r| Candidate {
             media_item_id: r.get("media_item_id"),
             media_file_id: r.get("media_file_id"),
             file_path: r.get("file_path"),
-            file_hash,
+            file_hash: r.get("file_hash"),
             runtime_seconds: r.get("runtime_seconds"),
             additional_streams: r.get("additional_streams"),
             is_movie: r.get("is_movie"),
-        });
-    }
-    Ok(out)
-}
-
-async fn has_cached_fingerprint(
-    pool: &PgPool,
-    media_file_id: Uuid,
-    file_hash: &str,
-) -> Result<bool, sqlx::Error> {
-    let exists: Option<(Uuid,)> = sqlx::query_as(
-        r#"
-        SELECT media_file_id FROM media_fingerprints
-        WHERE media_file_id = $1 AND file_hash = $2
-        "#,
-    )
-    .bind(media_file_id)
-    .bind(file_hash)
-    .fetch_optional(pool)
-    .await?;
-    Ok(exists.is_some())
+            fingerprint_cached: r.get("fingerprint_cached"),
+        })
+        .collect())
 }
 
 async fn apply_chapter_segments(
@@ -450,11 +540,19 @@ async fn apply_chapter_segments(
             continue;
         }
 
-        if has_segment_for_type(pool, candidate.media_item_id, seg_type.as_str())
-            .await
-            .unwrap_or(false)
-        {
-            continue;
+        match has_segment_for_type(pool, candidate.media_item_id, seg_type.as_str()).await {
+            Ok(true) => continue,
+            Ok(false) => {}
+            Err(error) => {
+                record_analysis_error(SegmentAnalysisErrorStage::Chapter);
+                tracing::warn!(
+                    media_item_id = %candidate.media_item_id,
+                    chapter_title = %title,
+                    error = %error,
+                    "Failed to check for an existing chapter-derived segment"
+                );
+                continue;
+            }
         }
 
         let detected = seg::chapter_to_detected_segment(chapter, seg_type, runtime_ms, safety);
@@ -462,8 +560,10 @@ async fn apply_chapter_segments(
         seg::mark_surfaced(&mut detected, safety);
 
         match insert_segment(pool, candidate.media_item_id, &detected).await {
-            Ok(_) => matched += 1,
+            Ok(true) => matched += 1,
+            Ok(false) => {}
             Err(e) => {
+                record_analysis_error(SegmentAnalysisErrorStage::Chapter);
                 tracing::warn!(
                     media_item_id = %candidate.media_item_id,
                     chapter_title = %title,
@@ -501,12 +601,7 @@ async fn fingerprint_and_store(
     candidate: &Candidate,
     analysis_cfg: &SegmentAnalysisConfig,
 ) -> Result<FingerprintOutcome, seg::SegmentPipelineError> {
-    if let Some(hash) = candidate.file_hash.as_deref()
-        && !hash.is_empty()
-        && has_cached_fingerprint(pool, candidate.media_file_id, hash)
-            .await
-            .unwrap_or(false)
-    {
+    if candidate.fingerprint_cached {
         return Ok(FingerprintOutcome::Reused);
     }
 
@@ -518,6 +613,7 @@ async fn fingerprint_and_store(
         )));
     }
 
+    record_analysis_file(SegmentAnalysisMethod::Chromaprint);
     let output = seg::fingerprint_file(&path, analysis_cfg.chromaprint_sample_rate).await?;
 
     let raw_bytes: Vec<u8> = output.raw.iter().flat_map(|v| v.to_le_bytes()).collect();
@@ -586,6 +682,7 @@ async fn cross_compare_seasons(
             Ok(e) if e.len() < 2 => continue,
             Ok(e) => e,
             Err(e) => {
+                record_analysis_error(SegmentAnalysisErrorStage::Chromaprint);
                 tracing::warn!(season_id = %season.season_id, error = %e, "Failed to load season fingerprints");
                 continue;
             }
@@ -602,11 +699,20 @@ async fn cross_compare_seasons(
             .collect();
 
         for m in &matches {
-            if has_segment_for_type(pool, m.media_item_id, seg::SegmentType::Intro.as_str())
+            match has_segment_for_type(pool, m.media_item_id, seg::SegmentType::Intro.as_str())
                 .await
-                .unwrap_or(false)
             {
-                continue;
+                Ok(true) => continue,
+                Ok(false) => {}
+                Err(error) => {
+                    record_analysis_error(SegmentAnalysisErrorStage::Chromaprint);
+                    tracing::warn!(
+                        media_item_id = %m.media_item_id,
+                        error = %error,
+                        "Failed to check for an existing chromaprint intro segment"
+                    );
+                    continue;
+                }
             }
 
             let runtime = runtime_by_item
@@ -619,10 +725,13 @@ async fn cross_compare_seasons(
             let mut detected = detected;
             seg::mark_surfaced(&mut detected, safety);
 
-            if let Err(e) = insert_segment(pool, m.media_item_id, &detected).await {
-                tracing::warn!(media_item_id = %m.media_item_id, error = %e, "Failed to insert chromaprint intro segment");
-            } else {
-                created += 1;
+            match insert_segment(pool, m.media_item_id, &detected).await {
+                Ok(true) => created += 1,
+                Ok(false) => {}
+                Err(error) => {
+                    record_analysis_error(SegmentAnalysisErrorStage::Chromaprint);
+                    tracing::warn!(media_item_id = %m.media_item_id, error = %error, "Failed to insert chromaprint intro segment");
+                }
             }
         }
     }
@@ -747,18 +856,22 @@ async fn detect_credits(
         let runtime_ms = item.runtime_seconds.max(0) * 1_000;
         let search_window = seg::credits_search_window_ms(runtime_ms, item.is_movie);
 
+        record_analysis_file(SegmentAnalysisMethod::Blackframe);
         let blackframes = match seg::detect_blackframes(&path, blackframe_params, search_window)
             .await
         {
             Ok(b) => b,
             Err(e) => {
+                record_analysis_error(SegmentAnalysisErrorStage::Blackframe);
                 tracing::warn!(media_item_id = %item.media_item_id, error = %e, "Blackframe detection failed");
                 continue;
             }
         };
+        record_analysis_file(SegmentAnalysisMethod::Silence);
         let silence = match seg::detect_silence(&path, silence_params).await {
             Ok(s) => s,
             Err(e) => {
+                record_analysis_error(SegmentAnalysisErrorStage::Silence);
                 tracing::warn!(media_item_id = %item.media_item_id, error = %e, "Silence detection failed");
                 continue;
             }
@@ -770,8 +883,10 @@ async fn detect_credits(
         for mut seg_ in segments {
             seg::mark_surfaced(&mut seg_, safety);
             match insert_segment(pool, item.media_item_id, &seg_).await {
-                Ok(_) => created += 1,
+                Ok(true) => created += 1,
+                Ok(false) => {}
                 Err(e) => {
+                    record_analysis_error(SegmentAnalysisErrorStage::Database);
                     tracing::warn!(
                         media_item_id = %item.media_item_id,
                         error = %e,
@@ -851,9 +966,11 @@ async fn detect_outros(
             continue;
         }
 
+        record_analysis_file(SegmentAnalysisMethod::Silence);
         let silence = match seg::detect_silence(&path, silence_params).await {
             Ok(events) => events,
             Err(error) => {
+                record_analysis_error(SegmentAnalysisErrorStage::Silence);
                 tracing::warn!(media_item_id = %item.media_item_id, error = %error, "Outro silence detection failed");
                 continue;
             }
@@ -863,8 +980,9 @@ async fn detect_outros(
             seg::detect_outro_from_silence(item.credits_end_ms, &silence, runtime_ms, item.is_movie)
         {
             seg::mark_surfaced(&mut detected, safety);
-            insert_segment(pool, item.media_item_id, &detected).await?;
-            created += 1;
+            if insert_segment(pool, item.media_item_id, &detected).await? {
+                created += 1;
+            }
         }
         mark_outro_analyzed(pool, item.credit_segment_id, item.file_hash.as_deref()).await?;
     }
@@ -967,8 +1085,8 @@ async fn insert_segment(
     pool: &PgPool,
     media_item_id: Uuid,
     detected: &seg::DetectedSegment,
-) -> Result<(), sqlx::Error> {
-    sqlx::query(
+) -> Result<bool, sqlx::Error> {
+    let result = sqlx::query(
         r#"
         INSERT INTO media_segments
             (media_item_id, segment_type, start_ms, end_ms, skip_to_ms,
@@ -987,7 +1105,11 @@ async fn insert_segment(
     .bind(&detected.metadata)
     .execute(pool)
     .await?;
-    Ok(())
+    let inserted = result.rows_affected() > 0;
+    if inserted {
+        record_segment_created(detected);
+    }
+    Ok(inserted)
 }
 
 #[cfg(test)]
