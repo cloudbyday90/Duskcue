@@ -21,6 +21,7 @@ These documents apply to every phase. Consult them when making implementation de
 | [CONFIGURATION.md](docs/operations/CONFIGURATION.md) | Two-tier config (bootstrap TOML + runtime DB), 14-step startup sequence |
 | [DATABASE.md](docs/design/DATABASE.md) | Full DDL, UUIDv7 key strategy, naming conventions, PG18 features |
 | [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md) | TV continue-watching/next-up/recommendation feed, Android TV Watch Next adapter, deep-link resume |
+| [ANDROID_TV.md](docs/design/ANDROID_TV.md) | Phase 17 Android TV / Google TV architecture, Watch Next, playback, and release gates |
 
 ### Code Standards
 
@@ -4213,6 +4214,8 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 **Tasks:**
 
 0. Research, design, and phase enrichment — verify 2026 Android TV, Google TV, Media3, Watch Next, Google Play, and Sony BRAVIA guidance from official sources; update docs and this phase before implementation.
+
+   **Task 0 implementation note:** Complete — [ANDROID_TV.md](docs/design/ANDROID_TV.md) records the July 18, 2026 official-source review and selects a dedicated `clients/tv/android/` Kotlin application with Compose for TV, not a Flutter TV flavor. The baseline is `com.duskcue.tv`, minSdk 26, compile/target SDK 36, Java 17, and aligned Media3 1.10.1 modules. The client must use the shared Phase 16d fixtures/contract, enforce the profile gate before profile-scoped requests or launcher publication, use server revalidation before every playback start, and treat launcher rows as local cache/mapping state only. Compose for TV is selected because Leanback is deprecated. Watch Next is limited to useful `continue`, `next_up`, and `new_episodes` entries, with one episode per series and removal on completion, revocation, or profile change; recommendations and ambient playback stay app-local. Google TV home-row appearance, Play distribution, and Sony BRAVIA HDR/audio/device behavior remain release-gate evidence rather than an API claim.
 1. Create Android TV project foundation — `clients/tv/android/` native Kotlin app using Compose for TV unless Task 0 finds a blocking reason to use Leanback; add Gradle module, package ID, debug signing, `LEANBACK_LAUNCHER` manifest activity, TV banner/icon placeholders, min/target SDK policy, local config, and app identity placeholders aligned with Phase 16d release readiness.
 2. Add shared contract/API client integration — implement a fixture-backed Kotlin client for the Phase 16d contract surface with base URL selection, bearer-token injection, timeout/retry policy, RFC 9457 Problem Details mapping, pagination/cache helpers, private ETag handling, SSE refresh hint handling where useful, diagnostics redaction, and typed adapter boundaries for later Fire TV reuse.
 3. Implement TV auth, server selection, and profile switching — device-linking login, saved server selection, re-auth/session-expired handling, logout/logout-all behavior, user/profile visibility, profile switching, and cleanup of local TV rows, Watch Next mappings, tokens, diagnostics identifiers, and cached server/user data when identity or server changes.

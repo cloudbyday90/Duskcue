@@ -652,6 +652,8 @@ node scripts/verify-device-lab.mjs
 
 Android TV / Google TV is the first target because it provides a documented Watch Next API through AndroidX TV Provider.
 
+The Phase 17 native-client architecture, current Android guidance, profile/cache boundary, playback behavior, and release gates are authoritative in [ANDROID_TV.md](ANDROID_TV.md). This adapter section remains the cross-platform mapping authority.
+
 ### Client Responsibilities
 
 - Build a native Android TV client in Kotlin.
