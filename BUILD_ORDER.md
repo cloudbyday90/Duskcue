@@ -3266,6 +3266,8 @@ The original Phase 11 work delivered the Trakt domain and worker. The audit foun
 
 **Verification:** `cargo check -p duskcue` and `cargo test -p duskcue reindex_maintenance` pass.
 
+**Post-Phase 13a parent-table ANALYZE follow-up complete:** `a05342e` registers the already-seeded `analyze_parents` task as a fallible scheduler worker. It respects the typed `MaintenanceConfig` toggle with a per-task override, runs plain `ANALYZE` for `play_sessions`, `play_events`, and `audit_log` (without `ONLY`, so PostgreSQL refreshes inheritance and child statistics), persists every table outcome in `scheduled_task_runs.stats`, and returns accumulated failures to the scheduler. Fixed `parent_table` metrics track successful and failed analyses. `ANALYZE SKIP LOCKED` remains intentionally excluded because PostgreSQL can skip the entire partition tree after a conflicting parent lock, which would leave planner statistics stale while appearing successful. `cargo test -p duskcue` passes 773 tests; strict `cargo check` and Clippy pass.
+
 **What was built for Task 8:**
 
 | File | Purpose |
