@@ -575,7 +575,7 @@ at 04:00, and FFmpeg invocations are sandboxed on Linux.
 **Not yet implemented (deferred to later tasks/phases):**
 
 - ~~Web client `SeekPreview.svelte` — Task 8 consumes the `/storyboard/index.vtt` endpoint via hls.js or a custom seek-bar component~~ — **Complete (Task 8)**
-- Prometheus metrics from the Metrics table (`storyboard_files_processed_total`, `storyboard_generation_duration_seconds`, etc.) — deferred to Pre-v1.0 Hardening
+- ~~Prometheus metrics from the Metrics table (`storyboard_files_processed_total`, `storyboard_generation_duration_seconds`, etc.)~~ — **Complete (Storyboard metrics follow-up):** the worker emits one bounded terminal outcome per attempted file, successful publications emit duration and sprite counts, reconciliation measures the cache tree, and authenticated index/sprite handlers record bounded serving outcomes.
 - `outro` segment type via silence-gap detection — unrelated to Task 6; deferred to a follow-up of Task 5
 
 ### Phase 10 Task 8 — Seek Preview Component (Complete)
