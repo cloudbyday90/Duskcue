@@ -775,6 +775,8 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **Library scan executor** — fetches all non-deleted libraries, runs `scan_library()` for each with `mode` from task config (default: `"full"`); aggregates `items_created`, `files_modified`, `files_deleted` across all libraries
 - **Per-task timeout wrapper** — the executor applies `tokio::time::timeout` using each `scheduled_tasks.timeout_seconds` value (clamped to at least one second). Expiry records a `timeout` run result and cancellation drops the worker future; Storyboard FFmpeg commands use `kill_on_drop(true)` so an in-flight child is terminated too.
 
+**Post-Phase 5 soft-delete purge follow-up complete:** `870bea4` turns the pre-seeded daily `soft_delete_purge` row into a fallible scheduler worker. It purges only `playlists`, `libraries`, and non-owner `users` whose `deleted_at` value is more than 30 days old, in independent 100-root-row `DELETE ... RETURNING` batches. Candidate selection uses `FOR UPDATE SKIP LOCKED` to defer concurrent restore/admin mutations; PostgreSQL foreign keys perform dependent cascades. Every root-table result is persisted in `scheduled_task_runs.stats`, fixed-cardinality metrics record deletions/failures, and an error after partial success remains visible to the scheduler for retry. Full server verification passes 774 tests.
+
  7. ~~Implement FS watching via `notify` + `notify-debouncer-full` for real-time detection~~ **DONE**
 
 **What was built for Task 7:**

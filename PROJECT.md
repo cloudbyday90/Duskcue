@@ -821,7 +821,7 @@ All database design is documented in [DATABASE.md](docs/design/DATABASE.md). Sum
 
 ### Cross-Cutting Concerns
 
-- **Soft delete:** `deleted_at` on `libraries`, `users`, `playlists` only; 30-day purge via scheduled task; partial unique indexes for business keys
+- **Soft delete:** `deleted_at` on `libraries`, `users`, `playlists` only; the daily worker hard-purges only roots beyond the 30-day recovery window in bounded lock-aware batches, excludes owner accounts, records root counts/failures, and lets foreign keys handle dependent cascades (`870bea4`); partial unique indexes preserve reusable business keys.
 - **Partitioning:** Three tables partitioned by month (`play_sessions`, `play_events`, `audit_log`); the scheduled application worker creates the current and bounded future partitions; retention detach/drop remains an explicit destructive-maintenance follow-up.
 - **Full-text search:** Trigger-maintained `search_vector` on `media_items` with cross-table data (title, overview, cast, genres, tags); GIN index; `pg_trgm` fuzzy fallback; field weighting (A-D); `GET /api/v1/search` uses PostgreSQL FTS with parallel type/genre/year/rating facet queries
 - **Audit trail:** Trigger-based `audit_log` table with JSONB before/after; application context via session variables; sensitive field redaction; range-partitioned monthly; 1-year retention
