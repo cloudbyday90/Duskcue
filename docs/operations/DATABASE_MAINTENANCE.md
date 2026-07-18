@@ -304,6 +304,25 @@ ANALYZE audit_log;
 
 ANALYZE is fast (statistical sampling, not a full scan) — typically completes in under 1 second per table even with millions of rows.
 
+### Implementation Contract
+
+The `analyze_parents` worker reads `analyze_parent_tables_enabled` from the
+typed `MaintenanceConfig`; a scheduled-task `enabled` value overrides it for a
+single task. When enabled, it runs plain `ANALYZE` (without `ONLY`) for each
+partitioned parent so PostgreSQL refreshes both the parent inheritance
+statistics and the child-partition statistics. It persists the per-parent
+results in `scheduled_task_runs.stats` and returns an error if any parent
+cannot be analyzed, allowing the scheduler's normal failure handling to retry
+the task.
+
+`SKIP LOCKED` is intentionally not used. PostgreSQL documents that a conflicting
+lock on a partitioned table can make `ANALYZE SKIP LOCKED` skip all of its
+partitions, which would report a successful but stale maintenance run. The
+five-minute timeout and daily cadence instead provide a bounded, observable
+failure path. Sources rechecked on 2026-07-18: [PostgreSQL routine
+vacuuming](https://www.postgresql.org/docs/current/routine-vacuuming.html) and
+[PostgreSQL ANALYZE](https://www.postgresql.org/docs/current/sql-analyze.html).
+
 ---
 
 ## Strategy 5: Partition Retention via DETACH
@@ -510,6 +529,8 @@ Exposed via Prometheus `/metrics` endpoint:
 |---|---|---|---|
 | `maintenance_reindex_total` | counter | table, index | Indexes reindexed |
 | `maintenance_reindex_bloat_before` | gauge | table, index | Bloat % before reindex |
+| `maintenance_parent_analyze_total` | counter | parent_table | Successful parent-table ANALYZE operations |
+| `maintenance_parent_analyze_failures_total` | counter | parent_table | Failed parent-table ANALYZE operations |
 | `maintenance_partitions_detached` | counter | table | Partitions detached for retention |
 
 ---

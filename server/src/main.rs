@@ -360,6 +360,7 @@ async fn main() {
     let backup_retention_state = state.clone();
     let reindex_maintenance_state = state.clone();
     let partition_management_state = state.clone();
+    let analyze_parents_state = state.clone();
     let disk_space_check_state = state.clone();
     let recovery_drill_state = state.clone();
     let migration_cleanup_state = state.clone();
@@ -584,6 +585,13 @@ async fn main() {
                         &state, task_id, config,
                     )
                     .await
+                }
+            })
+            .register_fallible_executor("analyze_parents", move |_pool, task_id, config| {
+                let state = analyze_parents_state.clone();
+                async move {
+                    duskcue::workers::analyze_parents::run_analyze_parents(&state, task_id, config)
+                        .await
                 }
             })
             .register_fallible_executor("disk_space_check", move |_pool, task_id, config| {

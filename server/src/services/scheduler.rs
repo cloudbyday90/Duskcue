@@ -960,6 +960,12 @@ pub async fn seed_default_tasks(pool: &sqlx::PgPool) -> Result<(), sqlx::Error> 
             Some("0 0 1 * *"),
             None::<i32>,
         ),
+        (
+            "Analyze Parents",
+            "analyze_parents",
+            Some("0 3 * * *"),
+            None::<i32>,
+        ),
         ("Session Cleanup", "session_cleanup", None, Some(3600)),
         (
             "Notification Cleanup",

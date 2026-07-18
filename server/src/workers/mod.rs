@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod analyze_parents;
 pub mod asset_directory_scanner;
 pub mod backup_runner;
 pub mod collection_sync;
