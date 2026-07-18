@@ -21,6 +21,7 @@ const authService = read('clients/mobile/lib/services/auth_service.dart');
 const androidService = read('clients/mobile/android/app/src/main/kotlin/com/duskcue/mobile/AmbientPlaybackService.kt');
 const androidBridge = read('clients/mobile/android/app/src/main/kotlin/com/duskcue/mobile/AmbientPlaybackBridge.kt');
 const androidManifest = read('clients/mobile/android/app/src/main/AndroidManifest.xml');
+const androidGradleProperties = read('clients/mobile/android/gradle.properties');
 const iosBridge = read('clients/mobile/ios/Runner/AmbientPlaybackBridge.swift');
 const iosInfo = read('clients/mobile/ios/Runner/Info.plist');
 const contracts = read('docs/api/CLIENT_CONTRACTS.md');
@@ -36,6 +37,9 @@ assert.match(profileScreen, /ambientPlaybackServiceProvider\)\.clear\(\)/);
 assert.match(authService, /_ambientPlayback\.clear\(\)/);
 
 assert.match(androidService, /class AmbientPlaybackService : MediaSessionService\(\)/);
+assert.match(androidGradleProperties, /org\.gradle\.jvmargs=-Xmx8G/);
+assert.match(androidGradleProperties, /android\.useAndroidX=true/);
+assert.match(androidGradleProperties, /android\.enableJetifier=true/);
 assert.match(androidService, /\/api\/v1\/ambient-channels\/\$\{activeRuntime\.channelId\}\/next/);
 assert.match(androidService, /"playback_mode", "ambient"/);
 assert.match(androidService, /"ambient_channel_updated_at", selection\.channelUpdatedAt/);
