@@ -2170,7 +2170,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
     - ~~`outro` segment type via silence-gap detection after credits~~ — Complete: a hash-aware second pass selects credits-marked primary files, accepts only a silence gap touching the credits boundary, persists analysis evidence on the credits marker, and stores only low-confidence bounded tails (`684b717`)
     - Movie intro detection via chromaprint — design specifies chromaprint for TV episodes (≥2 episodes in a season); movies fall through to chapters + blackframe only. Movie-specific audio matching (against a database of known studio logos) is a future enhancement
     - ~~Per-task timeout enforcement~~ — Complete: the scheduler honors each task row's configured timeout and records expiration as a timed-out run (`0420e68`)
-    - Prometheus metrics from SEGMENT_DETECTION.md Metrics table — `segment_analysis_files_total`, `segment_segments_created_total`, etc. deferred to Pre-v1.0 Hardening
+    - ~~Prometheus metrics from SEGMENT_DETECTION.md Metrics table~~ — Complete: bounded method/type/source/stage metrics, aggregate duration, active inventory, and low-confidence counters landed without library/media/path/user labels; the current local-only skip action remains deliberately deferred pending authenticated playback telemetry (`d5c6be8`)
 
      6. ~~Implement `server/src/workers/storyboard_generator.rs` — background thumbnail generation~~ **DONE**
 
