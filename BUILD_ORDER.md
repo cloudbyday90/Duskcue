@@ -3493,7 +3493,7 @@ The original Phase 11 work delivered the Trakt domain and worker. The audit foun
 
 ---
 
-## Phase 14 — Platform Migration
+## Phase 14 — Platform Migration (COMPLETE — Tasks 0–15)
 
 **Goal:** Import watch history and user item state from Plex, Jellyfin, and Emby with safe preflight, resumable execution, progress reporting, and auditable results.
 
@@ -3562,6 +3562,8 @@ The original Phase 11 work delivered the Trakt domain and worker. The audit foun
 **Task 15 implementation note:** Replaced the migration settings scaffold with a complete guided admin wizard. The page now creates Jellyfin/Emby/Plex sources, uploads Plex databases, tests API connections with session-only keys, discovers users/source watch data, preserves discovered source users for first-time mapping, runs preflight, saves mappings, triggers provider/fallback matching, supports manual review decisions and CSV export, starts dry-run or real imports, listens for `migration_progress` SSE events with polling fallback, displays results, and exposes rollback plus guarded source cleanup actions.
 
 **Verification:** Admin can run a no-write preflight, import watch history from Jellyfin/Emby via REST API and Plex via SQLite upload, observe live SSE progress, cancel/resume a run, review unmatched/low-confidence items, and verify watch states appear correctly in `user_item_data`. Completed and failed migrations emit notifications, cleanup removes temporary Plex uploads, and rollback restores imported rows without destroying newer local progress.
+
+**Outcome:** All sixteen Phase 14 tasks are implemented. The migration domain provides secured API and Plex entry paths, durable extraction/matching/import/rollback state, progress and notification signals, retention cleanup, and the guided admin workflow. `c4795b6` completed the cleanup worker and `976750b` completed the wizard. Real source-server credentials, production Plex databases, and backups remain operator release-gate validation rather than repository fixtures.
 
 ---
 
