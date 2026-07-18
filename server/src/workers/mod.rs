@@ -31,6 +31,7 @@ pub mod partition_management;
 pub mod recovery_drill_runner;
 pub mod reindex_maintenance;
 pub mod segment_detector;
+pub mod soft_delete_purge;
 pub mod storyboard_generator;
 pub mod subtitle_processor;
 pub mod trakt_sync;

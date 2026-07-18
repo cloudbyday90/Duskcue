@@ -3234,6 +3234,35 @@ Four cross-cutting concerns span all domains: soft delete, partitioning, full-te
 - The `soft_delete_purge` scheduled task hard-deletes rows where `deleted_at < now() - interval '30 days'`
 - Admin UI shows soft-deleted items in a "Trash" view with restore/permanent-delete actions
 
+#### Scheduled Purge Contract
+
+`soft_delete_purge` runs daily and considers only the three documented
+soft-delete roots (`libraries`, `users`, and `playlists`) whose recovery window
+has fully elapsed. The worker preserves the owner invariant by excluding
+`users.role = 'owner'`, even if an operator had somehow set an owner's
+`deleted_at` value directly.
+
+Each root table is purged with one static, bounded `DELETE ... RETURNING`
+statement. A candidate CTE orders the oldest rows, selects at most 100 root
+rows, and uses `FOR UPDATE SKIP LOCKED` before the deletion. This avoids
+competing with a concurrent restore or administrative mutation; a locked row is
+deferred to a later daily run rather than being deleted from a stale selection.
+The worker does not use `TRUNCATE`: PostgreSQL documents that it takes an
+`ACCESS EXCLUSIVE` lock and is unsuitable for concurrently used tables.
+
+Foreign-key `ON DELETE` actions remain the sole authority for dependent rows.
+The worker never invents an application-side child-table deletion order, and
+its per-table count is therefore the number of deleted root rows, not a claim
+about cascaded descendants. Root-table batches execute independently; if one
+fails after another succeeded, the completed batch remains durable, its record
+is kept in `scheduled_task_runs.stats`, and the worker returns a failure so the
+scheduler retries the remaining eligible work. Fixed-cardinality metrics use
+only `entity_type` (`library`, `user`, `playlist`).
+
+PostgreSQL sources rechecked on 2026-07-18: [DELETE](https://www.postgresql.org/docs/current/sql-delete.html),
+[data-modifying CTEs](https://www.postgresql.org/docs/current/queries-with.html),
+and [constraints and referential actions](https://www.postgresql.org/docs/current/ddl-constraints.html).
+
 #### DDL Changes
 
 The `deleted_at` columns and partial unique indexes are already included in the respective table DDL above (`libraries`, `users`, `playlists`).

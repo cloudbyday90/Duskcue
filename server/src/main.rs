@@ -361,6 +361,7 @@ async fn main() {
     let reindex_maintenance_state = state.clone();
     let partition_management_state = state.clone();
     let analyze_parents_state = state.clone();
+    let soft_delete_purge_state = state.clone();
     let disk_space_check_state = state.clone();
     let recovery_drill_state = state.clone();
     let migration_cleanup_state = state.clone();
@@ -592,6 +593,15 @@ async fn main() {
                 async move {
                     duskcue::workers::analyze_parents::run_analyze_parents(&state, task_id, config)
                         .await
+                }
+            })
+            .register_fallible_executor("soft_delete_purge", move |_pool, task_id, config| {
+                let state = soft_delete_purge_state.clone();
+                async move {
+                    duskcue::workers::soft_delete_purge::run_soft_delete_purge(
+                        &state, task_id, config,
+                    )
+                    .await
                 }
             })
             .register_fallible_executor("disk_space_check", move |_pool, task_id, config| {
