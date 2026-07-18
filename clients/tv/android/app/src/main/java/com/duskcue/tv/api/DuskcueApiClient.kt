@@ -67,6 +67,7 @@ sealed interface ApiResult<out T> {
     data class Success<T>(val value: T, val etag: String?) : ApiResult<T>
     data object NotModified : ApiResult<Nothing>
     data class Failure(val problem: ProblemDetails, val status: Int) : ApiResult<Nothing>
+    data object NetworkFailure : ApiResult<Nothing>
 }
 
 class DuskcueApiClient(
@@ -76,15 +77,19 @@ class DuskcueApiClient(
     private val etagStore: EtagStore,
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) {
-    fun tvSurface(limit: Int, cacheScope: String): ApiResult<TvSurface> {
+    fun tvSurface(
+        limit: Int,
+        cacheScope: String,
+        platform: TvPlatform = TvPlatform.AndroidTv,
+    ): ApiResult<TvSurface> {
         require(limit in 1..100)
-        val cacheKey = "$cacheScope:tv-surface:android_tv:$limit"
-        val response = transport.execute(
+        val cacheKey = "$cacheScope:tv-surface:${platform.apiValue}:$limit"
+        val response = execute(
             request(
-                path = "/api/v1/users/me/tv-surface?platform=android_tv&limit=$limit",
+                path = "/api/v1/users/me/tv-surface?platform=${platform.apiValue}&limit=$limit",
                 etag = etagStore.read(cacheKey),
             ),
-        )
+        ) ?: return ApiResult.NetworkFailure
         if (response.status == HttpURLConnection.HTTP_NOT_MODIFIED) {
             return ApiResult.NotModified
         }
@@ -98,11 +103,13 @@ class DuskcueApiClient(
         return ApiResult.Success(json.decodeFromString<TvSurface>(response.body), etag)
     }
 
-    fun resolveTvItem(platformContentId: String): ApiResult<TvResolveResponse> {
+    fun resolveTvItem(
+        platformContentId: String,
+        platform: TvPlatform = TvPlatform.AndroidTv,
+    ): ApiResult<TvResolveResponse> {
         val encodedId = java.net.URLEncoder.encode(platformContentId, "UTF-8")
-        val response = transport.execute(
-            request(path = "/api/v1/tv/resolve/$encodedId?platform=android_tv"),
-        )
+        val response = execute(request(path = "/api/v1/tv/resolve/$encodedId?platform=${platform.apiValue}"))
+            ?: return ApiResult.NetworkFailure
         if (response.status !in 200..299) {
             return failure(response)
         }
@@ -125,6 +132,12 @@ class DuskcueApiClient(
             ProblemDetails(status = response.status, title = "HTTP_${response.status}")
         }
         return ApiResult.Failure(problem = problem, status = response.status)
+    }
+
+    private fun execute(request: ApiRequest): ApiResponse? = try {
+        transport.execute(request)
+    } catch (_: java.io.IOException) {
+        null
     }
 }
 
@@ -155,6 +168,3 @@ class UrlConnectionTransport(
         }
     }
 }
-
-private fun Map<String, String>.header(name: String): String? =
-    entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value

@@ -35,6 +35,7 @@ android {
     sourceSets {
         getByName("test") {
             resources.srcDir("../../../../docs/api/fixtures/tv/v1")
+            resources.srcDir("../../../../docs/api/fixtures/playback/v1")
         }
     }
 }

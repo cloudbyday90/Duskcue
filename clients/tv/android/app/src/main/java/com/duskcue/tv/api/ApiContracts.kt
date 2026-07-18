@@ -14,7 +14,7 @@ data class ApiResponse(
     val body: String = "",
 )
 
-interface HttpTransport {
+fun interface HttpTransport {
     fun execute(request: ApiRequest): ApiResponse
 }
 
@@ -54,7 +54,15 @@ class ServerOrigin private constructor(val value: String) {
             require(uri.port == -1 || uri.port == 48027)
             val scheme = uri.scheme.lowercase()
             val host = uri.host.lowercase()
-            ServerOrigin("$scheme://$host:48027")
+            val normalizedHost = when {
+                host.startsWith("[") && host.endsWith("]") -> host
+                host.contains(":") -> "[$host]"
+                else -> host
+            }
+            ServerOrigin("$scheme://$normalizedHost:48027")
         }
     }
 }
+
+internal fun Map<String, String>.header(name: String): String? =
+    entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value

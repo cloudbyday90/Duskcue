@@ -6,7 +6,7 @@ This document is the implementation authority for Phase 17. It turns the shared 
 
 ## Status
 
-Phase 17 Tasks 0–1 are complete as of July 18, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, 16:9 placeholder banner/icon, Compose for TV entry point, debug APK build, fixture-backed contract unit tests, and Android lint verification. It is intentionally separate from the Flutter phone/tablet client.
+Phase 17 Tasks 0–2 are complete as of July 18, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, 16:9 placeholder banner/icon, Compose for TV entry point, debug APK build, fixture-backed contract unit tests, and Android lint verification. It is intentionally separate from the Flutter phone/tablet client.
 
 ## Research Outcome
 
@@ -42,6 +42,12 @@ The app declares `android.software.leanback` as required, `android.hardware.touc
 The foundation is checked in at `clients/tv/android/` with AGP 8.11.1, Kotlin 2.2.20, Compose compiler support, Java 17, compile/target SDK 36, and minSdk 26. `MainActivity` starts a Compose for TV application; the initial server-selection state contains no media or profile data. The manifest accepts only `duskcue://play/...` routes through the TV activity and disallows cleartext networking. The project includes TV icon/banner placeholders and a wrapper entry point aligned to the existing Gradle 8.14 distribution.
 
 `DuskcueApiClient` is deliberately transport-agnostic and has a real `HttpURLConnection` transport for future background dispatch. It establishes the Kotlin target's fixture-first boundary with canonical `:48027` origins, bearer-header injection, cache-scope-keyed private ETag revalidation, RFC 9457 decoding, typed TV surface/resolve models, and no credential-bearing URL construction. `DuskcueApiClientTest` consumes the shared `docs/api/fixtures/tv/v1` files directly. Verification: `:app:testDebugUnitTest`, `:app:lintDebug`, and `:app:assembleDebug` all pass using SDK 36 and Temurin 17.
+
+### Task 2 Implementation
+
+The shared Kotlin adapter boundary now includes a bounded retry wrapper for safe reads only, capped `Retry-After` handling, a cursor helper that preserves opaque cursors, profile-scope-keyed private ETag state, RFC 9457 decoding with trace IDs, and a transport-free network failure result. It exposes `AndroidTv` and `FireTv` platform values instead of hard-coding Android TV paths so Fire TV can reuse the typed client without leaking its different launcher behavior into the Android adapter.
+
+`ServerSentEventDecoder` handles multi-line SSE data, comments, IDs, and unknown event names without dropping the stream. The typed `tv_surface_changed` hint is the only current TV refresh event consumer; profile, playback, and Watch Next work decide how to schedule the actual refresh. `DiagnosticsRedactor` removes authorization/cookie headers and query strings before support data can be emitted, while retaining status, route path, error code, and trace ID. Tests read both shared TV/deep-link and cross-device-resume fixtures, covering current server response shapes rather than a copied client fixture.
 
 ### Contract And Identity Boundary
 
