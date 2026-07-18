@@ -6,10 +6,13 @@ import androidx.activity.compose.setContent
 import com.duskcue.tv.ui.DuskcueTvApp
 
 class MainActivity : ComponentActivity() {
+    private lateinit var runtime: TvApplicationRuntime
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        runtime = TvApplicationRuntime(applicationContext)
         setContent {
-            DuskcueTvApp()
+            DuskcueTvApp(runtime)
         }
     }
 }

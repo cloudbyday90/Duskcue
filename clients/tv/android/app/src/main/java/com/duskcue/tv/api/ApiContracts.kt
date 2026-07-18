@@ -42,6 +42,7 @@ interface EtagStore {
     fun read(key: String): String?
     fun write(key: String, value: String)
     fun remove(key: String)
+    fun clear()
 }
 
 class MemoryEtagStore : EtagStore {
@@ -55,6 +56,10 @@ class MemoryEtagStore : EtagStore {
 
     override fun remove(key: String) {
         values.remove(key)
+    }
+
+    override fun clear() {
+        values.clear()
     }
 }
 

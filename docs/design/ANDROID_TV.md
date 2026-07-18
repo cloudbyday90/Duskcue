@@ -6,7 +6,7 @@ This document is the implementation authority for Phase 17. It turns the shared 
 
 ## Status
 
-Phase 17 Tasks 0–3 are complete as of July 18, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, 16:9 placeholder banner/icon, Compose for TV entry point, debug APK build, fixture-backed contract unit tests, and Android lint verification. It is intentionally separate from the Flutter phone/tablet client.
+Phase 17 Tasks 0–4 are complete as of July 18, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, 16:9 placeholder banner/icon, Compose for TV entry point, device linking and profile lifecycle, profile-gated home/browse/detail/search/settings screens, debug APK build, fixture-backed contract unit tests, and Android lint verification. It is intentionally separate from the Flutter phone/tablet client.
 
 ## Research Outcome
 
@@ -70,6 +70,14 @@ All changes flow through a session coordinator. An account or server replacement
 `TvAuthenticationService` implements the Duskcue device-link route sequence: it requests a code with stable Android TV metadata, exposes the verification shortcut and user code, accepts a token only from a successful poll, keeps `AUTH_023` at the advertised interval, and honors `AUTH_024` using the server `Retry-After` or the required five-second increase capped at 60 seconds. It exposes profile listing, parent unlock, explicit profile switching with opt-in remembered-device choice, restore, logout, logout-all, and session-kicked paths. A 401 from profile restore/switch clears local identity state. Parent PIN input is sent only to the unlock endpoint and is not represented in `SecureTvState`.
 
 The coordinator tests prove cross-server/account replacement clears the identity scope before installing a new token, profile selection/switch clears profile scope before the replacement profile is exposed, logout preserves only the non-secret saved-server choice, and session-kicked is equivalent to logout. The actual living-room controls consume this service in Task 4; no profile-scoped screen is allowed to mount until its returned `ProfileGateState` permits it.
+
+### Task 4 Implementation
+
+`TvApplicationRuntime` creates one secure session/authentication runtime, one non-persistent private ETag store, and one `TvLivingRoomStore`. The living-room store is registered as the session coordinator's local-state cleaner: profile, account, server, logout, and session-kicked cleanup clears cached home rows and ETags before any replacement scope can load. A `304 Not Modified` response is useful only when a row cache exists in the same `{origin, user, profile}` scope; after cleanup it produces a bounded refresh error instead of displaying a prior household member's rows. Its unit tests consume the shared `surface-contract.json` fixture and prove cache reuse, ETag removal, and active-user-only `tv_surface_changed` handling.
+
+The Compose for TV shell now has server entry/device-link, profile picker, Home, Browse, Search, Detail, Profiles, and Settings states. Device linking polls the existing service flow; profile selection and the remembered-profile preference use the server switch endpoint. The parent PIN is a transient numeric input passed only to the existing parent-unlock call. No screen mounts the feed until `profile_selection_required` is false. A 401 from home, browse, search, detail availability, settings, or profile refresh clears the local identity scope and returns to device linking.
+
+Home renders the ordered server sections directly from `GET /api/v1/users/me/tv-surface`; Browse calls the library/collection item endpoints; Search calls the profile-authorized search endpoint; and Detail performs a pre-playback `GET /api/v1/tv/resolve/{platform_content_id}` availability check without attempting to create a stream. Settings reads and updates the user's TV-publication preference and exposes server/profile/logout controls. UI cards use the shared 10-foot tokens, reserve deterministic 16:9 title-art space until Task 8 adds authenticated artwork, expose server media titles as accessibility labels, and provide visible D-pad focus treatment. The foreground SSE transport and physical remote/TalkBack evidence remain later verification work; the controller is prepared to refresh only after a decoded event for the active user.
 
 ### Living-Room UX
 

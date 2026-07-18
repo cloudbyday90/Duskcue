@@ -2,6 +2,7 @@ package com.duskcue.tv.api
 
 import java.net.HttpURLConnection
 import java.net.URL
+import java.net.URLEncoder
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 
@@ -124,6 +125,8 @@ data class TvSurfaceItem(
     val title: String,
     val subtitle: String? = null,
     val description: String? = null,
+    val season_number: Int? = null,
+    val episode_number: Int? = null,
     val duration_ms: Long? = null,
     val resume_position_ms: Long? = null,
     val progress_percent: Double? = null,
@@ -131,7 +134,86 @@ data class TvSurfaceItem(
     val poster_url: String? = null,
     val backdrop_url: String? = null,
     val deep_link: String? = null,
+    val web_url: String? = null,
     val availability: String,
+    val availability_detail: String? = null,
+)
+
+@Serializable
+data class TvMediaItem(
+    val id: String,
+    val library_id: String,
+    val type: String,
+    val title: String,
+    val sort_title: String? = null,
+    val overview: String? = null,
+    val premiere_date: String? = null,
+    val content_rating: String? = null,
+    val runtime_seconds: Int? = null,
+    val rating_average: Double? = null,
+    val series_id: String? = null,
+    val season_number: Int? = null,
+    val episode_number: Int? = null,
+)
+
+@Serializable
+data class TvMediaItemPage(
+    val items: List<TvMediaItem>,
+    val cursor: String? = null,
+    val has_more: Boolean = false,
+)
+
+@Serializable
+data class TvSearchResponse(
+    val items: List<TvMediaItem>,
+)
+
+@Serializable
+data class TvLibrary(
+    val id: String,
+    val name: String,
+    val media_type: String,
+    val item_count: Long = 0,
+)
+
+@Serializable
+data class TvLibraryListResponse(
+    val items: List<TvLibrary>,
+    val total: Long = 0,
+)
+
+@Serializable
+data class TvCollection(
+    val id: String,
+    val name: String,
+    val description: String? = null,
+    val item_count: Int = 0,
+)
+
+@Serializable
+data class TvCollectionListResponse(
+    val items: List<TvCollection>,
+    val total: Long = 0,
+)
+
+@Serializable
+data class TvSurfaceSettings(
+    val tv_publication_enabled: Boolean,
+    val enabled_platforms: List<String>,
+    val publish_continue_watching: Boolean,
+    val publish_next_up: Boolean,
+    val publish_new_episodes: Boolean,
+    val publish_recommendations: Boolean,
+)
+
+@Serializable
+data class UpdateTvSurfaceSettingsRequest(
+    val tv_publication_enabled: Boolean? = null,
+    val enabled_platforms: List<String>? = null,
+    val publish_continue_watching: Boolean? = null,
+    val publish_next_up: Boolean? = null,
+    val publish_new_episodes: Boolean? = null,
+    val publish_recommendations: Boolean? = null,
 )
 
 @Serializable
@@ -212,6 +294,45 @@ class DuskcueApiClient(
         return ApiResult.Success(json.decodeFromString<TvResolveResponse>(response.body), null)
     }
 
+    fun libraries(): ApiResult<TvLibraryListResponse> = executeJson(
+        request(path = "/api/v1/libraries"),
+    )
+
+    fun libraryItems(libraryId: String, page: CursorRequest = CursorRequest(limit = 24)): ApiResult<TvMediaItemPage> =
+        executeJson(request(path = "/api/v1/libraries/${pathSegment(libraryId)}/items?${page.queryString()}"))
+
+    fun collections(): ApiResult<TvCollectionListResponse> = executeJson(
+        request(path = "/api/v1/collections?limit=24"),
+    )
+
+    fun collectionItems(collectionId: String, page: CursorRequest = CursorRequest(limit = 24)): ApiResult<TvMediaItemPage> =
+        executeJson(request(path = "/api/v1/collections/${pathSegment(collectionId)}/items?${page.queryString()}"))
+
+    fun mediaItem(mediaItemId: String): ApiResult<TvMediaItem> = executeJson(
+        request(path = "/api/v1/media-items/${pathSegment(mediaItemId)}"),
+    )
+
+    fun search(query: String, limit: Int = 24): ApiResult<TvSearchResponse> {
+        require(limit in 1..100)
+        val normalized = query.trim()
+        require(normalized.isNotEmpty())
+        return executeJson(
+            request(path = "/api/v1/search?q=${URLEncoder.encode(normalized, "UTF-8")}&limit=$limit"),
+        )
+    }
+
+    fun tvSettings(): ApiResult<TvSurfaceSettings> = executeJson(
+        request(path = "/api/v1/tv/settings"),
+    )
+
+    fun updateTvSettings(update: UpdateTvSurfaceSettingsRequest): ApiResult<TvSurfaceSettings> = executeJson(
+        request(
+            method = "PUT",
+            path = "/api/v1/tv/settings",
+            body = json.encodeToString(UpdateTvSurfaceSettingsRequest.serializer(), update),
+        ),
+    )
+
     override fun requestDeviceCode(request: DeviceCodeRequest): ApiResult<DeviceCodeResponse> = executeJson(
         request(
             method = "POST",
@@ -286,6 +407,8 @@ class DuskcueApiClient(
         }
         return ApiRequest(method = method, path = "${origin.value}$path", headers = headers, body = body)
     }
+
+    private fun pathSegment(value: String): String = URLEncoder.encode(value, "UTF-8")
 
     private fun failure(response: ApiResponse): ApiResult.Failure {
         val problem = runCatching {
