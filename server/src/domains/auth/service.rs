@@ -36,7 +36,7 @@ pub async fn validate_session(
 
     let row = sqlx::query(
         r#"
-        SELECT id, user_id, active_profile_id, token_hash, device_id, device_name,
+        SELECT id, user_id, active_profile_id, profile_selection_required, token_hash, device_id, device_name,
             client_name, client_version, client_platform,
             ip_address::text as ip_address, user_agent, is_secure,
             expires_at, last_active_at
@@ -187,13 +187,20 @@ async fn create_session_on_connection(
     device_info: &DeviceInfo,
 ) -> Result<(String, UserSession), AuthError> {
     let default_profile_id = ensure_default_profile_on_connection(connection, user_id).await?;
-    let active_profile_id = remembered_profile_for_device_on_connection(
+    let remembered_profile_id = remembered_profile_for_device_on_connection(
         connection,
         user_id,
         device_info.device_id.as_deref(),
     )
-    .await?
-    .unwrap_or(default_profile_id);
+    .await?;
+    let active_profile_id = remembered_profile_id.unwrap_or(default_profile_id);
+    let profile_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM user_profiles WHERE owner_user_id = $1")
+            .bind(user_id)
+            .fetch_one(&mut *connection)
+            .await?;
+    let should_require_profile_selection =
+        requires_profile_selection(remembered_profile_id.is_some(), profile_count);
     let token = generate_session_token();
     let token_hash = sha256_hex(&token);
 
@@ -204,15 +211,16 @@ async fn create_session_on_connection(
     let row = sqlx::query(
         r#"
         INSERT INTO user_sessions (
-            user_id, active_profile_id, token_hash, device_id, device_name,
+            user_id, active_profile_id, profile_selection_required, token_hash, device_id, device_name,
             client_name, client_version, client_platform,
             ip_address, user_agent, is_secure, expires_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9::inet, $10, $11, now() + ($12 || ' days')::interval)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::inet, $11, $12, now() + ($13 || ' days')::interval)
         RETURNING id, expires_at, last_active_at
         "#,
     )
     .bind(user_id)
     .bind(active_profile_id)
+    .bind(should_require_profile_selection)
     .bind(&token_hash)
     .bind(&device_info.device_id)
     .bind(&device_info.device_name)
@@ -234,6 +242,7 @@ async fn create_session_on_connection(
         id: session_id,
         user_id,
         active_profile_id,
+        profile_selection_required: should_require_profile_selection,
         token_hash,
         device_id: device_info.device_id.clone(),
         device_name: device_info.device_name.clone(),
@@ -371,7 +380,7 @@ pub async fn list_user_sessions(
 ) -> Result<Vec<UserSession>, AuthError> {
     let rows = sqlx::query(
         r#"
-        SELECT id, user_id, active_profile_id, token_hash, device_id, device_name,
+        SELECT id, user_id, active_profile_id, profile_selection_required, token_hash, device_id, device_name,
             client_name, client_version, client_platform,
             ip_address::text as ip_address, user_agent, is_secure,
             expires_at, last_active_at
@@ -509,6 +518,7 @@ pub async fn authenticate_invite_code(
         capabilities,
         has_all_library_access: db_has_all,
         active_profile_id: session.active_profile_id,
+        profile_selection_required: session.profile_selection_required,
     };
 
     Ok((user_id, token, summary))
@@ -570,6 +580,7 @@ fn row_to_session(row: &sqlx::postgres::PgRow) -> UserSession {
         id: row.get("id"),
         user_id: row.get("user_id"),
         active_profile_id: row.get("active_profile_id"),
+        profile_selection_required: row.get("profile_selection_required"),
         token_hash: row.get("token_hash"),
         device_id: row.try_get("device_id").ok(),
         device_name: row.try_get("device_name").ok(),
@@ -582,6 +593,10 @@ fn row_to_session(row: &sqlx::postgres::PgRow) -> UserSession {
         expires_at: row.get("expires_at"),
         last_active_at: row.get("last_active_at"),
     }
+}
+
+fn requires_profile_selection(has_remembered_profile: bool, profile_count: i64) -> bool {
+    !has_remembered_profile && profile_count > 1
 }
 
 async fn remembered_profile_for_device_on_connection(
@@ -728,7 +743,7 @@ fn hex_decode(hex: &str) -> Result<Vec<u8>, ()> {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_user_code, normalize_device_user_code};
+    use super::{format_user_code, normalize_device_user_code, requires_profile_selection};
 
     #[test]
     fn normalizes_formatted_device_codes_case_insensitively() {
@@ -739,6 +754,13 @@ mod tests {
     #[test]
     fn formats_device_codes_in_two_equal_groups() {
         assert_eq!(format_user_code("WDJBMJHT"), "WDJB-MJHT");
+    }
+
+    #[test]
+    fn requires_a_choice_only_for_unremembered_multi_profile_sessions() {
+        assert!(requires_profile_selection(false, 2));
+        assert!(!requires_profile_selection(true, 2));
+        assert!(!requires_profile_selection(false, 1));
     }
 }
 
@@ -1025,6 +1047,7 @@ pub async fn finish_passkey_authentication(
         capabilities,
         has_all_library_access,
         active_profile_id: session.active_profile_id,
+        profile_selection_required: session.profile_selection_required,
     };
 
     Ok((token, summary))
@@ -1495,6 +1518,7 @@ pub async fn poll_device_linking_token(
             capabilities,
             has_all_library_access,
             active_profile_id: session.active_profile_id,
+            profile_selection_required: session.profile_selection_required,
         },
     })
 }
@@ -1975,6 +1999,7 @@ pub async fn authenticate_reauth_code(
             capabilities,
             has_all_library_access,
             active_profile_id: session.active_profile_id,
+            profile_selection_required: session.profile_selection_required,
         },
     ))
 }

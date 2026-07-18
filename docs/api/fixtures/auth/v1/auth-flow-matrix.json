@@ -102,6 +102,51 @@
       ]
     },
     {
+      "id": "profile_selection",
+      "steps": [
+        {
+          "request": {
+            "method": "POST",
+            "path": "/api/v1/auth/login"
+          },
+          "expect_success": {
+            "user_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+            "active_profile_id": "abababab-abab-4bab-8bab-abababababab",
+            "profile_selection_required": true
+          }
+        },
+        {
+          "request": {
+            "method": "GET",
+            "path": "/api/v1/profiles"
+          },
+          "expect": {
+            "active_profile_id": "abababab-abab-4bab-8bab-abababababab",
+            "profile_selection_required": true,
+            "remembered_profile_id": null,
+            "device_can_remember_profile": true
+          }
+        },
+        {
+          "request": {
+            "method": "POST",
+            "path": "/api/v1/profiles/cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd/switch"
+          },
+          "expect_success": {
+            "active_profile_id": "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
+            "profile_selection_required": false,
+            "remembered_profile_id": "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd"
+          }
+        }
+      ],
+      "client_requirements": [
+        "do not mount profile-scoped rows while profile_selection_required is true",
+        "allow an explicit current-session selection even when remember_on_device is false",
+        "clear profile-scoped requests and cached previews before rendering the selected profile",
+        "revalidate the local session after a same-origin profile-change notification"
+      ]
+    },
+    {
       "id": "reauth",
       "steps": [
         {

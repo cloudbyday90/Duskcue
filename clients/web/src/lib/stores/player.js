@@ -46,7 +46,8 @@ function saveVolume(volume) {
 function createPlayerStore() {
     let heartbeatTimer = null;
 
-    const { subscribe, set, update } = writable({
+    function initialState() {
+        return {
         sessionId: null,
         mediaItem: null,
         mediaFileId: null,
@@ -63,7 +64,10 @@ function createPlayerStore() {
         playbackRate: 1,
         error: null,
         loading: false,
-    });
+        };
+    }
+
+    const { subscribe, set, update } = writable(initialState());
 
     function startHeartbeat() {
         stopHeartbeat();
@@ -247,24 +251,12 @@ function createPlayerStore() {
                 }
             }
 
-            set({
-                sessionId: null,
-                mediaItem: null,
-                mediaFileId: null,
-                streamUrl: null,
-                streamDecision: null,
-                transcodeSessionId: null,
-                isPlaying: false,
-                isBuffering: false,
-                positionMs: 0,
-                durationMs: 0,
-                volume: loadVolume(),
-                isMuted: false,
-                isFullscreen: false,
-                playbackRate: 1,
-                error: null,
-                loading: false,
-            });
+            set(initialState());
+        },
+
+        reset() {
+            stopHeartbeat();
+            set(initialState());
         },
 
         async sendHeartbeatNow() {

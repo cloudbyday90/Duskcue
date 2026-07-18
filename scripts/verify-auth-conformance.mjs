@@ -56,7 +56,7 @@ function readJson(filePath) {
 
 function assertAuthFlows(fixture) {
   const flows = new Map(fixture.flows.map((flow) => [flow.id, flow]));
-  for (const flow of ['device_linking', 'passkey_login', 'fallback_login', 'reauth']) {
+  for (const flow of ['device_linking', 'passkey_login', 'fallback_login', 'profile_selection', 'reauth']) {
     assert(flows.has(flow), `missing auth flow ${flow}`);
   }
   for (const flow of fixture.flows) {

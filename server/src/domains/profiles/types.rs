@@ -101,6 +101,7 @@ pub struct ProfileResponse {
 #[derive(Debug, Clone, Serialize)]
 pub struct ProfileListResponse {
     pub active_profile_id: Uuid,
+    pub profile_selection_required: bool,
     pub remembered_profile_id: Option<Uuid>,
     pub device_can_remember_profile: bool,
     pub items: Vec<ProfileResponse>,
@@ -114,6 +115,7 @@ pub struct SwitchProfileRequest {
 #[derive(Debug, Clone, Serialize)]
 pub struct SwitchProfileResponse {
     pub active_profile: ProfileResponse,
+    pub profile_selection_required: bool,
     pub remembered_profile_id: Option<Uuid>,
     pub device_can_remember_profile: bool,
 }

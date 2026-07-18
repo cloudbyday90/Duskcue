@@ -34,6 +34,7 @@ pub struct UserSummary {
     pub capabilities: Vec<String>,
     pub has_all_library_access: bool,
     pub active_profile_id: Uuid,
+    pub profile_selection_required: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
@@ -283,6 +284,7 @@ pub struct UserSession {
     pub id: Uuid,
     pub user_id: Uuid,
     pub active_profile_id: Uuid,
+    pub profile_selection_required: bool,
     pub token_hash: String,
     pub device_id: Option<String>,
     pub device_name: Option<String>,

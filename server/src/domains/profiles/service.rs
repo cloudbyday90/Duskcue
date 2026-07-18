@@ -24,6 +24,7 @@ pub async fn list_profiles(
     pool: &PgPool,
     owner_user_id: Uuid,
     active_profile_id: Uuid,
+    profile_selection_required: bool,
     device_id: Option<&str>,
 ) -> Result<ProfileListResponse, ProfilesError> {
     let rows = sqlx::query(
@@ -42,6 +43,7 @@ pub async fn list_profiles(
 
     Ok(ProfileListResponse {
         active_profile_id,
+        profile_selection_required,
         remembered_profile_id: remembered_profile_id(pool, owner_user_id, device_id).await?,
         device_can_remember_profile: normalized_device_id(device_id).is_some(),
         items,
@@ -176,6 +178,7 @@ pub async fn switch_profile(
     remember_on_device: Option<bool>,
 ) -> Result<SwitchProfileResponse, ProfilesError> {
     let profile = get_owned_profile(pool, owner_user_id, profile_id).await?;
+    let mut transaction = pool.begin().await?;
     if let Some(remember) = remember_on_device {
         let device_id = normalized_device_id(device_id);
         if remember {
@@ -189,7 +192,7 @@ pub async fn switch_profile(
             .bind(owner_user_id)
             .bind(device_id)
             .bind(profile_id)
-            .execute(pool)
+            .execute(&mut *transaction)
             .await?;
         } else if let Some(device_id) = device_id {
             sqlx::query(
@@ -197,24 +200,26 @@ pub async fn switch_profile(
             )
             .bind(owner_user_id)
             .bind(device_id)
-            .execute(pool)
+            .execute(&mut *transaction)
             .await?;
         }
     }
 
     let changed = sqlx::query(
-        "UPDATE user_sessions SET active_profile_id = $3, last_active_at = now() WHERE id = $1 AND user_id = $2",
+        "UPDATE user_sessions SET active_profile_id = $3, profile_selection_required = false, last_active_at = now() WHERE id = $1 AND user_id = $2",
     )
     .bind(session_id)
     .bind(owner_user_id)
     .bind(profile_id)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
     if changed.rows_affected() == 0 {
         return Err(ProfilesError::AccessDenied);
     }
+    transaction.commit().await?;
     Ok(SwitchProfileResponse {
         active_profile: profile_response(pool, profile).await?,
+        profile_selection_required: false,
         remembered_profile_id: remembered_profile_id(pool, owner_user_id, device_id).await?,
         device_can_remember_profile: normalized_device_id(device_id).is_some(),
     })

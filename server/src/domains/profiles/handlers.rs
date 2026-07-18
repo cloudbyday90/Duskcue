@@ -35,6 +35,7 @@ pub async fn list_profiles(
             &state.pool,
             user.user_id,
             user.profile_id,
+            user.profile_selection_required,
             user.device_id.as_deref(),
         )
         .await?,

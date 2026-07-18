@@ -20,6 +20,8 @@ const API_BASE = '/api/v1';
 
 let bearerToken = null;
 let serverOrigin = null;
+let profileScopeController = new AbortController();
+let profileScopeRevision = 0;
 
 export function setBearerToken(token) {
     bearerToken = token;
@@ -39,6 +41,12 @@ export function clearServerOrigin() {
 
 export function getServerOrigin() {
     return serverOrigin;
+}
+
+export function invalidateProfileScopedRequests() {
+    profileScopeController.abort();
+    profileScopeController = new AbortController();
+    profileScopeRevision += 1;
 }
 
 function buildUrl(base, path, params = {}) {
@@ -146,71 +154,116 @@ export async function request(method, path, options = {}) {
         headers['Content-Type'] = 'application/json';
     }
 
+    const profileScoped = options.profileScoped !== false;
+    const requestScope = createRequestScope(options.signal, profileScoped);
+    const requestRevision = profileScopeRevision;
     const fetchOptions = {
         method,
         headers,
         credentials: 'same-origin',
+        signal: requestScope.signal,
     };
-    if (options.signal) {
-        fetchOptions.signal = options.signal;
-    }
     if (hasBody) {
         fetchOptions.body = isFormData ? options.body : JSON.stringify(options.body);
     }
 
-    let response;
     try {
-        response = await fetch(url, /** @type {RequestInit} */ (fetchOptions));
-    } catch (err) {
-        if (err.name === 'AbortError') throw err;
-        throw new ApiError({
-            type: '/errors/network',
-            title: 'NETWORK_ERROR',
-            status: 0,
-            detail: err.message || 'Network request failed',
-        });
-    }
-
-    if (options.returnResponse) {
-        return response;
-    }
-
-    if (response.status === 204 || response.status === 304) {
-        return null;
-    }
-
-    if (!response.ok) {
-        let problem;
+        let response;
         try {
-            problem = await response.json();
-        } catch {
-            problem = {
-                type: `/errors/http_${response.status}`,
-                title: `HTTP_${response.status}`,
-                status: response.status,
-                detail: response.statusText || 'Unknown error',
-            };
+            response = await fetch(url, /** @type {RequestInit} */ (fetchOptions));
+        } catch (err) {
+            if (err.name === 'AbortError') throw err;
+            throw new ApiError({
+                type: '/errors/network',
+                title: 'NETWORK_ERROR',
+                status: 0,
+                detail: err.message || 'Network request failed',
+            });
         }
-        const error = new ApiError(problem);
-        const retryAfter = response.headers.get('Retry-After');
-        if (retryAfter) {
-            error.retryAfter = parseInt(retryAfter, 10);
+
+        ensureProfileScopeCurrent(profileScoped, requestRevision);
+
+        if (options.returnResponse) {
+            return response;
         }
-        throw error;
+
+        if (response.status === 204 || response.status === 304) {
+            return null;
+        }
+
+        if (!response.ok) {
+            let problem;
+            try {
+                problem = await response.json();
+            } catch {
+                problem = {
+                    type: `/errors/http_${response.status}`,
+                    title: `HTTP_${response.status}`,
+                    status: response.status,
+                    detail: response.statusText || 'Unknown error',
+                };
+            }
+            ensureProfileScopeCurrent(profileScoped, requestRevision);
+            const error = new ApiError(problem);
+            const retryAfter = response.headers.get('Retry-After');
+            if (retryAfter) {
+                error.retryAfter = parseInt(retryAfter, 10);
+            }
+            throw error;
+        }
+
+        const contentType = response.headers.get('Content-Type') || '';
+        if (options.responseType === 'text') {
+            const text = await response.text();
+            ensureProfileScopeCurrent(profileScoped, requestRevision);
+            return text;
+        }
+        if (options.responseType === 'blob') {
+            const blob = await response.blob();
+            ensureProfileScopeCurrent(profileScoped, requestRevision);
+            return blob;
+        }
+        if (contentType.includes('application/json')) {
+            const body = await response.json();
+            ensureProfileScopeCurrent(profileScoped, requestRevision);
+            return body;
+        }
+
+        return null;
+    } finally {
+        requestScope.dispose();
+    }
+}
+
+function createRequestScope(externalSignal, profileScoped) {
+    if (!profileScoped) {
+        return { signal: externalSignal, dispose() {} };
+    }
+    if (!externalSignal) {
+        return { signal: profileScopeController.signal, dispose() {} };
     }
 
-    const contentType = response.headers.get('Content-Type') || '';
-    if (options.responseType === 'text') {
-        return response.text();
+    const controller = new AbortController();
+    const scopeSignal = profileScopeController.signal;
+    const abort = () => controller.abort();
+    externalSignal.addEventListener('abort', abort, { once: true });
+    scopeSignal.addEventListener('abort', abort, { once: true });
+    if (externalSignal.aborted || scopeSignal.aborted) {
+        controller.abort();
     }
-    if (options.responseType === 'blob') {
-        return response.blob();
-    }
-    if (contentType.includes('application/json')) {
-        return response.json();
-    }
+    return {
+        signal: controller.signal,
+        dispose() {
+            externalSignal.removeEventListener('abort', abort);
+            scopeSignal.removeEventListener('abort', abort);
+        },
+    };
+}
 
-    return null;
+function ensureProfileScopeCurrent(profileScoped, requestRevision) {
+    if (profileScoped && requestRevision !== profileScopeRevision) {
+        throw new DOMException('Profile scope changed', 'AbortError');
+    }
 }
 
 export function get(path, params = {}, options = {}) {

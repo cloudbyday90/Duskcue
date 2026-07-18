@@ -19,7 +19,7 @@
 import { del, get, patch, post, put } from './core.js';
 
 export async function listProfiles() {
-    return get('/profiles');
+    return get('/profiles', {}, { profileScoped: false });
 }
 
 export async function createProfile(data) {
@@ -35,7 +35,7 @@ export async function deleteProfile(profileId) {
 }
 
 export async function switchProfile(profileId, data = {}) {
-    return post(`/profiles/${profileId}/switch`, data);
+    return post(`/profiles/${profileId}/switch`, data, { profileScoped: false });
 }
 
 export async function listAmbientChannels() {

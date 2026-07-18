@@ -14,8 +14,11 @@
     import { auth, isAuthenticated, currentUser, userHasAnyCapability } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
     import { events } from '$lib/stores/events.js';
+    import { player } from '$lib/stores/player.js';
     import { getSetupStatus } from '$lib/api/auth.js';
     import { listProfiles, switchProfile } from '$lib/api/profiles.js';
+    import { invalidateProfileScopedRequests } from '$lib/api/core.js';
+    import { publishProfileScopeChange, startProfileScopeSync } from '$lib/profiles/scope.js';
     import { startDesktopBridge, stopDesktopBridge } from '$lib/desktop/tauri.js';
     import NotificationToast from '$lib/components/NotificationToast.svelte';
     import NotificationBell from '$lib/components/NotificationBell.svelte';
@@ -33,6 +36,10 @@
     let deviceCanRememberProfile = $state(false);
     let rememberProfileOnDevice = $state(false);
     let profileLoadUserId = $state(null);
+    let profileSelectionRequired = $state(false);
+    let profileScopeReady = $state(false);
+    let profilesLoading = $state(false);
+    let profileScopeRevision = $state(0);
     let activeProfile = $derived(profiles.find((profile) => profile.id === $currentUser?.active_profile_id));
     let canAccessAdmin = $derived(
         userHasAnyCapability($currentUser, ['can_manage_server', 'can_manage_users', 'can_manage_libraries']),
@@ -49,6 +56,7 @@
     onMount(() => {
         auth.init();
         startDesktopBridge(goto);
+        const stopProfileScopeSync = startProfileScopeSync(handleProfileScopeChange);
         getSetupStatus()
             .then((status) => {
                 setupRequired = !!status?.setup_required;
@@ -60,7 +68,10 @@
                 authChecked = true;
             });
 
-        return () => stopDesktopBridge();
+        return () => {
+            stopProfileScopeSync();
+            stopDesktopBridge();
+        };
     });
 
     $effect(() => {
@@ -88,19 +99,17 @@
         const userId = $currentUser?.id;
         if ($isAuthenticated && userId && profileLoadUserId !== userId) {
             profileLoadUserId = userId;
+            profileScopeReady = false;
             loadProfiles();
         } else if (!$isAuthenticated) {
-            profiles = [];
-            rememberedProfileId = null;
-            deviceCanRememberProfile = false;
-            rememberProfileOnDevice = false;
-            profileLoadUserId = null;
+            resetProfileScope();
+            clearProfileState();
         }
     });
 
     $effect(() => {
         if (!authChecked) return;
-        if ($isAuthenticated) {
+        if ($isAuthenticated && profileScopeReady) {
             events.connect();
             return () => events.disconnect();
         } else {
@@ -113,33 +122,61 @@
     }
 
     async function loadProfiles() {
+        profilesLoading = true;
         try {
             const response = await listProfiles();
             profiles = response?.items || [];
+            const activeProfileId = response?.active_profile_id || $currentUser?.active_profile_id;
+            profileSelectionRequired = !!response?.profile_selection_required;
+            profileScopeReady = !profileSelectionRequired;
             rememberedProfileId = response?.remembered_profile_id || null;
             deviceCanRememberProfile = !!response?.device_can_remember_profile;
-            rememberProfileOnDevice = rememberedProfileId === $currentUser?.active_profile_id;
+            rememberProfileOnDevice = rememberedProfileId === activeProfileId;
+            if ($currentUser && (
+                $currentUser.active_profile_id !== activeProfileId
+                || !!$currentUser.profile_selection_required !== profileSelectionRequired
+            )) {
+                auth.setUser({
+                    ...$currentUser,
+                    active_profile_id: activeProfileId,
+                    profile_selection_required: profileSelectionRequired,
+                });
+            }
         } catch {
             profiles = [];
+            profileSelectionRequired = false;
+            profileScopeReady = false;
             rememberedProfileId = null;
             deviceCanRememberProfile = false;
             rememberProfileOnDevice = false;
+        } finally {
+            profilesLoading = false;
         }
     }
 
     async function selectProfile(profile) {
-        if (profile.id === $currentUser?.active_profile_id || switchingProfileId) return;
+        if ((profile.id === $currentUser?.active_profile_id && !profileSelectionRequired) || switchingProfileId) return;
         switchingProfileId = profile.id;
         try {
-            const response = await switchProfile(profile.id);
+            if (!profileSelectionRequired) {
+                await player.stop();
+            }
+            const response = await switchProfile(
+                profile.id,
+                profileSelectionRequired && deviceCanRememberProfile
+                    ? { remember_on_device: rememberProfileOnDevice }
+                    : {},
+            );
             const activeProfile = response?.active_profile || profile;
-            auth.setUser({ ...$currentUser, active_profile_id: activeProfile.id });
-            profiles = profiles.map((item) => item.id === activeProfile.id ? activeProfile : item);
-            rememberedProfileId = response?.remembered_profile_id || null;
-            deviceCanRememberProfile = !!response?.device_can_remember_profile;
-            rememberProfileOnDevice = rememberedProfileId === activeProfile.id;
+            applyProfileResponse(response, activeProfile);
+            resetProfileScope();
+            profileScopeReady = true;
             closeUserMenu();
+            publishProfileScopeChange({ userId: $currentUser?.id, profileId: activeProfile.id });
+            events.connect();
             goto('/dashboard');
+        } catch (err) {
+            notifications.error(err.detail || err.message || 'Could not switch profiles');
         } finally {
             switchingProfileId = null;
         }
@@ -154,9 +191,7 @@
             const response = await switchProfile(profile.id, {
                 remember_on_device: rememberProfileOnDevice,
             });
-            rememberedProfileId = response?.remembered_profile_id || null;
-            deviceCanRememberProfile = !!response?.device_can_remember_profile;
-            rememberProfileOnDevice = rememberedProfileId === profile.id;
+            applyProfileResponse(response, profile);
         } catch (err) {
             rememberProfileOnDevice = rememberedProfileId === profile.id;
             notifications.error(err.detail || err.message || 'Could not update this device preference');
@@ -167,6 +202,55 @@
 
     function closeUserMenu() {
         userMenuOpen = false;
+    }
+
+    async function forgetProfileOnDevice() {
+        if (!activeProfile || switchingProfileId) return;
+        rememberProfileOnDevice = false;
+        await updateRememberedProfile();
+    }
+
+    function applyProfileResponse(response, fallbackProfile) {
+        const activeProfile = response?.active_profile || fallbackProfile;
+        profileSelectionRequired = !!response?.profile_selection_required;
+        profiles = profiles.map((item) => item.id === activeProfile.id ? activeProfile : item);
+        rememberedProfileId = response?.remembered_profile_id || null;
+        deviceCanRememberProfile = !!response?.device_can_remember_profile;
+        rememberProfileOnDevice = rememberedProfileId === activeProfile.id;
+        auth.setUser({
+            ...$currentUser,
+            active_profile_id: activeProfile.id,
+            profile_selection_required: profileSelectionRequired,
+        });
+    }
+
+    function resetProfileScope() {
+        invalidateProfileScopedRequests();
+        player.reset();
+        events.disconnect();
+        profileScopeRevision += 1;
+    }
+
+    function clearProfileState() {
+        profiles = [];
+        profileSelectionRequired = false;
+        profileScopeReady = false;
+        profilesLoading = false;
+        rememberedProfileId = null;
+        deviceCanRememberProfile = false;
+        rememberProfileOnDevice = false;
+        profileLoadUserId = null;
+    }
+
+    async function handleProfileScopeChange(event) {
+        if (!$currentUser || event.user_id !== $currentUser.id) return;
+        resetProfileScope();
+        profileScopeReady = false;
+        await loadProfiles();
+        if (profileScopeReady) {
+            events.connect();
+        }
+        goto('/dashboard');
     }
 
     function toggleMobileMenu() {
@@ -197,25 +281,27 @@
                 <a href="/dashboard" class="nav-logo">{m.routes_layout_duskcue()}</a>
 
                 {#if $isAuthenticated}
-                    <ul class="nav-links">
-                        {#each navLinks as link}
-                            <li>
-                                <a
-                                    href={link.href}
-                                    class="nav-link"
-                                    class:active={$page.url.pathname.startsWith(link.href)}
-                                >
-                                    {link.label}
-                                </a>
-                            </li>
-                        {/each}
-                    </ul>
+                    {#if profileScopeReady}
+                        <ul class="nav-links">
+                            {#each navLinks as link}
+                                <li>
+                                    <a
+                                        href={link.href}
+                                        class="nav-link"
+                                        class:active={$page.url.pathname.startsWith(link.href)}
+                                    >
+                                        {link.label}
+                                    </a>
+                                </li>
+                            {/each}
+                        </ul>
 
-                    <div class="nav-search">
-                        <SearchBar compact onsearch={handleSearch} navigate={false} />
-                    </div>
+                        <div class="nav-search">
+                            <SearchBar compact onsearch={handleSearch} navigate={false} />
+                        </div>
 
-                    <NotificationBell />
+                        <NotificationBell />
+                    {/if}
 
                     <div class="nav-user">
                         <button
@@ -257,15 +343,21 @@
                                         {/each}
                                     </div>
                                     {#if deviceCanRememberProfile && activeProfile}
-                                        <label class="remember-profile">
-                                            <input
-                                                type="checkbox"
-                                                bind:checked={rememberProfileOnDevice}
-                                                onchange={updateRememberedProfile}
-                                                disabled={!!switchingProfileId}
-                                            />
-                                            <span>Remember this profile on this device</span>
-                                        </label>
+                                        {#if rememberedProfileId === activeProfile.id}
+                                            <button class="forget-profile" onclick={forgetProfileOnDevice} disabled={!!switchingProfileId}>
+                                                Forget this device
+                                            </button>
+                                        {:else}
+                                            <label class="remember-profile">
+                                                <input
+                                                    type="checkbox"
+                                                    bind:checked={rememberProfileOnDevice}
+                                                    onchange={updateRememberedProfile}
+                                                    disabled={!!switchingProfileId}
+                                                />
+                                                <span>Remember this profile on this device</span>
+                                            </label>
+                                        {/if}
                                     {/if}
                                     <a href="/settings/profiles" class="manage-profiles" onclick={closeUserMenu}>Manage profiles</a>
                                 </div>
@@ -284,20 +376,22 @@
                         {/if}
                     </div>
 
-                    <button
-                        class="menu-toggle"
-                        onclick={toggleMobileMenu}
-                        aria-label={m.routes_layout_open_menu()}
-                        aria-expanded={mobileMenuOpen}
-                    >
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                            {#if mobileMenuOpen}
-                                <path d="M18 6L6 18M6 6l12 12" />
-                            {:else}
-                                <path d="M3 12h18M3 6h18M3 18h18" />
-                            {/if}
-                        </svg>
-                    </button>
+                    {#if profileScopeReady}
+                        <button
+                            class="menu-toggle"
+                            onclick={toggleMobileMenu}
+                            aria-label={m.routes_layout_open_menu()}
+                            aria-expanded={mobileMenuOpen}
+                        >
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+                                {#if mobileMenuOpen}
+                                    <path d="M18 6L6 18M6 6l12 12" />
+                                {:else}
+                                    <path d="M3 12h18M3 6h18M3 18h18" />
+                                {/if}
+                            </svg>
+                        </button>
+                    {/if}
                 {/if}
             </nav>
         </header>
@@ -354,7 +448,47 @@
         {/if}
 
         <main class="main-content">
-            {@render children()}
+            {#if !$isAuthenticated || profileScopeReady}
+                {#key profileScopeRevision}
+                    {@render children()}
+                {/key}
+            {:else}
+                <section class="profile-gate" aria-labelledby="profile-gate-title">
+                    {#if profilesLoading}
+                        <div class="loading-spinner"></div>
+                        <p>Loading profiles…</p>
+                    {:else if profiles.length > 0}
+                        <span class="profile-gate-eyebrow">Duskcue</span>
+                        <h1 id="profile-gate-title">Who’s watching?</h1>
+                        <p>Choose a profile before viewing this device’s personalized rows and playback state.</p>
+                        <div class="profile-gate-list">
+                            {#each profiles as profile}
+                                <button
+                                    class="profile-gate-option"
+                                    onclick={() => selectProfile(profile)}
+                                    disabled={!!switchingProfileId}
+                                >
+                                    <span class="profile-gate-avatar">{profile.name?.[0]?.toUpperCase() || 'P'}</span>
+                                    <span>{profile.name}</span>
+                                    {#if profile.profile_type === 'kids'}<small>Kids</small>{/if}
+                                </button>
+                            {/each}
+                        </div>
+                        {#if deviceCanRememberProfile}
+                            <label class="remember-profile profile-gate-remember">
+                                <input type="checkbox" bind:checked={rememberProfileOnDevice} disabled={!!switchingProfileId} />
+                                <span>Remember my choice on this device</span>
+                            </label>
+                        {/if}
+                        <button class="profile-gate-signout" onclick={handleLogout}>Sign Out</button>
+                    {:else}
+                        <h1 id="profile-gate-title">Profiles are unavailable</h1>
+                        <p>Reconnect to load profiles before continuing.</p>
+                        <button class="profile-gate-retry" onclick={loadProfiles}>Try again</button>
+                        <button class="profile-gate-signout" onclick={handleLogout}>Sign Out</button>
+                    {/if}
+                </section>
+            {/if}
         </main>
     </div>
 
@@ -571,6 +705,18 @@
         accent-color: var(--color-accent);
     }
 
+    .forget-profile {
+        width: 100%;
+        margin-top: 0.75rem;
+        color: var(--color-text-secondary);
+        font-size: 0.75rem;
+        text-align: start;
+    }
+
+    .forget-profile:hover {
+        color: var(--color-error);
+    }
+
     .dropdown-item {
         display: block;
         width: 100%;
@@ -596,6 +742,104 @@
         width: 100%;
         margin: 0 auto;
         padding: 1.5rem;
+    }
+
+    .profile-gate {
+        width: min(100%, 520px);
+        min-height: calc(100vh - 160px);
+        display: grid;
+        align-content: center;
+        justify-items: stretch;
+        gap: 1rem;
+        margin: 0 auto;
+        padding: 2rem;
+        background: var(--color-bg-surface);
+        border: 1px solid var(--color-border-subtle);
+        border-radius: var(--radius-lg);
+        text-align: center;
+    }
+
+    .profile-gate h1 {
+        margin: 0;
+        color: var(--color-text-primary);
+        font-size: 1.5rem;
+    }
+
+    .profile-gate p {
+        margin: 0;
+        color: var(--color-text-secondary);
+        line-height: 1.5;
+    }
+
+    .profile-gate-eyebrow {
+        color: var(--color-accent);
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+    }
+
+    .profile-gate-list {
+        display: grid;
+        gap: 0.625rem;
+    }
+
+    .profile-gate-option {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-md);
+        background: var(--color-bg-elevated);
+        color: var(--color-text-primary);
+        font-weight: 600;
+        text-align: start;
+    }
+
+    .profile-gate-option:hover:not(:disabled) {
+        border-color: var(--color-accent);
+        background: var(--color-bg-hover);
+    }
+
+    .profile-gate-option small {
+        margin-inline-start: auto;
+        color: var(--color-text-muted);
+        font-size: 0.75rem;
+    }
+
+    .profile-gate-avatar {
+        display: grid;
+        width: 2.25rem;
+        height: 2.25rem;
+        place-items: center;
+        border-radius: 50%;
+        background: var(--color-accent-muted);
+        color: var(--color-accent);
+    }
+
+    .profile-gate-remember {
+        justify-content: center;
+        margin-top: 0;
+    }
+
+    .profile-gate-signout,
+    .profile-gate-retry {
+        justify-self: center;
+        color: var(--color-text-secondary);
+        font-size: 0.8125rem;
+    }
+
+    .profile-gate-signout:hover {
+        color: var(--color-error);
+    }
+
+    .profile-gate-retry {
+        padding: 0.625rem 0.875rem;
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        background: var(--color-bg-elevated);
     }
 
     .menu-toggle {

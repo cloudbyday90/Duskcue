@@ -148,6 +148,7 @@ pub async fn setup(
                 .collect(),
             has_all_library_access: true,
             active_profile_id,
+            profile_selection_required: false,
         },
     };
 
@@ -243,6 +244,7 @@ pub async fn auth_login(
             capabilities,
             has_all_library_access: user.has_all_library_access,
             active_profile_id: session.active_profile_id,
+            profile_selection_required: session.profile_selection_required,
         },
     };
 

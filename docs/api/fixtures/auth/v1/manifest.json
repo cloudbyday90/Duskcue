@@ -1,7 +1,7 @@
 {
   "fixture_pack": "duskcue-auth-session-conformance",
   "version": 1,
-  "updated": "2026-07-01",
+  "updated": "2026-07-18",
   "contract_manifest": "docs/api/client-contracts.v1.json",
   "client_fixture_pack": "docs/api/fixtures/client/v1/manifest.json",
   "purpose": "Reusable auth/session conformance fixtures for desktop, mobile, TV, and console clients.",
@@ -16,6 +16,7 @@
     "device_linking",
     "passkey_login",
     "fallback_login",
+    "profile_selection",
     "logout",
     "logout_all",
     "session_delete",
