@@ -6,7 +6,7 @@ This document is the implementation authority for Phase 17. It turns the shared 
 
 ## Status
 
-Phase 17 Tasks 0–2 are complete as of July 18, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, 16:9 placeholder banner/icon, Compose for TV entry point, debug APK build, fixture-backed contract unit tests, and Android lint verification. It is intentionally separate from the Flutter phone/tablet client.
+Phase 17 Tasks 0–3 are complete as of July 18, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, 16:9 placeholder banner/icon, Compose for TV entry point, debug APK build, fixture-backed contract unit tests, and Android lint verification. It is intentionally separate from the Flutter phone/tablet client.
 
 ## Research Outcome
 
@@ -54,6 +54,22 @@ The shared Kotlin adapter boundary now includes a bounded retry wrapper for safe
 The native client consumes the Phase 16d route manifest and the client, auth/session, playback, TV/deep-link, diagnostics, accessibility, device-lab, release, and client-CI fixture packs before it grows a production client. Its API layer owns canonical server-origin selection and bearer injection; RFC 9457 mapping, private ETag revalidation, bounded retry, and cancellation; redacted correlation identifiers; device-link authentication; secure token storage; session expiry/logout cleanup; and a server-backed profile gate.
 
 An authenticated TV cannot request, render, cache, or publish profile-scoped media until `profile_selection_required` is false. On server, account, or profile change it cancels requests and clears in-memory feed/artwork/playback state, encrypted credentials, diagnostics scope, and every local Watch Next mapping/program before rendering the new scope. A remembered profile is an opt-in convenience only; it is not a separate credential and never bypasses a Kids parent-unlock boundary.
+
+### Task 3 Storage And Session Decision
+
+Task 3 uses one app-private Preferences DataStore file, created once at top level in the data layer. The persisted envelope is encrypted with an AES-GCM key generated and retained by Android Keystore. The DataStore contains only ciphertext; plaintext bearer tokens, parent PINs, signed URLs, playback sessions, and parent-unlock expiry never reach disk. The Keystore key is app-scoped and non-exportable; it is not a shared Android `KeyChain` credential.
+
+The envelope can retain an opaque installation device ID, known server origins, the active session token/user/profile summary, and an explicit remembered-profile preference. Device-link code and parent PIN values are transient request inputs only. An unrecoverable decrypt failure is treated as signed out and deletes the ciphertext, rather than attempting a partial recovery.
+
+All changes flow through a session coordinator. An account or server replacement clears identity-scoped state: encrypted token, diagnostics identifiers, profile-scoped cache, queued playback, artwork, and future Watch Next mappings. A profile replacement clears profile-scoped state before the new profile can render or publish a launcher row. Logout and session-kicked signals use the identity-clear path. This provides the cleanup boundary before Task 7 adds actual TV Provider rows.
+
+### Task 3 Implementation
+
+`SecureSessionStore` is the Android implementation of the encrypted envelope. It creates no duplicate DataStore instances, generates a random per-installation device ID, remembers at most ten non-secret server origins, and keeps the active bearer token/user/profile summary encrypted. Its keystore AES-GCM payload includes a versionless IV prefix and authenticates ciphertext before decode; invalid ciphertext is deleted and replaced with an unauthenticated state. `allowBackup=false` is set on the TV application, so neither the encrypted payload nor a stale server/profile selection participates in Android backup/restore.
+
+`TvAuthenticationService` implements the Duskcue device-link route sequence: it requests a code with stable Android TV metadata, exposes the verification shortcut and user code, accepts a token only from a successful poll, keeps `AUTH_023` at the advertised interval, and honors `AUTH_024` using the server `Retry-After` or the required five-second increase capped at 60 seconds. It exposes profile listing, parent unlock, explicit profile switching with opt-in remembered-device choice, restore, logout, logout-all, and session-kicked paths. A 401 from profile restore/switch clears local identity state. Parent PIN input is sent only to the unlock endpoint and is not represented in `SecureTvState`.
+
+The coordinator tests prove cross-server/account replacement clears the identity scope before installing a new token, profile selection/switch clears profile scope before the replacement profile is exposed, logout preserves only the non-secret saved-server choice, and session-kicked is equivalent to logout. The actual living-room controls consume this service in Task 4; no profile-scoped screen is allowed to mount until its returned `ProfileGateState` permits it.
 
 ### Living-Room UX
 
@@ -112,6 +128,9 @@ If the system reports a program as no longer browsable, the adapter removes its 
 - Android TV app-quality criteria: https://developer.android.com/docs/quality-guidelines/tv-app-quality
 - Android TV navigation: https://developer.android.com/training/tv/get-started/navigation
 - Android TV layouts and overscan: https://developer.android.com/design/ui/tv/guides/styles/layouts
+- Android Keystore: https://developer.android.com/privacy-and-security/keystore
+- Android cryptography: https://developer.android.com/privacy-and-security/cryptography
+- Android Preferences DataStore: https://developer.android.com/topic/libraries/architecture/datastore
 - Google Play target API policy: https://support.google.com/googleplay/android-developer/answer/11926878
 - Google Play Android TV preview assets: https://support.google.com/googleplay/android-developer/answer/9866151
 - Sony Google TV / Android TV application availability: https://www.sony.com/electronics/support/televisions-projectors-lcd-tvs-android-/xr-55x90k/articles/00114472

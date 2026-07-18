@@ -111,6 +111,32 @@ class DuskcueApiClientTest {
         assertTrue(!DiagnosticsRedactor.redactedHeaders(mapOf("Authorization" to "Bearer secret")).containsKey("Authorization"))
     }
 
+    @Test
+    fun sends_device_link_requests_without_a_bearer_token() {
+        val transport = RecordingTransport(
+            ApiResponse(
+                status = 200,
+                body = """{"device_code":"device-code","user_code":"USER-CODE","verification_uri":"https://duskcue.example/auth/link","expires_in":600,"interval":5}""",
+            ),
+        )
+
+        val result = client(transport).requestDeviceCode(
+            DeviceCodeRequest(
+                device_id = "device-id",
+                client_name = "Duskcue Android TV",
+                client_platform = "android_tv",
+                client_version = "0.1.0",
+            ),
+        )
+
+        assertTrue(result is ApiResult.Success<DeviceCodeResponse>)
+        val request = transport.requests.single()
+        assertEquals("POST", request.method)
+        assertTrue(request.path.endsWith("/api/v1/device/code"))
+        assertNull(request.headers["Authorization"])
+        assertTrue(requireNotNull(request.body).contains("device-id"))
+    }
+
     private fun client(transport: HttpTransport): DuskcueApiClient = DuskcueApiClient(
         origin = ServerOrigin.parse("https://duskcue.example").getOrThrow(),
         transport = transport,

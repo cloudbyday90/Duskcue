@@ -6,6 +6,7 @@ data class ApiRequest(
     val method: String,
     val path: String,
     val headers: Map<String, String> = emptyMap(),
+    val body: String? = null,
 )
 
 data class ApiResponse(
@@ -20,6 +21,21 @@ fun interface HttpTransport {
 
 interface BearerTokenProvider {
     fun currentToken(): String?
+}
+
+class MutableBearerTokenProvider(initialToken: String? = null) : BearerTokenProvider {
+    @Volatile
+    private var token: String? = initialToken
+
+    override fun currentToken(): String? = token
+
+    fun replace(value: String?) {
+        token = value
+    }
+
+    fun clear() {
+        token = null
+    }
 }
 
 interface EtagStore {

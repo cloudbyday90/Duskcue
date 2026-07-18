@@ -36,6 +36,7 @@ android {
         getByName("test") {
             resources.srcDir("../../../../docs/api/fixtures/tv/v1")
             resources.srcDir("../../../../docs/api/fixtures/playback/v1")
+            resources.srcDir("../../../../docs/api/fixtures/auth/v1")
         }
     }
 }
@@ -51,7 +52,9 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.tv:tv-material:1.0.0")
+    implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.9.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")

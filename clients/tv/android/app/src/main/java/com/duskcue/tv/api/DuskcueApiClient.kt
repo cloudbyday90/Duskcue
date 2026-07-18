@@ -16,6 +16,89 @@ data class ProblemDetails(
 )
 
 @Serializable
+data class DeviceCodeRequest(
+    val device_id: String,
+    val client_name: String,
+    val client_platform: String,
+    val client_version: String,
+)
+
+@Serializable
+data class DeviceCodeResponse(
+    val device_code: String,
+    val user_code: String,
+    val verification_uri: String,
+    val verification_uri_complete: String? = null,
+    val expires_in: Int,
+    val interval: Int,
+)
+
+@Serializable
+data class DeviceTokenRequest(val device_code: String)
+
+@Serializable
+data class AuthenticatedUser(
+    val id: String,
+    val username: String,
+    val display_name: String,
+    val role: String,
+    val capabilities: List<String>,
+    val has_all_library_access: Boolean,
+    val active_profile_id: String,
+    val profile_selection_required: Boolean,
+)
+
+@Serializable
+data class DeviceTokenResponse(
+    val session_token: String,
+    val user: AuthenticatedUser,
+)
+
+@Serializable
+data class ProfileSummary(
+    val id: String,
+    val name: String,
+    val profile_type: String,
+    val is_default: Boolean,
+    val max_content_rating: String,
+    val allow_search: Boolean,
+    val allow_downloads: Boolean,
+    val allow_external_links: Boolean,
+    val allow_ambient_channels: Boolean,
+    val parent_pin_configured: Boolean,
+)
+
+@Serializable
+data class ProfileListResponse(
+    val active_profile_id: String,
+    val profile_selection_required: Boolean,
+    val remembered_profile_id: String? = null,
+    val device_can_remember_profile: Boolean,
+    val parent_unlock_required: Boolean,
+    val parent_unlock_expires_at: String? = null,
+    val items: List<ProfileSummary>,
+)
+
+@Serializable
+data class SwitchProfileRequest(val remember_on_device: Boolean)
+
+@Serializable
+data class SwitchProfileResponse(
+    val active_profile: ProfileSummary,
+    val profile_selection_required: Boolean,
+    val remembered_profile_id: String? = null,
+    val device_can_remember_profile: Boolean,
+    val parent_unlock_required: Boolean,
+    val parent_unlock_expires_at: String? = null,
+)
+
+@Serializable
+data class ParentUnlockRequest(val pin: String)
+
+@Serializable
+data class ParentUnlockResponse(val unlocked_until: String)
+
+@Serializable
 data class TvSurface(
     val generated_at: String,
     val platform: String,
@@ -66,8 +149,21 @@ data class TvResolveResponse(
 sealed interface ApiResult<out T> {
     data class Success<T>(val value: T, val etag: String?) : ApiResult<T>
     data object NotModified : ApiResult<Nothing>
-    data class Failure(val problem: ProblemDetails, val status: Int) : ApiResult<Nothing>
+    data class Failure(
+        val problem: ProblemDetails,
+        val status: Int,
+        val retryAfterSeconds: Int? = null,
+    ) : ApiResult<Nothing>
     data object NetworkFailure : ApiResult<Nothing>
+}
+
+interface TvSessionApi {
+    fun requestDeviceCode(request: DeviceCodeRequest): ApiResult<DeviceCodeResponse>
+    fun pollDeviceToken(deviceCode: String): ApiResult<DeviceTokenResponse>
+    fun listProfiles(): ApiResult<ProfileListResponse>
+    fun switchProfile(profileId: String, rememberOnDevice: Boolean): ApiResult<SwitchProfileResponse>
+    fun unlockParentProfile(pin: String): ApiResult<ParentUnlockResponse>
+    fun logout(allSessions: Boolean = false): ApiResult<Unit>
 }
 
 class DuskcueApiClient(
@@ -76,7 +172,7 @@ class DuskcueApiClient(
     private val tokenProvider: BearerTokenProvider,
     private val etagStore: EtagStore,
     private val json: Json = Json { ignoreUnknownKeys = true },
-) {
+) : TvSessionApi {
     fun tvSurface(
         limit: Int,
         cacheScope: String,
@@ -116,13 +212,79 @@ class DuskcueApiClient(
         return ApiResult.Success(json.decodeFromString<TvResolveResponse>(response.body), null)
     }
 
-    private fun request(path: String, etag: String? = null): ApiRequest {
+    override fun requestDeviceCode(request: DeviceCodeRequest): ApiResult<DeviceCodeResponse> = executeJson(
+        request(
+            method = "POST",
+            path = "/api/v1/device/code",
+            body = json.encodeToString(DeviceCodeRequest.serializer(), request),
+            authenticated = false,
+        ),
+    )
+
+    override fun pollDeviceToken(deviceCode: String): ApiResult<DeviceTokenResponse> = executeJson(
+        request(
+            method = "POST",
+            path = "/api/v1/device/token",
+            body = json.encodeToString(DeviceTokenRequest.serializer(), DeviceTokenRequest(deviceCode)),
+            authenticated = false,
+        ),
+    )
+
+    override fun listProfiles(): ApiResult<ProfileListResponse> = executeJson(
+        request(path = "/api/v1/profiles"),
+    )
+
+    override fun switchProfile(profileId: String, rememberOnDevice: Boolean): ApiResult<SwitchProfileResponse> = executeJson(
+        request(
+            method = "POST",
+            path = "/api/v1/profiles/$profileId/switch",
+            body = json.encodeToString(SwitchProfileRequest.serializer(), SwitchProfileRequest(rememberOnDevice)),
+        ),
+    )
+
+    override fun unlockParentProfile(pin: String): ApiResult<ParentUnlockResponse> = executeJson(
+        request(
+            method = "POST",
+            path = "/api/v1/profiles/parent-unlock",
+            body = json.encodeToString(ParentUnlockRequest.serializer(), ParentUnlockRequest(pin)),
+        ),
+    )
+
+    override fun logout(allSessions: Boolean): ApiResult<Unit> {
+        val path = if (allSessions) "/api/v1/auth/logout-all" else "/api/v1/auth/logout"
+        val response = execute(request(method = "POST", path = path)) ?: return ApiResult.NetworkFailure
+        if (response.status !in 200..299) {
+            return failure(response)
+        }
+        return ApiResult.Success(Unit, null)
+    }
+
+    private inline fun <reified T> executeJson(request: ApiRequest): ApiResult<T> {
+        val response = execute(request) ?: return ApiResult.NetworkFailure
+        if (response.status !in 200..299) {
+            return failure(response)
+        }
+        return ApiResult.Success(json.decodeFromString<T>(response.body), response.headers.header("etag"))
+    }
+
+    private fun request(
+        method: String = "GET",
+        path: String,
+        body: String? = null,
+        etag: String? = null,
+        authenticated: Boolean = true,
+    ): ApiRequest {
         val headers = buildMap {
             put("Accept", "application/json")
-            tokenProvider.currentToken()?.let { put("Authorization", "Bearer $it") }
+            if (body != null) {
+                put("Content-Type", "application/json; charset=utf-8")
+            }
+            if (authenticated) {
+                tokenProvider.currentToken()?.let { put("Authorization", "Bearer $it") }
+            }
             etag?.let { put("If-None-Match", it) }
         }
-        return ApiRequest(method = "GET", path = "${origin.value}$path", headers = headers)
+        return ApiRequest(method = method, path = "${origin.value}$path", headers = headers, body = body)
     }
 
     private fun failure(response: ApiResponse): ApiResult.Failure {
@@ -131,7 +293,11 @@ class DuskcueApiClient(
         }.getOrElse {
             ProblemDetails(status = response.status, title = "HTTP_${response.status}")
         }
-        return ApiResult.Failure(problem = problem, status = response.status)
+        return ApiResult.Failure(
+            problem = problem,
+            status = response.status,
+            retryAfterSeconds = response.headers.header("Retry-After")?.toIntOrNull(),
+        )
     }
 
     private fun execute(request: ApiRequest): ApiResponse? = try {
@@ -153,6 +319,10 @@ class UrlConnectionTransport(
         connection.instanceFollowRedirects = false
         request.headers.forEach(connection::setRequestProperty)
         return try {
+            request.body?.let { body ->
+                connection.doOutput = true
+                connection.outputStream.bufferedWriter(Charsets.UTF_8).use { writer -> writer.write(body) }
+            }
             val status = connection.responseCode
             val stream = if (status in 200..299) connection.inputStream else connection.errorStream
             val body = stream?.bufferedReader()?.use { it.readText() }.orEmpty()
