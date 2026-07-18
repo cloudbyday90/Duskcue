@@ -21,6 +21,7 @@ rusqlite.workspace = true
 rustls.workspace = true
 tokio-rustls.workspace = true
 ring.workspace = true
+argon2.workspace = true
 maxminddb.workspace = true
 validator.workspace = true
 tokio-process-tools.workspace = true

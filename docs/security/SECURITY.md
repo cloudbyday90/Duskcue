@@ -463,7 +463,13 @@ Phase 16a auth/session clients separate non-secret connection state from bearer-
 
 ### Remembered Household Profiles
 
-A remembered household profile is a non-secret, server-side preference keyed by the authenticated account and a stable device ID. It can select the active profile for a newly authenticated session, but it never authenticates a request, extends a session, or replaces a password, passkey, bearer token, cookie, or future parental PIN. The server verifies the profile/account relationship on every lookup and removes the preference on explicit sign-out, remote session revocation, or sign-out everywhere. Browser clients may persist only the opaque device ID needed for this preference; bearer tokens and parental secrets remain prohibited from browser storage. This preference does not lock a Kids profile; a parental unlock flow remains a separate security control.
+A remembered household profile is a non-secret, server-side preference keyed by the authenticated account and a stable device ID. It can select the active profile for a newly authenticated session, but it never authenticates a request, extends a session, or replaces a password, passkey, bearer token, cookie, or parental PIN. The server verifies the profile/account relationship on every lookup and removes the preference on explicit sign-out, remote session revocation, or sign-out everywhere. Browser clients may persist only the opaque device ID needed for this preference; bearer tokens and parental secrets remain prohibited from browser storage.
+
+### Kids Profile Parent Unlock
+
+Each PIN-protected Kids profile stores only a salted Argon2id PHC hash. Duskcue uses the OWASP minimum baseline of 19 MiB memory, two iterations, and one lane; the raw 4–12 digit PIN is accepted only by the create, update, or active-profile unlock request and is never returned, logged, cached, embedded in a URL, or sent through the browser's profile-change signal. The profile row persists a five-attempt/15-minute lockout so restarts, new tabs, and session refreshes cannot reset brute-force protection. A valid PIN grants a ten-minute unlock only for that Kids profile on the current server-side session. Changing the PIN or changing to another profile revokes the unlock. The endpoint returns generic invalid/locked Problem Details and deliberately omits an exact retry schedule.
+
+This is a shared-display profile boundary, not a replacement for the account's normal password/passkey/session authorization or MFA. It prevents profile-picker escape while a child uses a shared authenticated TV, but cannot secure credentials a parent intentionally discloses.
 
 ---
 

@@ -41,6 +41,10 @@ pub fn router(state: AppState) -> Router<AppState> {
             post(handlers::switch_profile),
         )
         .route(
+            "/api/v1/profiles/parent-unlock",
+            post(handlers::parent_unlock),
+        )
+        .route(
             "/api/v1/ambient-channels",
             get(handlers::list_ambient_channels).post(handlers::create_ambient_channel),
         )

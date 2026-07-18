@@ -41,6 +41,7 @@ async fn main() -> anyhow::Result<()> {
     sqlx::migrate!().run(&pool).await?;
     validate_media_query_contract(&pool).await?;
     validate_storyboard_lock_contract(&pool).await?;
+    validate_kids_parent_unlock_schema(&pool).await?;
     pool.close().await;
 
     println!("Duskcue migrations verified successfully");
@@ -94,5 +95,38 @@ async fn validate_storyboard_lock_contract(pool: &PgPool) -> anyhow::Result<()> 
         "storyboard advisory lock was not released with its transaction"
     );
     second.rollback().await?;
+    Ok(())
+}
+
+async fn validate_kids_parent_unlock_schema(pool: &PgPool) -> anyhow::Result<()> {
+    let queries = [
+        "SELECT parent_pin_hash, parent_pin_failed_attempts, parent_pin_locked_until FROM user_profiles LIMIT 0",
+        "SELECT parent_unlock_profile_id, parent_unlock_expires_at FROM user_sessions LIMIT 0",
+    ];
+    for query in queries {
+        sqlx::query(query).execute(pool).await?;
+    }
+
+    let profile_pin_constraint: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint WHERE conrelid = 'user_profiles'::regclass \
+         AND pg_get_constraintdef(oid) LIKE '%parent_pin_failed_attempts >= 0%')",
+    )
+    .fetch_one(pool)
+    .await?;
+    anyhow::ensure!(
+        profile_pin_constraint,
+        "user_profiles is missing the non-negative parent PIN failure constraint"
+    );
+
+    let session_unlock_index: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() \
+         AND indexname = 'idx_user_sessions_parent_unlock_profile')",
+    )
+    .fetch_one(pool)
+    .await?;
+    anyhow::ensure!(
+        session_unlock_index,
+        "user_sessions is missing the parent-unlock lookup index"
+    );
     Ok(())
 }

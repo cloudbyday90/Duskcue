@@ -147,6 +147,59 @@
       ]
     },
     {
+      "id": "parent_unlock",
+      "steps": [
+        {
+          "request": {
+            "method": "GET",
+            "path": "/api/v1/profiles"
+          },
+          "expect": {
+            "active_profile_id": "abababab-abab-4bab-8bab-abababababab",
+            "parent_unlock_required": true,
+            "parent_unlock_expires_at": null,
+            "items_include_parent_pin_configured": true
+          }
+        },
+        {
+          "request": {
+            "method": "POST",
+            "path": "/api/v1/profiles/parent-unlock"
+          },
+          "expect_problem": {
+            "status": 403,
+            "title": "PROFILE_010"
+          }
+        },
+        {
+          "request": {
+            "method": "POST",
+            "path": "/api/v1/profiles/parent-unlock"
+          },
+          "expect_success": {
+            "unlocked_until": "2026-07-18T16:10:00Z"
+          }
+        },
+        {
+          "request": {
+            "method": "POST",
+            "path": "/api/v1/profiles/cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd/switch"
+          },
+          "expect_success": {
+            "active_profile_id": "cdcdcdcd-cdcd-4dcd-8dcd-cdcdcdcdcdcd",
+            "parent_unlock_required": false,
+            "parent_unlock_expires_at": null
+          }
+        }
+      ],
+      "client_requirements": [
+        "show parent PIN only in a transient local prompt",
+        "never persist or publish the parent PIN",
+        "require a successful server unlock before selecting a standard profile from a locked Kids profile",
+        "clear parent-unlock UI state after a profile switch"
+      ]
+    },
+    {
       "id": "reauth",
       "steps": [
         {

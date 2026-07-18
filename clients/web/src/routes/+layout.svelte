@@ -16,7 +16,7 @@
     import { events } from '$lib/stores/events.js';
     import { player } from '$lib/stores/player.js';
     import { getSetupStatus } from '$lib/api/auth.js';
-    import { listProfiles, switchProfile } from '$lib/api/profiles.js';
+    import { listProfiles, switchProfile, unlockParentProfile } from '$lib/api/profiles.js';
     import { invalidateProfileScopedRequests } from '$lib/api/core.js';
     import { publishProfileScopeChange, startProfileScopeSync } from '$lib/profiles/scope.js';
     import { startDesktopBridge, stopDesktopBridge } from '$lib/desktop/tauri.js';
@@ -40,7 +40,13 @@
     let profileScopeReady = $state(false);
     let profilesLoading = $state(false);
     let profileScopeRevision = $state(0);
+    let parentUnlockRequired = $state(false);
+    let parentUnlockTarget = $state(null);
+    let parentPin = $state('');
+    let parentUnlockError = $state('');
+    let unlockingParent = $state(false);
     let activeProfile = $derived(profiles.find((profile) => profile.id === $currentUser?.active_profile_id));
+    let activeProfileIsKids = $derived(activeProfile?.profile_type === 'kids');
     let canAccessAdmin = $derived(
         userHasAnyCapability($currentUser, ['can_manage_server', 'can_manage_users', 'can_manage_libraries']),
     );
@@ -131,6 +137,7 @@
             profileScopeReady = !profileSelectionRequired;
             rememberedProfileId = response?.remembered_profile_id || null;
             deviceCanRememberProfile = !!response?.device_can_remember_profile;
+            parentUnlockRequired = !!response?.parent_unlock_required;
             rememberProfileOnDevice = rememberedProfileId === activeProfileId;
             if ($currentUser && (
                 $currentUser.active_profile_id !== activeProfileId
@@ -149,6 +156,7 @@
             rememberedProfileId = null;
             deviceCanRememberProfile = false;
             rememberProfileOnDevice = false;
+            parentUnlockRequired = false;
         } finally {
             profilesLoading = false;
         }
@@ -156,6 +164,12 @@
 
     async function selectProfile(profile) {
         if ((profile.id === $currentUser?.active_profile_id && !profileSelectionRequired) || switchingProfileId) return;
+        if (parentUnlockRequired && profile.profile_type === 'standard') {
+            parentUnlockTarget = profile;
+            parentPin = '';
+            parentUnlockError = '';
+            return;
+        }
         switchingProfileId = profile.id;
         try {
             if (!profileSelectionRequired) {
@@ -180,6 +194,31 @@
         } finally {
             switchingProfileId = null;
         }
+    }
+
+    async function unlockParentAccess() {
+        if (!parentUnlockTarget || unlockingParent) return;
+        unlockingParent = true;
+        parentUnlockError = '';
+        try {
+            const response = await unlockParentProfile({ pin: parentPin });
+            parentUnlockRequired = false;
+            const target = parentUnlockTarget;
+            parentUnlockTarget = null;
+            parentPin = '';
+            await selectProfile(target);
+        } catch (err) {
+            parentUnlockError = err.detail || err.message || 'Could not unlock parent access';
+        } finally {
+            unlockingParent = false;
+        }
+    }
+
+    function cancelParentUnlock() {
+        if (unlockingParent) return;
+        parentUnlockTarget = null;
+        parentPin = '';
+        parentUnlockError = '';
     }
 
     async function updateRememberedProfile() {
@@ -217,6 +256,7 @@
         rememberedProfileId = response?.remembered_profile_id || null;
         deviceCanRememberProfile = !!response?.device_can_remember_profile;
         rememberProfileOnDevice = rememberedProfileId === activeProfile.id;
+        parentUnlockRequired = !!response?.parent_unlock_required;
         auth.setUser({
             ...$currentUser,
             active_profile_id: activeProfile.id,
@@ -240,6 +280,10 @@
         deviceCanRememberProfile = false;
         rememberProfileOnDevice = false;
         profileLoadUserId = null;
+        parentUnlockRequired = false;
+        parentUnlockTarget = null;
+        parentPin = '';
+        parentUnlockError = '';
     }
 
     async function handleProfileScopeChange(event) {
@@ -359,12 +403,16 @@
                                             </label>
                                         {/if}
                                     {/if}
-                                    <a href="/settings/profiles" class="manage-profiles" onclick={closeUserMenu}>Manage profiles</a>
+                                    {#if !activeProfileIsKids}
+                                        <a href="/settings/profiles" class="manage-profiles" onclick={closeUserMenu}>Manage profiles</a>
+                                    {/if}
                                 </div>
-                                <a href="/settings" class="dropdown-item" onclick={closeUserMenu}>
-                                    Settings
-                                </a>
-                                {#if canAccessAdmin}
+                                {#if !activeProfileIsKids}
+                                    <a href="/settings" class="dropdown-item" onclick={closeUserMenu}>
+                                        Settings
+                                    </a>
+                                {/if}
+                                {#if canAccessAdmin && !activeProfileIsKids}
                                     <a href="/admin" class="dropdown-item" onclick={closeUserMenu}>
                                         {m.routes_admin_page_admin()}
                                     </a>
@@ -427,19 +475,21 @@
 
                 <div class="drawer-divider"></div>
 
-                <a href="/settings/notifications" class="drawer-link" onclick={closeMobileMenu}>
-                    Notifications
-                </a>
-                <a href="/settings" class="drawer-link" onclick={closeMobileMenu}>
-                    Settings
-                </a>
-                <a href="/settings/profiles" class="drawer-link" onclick={closeMobileMenu}>
-                    Profiles
-                </a>
-                {#if canAccessAdmin}
-                    <a href="/admin" class="drawer-link" onclick={closeMobileMenu}>
-                        {m.routes_admin_page_admin()}
+                {#if !activeProfileIsKids}
+                    <a href="/settings/notifications" class="drawer-link" onclick={closeMobileMenu}>
+                        Notifications
                     </a>
+                    <a href="/settings" class="drawer-link" onclick={closeMobileMenu}>
+                        Settings
+                    </a>
+                    <a href="/settings/profiles" class="drawer-link" onclick={closeMobileMenu}>
+                        Profiles
+                    </a>
+                    {#if canAccessAdmin}
+                        <a href="/admin" class="drawer-link" onclick={closeMobileMenu}>
+                            {m.routes_admin_page_admin()}
+                        </a>
+                    {/if}
                 {/if}
                 <button class="drawer-link drawer-danger" onclick={handleLogout}>
                     Sign Out
@@ -490,6 +540,26 @@
                 </section>
             {/if}
         </main>
+
+        {#if parentUnlockTarget}
+            <div class="parent-unlock-backdrop" role="presentation" onclick={cancelParentUnlock}></div>
+            <dialog open class="parent-unlock-dialog" aria-labelledby="parent-unlock-title">
+                <span class="parent-unlock-eyebrow">Parent access</span>
+                <h2 id="parent-unlock-title">Enter your parent PIN</h2>
+                <p>Unlocking parent access lasts for ten minutes on this device session.</p>
+                <form onsubmit={(event) => { event.preventDefault(); unlockParentAccess(); }}>
+                    <label>
+                        <span>Parent PIN</span>
+                        <input type="password" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="12" bind:value={parentPin} autocomplete="off" disabled={unlockingParent} />
+                    </label>
+                    {#if parentUnlockError}<p class="parent-unlock-error">{parentUnlockError}</p>{/if}
+                    <div class="parent-unlock-actions">
+                        <button type="button" class="parent-unlock-cancel" onclick={cancelParentUnlock} disabled={unlockingParent}>Cancel</button>
+                        <button type="submit" class="parent-unlock-submit" disabled={unlockingParent || parentPin.length < 4}>{unlockingParent ? 'Unlocking…' : 'Unlock'}</button>
+                    </div>
+                </form>
+            </dialog>
+        {/if}
     </div>
 
     <NotificationToast />
@@ -505,6 +575,19 @@
         display: flex;
         flex-direction: column;
     }
+
+    .parent-unlock-backdrop { position: fixed; inset: 0; z-index: 200; background: rgb(0 0 0 / 65%); }
+    .parent-unlock-dialog { position: fixed; z-index: 201; top: 50%; left: 50%; width: min(92vw, 430px); margin: 0; transform: translate(-50%, -50%); display: grid; gap: 0.85rem; padding: 1.4rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg-surface); box-shadow: 0 24px 64px rgb(0 0 0 / 35%); }
+    .parent-unlock-dialog h2, .parent-unlock-dialog p { margin: 0; }
+    .parent-unlock-dialog p { color: var(--color-text-secondary); }
+    .parent-unlock-eyebrow { color: var(--color-accent); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
+    .parent-unlock-dialog form, .parent-unlock-dialog label { display: grid; gap: 0.45rem; }
+    .parent-unlock-dialog input { border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 0.65rem; color: var(--color-text-primary); background: var(--color-bg-elevated); font: inherit; }
+    .parent-unlock-error { color: var(--color-error) !important; }
+    .parent-unlock-actions { display: flex; justify-content: flex-end; gap: 0.75rem; }
+    .parent-unlock-cancel, .parent-unlock-submit { border: 0; border-radius: var(--radius-sm); padding: 0.6rem 0.9rem; font: inherit; cursor: pointer; }
+    .parent-unlock-cancel { background: transparent; color: var(--color-text-secondary); }
+    .parent-unlock-submit { background: var(--color-accent); color: var(--color-on-accent, white); }
 
     .nav-bar {
         position: sticky;

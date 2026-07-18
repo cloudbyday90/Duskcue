@@ -37,6 +37,9 @@ pub struct ProfileRow {
     pub allow_downloads: bool,
     pub allow_external_links: bool,
     pub allow_ambient_channels: bool,
+    pub parent_pin_hash: Option<String>,
+    pub parent_pin_failed_attempts: i16,
+    pub parent_pin_locked_until: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -65,6 +68,8 @@ pub struct CreateProfileRequest {
     pub allow_downloads: Option<bool>,
     pub allow_external_links: Option<bool>,
     pub allow_ambient_channels: Option<bool>,
+    #[validate(length(min = 4, max = 12))]
+    pub parent_pin: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
@@ -79,6 +84,8 @@ pub struct UpdateProfileRequest {
     pub allow_downloads: Option<bool>,
     pub allow_external_links: Option<bool>,
     pub allow_ambient_channels: Option<bool>,
+    #[validate(length(min = 4, max = 12))]
+    pub parent_pin: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -94,6 +101,7 @@ pub struct ProfileResponse {
     pub allow_downloads: bool,
     pub allow_external_links: bool,
     pub allow_ambient_channels: bool,
+    pub parent_pin_configured: bool,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -104,6 +112,8 @@ pub struct ProfileListResponse {
     pub profile_selection_required: bool,
     pub remembered_profile_id: Option<Uuid>,
     pub device_can_remember_profile: bool,
+    pub parent_unlock_required: bool,
+    pub parent_unlock_expires_at: Option<DateTime<Utc>>,
     pub items: Vec<ProfileResponse>,
 }
 
@@ -118,6 +128,19 @@ pub struct SwitchProfileResponse {
     pub profile_selection_required: bool,
     pub remembered_profile_id: Option<Uuid>,
     pub device_can_remember_profile: bool,
+    pub parent_unlock_required: bool,
+    pub parent_unlock_expires_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct ParentUnlockRequest {
+    #[validate(length(min = 4, max = 12))]
+    pub pin: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ParentUnlockResponse {
+    pub unlocked_until: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]

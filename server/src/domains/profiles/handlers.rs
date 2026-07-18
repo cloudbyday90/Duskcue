@@ -34,11 +34,23 @@ pub async fn list_profiles(
         service::list_profiles(
             &state.pool,
             user.user_id,
+            user.session_id,
             user.profile_id,
             user.profile_selection_required,
             user.device_id.as_deref(),
         )
         .await?,
+    ))
+}
+
+pub async fn parent_unlock(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<ParentUnlockRequest>,
+) -> Result<Json<ParentUnlockResponse>, AppError> {
+    validate_request(&req, "/api/v1/profiles/parent-unlock")?;
+    Ok(Json(
+        service::parent_unlock(&state.pool, user.user_id, user.session_id, req.pin).await?,
     ))
 }
 

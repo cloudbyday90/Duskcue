@@ -1908,6 +1908,8 @@ CREATE TABLE user_sessions (
     user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
     active_profile_id UUID REFERENCES user_profiles(id) ON DELETE SET NULL,
     profile_selection_required BOOLEAN NOT NULL DEFAULT false,
+    parent_unlock_profile_id UUID REFERENCES user_profiles(id) ON DELETE SET NULL,
+    parent_unlock_expires_at TIMESTAMPTZ,
 
     token_hash TEXT NOT NULL UNIQUE,
     device_id TEXT,
@@ -1937,6 +1939,8 @@ CREATE INDEX idx_user_sessions_device ON user_sessions (user_id, device_id);
 `device_id` — client-generated stable identifier. Used to group sessions from the same physical device. Enables "sign out of my iPhone" functionality.
 
 `profile_selection_required` — set only for a newly created session that has more than one household profile and no valid remembered profile. The server still assigns the default profile for compatibility, but clients must present a selection gate before mounting profile-scoped rows. A successful `POST /api/v1/profiles/{id}/switch` clears the flag atomically with the current session update and any remembered-profile mutation.
+
+`parent_unlock_profile_id` and `parent_unlock_expires_at` — a matching, unexpired pair permits the current session to leave that PIN-protected Kids profile. Both are cleared when the session changes profiles and when the parent changes the profile's PIN. PIN hashes, failed-attempt counters, and lock timestamps are stored on the relevant `user_profiles` row rather than in a client or ephemeral process state.
 
 Sessions are cleaned up via a scheduled task that deletes expired rows. `last_active_at` is updated on each authenticated request (with throttling — not on every single request).
 
@@ -3661,7 +3665,7 @@ ORDER BY changed_at DESC;
 
 ### Household Profiles and Ambient Channels
 
-The profile schema is implemented by `20260712080000_create_profiles_and_ambient_channels.sql`, `20260712080100_add_profile_device_preferences.sql`, and `20260718110000_add_profile_selection_state.sql`, and is fully described in [PROFILES_AND_AMBIENT_CHANNELS.md](PROFILES_AND_AMBIENT_CHANNELS.md). `user_profiles` belongs to the authenticated `users` record; `user_sessions.active_profile_id`, `user_sessions.profile_selection_required`, `user_item_data.profile_id`, and `play_sessions.profile_id` make active identity, first-use selection, viewing state, and analytics profile-aware. Existing state is backfilled to each user’s default standard profile. `profile_device_preferences` stores one non-secret remembered profile per account and stable device ID, with a composite foreign key that prevents cross-account profile references.
+The profile schema is implemented by `20260712080000_create_profiles_and_ambient_channels.sql`, `20260712080100_add_profile_device_preferences.sql`, `20260718110000_add_profile_selection_state.sql`, and `20260718120000_add_kids_parent_unlock.sql`, and is fully described in [PROFILES_AND_AMBIENT_CHANNELS.md](PROFILES_AND_AMBIENT_CHANNELS.md). `user_profiles` belongs to the authenticated `users` record; `user_sessions.active_profile_id`, `user_sessions.profile_selection_required`, the session-scoped parent-unlock pair, `user_item_data.profile_id`, and `play_sessions.profile_id` make active identity, first-use selection, locked Kids exits, viewing state, and analytics profile-aware. Existing state is backfilled to each user’s default standard profile. `profile_device_preferences` stores one non-secret remembered profile per account and stable device ID, with a composite foreign key that prevents cross-account profile references.
 
 `ambient_channels` and ordered `ambient_channel_items` provide an auditable, deterministic queue. `play_sessions.playback_mode` distinguishes ambient operational telemetry from interactive personal playback. Ambient sessions retain system diagnostics but must not update `user_item_data`, recommendations, or external watch sync.
 

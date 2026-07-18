@@ -36,6 +36,27 @@ pub enum ProfilesError {
     #[error("a stable device identifier is required to remember a profile")]
     DeviceIdentityRequired,
 
+    #[error("a parent PIN is required for Kids profiles")]
+    ParentPinRequired,
+
+    #[error("a parent PIN is only available for Kids profiles")]
+    ParentPinNotAllowed,
+
+    #[error("parent PIN is invalid")]
+    ParentPinInvalid,
+
+    #[error("parent PIN attempts are temporarily locked")]
+    ParentPinLocked,
+
+    #[error("parent unlock is required before leaving this Kids profile")]
+    ParentUnlockRequired,
+
+    #[error("parent unlock is unavailable for this profile")]
+    ParentUnlockUnavailable,
+
+    #[error("parent PIN hashing failed")]
+    ParentPinHashingFailed,
+
     #[error("content is not available for this profile")]
     ContentNotAllowed,
 

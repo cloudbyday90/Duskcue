@@ -14,7 +14,7 @@ The first implementation establishes the server contract and data model for thre
 
 | Topic | Finding | Decision |
 |---|---|---|
-| Parent unlock secret | OWASP recommends a deliberately slow password-hashing function, with Argon2id preferred, for password-equivalent secrets. | A parental PIN is never stored or returned. The future parent-unlock endpoint will hash and verify it server-side with Argon2id; profile creation and switching never expose a PIN value in a response. |
+| Parent unlock secret | OWASP recommends a deliberately slow password-hashing function, with Argon2id preferred, for password-equivalent secrets. OWASP also recommends bounded failed-authentication attempts and avoids detailed retry signals that help automation. | Each new Kids profile has its own 4–12 digit parent PIN. The server stores only an Argon2id hash using the OWASP 19 MiB, two-iteration, single-lane baseline. A PIN never appears in a response, client cache, diagnostic signal, or remembered-profile mapping. Five failed attempts lock that Kids profile for 15 minutes in PostgreSQL; a successful check creates a ten-minute unlock for that profile on the current server session only. |
 | Children's data | COPPA focuses on online collection from children under 13. A local-first server should still minimize child data and put control with the parent. | A Kids profile stores only a display name, avatar choice, and policy. It does not need an email, birth date, advertising identity, or external-service account. Unknown ratings are denied in Kids mode. |
 | Remembered profile | Apple TV exposes a platform decision for whether a shared device should retain the current user selection; OWASP treats session credentials as authentication secrets, not preference data. | Remember a selected profile only as a server-side, account-scoped mapping to a stable per-installation device ID. It is opt-in, revocable, and never a cached session token, password, parental PIN, hardware identifier, or standalone profile credential. |
 | First-use selection and tab consistency | Apple directs tvOS apps to show a picker when there is no saved selection or when it cannot store one. The HTML Broadcast Channel API and Web Storage `storage` event provide same-origin notification only. | Record whether a new session requires a selection, block the web shell from mounting profile-scoped routes until the user chooses, and propagate a minimal profile-change signal to other same-origin tabs. |
@@ -60,7 +60,7 @@ Profile selection is an authorization boundary, not merely a client preference.
 2. A Kids profile may only enumerate, resolve, stream, or receive artwork for permitted libraries and normalized ratings at or below its limit.
 3. Direct media routes and playback starts perform the same policy check; a copied media ID cannot bypass the browse UI.
 4. Standard profiles inherit the authenticated account's library authorization. Kids profiles can only narrow that scope.
-5. The owner configures profiles and channels. A later shared-TV unlock screen may require a parental PIN before leaving Kids mode; this never replaces normal account authentication for remote/API access.
+5. The owner configures profiles and channels from a standard profile. Leaving a PIN-protected Kids profile for a standard profile requires a valid, unexpired parent unlock on the current server session; this never replaces normal account authentication for remote/API access.
 
 ## Remembered Profile on a Device
 
@@ -70,7 +70,7 @@ Profile selection is an authorization boundary, not merely a client preference.
 
 An explicit sign-out or remote session revocation removes that device's remembered mapping. Signing out everywhere and soft-deleting a user remove every mapping for the account. Deleting a profile cascades its mappings. Browser storage contains only a generated opaque device ID; session credentials remain in the normal cookie/bearer-token mechanism, and neither a profile choice nor a future parent-unlock secret is stored on the client.
 
-This is a convenience default, not a parental-control lock or authentication substitute. In particular, remembering a Kids profile does not prevent a holder of the authenticated session from selecting another profile. The parent-PIN unlock flow remains the necessary follow-up before a shared TV can claim a locked Kids exit path. tvOS clients must follow the platform's `shouldStorePreferencesForCurrentUser` decision before retaining a profile selection; shared-device clients should default to showing the picker when that capability or a stable device ID is unavailable.
+This is a convenience default, not a parental-control lock or authentication substitute. Remembering a Kids profile never stores or extends a parent unlock, and changing a profile clears the current session's parent-unlock state. tvOS clients must follow the platform's `shouldStorePreferencesForCurrentUser` decision before retaining a profile selection; shared-device clients should default to showing the picker when that capability or a stable device ID is unavailable.
 
 ### Shared-TV Startup and Invalidation Rules
 
@@ -79,6 +79,16 @@ A remembered mapping is intentionally per account and per app installation. Each
 On a device with a valid mapping, the server selects that profile at normal account-session creation and the TV can enter the mapped profile without another picker. When an account has more than one profile but the new session has no mapping, the server starts on the compatibility default and marks the session `profile_selection_required`. A shared-TV client must show a “Who’s watching?” picker before it fetches, displays, or publishes profile-scoped rows, and it must call the existing switch endpoint after the user chooses a profile. Selecting “remember on this TV” creates the mapping; selecting “forget this TV” removes it. A successful switch clears the current session's selection-required flag even if the choice is deliberately not remembered.
 
 Profile changes are privacy-sensitive cache boundaries. Every client must abort in-flight profile-scoped requests and clear active playback previews, Blob/object URLs, artwork and TV-feed caches, platform row mappings, ambient queue state, and client-side profile summaries before it renders the new profile. A browser must propagate a minimal same-origin invalidation signal to other open tabs, which must revalidate their own server session before rendering profile-scoped data; a native TV must clear the same state before publishing launcher rows. Server authorization remains authoritative for every subsequent request.
+
+## Parent PIN and Timed Unlock
+
+`user_profiles.parent_pin_hash` is nullable only to preserve existing Kids profiles during migration. Creating a new Kids profile requires a `parent_pin`; a parent updates an existing Kids profile from a standard profile to enable its lock. The request accepts exactly 4–12 ASCII digits and the server immediately derives an Argon2id PHC string using a random salt. It never returns the hash or the submitted PIN. A standard profile neither accepts nor exposes a parent PIN.
+
+`POST /api/v1/profiles/parent-unlock` acts only on the session's active Kids profile. It locks the session and profile rows, rejects an expired durable lock without a precise `Retry-After`, verifies the PIN, and either records a profile/session-scoped unlock expiring ten minutes later or persists a failed attempt. The fifth consecutive failure sets `parent_pin_locked_until` for fifteen minutes. Success resets the durable failure state. The `GET /api/v1/profiles` response reports whether the active Kids profile currently requires unlock and its configured state, never a PIN, hash, attempt count, or exact lock expiry.
+
+`POST /api/v1/profiles/{id}/switch` locks the session before changing its active profile. If it leaves a PIN-protected Kids profile for a standard profile, the session must carry a matching, unexpired unlock. A successful switch to a different profile clears that session's unlock; updating a Kids PIN clears every outstanding unlock for that Kids profile. This makes the server, rather than browser or TV cache state, authoritative.
+
+This boundary prevents ordinary profile-picker escape on a shared display. It is not MFA and cannot protect an account bearer token or password that a parent gives to a child; remote/API access continues to rely on normal account authentication and authorization.
 
 ## Ambient Channel Contract
 
@@ -111,9 +121,15 @@ Implemented in the shared-TV hardening follow-up (`c53dabe`):
 - profile-scoped request cancellation, routed-subtree remounting, local playback reset, and same-origin tab revalidation through BroadcastChannel with a Web Storage fallback; and
 - an auth fixture and cross-layer integration verifier for the selection state, transactional switch, migration, web gate, and synchronization contract.
 
+Implemented in the Kids parent-unlock hardening follow-up (2026-07-18):
+
+- per-Kids-profile Argon2id PIN hashes using a random salt and the OWASP 19 MiB/two-iteration/single-lane baseline, with no plaintext or reversible value at rest;
+- PostgreSQL-backed five-failure/15-minute throttling and a ten-minute profile/session unlock;
+- server-side exit enforcement, revocation on profile/PIN changes, a profile-management PIN editor, and a web parent-access prompt that holds the PIN only for submission; and
+- a compatibility path for existing unprotected Kids profiles: a parent enables the PIN from a standard profile before treating that profile as locked.
+
 Deferred follow-up:
 
-- parental PIN entry/unlock flow and attempt throttling; until it exists, a Kids profile is content-filtered but does not provide a locked shared-TV profile exit;
 - native shared-TV picker enforcement and platform cache invalidation; web applies the session flag and same-origin invalidation contract, while each native TV client must apply the same picker and cache-boundary rules before claiming the shared-TV experience;
 - profile-specific Trakt account linking/export selection;
 - native Android/iOS background-player implementations and offline ambient queue prefetch;

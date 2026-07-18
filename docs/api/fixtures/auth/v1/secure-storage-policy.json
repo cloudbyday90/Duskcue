@@ -95,6 +95,24 @@
         "query_string"
       ],
       "redaction": "stable_hash"
+    },
+    {
+      "id": "parent_pin",
+      "classification": "secret",
+      "allowed_storage": [
+        "memory_only_during_submission"
+      ],
+      "forbidden_storage": [
+        "query_string",
+        "local_storage",
+        "plaintext_preferences",
+        "platform_secure_storage",
+        "logs",
+        "crash_reports",
+        "diagnostics_bundle",
+        "profile_change_signal"
+      ],
+      "redaction": "omit"
     }
   ]
 }

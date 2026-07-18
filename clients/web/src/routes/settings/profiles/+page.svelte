@@ -32,6 +32,7 @@
             allow_downloads: false,
             allow_external_links: false,
             allow_ambient_channels: true,
+            parent_pin: '',
         };
     }
 
@@ -65,10 +66,18 @@
             error = 'Enter a profile name.';
             return;
         }
+        if (form.profile_type === 'kids' && !/^\d{4,12}$/.test(form.parent_pin)) {
+            error = 'Enter a 4 to 12 digit parent PIN for this Kids profile.';
+            return;
+        }
         saving = true;
         error = '';
         try {
-            const profile = await createProfile({ ...form, name: form.name.trim() });
+            const profile = await createProfile({
+                ...form,
+                name: form.name.trim(),
+                parent_pin: form.profile_type === 'kids' ? form.parent_pin : undefined,
+            });
             profiles = [...profiles, profile];
             createOpen = false;
             form = newProfileForm();
@@ -91,6 +100,7 @@
                 allow_downloads: profile.allow_downloads,
                 allow_external_links: profile.allow_external_links,
                 allow_ambient_channels: profile.allow_ambient_channels,
+                parent_pin: profile.parent_pin || undefined,
             });
             profiles = profiles.map((item) => item.id === updated.id ? updated : item);
             notifications.success('Parental controls saved.');
@@ -165,6 +175,10 @@
                     <label><input type="checkbox" bind:checked={form.allow_external_links} /> Allow external links</label>
                     <label><input type="checkbox" bind:checked={form.allow_ambient_channels} /> Allow Kids channels</label>
                 </div>
+                <label>
+                    <span>Parent PIN</span>
+                    <input type="password" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="12" bind:value={form.parent_pin} autocomplete="new-password" placeholder="4 to 12 digits" />
+                </label>
             {/if}
             <div class="actions"><button class="btn-secondary" onclick={() => createOpen = false}>Cancel</button><button class="btn-primary" onclick={create} disabled={saving}>Create profile</button></div>
         </section>
@@ -183,6 +197,7 @@
                             <label>Maximum rating <select bind:value={profile.max_content_rating}>{#each RATINGS as rating}<option value={rating}>{rating}</option>{/each}</select></label>
                             <fieldset><legend>Allowed libraries</legend><div class="check-list">{#each libraries as library}<label><input type="checkbox" checked={profile.library_ids.includes(library.id)} onchange={() => profile.library_ids = profile.library_ids.includes(library.id) ? profile.library_ids.filter((id) => id !== library.id) : [...profile.library_ids, library.id]} /> {library.name}</label>{/each}</div></fieldset>
                             <div class="check-list controls"><label><input type="checkbox" bind:checked={profile.allow_search} /> Search</label><label><input type="checkbox" bind:checked={profile.allow_downloads} /> Downloads</label><label><input type="checkbox" bind:checked={profile.allow_external_links} /> External links</label><label><input type="checkbox" bind:checked={profile.allow_ambient_channels} /> Kids channels</label></div>
+                            <label>Parent PIN <input type="password" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="12" bind:value={profile.parent_pin} autocomplete="new-password" placeholder={profile.parent_pin_configured ? 'Replace PIN (optional)' : 'Set a 4 to 12 digit PIN'} /></label>
                             <button class="btn-secondary" onclick={() => saveControls(profile)} disabled={saving}>Save controls</button>
                         </div>
                     {:else}

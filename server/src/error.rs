@@ -1552,10 +1552,40 @@ fn profiles_error_to_http(
             "PROFILE_008",
             "A stable device identifier is required to remember a profile".into(),
         ),
+        ProfilesError::ParentPinRequired | ProfilesError::ParentPinNotAllowed => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "PROFILE_009",
+            "A valid parent PIN is required for a Kids profile".into(),
+        ),
+        ProfilesError::ParentPinInvalid => (
+            StatusCode::FORBIDDEN,
+            "PROFILE_010",
+            "The parent PIN is invalid".into(),
+        ),
+        ProfilesError::ParentPinLocked => (
+            StatusCode::TOO_MANY_REQUESTS,
+            "PROFILE_011",
+            "Too many parent PIN attempts. Try again later".into(),
+        ),
+        ProfilesError::ParentUnlockRequired => (
+            StatusCode::FORBIDDEN,
+            "PROFILE_012",
+            "A parent unlock is required before leaving this Kids profile".into(),
+        ),
+        ProfilesError::ParentUnlockUnavailable => (
+            StatusCode::CONFLICT,
+            "PROFILE_013",
+            "Parent unlock is unavailable for this profile".into(),
+        ),
         ProfilesError::InvalidProfileType(_) | ProfilesError::InvalidContentRating(_) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             "VALID_001",
             "Profile configuration is invalid".into(),
+        ),
+        ProfilesError::ParentPinHashingFailed => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL",
+            "Internal server error".into(),
         ),
         ProfilesError::ChannelUnavailable => (
             StatusCode::NOT_FOUND,

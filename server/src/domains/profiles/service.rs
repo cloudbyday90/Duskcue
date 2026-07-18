@@ -14,22 +14,33 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use sqlx::{PgPool, Row};
+use argon2::password_hash::{
+    PasswordHash, PasswordHasher, PasswordVerifier, SaltString, rand_core::OsRng,
+};
+use argon2::{Algorithm, Argon2, Params, Version};
+use chrono::{DateTime, Duration, Utc};
+use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
 use super::error::ProfilesError;
 use super::types::*;
 
+const PARENT_PIN_MAX_ATTEMPTS: i16 = 5;
+const PARENT_PIN_LOCKOUT_MINUTES: i64 = 15;
+const PARENT_UNLOCK_MINUTES: i64 = 10;
+
 pub async fn list_profiles(
     pool: &PgPool,
     owner_user_id: Uuid,
+    session_id: Uuid,
     active_profile_id: Uuid,
     profile_selection_required: bool,
     device_id: Option<&str>,
 ) -> Result<ProfileListResponse, ProfilesError> {
     let rows = sqlx::query(
         "SELECT id, owner_user_id, name, avatar, profile_type, is_default, max_content_rating, \
-         allow_search, allow_downloads, allow_external_links, allow_ambient_channels, created_at, updated_at \
+         allow_search, allow_downloads, allow_external_links, allow_ambient_channels, parent_pin_hash, \
+         parent_pin_failed_attempts, parent_pin_locked_until, created_at, updated_at \
          FROM user_profiles WHERE owner_user_id = $1 ORDER BY is_default DESC, created_at ASC",
     )
     .bind(owner_user_id)
@@ -41,11 +52,16 @@ pub async fn list_profiles(
         items.push(profile_response(pool, row_to_profile(row)).await?);
     }
 
+    let parent_unlock =
+        parent_unlock_state(pool, owner_user_id, session_id, active_profile_id).await?;
+
     Ok(ProfileListResponse {
         active_profile_id,
         profile_selection_required,
         remembered_profile_id: remembered_profile_id(pool, owner_user_id, device_id).await?,
         device_can_remember_profile: normalized_device_id(device_id).is_some(),
+        parent_unlock_required: parent_unlock.required,
+        parent_unlock_expires_at: parent_unlock.expires_at,
         items,
     })
 }
@@ -57,31 +73,43 @@ pub async fn create_profile(
 ) -> Result<ProfileResponse, ProfilesError> {
     let profile_type = req.profile_type.unwrap_or_else(|| "standard".to_string());
     validate_profile_type(&profile_type)?;
-    let max_content_rating =
-        canonical_content_rating(req.max_content_rating.as_deref().unwrap_or("NC-17"))?;
+    let is_kids_profile = profile_type == "kids";
+    let max_content_rating = canonical_content_rating(
+        req.max_content_rating
+            .as_deref()
+            .unwrap_or(if is_kids_profile { "TV-Y7" } else { "NC-17" }),
+    )?;
     let name = req.name.trim();
     if name.is_empty() {
         return Err(ProfilesError::InvalidProfileType(
             "name is required".to_string(),
         ));
     }
+    let parent_pin_hash = match req.parent_pin.as_deref() {
+        Some(pin) if is_kids_profile => Some(hash_parent_pin(pin)?),
+        Some(_) => return Err(ProfilesError::ParentPinNotAllowed),
+        None if is_kids_profile => return Err(ProfilesError::ParentPinRequired),
+        None => None,
+    };
 
     let row = sqlx::query(
         "INSERT INTO user_profiles (owner_user_id, name, avatar, profile_type, max_content_rating, \
-         allow_search, allow_downloads, allow_external_links, allow_ambient_channels) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) \
+         allow_search, allow_downloads, allow_external_links, allow_ambient_channels, parent_pin_hash) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) \
          RETURNING id, owner_user_id, name, avatar, profile_type, is_default, max_content_rating, \
-         allow_search, allow_downloads, allow_external_links, allow_ambient_channels, created_at, updated_at",
+         allow_search, allow_downloads, allow_external_links, allow_ambient_channels, parent_pin_hash, \
+         parent_pin_failed_attempts, parent_pin_locked_until, created_at, updated_at",
     )
     .bind(owner_user_id)
     .bind(name)
     .bind(req.avatar.as_deref().map(str::trim).filter(|v| !v.is_empty()))
     .bind(&profile_type)
     .bind(&max_content_rating)
-    .bind(req.allow_search.unwrap_or(true))
-    .bind(req.allow_downloads.unwrap_or(true))
-    .bind(req.allow_external_links.unwrap_or(true))
+    .bind(req.allow_search.unwrap_or(!is_kids_profile))
+    .bind(req.allow_downloads.unwrap_or(!is_kids_profile))
+    .bind(req.allow_external_links.unwrap_or(!is_kids_profile))
     .bind(req.allow_ambient_channels.unwrap_or(true))
+    .bind(parent_pin_hash)
     .fetch_one(pool)
     .await?;
 
@@ -111,15 +139,24 @@ pub async fn update_profile(
             "name is required".to_string(),
         ));
     }
+    let parent_pin_hash = match req.parent_pin.as_deref() {
+        Some(pin) if current.profile_type == "kids" => Some(hash_parent_pin(pin)?),
+        Some(_) => return Err(ProfilesError::ParentPinNotAllowed),
+        None => None,
+    };
 
+    let mut transaction = pool.begin().await?;
     let row = sqlx::query(
         "UPDATE user_profiles SET name = COALESCE($3, name), avatar = COALESCE($4, avatar), \
          max_content_rating = COALESCE($5, max_content_rating), allow_search = COALESCE($6, allow_search), \
          allow_downloads = COALESCE($7, allow_downloads), allow_external_links = COALESCE($8, allow_external_links), \
-         allow_ambient_channels = COALESCE($9, allow_ambient_channels), updated_at = now() \
+         allow_ambient_channels = COALESCE($9, allow_ambient_channels), parent_pin_hash = COALESCE($10, parent_pin_hash), \
+         parent_pin_failed_attempts = CASE WHEN $10 IS NULL THEN parent_pin_failed_attempts ELSE 0 END, \
+         parent_pin_locked_until = CASE WHEN $10 IS NULL THEN parent_pin_locked_until ELSE NULL END, updated_at = now() \
          WHERE id = $1 AND owner_user_id = $2 \
          RETURNING id, owner_user_id, name, avatar, profile_type, is_default, max_content_rating, \
-         allow_search, allow_downloads, allow_external_links, allow_ambient_channels, created_at, updated_at",
+         allow_search, allow_downloads, allow_external_links, allow_ambient_channels, parent_pin_hash, \
+         parent_pin_failed_attempts, parent_pin_locked_until, created_at, updated_at",
     )
     .bind(profile_id)
     .bind(owner_user_id)
@@ -130,12 +167,23 @@ pub async fn update_profile(
     .bind(req.allow_downloads)
     .bind(req.allow_external_links)
     .bind(req.allow_ambient_channels)
-    .fetch_one(pool)
+    .bind(&parent_pin_hash)
+    .fetch_one(&mut *transaction)
     .await?;
 
     if let Some(library_ids) = req.library_ids {
-        replace_profile_libraries(pool, current.id, library_ids).await?;
+        replace_profile_libraries_in_transaction(&mut transaction, current.id, library_ids).await?;
     }
+    if parent_pin_hash.is_some() {
+        sqlx::query(
+            "UPDATE user_sessions SET parent_unlock_profile_id = NULL, parent_unlock_expires_at = NULL \
+             WHERE parent_unlock_profile_id = $1",
+        )
+        .bind(profile_id)
+        .execute(&mut *transaction)
+        .await?;
+    }
+    transaction.commit().await?;
 
     profile_response(pool, row_to_profile(&row)).await
 }
@@ -179,6 +227,31 @@ pub async fn switch_profile(
 ) -> Result<SwitchProfileResponse, ProfilesError> {
     let profile = get_owned_profile(pool, owner_user_id, profile_id).await?;
     let mut transaction = pool.begin().await?;
+    let session = sqlx::query(
+        "SELECT s.active_profile_id, s.parent_unlock_profile_id, s.parent_unlock_expires_at, \
+         p.profile_type AS active_profile_type, p.parent_pin_hash IS NOT NULL AS active_profile_has_parent_pin \
+         FROM user_sessions s JOIN user_profiles p ON p.id = s.active_profile_id \
+         WHERE s.id = $1 AND s.user_id = $2 FOR UPDATE OF s",
+    )
+    .bind(session_id)
+    .bind(owner_user_id)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(ProfilesError::AccessDenied)?;
+    let active_profile_id: Uuid = session.get("active_profile_id");
+    let active_profile_type: String = session.get("active_profile_type");
+    let active_profile_has_parent_pin: bool = session.get("active_profile_has_parent_pin");
+    let unlocked_profile_id: Option<Uuid> = session.try_get("parent_unlock_profile_id").ok();
+    let unlocked_until: Option<DateTime<Utc>> = session.try_get("parent_unlock_expires_at").ok();
+    if active_profile_id != profile_id
+        && active_profile_type == "kids"
+        && profile.profile_type == "standard"
+        && active_profile_has_parent_pin
+        && (unlocked_profile_id != Some(active_profile_id)
+            || unlocked_until.is_none_or(|expires_at| expires_at <= Utc::now()))
+    {
+        return Err(ProfilesError::ParentUnlockRequired);
+    }
     if let Some(remember) = remember_on_device {
         let device_id = normalized_device_id(device_id);
         if remember {
@@ -205,24 +278,117 @@ pub async fn switch_profile(
         }
     }
 
-    let changed = sqlx::query(
-        "UPDATE user_sessions SET active_profile_id = $3, profile_selection_required = false, last_active_at = now() WHERE id = $1 AND user_id = $2",
-    )
-    .bind(session_id)
-    .bind(owner_user_id)
-    .bind(profile_id)
-    .execute(&mut *transaction)
-    .await?;
+    let update = if active_profile_id == profile_id {
+        "UPDATE user_sessions SET profile_selection_required = false, last_active_at = now() WHERE id = $1 AND user_id = $2"
+    } else {
+        "UPDATE user_sessions SET active_profile_id = $3, profile_selection_required = false, \
+         parent_unlock_profile_id = NULL, parent_unlock_expires_at = NULL, last_active_at = now() \
+         WHERE id = $1 AND user_id = $2"
+    };
+    let mut update_query = sqlx::query(update).bind(session_id).bind(owner_user_id);
+    if active_profile_id != profile_id {
+        update_query = update_query.bind(profile_id);
+    }
+    let changed = update_query.execute(&mut *transaction).await?;
     if changed.rows_affected() == 0 {
         return Err(ProfilesError::AccessDenied);
     }
     transaction.commit().await?;
+    let parent_unlock = parent_unlock_state(pool, owner_user_id, session_id, profile_id).await?;
     Ok(SwitchProfileResponse {
         active_profile: profile_response(pool, profile).await?,
         profile_selection_required: false,
         remembered_profile_id: remembered_profile_id(pool, owner_user_id, device_id).await?,
         device_can_remember_profile: normalized_device_id(device_id).is_some(),
+        parent_unlock_required: parent_unlock.required,
+        parent_unlock_expires_at: parent_unlock.expires_at,
     })
+}
+
+pub async fn parent_unlock(
+    pool: &PgPool,
+    owner_user_id: Uuid,
+    session_id: Uuid,
+    pin: String,
+) -> Result<ParentUnlockResponse, ProfilesError> {
+    validate_parent_pin(&pin)?;
+    let mut transaction = pool.begin().await?;
+    let active_session =
+        sqlx::query("SELECT active_profile_id FROM user_sessions WHERE id = $1 AND user_id = $2")
+            .bind(session_id)
+            .bind(owner_user_id)
+            .fetch_optional(&mut *transaction)
+            .await?
+            .ok_or(ProfilesError::AccessDenied)?;
+    let profile_id: Uuid = active_session.get("active_profile_id");
+    let profile = sqlx::query(
+        "SELECT profile_type, parent_pin_hash, parent_pin_failed_attempts, parent_pin_locked_until \
+         FROM user_profiles WHERE id = $1 AND owner_user_id = $2 FOR UPDATE",
+    )
+    .bind(profile_id)
+    .bind(owner_user_id)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(ProfilesError::NotFound)?;
+    let profile_type: String = profile.get("profile_type");
+    if profile_type != "kids" {
+        return Err(ProfilesError::ParentUnlockUnavailable);
+    }
+    let locked_session = sqlx::query(
+        "SELECT active_profile_id FROM user_sessions WHERE id = $1 AND user_id = $2 FOR UPDATE",
+    )
+    .bind(session_id)
+    .bind(owner_user_id)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(ProfilesError::AccessDenied)?;
+    let locked_active_profile_id: Uuid = locked_session.get("active_profile_id");
+    if locked_active_profile_id != profile_id {
+        return Err(ProfilesError::ParentUnlockUnavailable);
+    }
+    let parent_pin_hash: Option<String> = profile.try_get("parent_pin_hash").ok().flatten();
+    let parent_pin_hash = parent_pin_hash.ok_or(ProfilesError::ParentUnlockUnavailable)?;
+    let existing_parent_pin_lock: Option<DateTime<Utc>> =
+        profile.try_get("parent_pin_locked_until").ok().flatten();
+    if existing_parent_pin_lock.is_some_and(|locked_until| locked_until > Utc::now()) {
+        return Err(ProfilesError::ParentPinLocked);
+    }
+    if !verify_parent_pin(&parent_pin_hash, &pin)? {
+        let failed_attempts: i16 = profile.get("parent_pin_failed_attempts");
+        let next_failed_attempts = failed_attempts.saturating_add(1);
+        let locked_until = parent_pin_locked_until(next_failed_attempts, Utc::now());
+        sqlx::query(
+            "UPDATE user_profiles SET parent_pin_failed_attempts = $2, parent_pin_locked_until = $3, updated_at = now() \
+             WHERE id = $1",
+        )
+        .bind(profile_id)
+        .bind(next_failed_attempts)
+        .bind(locked_until)
+        .execute(&mut *transaction)
+        .await?;
+        transaction.commit().await?;
+        return Err(ProfilesError::ParentPinInvalid);
+    }
+    let unlocked_until = Utc::now() + Duration::minutes(PARENT_UNLOCK_MINUTES);
+    sqlx::query(
+        "UPDATE user_profiles SET parent_pin_failed_attempts = 0, parent_pin_locked_until = NULL, updated_at = now() \
+         WHERE id = $1",
+    )
+    .bind(profile_id)
+    .execute(&mut *transaction)
+    .await?;
+    sqlx::query(
+        "UPDATE user_sessions SET parent_unlock_profile_id = $3, parent_unlock_expires_at = $4, last_active_at = now() \
+         WHERE id = $1 AND user_id = $2",
+    )
+    .bind(session_id)
+    .bind(owner_user_id)
+    .bind(profile_id)
+    .bind(unlocked_until)
+    .execute(&mut *transaction)
+    .await?;
+    transaction.commit().await?;
+    Ok(ParentUnlockResponse { unlocked_until })
 }
 
 pub fn normalized_device_id(device_id: Option<&str>) -> Option<&str> {
@@ -635,7 +801,8 @@ async fn get_owned_profile(
 ) -> Result<ProfileRow, ProfilesError> {
     let row = sqlx::query(
         "SELECT id, owner_user_id, name, avatar, profile_type, is_default, max_content_rating, \
-         allow_search, allow_downloads, allow_external_links, allow_ambient_channels, created_at, updated_at \
+         allow_search, allow_downloads, allow_external_links, allow_ambient_channels, parent_pin_hash, \
+         parent_pin_failed_attempts, parent_pin_locked_until, created_at, updated_at \
          FROM user_profiles WHERE id = $1 AND owner_user_id = $2",
     )
     .bind(profile_id)
@@ -663,6 +830,7 @@ async fn profile_response(
         allow_downloads: profile.allow_downloads,
         allow_external_links: profile.allow_external_links,
         allow_ambient_channels: profile.allow_ambient_channels,
+        parent_pin_configured: profile.parent_pin_hash.is_some(),
         created_at: profile.created_at,
         updated_at: profile.updated_at,
     })
@@ -688,16 +856,26 @@ async fn replace_profile_libraries(
     profile_id: Uuid,
     library_ids: Vec<Uuid>,
 ) -> Result<(), ProfilesError> {
+    let mut tx = pool.begin().await?;
+    replace_profile_libraries_in_transaction(&mut tx, profile_id, library_ids).await?;
+    tx.commit().await?;
+    Ok(())
+}
+
+async fn replace_profile_libraries_in_transaction(
+    transaction: &mut Transaction<'_, Postgres>,
+    profile_id: Uuid,
+    library_ids: Vec<Uuid>,
+) -> Result<(), ProfilesError> {
     let mut unique = Vec::new();
     for library_id in library_ids {
         if !unique.contains(&library_id) {
             unique.push(library_id);
         }
     }
-    let mut tx = pool.begin().await?;
     sqlx::query("DELETE FROM profile_library_access WHERE profile_id = $1")
         .bind(profile_id)
-        .execute(&mut *tx)
+        .execute(&mut **transaction)
         .await?;
     for library_id in unique {
         sqlx::query(
@@ -705,11 +883,79 @@ async fn replace_profile_libraries(
         )
         .bind(profile_id)
         .bind(library_id)
-        .execute(&mut *tx)
+        .execute(&mut **transaction)
         .await?;
     }
-    tx.commit().await?;
     Ok(())
+}
+
+struct ParentUnlockState {
+    required: bool,
+    expires_at: Option<DateTime<Utc>>,
+}
+
+async fn parent_unlock_state(
+    pool: &PgPool,
+    owner_user_id: Uuid,
+    session_id: Uuid,
+    active_profile_id: Uuid,
+) -> Result<ParentUnlockState, ProfilesError> {
+    let row = sqlx::query(
+        "SELECT p.profile_type = 'kids' AND p.parent_pin_hash IS NOT NULL \
+         AND (s.parent_unlock_profile_id IS DISTINCT FROM p.id OR s.parent_unlock_expires_at IS NULL \
+         OR s.parent_unlock_expires_at <= now()) AS parent_unlock_required, \
+         CASE WHEN s.parent_unlock_profile_id = p.id AND s.parent_unlock_expires_at > now() \
+         THEN s.parent_unlock_expires_at ELSE NULL END AS parent_unlock_expires_at \
+         FROM user_sessions s JOIN user_profiles p ON p.id = s.active_profile_id \
+         WHERE s.id = $1 AND s.user_id = $2 AND p.id = $3",
+    )
+    .bind(session_id)
+    .bind(owner_user_id)
+    .bind(active_profile_id)
+    .fetch_optional(pool)
+    .await?
+    .ok_or(ProfilesError::AccessDenied)?;
+    Ok(ParentUnlockState {
+        required: row.get("parent_unlock_required"),
+        expires_at: row.try_get("parent_unlock_expires_at").ok().flatten(),
+    })
+}
+
+fn validate_parent_pin(pin: &str) -> Result<(), ProfilesError> {
+    if !(4..=12).contains(&pin.len()) || !pin.bytes().all(|value| value.is_ascii_digit()) {
+        return Err(ProfilesError::ParentPinRequired);
+    }
+    Ok(())
+}
+
+fn parent_pin_hasher() -> Result<Argon2<'static>, ProfilesError> {
+    let params = Params::new(19 * 1024, 2, 1, Some(32))
+        .map_err(|_| ProfilesError::ParentPinHashingFailed)?;
+    Ok(Argon2::new(Algorithm::Argon2id, Version::V0x13, params))
+}
+
+fn hash_parent_pin(pin: &str) -> Result<String, ProfilesError> {
+    validate_parent_pin(pin)?;
+    let salt = SaltString::generate(&mut OsRng);
+    parent_pin_hasher()?
+        .hash_password(pin.as_bytes(), &salt)
+        .map(|hash| hash.to_string())
+        .map_err(|_| ProfilesError::ParentPinHashingFailed)
+}
+
+fn verify_parent_pin(hash: &str, pin: &str) -> Result<bool, ProfilesError> {
+    let parsed = match PasswordHash::new(hash) {
+        Ok(parsed) => parsed,
+        Err(_) => return Ok(false),
+    };
+    Ok(parent_pin_hasher()?
+        .verify_password(pin.as_bytes(), &parsed)
+        .is_ok())
+}
+
+fn parent_pin_locked_until(failed_attempts: i16, now: DateTime<Utc>) -> Option<DateTime<Utc>> {
+    (failed_attempts >= PARENT_PIN_MAX_ATTEMPTS)
+        .then(|| now + Duration::minutes(PARENT_PIN_LOCKOUT_MINUTES))
 }
 
 async fn assert_channel_owned(
@@ -787,6 +1033,9 @@ fn row_to_profile(row: &sqlx::postgres::PgRow) -> ProfileRow {
         allow_downloads: row.get("allow_downloads"),
         allow_external_links: row.get("allow_external_links"),
         allow_ambient_channels: row.get("allow_ambient_channels"),
+        parent_pin_hash: row.try_get("parent_pin_hash").ok().flatten(),
+        parent_pin_failed_attempts: row.get("parent_pin_failed_attempts"),
+        parent_pin_locked_until: row.try_get("parent_pin_locked_until").ok().flatten(),
         created_at: row.get("created_at"),
         updated_at: row.get("updated_at"),
     }
@@ -872,5 +1121,32 @@ mod tests {
         );
         assert_eq!(normalized_device_id(Some("   ")), None);
         assert_eq!(normalized_device_id(Some(&"a".repeat(201))), None);
+    }
+
+    #[test]
+    fn parent_pins_require_a_bounded_numeric_value() {
+        assert!(validate_parent_pin("1234").is_ok());
+        assert!(validate_parent_pin("123456789012").is_ok());
+        assert!(validate_parent_pin("123").is_err());
+        assert!(validate_parent_pin("1234567890123").is_err());
+        assert!(validate_parent_pin("12a4").is_err());
+    }
+
+    #[test]
+    fn parent_pin_hashes_are_argon2id_and_verify_without_exposure() {
+        let hash = hash_parent_pin("482916").unwrap();
+        assert!(hash.starts_with("$argon2id$"));
+        assert!(verify_parent_pin(&hash, "482916").unwrap());
+        assert!(!verify_parent_pin(&hash, "482917").unwrap());
+    }
+
+    #[test]
+    fn fifth_parent_pin_failure_starts_the_durable_lockout_window() {
+        let now = Utc::now();
+        assert!(parent_pin_locked_until(4, now).is_none());
+        assert_eq!(
+            parent_pin_locked_until(5, now),
+            Some(now + Duration::minutes(PARENT_PIN_LOCKOUT_MINUTES))
+        );
     }
 }

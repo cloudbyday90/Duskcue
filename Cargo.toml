@@ -29,6 +29,7 @@ rusqlite = { version = "0.32", features = ["bundled"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 ring = "0.17"
+argon2 = "0.5"
 maxminddb = { version = "0.28", features = ["mmap"] }
 validator = { version = "0.20", features = ["derive"] }
 tokio-process-tools = "0.11"

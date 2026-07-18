@@ -462,12 +462,13 @@ OWASP API6 (Unrestricted Access to Sensitive Business Flows) — automated abuse
 | **Re-auth code requests** | 3 per user per 24 hours | Email delivery required |
 | **Passkey registration** | 5 per user per hour | Requires active session |
 | **Password change** | 3 per user per hour | Requires current password |
+| **Kids parent-PIN unlock** | 5 consecutive failures per Kids profile | PostgreSQL-backed 15-minute lock; valid PIN grants only a 10-minute current-session unlock |
 | **Library scan trigger** | 1 per user per 5 min | Requires `can_manage_libraries` |
 | **Backup creation** | 1 per user per hour | Requires `can_manage_server` |
 
 ### Implementation
 
-These are enforced at the application layer using a token-bucket rate limiter stored in memory (not in `governor`, which handles HTTP-level rate limiting). Uses a simple `DashMap<String, TokenBucket>` keyed by user ID or IP.
+Most flows are enforced at the application layer using a token-bucket rate limiter stored in memory (not in `governor`, which handles HTTP-level rate limiting). The Kids parent-PIN flow is deliberately different: failure count and lock state live on the Kids profile in PostgreSQL, are mutated under row locks, and survive restart/session replacement. Its response does not disclose attempt counts or a precise retry time.
 
 ---
 

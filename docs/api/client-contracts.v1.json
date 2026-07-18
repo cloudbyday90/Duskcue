@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-07-12",
+  "updated": "2026-07-18",
   "base_origin": "http(s)://<server>:48027",
   "base_api_path": "/api/v1",
   "source_of_truth": {
@@ -3729,6 +3729,116 @@
         }
       ],
       "phase16d_priority": "required"
+    },
+    {
+      "name": "profiles",
+      "phase16a_priority": "advisory",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/v1/profiles",
+          "auth": "user",
+          "response": "ProfileListResponse",
+          "web_helpers": [
+            "listProfiles"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "ProfileListResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PROFILE_001",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/profiles/{id}/switch",
+          "auth": "user",
+          "request": "SwitchProfileRequest",
+          "response": "SwitchProfileResponse",
+          "web_helpers": [
+            "switchProfile"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "SwitchProfileResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": "SwitchProfileRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PROFILE_001",
+                "PROFILE_002",
+                "PROFILE_008",
+                "PROFILE_012",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/profiles/parent-unlock",
+          "auth": "user",
+          "request": "ParentUnlockRequest",
+          "response": "ParentUnlockResponse",
+          "web_helpers": [
+            "unlockParentProfile"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "ParentUnlockResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "ParentUnlockRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PROFILE_010",
+                "PROFILE_011",
+                "PROFILE_013",
+                "VALID_001",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "advisory"
     }
   ],
   "phase16d": {
@@ -3743,6 +3853,7 @@
       "playback",
       "subtitles",
       "segments_storyboards",
+      "profiles",
       "collections",
       "quality",
       "tv",

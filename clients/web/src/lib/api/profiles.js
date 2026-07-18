@@ -38,6 +38,10 @@ export async function switchProfile(profileId, data = {}) {
     return post(`/profiles/${profileId}/switch`, data, { profileScoped: false });
 }
 
+export async function unlockParentProfile(data) {
+    return post('/profiles/parent-unlock', data, { profileScoped: false });
+}
+
 export async function listAmbientChannels() {
     return get('/ambient-channels');
 }

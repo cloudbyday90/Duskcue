@@ -1091,6 +1091,7 @@ The TV feed uses the active profile's history and applies its media policy befor
 - Deep links must revalidate auth and access before playback; `scripts/verify-tv-deeplink-conformance.mjs` defines the shared launch-time cases downstream clients must satisfy.
 - Platform clients must not cache bearer tokens in plaintext.
 - A remembered profile is a non-secret convenience preference, not a TV authentication or Kids exit-lock mechanism. tvOS must honor `TVUserManager.shouldStorePreferencesForCurrentUser`; platforms without a stable permitted device ID must show profile selection instead. When the auth/profile response sets `profile_selection_required`, a TV must show that picker before it fetches or publishes profile-scoped rows, then clear its preview/artwork/queue/launcher state after the switch succeeds.
+- A PIN-protected active Kids profile exposes `parent_unlock_required`; before it switches to a standard profile, the TV must present a transient parent-PIN prompt and call `POST /api/v1/profiles/parent-unlock`. The server grants only a ten-minute current-session unlock and enforces durable throttling. The TV must not cache a PIN, treat a local timer as authority, include it in launcher metadata/support logs, or retain parent-access UI state after a profile/session change.
 - Artwork URLs should use existing authenticated or signed artwork delivery rules.
 
 ## Phase Placement

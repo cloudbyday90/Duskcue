@@ -17,6 +17,7 @@
     "passkey_login",
     "fallback_login",
     "profile_selection",
+    "parent_unlock",
     "logout",
     "logout_all",
     "session_delete",
@@ -32,6 +33,7 @@
     "server_origin",
     "user_summary",
     "device_identifier"
+    ,"parent_pin"
   ],
   "required_switching_cases": [
     "switch_server",
