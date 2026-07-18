@@ -5,6 +5,7 @@ import java.net.URL
 import java.net.URLEncoder
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
 
 @Serializable
 data class ProblemDetails(
@@ -164,6 +165,31 @@ data class TvMediaItemPage(
 )
 
 @Serializable
+data class TvMediaFile(
+    val id: String,
+    val media_item_id: String,
+    val audio_codec: String? = null,
+    val audio_channels: Int? = null,
+    val audio_language: String? = null,
+    val audio_bitrate: Int? = null,
+    val additional_streams: JsonObject = JsonObject(emptyMap()),
+)
+
+@Serializable
+data class TvSegment(
+    val id: String,
+    val media_item_id: String,
+    val segment_type: String,
+    val start_ms: Long,
+    val end_ms: Long,
+    val skip_to_ms: Long,
+    val confidence: Double? = null,
+)
+
+@Serializable
+data class TvSegmentListResponse(val segments: List<TvSegment>)
+
+@Serializable
 data class TvSearchResponse(
     val items: List<TvMediaItem>,
 )
@@ -226,6 +252,117 @@ data class TvResolveResponse(
     val playback_action: String,
     val requires_auth: Boolean,
     val access_revalidated: Boolean,
+    val playback_start: TvPlaybackStartHint? = null,
+)
+
+@Serializable
+data class TvPlaybackStartHint(
+    val method: String,
+    val path: String,
+    val media_item_id: String,
+    val start_position_ms: Long,
+    val device_profile_required: Boolean,
+)
+
+@Serializable
+data class TvDeviceProfile(
+    val client: String,
+    val platform: String,
+    val video_codecs: List<String>,
+    val audio_codecs: List<String>,
+    val subtitle_formats: List<String>,
+    val containers: List<String>,
+    val max_resolution: String,
+    val max_audio_channels: Int,
+    val hdr_formats: List<String>,
+    val max_bitrate_bps: Long,
+    val supports_dolby_vision: Boolean,
+    val allow_client_side_dv_fallback: Boolean,
+    val max_video_bit_depth: Int,
+) {
+    companion object {
+        fun androidTv(): TvDeviceProfile = TvDeviceProfile(
+            client = "duskcue_tv",
+            platform = "android_tv",
+            video_codecs = listOf("h264"),
+            audio_codecs = listOf("aac"),
+            subtitle_formats = listOf("webvtt", "srt"),
+            containers = listOf("mp4", "mkv", "matroska"),
+            max_resolution = "1080p",
+            max_audio_channels = 2,
+            hdr_formats = emptyList(),
+            max_bitrate_bps = 20_000_000,
+            supports_dolby_vision = false,
+            allow_client_side_dv_fallback = false,
+            max_video_bit_depth = 8,
+        )
+    }
+}
+
+@Serializable
+data class StartTvPlaybackRequest(
+    val media_item_id: String,
+    val media_file_id: String? = null,
+    val audio_stream_index: Int? = null,
+    val subtitle_stream_index: Int? = null,
+    val max_streaming_bitrate: Long? = null,
+    val force_transcode: Boolean = false,
+    val device_profile: TvDeviceProfile,
+    val quality_mode: String = "auto",
+)
+
+@Serializable
+data class TvPlaybackStartResponse(
+    val session_id: String,
+    val stream_decision: String,
+    val stream_url: String,
+    val media_item_id: String,
+    val media_file_id: String? = null,
+    val transcode_session_id: String? = null,
+    val selected_audio_stream_index: Int? = null,
+    val selected_subtitle_stream_index: Int? = null,
+    val restart_required: Boolean = false,
+    val playback_mode: String,
+)
+
+@Serializable
+data class TvPlaybackHeartbeatRequest(
+    val session_id: String,
+    val position_ms: Long,
+    val state: String,
+    val is_paused: Boolean,
+    val is_buffering: Boolean,
+)
+
+@Serializable
+data class TvPlaybackSeekRequest(
+    val session_id: String,
+    val position_ms: Long,
+)
+
+@Serializable
+data class TvPlaybackStopRequest(
+    val session_id: String,
+    val position_ms: Long,
+)
+
+@Serializable
+data class TvQoeReportRequest(
+    val session_id: String,
+    val startup_time_ms: Int? = null,
+    val rebuffer_count: Int? = null,
+    val rebuffer_duration_ms: Long? = null,
+    val rebuffer_ratio: Double? = null,
+    val average_bitrate_bps: Long? = null,
+    val switches_per_minute: Double? = null,
+    val quality_drops: Int? = null,
+    val quality_change_count: Int? = null,
+    val selected_quality_mode: String? = null,
+    val current_rung: String? = null,
+    val current_buffer_seconds: Double? = null,
+    val playback_failure_code: String? = null,
+    val playback_failure_message: String? = null,
+    val recorded_at: String? = null,
 )
 
 sealed interface ApiResult<out T> {
@@ -312,6 +449,14 @@ class DuskcueApiClient(
         request(path = "/api/v1/media-items/${pathSegment(mediaItemId)}"),
     )
 
+    fun mediaFiles(mediaItemId: String): ApiResult<List<TvMediaFile>> = executeJson(
+        request(path = "/api/v1/media-items/${pathSegment(mediaItemId)}/files"),
+    )
+
+    fun segments(mediaItemId: String): ApiResult<TvSegmentListResponse> = executeJson(
+        request(path = "/api/v1/items/${pathSegment(mediaItemId)}/segments"),
+    )
+
     fun search(query: String, limit: Int = 24): ApiResult<TvSearchResponse> {
         require(limit in 1..100)
         val normalized = query.trim()
@@ -330,6 +475,46 @@ class DuskcueApiClient(
             method = "PUT",
             path = "/api/v1/tv/settings",
             body = json.encodeToString(UpdateTvSurfaceSettingsRequest.serializer(), update),
+        ),
+    )
+
+    fun startTvPlayback(request: StartTvPlaybackRequest): ApiResult<TvPlaybackStartResponse> = executeJson(
+        request(
+            method = "POST",
+            path = "/api/v1/playback/start",
+            body = json.encodeToString(StartTvPlaybackRequest.serializer(), request),
+        ),
+    )
+
+    fun playbackHeartbeat(request: TvPlaybackHeartbeatRequest): ApiResult<Unit> = executeEmpty(
+        request(
+            method = "POST",
+            path = "/api/v1/playback/heartbeat",
+            body = json.encodeToString(TvPlaybackHeartbeatRequest.serializer(), request),
+        ),
+    )
+
+    fun playbackSeek(request: TvPlaybackSeekRequest): ApiResult<Unit> = executeEmpty(
+        request(
+            method = "POST",
+            path = "/api/v1/playback/seek",
+            body = json.encodeToString(TvPlaybackSeekRequest.serializer(), request),
+        ),
+    )
+
+    fun stopTvPlayback(request: TvPlaybackStopRequest): ApiResult<Unit> = executeEmpty(
+        request(
+            method = "POST",
+            path = "/api/v1/playback/stop",
+            body = json.encodeToString(TvPlaybackStopRequest.serializer(), request),
+        ),
+    )
+
+    fun reportPlaybackQoe(request: TvQoeReportRequest): ApiResult<Unit> = executeEmpty(
+        request(
+            method = "POST",
+            path = "/api/v1/playback/qoe",
+            body = json.encodeToString(TvQoeReportRequest.serializer(), request),
         ),
     )
 
@@ -386,6 +571,14 @@ class DuskcueApiClient(
             return failure(response)
         }
         return ApiResult.Success(json.decodeFromString<T>(response.body), response.headers.header("etag"))
+    }
+
+    private fun executeEmpty(request: ApiRequest): ApiResult<Unit> {
+        val response = execute(request) ?: return ApiResult.NetworkFailure
+        if (response.status !in 200..299) {
+            return failure(response)
+        }
+        return ApiResult.Success(Unit, null)
     }
 
     private fun request(

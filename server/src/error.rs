@@ -1397,6 +1397,11 @@ fn playback_error_to_http(
             "PLAY_006",
             format!("Invalid playback mode: {}", r),
         ),
+        PlaybackError::TrackUnavailable(_) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALID_001",
+            "Selected audio or subtitle track is unavailable".into(),
+        ),
         PlaybackError::AmbientChannelStale => (
             StatusCode::CONFLICT,
             "PLAY_019",

@@ -37,6 +37,10 @@ Phase 17 Tasks 0–4 are complete as of July 18, 2026. `clients/tv/android/` is 
 
 The app declares `android.software.leanback` as required, `android.hardware.touchscreen` as not required, a `LEANBACK_LAUNCHER` activity, and HTTPS networking. Later Media3 work may add only the playback permissions required by its active service behavior. It must not inherit the phone app's cleartext-by-default networking posture. Local development must use an explicit debug-only network-security configuration when a local HTTP server is genuinely required.
 
+### Local Toolchain Verification
+
+The workstation configuration uses a user-level `JAVA_HOME` pointing to Temurin 17, `ANDROID_HOME` and `ANDROID_SDK_ROOT` pointing to the installed SDK, and user PATH entries for that JDK's `bin` directory and Android `platform-tools`. The ignored `clients/tv/android/local.properties` provides Gradle's per-workstation `sdk.dir`; it is intentionally not committed. SDK platform/build tools 36 and their licenses are installed. A fresh terminal is required to inherit changed Windows user environment variables.
+
 ### Task 1 Implementation
 
 The foundation is checked in at `clients/tv/android/` with AGP 8.11.1, Kotlin 2.2.20, Compose compiler support, Java 17, compile/target SDK 36, and minSdk 26. `MainActivity` starts a Compose for TV application; the initial server-selection state contains no media or profile data. The manifest accepts only `duskcue://play/...` routes through the TV activity and disallows cleartext networking. The project includes TV icon/banner placeholders and a wrapper entry point aligned to the existing Gradle 8.14 distribution.
@@ -87,7 +91,30 @@ Every visible action must be reachable by a basic D-pad (up, down, left, right, 
 
 ### Playback And Deep Links
 
+#### Task 5 Research Decision
+
+The July 18, 2026 official Android review confirms that Media3 `ExoPlayer` is the supported player implementation and that a player which must be controllable by TV remotes/system media controls belongs with its `MediaSession` in a `MediaSessionService`. Android's service guidance creates both in `onCreate`, releases both in `onDestroy`, and requires the foreground-service/media-playback permissions plus the service action declaration. Android TV control guidance maps D-pad center to play/pause, left/right to seek, and up/down to showing controls without stopping video.
+
+| Option | Benefits | Costs | Decision |
+|---|---|---|---|
+| Activity-owned `ExoPlayer` | Smallest implementation | Loses a single player/session authority when UI lifecycle changes; weaker remote/system control path | Reject. |
+| `MediaSessionService` + `ExoPlayer` | One player authority, system/remote integration, supported Media3 lifecycle | Requires foreground-service declaration and explicit service cleanup | Use for interactive TV playback. |
+| `MediaLibraryService` | Can expose an Android media catalog to external browsers | Would duplicate Duskcue's private/profile-scoped catalog and exposes an unnecessary browse surface | Reject for v1. |
+| Android system playback resumption | Can show a post-reboot resumption entry | Requires a locally restorable playlist; Duskcue must re-resolve profile access and never retains stream URLs or token-bearing runtime state | Do not opt in. Return through Duskcue's normal resolve/start flow instead. |
+
+The service keeps the bearer token, resolved stream URL, server session ID, and selected media metadata only in its active in-memory runtime. UI code resolves the platform content ID immediately before each `POST /api/v1/playback/start`, passes the fresh server resume position to the player, and clears the service runtime on logout, server switch, profile switch, session expiration, player error, completion, and explicit exit. The service uses `DefaultHttpDataSource` bearer headers for direct and HLS requests; it never adds credentials to stream URLs, local state, media metadata, or logs. It emits an immediate heartbeat on first rendered frame, periodic state heartbeats, seek/stop transitions, and a final QoE report. Activity/task removal pauses and releases interactive video rather than silently continuing it in the background. The service is app-internal (`exported=false`): Android TV's in-app D-pad and MediaSession behavior remain available, while assistant/third-party controller discovery is intentionally deferred until a controller authorization policy exists.
+
+The first player surface binds a native `PlayerView` to the service; default Media3/TV remote behavior remains authoritative until device testing identifies an accessibility or focus defect. The initial device profile is deliberately conservative (H.264/AAC, 1080p, stereo, SDR, MP4/Matroska, WebVTT/SRT); richer codecs, HDR, bit depth, passthrough, and display-mode claims require device capability evidence rather than optimistic constants. Track selection, captions, quality mode, and QoE are derived from the existing playback/quality contracts rather than a client-owned policy. The service does not implement Watch Next, system playback resumption, background ambient channels, or deep-link routing in this task.
+
 The player resolves a current Duskcue item immediately before `POST /api/v1/playback/start`, then uses only the returned runtime stream state. It reports heartbeat, seek, stop, completion, selected audio/subtitle tracks, playback errors, and QoE through the shared contract. It refreshes the latest server resume state after returning from launcher/deep-link entry and before it creates the `MediaItem`.
+
+#### Task 5 Implementation
+
+The TV player is now an app-internal `MediaSessionService` owning one ExoPlayer, MediaSession, bearer-authenticated direct/HLS data source, and temporary `PlayerView` attachment. It has no persisted playback token, URL, session ID, or media state. It sends first-frame/periodic heartbeats, seek, stop/completion, and final QoE signals; the QoE payload records startup, rebuffer count/duration/ratio, bitrate/rung, quality changes/drops, selected quality mode, and a distinct playback failure code/message. Media3 handles play/pause/media buttons through the session and uses the shared 10-second backward / 30-second forward seek increments; a player error is reported and displayed as a safe return-to-details state rather than a blank playback surface.
+
+Audio and caption choices are fetched from the profile-authorized media-file endpoint while a detail view is active. The scanner now stores every source audio stream in `media_files.additional_streams.audio` alongside subtitle streams, so a library rescan upgrades existing media metadata. `POST /api/v1/playback/start` validates an explicitly selected source index and returns `VALID_001` with a field-level `unavailable` error for a missing audio or subtitle stream. The selected audio stream drives the decision engine and FFmpeg map; a selected subtitle is retained in direct play or rendered into the HLS conversion when container conversion is required. The player observes profile-authorized segment windows once per second and exposes a focusable Skip Intro/Credits action that uses the segment's server-provided `skip_to_ms`. The native direct-play preference is language-based, so exact selection among duplicate same-language streams remains a physical-device validation item rather than a completed release claim.
+
+The Android test/lint/debug-build gate and Rust `cargo check -p duskcue` pass after this implementation. Deep-link launch revalidation, Watch Next, artwork, CI, and device evidence remain separate tasks.
 
 `duskcue://play/{type}/{id}` is an app route, not a capability URL. The activity accepts only recognized type/ID paths, shows no private item details until server resolution succeeds, and falls back to device linking or a bounded unavailable/access-denied state. It never persists signed stream URLs, bearer tokens, parent PINs, or parent-unlock expiry. Future Google TV Live integrations must additionally respect the documented `exit_on_back` direct-back behavior; it is not claimed by the initial on-demand client.
 
@@ -127,6 +154,10 @@ If the system reports a program as no longer browsable, the adapter removes its 
 
 - Android TV app creation: https://developer.android.com/training/tv/get-started/create
 - Compose for TV: https://developer.android.com/training/tv/playback/compose
+- Media3 background playback service: https://developer.android.com/media/media3/session/background-playback
+- Media3 playback control/session: https://developer.android.com/media/media3/session/control-playback
+- Android TV playback controls: https://developer.android.com/training/tv/playback/controls
+- Android TV playback guidance: https://developer.android.com/training/tv/playback/
 - Android TV playback overview: https://developer.android.com/training/tv/playback
 - Media3 ExoPlayer setup: https://developer.android.com/media/media3/exoplayer/hello-world
 - Media3 session playback control: https://developer.android.com/media/media3/session/control-playback

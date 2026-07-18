@@ -914,14 +914,23 @@ pub async fn submit_qoe_report(
     let session_id = req
         .session_id
         .ok_or_else(|| QualityError::InvalidTelemetry("session_id is required".to_string()))?;
+    let metadata = serde_json::json!({
+        "rebuffer_count": req.rebuffer_count,
+        "rebuffer_duration_ms": req.rebuffer_duration_ms,
+        "quality_change_count": req.quality_change_count,
+        "selected_quality_mode": req.selected_quality_mode,
+        "playback_failure_code": req.playback_failure_code,
+        "playback_failure_message": req.playback_failure_message,
+        "recorded_at": req.recorded_at,
+    });
 
     let row = sqlx::query(
         r#"INSERT INTO qoe_reports (
             user_id, session_id, report_interval_seconds,
             startup_time_ms, rebuffer_ratio, average_bitrate_bps,
             switches_per_minute, quality_drops,
-            current_rung, current_buffer_seconds
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            current_rung, current_buffer_seconds, metadata
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
         RETURNING id"#,
     )
     .bind(user_id)
@@ -934,6 +943,7 @@ pub async fn submit_qoe_report(
     .bind(req.quality_drops)
     .bind(&req.current_rung)
     .bind(req.current_buffer_seconds)
+    .bind(metadata)
     .fetch_one(pool)
     .await
     .map_err(QualityError::Database)?;

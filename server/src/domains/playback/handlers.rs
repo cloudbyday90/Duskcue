@@ -62,7 +62,7 @@ pub async fn start_playback(
     })?;
 
     let config = state.runtime_config.load();
-    let result = service::start_playback(
+    let result = match service::start_playback(
         &state.pool,
         &state.transcode_manager,
         user.user_id,
@@ -72,7 +72,21 @@ pub async fn start_playback(
         &config,
         &state.bootstrap.data_dir,
     )
-    .await?;
+    .await
+    {
+        Ok(result) => result,
+        Err(crate::domains::playback::PlaybackError::TrackUnavailable(field)) => {
+            return Err(AppError::Validation {
+                errors: vec![crate::error::FieldError {
+                    field: format!("{field}_stream_index"),
+                    code: "unavailable".to_string(),
+                    message: format!("The selected {field} stream is not available for this item."),
+                }],
+                instance: Some("/api/v1/playback/start".to_string()),
+            });
+        }
+        Err(error) => return Err(error.into()),
+    };
     drop(config);
 
     if result.playback_mode == "interactive" {

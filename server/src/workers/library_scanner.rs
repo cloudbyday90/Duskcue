@@ -690,6 +690,7 @@ async fn probe_file(path: &Path) -> Result<ProbeResult, ScannerError> {
     let mut audio_language = None;
     let mut audio_bitrate = None;
     let mut additional_streams = serde_json::json!({});
+    let mut audio_streams: Vec<serde_json::Value> = Vec::new();
     let mut subtitle_streams: Vec<serde_json::Value> = Vec::new();
 
     for stream in &streams {
@@ -707,14 +708,28 @@ async fn probe_file(path: &Path) -> Result<ProbeResult, ScannerError> {
                 });
                 video_frame_rate = parse_frame_rate(stream.r_frame_rate.as_deref());
             }
-            Some("audio") if audio_codec.is_none() => {
-                audio_codec = stream.codec_name.clone();
-                audio_channels = stream.channels;
-                audio_language = stream
+            Some("audio") => {
+                let language = stream
                     .tags
                     .as_ref()
-                    .and_then(|t| t.get("language").cloned());
-                audio_bitrate = stream.bit_rate.as_ref().and_then(|b| b.parse::<i32>().ok());
+                    .and_then(|t| t.get("language").cloned())
+                    .unwrap_or_else(|| "und".to_string());
+                let title = stream.tags.as_ref().and_then(|t| t.get("title").cloned());
+                let bitrate = stream.bit_rate.as_ref().and_then(|b| b.parse::<i32>().ok());
+                if audio_codec.is_none() {
+                    audio_codec = stream.codec_name.clone();
+                    audio_channels = stream.channels;
+                    audio_language = Some(language.clone());
+                    audio_bitrate = bitrate;
+                }
+                audio_streams.push(serde_json::json!({
+                    "index": stream.index.unwrap_or(0),
+                    "codec": stream.codec_name,
+                    "channels": stream.channels,
+                    "language": language,
+                    "title": title,
+                    "bitrate": bitrate,
+                }));
             }
             Some("subtitle") => {
                 let lang = stream
@@ -744,7 +759,7 @@ async fn probe_file(path: &Path) -> Result<ProbeResult, ScannerError> {
 
                 subtitle_streams.push(serde_json::json!({
                     "index": stream.index.unwrap_or(0),
-                    "codec_name": stream.codec_name,
+                    "codec": stream.codec_name,
                     "language": lang,
                     "title": title,
                     "is_forced": is_forced,
@@ -786,6 +801,13 @@ async fn probe_file(path: &Path) -> Result<ProbeResult, ScannerError> {
             .as_object_mut()
             .unwrap_or(&mut serde_json::Map::new())
             .insert("chapters".to_string(), serde_json::json!(chapters));
+    }
+
+    if !audio_streams.is_empty() {
+        additional_streams
+            .as_object_mut()
+            .unwrap_or(&mut serde_json::Map::new())
+            .insert("audio".to_string(), serde_json::json!(audio_streams));
     }
 
     if !subtitle_streams.is_empty() {

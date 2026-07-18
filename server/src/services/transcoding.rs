@@ -180,6 +180,10 @@ pub struct StartSessionParams {
     pub source_video_codec: String,
     pub source_video_resolution: (u32, u32),
     pub source_audio_codec: String,
+    pub source_audio_stream_index: Option<i32>,
+    pub subtitle_stream_index: Option<i32>,
+    pub subtitle_stream_ordinal: Option<usize>,
+    pub subtitle_burn_in: bool,
     pub target_video_codec: Option<String>,
     pub target_audio_codec: Option<String>,
     pub target_resolution: Option<(u32, u32)>,
@@ -198,6 +202,10 @@ pub struct TranscodeSession {
     pub source_video_codec: String,
     pub source_video_resolution: (u32, u32),
     pub source_audio_codec: String,
+    pub source_audio_stream_index: Option<i32>,
+    pub subtitle_stream_index: Option<i32>,
+    pub subtitle_stream_ordinal: Option<usize>,
+    pub subtitle_burn_in: bool,
 
     pub target_video_codec: String,
     pub target_video_resolution: (u32, u32),
@@ -271,6 +279,10 @@ impl TranscodeManager {
             source_video_codec,
             source_video_resolution,
             source_audio_codec,
+            source_audio_stream_index,
+            subtitle_stream_index,
+            subtitle_stream_ordinal,
+            subtitle_burn_in,
             target_video_codec,
             target_audio_codec,
             target_resolution,
@@ -330,11 +342,24 @@ impl TranscodeManager {
 
         let mut args = build_ffmpeg_input_args(seek_position_ms, &source_path);
 
+        if subtitle_burn_in {
+            let subtitle_ordinal = subtitle_stream_ordinal.ok_or_else(|| {
+                PlaybackError::FfmpegFailed(
+                    "subtitle burn-in requires a selected subtitle stream".to_string(),
+                )
+            })?;
+            args.extend([
+                "-filter_complex".to_string(),
+                build_subtitle_burn_in_filter(&source_path, subtitle_ordinal),
+                "-map".to_string(),
+                "[video]".to_string(),
+            ]);
+        } else {
+            args.extend(["-map".to_string(), "0:0".to_string()]);
+        }
         args.extend([
             "-map".to_string(),
-            "0:0".to_string(),
-            "-map".to_string(),
-            "0:1".to_string(),
+            format!("0:{}", source_audio_stream_index.unwrap_or(1)),
         ]);
 
         args.extend(build_video_encode_args(
@@ -375,6 +400,10 @@ impl TranscodeManager {
             source_video_codec,
             source_video_resolution,
             source_audio_codec,
+            source_audio_stream_index,
+            subtitle_stream_index,
+            subtitle_stream_ordinal,
+            subtitle_burn_in,
             target_video_codec: effective_video_codec,
             target_video_resolution: (rendition.width, rendition.height),
             target_audio_codec: effective_audio_codec,
@@ -463,6 +492,10 @@ impl TranscodeManager {
                 source_video_codec: old_session.source_video_codec,
                 source_video_resolution: old_session.source_video_resolution,
                 source_audio_codec: old_session.source_audio_codec,
+                source_audio_stream_index: old_session.source_audio_stream_index,
+                subtitle_stream_index: old_session.subtitle_stream_index,
+                subtitle_stream_ordinal: old_session.subtitle_stream_ordinal,
+                subtitle_burn_in: old_session.subtitle_burn_in,
                 target_video_codec: Some(old_session.target_video_codec),
                 target_audio_codec: Some(old_session.target_audio_codec),
                 target_resolution: Some(old_session.target_video_resolution),
@@ -483,6 +516,7 @@ impl TranscodeManager {
         source_video_codec: String,
         source_video_resolution: (u32, u32),
         source_audio_codec: String,
+        source_audio_stream_index: Option<i32>,
         data_dir: &Path,
     ) -> Result<TranscodeSession, PlaybackError> {
         let permit = Arc::clone(&self.semaphore)
@@ -510,7 +544,7 @@ impl TranscodeManager {
             "-map".to_string(),
             "0:0".to_string(),
             "-map".to_string(),
-            "0:1".to_string(),
+            format!("0:{}", source_audio_stream_index.unwrap_or(1)),
             "-c:v".to_string(),
             "copy".to_string(),
             "-c:a".to_string(),
@@ -539,6 +573,10 @@ impl TranscodeManager {
             source_video_codec,
             source_video_resolution,
             source_audio_codec,
+            source_audio_stream_index,
+            subtitle_stream_index: None,
+            subtitle_stream_ordinal: None,
+            subtitle_burn_in: false,
             target_video_codec: "copy".to_string(),
             target_video_resolution: source_video_resolution,
             target_audio_codec: "copy".to_string(),
@@ -691,6 +729,15 @@ fn build_ffmpeg_input_args(seek_position_ms: Option<i64>, source_path: &Path) ->
     ]);
 
     args
+}
+
+fn build_subtitle_burn_in_filter(source_path: &Path, subtitle_ordinal: usize) -> String {
+    let escaped_path = source_path
+        .to_string_lossy()
+        .replace('\\', "\\\\")
+        .replace(':', "\\:")
+        .replace('\'', "\\'");
+    format!("[0:v]subtitles=filename='{escaped_path}':si={subtitle_ordinal}[video]")
 }
 
 fn build_video_encode_args(

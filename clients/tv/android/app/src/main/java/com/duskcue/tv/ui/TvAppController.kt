@@ -4,16 +4,22 @@ import com.duskcue.tv.TvApplicationRuntime
 import com.duskcue.tv.api.ApiResult
 import com.duskcue.tv.api.ProfileListResponse
 import com.duskcue.tv.api.ServerOrigin
+import com.duskcue.tv.api.StartTvPlaybackRequest
 import com.duskcue.tv.api.TvCollection
+import com.duskcue.tv.api.TvDeviceProfile
 import com.duskcue.tv.api.TvLibrary
 import com.duskcue.tv.api.TvMediaItem
+import com.duskcue.tv.api.TvMediaFile
+import com.duskcue.tv.api.TvPlaybackStartResponse
 import com.duskcue.tv.api.TvResolveResponse
 import com.duskcue.tv.api.TvSearchResponse
+import com.duskcue.tv.api.TvSegment
 import com.duskcue.tv.api.TvSurfaceItem
 import com.duskcue.tv.api.TvSurfaceSettings
 import com.duskcue.tv.api.UpdateTvSurfaceSettingsRequest
 import com.duskcue.tv.api.ServerSentEvent
 import com.duskcue.tv.home.TvHomeLoadState
+import com.duskcue.tv.playback.TvPlaybackService
 import com.duskcue.tv.session.DeviceLinkChallenge
 import com.duskcue.tv.session.DeviceLinkPollResult
 import kotlinx.coroutines.CoroutineScope
@@ -25,6 +31,11 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 enum class TvAppPhase {
     Launching,
@@ -41,6 +52,7 @@ enum class TvRoute {
     Search,
     Settings,
     Profiles,
+    Player,
 }
 
 data class TvDetail(
@@ -50,6 +62,12 @@ data class TvDetail(
     val subtitle: String? = null,
     val description: String? = null,
     val availability: String = "playable",
+)
+
+data class TvTrackOption(
+    val index: Int,
+    val label: String,
+    val language: String? = null,
 )
 
 data class TvAppState(
@@ -68,7 +86,15 @@ data class TvAppState(
     val searchQuery: String = "",
     val searchResult: TvSearchResponse? = null,
     val detail: TvDetail? = null,
+    val playbackFileId: String? = null,
+    val audioTracks: List<TvTrackOption> = emptyList(),
+    val subtitleTracks: List<TvTrackOption> = emptyList(),
+    val segments: List<TvSegment> = emptyList(),
+    val selectedAudioTrackIndex: Int? = null,
+    val selectedSubtitleTrackIndex: Int? = null,
     val prePlayback: ApiResult<TvResolveResponse>? = null,
+    val playback: TvPlaybackStartResponse? = null,
+    val qualityMode: String = "auto",
     val tvSettings: TvSurfaceSettings? = null,
     val busy: Boolean = false,
     val message: String? = null,
@@ -247,6 +273,96 @@ class TvAppController(
         }
     }
 
+    fun startPlayback() {
+        val detail = state.value.detail ?: return
+        scope.launch {
+            val playbackState = state.value
+            mutableState.update { it.copy(busy = true, prePlayback = null, message = null) }
+            val session = runtime.activeSession() ?: return@launch showServerSetup("Sign in again to continue.")
+            val resolve = withContext(Dispatchers.IO) { runtime.client(session.origin).resolveTvItem(detail.platformContentId) }
+            if (expireIfUnauthorized(resolve)) {
+                return@launch
+            }
+            val resolved = (resolve as? ApiResult.Success)?.value ?: run {
+                mutableState.update { it.copy(busy = false, message = resultMessage(resolve) ?: "This title is unavailable.") }
+                return@launch
+            }
+            if (!resolved.access_revalidated || resolved.availability != "playable" || resolved.playback_action != "start_playback") {
+                mutableState.update { it.copy(busy = false, message = "This title is unavailable.") }
+                return@launch
+            }
+            val start = withContext(Dispatchers.IO) {
+                runtime.client(session.origin).startTvPlayback(
+                    StartTvPlaybackRequest(
+                        media_item_id = resolved.media_item_id,
+                        media_file_id = playbackState.playbackFileId,
+                        audio_stream_index = playbackState.selectedAudioTrackIndex,
+                        subtitle_stream_index = playbackState.selectedSubtitleTrackIndex,
+                        device_profile = TvDeviceProfile.androidTv(),
+                        quality_mode = playbackState.qualityMode,
+                    ),
+                )
+            }
+            if (expireIfUnauthorized(start)) {
+                return@launch
+            }
+            val playback = (start as? ApiResult.Success)?.value ?: run {
+                mutableState.update { it.copy(busy = false, message = resultMessage(start) ?: "Playback could not start.") }
+                return@launch
+            }
+            val started = runtime.startInteractivePlayback(
+                sessionId = playback.session_id,
+                streamUrl = playback.stream_url,
+                mediaItemId = playback.media_item_id,
+                title = detail.title,
+                startPositionMs = resolved.resume_position_ms,
+                qualityMode = playbackState.qualityMode,
+                audioLanguage = playbackState.audioTracks.find { it.index == playbackState.selectedAudioTrackIndex }?.language,
+                subtitleLanguage = playbackState.subtitleTracks.find { it.index == playbackState.selectedSubtitleTrackIndex }?.language,
+            )
+            if (!started) {
+                mutableState.update { it.copy(busy = false, message = "Choose a profile before playback starts.") }
+                return@launch
+            }
+            mutableState.update { it.copy(route = TvRoute.Player, playback = playback, busy = false) }
+        }
+    }
+
+    fun exitPlayback() {
+        runtime.stopPlayback()
+        TvPlaybackService.clearPlaybackUi()
+        mutableState.update { it.copy(route = TvRoute.Detail, playback = null) }
+    }
+
+    fun cycleQualityMode() {
+        mutableState.update {
+            val next = when (it.qualityMode) {
+                "auto" -> "maximum"
+                "maximum" -> "manual"
+                else -> "auto"
+            }
+            it.copy(qualityMode = next)
+        }
+    }
+
+    fun cycleAudioTrack() {
+        mutableState.update { current ->
+            val next = nextTrackIndex(current.audioTracks, current.selectedAudioTrackIndex)
+            current.copy(selectedAudioTrackIndex = next)
+        }
+    }
+
+    fun cycleSubtitleTrack() {
+        mutableState.update { current ->
+            val next = nextTrackIndex(current.subtitleTracks, current.selectedSubtitleTrackIndex)
+            current.copy(selectedSubtitleTrackIndex = next)
+        }
+    }
+
+    fun skipSegment(segment: TvSegment) {
+        TvPlaybackService.seekTo(segment.skip_to_ms)
+    }
+
     fun openSettings() {
         mutableState.update { it.copy(route = TvRoute.Settings, busy = true, message = null) }
         scope.launch {
@@ -421,8 +537,66 @@ class TvAppController(
     }
 
     private fun showDetail(detail: TvDetail) {
-        mutableState.update { it.copy(route = TvRoute.Detail, detail = detail, prePlayback = null, message = null) }
+        mutableState.update {
+            it.copy(
+                route = TvRoute.Detail,
+                detail = detail,
+                playbackFileId = null,
+                audioTracks = emptyList(),
+                subtitleTracks = emptyList(),
+                segments = emptyList(),
+                selectedAudioTrackIndex = null,
+                selectedSubtitleTrackIndex = null,
+                prePlayback = null,
+                message = null,
+            )
+        }
+        scope.launch {
+            val session = runtime.activeSession() ?: return@launch
+            val files = withContext(Dispatchers.IO) { runtime.client(session.origin).mediaFiles(detail.mediaItemId) }
+            if (expireIfUnauthorized(files)) return@launch
+            val segments = withContext(Dispatchers.IO) { runtime.client(session.origin).segments(detail.mediaItemId) }
+            if (expireIfUnauthorized(segments)) return@launch
+            val file = (files as? ApiResult.Success)?.value?.firstOrNull()
+            val audioTracks = file?.trackOptions("audio").orEmpty()
+            val subtitleTracks = file?.trackOptions("subtitles").orEmpty()
+            val itemSegments = (segments as? ApiResult.Success)?.value?.segments.orEmpty()
+            mutableState.update { current ->
+                if (current.detail?.mediaItemId != detail.mediaItemId) current else current.copy(
+                    playbackFileId = file?.id,
+                    audioTracks = audioTracks,
+                    subtitleTracks = subtitleTracks,
+                    segments = itemSegments,
+                )
+            }
+        }
     }
+
+    private fun nextTrackIndex(tracks: List<TvTrackOption>, currentIndex: Int?): Int? {
+        if (tracks.isEmpty()) return null
+        if (currentIndex == null) return tracks.first().index
+        val currentPosition = tracks.indexOfFirst { it.index == currentIndex }
+        return if (currentPosition == -1 || currentPosition == tracks.lastIndex) null else tracks[currentPosition + 1].index
+    }
+
+    private fun TvMediaFile.trackOptions(category: String): List<TvTrackOption> = additional_streams
+        .get(category)
+        ?.jsonArray
+        ?.mapNotNull { value ->
+            val stream = value.jsonObject
+            val index = stream["index"]?.jsonPrimitive?.intOrNull ?: return@mapNotNull null
+            val language = stream["language"]?.jsonPrimitive?.contentOrNull
+            val codec = stream["codec"]?.jsonPrimitive?.contentOrNull
+                ?: stream["codec_name"]?.jsonPrimitive?.contentOrNull
+            val channels = stream["channels"]?.jsonPrimitive?.intOrNull?.let { "${it}ch" }
+            val title = stream["title"]?.jsonPrimitive?.contentOrNull
+            TvTrackOption(
+                index = index,
+                label = listOfNotNull(title, language, codec, channels).joinToString(" · ").ifBlank { "Track $index" },
+                language = language,
+            )
+        }
+        .orEmpty()
 
     private fun showServerSetup(message: String? = null) {
         mutableState.value = TvAppState(

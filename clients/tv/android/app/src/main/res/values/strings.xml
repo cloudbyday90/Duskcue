@@ -24,6 +24,16 @@
     <string name="tv_search_action">Search</string>
     <string name="tv_no_results">No matching media was found.</string>
     <string name="tv_check_availability">Check availability</string>
+    <string name="tv_play">Play</string>
+    <string name="tv_audio_track">Audio: %1$s</string>
+    <string name="tv_subtitle_track">Captions: %1$s</string>
+    <string name="tv_track_default">Default</string>
+    <string name="tv_captions_off">Off</string>
+    <string name="tv_quality_mode">Quality: %1$s</string>
+    <string name="tv_playback_status">Playback: %1$s</string>
+    <string name="tv_skip_segment">Skip %1$s</string>
+    <string name="tv_playback_error">Playback could not continue: %1$s</string>
+    <string name="tv_return_to_details">Return to details</string>
     <string name="tv_ready_to_play">Ready to play: %1$s</string>
     <string name="tv_unavailable">This title is unavailable.</string>
     <string name="tv_server_unreachable">Duskcue could not reach this server.</string>

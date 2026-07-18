@@ -9,8 +9,11 @@ import com.duskcue.tv.api.ServerOrigin
 import com.duskcue.tv.api.UrlConnectionTransport
 import com.duskcue.tv.home.TvLivingRoomStore
 import com.duskcue.tv.home.TvProfileScope
+import com.duskcue.tv.playback.TvInteractivePlayback
+import com.duskcue.tv.playback.TvPlaybackService
 import com.duskcue.tv.session.SecureSessionStore
 import com.duskcue.tv.session.TvAuthenticationService
+import com.duskcue.tv.session.TvLocalStateCleaner
 import com.duskcue.tv.session.TvSessionCoordinator
 
 data class ActiveTvSession(
@@ -21,14 +24,26 @@ data class ActiveTvSession(
 )
 
 class TvApplicationRuntime(context: Context) {
+    private val applicationContext = context.applicationContext
     private val tokenProvider = MutableBearerTokenProvider()
     private val etags = MemoryEtagStore()
     private val sessionStore = SecureSessionStore(context)
     val livingRoom = TvLivingRoomStore(etags = etags)
+    private val localStateCleaner = object : TvLocalStateCleaner {
+        override suspend fun clearProfileScope() {
+            TvPlaybackService.stop(applicationContext)
+            livingRoom.clearProfileScope()
+        }
+
+        override suspend fun clearIdentityScope() {
+            TvPlaybackService.stop(applicationContext)
+            livingRoom.clearIdentityScope()
+        }
+    }
     private val coordinator = TvSessionCoordinator(
         store = sessionStore,
         tokenProvider = tokenProvider,
-        cleaner = livingRoom,
+        cleaner = localStateCleaner,
     )
     val authentication = TvAuthenticationService(
         store = sessionStore,
@@ -58,4 +73,42 @@ class TvApplicationRuntime(context: Context) {
     suspend fun activeProfileScope(): TvProfileScope? = activeSession()
         ?.takeUnless(ActiveTvSession::profileSelectionRequired)
         ?.let { TvProfileScope(it.origin.value, it.userId, it.profileId) }
+
+    suspend fun startInteractivePlayback(
+        sessionId: String,
+        streamUrl: String,
+        mediaItemId: String,
+        title: String,
+        startPositionMs: Long,
+        qualityMode: String,
+        audioLanguage: String?,
+        subtitleLanguage: String?,
+    ): Boolean {
+        val session = sessionStore.current().session ?: return false
+        if (session.profile_selection_required) return false
+        TvPlaybackService.start(
+            applicationContext,
+            TvInteractivePlayback(
+                serverOrigin = session.origin,
+                bearerToken = session.token,
+                sessionId = sessionId,
+                streamUrl = streamUrl,
+                mediaItemId = mediaItemId,
+                title = title,
+                startPositionMs = startPositionMs,
+                qualityMode = qualityMode,
+                audioLanguage = audioLanguage,
+                subtitleLanguage = subtitleLanguage,
+            ),
+        )
+        return true
+    }
+
+    fun pausePlayback() {
+        TvPlaybackService.pause()
+    }
+
+    fun stopPlayback() {
+        TvPlaybackService.stop(applicationContext)
+    }
 }

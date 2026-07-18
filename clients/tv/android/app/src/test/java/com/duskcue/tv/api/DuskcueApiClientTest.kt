@@ -137,6 +137,54 @@ class DuskcueApiClientTest {
         assertTrue(requireNotNull(request.body).contains("device-id"))
     }
 
+    @Test
+    fun starts_playback_with_a_typed_android_tv_profile_after_a_resolve_handoff() {
+        val fixture = fixtureJson.parseToJsonElement(fixture("deep-link-resolve.json"))
+        val playable = fixture.jsonObject.getValue("cases").jsonArray.first().jsonObject.getValue("body").toString()
+        val startResponse = """
+            {
+              "session_id":"50505050-5050-4050-8050-505050505050",
+              "stream_decision":"direct_stream",
+              "stream_url":"/api/v1/transcode/50505050-5050-4050-8050-505050505050/manifest.m3u8",
+              "media_item_id":"11111111-1111-4111-8111-111111111111",
+              "media_file_id":"66666666-6666-4666-8666-666666666666",
+              "selected_audio_stream_index":1,
+              "selected_subtitle_stream_index":3,
+              "restart_required":true,
+              "playback_mode":"interactive"
+            }
+        """.trimIndent()
+        val transport = QueueTransport(
+            ApiResponse(status = 200, body = playable),
+            ApiResponse(status = 200, body = startResponse),
+        )
+        val client = client(transport)
+
+        val resolve = client.resolveTvItem("duskcue:movie:11111111-1111-4111-8111-111111111111")
+        val resolved = (resolve as ApiResult.Success).value
+        val start = client.startTvPlayback(
+            StartTvPlaybackRequest(
+                media_item_id = resolved.media_item_id,
+                audio_stream_index = 1,
+                subtitle_stream_index = 3,
+                device_profile = TvDeviceProfile.androidTv(),
+            ),
+        )
+
+        assertEquals(2_400_000, resolved.resume_position_ms)
+        assertEquals("/api/v1/playback/start", resolved.playback_start?.path)
+        assertTrue(start is ApiResult.Success<TvPlaybackStartResponse>)
+        val playbackStart = (start as ApiResult.Success).value
+        assertEquals(1, playbackStart.selected_audio_stream_index)
+        assertEquals(3, playbackStart.selected_subtitle_stream_index)
+        assertTrue(playbackStart.restart_required)
+        assertEquals("Bearer fixture-token", transport.requests.last().headers["Authorization"])
+        assertTrue(requireNotNull(transport.requests.last().body).contains("android_tv"))
+        assertTrue(requireNotNull(transport.requests.last().body).contains("11111111-1111-4111-8111-111111111111"))
+        assertTrue(requireNotNull(transport.requests.last().body).contains("\"audio_stream_index\":1"))
+        assertTrue(requireNotNull(transport.requests.last().body).contains("\"subtitle_stream_index\":3"))
+    }
+
     private fun client(transport: HttpTransport): DuskcueApiClient = DuskcueApiClient(
         origin = ServerOrigin.parse("https://duskcue.example").getOrThrow(),
         transport = transport,
@@ -159,6 +207,16 @@ class DuskcueApiClientTest {
         override fun execute(request: ApiRequest): ApiResponse {
             requests += request
             return response
+        }
+    }
+
+    private class QueueTransport(vararg responses: ApiResponse) : HttpTransport {
+        private val responses = ArrayDeque(responses.toList())
+        val requests = mutableListOf<ApiRequest>()
+
+        override fun execute(request: ApiRequest): ApiResponse {
+            requests += request
+            return responses.removeFirst()
         }
     }
 }

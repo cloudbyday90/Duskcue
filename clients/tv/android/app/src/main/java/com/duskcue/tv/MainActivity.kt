@@ -15,4 +15,11 @@ class MainActivity : ComponentActivity() {
             DuskcueTvApp(runtime)
         }
     }
+
+    override fun onStop() {
+        if (!isChangingConfigurations) {
+            runtime.pausePlayback()
+        }
+        super.onStop()
+    }
 }

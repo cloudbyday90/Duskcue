@@ -185,12 +185,19 @@ pub struct QoeReportRequest {
     #[validate(required)]
     pub session_id: Option<Uuid>,
     pub startup_time_ms: Option<i32>,
+    pub rebuffer_count: Option<i32>,
+    pub rebuffer_duration_ms: Option<i64>,
     pub rebuffer_ratio: Option<f32>,
     pub average_bitrate_bps: Option<i64>,
     pub switches_per_minute: Option<f32>,
     pub quality_drops: Option<i32>,
+    pub quality_change_count: Option<i32>,
+    pub selected_quality_mode: Option<String>,
     pub current_rung: Option<String>,
     pub current_buffer_seconds: Option<f32>,
+    pub playback_failure_code: Option<String>,
+    pub playback_failure_message: Option<String>,
+    pub recorded_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize)]

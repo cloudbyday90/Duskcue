@@ -103,7 +103,11 @@ pub async fn start_playback(
         select_best_media_file(pool, media_item_id).await?
     };
 
-    let media_info = build_media_file_info(&media_file_details);
+    let (media_info, selected_tracks) = build_media_file_info(
+        &media_file_details,
+        req.audio_stream_index,
+        req.subtitle_stream_index,
+    )?;
 
     let device_caps = build_device_capabilities(req.device_profile.as_ref(), config);
 
@@ -116,6 +120,14 @@ pub async fn start_playback(
     );
 
     let mut decision = decision_engine::decide(&media_info, &device_caps, &network, &engine_config);
+
+    if selected_tracks.subtitle_stream_index.is_some()
+        && decision.overall != StreamDecision::DirectPlay
+        && !decision.subtitle_burn_in_required
+    {
+        decision.overall = StreamDecision::Transcode;
+        decision.subtitle_burn_in_required = true;
+    }
 
     if req.force_transcode.unwrap_or(false) {
         decision.overall = StreamDecision::Transcode;
@@ -144,6 +156,7 @@ pub async fn start_playback(
                     media_info.video_codec.clone(),
                     media_info.video_resolution,
                     media_info.audio_codec.clone(),
+                    selected_tracks.audio_stream_index,
                     data_dir,
                 )
                 .await?;
@@ -165,6 +178,10 @@ pub async fn start_playback(
                         source_video_codec: media_info.video_codec.clone(),
                         source_video_resolution: media_info.video_resolution,
                         source_audio_codec: media_info.audio_codec.clone(),
+                        source_audio_stream_index: selected_tracks.audio_stream_index,
+                        subtitle_stream_index: selected_tracks.subtitle_stream_index,
+                        subtitle_stream_ordinal: selected_tracks.subtitle_stream_ordinal,
+                        subtitle_burn_in: decision.subtitle_burn_in_required,
                         target_video_codec: target_v,
                         target_audio_codec: target_a,
                         target_resolution: target_res,
@@ -215,6 +232,9 @@ pub async fn start_playback(
         target_video_codec: decision.target_video_codec,
         target_audio_codec: decision.target_audio_codec,
         transcode_session_id,
+        selected_audio_stream_index: selected_tracks.audio_stream_index,
+        selected_subtitle_stream_index: selected_tracks.subtitle_stream_index,
+        restart_required: req.audio_stream_index.is_some() || req.subtitle_stream_index.is_some(),
         playback_mode: playback_mode.to_string(),
         ambient_channel_id: ambient_channel.as_ref().map(|channel| channel.id),
         ambient_channel_updated_at: ambient_channel.map(|channel| channel.updated_at),
@@ -299,7 +319,17 @@ fn row_to_media_file_details(row: &sqlx::postgres::PgRow) -> MediaFileDetails {
     }
 }
 
-fn build_media_file_info(details: &MediaFileDetails) -> MediaFileInfo {
+struct SelectedTracks {
+    audio_stream_index: Option<i32>,
+    subtitle_stream_index: Option<i32>,
+    subtitle_stream_ordinal: Option<usize>,
+}
+
+fn build_media_file_info(
+    details: &MediaFileDetails,
+    audio_stream_index: Option<i32>,
+    subtitle_stream_index: Option<i32>,
+) -> Result<(MediaFileInfo, SelectedTracks), PlaybackError> {
     let (res_w, res_h) = details
         .video_resolution
         .as_deref()
@@ -307,13 +337,21 @@ fn build_media_file_info(details: &MediaFileDetails) -> MediaFileInfo {
         .unwrap_or((1920, 1080));
 
     let bit_depth = extract_video_bit_depth(&details.additional_streams);
-
-    let (subtitle_format, has_embedded_subtitles) =
-        extract_subtitle_info(&details.additional_streams);
+    let selected_audio = audio_stream_index
+        .map(|index| find_stream(&details.additional_streams, "audio", index, "audio"))
+        .transpose()?;
+    let selected_subtitle = subtitle_stream_index
+        .map(|index| find_stream(&details.additional_streams, "subtitles", index, "subtitle"))
+        .transpose()?;
+    let audio = selected_audio.map(|(_, stream)| stream);
+    let (subtitle_format, has_embedded_subtitles) = selected_subtitle
+        .as_ref()
+        .map(|(_, stream)| (stream_codec(stream), true))
+        .unwrap_or((None, false));
 
     let frame_rate = details.video_frame_rate.unwrap_or(24.0);
 
-    MediaFileInfo {
+    let media_info = MediaFileInfo {
         container_format: details.container_format.clone(),
         video_codec: details
             .video_codec
@@ -329,17 +367,66 @@ fn build_media_file_info(details: &MediaFileDetails) -> MediaFileInfo {
             .clone()
             .unwrap_or_else(|| "sdr".to_string()),
         video_frame_rate: frame_rate,
-        audio_codec: details
-            .audio_codec
-            .clone()
+        audio_codec: audio
+            .and_then(stream_codec)
+            .or_else(|| details.audio_codec.clone())
             .unwrap_or_else(|| "aac".to_string()),
-        audio_channels: details.audio_channels.unwrap_or(2) as u32,
-        audio_bitrate_bps: details.audio_bitrate.unwrap_or(0) as u64,
-        audio_language: details.audio_language.clone(),
+        audio_channels: audio
+            .and_then(|stream| stream.get("channels"))
+            .and_then(serde_json::Value::as_u64)
+            .map(|channels| channels as u32)
+            .unwrap_or_else(|| details.audio_channels.unwrap_or(2) as u32),
+        audio_bitrate_bps: audio
+            .and_then(|stream| stream.get("bitrate"))
+            .and_then(serde_json::Value::as_u64)
+            .unwrap_or_else(|| details.audio_bitrate.unwrap_or(0) as u64),
+        audio_language: audio
+            .and_then(|stream| stream.get("language"))
+            .and_then(serde_json::Value::as_str)
+            .map(String::from)
+            .or_else(|| details.audio_language.clone()),
         has_embedded_subtitles,
         subtitle_format,
         additional_streams: Some(details.additional_streams.clone()),
-    }
+    };
+
+    Ok((
+        media_info,
+        SelectedTracks {
+            audio_stream_index,
+            subtitle_stream_index,
+            subtitle_stream_ordinal: selected_subtitle.map(|(ordinal, _)| ordinal),
+        },
+    ))
+}
+
+fn find_stream<'a>(
+    streams: &'a serde_json::Value,
+    category: &str,
+    index: i32,
+    track_name: &'static str,
+) -> Result<(usize, &'a serde_json::Value), PlaybackError> {
+    streams
+        .get(category)
+        .and_then(serde_json::Value::as_array)
+        .and_then(|items| {
+            items.iter().enumerate().find(|(_, stream)| {
+                stream
+                    .get("index")
+                    .and_then(serde_json::Value::as_i64)
+                    .map(|stream_index| stream_index == i64::from(index))
+                    .unwrap_or(false)
+            })
+        })
+        .ok_or(PlaybackError::TrackUnavailable(track_name))
+}
+
+fn stream_codec(stream: &serde_json::Value) -> Option<String> {
+    stream
+        .get("codec")
+        .or_else(|| stream.get("codec_name"))
+        .and_then(serde_json::Value::as_str)
+        .map(String::from)
 }
 
 fn extract_video_bit_depth(streams: &serde_json::Value) -> u32 {
@@ -365,21 +452,6 @@ fn extract_video_level(streams: &serde_json::Value) -> Option<f32> {
         .and_then(|v| v.get("level"))
         .and_then(|l| l.as_f64())
         .map(|l| l as f32)
-}
-
-fn extract_subtitle_info(streams: &serde_json::Value) -> (Option<String>, bool) {
-    let subs = match streams.get("subtitles").and_then(|s| s.as_array()) {
-        Some(arr) if !arr.is_empty() => arr,
-        _ => return (None, false),
-    };
-
-    let fmt = subs
-        .first()
-        .and_then(|s| s.get("codec"))
-        .and_then(|c| c.as_str())
-        .map(String::from);
-
-    (fmt, true)
 }
 
 fn build_device_capabilities(

@@ -25,6 +25,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -47,6 +48,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.activity.compose.BackHandler
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
@@ -59,6 +62,8 @@ import com.duskcue.tv.api.TvMediaItem
 import com.duskcue.tv.api.TvSection
 import com.duskcue.tv.api.TvSurfaceItem
 import com.duskcue.tv.home.TvHomeLoadState
+import com.duskcue.tv.playback.TvPlaybackService
+import androidx.media3.ui.PlayerView
 
 private val TvBackground = Color(0xFF0E0F13)
 private val TvSurface = Color(0xFF16181F)
@@ -142,6 +147,7 @@ private fun SignedInPage(state: TvAppState, controller: TvAppController) {
         TvRoute.Search -> SearchPage(state, controller)
         TvRoute.Settings -> SettingsPage(state, controller)
         TvRoute.Profiles -> ProfilePickerPage(state, controller, allowBack = true)
+        TvRoute.Player -> PlayerPage(state, controller)
     }
 }
 
@@ -298,6 +304,38 @@ private fun DetailPage(state: TvAppState, controller: TvAppController) {
             Text(it, fontSize = 23.sp, color = TvText)
         }
         Spacer(Modifier.height(30.dp))
+        TvAction(stringResource(R.string.tv_play), enabled = !state.busy, onClick = controller::startPlayback)
+        Spacer(Modifier.height(14.dp))
+        if (state.audioTracks.isNotEmpty()) {
+            TvAction(
+                stringResource(
+                    R.string.tv_audio_track,
+                    state.audioTracks.find { it.index == state.selectedAudioTrackIndex }?.label
+                        ?: stringResource(R.string.tv_track_default),
+                ),
+                enabled = !state.busy,
+                onClick = controller::cycleAudioTrack,
+            )
+            Spacer(Modifier.height(14.dp))
+        }
+        if (state.subtitleTracks.isNotEmpty()) {
+            TvAction(
+                stringResource(
+                    R.string.tv_subtitle_track,
+                    state.subtitleTracks.find { it.index == state.selectedSubtitleTrackIndex }?.label
+                        ?: stringResource(R.string.tv_captions_off),
+                ),
+                enabled = !state.busy,
+                onClick = controller::cycleSubtitleTrack,
+            )
+            Spacer(Modifier.height(14.dp))
+        }
+        TvAction(
+            stringResource(R.string.tv_quality_mode, state.qualityMode.replaceFirstChar(Char::titlecase)),
+            enabled = !state.busy,
+            onClick = controller::cycleQualityMode,
+        )
+        Spacer(Modifier.height(14.dp))
         TvAction(stringResource(R.string.tv_check_availability), enabled = !state.busy, onClick = controller::preparePlayback)
         when (val readiness = state.prePlayback) {
             is ApiResult.Success -> Text(
@@ -310,6 +348,80 @@ private fun DetailPage(state: TvAppState, controller: TvAppController) {
             else -> Unit
         }
         TvMessage(state.message)
+    }
+}
+
+@Composable
+private fun PlayerPage(state: TvAppState, controller: TvAppController) {
+    var playerView: PlayerView? by remember { mutableStateOf(null) }
+    val playbackUi by TvPlaybackService.playbackUi.collectAsState()
+    val activeSegment = state.segments.firstOrNull { segment ->
+        playbackUi.positionMs >= segment.start_ms && playbackUi.positionMs < segment.end_ms
+    }
+    BackHandler(onBack = controller::exitPlayback)
+    DisposableEffect(Unit) {
+        onDispose {
+            playerView?.let(TvPlaybackService::detach)
+        }
+    }
+    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+        AndroidView(
+            factory = { context ->
+                PlayerView(context).also { view ->
+                    playerView = view
+                    TvPlaybackService.attach(view)
+                }
+            },
+            update = TvPlaybackService::attach,
+            modifier = Modifier.fillMaxSize(),
+        )
+        state.detail?.title?.let { title ->
+            Text(
+                title,
+                modifier = Modifier.align(Alignment.TopStart).padding(36.dp),
+                fontSize = 23.sp,
+                color = TvText,
+            )
+        }
+        state.playback?.let { playback ->
+            Text(
+                stringResource(
+                    R.string.tv_playback_status,
+                    "${playback.stream_decision.replace('_', ' ')} · ${state.qualityMode}",
+                ),
+                modifier = Modifier.align(Alignment.TopEnd).padding(36.dp),
+                fontSize = 18.sp,
+                color = TvSecondary,
+            )
+        }
+        activeSegment?.let { segment ->
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(36.dp),
+            ) {
+                TvAction(
+                    stringResource(
+                        R.string.tv_skip_segment,
+                        segment.segment_type.replaceFirstChar(Char::titlecase),
+                    ),
+                    compact = true,
+                    onClick = { controller.skipSegment(segment) },
+                )
+            }
+        }
+        playbackUi.errorCode?.let { errorCode ->
+            Column(
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .width(420.dp)
+                    .padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(18.dp),
+            ) {
+                Text(stringResource(R.string.tv_playback_error, errorCode), fontSize = 23.sp, color = TvError)
+                TvAction(stringResource(R.string.tv_return_to_details), compact = true, onClick = controller::exitPlayback)
+            }
+        }
     }
 }
 

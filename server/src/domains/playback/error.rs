@@ -39,6 +39,9 @@ pub enum PlaybackError {
     #[error("invalid playback mode: {0}")]
     InvalidPlaybackMode(String),
 
+    #[error("selected {0} track is unavailable")]
+    TrackUnavailable(&'static str),
+
     #[error("ambient channel selection is stale")]
     AmbientChannelStale,
 
