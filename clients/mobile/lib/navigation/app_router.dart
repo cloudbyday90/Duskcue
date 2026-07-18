@@ -24,6 +24,7 @@ import 'package:duskcue_mobile/screens/library_detail_screen.dart';
 import 'package:duskcue_mobile/screens/media_detail_screen.dart';
 import 'package:duskcue_mobile/screens/notifications_screen.dart';
 import 'package:duskcue_mobile/screens/playback_entry_screen.dart';
+import 'package:duskcue_mobile/screens/profile_selection_screen.dart';
 import 'package:duskcue_mobile/screens/search_screen.dart';
 import 'package:duskcue_mobile/screens/server_selection_screen.dart';
 import 'package:duskcue_mobile/screens/settings_screen.dart';
@@ -40,6 +41,9 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final path = state.uri.path;
       final setupPath = path == '/server' || path == '/auth';
+      final profilePath = path == '/profiles';
+      final manualProfileSelection =
+          state.uri.queryParameters['switch'] == 'true';
 
       if (session.server == null && path != '/server') {
         return '/server';
@@ -47,7 +51,18 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       if (session.server != null && !session.isAuthenticated && !setupPath) {
         return '/auth';
       }
+      if (session.isAuthenticated &&
+          !session.isProfileScopeReady &&
+          !profilePath) {
+        return '/profiles';
+      }
       if (session.isAuthenticated && setupPath) {
+        return session.isProfileScopeReady ? '/dashboard' : '/profiles';
+      }
+      if (session.isAuthenticated &&
+          session.isProfileScopeReady &&
+          profilePath &&
+          !manualProfileSelection) {
         return '/dashboard';
       }
       return null;
@@ -57,12 +72,16 @@ final appRouterProvider = Provider<GoRouter>((ref) {
         path: '/server',
         builder: (context, state) => const ServerSelectionScreen(),
       ),
+      GoRoute(path: '/auth', builder: (context, state) => const AuthScreen()),
       GoRoute(
-        path: '/auth',
-        builder: (context, state) => const AuthScreen(),
+        path: '/profiles',
+        builder: (context, state) => ProfileSelectionScreen(
+          allowManualSelection: state.uri.queryParameters['switch'] == 'true',
+        ),
       ),
       StatefulShellRoute.indexedStack(
-        builder: (context, state, navigationShell) => AppShell(navigationShell: navigationShell),
+        builder: (context, state, navigationShell) =>
+            AppShell(navigationShell: navigationShell),
         branches: [
           StatefulShellBranch(
             routes: [
@@ -124,15 +143,20 @@ final appRouterProvider = Provider<GoRouter>((ref) {
       ),
       GoRoute(
         path: '/libraries/:libraryId',
-        builder: (context, state) => LibraryDetailScreen(libraryId: state.pathParameters['libraryId'] ?? ''),
+        builder: (context, state) => LibraryDetailScreen(
+          libraryId: state.pathParameters['libraryId'] ?? '',
+        ),
       ),
       GoRoute(
         path: '/media/:itemId',
-        builder: (context, state) => MediaDetailScreen(itemId: state.pathParameters['itemId'] ?? ''),
+        builder: (context, state) =>
+            MediaDetailScreen(itemId: state.pathParameters['itemId'] ?? ''),
       ),
       GoRoute(
         path: '/collections/:collectionId',
-        builder: (context, state) => CollectionDetailScreen(collectionId: state.pathParameters['collectionId'] ?? ''),
+        builder: (context, state) => CollectionDetailScreen(
+          collectionId: state.pathParameters['collectionId'] ?? '',
+        ),
       ),
       GoRoute(
         path: '/play/:itemId',

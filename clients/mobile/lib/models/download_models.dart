@@ -177,20 +177,31 @@ class DownloadPackageManifest {
       downloadJobId: _string(json, const ['download_job_id', 'job_id']),
       schemaVersion: _int(json['schema_version']) ?? 1,
       manifestVersion: _int(json['manifest_version']) ?? 1,
-      packageFormat: _string(json, const ['package_format'], fallback: 'hls_fmp4'),
-      packageStrategy: _string(json, const ['package_strategy'], fallback: 'remux'),
+      packageFormat: _string(json, const [
+        'package_format',
+      ], fallback: 'hls_fmp4'),
+      packageStrategy: _string(json, const [
+        'package_strategy',
+      ], fallback: 'remux'),
       mediaItemId: _string(json, const ['media_item_id']),
       mediaFileId: _nullableString(json, const ['media_file_id']),
       totalBytes: _int(json['total_bytes']) ?? 0,
       packageHashSha256: _nullableString(json, const ['package_hash_sha256']),
       files: (json['files'] as List? ?? const [])
           .whereType<Map>()
-          .map((file) => DownloadPackageFile.fromJson(Map<String, Object?>.from(file)))
+          .map(
+            (file) =>
+                DownloadPackageFile.fromJson(Map<String, Object?>.from(file)),
+          )
           .toList(growable: false),
-      selectedAudio: Map<String, Object?>.from((json['selected_audio'] as Map?) ?? const {}),
+      selectedAudio: Map<String, Object?>.from(
+        (json['selected_audio'] as Map?) ?? const {},
+      ),
       selectedSubtitles: selectedSubtitles,
       expiresAt: _date(json['expires_at']),
-      syncMetadata: Map<String, Object?>.from((json['sync_metadata'] as Map?) ?? const {}),
+      syncMetadata: Map<String, Object?>.from(
+        (json['sync_metadata'] as Map?) ?? const {},
+      ),
     );
   }
 }
@@ -279,7 +290,10 @@ class PackageTransferUrls {
       expiresAt: _date(json['expires_at']),
       files: (json['files'] as List? ?? const [])
           .whereType<Map>()
-          .map((file) => PackageTransferUrl.fromJson(Map<String, Object?>.from(file)))
+          .map(
+            (file) =>
+                PackageTransferUrl.fromJson(Map<String, Object?>.from(file)),
+          )
           .toList(growable: false),
     );
   }
@@ -315,11 +329,14 @@ class OfflinePlaybackEvent {
 
   static OfflinePlaybackEvent fromJson(Map<String, Object?> json) {
     return OfflinePlaybackEvent(
-      eventId: _string(json, const ['event_id'], fallback: _legacyEventId(json)),
+      eventId: _string(json, const [
+        'event_id',
+      ], fallback: _legacyEventId(json)),
       packageId: _string(json, const ['package_id']),
       eventType: _string(json, const ['event_type'], fallback: 'heartbeat'),
       positionMs: _int(json['position_ms']) ?? 0,
-      occurredAt: _date(json['occurred_at']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+      occurredAt:
+          _date(json['occurred_at']) ?? DateTime.fromMillisecondsSinceEpoch(0),
       details: Map<String, Object?>.from((json['details'] as Map?) ?? const {}),
     );
   }
@@ -348,7 +365,9 @@ class DownloadSyncResponse {
     return DownloadSyncResponse(
       acceptedPackageStates: _int(json['accepted_package_states']) ?? 0,
       acceptedPlaybackEvents: _int(json['accepted_playback_events']) ?? 0,
-      acceptedPlaybackEventIds: _stringList(json['accepted_playback_event_ids']),
+      acceptedPlaybackEventIds: _stringList(
+        json['accepted_playback_event_ids'],
+      ),
       revokedPackageIds: _stringList(json['revoked_package_ids']),
       expiredPackageIds: _stringList(json['expired_package_ids']),
       deletedPackageIds: _stringList(json['deleted_package_ids']),
@@ -381,19 +400,22 @@ class DownloadInventoryScope {
   const DownloadInventoryScope({
     required this.serverOrigin,
     required this.userId,
+    required this.profileId,
     required this.deviceIdentifier,
   });
 
   final String serverOrigin;
   final String userId;
+  final String profileId;
   final String deviceIdentifier;
 
-  String get key => '$serverOrigin|$userId|$deviceIdentifier';
+  String get key => '$serverOrigin|$userId|$profileId|$deviceIdentifier';
 
   Map<String, Object?> toJson() {
     return {
       'server_origin': serverOrigin,
       'user_id': userId,
+      'profile_id': profileId,
       'device_identifier': deviceIdentifier,
     };
   }
@@ -402,6 +424,7 @@ class DownloadInventoryScope {
     return DownloadInventoryScope(
       serverOrigin: json['server_origin'] as String? ?? '',
       userId: json['user_id'] as String? ?? '',
+      profileId: json['profile_id'] as String? ?? '',
       deviceIdentifier: json['device_identifier'] as String? ?? '',
     );
   }
@@ -442,7 +465,9 @@ class DownloadManagerSettings {
       allowCellular: allowCellular ?? this.allowCellular,
       chargingOnly: chargingOnly ?? this.chargingOnly,
       pauseOnLowStorage: pauseOnLowStorage ?? this.pauseOnLowStorage,
-      storageCapBytes: clearStorageCap ? null : storageCapBytes ?? this.storageCapBytes,
+      storageCapBytes: clearStorageCap
+          ? null
+          : storageCapBytes ?? this.storageCapBytes,
       autoDeleteWatched: autoDeleteWatched ?? this.autoDeleteWatched,
     );
   }
@@ -461,7 +486,9 @@ class DownloadManagerSettings {
 
   static DownloadManagerSettings fromJson(Map<String, Object?> json) {
     return DownloadManagerSettings(
-      defaultQualityMode: DownloadQualityMode.fromApiValue(json['default_quality_mode'] as String?),
+      defaultQualityMode: DownloadQualityMode.fromApiValue(
+        json['default_quality_mode'] as String?,
+      ),
       wifiOnly: json['wifi_only'] as bool? ?? true,
       allowCellular: json['allow_cellular'] as bool? ?? false,
       chargingOnly: json['charging_only'] as bool? ?? false,
@@ -499,9 +526,15 @@ class DownloadPlan {
     return DownloadPlan(
       mediaItemId: _string(json, const ['media_item_id']),
       mediaFileId: _nullableString(json, const ['media_file_id']),
-      packageFormat: _string(json, const ['package_format'], fallback: 'hls_fmp4'),
-      packageStrategy: _string(json, const ['package_strategy'], fallback: 'remux'),
-      qualityMode: DownloadQualityMode.fromApiValue(json['quality_mode'] as String?),
+      packageFormat: _string(json, const [
+        'package_format',
+      ], fallback: 'hls_fmp4'),
+      packageStrategy: _string(json, const [
+        'package_strategy',
+      ], fallback: 'remux'),
+      qualityMode: DownloadQualityMode.fromApiValue(
+        json['quality_mode'] as String?,
+      ),
       estimatedBytes: _int(json['estimated_bytes']) ?? 0,
       planRevision: _string(json, const ['plan_revision']),
       planHash: _string(json, const ['plan_hash']),
@@ -546,8 +579,12 @@ class DownloadJob {
       mediaFileId: _nullableString(json, const ['media_file_id']),
       deviceIdentifier: _string(json, const ['device_identifier']),
       status: DownloadItemStatus.fromServerStatus(json['status'] as String?),
-      packageFormat: _string(json, const ['package_format'], fallback: 'hls_fmp4'),
-      qualityMode: DownloadQualityMode.fromApiValue(json['quality_mode'] as String?),
+      packageFormat: _string(json, const [
+        'package_format',
+      ], fallback: 'hls_fmp4'),
+      qualityMode: DownloadQualityMode.fromApiValue(
+        json['quality_mode'] as String?,
+      ),
       progressPercent: _double(json['progress_percent']) ?? 0,
       bytesExpected: _int(json['bytes_expected']),
       bytesPrepared: _int(json['bytes_prepared']) ?? 0,
@@ -657,7 +694,9 @@ class DownloadItem {
 
   String get id => jobId ?? mediaItemId;
 
-  bool get canRetry => status == DownloadItemStatus.failed || status == DownloadItemStatus.unavailable;
+  bool get canRetry =>
+      status == DownloadItemStatus.failed ||
+      status == DownloadItemStatus.unavailable;
 
   bool get canPlayOffline {
     return status == DownloadItemStatus.playableOffline &&
@@ -707,16 +746,24 @@ class DownloadItem {
       bytesExpected: bytesExpected ?? this.bytesExpected,
       bytesPrepared: bytesPrepared ?? this.bytesPrepared,
       localFilesVerified: localFilesVerified ?? this.localFilesVerified,
-      localResumePositionMs: localResumePositionMs ?? this.localResumePositionMs,
-      pendingPlaybackEventCount: pendingPlaybackEventCount ?? this.pendingPlaybackEventCount,
+      localResumePositionMs:
+          localResumePositionMs ?? this.localResumePositionMs,
+      pendingPlaybackEventCount:
+          pendingPlaybackEventCount ?? this.pendingPlaybackEventCount,
       failureReason: failureReason,
-      waitingReason: clearWaitingReason ? null : waitingReason ?? this.waitingReason,
-      localPlaybackPath: clearLocalPlaybackPath ? null : localPlaybackPath ?? this.localPlaybackPath,
-      localManifestHashSha256:
-          clearLocalManifestHashSha256 ? null : localManifestHashSha256 ?? this.localManifestHashSha256,
+      waitingReason: clearWaitingReason
+          ? null
+          : waitingReason ?? this.waitingReason,
+      localPlaybackPath: clearLocalPlaybackPath
+          ? null
+          : localPlaybackPath ?? this.localPlaybackPath,
+      localManifestHashSha256: clearLocalManifestHashSha256
+          ? null
+          : localManifestHashSha256 ?? this.localManifestHashSha256,
       expiresAt: expiresAt ?? this.expiresAt,
-      localPlaybackUpdatedAt:
-          clearLocalPlaybackUpdatedAt ? null : localPlaybackUpdatedAt ?? this.localPlaybackUpdatedAt,
+      localPlaybackUpdatedAt: clearLocalPlaybackUpdatedAt
+          ? null
+          : localPlaybackUpdatedAt ?? this.localPlaybackUpdatedAt,
       localCompleted: localCompleted ?? this.localCompleted,
       localWatched: localWatched ?? this.localWatched,
       updatedAt: updatedAt ?? this.updatedAt,
@@ -790,22 +837,28 @@ class DownloadItem {
       packageId: _nullableString(json, const ['package_id']),
       mediaFileId: _nullableString(json, const ['media_file_id']),
       status: DownloadItemStatus.fromJson(json['status'] as String?),
-      qualityMode: DownloadQualityMode.fromApiValue(json['quality_mode'] as String?),
+      qualityMode: DownloadQualityMode.fromApiValue(
+        json['quality_mode'] as String?,
+      ),
       progressPercent: _double(json['progress_percent']) ?? 0,
       bytesExpected: _int(json['bytes_expected']),
       bytesPrepared: _int(json['bytes_prepared']) ?? 0,
       localFilesVerified: _int(json['local_files_verified']) ?? 0,
       localResumePositionMs: _int(json['local_resume_position_ms']) ?? 0,
-      pendingPlaybackEventCount: _int(json['pending_playback_event_count']) ?? 0,
+      pendingPlaybackEventCount:
+          _int(json['pending_playback_event_count']) ?? 0,
       failureReason: _nullableString(json, const ['failure_reason']),
       waitingReason: _nullableString(json, const ['waiting_reason']),
       localPlaybackPath: _nullableString(json, const ['local_playback_path']),
-      localManifestHashSha256: _nullableString(json, const ['local_manifest_hash_sha256']),
+      localManifestHashSha256: _nullableString(json, const [
+        'local_manifest_hash_sha256',
+      ]),
       expiresAt: _date(json['expires_at']),
       localPlaybackUpdatedAt: _date(json['local_playback_updated_at']),
       localCompleted: json['local_completed'] as bool? ?? false,
       localWatched: json['local_watched'] as bool? ?? false,
-      updatedAt: _date(json['updated_at']) ?? DateTime.fromMillisecondsSinceEpoch(0),
+      updatedAt:
+          _date(json['updated_at']) ?? DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
 
@@ -828,7 +881,11 @@ class DownloadItem {
   }
 }
 
-String _string(Map<String, Object?> json, List<String> keys, {String fallback = ''}) {
+String _string(
+  Map<String, Object?> json,
+  List<String> keys, {
+  String fallback = '',
+}) {
   return _nullableString(json, keys) ?? fallback;
 }
 
@@ -836,7 +893,9 @@ String? _nullableString(Map<String, Object?> json, List<String> keys) {
   for (final key in keys) {
     final value = json[key];
     if (value is String && value.isNotEmpty) return value;
-    if (value != null && value is! Map && value is! List) return value.toString();
+    if (value != null && value is! Map && value is! List) {
+      return value.toString();
+    }
   }
   return null;
 }

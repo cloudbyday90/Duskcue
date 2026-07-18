@@ -15,15 +15,43 @@ void main() {
       hasAllLibraryAccess: true,
     );
 
-    final authenticated = SessionState(server: server).copyWith(
-      user: user,
-      isAuthenticated: true,
-    );
+    final authenticated = SessionState(
+      server: server,
+    ).copyWith(user: user, isAuthenticated: true);
     final cleared = authenticated.clearAuth();
 
     expect(authenticated.isAuthenticated, isTrue);
     expect(cleared.server, server);
     expect(cleared.user, isNull);
     expect(cleared.isAuthenticated, isFalse);
+    expect(cleared.profileScopeStatus, ProfileScopeStatus.uninitialized);
+  });
+
+  test('profile scope is unresolved until the profile gate returns', () {
+    final server = ServerProfile(origin: Uri.parse('http://localhost:48027'));
+    const user = UserSummary(
+      id: 'user-1',
+      username: 'owner',
+      displayName: 'Owner',
+      role: 'owner',
+      capabilities: [],
+      hasAllLibraryAccess: true,
+    );
+    final initial = SessionState(
+      server: server,
+      user: user,
+      isAuthenticated: true,
+    );
+    final resolved = initial.copyWith(
+      user: user.copyWith(
+        activeProfileId: 'profile-1',
+        profileSelectionRequired: false,
+      ),
+      profileScopeStatus: ProfileScopeStatus.ready,
+    );
+
+    expect(initial.isProfileScopeReady, isFalse);
+    expect(resolved.isProfileScopeReady, isTrue);
+    expect(resolved.user?.activeProfileId, 'profile-1');
   });
 }

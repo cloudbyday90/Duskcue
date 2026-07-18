@@ -25,6 +25,7 @@ import 'package:duskcue_mobile/services/download_service.dart';
 import 'package:duskcue_mobile/services/native_passkey_service.dart';
 import 'package:duskcue_mobile/services/offline_playback_service.dart';
 import 'package:duskcue_mobile/services/playback_service.dart';
+import 'package:duskcue_mobile/services/profile_service.dart';
 import 'package:duskcue_mobile/services/protected_download_storage_service.dart';
 import 'package:duskcue_mobile/services/push_registration_service.dart';
 import 'package:duskcue_mobile/services/quality_service.dart';
@@ -49,9 +50,10 @@ final deviceIdentityProvider = Provider<DeviceIdentityService>((ref) {
   return DeviceIdentityService(ref.watch(secureStorageProvider));
 });
 
-final protectedDownloadStorageProvider = Provider<ProtectedDownloadStorageService>((ref) {
-  return ProtectedDownloadStorageService();
-});
+final protectedDownloadStorageProvider =
+    Provider<ProtectedDownloadStorageService>((ref) {
+      return ProtectedDownloadStorageService();
+    });
 
 final offlinePlaybackServiceProvider = Provider<OfflinePlaybackService>((ref) {
   return OfflinePlaybackService(ref.watch(protectedDownloadStorageProvider));
@@ -83,6 +85,10 @@ final playbackServiceProvider = Provider<PlaybackService>((ref) {
   return PlaybackService(ref.watch(apiClientProvider));
 });
 
+final profileServiceProvider = Provider<ProfileService>((ref) {
+  return ProfileService(ref.watch(apiClientProvider));
+});
+
 final downloadServiceProvider = Provider<DownloadService>((ref) {
   return DownloadService(
     apiClient: ref.watch(apiClientProvider),
@@ -90,7 +96,9 @@ final downloadServiceProvider = Provider<DownloadService>((ref) {
   );
 });
 
-final pushRegistrationServiceProvider = Provider<PushRegistrationService>((ref) {
+final pushRegistrationServiceProvider = Provider<PushRegistrationService>((
+  ref,
+) {
   final service = PushRegistrationService(
     apiClient: ref.watch(apiClientProvider),
     storage: ref.watch(secureStorageProvider),

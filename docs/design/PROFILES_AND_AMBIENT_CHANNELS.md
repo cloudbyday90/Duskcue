@@ -35,6 +35,16 @@ Android's Media3 guidance places a `Player` and `MediaSession` in a `MediaSessio
 
 Native state is deliberately bounded and non-secret: a client may retain the active channel ID, selected media ID, revision, playback position, and player state for service restoration, but must not persist a stream URL, signed URL, bearer token, transcode URL, parent PIN, or parent-unlock expiry as queue state. After process/service restart, profile change, account/session loss, or stale-revision conflict, it must obtain a fresh selection and playback URL from Duskcue. Sources: [Android Media3 background playback](https://developer.android.com/media/media3/session/background-playback), [Android MediaSession control](https://developer.android.com/media/media3/session/control-playback), [Apple AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer), and [Apple media playback configuration](https://developer.apple.com/documentation/avfoundation/configuring-your-app-for-media-playback). These official sources were rechecked on 2026-07-18.
 
+### Native Flutter Profile Gate Research (2026-07-18)
+
+| Option | Advantages | Limitations | Decision |
+|---|---|---|---|
+| Trust only the profile fields cached in the login response | No extra request before rendering. | A restored token can carry stale state, and no UI boundary exists while the native client refreshes the current server session. | Rejected. |
+| Fetch profiles opportunistically after opening the authenticated shell | Simple to add. | Dashboard, search, deep links, image cache, and offline packages can become visible before the response resolves. | Rejected. |
+| Route every authenticated native session through a server-backed profile gate | Makes profile resolution a navigation prerequisite, works for fresh login and token restoration, and gives the same reusable boundary to a future TV shell. | Adds a short loading/picker stage before the authenticated shell. | Selected. |
+
+Flutter's navigation guidance supports declarative routing, while `WidgetsBindingObserver` provides lifecycle notification for the existing foreground client. Duskcue's Flutter client therefore enters `/profiles` after every successful authentication or restoration, calls `GET /api/v1/profiles`, and only releases normal routes after the server reports the active scope. When `profile_selection_required` is set, the screen remains a blocking picker; a manually opened picker can also switch profiles later. A successful switch clears native profile-scoped state before navigation continues: active download inventory, protected package root selection, decoded image memory/disk cache, and current route state. Offline download scope expands from `(server_origin, user_id, device_identifier)` to include `profile_id`, preventing one household profile from discovering another profile's local package inventory. Sources: [Flutter navigation and routing](https://docs.flutter.dev/ui/navigation), [Flutter `WidgetsBindingObserver`](https://api.flutter.dev/flutter/widgets/WidgetsBindingObserver-class.html), and [Apple TVUserManager](https://developer.apple.com/documentation/tvservices/tvusermanager). These official sources were rechecked on 2026-07-18.
+
 ### First-Use Gate Research (2026-07-18)
 
 | Option | Advantages | Limitations | Decision |
@@ -116,6 +126,8 @@ The API is player-agnostic: a native client owns the actual background service/s
 
 An Android implementation must keep one ambient player/session in its `MediaSessionService`, configure the required foreground-media-playback capability, and re-resolve through the Duskcue APIs rather than resuming an old URL. An Apple implementation must configure media playback/background behavior when playback begins, use `AVQueuePlayer` for queued ambient items, and reconcile interruption/output-route lifecycle with the normal heartbeat/stop endpoints. Both must clear queue state before rendering a replacement profile and must never export ambient activity into personal rows, watch counts, or Trakt.
 
+The existing Flutter Android/iOS client is the first native consumer of the profile-selection contract. It is not a TV client and does not claim platform-TV enforcement; instead, it provides the reusable server-backed picker, parent-unlock prompt, profile-scoped download isolation, and cache reset pattern that native TV targets must adopt when their application shells exist.
+
 ## Implementation Status
 
 Implemented in the initial server slice:
@@ -149,9 +161,16 @@ Implemented in the ambient native-player contract hardening follow-up (2026-07-1
 - indexed, typed `play_sessions.ambient_channel_id` diagnostics with safe legacy metadata backfill; and
 - ambient playback fixtures and contract/migration verifiers that bind the revision, Kids recheck, non-personal activity rules, and native restoration boundary.
 
+Implemented in the Flutter native profile-gate follow-up (2026-07-18):
+
+- fresh authentication and token restoration now route through a blocking `/profiles` screen, which loads the server-backed profile scope before the Flutter shell, deep links, realtime connection, or download manager can run;
+- the picker supports a per-device remembered-profile preference and exposes a transient, obscured parent-PIN prompt for a locked Kids-to-standard transition without persisting the PIN or unlock state;
+- a successful switch clears the in-memory and disk artwork caches plus the active download-manager state before it publishes the replacement session scope; and
+- local offline inventory, protected package, and download-settings namespaces now include `profile_id`, preserving old profile data only in its former inaccessible namespace rather than deleting another profile's packages.
+
 Deferred follow-up:
 
-- native shared-TV picker enforcement and platform cache invalidation; web applies the session flag and same-origin invalidation contract, while each native TV client must apply the same picker and cache-boundary rules before claiming the shared-TV experience;
+- native shared-TV picker enforcement and platform cache invalidation; Flutter Android/iOS now supplies the reusable native implementation, while each dedicated native TV client must apply the same picker and cache-boundary rules before claiming the shared-TV experience;
 - profile-specific Trakt account linking/export selection;
 - native Android/iOS background-player implementations and offline ambient queue prefetch, consuming the revision handshake rather than retaining stream URLs;
 - time windows, daily limits, and child-safe metadata editorial review.

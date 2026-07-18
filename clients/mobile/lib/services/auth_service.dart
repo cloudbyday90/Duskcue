@@ -31,11 +31,11 @@ class AuthService {
     required DeviceIdentityService deviceIdentity,
     required NativePasskeyService passkeys,
     required ProtectedDownloadStorageService protectedDownloads,
-  })  : _apiClient = apiClient,
-        _storage = storage,
-        _deviceIdentity = deviceIdentity,
-        _passkeys = passkeys,
-        _protectedDownloads = protectedDownloads;
+  }) : _apiClient = apiClient,
+       _storage = storage,
+       _deviceIdentity = deviceIdentity,
+       _passkeys = passkeys,
+       _protectedDownloads = protectedDownloads;
 
   final DuskcueApiClient _apiClient;
   final SecureStorageService _storage;
@@ -51,7 +51,9 @@ class AuthService {
     _apiClient.configure(server.origin, bearerToken: token);
     await listSessions();
 
-    final user = UserSummary.fromJson(Map<String, Object?>.from(jsonDecode(userJson) as Map));
+    final user = UserSummary.fromJson(
+      Map<String, Object?>.from(jsonDecode(userJson) as Map),
+    );
     return AuthSession(sessionToken: token, user: user);
   }
 
@@ -63,7 +65,12 @@ class AuthService {
     final body = await _authPayload(server);
     body['username'] = username;
     body['password'] = password;
-    return _completeAuth(await _apiClient.post<Map<String, Object?>>('/api/v1/auth/login', body: body));
+    return _completeAuth(
+      await _apiClient.post<Map<String, Object?>>(
+        '/api/v1/auth/login',
+        body: body,
+      ),
+    );
   }
 
   Future<AuthSession> loginWithInvite({
@@ -72,7 +79,12 @@ class AuthService {
   }) async {
     final body = await _authPayload(server);
     body['code'] = code;
-    return _completeAuth(await _apiClient.post<Map<String, Object?>>('/api/v1/auth/invite', body: body));
+    return _completeAuth(
+      await _apiClient.post<Map<String, Object?>>(
+        '/api/v1/auth/invite',
+        body: body,
+      ),
+    );
   }
 
   Future<AuthSession> loginWithReauthCode({
@@ -81,23 +93,30 @@ class AuthService {
   }) async {
     final body = await _authPayload(server);
     body['code'] = code;
-    return _completeAuth(await _apiClient.post<Map<String, Object?>>('/api/v1/auth/reauth', body: body));
+    return _completeAuth(
+      await _apiClient.post<Map<String, Object?>>(
+        '/api/v1/auth/reauth',
+        body: body,
+      ),
+    );
   }
 
   Future<AuthSession> loginWithPasskey() async {
-    final start = await _apiClient.post<Map<String, Object?>>('/api/v1/auth/webauthn/start', body: {});
+    final start = await _apiClient.post<Map<String, Object?>>(
+      '/api/v1/auth/webauthn/start',
+      body: {},
+    );
     final data = Map<String, Object?>.from(start.data ?? const {});
     final challengeId = data['challenge_id'] as String? ?? '';
-    final requestOptions = Map<String, Object?>.from(data['request_options'] as Map? ?? const {});
+    final requestOptions = Map<String, Object?>.from(
+      data['request_options'] as Map? ?? const {},
+    );
     final credential = await _passkeys.getCredential(requestOptions);
     final identity = await _deviceIdentity.current();
     return _completeAuth(
       await _apiClient.post<Map<String, Object?>>(
         '/api/v1/auth/webauthn/finish',
-        body: {
-          'credential': credential,
-          ...identity.toAuthJson(),
-        },
+        body: {'credential': credential, ...identity.toAuthJson()},
         headers: {'X-Challenge-Id': challengeId},
       ),
     );
@@ -110,7 +129,9 @@ class AuthService {
     );
     final data = Map<String, Object?>.from(start.data ?? const {});
     final challengeId = data['challenge_id'] as String? ?? '';
-    final creationOptions = Map<String, Object?>.from(data['creation_options'] as Map? ?? const {});
+    final creationOptions = Map<String, Object?>.from(
+      data['creation_options'] as Map? ?? const {},
+    );
     final credential = await _passkeys.createCredential(creationOptions);
     await _apiClient.post<Map<String, Object?>>(
       '/api/v1/user/passkeys/register/finish',
@@ -120,9 +141,14 @@ class AuthService {
   }
 
   Future<List<PasskeySummary>> listPasskeys() async {
-    final response = await _apiClient.get<Map<String, Object?>>('/api/v1/user/passkeys');
-    final items = (response.data?['items'] as List? ?? const []).whereType<Map>();
-    return items.map((item) => PasskeySummary.fromJson(Map<String, Object?>.from(item))).toList(growable: false);
+    final response = await _apiClient.get<Map<String, Object?>>(
+      '/api/v1/user/passkeys',
+    );
+    final items = (response.data?['items'] as List? ?? const [])
+        .whereType<Map>();
+    return items
+        .map((item) => PasskeySummary.fromJson(Map<String, Object?>.from(item)))
+        .toList(growable: false);
   }
 
   Future<void> deletePasskey(String passkeyId) async {
@@ -130,9 +156,17 @@ class AuthService {
   }
 
   Future<List<NotificationPreference>> listNotificationPreferences() async {
-    final response = await _apiClient.get<Map<String, Object?>>('/api/v1/user/notification-preferences');
-    final items = (response.data?['preferences'] as List? ?? const []).whereType<Map>();
-    return items.map((item) => NotificationPreference.fromJson(Map<String, Object?>.from(item))).toList(growable: false);
+    final response = await _apiClient.get<Map<String, Object?>>(
+      '/api/v1/user/notification-preferences',
+    );
+    final items = (response.data?['preferences'] as List? ?? const [])
+        .whereType<Map>();
+    return items
+        .map(
+          (item) =>
+              NotificationPreference.fromJson(Map<String, Object?>.from(item)),
+        )
+        .toList(growable: false);
   }
 
   Future<NotificationPreference> updateNotificationPreference(
@@ -159,9 +193,16 @@ class AuthService {
   }
 
   Future<List<PushDeviceSummary>> listPushDevices() async {
-    final response = await _apiClient.get<Map<String, Object?>>('/api/v1/user/push-devices');
-    final items = (response.data?['devices'] as List? ?? const []).whereType<Map>();
-    return items.map((item) => PushDeviceSummary.fromJson(Map<String, Object?>.from(item))).toList(growable: false);
+    final response = await _apiClient.get<Map<String, Object?>>(
+      '/api/v1/user/push-devices',
+    );
+    final items = (response.data?['devices'] as List? ?? const [])
+        .whereType<Map>();
+    return items
+        .map(
+          (item) => PushDeviceSummary.fromJson(Map<String, Object?>.from(item)),
+        )
+        .toList(growable: false);
   }
 
   Future<void> deletePushDevice(String deviceId) async {
@@ -174,7 +215,9 @@ class AuthService {
       '/api/v1/device/code',
       body: identity.toAuthJson(),
     );
-    return DeviceCode.fromJson(Map<String, Object?>.from(response.data ?? const {}));
+    return DeviceCode.fromJson(
+      Map<String, Object?>.from(response.data ?? const {}),
+    );
   }
 
   Future<AuthSession> pollDeviceToken(String deviceCode) async {
@@ -187,9 +230,14 @@ class AuthService {
   }
 
   Future<List<SessionDetail>> listSessions() async {
-    final response = await _apiClient.get<Map<String, Object?>>('/api/v1/user/sessions');
-    final items = (response.data?['items'] as List? ?? const []).whereType<Map>();
-    return items.map((item) => SessionDetail.fromJson(Map<String, Object?>.from(item))).toList(growable: false);
+    final response = await _apiClient.get<Map<String, Object?>>(
+      '/api/v1/user/sessions',
+    );
+    final items = (response.data?['items'] as List? ?? const [])
+        .whereType<Map>();
+    return items
+        .map((item) => SessionDetail.fromJson(Map<String, Object?>.from(item)))
+        .toList(growable: false);
   }
 
   Future<void> deleteSession(String sessionId) async {
@@ -221,12 +269,13 @@ class AuthService {
     await _storage.clearDownloadState();
   }
 
+  Future<void> updateStoredUser(UserSummary user) {
+    return _storage.writeUser(jsonEncode(user.toJson()));
+  }
+
   Future<Map<String, Object?>> _authPayload(ServerProfile server) async {
     final identity = await _deviceIdentity.current();
-    return {
-      ...identity.toAuthJson(),
-      'server': server.origin.toString(),
-    };
+    return {...identity.toAuthJson(), 'server': server.origin.toString()};
   }
 
   Future<AuthSession> _completeAuth(dynamic response) async {

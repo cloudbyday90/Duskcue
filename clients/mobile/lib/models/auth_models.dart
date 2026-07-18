@@ -22,6 +22,8 @@ class UserSummary {
     required this.role,
     required this.capabilities,
     required this.hasAllLibraryAccess,
+    this.activeProfileId = '',
+    this.profileSelectionRequired = false,
   });
 
   final String id;
@@ -30,6 +32,8 @@ class UserSummary {
   final String role;
   final List<String> capabilities;
   final bool hasAllLibraryAccess;
+  final String activeProfileId;
+  final bool profileSelectionRequired;
 
   factory UserSummary.fromJson(Map<String, Object?> json) {
     return UserSummary(
@@ -37,8 +41,30 @@ class UserSummary {
       username: json['username'] as String? ?? '',
       displayName: json['display_name'] as String? ?? '',
       role: json['role'] as String? ?? '',
-      capabilities: (json['capabilities'] as List? ?? const []).whereType<String>().toList(growable: false),
+      capabilities: (json['capabilities'] as List? ?? const [])
+          .whereType<String>()
+          .toList(growable: false),
       hasAllLibraryAccess: json['has_all_library_access'] as bool? ?? false,
+      activeProfileId: json['active_profile_id'] as String? ?? '',
+      profileSelectionRequired:
+          json['profile_selection_required'] as bool? ?? false,
+    );
+  }
+
+  UserSummary copyWith({
+    String? activeProfileId,
+    bool? profileSelectionRequired,
+  }) {
+    return UserSummary(
+      id: id,
+      username: username,
+      displayName: displayName,
+      role: role,
+      capabilities: capabilities,
+      hasAllLibraryAccess: hasAllLibraryAccess,
+      activeProfileId: activeProfileId ?? this.activeProfileId,
+      profileSelectionRequired:
+          profileSelectionRequired ?? this.profileSelectionRequired,
     );
   }
 
@@ -50,15 +76,14 @@ class UserSummary {
       'role': role,
       'capabilities': capabilities,
       'has_all_library_access': hasAllLibraryAccess,
+      'active_profile_id': activeProfileId,
+      'profile_selection_required': profileSelectionRequired,
     };
   }
 }
 
 class AuthSession {
-  const AuthSession({
-    required this.sessionToken,
-    required this.user,
-  });
+  const AuthSession({required this.sessionToken, required this.user});
 
   final String sessionToken;
   final UserSummary user;
@@ -66,7 +91,9 @@ class AuthSession {
   factory AuthSession.fromJson(Map<String, Object?> json) {
     return AuthSession(
       sessionToken: json['session_token'] as String? ?? '',
-      user: UserSummary.fromJson(Map<String, Object?>.from(json['user'] as Map? ?? const {})),
+      user: UserSummary.fromJson(
+        Map<String, Object?>.from(json['user'] as Map? ?? const {}),
+      ),
     );
   }
 }
@@ -132,8 +159,12 @@ class SessionDetail {
       clientPlatform: json['client_platform'] as String?,
       ipAddress: json['ip_address'] as String?,
       isSecure: json['is_secure'] as bool? ?? false,
-      lastActiveAt: DateTime.tryParse(json['last_active_at'] as String? ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
-      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
+      lastActiveAt:
+          DateTime.tryParse(json['last_active_at'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      createdAt:
+          DateTime.tryParse(json['created_at'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
 }
@@ -157,8 +188,12 @@ class PasskeySummary {
     return PasskeySummary(
       id: json['id'] as String? ?? '',
       name: json['name'] as String? ?? 'Passkey',
-      transports: (json['transports'] as List? ?? const []).whereType<String>().toList(growable: false),
-      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
+      transports: (json['transports'] as List? ?? const [])
+          .whereType<String>()
+          .toList(growable: false),
+      createdAt:
+          DateTime.tryParse(json['created_at'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
       lastUsedAt: DateTime.tryParse(json['last_used_at'] as String? ?? ''),
     );
   }
@@ -255,8 +290,12 @@ class PushDeviceSummary {
       lastSeenAt: DateTime.tryParse(json['last_seen_at'] as String? ?? ''),
       isActive: json['is_active'] as bool? ?? false,
       invalidatedAt: DateTime.tryParse(json['invalidated_at'] as String? ?? ''),
-      createdAt: DateTime.tryParse(json['created_at'] as String? ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
-      updatedAt: DateTime.tryParse(json['updated_at'] as String? ?? '') ?? DateTime.fromMillisecondsSinceEpoch(0),
+      createdAt:
+          DateTime.tryParse(json['created_at'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
+      updatedAt:
+          DateTime.tryParse(json['updated_at'] as String? ?? '') ??
+          DateTime.fromMillisecondsSinceEpoch(0),
     );
   }
 }

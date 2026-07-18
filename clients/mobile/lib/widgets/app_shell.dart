@@ -36,7 +36,8 @@ class AppShell extends ConsumerStatefulWidget {
   ConsumerState<AppShell> createState() => _AppShellState();
 }
 
-class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver {
+class _AppShellState extends ConsumerState<AppShell>
+    with WidgetsBindingObserver {
   static const _fallbackPollInterval = Duration(seconds: 60);
 
   StreamSubscription<RealtimeEvent>? _eventSubscription;
@@ -54,9 +55,17 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
     _statusSubscription = realtime.status.listen((status) {
       ref.read(realtimeProvider.notifier).setStatus(status);
     });
-    _pushTapSubscription = ref.read(pushRegistrationServiceProvider).notificationTaps.listen(_handlePushTap);
-    _fallbackTimer = Timer.periodic(_fallbackPollInterval, (_) => unawaited(_pollFallback()));
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncRealtime(refresh: true));
+    _pushTapSubscription = ref
+        .read(pushRegistrationServiceProvider)
+        .notificationTaps
+        .listen(_handlePushTap);
+    _fallbackTimer = Timer.periodic(
+      _fallbackPollInterval,
+      (_) => unawaited(_pollFallback()),
+    );
+    WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _syncRealtime(refresh: true),
+    );
   }
 
   @override
@@ -82,11 +91,13 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
     final session = ref.read(sessionProvider);
     final foreground = _lifecycleState == AppLifecycleState.resumed;
     final realtime = ref.read(realtimeServiceProvider);
-    if (session.isAuthenticated && foreground) {
+    if (session.isAuthenticated && session.isProfileScopeReady && foreground) {
       unawaited(realtime.connect());
       unawaited(ref.read(pushRegistrationServiceProvider).startOrRefresh());
       unawaited(ref.read(qualityServiceProvider).reportCapabilities());
-      unawaited(ref.read(downloadManagerProvider.notifier).loadForCurrentSession());
+      unawaited(
+        ref.read(downloadManagerProvider.notifier).loadForCurrentSession(),
+      );
       if (refresh) {
         unawaited(_pollFallback(force: true));
       }
@@ -109,10 +120,14 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
     if (!mounted) return;
     final session = ref.read(sessionProvider);
     final realtimeState = ref.read(realtimeProvider);
-    if (!session.isAuthenticated) return;
-    if (!force && realtimeState.status == RealtimeConnectionStatus.connected) return;
+    if (!session.isAuthenticated || !session.isProfileScopeReady) return;
+    if (!force && realtimeState.status == RealtimeConnectionStatus.connected) {
+      return;
+    }
     try {
-      final count = await ref.read(contentServiceProvider).unreadNotificationCount();
+      final count = await ref
+          .read(contentServiceProvider)
+          .unreadNotificationCount();
       ref.read(realtimeProvider.notifier).setUnreadCount(count);
     } catch (_) {}
   }
@@ -137,7 +152,9 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
       case 'admin_task':
         break;
       case 'download_job_status':
-        unawaited(ref.read(downloadManagerProvider.notifier).handleRealtimeEvent(event));
+        unawaited(
+          ref.read(downloadManagerProvider.notifier).handleRealtimeEvent(event),
+        );
         break;
     }
   }
@@ -146,9 +163,14 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
     final data = event.jsonData;
     final title = data['title']?.toString();
     final body = data['body']?.toString() ?? data['message']?.toString();
-    final message = [title, body].whereType<String>().where((value) => value.isNotEmpty).join('\n');
+    final message = [
+      title,
+      body,
+    ].whereType<String>().where((value) => value.isNotEmpty).join('\n');
     if (message.isEmpty || !mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   @override
@@ -163,20 +185,53 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
       bottomNavigationBar: NavigationBar(
         selectedIndex: widget.navigationShell.currentIndex,
         onDestinationSelected: (index) {
-          widget.navigationShell.goBranch(index, initialLocation: index == widget.navigationShell.currentIndex);
+          widget.navigationShell.goBranch(
+            index,
+            initialLocation: index == widget.navigationShell.currentIndex,
+          );
         },
         destinations: [
-          NavigationDestination(icon: const Icon(Icons.home_outlined), selectedIcon: const Icon(Icons.home), label: strings.dashboard),
-          NavigationDestination(icon: const Icon(Icons.video_library_outlined), selectedIcon: const Icon(Icons.video_library), label: strings.libraries),
-          NavigationDestination(icon: const Icon(Icons.search), selectedIcon: const Icon(Icons.manage_search), label: strings.search),
-          NavigationDestination(icon: const Icon(Icons.collections_bookmark_outlined), selectedIcon: const Icon(Icons.collections_bookmark), label: strings.collections),
-          NavigationDestination(icon: const Icon(Icons.download_outlined), selectedIcon: const Icon(Icons.download), label: strings.downloads),
           NavigationDestination(
-            icon: _NotificationIcon(count: session.isAuthenticated ? realtime.unreadCount : 0, selected: false),
-            selectedIcon: _NotificationIcon(count: session.isAuthenticated ? realtime.unreadCount : 0, selected: true),
+            icon: const Icon(Icons.home_outlined),
+            selectedIcon: const Icon(Icons.home),
+            label: strings.dashboard,
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.video_library_outlined),
+            selectedIcon: const Icon(Icons.video_library),
+            label: strings.libraries,
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.search),
+            selectedIcon: const Icon(Icons.manage_search),
+            label: strings.search,
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.collections_bookmark_outlined),
+            selectedIcon: const Icon(Icons.collections_bookmark),
+            label: strings.collections,
+          ),
+          NavigationDestination(
+            icon: const Icon(Icons.download_outlined),
+            selectedIcon: const Icon(Icons.download),
+            label: strings.downloads,
+          ),
+          NavigationDestination(
+            icon: _NotificationIcon(
+              count: session.isAuthenticated ? realtime.unreadCount : 0,
+              selected: false,
+            ),
+            selectedIcon: _NotificationIcon(
+              count: session.isAuthenticated ? realtime.unreadCount : 0,
+              selected: true,
+            ),
             label: strings.notifications,
           ),
-          NavigationDestination(icon: const Icon(Icons.settings_outlined), selectedIcon: const Icon(Icons.settings), label: strings.settings),
+          NavigationDestination(
+            icon: const Icon(Icons.settings_outlined),
+            selectedIcon: const Icon(Icons.settings),
+            label: strings.settings,
+          ),
         ],
       ),
     );
@@ -184,17 +239,16 @@ class _AppShellState extends ConsumerState<AppShell> with WidgetsBindingObserver
 }
 
 class _NotificationIcon extends StatelessWidget {
-  const _NotificationIcon({
-    required this.count,
-    required this.selected,
-  });
+  const _NotificationIcon({required this.count, required this.selected});
 
   final int count;
   final bool selected;
 
   @override
   Widget build(BuildContext context) {
-    final icon = Icon(selected ? Icons.notifications : Icons.notifications_outlined);
+    final icon = Icon(
+      selected ? Icons.notifications : Icons.notifications_outlined,
+    );
     if (count <= 0) return icon;
     return Badge(
       label: Text(count > 99 ? '99+' : count.toString()),

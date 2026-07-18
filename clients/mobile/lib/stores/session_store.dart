@@ -18,26 +18,35 @@ import 'package:duskcue_mobile/models/auth_models.dart';
 import 'package:duskcue_mobile/models/server_profile.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+enum ProfileScopeStatus { uninitialized, unresolved, selectionRequired, ready }
+
 class SessionState {
   const SessionState({
     this.server,
     this.user,
     this.isAuthenticated = false,
+    this.profileScopeStatus = ProfileScopeStatus.uninitialized,
   });
 
   final ServerProfile? server;
   final UserSummary? user;
   final bool isAuthenticated;
+  final ProfileScopeStatus profileScopeStatus;
+
+  bool get isProfileScopeReady =>
+      profileScopeStatus == ProfileScopeStatus.ready;
 
   SessionState copyWith({
     ServerProfile? server,
     UserSummary? user,
     bool? isAuthenticated,
+    ProfileScopeStatus? profileScopeStatus,
   }) {
     return SessionState(
       server: server ?? this.server,
       user: user ?? this.user,
       isAuthenticated: isAuthenticated ?? this.isAuthenticated,
+      profileScopeStatus: profileScopeStatus ?? this.profileScopeStatus,
     );
   }
 
@@ -57,7 +66,28 @@ class SessionNotifier extends Notifier<SessionState> {
   }
 
   void setAuthenticated(UserSummary user) {
-    state = state.copyWith(user: user, isAuthenticated: true);
+    state = state.copyWith(
+      user: user,
+      isAuthenticated: true,
+      profileScopeStatus: ProfileScopeStatus.unresolved,
+    );
+  }
+
+  void resolveProfileScope({
+    required String activeProfileId,
+    required bool profileSelectionRequired,
+  }) {
+    final user = state.user;
+    if (user == null || !state.isAuthenticated) return;
+    state = state.copyWith(
+      user: user.copyWith(
+        activeProfileId: activeProfileId,
+        profileSelectionRequired: profileSelectionRequired,
+      ),
+      profileScopeStatus: profileSelectionRequired
+          ? ProfileScopeStatus.selectionRequired
+          : ProfileScopeStatus.ready,
+    );
   }
 
   void clearAuthentication() {

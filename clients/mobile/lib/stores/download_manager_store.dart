@@ -106,25 +106,29 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     }
   }
 
+  void clearForProfileChange() {
+    state = const DownloadManagerState();
+  }
+
   Future<void> queueDownload(MediaItemSummary item) async {
     final scope = await _requireScope();
     final settings = state.settings;
     state = state.copyWith(loading: true, clearError: true);
     try {
       final service = ref.read(downloadServiceProvider);
-      final plan = await service.planDownload(mediaItemId: item.id, qualityMode: settings.defaultQualityMode);
+      final plan = await service.planDownload(
+        mediaItemId: item.id,
+        qualityMode: settings.defaultQualityMode,
+      );
       if (!_fitsStorageCap(settings, plan.estimatedBytes)) {
         throw StateError('Download storage cap would be exceeded.');
       }
       final job = await service.createDownloadJob(
-            item: item,
-            qualityMode: settings.defaultQualityMode,
-            plan: plan,
-          );
-      final next = _upsertItem(
-        state.items,
-        DownloadItem.queued(item, job),
+        item: item,
+        qualityMode: settings.defaultQualityMode,
+        plan: plan,
       );
+      final next = _upsertItem(state.items, DownloadItem.queued(item, job));
       await _persistItems(scope, next);
       state = state.copyWith(
         scope: scope,
@@ -156,10 +160,17 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
         updated.add(item);
       }
     }
-    final constrained = await _applyTransferConstraints(updated, state.settings);
+    final constrained = await _applyTransferConstraints(
+      updated,
+      state.settings,
+    );
     final materialized = await _materializeReadyPackages(scope, constrained);
     await _persistItems(scope, materialized);
-    state = state.copyWith(scope: scope, items: _sortItems(materialized), clearError: true);
+    state = state.copyWith(
+      scope: scope,
+      items: _sortItems(materialized),
+      clearError: true,
+    );
     await _syncPendingChanges(scope);
   }
 
@@ -200,11 +211,16 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
   Future<void> resume(DownloadItem item) async {
     final scope = await _requireScope();
     final resumed = item.copyWith(
-      status: item.packageId == null ? DownloadItemStatus.ready : DownloadItemStatus.downloading,
+      status: item.packageId == null
+          ? DownloadItemStatus.ready
+          : DownloadItemStatus.downloading,
       updatedAt: DateTime.now(),
       clearWaitingReason: true,
     );
-    final next = await _applyTransferConstraints(_replaceItem(state.items, resumed), state.settings);
+    final next = await _applyTransferConstraints(
+      _replaceItem(state.items, resumed),
+      state.settings,
+    );
     await _persistItems(scope, next);
     state = state.copyWith(items: _sortItems(next), clearError: true);
   }
@@ -218,7 +234,9 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
       } catch (_) {}
     }
     await ref.read(protectedDownloadStorageProvider).deletePackage(scope, item);
-    final next = state.items.where((candidate) => candidate.id != item.id).toList(growable: false);
+    final next = state.items
+        .where((candidate) => candidate.id != item.id)
+        .toList(growable: false);
     await _persistItems(scope, next);
     state = state.copyWith(items: _sortItems(next), clearError: true);
   }
@@ -253,7 +271,11 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     await _saveSettings(scope, settings);
     final constrained = await _applyTransferConstraints(state.items, settings);
     await _persistItems(scope, constrained);
-    state = state.copyWith(settings: settings, items: _sortItems(constrained), clearError: true);
+    state = state.copyWith(
+      settings: settings,
+      items: _sortItems(constrained),
+      clearError: true,
+    );
   }
 
   Future<void> handleRealtimeEvent(RealtimeEvent event) async {
@@ -264,7 +286,8 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     if (update.deviceIdentifier != scope.deviceIdentifier) return;
 
     final current = state.items.firstWhere(
-      (item) => item.jobId == update.jobId || item.mediaItemId == update.mediaItemId,
+      (item) =>
+          item.jobId == update.jobId || item.mediaItemId == update.mediaItemId,
       orElse: () => DownloadItem(
         mediaItemId: update.mediaItemId,
         title: 'Download',
@@ -284,12 +307,19 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     );
     final materialized = await _materializeReadyPackages(scope, next);
     await _persistItems(scope, materialized);
-    state = state.copyWith(scope: scope, items: _sortItems(materialized), clearError: true);
+    state = state.copyWith(
+      scope: scope,
+      items: _sortItems(materialized),
+      clearError: true,
+    );
   }
 
   Future<void> materializePackage(DownloadItem item) async {
     final scope = await _requireScope();
-    final next = await _materializeReadyPackages(scope, _replaceItem(state.items, item));
+    final next = await _materializeReadyPackages(
+      scope,
+      _replaceItem(state.items, item),
+    );
     await _persistItems(scope, next);
     state = state.copyWith(items: _sortItems(next), clearError: true);
   }
@@ -305,8 +335,11 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     final scope = await _requireScope();
     final packageId = item.packageId;
     if (packageId == null || packageId.isEmpty) return;
-    final completed = eventType == 'completed' || (durationMs > 0 && durationMs - positionMs <= 2000);
-    final watched = completed || (durationMs > 0 && positionMs / durationMs >= 0.9);
+    final completed =
+        eventType == 'completed' ||
+        (durationMs > 0 && durationMs - positionMs <= 2000);
+    final watched =
+        completed || (durationMs > 0 && positionMs / durationMs >= 0.9);
     final protectedStorage = ref.read(protectedDownloadStorageProvider);
     await protectedStorage.appendOfflinePlaybackEvent(
       scope,
@@ -326,7 +359,10 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
         },
       ),
     );
-    final pendingCount = await protectedStorage.pendingPlaybackEventCount(scope, packageId);
+    final pendingCount = await protectedStorage.pendingPlaybackEventCount(
+      scope,
+      packageId,
+    );
     final nextItem = item.copyWith(
       localResumePositionMs: completed ? 0 : positionMs,
       localCompleted: completed,
@@ -361,11 +397,18 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     final session = ref.read(sessionProvider);
     final server = session.server;
     final user = session.user;
-    if (!session.isAuthenticated || server == null || user == null) return null;
+    if (!session.isAuthenticated ||
+        !session.isProfileScopeReady ||
+        server == null ||
+        user == null ||
+        user.activeProfileId.isEmpty) {
+      return null;
+    }
     final identity = await ref.read(deviceIdentityProvider).current();
     return DownloadInventoryScope(
       serverOrigin: server.origin.toString(),
       userId: user.id,
+      profileId: user.activeProfileId,
       deviceIdentifier: identity.deviceId,
     );
   }
@@ -382,14 +425,22 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
         .toList(growable: false);
   }
 
-  Future<void> _saveItems(DownloadInventoryScope scope, List<DownloadItem> items) async {
+  Future<void> _saveItems(
+    DownloadInventoryScope scope,
+    List<DownloadItem> items,
+  ) async {
     final storage = ref.read(secureStorageProvider);
     final root = _decodeRoot(await storage.readDownloadInventory());
-    root[scope.key] = items.map((item) => item.toJson()).toList(growable: false);
+    root[scope.key] = items
+        .map((item) => item.toJson())
+        .toList(growable: false);
     await storage.writeDownloadInventory(jsonEncode(root));
   }
 
-  Future<void> _persistItems(DownloadInventoryScope scope, List<DownloadItem> items) async {
+  Future<void> _persistItems(
+    DownloadInventoryScope scope,
+    List<DownloadItem> items,
+  ) async {
     await _saveItems(scope, items);
     final protectedStorage = ref.read(protectedDownloadStorageProvider);
     await protectedStorage.prepareScope(scope);
@@ -404,7 +455,9 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
       final events = await protectedStorage.readOfflinePlaybackEvents(scope);
       final packageStates = _packageStatesForSync(state.items, events);
       if (packageStates.isEmpty && events.isEmpty) return;
-      final response = await ref.read(downloadServiceProvider).syncDownloadState(
+      final response = await ref
+          .read(downloadServiceProvider)
+          .syncDownloadState(
             packageStates: packageStates,
             playbackEvents: events,
           );
@@ -416,11 +469,13 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
       for (final item in state.items) {
         var updated = item;
         final packageId = item.packageId;
-        if (packageId != null && response.deletedPackageIds.contains(packageId)) {
+        if (packageId != null &&
+            response.deletedPackageIds.contains(packageId)) {
           await protectedStorage.deletePackage(scope, item);
           continue;
         }
-        if (packageId != null && response.expiredPackageIds.contains(packageId)) {
+        if (packageId != null &&
+            response.expiredPackageIds.contains(packageId)) {
           await protectedStorage.deletePackage(scope, item);
           updated = updated.copyWith(
             status: DownloadItemStatus.expired,
@@ -433,7 +488,8 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
             clearLocalPlaybackUpdatedAt: true,
             updatedAt: DateTime.now(),
           );
-        } else if (packageId != null && response.revokedPackageIds.contains(packageId)) {
+        } else if (packageId != null &&
+            response.revokedPackageIds.contains(packageId)) {
           await protectedStorage.deletePackage(scope, item);
           updated = updated.copyWith(
             status: DownloadItemStatus.unavailable,
@@ -449,7 +505,8 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
         }
         if (packageId != null) {
           updated = updated.copyWith(
-            pendingPlaybackEventCount: await protectedStorage.pendingPlaybackEventCount(scope, packageId),
+            pendingPlaybackEventCount: await protectedStorage
+                .pendingPlaybackEventCount(scope, packageId),
           );
         }
         next.add(updated);
@@ -474,7 +531,8 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
           expiresAt == null ||
           !expiresAt.isAfter(now) ||
           expiresAt.difference(now) > _renewBeforeExpiry ||
-          (item.status != DownloadItemStatus.ready && item.status != DownloadItemStatus.playableOffline)) {
+          (item.status != DownloadItemStatus.ready &&
+              item.status != DownloadItemStatus.playableOffline)) {
         renewed.add(item);
         continue;
       }
@@ -483,7 +541,9 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
         renewed.add(
           item.copyWith(
             expiresAt: renewal.expiresAt,
-            waitingReason: item.status == DownloadItemStatus.playableOffline ? 'Playable offline' : item.waitingReason,
+            waitingReason: item.status == DownloadItemStatus.playableOffline
+                ? 'Playable offline'
+                : item.waitingReason,
             updatedAt: DateTime.now(),
           ),
         );
@@ -500,7 +560,9 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
   ) {
     final eventsByPackage = <String, List<Map<String, Object?>>>{};
     for (final event in events) {
-      eventsByPackage.putIfAbsent(event.packageId, () => <Map<String, Object?>>[]).add(event.toJson());
+      eventsByPackage
+          .putIfAbsent(event.packageId, () => <Map<String, Object?>>[])
+          .add(event.toJson());
     }
     return items
         .where((item) => item.packageId != null && item.packageId!.isNotEmpty)
@@ -512,7 +574,9 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
             'files_verified': item.localFilesVerified,
             'local_manifest_hash_sha256': item.localManifestHashSha256,
             'local_resume_position_ms': item.localResumePositionMs,
-            'pending_events': eventsByPackage[item.packageId] ?? const <Map<String, Object?>>[],
+            'pending_events':
+                eventsByPackage[item.packageId] ??
+                const <Map<String, Object?>>[],
           },
         )
         .toList(growable: false);
@@ -522,7 +586,8 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     return switch (item.status) {
       DownloadItemStatus.downloading => 'downloading',
       DownloadItemStatus.paused => 'paused',
-      DownloadItemStatus.playableOffline => item.pendingPlaybackEventCount > 0 ? 'sync_pending' : 'playable',
+      DownloadItemStatus.playableOffline =>
+        item.pendingPlaybackEventCount > 0 ? 'sync_pending' : 'playable',
       DownloadItemStatus.failed => 'failed',
       DownloadItemStatus.expired => 'expired',
       DownloadItemStatus.unavailable => 'revoked',
@@ -541,7 +606,9 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
   ) async {
     var next = items;
     for (final item in items) {
-      if (item.status != DownloadItemStatus.ready || item.packageId == null || item.packageId!.isEmpty) {
+      if (item.status != DownloadItemStatus.ready ||
+          item.packageId == null ||
+          item.packageId!.isEmpty) {
         continue;
       }
       try {
@@ -571,7 +638,10 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     return next;
   }
 
-  Future<DownloadItem> _materializePackage(DownloadInventoryScope scope, DownloadItem item) async {
+  Future<DownloadItem> _materializePackage(
+    DownloadInventoryScope scope,
+    DownloadItem item,
+  ) async {
     final packageId = item.packageId;
     if (packageId == null || packageId.isEmpty) {
       throw StateError('Download package is missing.');
@@ -581,7 +651,9 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     final manifest = await downloadService.getPackageManifest(packageId);
     final transfer = await downloadService.createTransferUrls(
       packageId: packageId,
-      filePaths: manifest.files.map((file) => file.relativePath).toList(growable: false),
+      filePaths: manifest.files
+          .map((file) => file.relativePath)
+          .toList(growable: false),
     );
     final transferByPath = {
       for (final file in transfer.files) file.relativePath: file,
@@ -612,8 +684,15 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     if (playbackFile == null) {
       throw StateError('Package has no playable offline file.');
     }
-    final playbackPath = await protectedStorage.packageFilePath(scope, item, playbackFile.relativePath);
-    final pendingEvents = await protectedStorage.pendingPlaybackEventCount(scope, packageId);
+    final playbackPath = await protectedStorage.packageFilePath(
+      scope,
+      item,
+      playbackFile.relativePath,
+    );
+    final pendingEvents = await protectedStorage.pendingPlaybackEventCount(
+      scope,
+      packageId,
+    );
     return item.copyWith(
       status: DownloadItemStatus.playableOffline,
       progressPercent: 100,
@@ -630,7 +709,9 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     );
   }
 
-  Future<DownloadManagerSettings> _readSettings(DownloadInventoryScope scope) async {
+  Future<DownloadManagerSettings> _readSettings(
+    DownloadInventoryScope scope,
+  ) async {
     final raw = await ref.read(secureStorageProvider).readDownloadSettings();
     final root = _decodeRoot(raw);
     final value = root[scope.key];
@@ -640,7 +721,10 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     return const DownloadManagerSettings();
   }
 
-  Future<void> _saveSettings(DownloadInventoryScope scope, DownloadManagerSettings settings) async {
+  Future<void> _saveSettings(
+    DownloadInventoryScope scope,
+    DownloadManagerSettings settings,
+  ) async {
     final storage = ref.read(secureStorageProvider);
     final root = _decodeRoot(await storage.readDownloadSettings());
     root[scope.key] = settings.toJson();
@@ -653,29 +737,33 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
   ) async {
     final connectivity = await ref.read(connectivityServiceProvider).current();
     final onCellular = connectivity.contains(ConnectivityResult.mobile);
-    final waitingForWifi = settings.wifiOnly && !settings.allowCellular && onCellular;
+    final waitingForWifi =
+        settings.wifiOnly && !settings.allowCellular && onCellular;
     final overStorageCap = _storageCapExceeded(items, settings);
-    return items.map((item) {
-      if (waitingForWifi &&
-          (item.status == DownloadItemStatus.ready || item.status == DownloadItemStatus.downloading)) {
-        return item.copyWith(
-          status: DownloadItemStatus.paused,
-          waitingReason: 'Waiting for Wi-Fi',
-          updatedAt: DateTime.now(),
-        );
-      }
-      if (overStorageCap &&
-          (item.status == DownloadItemStatus.queued ||
-              item.status == DownloadItemStatus.ready ||
-              item.status == DownloadItemStatus.downloading)) {
-        return item.copyWith(
-          status: DownloadItemStatus.paused,
-          waitingReason: 'Storage cap reached',
-          updatedAt: DateTime.now(),
-        );
-      }
-      return item;
-    }).toList(growable: false);
+    return items
+        .map((item) {
+          if (waitingForWifi &&
+              (item.status == DownloadItemStatus.ready ||
+                  item.status == DownloadItemStatus.downloading)) {
+            return item.copyWith(
+              status: DownloadItemStatus.paused,
+              waitingReason: 'Waiting for Wi-Fi',
+              updatedAt: DateTime.now(),
+            );
+          }
+          if (overStorageCap &&
+              (item.status == DownloadItemStatus.queued ||
+                  item.status == DownloadItemStatus.ready ||
+                  item.status == DownloadItemStatus.downloading)) {
+            return item.copyWith(
+              status: DownloadItemStatus.paused,
+              waitingReason: 'Storage cap reached',
+              updatedAt: DateTime.now(),
+            );
+          }
+          return item;
+        })
+        .toList(growable: false);
   }
 
   bool _fitsStorageCap(DownloadManagerSettings settings, int estimatedBytes) {
@@ -684,24 +772,24 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     return _currentStorageBytes(state.items) + estimatedBytes <= cap;
   }
 
-  bool _storageCapExceeded(List<DownloadItem> items, DownloadManagerSettings settings) {
+  bool _storageCapExceeded(
+    List<DownloadItem> items,
+    DownloadManagerSettings settings,
+  ) {
     final cap = settings.storageCapBytes;
     if (cap == null || cap <= 0) return false;
     return _currentStorageBytes(items) > cap;
   }
 
   int _currentStorageBytes(List<DownloadItem> items) {
-    return items.fold<int>(
-      0,
-      (total, item) {
-        if (item.status == DownloadItemStatus.cancelled ||
-            item.status == DownloadItemStatus.expired ||
-            item.status == DownloadItemStatus.unavailable) {
-          return total;
-        }
-        return total + (item.bytesExpected ?? item.bytesPrepared);
-      },
-    );
+    return items.fold<int>(0, (total, item) {
+      if (item.status == DownloadItemStatus.cancelled ||
+          item.status == DownloadItemStatus.expired ||
+          item.status == DownloadItemStatus.unavailable) {
+        return total;
+      }
+      return total + (item.bytesExpected ?? item.bytesPrepared);
+    });
   }
 
   Map<String, Object?> _decodeRoot(String? raw) {
@@ -715,15 +803,17 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
 
   List<DownloadItem> _upsertItem(List<DownloadItem> items, DownloadItem item) {
     var replaced = false;
-    final next = items.map((candidate) {
-      if (candidate.id == item.id ||
-          candidate.jobId == item.jobId ||
-          candidate.mediaItemId == item.mediaItemId) {
-        replaced = true;
-        return item;
-      }
-      return candidate;
-    }).toList(growable: true);
+    final next = items
+        .map((candidate) {
+          if (candidate.id == item.id ||
+              candidate.jobId == item.jobId ||
+              candidate.mediaItemId == item.mediaItemId) {
+            replaced = true;
+            return item;
+          }
+          return candidate;
+        })
+        .toList(growable: true);
     if (!replaced) next.add(item);
     return next;
   }
@@ -742,7 +832,10 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
     return item.applyJob(job);
   }
 
-  DownloadItem _mergeStatusEvent(DownloadItem item, DownloadJobStatusEvent event) {
+  DownloadItem _mergeStatusEvent(
+    DownloadItem item,
+    DownloadJobStatusEvent event,
+  ) {
     if (item.canPlayOffline && event.status == DownloadItemStatus.ready) {
       return item.copyWith(
         jobId: event.jobId,
@@ -757,7 +850,9 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
   }
 
   List<DownloadItem> _replaceItem(List<DownloadItem> items, DownloadItem item) {
-    return items.map((candidate) => candidate.id == item.id ? item : candidate).toList(growable: false);
+    return items
+        .map((candidate) => candidate.id == item.id ? item : candidate)
+        .toList(growable: false);
   }
 
   List<DownloadItem> _sortItems(List<DownloadItem> items) {
@@ -767,6 +862,7 @@ class DownloadManagerNotifier extends Notifier<DownloadManagerState> {
   }
 }
 
-final downloadManagerProvider = NotifierProvider<DownloadManagerNotifier, DownloadManagerState>(
-  DownloadManagerNotifier.new,
-);
+final downloadManagerProvider =
+    NotifierProvider<DownloadManagerNotifier, DownloadManagerState>(
+      DownloadManagerNotifier.new,
+    );

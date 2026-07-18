@@ -34,7 +34,9 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  final TextEditingController _passkeyNameController = TextEditingController(text: 'Mobile passkey');
+  final TextEditingController _passkeyNameController = TextEditingController(
+    text: 'Mobile passkey',
+  );
 
   List<SessionDetail> _sessions = const [];
   List<PasskeySummary> _passkeys = const [];
@@ -127,14 +129,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _deletePasskey(String passkeyId) async {
     await ref.read(authServiceProvider).deletePasskey(passkeyId);
     if (!mounted) return;
-    setState(() => _passkeys = _passkeys.where((item) => item.id != passkeyId).toList(growable: false));
+    setState(
+      () => _passkeys = _passkeys
+          .where((item) => item.id != passkeyId)
+          .toList(growable: false),
+    );
   }
 
   Future<void> _deleteSession(String sessionId) async {
     try {
       await ref.read(authServiceProvider).deleteSession(sessionId);
       if (!mounted) return;
-      setState(() => _sessions = _sessions.where((item) => item.id != sessionId).toList(growable: false));
+      setState(
+        () => _sessions = _sessions
+            .where((item) => item.id != sessionId)
+            .toList(growable: false),
+      );
     } on ClientError catch (error) {
       _handleError(error);
     }
@@ -158,18 +168,35 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (mounted) context.go('/server');
   }
 
-  Future<void> _savePreference(NotificationPreference preference, String channel, bool value) async {
+  Future<void> _savePreference(
+    NotificationPreference preference,
+    String channel,
+    bool value,
+  ) async {
     try {
       final updated = switch (channel) {
-        'in_app' => await ref.read(authServiceProvider).updateNotificationPreference(preference, inAppEnabled: value),
-        'webhook' => await ref.read(authServiceProvider).updateNotificationPreference(preference, webhookEnabled: value),
-        'push' => await ref.read(authServiceProvider).updateNotificationPreference(preference, pushEnabled: value),
+        'in_app' =>
+          await ref
+              .read(authServiceProvider)
+              .updateNotificationPreference(preference, inAppEnabled: value),
+        'webhook' =>
+          await ref
+              .read(authServiceProvider)
+              .updateNotificationPreference(preference, webhookEnabled: value),
+        'push' =>
+          await ref
+              .read(authServiceProvider)
+              .updateNotificationPreference(preference, pushEnabled: value),
         _ => preference,
       };
       if (!mounted) return;
       setState(() {
         _preferences = _preferences
-            .map((item) => item.notificationTypeId == updated.notificationTypeId ? updated : item)
+            .map(
+              (item) => item.notificationTypeId == updated.notificationTypeId
+                  ? updated
+                  : item,
+            )
             .toList(growable: false);
       });
     } on ClientError catch (error) {
@@ -180,7 +207,11 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   Future<void> _deletePushDevice(String deviceId) async {
     await ref.read(authServiceProvider).deletePushDevice(deviceId);
     if (!mounted) return;
-    setState(() => _pushDevices = _pushDevices.where((item) => item.id != deviceId).toList(growable: false));
+    setState(
+      () => _pushDevices = _pushDevices
+          .where((item) => item.id != deviceId)
+          .toList(growable: false),
+    );
   }
 
   Future<void> _setDefaultQuality(QualityMode mode) async {
@@ -194,7 +225,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final url = server.origin.replace(path: '/settings').toString();
     await Clipboard.setData(ClipboardData(text: url));
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Settings URL copied.')));
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Settings URL copied.')));
   }
 
   void _handleError(ClientError error) {
@@ -235,13 +268,17 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               _SectionHeader(
                 title: session.user?.displayName ?? 'Not signed in',
                 subtitle: [
-                  if (session.user?.username.isNotEmpty == true) '@${session.user!.username}',
+                  if (session.user?.username.isNotEmpty == true)
+                    '@${session.user!.username}',
                   if (session.user?.role.isNotEmpty == true) session.user!.role,
                 ].join(' · '),
               ),
               if (_message != null) ...[
                 const SizedBox(height: 8),
-                Text(_message!, style: TextStyle(color: theme.colorScheme.error)),
+                Text(
+                  _message!,
+                  style: TextStyle(color: theme.colorScheme.error),
+                ),
               ],
               const SizedBox(height: 12),
               if (_loading) const LinearProgressIndicator(),
@@ -260,27 +297,58 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                 },
               ),
               const SizedBox(height: 12),
+              Card(
+                child: ListTile(
+                  leading: const Icon(Icons.switch_account_outlined),
+                  title: const Text('Switch profile'),
+                  subtitle: const Text(
+                    'Choose the household profile for this device.',
+                  ),
+                  enabled: session.isProfileScopeReady,
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: session.isProfileScopeReady
+                      ? () => context.go('/profiles?switch=true')
+                      : null,
+                ),
+              ),
+              const SizedBox(height: 12),
               ExpansionTile(
                 leading: const Icon(Icons.devices),
                 title: const Text('Sessions'),
-                subtitle: Text('${_sessions.length} authorized device${_sessions.length == 1 ? '' : 's'}'),
+                subtitle: Text(
+                  '${_sessions.length} authorized device${_sessions.length == 1 ? '' : 's'}',
+                ),
                 children: [
                   ..._sessions.map((item) {
-                    final isCurrent = item.deviceId != null && item.deviceId == _currentDeviceId;
+                    final isCurrent =
+                        item.deviceId != null &&
+                        item.deviceId == _currentDeviceId;
                     return ListTile(
-                      title: Text(item.deviceName ?? item.clientName ?? item.clientPlatform ?? 'Duskcue client'),
+                      title: Text(
+                        item.deviceName ??
+                            item.clientName ??
+                            item.clientPlatform ??
+                            'Duskcue client',
+                      ),
                       subtitle: Text(
                         [
                           if (isCurrent) 'Current device',
-                          '${item.clientName ?? 'Unknown app'} ${item.clientVersion ?? ''}'.trim(),
+                          '${item.clientName ?? 'Unknown app'} ${item.clientVersion ?? ''}'
+                              .trim(),
                           if (item.ipAddress != null) item.ipAddress!,
                           'Last active ${_formatDate(item.lastActiveAt)}',
                         ].where((value) => value.isNotEmpty).join('\n'),
                       ),
                       isThreeLine: true,
                       trailing: IconButton(
-                        tooltip: isCurrent ? 'Sign out here' : 'Sign out device',
-                        onPressed: session.isAuthenticated ? () => unawaited(isCurrent ? _logout() : _deleteSession(item.id)) : null,
+                        tooltip: isCurrent
+                            ? 'Sign out here'
+                            : 'Sign out device',
+                        onPressed: session.isAuthenticated
+                            ? () => unawaited(
+                                isCurrent ? _logout() : _deleteSession(item.id),
+                              )
+                            : null,
                         icon: const Icon(Icons.logout),
                       ),
                     );
@@ -313,7 +381,10 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         Expanded(
                           child: TextField(
                             controller: _passkeyNameController,
-                            decoration: const InputDecoration(labelText: 'Passkey name', border: OutlineInputBorder()),
+                            decoration: const InputDecoration(
+                              labelText: 'Passkey name',
+                              border: OutlineInputBorder(),
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -326,16 +397,20 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                   ),
                   if (_passkeys.isEmpty)
-                    const ListTile(title: Text('No passkeys registered for this account.'))
+                    const ListTile(
+                      title: Text('No passkeys registered for this account.'),
+                    )
                   else
                     ..._passkeys.map(
                       (item) => ListTile(
                         title: Text(item.name),
                         subtitle: Text(
                           [
-                            if (item.transports.isNotEmpty) item.transports.join(', '),
+                            if (item.transports.isNotEmpty)
+                              item.transports.join(', '),
                             'Created ${_formatDate(item.createdAt)}',
-                            if (item.lastUsedAt != null) 'Last used ${_formatDate(item.lastUsedAt!)}',
+                            if (item.lastUsedAt != null)
+                              'Last used ${_formatDate(item.lastUsedAt!)}',
                           ].join('\n'),
                         ),
                         isThreeLine: true,
@@ -351,32 +426,45 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
               ExpansionTile(
                 leading: const Icon(Icons.notifications),
                 title: const Text('Notification preferences'),
-                subtitle: Text('${_preferences.length} notification type${_preferences.length == 1 ? '' : 's'}'),
+                subtitle: Text(
+                  '${_preferences.length} notification type${_preferences.length == 1 ? '' : 's'}',
+                ),
                 children: [
                   if (_preferences.isEmpty)
-                    const ListTile(title: Text('No notification preferences available.'))
+                    const ListTile(
+                      title: Text('No notification preferences available.'),
+                    )
                   else
                     ..._preferences.map(
                       (item) => Column(
                         children: [
                           ListTile(
-                            title: Text(_titleCase(item.name.replaceAll('_', ' '))),
-                            subtitle: Text('${item.category} · ${item.priority}${item.isUsingDefaults ? ' · default' : ''}'),
+                            title: Text(
+                              _titleCase(item.name.replaceAll('_', ' ')),
+                            ),
+                            subtitle: Text(
+                              '${item.category} · ${item.priority}${item.isUsingDefaults ? ' · default' : ''}',
+                            ),
                           ),
                           SwitchListTile(
                             title: const Text('In-app'),
                             value: item.inAppEnabled,
-                            onChanged: (value) => unawaited(_savePreference(item, 'in_app', value)),
+                            onChanged: (value) => unawaited(
+                              _savePreference(item, 'in_app', value),
+                            ),
                           ),
                           SwitchListTile(
                             title: const Text('Push'),
                             value: item.pushEnabled,
-                            onChanged: (value) => unawaited(_savePreference(item, 'push', value)),
+                            onChanged: (value) =>
+                                unawaited(_savePreference(item, 'push', value)),
                           ),
                           SwitchListTile(
                             title: const Text('Webhook'),
                             value: item.webhookEnabled,
-                            onChanged: (value) => unawaited(_savePreference(item, 'webhook', value)),
+                            onChanged: (value) => unawaited(
+                              _savePreference(item, 'webhook', value),
+                            ),
                           ),
                           const Divider(height: 1),
                         ],
@@ -394,21 +482,26 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                   else
                     ..._pushDevices.map(
                       (item) => ListTile(
-                        title: Text(item.deviceName ?? item.platform ?? item.provider),
+                        title: Text(
+                          item.deviceName ?? item.platform ?? item.provider,
+                        ),
                         subtitle: Text(
                           [
                             _providerLabel(item.provider),
                             if (item.appVersion != null) 'v${item.appVersion}',
                             if (item.tokenPreview.isNotEmpty) item.tokenPreview,
-                            if (item.lastSeenAt != null) 'Last seen ${_formatDate(item.lastSeenAt!)}',
-                            if (item.invalidatedAt != null) 'Invalidated ${_formatDate(item.invalidatedAt!)}',
+                            if (item.lastSeenAt != null)
+                              'Last seen ${_formatDate(item.lastSeenAt!)}',
+                            if (item.invalidatedAt != null)
+                              'Invalidated ${_formatDate(item.invalidatedAt!)}',
                             item.isActive ? 'Active' : 'Inactive',
                           ].join('\n'),
                         ),
                         isThreeLine: true,
                         trailing: IconButton(
                           tooltip: 'Revoke push device',
-                          onPressed: () => unawaited(_deletePushDevice(item.id)),
+                          onPressed: () =>
+                              unawaited(_deletePushDevice(item.id)),
                           icon: const Icon(Icons.delete_outline),
                         ),
                       ),
@@ -465,11 +558,19 @@ class _ServerSettingsCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Server connection', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              'Server connection',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 8),
             Text(serverName ?? serverOrigin ?? 'No server selected'),
-            if (serverOrigin != null) Text(serverOrigin!, style: Theme.of(context).textTheme.bodySmall),
-            if (networkMode != null) Text('Network mode: $networkMode', style: Theme.of(context).textTheme.bodySmall),
+            if (serverOrigin != null)
+              Text(serverOrigin!, style: Theme.of(context).textTheme.bodySmall),
+            if (networkMode != null)
+              Text(
+                'Network mode: $networkMode',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
             const SizedBox(height: 12),
             Wrap(
               spacing: 8,
@@ -481,7 +582,9 @@ class _ServerSettingsCard extends StatelessWidget {
                   label: const Text('Choose server'),
                 ),
                 OutlinedButton.icon(
-                  onPressed: serverOrigin == null ? null : onCopyAdminSettingsUrl,
+                  onPressed: serverOrigin == null
+                      ? null
+                      : onCopyAdminSettingsUrl,
                   icon: const Icon(Icons.copy),
                   label: const Text('Copy web settings URL'),
                 ),
@@ -512,7 +615,12 @@ class _QualitySettingsCard extends StatelessWidget {
             border: OutlineInputBorder(),
           ),
           items: QualityMode.values
-              .map((mode) => DropdownMenuItem<QualityMode>(value: mode, child: Text(mode.label)))
+              .map(
+                (mode) => DropdownMenuItem<QualityMode>(
+                  value: mode,
+                  child: Text(mode.label),
+                ),
+              )
               .toList(growable: false),
           onChanged: onChanged,
         ),
@@ -530,7 +638,9 @@ class _AdminWorkflowNote extends StatelessWidget {
       child: ListTile(
         leading: Icon(Icons.admin_panel_settings_outlined),
         title: Text('Admin settings'),
-        subtitle: Text('Server, library, backup, migration, storage, and full quality policy administration remain web-first.'),
+        subtitle: Text(
+          'Server, library, backup, migration, storage, and full quality policy administration remain web-first.',
+        ),
       ),
     );
   }

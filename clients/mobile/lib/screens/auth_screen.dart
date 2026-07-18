@@ -53,7 +53,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   Future<void> _loginWithPassword() async {
     await _runAuth(() async {
       final server = _requireServer();
-      return ref.read(authServiceProvider).loginWithPassword(
+      return ref
+          .read(authServiceProvider)
+          .loginWithPassword(
             username: _usernameController.text.trim(),
             password: _passwordController.text,
             server: server,
@@ -64,17 +66,18 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   Future<void> _loginWithInvite() async {
     await _runAuth(() async {
       final server = _requireServer();
-      return ref.read(authServiceProvider).loginWithInvite(
-            code: _inviteController.text.trim(),
-            server: server,
-          );
+      return ref
+          .read(authServiceProvider)
+          .loginWithInvite(code: _inviteController.text.trim(), server: server);
     });
   }
 
   Future<void> _loginWithReauth() async {
     await _runAuth(() async {
       final server = _requireServer();
-      return ref.read(authServiceProvider).loginWithReauthCode(
+      return ref
+          .read(authServiceProvider)
+          .loginWithReauthCode(
             code: _reauthController.text.trim(),
             server: server,
           );
@@ -95,14 +98,16 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   Future<void> _pollDeviceCode() async {
     final code = _deviceCode;
     if (code == null) return;
-    await _runAuth(() => ref.read(authServiceProvider).pollDeviceToken(code.deviceCode));
+    await _runAuth(
+      () => ref.read(authServiceProvider).pollDeviceToken(code.deviceCode),
+    );
   }
 
   Future<void> _runAuth(Future<AuthSession> Function() action) async {
     await _run(() async {
       final session = await action();
       ref.read(sessionProvider.notifier).setAuthenticated(session.user);
-      if (mounted) context.go('/dashboard');
+      if (mounted) context.go('/profiles');
     });
   }
 
@@ -116,9 +121,13 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
     } on ClientError catch (error) {
       _showMessage(error.toString());
     } on PlatformException catch (error) {
-      _showMessage(error.message ?? 'This sign-in method is not available on this device.');
+      _showMessage(
+        error.message ?? 'This sign-in method is not available on this device.',
+      );
     } on UnsupportedError catch (error) {
-      _showMessage(error.message ?? 'This sign-in method is not available on this device.');
+      _showMessage(
+        error.message ?? 'This sign-in method is not available on this device.',
+      );
     } catch (_) {
       _showMessage('Authentication failed.');
     } finally {
@@ -154,7 +163,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
         child: ListView(
           padding: const EdgeInsets.all(24),
           children: [
-            Text(server?.origin.toString() ?? 'No server selected', style: Theme.of(context).textTheme.titleMedium),
+            Text(
+              server?.origin.toString() ?? 'No server selected',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
             const SizedBox(height: 24),
             FilledButton.icon(
               onPressed: _loading ? null : _loginWithPasskey,
@@ -164,13 +176,19 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             const SizedBox(height: 24),
             TextField(
               controller: _usernameController,
-              decoration: const InputDecoration(labelText: 'Username', border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                labelText: 'Username',
+                border: OutlineInputBorder(),
+              ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: _passwordController,
               obscureText: true,
-              decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                labelText: 'Password',
+                border: OutlineInputBorder(),
+              ),
               onSubmitted: (_) => _loginWithPassword(),
             ),
             const SizedBox(height: 12),
@@ -181,7 +199,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             const Divider(height: 40),
             TextField(
               controller: _inviteController,
-              decoration: const InputDecoration(labelText: 'Invite code', border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                labelText: 'Invite code',
+                border: OutlineInputBorder(),
+              ),
               onSubmitted: (_) => _loginWithInvite(),
             ),
             const SizedBox(height: 12),
@@ -192,7 +213,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             const SizedBox(height: 24),
             TextField(
               controller: _reauthController,
-              decoration: const InputDecoration(labelText: 'Re-auth code', border: OutlineInputBorder()),
+              decoration: const InputDecoration(
+                labelText: 'Re-auth code',
+                border: OutlineInputBorder(),
+              ),
               onSubmitted: (_) => _loginWithReauth(),
             ),
             const SizedBox(height: 12),
@@ -208,7 +232,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             ),
             if (_deviceCode != null) ...[
               const SizedBox(height: 12),
-              SelectableText('Code: ${_deviceCode!.userCode}\nApprove at ${_deviceCode!.verificationUri}'),
+              SelectableText(
+                'Code: ${_deviceCode!.userCode}\nApprove at ${_deviceCode!.verificationUri}',
+              ),
               const SizedBox(height: 12),
               OutlinedButton(
                 onPressed: _loading ? null : _pollDeviceCode,
@@ -217,7 +243,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             ],
             if (_message != null) ...[
               const SizedBox(height: 16),
-              Text(_message!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+              Text(
+                _message!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
             ],
             if (_loading) ...[
               const SizedBox(height: 16),

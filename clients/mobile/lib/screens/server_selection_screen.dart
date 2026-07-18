@@ -26,12 +26,14 @@ class ServerSelectionScreen extends ConsumerStatefulWidget {
   const ServerSelectionScreen({super.key});
 
   @override
-  ConsumerState<ServerSelectionScreen> createState() => _ServerSelectionScreenState();
+  ConsumerState<ServerSelectionScreen> createState() =>
+      _ServerSelectionScreenState();
 }
 
 class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
-  final TextEditingController _controller =
-      TextEditingController(text: 'http://10.0.2.2:48027');
+  final TextEditingController _controller = TextEditingController(
+    text: 'http://10.0.2.2:48027',
+  );
   NetworkMode _networkMode = NetworkMode.local;
   List<ServerProfile> _savedServers = const [];
   bool _loadingSavedServers = true;
@@ -80,20 +82,27 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
     });
 
     try {
-      final profile = ServerProfile.fromInput(_controller.text, networkMode: _networkMode);
+      final profile = ServerProfile.fromInput(
+        _controller.text,
+        networkMode: _networkMode,
+      );
       final apiClient = ref.read(apiClientProvider);
       apiClient.configure(profile.origin);
       await apiClient.ready();
 
       await ref.read(serverRepositoryProvider).saveConnectedServer(profile);
-      final connectedProfile = profile.copyWith(lastConnectedAt: DateTime.now().toUtc());
+      final connectedProfile = profile.copyWith(
+        lastConnectedAt: DateTime.now().toUtc(),
+      );
       ref.read(sessionProvider.notifier).selectServer(connectedProfile);
 
       try {
-        final session = await ref.read(authServiceProvider).restore(connectedProfile);
+        final session = await ref
+            .read(authServiceProvider)
+            .restore(connectedProfile);
         if (session != null) {
           ref.read(sessionProvider.notifier).setAuthenticated(session.user);
-          if (mounted) context.go('/dashboard');
+          if (mounted) context.go('/profiles');
           return;
         }
       } catch (_) {
@@ -122,9 +131,12 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
 
   String _connectionMessage(ClientError error) {
     return switch (error.kind) {
-      ClientErrorKind.network => 'The server could not be reached. Check the URL, network, and certificate trust.',
-      ClientErrorKind.serverUnavailable => 'The server responded but is not ready yet.',
-      _ => 'The server responded with ${error.problem.status}: ${error.problem.title}.',
+      ClientErrorKind.network =>
+        'The server could not be reached. Check the URL, network, and certificate trust.',
+      ClientErrorKind.serverUnavailable =>
+        'The server responded but is not ready yet.',
+      _ =>
+        'The server responded with ${error.problem.status}: ${error.problem.title}.',
     };
   }
 
@@ -198,18 +210,25 @@ class _ServerSelectionScreenState extends ConsumerState<ServerSelectionScreen> {
                 child: Text(_testing ? 'Testing...' : 'Test and continue'),
               ),
               const SizedBox(height: 24),
-              Text('Saved servers', style: Theme.of(context).textTheme.titleMedium),
+              Text(
+                'Saved servers',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
               const SizedBox(height: 8),
               if (_loadingSavedServers)
                 const LinearProgressIndicator()
               else if (_savedServers.isEmpty)
-                const Text('Servers that pass the connection test will appear here.')
+                const Text(
+                  'Servers that pass the connection test will appear here.',
+                )
               else
                 ..._savedServers.map(
                   (server) => ListTile(
                     contentPadding: EdgeInsets.zero,
                     title: Text(server.displayName ?? server.origin.host),
-                    subtitle: Text('${server.origin} · ${server.networkMode.label}'),
+                    subtitle: Text(
+                      '${server.origin} · ${server.networkMode.label}',
+                    ),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: _testing ? null : () => _selectSaved(server),
                   ),

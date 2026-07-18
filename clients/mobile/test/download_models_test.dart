@@ -2,25 +2,35 @@ import 'package:duskcue_mobile/models/download_models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('download inventory scope separates server user and device', () {
+  test('download inventory scope separates server user profile and device', () {
     const first = DownloadInventoryScope(
       serverOrigin: 'http://one.example:48027',
       userId: 'user-a',
+      profileId: 'profile-a',
       deviceIdentifier: 'device-a',
     );
     const second = DownloadInventoryScope(
       serverOrigin: 'http://one.example:48027',
       userId: 'user-a',
+      profileId: 'profile-a',
       deviceIdentifier: 'device-b',
     );
     const third = DownloadInventoryScope(
       serverOrigin: 'http://two.example:48027',
       userId: 'user-a',
+      profileId: 'profile-a',
+      deviceIdentifier: 'device-a',
+    );
+    const fourth = DownloadInventoryScope(
+      serverOrigin: 'http://one.example:48027',
+      userId: 'user-a',
+      profileId: 'profile-b',
       deviceIdentifier: 'device-a',
     );
 
     expect(first.key, isNot(second.key));
     expect(first.key, isNot(third.key));
+    expect(first.key, isNot(fourth.key));
   });
 
   test('job status events update package and failure metadata', () {
@@ -163,25 +173,28 @@ void main() {
     expect(urls.files.single.headers['X-Duskcue-Byte-Size'], 42);
   });
 
-  test('download item tracks playable offline state and pending sync events', () {
-    final item = DownloadItem(
-      mediaItemId: 'media-1',
-      title: 'Movie',
-      packageId: 'package-1',
-      status: DownloadItemStatus.playableOffline,
-      localPlaybackPath: '/app/downloads/media.mp4',
-      localResumePositionMs: 45000,
-      pendingPlaybackEventCount: 2,
-      updatedAt: DateTime.utc(2026),
-    );
+  test(
+    'download item tracks playable offline state and pending sync events',
+    () {
+      final item = DownloadItem(
+        mediaItemId: 'media-1',
+        title: 'Movie',
+        packageId: 'package-1',
+        status: DownloadItemStatus.playableOffline,
+        localPlaybackPath: '/app/downloads/media.mp4',
+        localResumePositionMs: 45000,
+        pendingPlaybackEventCount: 2,
+        updatedAt: DateTime.utc(2026),
+      );
 
-    final decoded = DownloadItem.fromJson(item.toJson());
+      final decoded = DownloadItem.fromJson(item.toJson());
 
-    expect(decoded.canPlayOffline, isTrue);
-    expect(decoded.localResumePositionMs, 45000);
-    expect(decoded.pendingPlaybackEventCount, 2);
-    expect(decoded.status, DownloadItemStatus.playableOffline);
-  });
+      expect(decoded.canPlayOffline, isTrue);
+      expect(decoded.localResumePositionMs, 45000);
+      expect(decoded.pendingPlaybackEventCount, 2);
+      expect(decoded.status, DownloadItemStatus.playableOffline);
+    },
+  );
 
   test('sync response separates accepted events and invalidated packages', () {
     final response = DownloadSyncResponse.fromJson({
