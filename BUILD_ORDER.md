@@ -772,7 +772,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 - **`TaskFailureInfo` struct** — groups failure parameters to avoid `too_many_arguments` clippy warning
 - **Scheduler integrates with `TaskTracker` + `CancellationToken`** — spawned as a tracked task alongside the HTTP server; responds to shutdown signal
 - **Library scan executor** — fetches all non-deleted libraries, runs `scan_library()` for each with `mode` from task config (default: `"full"`); aggregates `items_created`, `files_modified`, `files_deleted` across all libraries
-- **No task timeout in executor wrapper** — individual task timeout handled inside the spawned `JoinHandle` via `tokio::time::timeout`; timeout value comes from `scheduled_tasks.timeout_seconds` (default: 3600) — but currently the inner handler's own timeout (3600s hardcoded) applies; the outer spawn just awaits the `JoinHandle`
+- **Per-task timeout wrapper** — the executor applies `tokio::time::timeout` using each `scheduled_tasks.timeout_seconds` value (clamped to at least one second). Expiry records a `timeout` run result and cancellation drops the worker future; Storyboard FFmpeg commands use `kill_on_drop(true)` so an in-flight child is terminated too.
 
  7. ~~Implement FS watching via `notify` + `notify-debouncer-full` for real-time detection~~ **DONE**
 
@@ -2160,7 +2160,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
     - **Credits detection is supplementary** — Items already resolved by chapter markers are skipped (passed in `chapter_resolved` list). Items already having a `credits` segment are also skipped (checked via `has_segment_for_type`). This prevents redundant FFmpeg invocations. Blackframe + silence are always run together so `combine_credits_signals` can produce `source='combined'` high-confidence credits when both methods agree
     - **`outro` segment type deferred** — The design notes outro detection requires reading existing `credits` segments (chicken-and-egg within a single library pass). Implemented as a comment in the worker module; will be addressed in a follow-up that runs after credits are established across the library
     - **`segment_analysis` task enabled by default** — Unlike `subtitle_auto_fetch` (disabled by default because it consumes external API quota), segment analysis uses local FFmpeg and is safe to run by default. The daily 03:00 schedule matches the design's "after the daily library scan" timing (both fire at 03:00; the scheduler processes them sequentially within the same tick)
-    - **14400s (4-hour) timeout** — Per SEGMENT_DETECTION.md "Timeout: 4 hours". Note: the current scheduler executor wrapper uses a hardcoded 3600s timeout (`tokio::time::timeout(Duration::from_secs(3600), ...)`); the `timeout_seconds` DB column is stored but not yet enforced. Large library analysis may hit the 3600s wrapper timeout before the 14400s column value — this is a pre-existing scheduler limitation to be addressed when per-task timeout enforcement is added
+    - **14400s (4-hour) timeout** — Per SEGMENT_DETECTION.md "Timeout: 4 hours". The shared scheduler applies each task row's `timeout_seconds`, so segment analysis receives its declared four-hour budget. Timeout and cancellation regression coverage landed with `0420e68`.
     - **`ON CONFLICT DO NOTHING` on segment insert** — Prevents duplicate segments when re-analyzing unchanged files. The `media_segments` table has no unique constraint on `(media_item_id, segment_type)` for non-manual segments (only `WHERE is_manual = true`), so the `has_segment_for_type` pre-check is the primary deduplication mechanism; `ON CONFLICT DO NOTHING` is a safety net for race conditions
     - **No new workspace dependencies** — All functionality uses existing `sqlx`, `serde_json`, `tokio::process::Command`, and the already-present `chromaprint-next`, `regex` crates. FFmpeg invocation reuses the subprocess pattern from `services/segments.rs`
 
@@ -2168,7 +2168,7 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
     - `outro` segment type via silence-gap detection after credits — requires a second pass after credits are established
     - Movie intro detection via chromaprint — design specifies chromaprint for TV episodes (≥2 episodes in a season); movies fall through to chapters + blackframe only. Movie-specific audio matching (against a database of known studio logos) is a future enhancement
-    - Per-task timeout enforcement — the scheduler executor uses a hardcoded 3600s timeout; the `timeout_seconds` column is stored but not enforced
+    - ~~Per-task timeout enforcement~~ — Complete: the scheduler honors each task row's configured timeout and records expiration as a timed-out run (`0420e68`)
     - Prometheus metrics from SEGMENT_DETECTION.md Metrics table — `segment_analysis_files_total`, `segment_segments_created_total`, etc. deferred to Pre-v1.0 Hardening
 
      6. ~~Implement `server/src/workers/storyboard_generator.rs` — background thumbnail generation~~ **DONE**
@@ -2200,16 +2200,15 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
      - **Per-file error isolation** — `generate_for_library` catches per-file errors and continues to the next file (matching the segment detector's per-file error pattern). Failed files are counted in `LibraryGenerationResult.errors` and logged at WARN but do not abort the library run. Critical for large libraries where a single corrupt file should not prevent the rest from processing.
      - **Movie/episode-only filtering + healthy files** — The candidate query filters `mi.type IN ('movie', 'episode')` and `mf.is_healthy = true` because series/seasons are container types without direct `media_files`, and storyboards correspond to actual video files that exist on disk and are playable.
      - **`gen` is a reserved keyword in Rust 2024 edition** — The `persist_storyboard_row` parameter was initially named `gen` (for "generation result"); the compiler rejected it as `gen` is reserved for future generator syntax. Renamed to `result`.
-     - **4-hour timeout stored but not enforced** — The existing scheduler executor wrapper uses a hardcoded 3600s timeout; the `timeout_seconds` column (14400 for `storyboard_generation`) is stored but not yet enforced. This is a pre-existing scheduler limitation noted in Task 5; large library generation may hit the 3600s wrapper timeout first. Tracked as deferred work.
+     - **Configured four-hour timeout enforced** — The scheduler derives the storyboard wrapper duration from `scheduled_tasks.timeout_seconds` (14400 for `storyboard_generation`) and records expiration as a timed-out run. The FFmpeg command is configured with `kill_on_drop(true)`, so timeout cancellation terminates the in-flight child rather than leaving it orphaned (`0420e68`).
      - **No new workspace dependencies** — All functionality uses existing `sqlx`, `serde_json`, `tokio::process::Command`, and the already-built `services::storyboards` and `services::sandbox` modules.
      - **8 unit tests** covering: `LibraryGenerationResult::message()` formatting (with data and default), `AggregateResult::add()` accumulation, `is_storyboards_enabled_for_library()` for absent key (defaults true), explicit true/false, and non-boolean values (defaults true), `storyboard_dir()` path layout
 
      **Not yet implemented (deferred to later tasks/phases):**
 
-     - Task 8: Implement seek preview in web client player — `SeekPreview.svelte` (will consume the `/storyboard/index.vtt` endpoint via hls.js or a custom seek-bar component)
-     - Storyboard metadata in playback start response — when `start_playback` is updated to include the storyboard block per the "Integration with Playback" spec, the playback service will call `storyboards::service::get_storyboard` and embed the result in `PlaybackStartResponse`
-     - Prometheus metrics from STORYBOARDS.md Metrics table (`storyboard_files_processed_total`, `storyboard_generation_duration_seconds`, etc.) — deferred to Pre-v1.0 Hardening
-     - Per-task timeout enforcement — the scheduler executor uses a hardcoded 3600s timeout; the `timeout_seconds` column is stored but not enforced
+     - Storyboard metadata in playback start response — intentionally not used. The selected healthy media-file version fetches its protected storyboard metadata after playback setup, keeping preview assets independent from session startup.
+     - ~~Prometheus metrics from STORYBOARDS.md Metrics table~~ — Complete: bounded generation, serving, duration, sprite, and cache-size metrics landed in Post-Phase 10 Task 7 (`09668d4`).
+     - ~~Per-task timeout enforcement~~ — Complete: the scheduler honors `timeout_seconds`, and storyboard FFmpeg cancellation kills the dropped child process (`0420e68`).
      7. ~~Implement skip button in web client player — `SkipButton.svelte`~~ **DONE**
      8. ~~Implement seek preview in web client player — `SeekPreview.svelte`~~ **DONE**
 
@@ -4431,8 +4430,11 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
    - The existing Prometheus endpoint now exposes outcome-bounded generation attempts and errors, successful FFmpeg duration and sprite counts, authenticated index/sprite read outcomes, and the reconciled cache byte size.
    - Library IDs, media IDs, file paths, and raw error text remain in structured logs, task history, and SSE progress rather than Prometheus labels; each label vocabulary is fixed and privacy-safe.
    - Cache measurement runs off the async worker, sums the actual VTT/WebP cache tree, and ignores symlinks so telemetry cannot traverse outside the configured cache root.
+8. ~~Cover configured Storyboard task timeout and cancellation behavior~~ **DONE — `0420e68`**
+   - The scheduler's persisted `timeout_seconds` now has direct regression coverage, including the Storyboard four-hour value and invalid-value clamp, timeout dropping unfinished work, and cancellation winning before a handler begins.
+   - Timed-out Storyboard FFmpeg work is safe: Tokio drops the command future and `kill_on_drop(true)` terminates the child process. The corrected Build Order removes every stale hard-coded one-hour timeout claim.
 
-**Outcome:** All seven hardening and observability tasks are complete. Verification for Task 7: `cargo fmt --all -- --check`, `cargo test -p duskcue` (763 tests), `node scripts/verify-storyboard-metrics.mjs`, `node scripts/verify-client-contracts.mjs`, and `node scripts/verify-playback-conformance.mjs`. A strict full-crate clippy run remains blocked by 11 pre-existing diagnostics in download, playback, TV, notification, and metadata-refresh modules; the Storyboard implementation adds none.
+**Outcome:** All eight hardening and observability tasks are complete. Verification for Task 8: `cargo fmt --all -- --check`, `cargo test -p duskcue` (766 tests), `node scripts/verify-storyboard-metrics.mjs`, and a strict clippy pass with the 11 known unrelated download, playback, TV, notification, and metadata-refresh diagnostics explicitly suppressed. The Task 8 implementation adds no lint diagnostics.
 
 ---
 
