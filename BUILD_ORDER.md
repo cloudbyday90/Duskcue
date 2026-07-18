@@ -4491,9 +4491,9 @@ Phases 9–13a can be built in any order after Phase 8, since they are independe
 
 ---
 
-## Post-Phase 16d — Household Profiles, Kids Mode, and Ambient Channels (Server Hardening Complete; Native Follow-up Active)
+## Post-Phase 16d — Household Profiles, Kids Mode, and Ambient Channels (Flutter Profile Gate Complete; Ambient Player Follow-up Active)
 
-**Committed:** `00d631b`, `d4e37ba`, `c53dabe`, `881db75`, and `a0a8963` on `main`
+**Committed:** `00d631b`, `d4e37ba`, `c53dabe`, `881db75`, `a0a8963`, and `dd38cd1` on `main`
 
 **Authoritative document:** [PROFILES_AND_AMBIENT_CHANNELS.md](docs/design/PROFILES_AND_AMBIENT_CHANNELS.md)
 
@@ -4507,6 +4507,7 @@ Phases 9–13a can be built in any order after Phase 8, since they are independe
 - Web profile picker and management page for standard/Kids profile creation and parental policies.
 - Opt-in remembered-profile mapping per account/device, resolved only after normal authentication and cleared on sign-out or session revocation.
 - Server-issued first-use selection state for new multi-profile sessions, plus a web profile gate that blocks profile-scoped routes until an explicit choice is made.
+- Flutter Android/iOS profile gate: fresh login and token restoration resolve server profile scope before authenticated routes, with manual switching, remembered-device preference, transient parent unlock, artwork-cache clearing, and profile-isolated offline download scopes.
 
 **Key decisions:**
 
@@ -4522,6 +4523,8 @@ Phases 9–13a can be built in any order after Phase 8, since they are independe
 
 **Ambient native-player contract hardening (2026-07-18, `a0a8963`):** `ambient_channels.updated_at` is now the authoritative queue/configuration revision and advances inside the ordered-item replacement transaction. The next-item response returns it, while ambient playback start requires it and uses a conditional `INSERT ... SELECT` to prove the current channel is enabled, audience-matched, still contains the requested item, and has not changed. A mismatch is `409 PLAY_019`, creates no Duskcue play session or playback response URL, and cleans up any newly started transcode session. New sessions use the indexed, nullable `play_sessions.ambient_channel_id` relationship; legacy valid metadata values are backfilled. The playback fixture pack, client contract manifest, static verifier, and disposable PostgreSQL verifier cover the new boundary.
 
-**Hardening order after Kids mode:** (1) enforce first-use shared-TV profile selection, parent-unlock UI, and cache lifecycle on native clients, and (2) implement native Android/iOS background players against the hardened ambient revision contract without contributing personal playback activity.
+**Flutter native profile gate (2026-07-18, `dd38cd1`):** The existing Android/iOS Flutter client now routes every fresh or restored authenticated session to `/profiles` before the application shell, deep links, realtime, or downloads can run. The server-backed picker handles first-use selection, remembered-profile opt-in, manual switching from Settings, and a transient obscured PIN prompt when exiting a locked Kids profile. A switch clears image memory/disk cache and active download state before publishing the new profile; download inventory, package storage, and settings are partitioned by `profile_id`, so a prior profile's local packages remain inaccessible instead of being deleted. No TV application exists in this repository, so dedicated native TV enforcement remains a future platform task.
 
-**Verification:** `cargo fmt --check`, `cargo check -p duskcue`, focused profile-selection and parent-PIN unit tests, `npm run build` in `clients/web`, `node scripts/verify-profile-selection-integration.mjs`, `node scripts/verify-profile-parent-unlock-integration.mjs`, `node scripts/verify-auth-conformance.mjs`, `node scripts/verify-client-contracts.mjs`, `node scripts/verify-playback-conformance.mjs`, `node scripts/verify-ambient-player-contract.mjs`, and `scripts/verify-migrations.ps1` against disposable PostgreSQL 18 pass.
+**Hardening order after Kids mode:** (1) implement native Android/iOS background players against the hardened ambient revision contract without contributing personal playback activity, and (2) adopt the proven profile gate/cache lifecycle in each dedicated TV application as its platform shell is introduced.
+
+**Verification:** `cargo fmt --check`, `cargo check -p duskcue`, focused profile-selection and parent-PIN unit tests, `npm run build` in `clients/web`, `flutter analyze` and `flutter test` in `clients/mobile`, `node scripts/verify-profile-selection-integration.mjs`, `node scripts/verify-profile-parent-unlock-integration.mjs`, `node scripts/verify-auth-conformance.mjs`, `node scripts/verify-client-contracts.mjs`, `node scripts/verify-playback-conformance.mjs`, `node scripts/verify-ambient-player-contract.mjs`, and `scripts/verify-migrations.ps1` against disposable PostgreSQL 18 pass.
