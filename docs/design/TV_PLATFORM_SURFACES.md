@@ -183,6 +183,7 @@ Profile, server, and device-linking behavior:
 - Launcher, Top Shelf, Watch Next, Smart Hub Preview, and app-local rows are scoped to the authenticated Duskcue user whose settings enabled publication.
 - Device-linking must resume the original deep link or platform tile after authentication succeeds.
 - Switching user/profile or server must abort profile-scoped requests and clear platform-local launcher mappings, cached TV rows, artwork, preview images, queue state, and user summaries for the old identity before publishing new rows.
+- Ambient playback is app-local and never publishes Watch Next, Top Shelf, launcher, or personal continuation activity. A TV requests `ambient-channels/{id}/next`, retains the returned non-secret channel/item/revision only until start, and echoes the revision to playback start. `PLAY_019` means the TV must discard that selection and resolve again; it must not reuse an old stream URL.
 
 Privacy rules:
 
@@ -1092,6 +1093,7 @@ The TV feed uses the active profile's history and applies its media policy befor
 - Platform clients must not cache bearer tokens in plaintext.
 - A remembered profile is a non-secret convenience preference, not a TV authentication or Kids exit-lock mechanism. tvOS must honor `TVUserManager.shouldStorePreferencesForCurrentUser`; platforms without a stable permitted device ID must show profile selection instead. When the auth/profile response sets `profile_selection_required`, a TV must show that picker before it fetches or publishes profile-scoped rows, then clear its preview/artwork/queue/launcher state after the switch succeeds.
 - A PIN-protected active Kids profile exposes `parent_unlock_required`; before it switches to a standard profile, the TV must present a transient parent-PIN prompt and call `POST /api/v1/profiles/parent-unlock`. The server grants only a ten-minute current-session unlock and enforces durable throttling. The TV must not cache a PIN, treat a local timer as authority, include it in launcher metadata/support logs, or retain parent-access UI state after a profile/session change.
+- Ambient queue restoration can retain only the channel ID, selected media ID, server-issued revision, position, and player state. It must not retain stream URLs, bearer/signed credentials, parent PINs, or parent-unlock state, and it must re-resolve after app/service restart, profile/session change, or `PLAY_019`.
 - Artwork URLs should use existing authenticated or signed artwork delivery rules.
 
 ## Phase Placement

@@ -203,6 +203,7 @@ pub struct AmbientChannelNextResponse {
     pub channel_name: String,
     pub media_item_id: Uuid,
     pub playback_mode: String,
+    pub channel_updated_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone)]

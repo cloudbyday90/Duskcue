@@ -1318,6 +1318,7 @@
                 "PLAYBACK_001",
                 "PLAYBACK_002",
                 "PLAYBACK_003",
+                "PLAY_019",
                 "STREAM_001",
                 "VALID_001",
                 "RATE_LIMITED",
@@ -3839,6 +3840,81 @@
         }
       ],
       "phase16d_priority": "advisory"
+    },
+    {
+      "name": "ambient_channels",
+      "phase16a_priority": "advisory",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/v1/ambient-channels",
+          "auth": "user",
+          "response": "AmbientChannelListResponse",
+          "web_helpers": [
+            "listAmbientChannels"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "AmbientChannelListResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PROFILE_004",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "POST",
+          "path": "/api/v1/ambient-channels/{id}/next",
+          "auth": "user",
+          "request": "AmbientChannelNextRequest",
+          "response": "AmbientChannelNextResponse",
+          "web_helpers": [
+            "nextAmbientChannelItem"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "AmbientChannelNextResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": "AmbientChannelNextRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PROFILE_003",
+                "PROFILE_004",
+                "PROFILE_007",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ],
+      "phase16d_priority": "advisory"
     }
   ],
   "phase16d": {
@@ -3854,6 +3930,7 @@
       "subtitles",
       "segments_storyboards",
       "profiles",
+      "ambient_channels",
       "collections",
       "quality",
       "tv",

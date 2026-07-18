@@ -1164,6 +1164,7 @@ Streaming policy error codes:
 | `PLAY_016` | 403 | Cannot remove default policy without assigning a replacement |
 | `PLAY_017` | 400 | Invalid transcode resolution |
 | `PLAY_018` | 400 | Invalid IP range (missing CIDR prefix length) |
+| `PLAY_019` | 409 | Ambient channel selection changed before playback start; resolve the channel again |
 
 ---
 

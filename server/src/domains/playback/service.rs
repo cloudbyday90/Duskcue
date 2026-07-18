@@ -57,13 +57,18 @@ pub async fn start_playback(
     crate::domains::profiles::service::assert_media_access(pool, &profile_scope, media_item_id)
         .await
         .map_err(|_| PlaybackError::AccessDenied)?;
-    if playback_mode == "ambient" {
+    let ambient_channel = if playback_mode == "ambient" {
         let channel_id = req.ambient_channel_id.ok_or_else(|| {
             PlaybackError::InvalidPlaybackMode(
                 "ambient playback requires ambient_channel_id".to_string(),
             )
         })?;
-        crate::domains::profiles::service::assert_ambient_playback_allowed(
+        let channel_updated_at = req.ambient_channel_updated_at.ok_or_else(|| {
+            PlaybackError::InvalidPlaybackMode(
+                "ambient playback requires ambient_channel_updated_at".to_string(),
+            )
+        })?;
+        let channel = crate::domains::profiles::service::assert_ambient_playback_allowed(
             pool,
             &profile_scope,
             channel_id,
@@ -71,7 +76,18 @@ pub async fn start_playback(
         )
         .await
         .map_err(|_| PlaybackError::AccessDenied)?;
-    }
+        if channel.updated_at != channel_updated_at {
+            return Err(PlaybackError::AmbientChannelStale);
+        }
+        Some(channel)
+    } else {
+        if req.ambient_channel_id.is_some() || req.ambient_channel_updated_at.is_some() {
+            return Err(PlaybackError::InvalidPlaybackMode(
+                "interactive playback cannot include ambient channel fields".to_string(),
+            ));
+        }
+        None
+    };
 
     let item_row = sqlx::query("SELECT id, library_id FROM media_items WHERE id = $1")
         .bind(media_item_id)
@@ -163,7 +179,7 @@ pub async fn start_playback(
         }
     }
 
-    let play_session_id = create_play_session(
+    let play_session_id = match create_play_session(
         pool,
         user_id,
         profile_id,
@@ -175,9 +191,18 @@ pub async fn start_playback(
         req.quality_mode.as_deref(),
         req.max_streaming_bitrate,
         playback_mode,
-        req.ambient_channel_id,
+        ambient_channel.as_ref(),
     )
-    .await?;
+    .await
+    {
+        Ok(session_id) => session_id,
+        Err(error) => {
+            if let Some(transcode_session_id) = transcode_session_id {
+                let _ = transcode_manager.stop_session(transcode_session_id).await;
+            }
+            return Err(error);
+        }
+    };
 
     Ok(PlaybackStartResponse {
         session_id: play_session_id,
@@ -191,6 +216,8 @@ pub async fn start_playback(
         target_audio_codec: decision.target_audio_codec,
         transcode_session_id,
         playback_mode: playback_mode.to_string(),
+        ambient_channel_id: ambient_channel.as_ref().map(|channel| channel.id),
+        ambient_channel_updated_at: ambient_channel.map(|channel| channel.updated_at),
     })
 }
 
@@ -538,7 +565,7 @@ async fn create_play_session(
     quality_mode: Option<&str>,
     max_streaming_bitrate: Option<u64>,
     playback_mode: &str,
-    ambient_channel_id: Option<Uuid>,
+    ambient_channel: Option<&crate::domains::profiles::types::AmbientChannelRow>,
 ) -> Result<Uuid, PlaybackError> {
     let session_id = Uuid::now_v7();
 
@@ -549,24 +576,51 @@ async fn create_play_session(
         "current_position_ms": 0,
         "quality_mode": quality_mode,
         "max_streaming_bitrate": max_streaming_bitrate,
-        "ambient_channel_id": ambient_channel_id,
     });
 
-    sqlx::query(
-        "INSERT INTO play_sessions (id, user_id, profile_id, media_item_id, library_id, playback_mode, \
-         started_at, client_name, stream_decision, metadata) \
-         VALUES ($1, $2, $3, $4, $5, $6, now(), 'duskcue-web', $7, $8)",
-    )
-    .bind(session_id)
-    .bind(user_id)
-    .bind(profile_id)
-    .bind(media_item_id)
-    .bind(library_id)
-    .bind(playback_mode)
-    .bind(stream_decision)
-    .bind(&metadata)
-    .execute(pool)
-    .await?;
+    if let Some(channel) = ambient_channel {
+        let result = sqlx::query(
+            "INSERT INTO play_sessions (id, user_id, profile_id, media_item_id, library_id, playback_mode, \
+             ambient_channel_id, started_at, client_name, stream_decision, metadata) \
+             SELECT $1, $2, $3, $4, $5, $6, c.id, now(), 'duskcue-web', $10, $11 \
+             FROM ambient_channels c \
+             JOIN ambient_channel_items i ON i.channel_id = c.id AND i.media_item_id = $4 \
+             WHERE c.id = $7 AND c.owner_user_id = $2 AND c.audience = $8 AND c.is_enabled = true \
+               AND c.updated_at = $9",
+        )
+        .bind(session_id)
+        .bind(user_id)
+        .bind(profile_id)
+        .bind(media_item_id)
+        .bind(library_id)
+        .bind(playback_mode)
+        .bind(channel.id)
+        .bind(&channel.audience)
+        .bind(channel.updated_at)
+        .bind(stream_decision)
+        .bind(&metadata)
+        .execute(pool)
+        .await?;
+        if result.rows_affected() == 0 {
+            return Err(PlaybackError::AmbientChannelStale);
+        }
+    } else {
+        sqlx::query(
+            "INSERT INTO play_sessions (id, user_id, profile_id, media_item_id, library_id, playback_mode, \
+             started_at, client_name, stream_decision, metadata) \
+             VALUES ($1, $2, $3, $4, $5, $6, now(), 'duskcue-web', $7, $8)",
+        )
+        .bind(session_id)
+        .bind(user_id)
+        .bind(profile_id)
+        .bind(media_item_id)
+        .bind(library_id)
+        .bind(playback_mode)
+        .bind(stream_decision)
+        .bind(&metadata)
+        .execute(pool)
+        .await?;
+    }
 
     Ok(session_id)
 }

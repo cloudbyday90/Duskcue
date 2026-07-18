@@ -12,7 +12,8 @@
     "playback-media-session-remote",
     "playback-qoe-metrics",
     "playback-cross-device-resume",
-    "playback-error-reporting"
+    "playback-error-reporting",
+    "playback-ambient-channel-revision"
   ],
   "required_state_events": [
     "start",
@@ -26,6 +27,12 @@
     "stop",
     "completion",
     "playback_error"
+  ],
+  "required_ambient_cases": [
+    "standard_channel_start",
+    "kids_channel_start",
+    "stale_channel_revision",
+    "profile_change_requires_reresolution"
   ],
   "required_stream_decisions": [
     "direct_play",
@@ -134,6 +141,17 @@
         "expired media URL",
         "unsupported track",
         "QoE failure report"
+      ]
+    },
+    {
+      "id": "playback-ambient-channel-revision",
+      "file": "ambient-channel-revision.json",
+      "covers": [
+        "server-issued channel revision",
+        "ambient playback start",
+        "Kids channel policy",
+        "stale queue rejection",
+        "non-secret native restoration state"
       ]
     }
   ]

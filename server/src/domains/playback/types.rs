@@ -49,6 +49,7 @@ pub struct PlaySessionRow {
     pub stream_decision: String,
     pub percent_complete: Option<f32>,
     pub plays_in_session: i32,
+    pub ambient_channel_id: Option<Uuid>,
     pub metadata: serde_json::Value,
 }
 
@@ -109,6 +110,7 @@ pub struct StartPlaybackRequest {
     pub quality_mode: Option<String>,
     pub playback_mode: Option<String>,
     pub ambient_channel_id: Option<Uuid>,
+    pub ambient_channel_updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
@@ -192,6 +194,8 @@ pub struct PlaybackStartResponse {
     pub target_audio_codec: Option<String>,
     pub transcode_session_id: Option<Uuid>,
     pub playback_mode: String,
+    pub ambient_channel_id: Option<Uuid>,
+    pub ambient_channel_updated_at: Option<DateTime<Utc>>,
 }
 
 #[derive(Debug, Clone, Serialize)]

@@ -51,6 +51,7 @@ assertMediaSession(fixtures.get('playback-media-session-remote'));
 assertQoe(fixtures.get('playback-qoe-metrics'));
 assertCrossDeviceResume(fixtures.get('playback-cross-device-resume'));
 assertErrorReporting(fixtures.get('playback-error-reporting'));
+assertAmbientChannelRevision(fixtures.get('playback-ambient-channel-revision'));
 
 console.log(`Verified ${fixtureEntries.length} playback conformance fixtures.`);
 
@@ -149,6 +150,43 @@ function assertErrorReporting(fixture) {
     assert(item.expected_client_action);
   }
   assert(cases.get('transcode-unavailable').qoe.playback_failure_code);
+}
+
+function assertAmbientChannelRevision(fixture) {
+  const cases = new Map(fixture.cases.map((entry) => [entry.id, entry]));
+  for (const id of manifest.required_ambient_cases ?? []) {
+    assert(cases.has(id), `missing ambient channel case ${id}`);
+  }
+  const standard = cases.get('standard_channel_start');
+  assertPlaybackRequest(standard.next_request, 'ambient.next');
+  assertPlaybackRequest(standard.start_request, 'ambient.start');
+  assert.equal(standard.next_response.playback_mode, 'ambient');
+  assert.equal(standard.start_request.body.playback_mode, 'ambient');
+  assert.equal(standard.start_request.body.ambient_channel_id, standard.next_response.channel_id);
+  assert.equal(standard.start_request.body.ambient_channel_updated_at, standard.next_response.channel_updated_at);
+  assert.match(standard.next_response.channel_updated_at, dateTimePattern);
+  assert.equal(standard.expect.history_write, false);
+  assert.equal(standard.expect.trakt_export, false);
+
+  const kids = cases.get('kids_channel_start');
+  assert.equal(kids.active_profile.profile_type, 'kids');
+  assert.equal(kids.expect.channel_audience, 'kids');
+  assert.equal(kids.expect.profile_policy_rechecked_at_next, true);
+  assert.equal(kids.expect.profile_policy_rechecked_at_start, true);
+
+  const stale = cases.get('stale_channel_revision');
+  assertPlaybackRequest(stale.start_request, 'ambient.stale-start');
+  assert.equal(stale.response.status, 409);
+  assert.equal(stale.response.problem.title, 'PLAY_019');
+  assert.equal(stale.expect.play_session_created, false);
+  assert.equal(stale.expect.stream_url_returned, false);
+
+  const restore = cases.get('profile_change_requires_reresolution');
+  for (const forbidden of ['stream_url', 'transcode_url', 'bearer_token', 'signed_url', 'parent_pin', 'parent_unlock_expires_at']) {
+    assert(restore.stored_state.forbidden.includes(forbidden), `ambient restoration must prohibit ${forbidden}`);
+  }
+  assert.equal(restore.expect.profile_change_clears_queue, true);
+  assert.equal(restore.expect.service_restart_calls_next, true);
 }
 
 function assertPlaybackRequest(request, context) {

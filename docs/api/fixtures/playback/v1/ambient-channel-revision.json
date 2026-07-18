@@ -1,0 +1,109 @@
+{
+  "fixture": "playback-ambient-channel-revision",
+  "version": 1,
+  "updated": "2026-07-18",
+  "channel_revision_format": "RFC3339 UTC",
+  "cases": [
+    {
+      "id": "standard_channel_start",
+      "next_request": {
+        "method": "POST",
+        "path": "/api/v1/ambient-channels/5b1541a6-ef86-4ec1-a6f8-f2a97927bb10/next",
+        "body": {
+          "after_media_item_id": null
+        }
+      },
+      "next_response": {
+        "channel_id": "5b1541a6-ef86-4ec1-a6f8-f2a97927bb10",
+        "channel_name": "Documentaries",
+        "media_item_id": "7f2bb499-3f0e-41fc-9483-d02e45569b36",
+        "playback_mode": "ambient",
+        "channel_updated_at": "2026-07-18T16:00:00Z"
+      },
+      "start_request": {
+        "method": "POST",
+        "path": "/api/v1/playback/start",
+        "body": {
+          "media_item_id": "7f2bb499-3f0e-41fc-9483-d02e45569b36",
+          "playback_mode": "ambient",
+          "ambient_channel_id": "5b1541a6-ef86-4ec1-a6f8-f2a97927bb10",
+          "ambient_channel_updated_at": "2026-07-18T16:00:00Z"
+        }
+      },
+      "expect": {
+        "playback_mode": "ambient",
+        "history_write": false,
+        "resume_write": false,
+        "play_count_write": false,
+        "tv_surface_event": false,
+        "trakt_export": false,
+        "session_ambient_channel_id": "5b1541a6-ef86-4ec1-a6f8-f2a97927bb10"
+      }
+    },
+    {
+      "id": "kids_channel_start",
+      "active_profile": {
+        "profile_type": "kids",
+        "max_content_rating": "TV-Y7"
+      },
+      "expect": {
+        "channel_audience": "kids",
+        "profile_policy_rechecked_at_next": true,
+        "profile_policy_rechecked_at_start": true,
+        "history_write": false,
+        "trakt_export": false
+      }
+    },
+    {
+      "id": "stale_channel_revision",
+      "change": "parent replaces the channel items after next returns",
+      "start_request": {
+        "method": "POST",
+        "path": "/api/v1/playback/start",
+        "body": {
+          "media_item_id": "7f2bb499-3f0e-41fc-9483-d02e45569b36",
+          "playback_mode": "ambient",
+          "ambient_channel_id": "5b1541a6-ef86-4ec1-a6f8-f2a97927bb10",
+          "ambient_channel_updated_at": "2026-07-18T16:00:00Z"
+        }
+      },
+      "response": {
+        "status": 409,
+        "problem": {
+          "title": "PLAY_019",
+          "detail": "Ambient channel selection is stale"
+        }
+      },
+      "expect": {
+        "play_session_created": false,
+        "stream_url_returned": false,
+        "client_action": "discard pending selection and call next again"
+      }
+    },
+    {
+      "id": "profile_change_requires_reresolution",
+      "stored_state": {
+        "allowed": [
+          "channel_id",
+          "media_item_id",
+          "channel_updated_at",
+          "position_ms",
+          "player_state"
+        ],
+        "forbidden": [
+          "stream_url",
+          "transcode_url",
+          "bearer_token",
+          "signed_url",
+          "parent_pin",
+          "parent_unlock_expires_at"
+        ]
+      },
+      "expect": {
+        "profile_change_clears_queue": true,
+        "service_restart_calls_next": true,
+        "stale_revision_calls_next": true
+      }
+    }
+  ]
+}

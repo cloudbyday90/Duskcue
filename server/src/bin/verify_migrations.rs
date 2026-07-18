@@ -42,6 +42,7 @@ async fn main() -> anyhow::Result<()> {
     validate_media_query_contract(&pool).await?;
     validate_storyboard_lock_contract(&pool).await?;
     validate_kids_parent_unlock_schema(&pool).await?;
+    validate_ambient_playback_schema(&pool).await?;
     pool.close().await;
 
     println!("Duskcue migrations verified successfully");
@@ -127,6 +128,36 @@ async fn validate_kids_parent_unlock_schema(pool: &PgPool) -> anyhow::Result<()>
     anyhow::ensure!(
         session_unlock_index,
         "user_sessions is missing the parent-unlock lookup index"
+    );
+    Ok(())
+}
+
+async fn validate_ambient_playback_schema(pool: &PgPool) -> anyhow::Result<()> {
+    sqlx::query("SELECT ambient_channel_id FROM play_sessions LIMIT 0")
+        .execute(pool)
+        .await?;
+
+    let ambient_session_index: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM pg_indexes WHERE schemaname = current_schema() \
+         AND indexname = 'idx_play_sessions_ambient_channel_id')",
+    )
+    .fetch_one(pool)
+    .await?;
+    anyhow::ensure!(
+        ambient_session_index,
+        "play_sessions is missing the ambient-channel diagnostics index"
+    );
+
+    let ambient_channel_foreign_key: bool = sqlx::query_scalar(
+        "SELECT EXISTS(SELECT 1 FROM pg_constraint \
+         WHERE conrelid = 'play_sessions'::regclass AND contype = 'f' \
+           AND confrelid = 'ambient_channels'::regclass)",
+    )
+    .fetch_one(pool)
+    .await?;
+    anyhow::ensure!(
+        ambient_channel_foreign_key,
+        "play_sessions is missing the ambient-channel foreign key"
     );
     Ok(())
 }

@@ -39,6 +39,9 @@ pub enum PlaybackError {
     #[error("invalid playback mode: {0}")]
     InvalidPlaybackMode(String),
 
+    #[error("ambient channel selection is stale")]
+    AmbientChannelStale,
+
     #[error("invalid byte range for direct stream: {0}")]
     InvalidByteRange(String),
 

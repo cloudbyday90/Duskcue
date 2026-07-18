@@ -1397,6 +1397,11 @@ fn playback_error_to_http(
             "PLAY_006",
             format!("Invalid playback mode: {}", r),
         ),
+        PlaybackError::AmbientChannelStale => (
+            StatusCode::CONFLICT,
+            "PLAY_019",
+            "Ambient channel selection is stale".into(),
+        ),
         PlaybackError::InvalidByteRange(r) => (
             StatusCode::RANGE_NOT_SATISFIABLE,
             "PLAY_007",

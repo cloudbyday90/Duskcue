@@ -560,7 +560,7 @@ pub async fn create_ambient_channel(
     .fetch_one(pool)
     .await?;
     let channel = row_to_channel(&row);
-    replace_channel_items(
+    let channel = replace_channel_items(
         pool,
         owner_user_id,
         channel.id,
@@ -647,8 +647,7 @@ pub async fn replace_channel_items(
     owner_user_id: Uuid,
     channel_id: Uuid,
     media_item_ids: Vec<Uuid>,
-) -> Result<(), ProfilesError> {
-    assert_channel_owned(pool, owner_user_id, channel_id).await?;
+) -> Result<AmbientChannelRow, ProfilesError> {
     let mut unique = Vec::new();
     for media_item_id in media_item_ids {
         if !unique.contains(&media_item_id) {
@@ -656,11 +655,30 @@ pub async fn replace_channel_items(
         }
     }
     let mut tx = pool.begin().await?;
-    sqlx::query("DELETE FROM ambient_channel_items WHERE channel_id = $1")
-        .bind(channel_id)
-        .execute(&mut *tx)
-        .await?;
-    for (position, media_item_id) in unique.iter().enumerate() {
+    let channel_row = sqlx::query(
+        "SELECT id, owner_user_id, name, description, audience, is_enabled, created_at, updated_at \
+         FROM ambient_channels WHERE id = $1 AND owner_user_id = $2 FOR UPDATE",
+    )
+    .bind(channel_id)
+    .bind(owner_user_id)
+    .fetch_optional(&mut *tx)
+    .await?
+    .ok_or(ProfilesError::ChannelNotFound)?;
+    let channel = row_to_channel(&channel_row);
+    let current = sqlx::query(
+        "SELECT media_item_id FROM ambient_channel_items WHERE channel_id = $1 ORDER BY position",
+    )
+    .bind(channel_id)
+    .fetch_all(&mut *tx)
+    .await?
+    .iter()
+    .map(|row| row.try_get("media_item_id"))
+    .collect::<Result<Vec<Uuid>, sqlx::Error>>()?;
+    if current == unique {
+        tx.commit().await?;
+        return Ok(channel);
+    }
+    for media_item_id in &unique {
         let exists: bool =
             sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM media_items WHERE id = $1)")
                 .bind(media_item_id)
@@ -669,6 +687,20 @@ pub async fn replace_channel_items(
         if !exists {
             return Err(ProfilesError::ContentNotAllowed);
         }
+    }
+    let channel_row = sqlx::query(
+        "UPDATE ambient_channels SET updated_at = now() WHERE id = $1 AND owner_user_id = $2 \
+         RETURNING id, owner_user_id, name, description, audience, is_enabled, created_at, updated_at",
+    )
+    .bind(channel_id)
+    .bind(owner_user_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    sqlx::query("DELETE FROM ambient_channel_items WHERE channel_id = $1")
+        .bind(channel_id)
+        .execute(&mut *tx)
+        .await?;
+    for (position, media_item_id) in unique.iter().enumerate() {
         sqlx::query(
             "INSERT INTO ambient_channel_items (channel_id, media_item_id, position) VALUES ($1, $2, $3)",
         )
@@ -679,7 +711,7 @@ pub async fn replace_channel_items(
         .await?;
     }
     tx.commit().await?;
-    Ok(())
+    Ok(row_to_channel(&channel_row))
 }
 
 pub async fn next_ambient_channel_item(
@@ -717,6 +749,7 @@ pub async fn next_ambient_channel_item(
                 channel_name: channel.name,
                 media_item_id,
                 playback_mode: "ambient".to_string(),
+                channel_updated_at: channel.updated_at,
             });
         }
     }
@@ -728,8 +761,8 @@ pub async fn assert_ambient_playback_allowed(
     scope: &ProfileScope,
     channel_id: Uuid,
     media_item_id: Uuid,
-) -> Result<(), ProfilesError> {
-    get_available_channel(pool, scope, channel_id).await?;
+) -> Result<AmbientChannelRow, ProfilesError> {
+    let channel = get_available_channel(pool, scope, channel_id).await?;
     let is_member: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM ambient_channel_items WHERE channel_id = $1 AND media_item_id = $2)",
     )
@@ -740,7 +773,8 @@ pub async fn assert_ambient_playback_allowed(
     if !is_member {
         return Err(ProfilesError::ChannelUnavailable);
     }
-    assert_media_access(pool, scope, media_item_id).await
+    assert_media_access(pool, scope, media_item_id).await?;
+    Ok(channel)
 }
 
 pub fn canonical_content_rating(value: &str) -> Result<String, ProfilesError> {

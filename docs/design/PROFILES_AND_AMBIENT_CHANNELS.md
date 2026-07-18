@@ -23,6 +23,18 @@ The first implementation establishes the server contract and data model for thre
 
 Sources: [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html), [OWASP Session Management Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html), [FTC COPPA guidance](https://www.ftc.gov/business-guidance/resources/complying-coppa-frequently-asked-questions), [Apple TV user preference guidance](https://developer.apple.com/documentation/tvservices/tvusermanager), [RFC 8628 device authorization](https://www.rfc-editor.org/rfc/rfc8628), [Android Media3 background playback](https://developer.android.com/media/media3/session/background-playback), [Apple AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer), and [Apple media playback configuration](https://developer.apple.com/documentation/avfoundation/configuring-your-app-for-media-playback?changes=la_4__5). The Apple, OWASP, and RFC sources were rechecked on 2026-07-18.
 
+### Native Ambient Queue Research (2026-07-18)
+
+| Option | Advantages | Limitations | Decision |
+|---|---|---|---|
+| Resolve a channel item once and start it later without a revision | Smallest request shape. | A parent can edit, disable, or change the audience of a channel after `next` returns; a stale client could then start a formerly eligible item. | Rejected. |
+| Run a persistent server-side player/queue worker | Centralizes queue state. | Confuses the server's authorization/streaming role with device playback, cannot correctly own Android/iOS audio focus or OS lifecycle, and adds a service that does not exist for browser clients. | Rejected. |
+| Return a channel revision from `next` and require it at ambient start | Keeps the server authoritative for current channel eligibility, rejects stale selection, and lets each platform retain its native player lifecycle. | Clients must retain a small non-secret selection record until start and refetch after a conflict. | Selected. |
+
+Android's Media3 guidance places a `Player` and `MediaSession` in a `MediaSessionService` for playback outside an activity. Apple uses `AVQueuePlayer` for a queue and requires the app's media-playback audio/background configuration. Those platform responsibilities make a persistent Duskcue server player the wrong ownership boundary. The server instead returns a deterministic item plus `channel_updated_at`; a client echoes that exact RFC3339 UTC value as `ambient_channel_updated_at` to `POST /api/v1/playback/start`. The server rechecks the channel, membership, profile policy, and revision at the moment the session is created. A changed revision returns `409 PLAY_019`, and the client must discard its pending selection and call `next` again.
+
+Native state is deliberately bounded and non-secret: a client may retain the active channel ID, selected media ID, revision, playback position, and player state for service restoration, but must not persist a stream URL, signed URL, bearer token, transcode URL, parent PIN, or parent-unlock expiry as queue state. After process/service restart, profile change, account/session loss, or stale-revision conflict, it must obtain a fresh selection and playback URL from Duskcue. Sources: [Android Media3 background playback](https://developer.android.com/media/media3/session/background-playback), [Android MediaSession control](https://developer.android.com/media/media3/session/control-playback), [Apple AVPlayer](https://developer.apple.com/documentation/avfoundation/avplayer), and [Apple media playback configuration](https://developer.apple.com/documentation/avfoundation/configuring-your-app-for-media-playback). These official sources were rechecked on 2026-07-18.
+
 ### First-Use Gate Research (2026-07-18)
 
 | Option | Advantages | Limitations | Decision |
@@ -92,15 +104,17 @@ This boundary prevents ordinary profile-picker escape on a shared display. It is
 
 ## Ambient Channel Contract
 
-An ambient channel is a named, ordered list of media items with an audience of `standard` or `kids`. `GET /api/v1/ambient-channels` presents only channels allowed by the active profile. `POST /api/v1/ambient-channels/{id}/next` chooses the next eligible item and returns an ambient playback request.
+An ambient channel is a named, ordered list of media items with an audience of `standard` or `kids`. `GET /api/v1/ambient-channels` presents only channels allowed by the active profile. `POST /api/v1/ambient-channels/{id}/next` chooses the next eligible item and returns an ambient playback request with `channel_updated_at`, the queue/configuration revision. Replacing ordered items, changing the audience, or enabling/disabling a channel advances that revision transactionally.
 
-The client starts that item with `playback_mode: "ambient"` and the channel ID. The server records a `play_sessions` row for diagnostics with `playback_mode = 'ambient'`, but heartbeat, seek, and stop never write `user_item_data` or publish personal TV-surface updates. Ambient sessions are excluded from Trakt export. A Kids channel is filtered through the same library/rating policy before a queue item is returned.
+The client starts that item with `playback_mode: "ambient"`, the channel ID, and the exact `ambient_channel_updated_at` received from `next`. An ambient start without all three fields is invalid; one whose channel revision is no longer current fails with `409 PLAY_019`, without creating a session or stream URL. The server records a `play_sessions` row for diagnostics with `playback_mode = 'ambient'` and the typed `ambient_channel_id`, but heartbeat, seek, and stop never write `user_item_data` or publish personal TV-surface updates. Ambient sessions are excluded from Trakt export. A Kids channel is filtered through the same library/rating policy both when a queue item is returned and when it starts.
 
 The channel resolver is intentionally deterministic: it advances past the caller's previous item in channel order and wraps. It does not use a random catalog query, so parents can audit exactly what a Kids channel can play.
 
 ## Native Client Handoff
 
 The API is player-agnostic: a native client owns the actual background service/session and calls the normal playback start, heartbeat, seek, stop, and channel-next APIs. Android's Media3 `MediaSessionService` and Apple `AVQueuePlayer` are the target native implementations. The server never pretends a browser tab is a native background player.
+
+An Android implementation must keep one ambient player/session in its `MediaSessionService`, configure the required foreground-media-playback capability, and re-resolve through the Duskcue APIs rather than resuming an old URL. An Apple implementation must configure media playback/background behavior when playback begins, use `AVQueuePlayer` for queued ambient items, and reconcile interruption/output-route lifecycle with the normal heartbeat/stop endpoints. Both must clear queue state before rendering a replacement profile and must never export ambient activity into personal rows, watch counts, or Trakt.
 
 ## Implementation Status
 
@@ -128,11 +142,18 @@ Implemented in the Kids parent-unlock hardening follow-up (2026-07-18):
 - server-side exit enforcement, revocation on profile/PIN changes, a profile-management PIN editor, and a web parent-access prompt that holds the PIN only for submission; and
 - a compatibility path for existing unprotected Kids profiles: a parent enables the PIN from a standard profile before treating that profile as locked.
 
+Implemented in the ambient native-player contract hardening follow-up (2026-07-18):
+
+- a server-issued `channel_updated_at` queue/configuration revision from `next`, advanced atomically with channel or ordered-item changes;
+- a required ambient-start revision handshake, including `409 PLAY_019` stale-selection rejection before a Duskcue play session is created;
+- indexed, typed `play_sessions.ambient_channel_id` diagnostics with safe legacy metadata backfill; and
+- ambient playback fixtures and contract/migration verifiers that bind the revision, Kids recheck, non-personal activity rules, and native restoration boundary.
+
 Deferred follow-up:
 
 - native shared-TV picker enforcement and platform cache invalidation; web applies the session flag and same-origin invalidation contract, while each native TV client must apply the same picker and cache-boundary rules before claiming the shared-TV experience;
 - profile-specific Trakt account linking/export selection;
-- native Android/iOS background-player implementations and offline ambient queue prefetch;
+- native Android/iOS background-player implementations and offline ambient queue prefetch, consuming the revision handshake rather than retaining stream URLs;
 - time windows, daily limits, and child-safe metadata editorial review.
 
 Related documents: [DATABASE.md](DATABASE.md), [TV_PLATFORM_SURFACES.md](TV_PLATFORM_SURFACES.md), [CLIENT_PLATFORM_READINESS.md](CLIENT_PLATFORM_READINESS.md), and [SECURITY.md](../security/SECURITY.md).
