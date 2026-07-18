@@ -359,6 +359,7 @@ async fn main() {
     let backup_verification_state = state.clone();
     let backup_retention_state = state.clone();
     let reindex_maintenance_state = state.clone();
+    let partition_management_state = state.clone();
     let disk_space_check_state = state.clone();
     let recovery_drill_state = state.clone();
     let migration_cleanup_state = state.clone();
@@ -571,6 +572,15 @@ async fn main() {
                 let state = reindex_maintenance_state.clone();
                 async move {
                     duskcue::workers::reindex_maintenance::run_reindex_maintenance(
+                        &state, task_id, config,
+                    )
+                    .await
+                }
+            })
+            .register_fallible_executor("partition_management", move |_pool, task_id, config| {
+                let state = partition_management_state.clone();
+                async move {
+                    duskcue::workers::partition_management::run_partition_management(
                         &state, task_id, config,
                     )
                     .await

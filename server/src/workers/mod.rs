@@ -26,6 +26,7 @@ pub mod migration_cleanup;
 pub mod migration_runner;
 pub mod notification_cleanup;
 pub mod overlay_compositor;
+pub mod partition_management;
 pub mod recovery_drill_runner;
 pub mod reindex_maintenance;
 pub mod segment_detector;

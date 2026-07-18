@@ -428,6 +428,25 @@ When `autovacuum_tuning_enabled` is toggled off, the server resets all per-table
 
 Two new task types added to the `scheduled_tasks` table:
 
+### partition_management
+
+The scheduled `partition_management` worker creates the current monthly
+partition plus a bounded horizon of one to twelve future months for
+`play_sessions`, `play_events`, and `audit_log`. Its default horizon is two
+months, read from task config as `create_ahead_months`. Existing partitions are
+left unchanged; each run writes per-table/month actions and failures to
+`scheduled_task_runs.stats`, and any creation failure marks the scheduled run
+failed so the scheduler can retry it. This worker deliberately creates
+partitions only: automatic retention detaches/drops remain a separate,
+destructive maintenance change requiring its own safety and recovery contract.
+
+PostgreSQL documents creating empty `PARTITION OF` tables for future data and
+notes that concurrent partition detach has additional lifecycle restrictions.
+The selected creation-only design therefore prevents missing-partition write
+failures without silently deleting retained history. Sources rechecked on
+2026-07-18: [PostgreSQL table partitioning](https://www.postgresql.org/docs/current/ddl-partitioning.html)
+and [PostgreSQL ALTER TABLE](https://www.postgresql.org/docs/current/sql-altertable.html).
+
 ### reindex_maintenance
 
 | Parameter | Value |
