@@ -6,7 +6,7 @@ This document is the implementation authority for Phase 17. It turns the shared 
 
 ## Status
 
-Phase 17 Task 0 is complete as of July 18, 2026. The first implementation target is a buildable native Kotlin application at `clients/tv/android/`; it is intentionally separate from the Flutter phone/tablet client.
+Phase 17 Tasks 0–1 are complete as of July 18, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, 16:9 placeholder banner/icon, Compose for TV entry point, debug APK build, fixture-backed contract unit tests, and Android lint verification. It is intentionally separate from the Flutter phone/tablet client.
 
 ## Research Outcome
 
@@ -24,7 +24,7 @@ Phase 17 Task 0 is complete as of July 18, 2026. The first implementation target
 
 ### Dedicated Native Client
 
-`clients/tv/android/` owns its Gradle wrapper, Kotlin application module, native resources, emulator tests, and Play-ready metadata. It may reuse the versioned Duskcue HTTP fixtures and conceptual adapter boundaries from Phase 16d, but it shares no Flutter UI/runtime or phone-oriented navigation code.
+`clients/tv/android/` owns its Kotlin application module, native resources, emulator tests, and Play-ready metadata. Its checked-in wrapper entry point delegates to the repository's established Gradle 8.14 wrapper so the mobile and TV Android projects use the same verified Gradle distribution. It may reuse the versioned Duskcue HTTP fixtures and conceptual adapter boundaries from Phase 16d, but it shares no Flutter UI/runtime or phone-oriented navigation code.
 
 | Setting | Value | Reason |
 |---|---|---|
@@ -35,7 +35,13 @@ Phase 17 Task 0 is complete as of July 18, 2026. The first implementation target
 | JVM/toolchain | Java 17 | Aligns with the checked-in Android/Flutter toolchain. |
 | Playback | Media3 1.10.1 ExoPlayer + MediaSession | Current version used by Duskcue's native Android playback bridge; all Media3 modules stay version-aligned. |
 
-The app declares `android.software.leanback` as required, `android.hardware.touchscreen` as not required, a `LEANBACK_LAUNCHER` activity, HTTPS networking, and only the playback permissions that active Media3 service behavior requires. It must not inherit the phone app's cleartext-by-default networking posture. Local development must use an explicit debug-only network-security configuration when a local HTTP server is genuinely required.
+The app declares `android.software.leanback` as required, `android.hardware.touchscreen` as not required, a `LEANBACK_LAUNCHER` activity, and HTTPS networking. Later Media3 work may add only the playback permissions required by its active service behavior. It must not inherit the phone app's cleartext-by-default networking posture. Local development must use an explicit debug-only network-security configuration when a local HTTP server is genuinely required.
+
+### Task 1 Implementation
+
+The foundation is checked in at `clients/tv/android/` with AGP 8.11.1, Kotlin 2.2.20, Compose compiler support, Java 17, compile/target SDK 36, and minSdk 26. `MainActivity` starts a Compose for TV application; the initial server-selection state contains no media or profile data. The manifest accepts only `duskcue://play/...` routes through the TV activity and disallows cleartext networking. The project includes TV icon/banner placeholders and a wrapper entry point aligned to the existing Gradle 8.14 distribution.
+
+`DuskcueApiClient` is deliberately transport-agnostic and has a real `HttpURLConnection` transport for future background dispatch. It establishes the Kotlin target's fixture-first boundary with canonical `:48027` origins, bearer-header injection, cache-scope-keyed private ETag revalidation, RFC 9457 decoding, typed TV surface/resolve models, and no credential-bearing URL construction. `DuskcueApiClientTest` consumes the shared `docs/api/fixtures/tv/v1` files directly. Verification: `:app:testDebugUnitTest`, `:app:lintDebug`, and `:app:assembleDebug` all pass using SDK 36 and Temurin 17.
 
 ### Contract And Identity Boundary
 
