@@ -991,6 +991,7 @@ pub async fn detect_silence(
         .arg("-nostdin")
         .arg("-i")
         .arg(path)
+        .arg("-vn")
         .arg("-af")
         .arg(&filter)
         .arg("-f")
@@ -1133,6 +1134,42 @@ pub fn combine_credits_signals(
     }
 
     segments
+}
+
+pub fn detect_outro_from_silence(
+    credits_end_ms: i32,
+    silence: &[SilenceEvent],
+    runtime_ms: i32,
+    is_movie: bool,
+) -> Option<DetectedSegment> {
+    let thresholds = DurationThresholds::for_type(SegmentType::Outro);
+    let gap = silence.iter().find(|event| {
+        event.start_ms <= credits_end_ms.saturating_add(5_000)
+            && event.end_ms >= credits_end_ms
+            && event.end_ms < runtime_ms
+    })?;
+    let start_ms = gap.end_ms;
+    let end_ms = runtime_ms;
+    let duration_ms = end_ms.saturating_sub(start_ms);
+    if duration_ms < thresholds.min_ms || duration_ms > thresholds.max_for(is_movie) {
+        return None;
+    }
+
+    Some(DetectedSegment {
+        segment_type: SegmentType::Outro,
+        start_ms,
+        end_ms,
+        skip_to_ms: end_ms,
+        source: SegmentSource::Silence,
+        confidence: 0.6,
+        metadata: serde_json::json!({
+            "algorithm": "silence_gap_v1",
+            "credits_end_ms": credits_end_ms,
+            "silence_start_ms": gap.start_ms,
+            "silence_end_ms": gap.end_ms,
+            "runtime_ms": runtime_ms,
+        }),
+    })
 }
 
 /// Coalesce a stream of black-frame events into `(start_ms, end_ms)` runs.
@@ -1590,6 +1627,44 @@ mod tests {
         assert_eq!(segs.len(), 1);
         assert_eq!(segs[0].source, SegmentSource::Blackframe);
         assert_eq!(segs[0].confidence, 0.5);
+    }
+
+    #[test]
+    fn outro_uses_the_silence_gap_touching_credits() {
+        let silence = vec![SilenceEvent {
+            start_ms: 1_000_000,
+            end_ms: 1_005_000,
+            duration_ms: 5_000,
+        }];
+        let outro = detect_outro_from_silence(1_002_000, &silence, 1_060_000, false).unwrap();
+
+        assert_eq!(outro.segment_type, SegmentType::Outro);
+        assert_eq!(outro.start_ms, 1_005_000);
+        assert_eq!(outro.end_ms, 1_060_000);
+        assert_eq!(outro.source, SegmentSource::Silence);
+        assert_eq!(outro.confidence, 0.6);
+    }
+
+    #[test]
+    fn outro_rejects_a_silence_gap_far_from_credits() {
+        let silence = vec![SilenceEvent {
+            start_ms: 1_020_000,
+            end_ms: 1_025_000,
+            duration_ms: 5_000,
+        }];
+
+        assert!(detect_outro_from_silence(1_000_000, &silence, 1_070_000, false).is_none());
+    }
+
+    #[test]
+    fn outro_rejects_a_tail_outside_duration_thresholds() {
+        let silence = vec![SilenceEvent {
+            start_ms: 1_000_000,
+            end_ms: 1_005_000,
+            duration_ms: 5_000,
+        }];
+
+        assert!(detect_outro_from_silence(1_002_000, &silence, 1_015_000, false).is_none());
     }
 
     #[test]

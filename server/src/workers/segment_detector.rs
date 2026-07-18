@@ -26,12 +26,8 @@
 //! 3. Chromaprint audio fingerprinting (Method 2) — CPU-bound, cached
 //! 4. Cross-episode fingerprint comparison (Method 2 cont.) — intros only
 //! 5. Black frame + silence detection (Methods 3 & 4) — credits
-//! 6. Report results
-//!
-//! The `outro` segment type (silence-gap detection after credits) is
-//! intentionally deferred — it requires reading existing `credits` segments
-//! (chicken-and-egg within a single pass) and the design reserves it for a
-//! follow-up task.
+//! 6. Silence-gap detection after existing credits — outro candidates
+//! 7. Report results
 //!
 //! ## Incremental analysis
 //!
@@ -241,6 +237,15 @@ async fn analyze_library(
         }
     };
     result.segments_created += credits_segments as u64;
+
+    let outro_segments = match detect_outros(pool, library_id, &silence_params, safety).await {
+        Ok(n) => n,
+        Err(e) => {
+            tracing::warn!(library_id = %library_id, error = %e, "Outro detection failed");
+            0
+        }
+    };
+    result.segments_created += outro_segments as u64;
 
     Ok(result)
 }
@@ -829,6 +834,133 @@ async fn fetch_items_needing_credits(
         });
     }
     Ok(out)
+}
+
+async fn detect_outros(
+    pool: &PgPool,
+    library_id: Uuid,
+    silence_params: &SilenceParams,
+    safety: &SafetyConfig,
+) -> Result<usize, sqlx::Error> {
+    let items = fetch_items_needing_outros(pool, library_id).await?;
+    let mut created = 0usize;
+
+    for item in &items {
+        let path = PathBuf::from(&item.file_path);
+        if !path.exists() {
+            continue;
+        }
+
+        let silence = match seg::detect_silence(&path, silence_params).await {
+            Ok(events) => events,
+            Err(error) => {
+                tracing::warn!(media_item_id = %item.media_item_id, error = %error, "Outro silence detection failed");
+                continue;
+            }
+        };
+        let runtime_ms = item.runtime_seconds.max(0).saturating_mul(1_000);
+        if let Some(mut detected) =
+            seg::detect_outro_from_silence(item.credits_end_ms, &silence, runtime_ms, item.is_movie)
+        {
+            seg::mark_surfaced(&mut detected, safety);
+            insert_segment(pool, item.media_item_id, &detected).await?;
+            created += 1;
+        }
+        mark_outro_analyzed(pool, item.credit_segment_id, item.file_hash.as_deref()).await?;
+    }
+
+    Ok(created)
+}
+
+#[derive(Debug)]
+struct OutroCandidate {
+    credit_segment_id: Uuid,
+    media_item_id: Uuid,
+    file_path: String,
+    file_hash: Option<String>,
+    runtime_seconds: i32,
+    credits_end_ms: i32,
+    is_movie: bool,
+}
+
+async fn fetch_items_needing_outros(
+    pool: &PgPool,
+    library_id: Uuid,
+) -> Result<Vec<OutroCandidate>, sqlx::Error> {
+    let rows = sqlx::query(
+        r#"
+        SELECT
+            credits.id AS credit_segment_id,
+            mi.id AS media_item_id,
+            mf.file_path AS file_path,
+            mf.file_hash AS file_hash,
+            mf.runtime_seconds AS runtime_seconds,
+            credits.end_ms AS credits_end_ms,
+            (mi.type = 'movie') AS is_movie
+        FROM media_segments credits
+        JOIN media_items mi ON mi.id = credits.media_item_id
+        JOIN LATERAL (
+            SELECT id, file_path, file_hash, runtime_seconds
+            FROM media_files
+            WHERE media_item_id = mi.id AND is_healthy = true
+            ORDER BY file_size DESC, id ASC
+            LIMIT 1
+        ) mf ON true
+        WHERE mi.library_id = $1
+          AND mi.type IN ('movie', 'episode')
+          AND credits.segment_type = 'credits'
+          AND NOT EXISTS (
+              SELECT 1 FROM media_segments outro
+              WHERE outro.media_item_id = mi.id AND outro.segment_type = 'outro'
+          )
+          AND (credits.metadata->'outro_analysis'->>'file_hash')
+              IS DISTINCT FROM COALESCE(mf.file_hash, '')
+        "#,
+    )
+    .bind(library_id)
+    .fetch_all(pool)
+    .await?;
+
+    Ok(rows
+        .iter()
+        .map(|row| OutroCandidate {
+            credit_segment_id: row.get("credit_segment_id"),
+            media_item_id: row.get("media_item_id"),
+            file_path: row.get("file_path"),
+            file_hash: row.get("file_hash"),
+            runtime_seconds: row.get("runtime_seconds"),
+            credits_end_ms: row.get("credits_end_ms"),
+            is_movie: row.get("is_movie"),
+        })
+        .collect())
+}
+
+async fn mark_outro_analyzed(
+    pool: &PgPool,
+    credit_segment_id: Uuid,
+    file_hash: Option<&str>,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        UPDATE media_segments
+        SET metadata = jsonb_set(
+                COALESCE(metadata, '{}'::jsonb),
+                '{outro_analysis}',
+                jsonb_build_object(
+                    'algorithm', 'silence_gap_v1',
+                    'file_hash', COALESCE($2, ''),
+                    'analyzed_at', now()
+                ),
+                true
+            )
+        WHERE id = $1
+        "#,
+    )
+    .bind(credit_segment_id)
+    .bind(file_hash)
+    .execute(pool)
+    .await?;
+    Ok(())
 }
 
 async fn insert_segment(

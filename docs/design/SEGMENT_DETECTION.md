@@ -223,6 +223,18 @@ Segments outside these ranges are ignored — a 10-minute "intro" detection is a
 - **Button visibility window:** The "Skip Intro" button appears when playback enters the intro segment and disappears after the intro segment ends (or after a configurable timeout, default 10 seconds into the intro)
 - **Client responsibility:** The server provides segment timestamps; the client renders the skip button and handles the seek
 
+### Outro Detection Decision (2026-07-18)
+
+| Option | Benefits | Risks | Decision |
+|---|---|---|---|
+| Treat any late-file silence as an outro boundary | Finds more candidates. | Ordinary scene pauses and quiet final credits become false positives. | Rejected. |
+| Scan only files whose source fingerprint changed | Low recurring cost. | Misses chapter/manual/previously detected credits and cannot complete the required second pass. | Rejected. |
+| Analyze unreviewed credits markers once per file hash; require a silence interval that touches the credits boundary; retain the bounded post-silence tail as a low-confidence candidate | Handles credits created by any method, avoids repeated scans for unchanged files, and gives admins evidence without changing default playback. | Silence alone cannot prove a post-credits scene. | Selected. |
+
+The outro pass is independent of the fingerprint-incremental candidate query. It selects a healthy primary file only when there is an existing credits marker, no outro marker, and no matching `credits.metadata.outro_analysis.file_hash`. The marker stores the `silence_gap_v1` algorithm, analyzed hash, and timestamp after a successful scan, so an unchanged no-match is not reprocessed daily while a changed file is reconsidered. A gap must overlap the credits endpoint or start within five seconds after it; the candidate begins at the gap's end and extends to the runtime. The tail must satisfy the existing `outro` duration ceiling (15–120 seconds for TV, 15–300 seconds for movies).
+
+Silence is one signal, so the resulting `outro` has confidence 0.6 and remains below the default 0.7 surfaced threshold. It therefore creates no default Skip Outro control and never auto-skips; an administrator may lower the existing threshold to review it. FFmpeg documents that `silencedetect` reports a start, end, and duration after audio remains under the configured noise tolerance for the requested minimum duration; Duskcue runs it audio-only with `-vn`. Sources rechecked on 2026-07-18: [FFmpeg `silencedetect`](https://ffmpeg.org/ffmpeg-filters.html#silencedetect) and [FFmpeg input seeking and duration controls](https://ffmpeg.org/ffmpeg.html).
+
 ### Confidence Scoring
 
 Each detected segment has a confidence score (0.0–1.0):
@@ -317,7 +329,12 @@ For each library with segment detection enabled:
      - Require agreement from both methods for high confidence
      - Create or update media_segments
 
-  6. Report results:
+  6. Run the post-credits outro pass:
+     - Select healthy primary files with an existing `credits` segment, no `outro`, and no matching `metadata.outro_analysis.file_hash`
+     - Run audio-only `silencedetect`; accept only a silence interval that reaches the credits boundary or begins within 5 seconds after it
+     - Store the post-silence tail only when it is within the `outro` duration limit; mark the credits segment with the analyzed source hash even when no candidate is found
+
+  7. Report results:
      - Segments created, updated, unchanged per library
      - Low-confidence detections logged for admin review
      - Errors logged per file
@@ -687,4 +704,3 @@ The web client `SkipButton.svelte` overlay lands in `clients/web/src/lib/compone
 - **Auto-skip deduplication** — When `autoSkip<Type>` is enabled, auto-skip fires at most once per segment entry (tracked via `autoSkippedIds` Set). Prevents double-firing if playback position wobbles around `start_ms` (e.g., re-buffering pulls position back into the intro briefly).
 - **Skip seeks to `skip_to_ms`** — The client does not recompute padding; it honors the server-provided `skip_to_ms` (which already includes `intro_end_padding_ms` shortening per Task 5's `apply_safety_padding`). Direct-play seeks set `videoEl.currentTime` directly (no server round-trip); transcode/direct_stream seeks call `player.seek()` for server-side transcode restart.
 - **Auto-skip preferences in localStorage (interim)** — The design specifies `users.metadata.auto_skip` JSONB for server-side persistence. No `users.metadata` API exists yet (Phase 13a territory). Stored in `DEFAULT_PREFS` localStorage until the user-metadata API lands; the client prefs structure uses the same shape (`autoSkipIntro`, etc.) for trivial future migration.
-
