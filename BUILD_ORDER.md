@@ -4491,9 +4491,9 @@ Phases 9–13a can be built in any order after Phase 8, since they are independe
 
 ---
 
-## Post-Phase 16d — Household Profiles, Kids Mode, and Ambient Channels (Flutter Profile Gate Complete; Ambient Player Follow-up Active)
+## Post-Phase 16d — Household Profiles, Kids Mode, and Ambient Channels (Native Ambient Player Complete; TV Profile-Gate Follow-up Active)
 
-**Committed:** `00d631b`, `d4e37ba`, `c53dabe`, `881db75`, `a0a8963`, and `dd38cd1` on `main`
+**Committed:** `00d631b`, `d4e37ba`, `c53dabe`, `881db75`, `a0a8963`, `dd38cd1`, and `e185c14` on `main`
 
 **Authoritative document:** [PROFILES_AND_AMBIENT_CHANNELS.md](docs/design/PROFILES_AND_AMBIENT_CHANNELS.md)
 
@@ -4508,6 +4508,8 @@ Phases 9–13a can be built in any order after Phase 8, since they are independe
 - Opt-in remembered-profile mapping per account/device, resolved only after normal authentication and cleared on sign-out or session revocation.
 - Server-issued first-use selection state for new multi-profile sessions, plus a web profile gate that blocks profile-scoped routes until an explicit choice is made.
 - Flutter Android/iOS profile gate: fresh login and token restoration resolve server profile scope before authenticated routes, with manual switching, remembered-device preference, transient parent unlock, artwork-cache clearing, and profile-isolated offline download scopes.
+- Flutter-native ambient channel picker and player surface backed by exactly one native queue per platform. Android uses a Media3 `ExoPlayer`/`MediaSessionService`; iOS uses `AVQueuePlayer` with active media-playback audio/background configuration.
+- A reproducible Android mobile build baseline: checked-in Gradle wrapper, JDK 17, API 36/build-tools 36, AGP 8.11.1, Gradle 8.14, Kotlin 2.2.20, AndroidX/Jetifier, and a compatible Firebase Core/Messaging lock pairing.
 
 **Key decisions:**
 
@@ -4525,6 +4527,8 @@ Phases 9–13a can be built in any order after Phase 8, since they are independe
 
 **Flutter native profile gate (2026-07-18, `dd38cd1`):** The existing Android/iOS Flutter client now routes every fresh or restored authenticated session to `/profiles` before the application shell, deep links, realtime, or downloads can run. The server-backed picker handles first-use selection, remembered-profile opt-in, manual switching from Settings, and a transient obscured PIN prompt when exiting a locked Kids profile. A switch clears image memory/disk cache and active download state before publishing the new profile; download inventory, package storage, and settings are partitioned by `profile_id`, so a prior profile's local packages remain inaccessible instead of being deleted. No TV application exists in this repository, so dedicated native TV enforcement remains a future platform task.
 
-**Hardening order after Kids mode:** (1) implement native Android/iOS background players against the hardened ambient revision contract without contributing personal playback activity, and (2) adopt the proven profile gate/cache lifecycle in each dedicated TV application as its platform shell is introduced.
+**Native ambient player (2026-07-18, `e185c14`):** Flutter now loads only profile-authorized ambient channels and passes an explicit selection plus the current origin/bearer only to an in-memory native runtime. Android's single `MediaSessionService` declares the required `mediaPlayback` foreground-service capability, while iOS has a single `AVQueuePlayer`, `.playback`/`.moviePlayback` audio session, `audio` background mode, and system play/pause controls. Both runtimes call `next`, revision-checked ambient start, heartbeat, stop, and completion advancement themselves; they stop an abandoned or completed server session before advancing, retry `PLAY_019` once from a fresh `next`, and retain no stream URL, bearer token, session ID, or selection across process/service loss, profile/auth/server changes, or explicit stop. The Android target also now checks in its wrapper and aligns on JDK 17/API 36, AGP 8.11.1, Gradle 8.14, Kotlin 2.2.20, AndroidX/Jetifier, and the matching Firebase Core/Messaging lockfile releases. Flutter's built-in Kotlin migration remains a focused future compatibility task, not a silent behavior change in this player delivery.
 
-**Verification:** `cargo fmt --check`, `cargo check -p duskcue`, focused profile-selection and parent-PIN unit tests, `npm run build` in `clients/web`, `flutter analyze` and `flutter test` in `clients/mobile`, `node scripts/verify-profile-selection-integration.mjs`, `node scripts/verify-profile-parent-unlock-integration.mjs`, `node scripts/verify-auth-conformance.mjs`, `node scripts/verify-client-contracts.mjs`, `node scripts/verify-playback-conformance.mjs`, `node scripts/verify-ambient-player-contract.mjs`, and `scripts/verify-migrations.ps1` against disposable PostgreSQL 18 pass.
+**Hardening order after Kids mode:** (1) adopt the proven profile gate/cache lifecycle in each dedicated TV application as its platform shell is introduced, then (2) consider offline ambient prefetch only if it preserves the no-stream-URL/no-credential restoration boundary.
+
+**Verification:** `cargo fmt --check`, `cargo check -p duskcue`, focused profile-selection and parent-PIN unit tests, `npm run build` in `clients/web`, `flutter doctor -v`, `flutter analyze`, `flutter test`, and `flutter build apk --debug` in `clients/mobile`, `node scripts/verify-native-ambient-player.mjs`, `node scripts/verify-profile-selection-integration.mjs`, `node scripts/verify-profile-parent-unlock-integration.mjs`, `node scripts/verify-auth-conformance.mjs`, `node scripts/verify-client-contracts.mjs`, `node scripts/verify-playback-conformance.mjs`, `node scripts/verify-ambient-player-contract.mjs`, and `scripts/verify-migrations.ps1` against disposable PostgreSQL 18 pass. iOS compilation and device/background-interruption evidence remain a macOS/iOS hardware release gate.
