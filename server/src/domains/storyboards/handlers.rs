@@ -46,9 +46,10 @@ pub async fn get_storyboard_index(
 ) -> Result<Response, AppError> {
     assert_media_profile_access(&state, &user, item_id).await?;
     let cache_dir = state.bootstrap.cache_dir.clone();
-    let content =
-        service::get_storyboard_index(&state.pool, item_id, query.media_file_id, &cache_dir)
-            .await?;
+    let result =
+        service::get_storyboard_index(&state.pool, item_id, query.media_file_id, &cache_dir).await;
+    record_storyboard_served("index", result.is_ok());
+    let content = result?;
 
     Ok(Response::builder()
         .status(StatusCode::OK)
@@ -66,14 +67,16 @@ pub async fn get_storyboard_sprite(
 ) -> Result<Response, AppError> {
     assert_media_profile_access(&state, &user, item_id).await?;
     let cache_dir = state.bootstrap.cache_dir.clone();
-    let data = service::get_storyboard_sprite(
+    let result = service::get_storyboard_sprite(
         &state.pool,
         item_id,
         query.media_file_id,
         &sprite,
         &cache_dir,
     )
-    .await?;
+    .await;
+    record_storyboard_served("sprite", result.is_ok());
+    let data = result?;
 
     Ok(Response::builder()
         .status(StatusCode::OK)
@@ -97,6 +100,15 @@ async fn assert_media_profile_access(
     .await?;
     crate::domains::profiles::service::assert_media_access(&state.pool, &scope, item_id).await?;
     Ok(())
+}
+
+fn record_storyboard_served(asset: &'static str, success: bool) {
+    metrics::counter!(
+        "storyboard_served_total",
+        "asset" => asset,
+        "outcome" => if success { "success" } else { "error" }
+    )
+    .increment(1);
 }
 
 pub async fn generate_library_storyboards(

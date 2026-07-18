@@ -270,6 +270,7 @@ pub async fn generate_for_item_one(
                 path = %file.file_path,
                 "Source file missing, skipping storyboard generation"
             );
+            record_storyboard_generation_error(StoryboardGenerationErrorKind::MissingSource);
             result.errors += 1;
         } else {
             match generate_and_publish_storyboard(
@@ -444,6 +445,7 @@ async fn generate_for_library(
                 path = %file.file_path,
                 "Source file missing, skipping"
             );
+            record_storyboard_generation_error(StoryboardGenerationErrorKind::MissingSource);
             result.errors += 1;
             publish_progress(
                 state,
@@ -652,6 +654,69 @@ enum PublishedStoryboard {
 enum GenerationPublishError {
     Pipeline(sb_svc::StoryboardPipelineError),
     Database(sqlx::Error),
+}
+
+#[derive(Clone, Copy)]
+enum StoryboardProcessOutcome {
+    Generated,
+    AlreadyRunning,
+    MissingSource,
+    PipelineError,
+    DatabaseError,
+}
+
+impl StoryboardProcessOutcome {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Generated => "generated",
+            Self::AlreadyRunning => "already_running",
+            Self::MissingSource => "missing_source",
+            Self::PipelineError => "pipeline_error",
+            Self::DatabaseError => "database_error",
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum StoryboardGenerationErrorKind {
+    MissingSource,
+    Pipeline,
+    Database,
+}
+
+impl StoryboardGenerationErrorKind {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::MissingSource => "missing_source",
+            Self::Pipeline => "pipeline",
+            Self::Database => "database",
+        }
+    }
+
+    fn process_outcome(self) -> StoryboardProcessOutcome {
+        match self {
+            Self::MissingSource => StoryboardProcessOutcome::MissingSource,
+            Self::Pipeline => StoryboardProcessOutcome::PipelineError,
+            Self::Database => StoryboardProcessOutcome::DatabaseError,
+        }
+    }
+}
+
+fn record_storyboard_process_outcome(outcome: StoryboardProcessOutcome) {
+    metrics::counter!("storyboard_files_processed_total", "outcome" => outcome.as_str())
+        .increment(1);
+}
+
+fn record_storyboard_generation_error(kind: StoryboardGenerationErrorKind) {
+    record_storyboard_process_outcome(kind.process_outcome());
+    metrics::counter!("storyboard_generation_errors_total", "kind" => kind.as_str()).increment(1);
+}
+
+fn record_storyboard_generation_success(result: &sb_svc::GenerationResult) {
+    record_storyboard_process_outcome(StoryboardProcessOutcome::Generated);
+    metrics::counter!("storyboard_sprites_created_total").increment(result.sprite_count as u64);
+    metrics::histogram!("storyboard_generation_duration_seconds")
+        .record(result.generation_duration_ms as f64 / 1000.0);
 }
 
 /// Fetch all non-deleted, scan-enabled libraries. Used by the scheduled
@@ -899,17 +964,27 @@ async fn generate_and_publish_storyboard(
 ) -> Result<PublishedStoryboard, GenerationPublishError> {
     let artifact_id = Uuid::now_v7();
     let output_dir = storyboard_dir(cache_dir, file.media_file_id, artifact_id);
-    let mut tx = pool
-        .begin()
-        .await
-        .map_err(GenerationPublishError::Database)?;
-    let acquired: bool = sqlx::query_scalar("SELECT pg_try_advisory_xact_lock($1)")
+    let mut tx = match pool.begin().await {
+        Ok(tx) => tx,
+        Err(error) => {
+            record_storyboard_generation_error(StoryboardGenerationErrorKind::Database);
+            return Err(GenerationPublishError::Database(error));
+        }
+    };
+    let acquired: bool = match sqlx::query_scalar("SELECT pg_try_advisory_xact_lock($1)")
         .bind(storyboard_lock_key(file.media_file_id))
         .fetch_one(&mut *tx)
         .await
-        .map_err(GenerationPublishError::Database)?;
+    {
+        Ok(acquired) => acquired,
+        Err(error) => {
+            record_storyboard_generation_error(StoryboardGenerationErrorKind::Database);
+            return Err(GenerationPublishError::Database(error));
+        }
+    };
 
     if !acquired {
+        record_storyboard_process_outcome(StoryboardProcessOutcome::AlreadyRunning);
         return Ok(PublishedStoryboard::AlreadyRunning);
     }
 
@@ -918,6 +993,7 @@ async fn generate_and_publish_storyboard(
             Ok(result) => result,
             Err(error) => {
                 let _ = tokio::fs::remove_dir_all(&output_dir).await;
+                record_storyboard_generation_error(StoryboardGenerationErrorKind::Pipeline);
                 return Err(GenerationPublishError::Pipeline(error));
             }
         };
@@ -933,13 +1009,16 @@ async fn generate_and_publish_storyboard(
     .await
     {
         let _ = tokio::fs::remove_dir_all(&output_dir).await;
+        record_storyboard_generation_error(StoryboardGenerationErrorKind::Database);
         return Err(GenerationPublishError::Database(error));
     }
 
-    tx.commit()
-        .await
-        .map_err(GenerationPublishError::Database)?;
+    if let Err(error) = tx.commit().await {
+        record_storyboard_generation_error(StoryboardGenerationErrorKind::Database);
+        return Err(GenerationPublishError::Database(error));
+    }
 
+    record_storyboard_generation_success(&result);
     Ok(PublishedStoryboard::Published(result))
 }
 
@@ -1043,7 +1122,10 @@ async fn reconcile_storyboard_cache(pool: &PgPool, cache_dir: &Path) {
     let root = cache_dir.join(STORYBOARDS_SUBDIR);
     let mut media_dirs = match tokio::fs::read_dir(&root).await {
         Ok(entries) => entries,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            metrics::gauge!("storyboard_storage_bytes").set(0.0);
+            return;
+        }
         Err(error) => {
             tracing::warn!(error = %error, root = %root.display(), "failed to read storyboard cache root");
             return;
@@ -1136,6 +1218,34 @@ async fn reconcile_storyboard_cache(pool: &PgPool, cache_dir: &Path) {
             errors = result.errors,
             "storyboard cache reconciliation complete"
         );
+    }
+    record_storyboard_cache_storage(&root).await;
+}
+
+async fn record_storyboard_cache_storage(root: &Path) {
+    let root = root.to_path_buf();
+    let measurement_root = root.clone();
+    match tokio::task::spawn_blocking(move || storyboard_cache_bytes(&measurement_root)).await {
+        Ok(Ok(bytes)) => metrics::gauge!("storyboard_storage_bytes").set(bytes as f64),
+        Ok(Err(error)) => {
+            tracing::warn!(error = %error, root = %root.display(), "failed to measure storyboard cache storage")
+        }
+        Err(error) => {
+            tracing::warn!(error = %error, root = %root.display(), "failed to measure storyboard cache storage")
+        }
+    }
+}
+
+fn storyboard_cache_bytes(path: &Path) -> std::io::Result<u64> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => Ok(0),
+        Ok(metadata) if metadata.is_file() => Ok(metadata.len()),
+        Ok(_) => std::fs::read_dir(path)?.try_fold(0_u64, |total, entry| {
+            let entry = entry?;
+            Ok(total.saturating_add(storyboard_cache_bytes(&entry.path())?))
+        }),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(0),
+        Err(error) => Err(error),
     }
 }
 
@@ -1426,5 +1536,44 @@ mod tests {
         assert!(parse_storyboard_task_config(json!({"interval_mode": "hourly"})).is_err());
         assert!(parse_storyboard_task_config(json!({"max_concurrent_analyses": 2})).is_err());
         assert!(parse_storyboard_task_config(json!({"unexpected": true})).is_err());
+    }
+
+    #[test]
+    fn storyboard_metric_labels_are_bounded() {
+        assert_eq!(StoryboardProcessOutcome::Generated.as_str(), "generated");
+        assert_eq!(
+            StoryboardProcessOutcome::AlreadyRunning.as_str(),
+            "already_running"
+        );
+        assert_eq!(
+            StoryboardProcessOutcome::MissingSource.as_str(),
+            "missing_source"
+        );
+        assert_eq!(
+            StoryboardProcessOutcome::PipelineError.as_str(),
+            "pipeline_error"
+        );
+        assert_eq!(
+            StoryboardProcessOutcome::DatabaseError.as_str(),
+            "database_error"
+        );
+        assert_eq!(
+            StoryboardGenerationErrorKind::MissingSource.as_str(),
+            "missing_source"
+        );
+        assert_eq!(StoryboardGenerationErrorKind::Pipeline.as_str(), "pipeline");
+        assert_eq!(StoryboardGenerationErrorKind::Database.as_str(), "database");
+    }
+
+    #[test]
+    fn storyboard_cache_bytes_sums_nested_files() {
+        let root = std::env::temp_dir().join(format!("duskcue-storyboard-{}", Uuid::now_v7()));
+        std::fs::create_dir_all(root.join("artifact")).unwrap();
+        std::fs::write(root.join("index.vtt"), b"vtt").unwrap();
+        std::fs::write(root.join("artifact").join("sprite_001.webp"), b"sprite").unwrap();
+
+        assert_eq!(storyboard_cache_bytes(&root).unwrap(), 9);
+
+        let _ = std::fs::remove_dir_all(root);
     }
 }

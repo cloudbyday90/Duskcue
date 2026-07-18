@@ -392,12 +392,24 @@ Storyboard metrics are exposed via the existing Prometheus `/metrics` endpoint:
 
 | Metric | Type | Labels | Description |
 |---|---|---|---|
-| `storyboard_files_processed_total` | counter | library | Files processed for storyboard generation |
-| `storyboard_generation_duration_seconds` | histogram | library | Time to generate storyboards for one file |
-| `storyboard_sprites_created_total` | counter | library | Sprite sheet images created |
-| `storyboard_storage_bytes` | gauge | library | Current disk usage of storyboard cache |
-| `storyboard_served_total` | counter | — | Storyboard index/sprite HTTP requests served |
-| `storyboard_generation_errors_total` | counter | library, error_type | Generation failures by type |
+| `storyboard_files_processed_total` | counter | `outcome` (`generated`, `already_running`, `missing_source`, `pipeline_error`, `database_error`) | File-level generation attempts, including the resolved terminal result |
+| `storyboard_generation_duration_seconds` | histogram | — | FFmpeg generation duration for successfully published storyboard artifacts |
+| `storyboard_sprites_created_total` | counter | — | Sprite sheet images made visible by successful artifact publication |
+| `storyboard_storage_bytes` | gauge | — | Current byte size of the complete storyboard cache tree after reconciliation |
+| `storyboard_served_total` | counter | `asset` (`index`, `sprite`), `outcome` (`success`, `error`) | Authenticated WebVTT and WebP asset reads |
+| `storyboard_generation_errors_total` | counter | `kind` (`missing_source`, `pipeline`, `database`) | Generation failures by bounded operational class |
+
+### Observability Decision (2026-07-18)
+
+| Option | Advantages | Limitations | Decision |
+|---|---|---|---|
+| Label every metric with `library_id`, media ID, file path, or raw FFmpeg/database error text | Direct per-object drill-down from one metric. | Each new library, file, path, or error string creates a Prometheus time series; it is unbounded, private, and unsuitable for a long-lived self-hosted server. | Rejected. |
+| Emit only success counts | Minimal implementation. | Cannot distinguish a healthy no-op run from missing sources, FFmpeg failures, publication failures, or serving errors. | Rejected. |
+| Use fixed outcome/asset/error-kind vocabularies, an unlabeled cache-size gauge, and tracing/SSE/scheduled-run records for object-level investigation | Supports rate, error, duration, cache-growth, and serving dashboards while keeping label cardinality bounded and private. | Per-library diagnosis remains in the existing task history, structured logs, and admin progress events rather than Prometheus labels. | Selected. |
+
+The worker records a file exactly once for each terminal attempt: `generated`, `already_running`, `missing_source`, `pipeline_error`, or `database_error`. A successful publication contributes its FFmpeg duration and sprite count; an unsuccessful publication does not claim generated output. Cache storage is measured from the reconciled filesystem tree, not a per-library database estimate, so it includes the VTT and actual WebP bytes. Index and sprite reads record only the bounded `asset` and `outcome` labels.
+
+Prometheus recommends a single meaning and base unit per metric and cautions that every unique label combination is a time series, so IDs and other unbounded values must not become labels. The Rust `metrics` facade maps counters, gauges, and histograms directly to this contract. Sources rechecked on 2026-07-18: [Prometheus metric and label naming](https://prometheus.io/docs/practices/naming/), [Prometheus histograms](https://prometheus.io/docs/practices/histograms/), and [Rust `metrics` metric types](https://docs.rs/metrics/latest/metrics/).
 
 ---
 
