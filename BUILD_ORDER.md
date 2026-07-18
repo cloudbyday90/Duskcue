@@ -4493,7 +4493,7 @@ Phases 9–13a can be built in any order after Phase 8, since they are independe
 
 ## Post-Phase 16d — Household Profiles, Kids Mode, and Ambient Channels (Core Complete; Hardening Follow-up Active)
 
-**Committed:** `00d631b`, `d4e37ba`, and `c53dabe` on `main`
+**Committed:** `00d631b`, `d4e37ba`, `c53dabe`, and `881db75` on `main`
 
 **Authoritative document:** [PROFILES_AND_AMBIENT_CHANNELS.md](docs/design/PROFILES_AND_AMBIENT_CHANNELS.md)
 
@@ -4511,11 +4511,13 @@ Phases 9–13a can be built in any order after Phase 8, since they are independe
 
 - The authenticated `users` record remains the authorization and external-integration owner; `user_profiles` owns household experience state.
 - Native background playback is a client responsibility. Android consumes this contract through Media3 `MediaSessionService`; Apple clients use AVQueuePlayer and the appropriate background media configuration. A web tab is not represented as native background playback.
-- Parental PIN entry, timed parent unlock, and profile-specific Trakt linking are intentionally deferred rather than storing an unprotected or client-side hashed PIN.
+- Parent PIN hashes are per-Kids-profile, Argon2id-derived server secrets; a valid PIN grants only a session-scoped, ten-minute profile unlock, while five failures produce a durable 15-minute lockout.
 - A remembered profile is a device convenience setting, not an account credential or a Kids exit lock; profile PIN work remains required before making a shared-TV lock claim.
 
 **Shared-TV selection hardening (2026-07-18, `c53dabe`):** A remembered profile is a per-account, per-installation mapping keyed by a random opaque device ID. Separate TVs deliberately get separate mappings, and deleting app/browser data creates a new identity rather than cloning a household preference. A valid mapping is applied only after account authentication. A new session with multiple profiles and no valid mapping is explicitly marked `profile_selection_required`; the server retains its default-profile fallback for API compatibility, while the web shell blocks profile-scoped routes until the user switches explicitly. That switch clears the flag atomically with a requested remember/forget mutation. Web invalidates in-flight profile-scoped calls, remounts profile-scoped UI, resets local playback, and revalidates same-origin tabs through BroadcastChannel with a storage-event fallback. Native TV clients must implement the same gate and clear previews, artwork, queue, and launcher state before publishing replacement rows. See [PROFILES_AND_AMBIENT_CHANNELS.md](docs/design/PROFILES_AND_AMBIENT_CHANNELS.md), [TV_PLATFORM_SURFACES.md](docs/design/TV_PLATFORM_SURFACES.md), and [CLIENT_CONTRACTS.md](docs/api/CLIENT_CONTRACTS.md).
 
-**Hardening order after Link:** (1) enforce first-use shared-TV profile selection and remembered-profile lifecycle on native clients, (2) add a server-verifiable parent PIN and timed parent-unlock boundary for Kids profiles, and (3) consume the already-defined ambient-channel contract in native background players without contributing personal playback activity.
+**Kids parent-unlock hardening (2026-07-18):** New Kids profiles require a 4–12 digit parent PIN. The server stores only an Argon2id PHC hash with a random salt and OWASP's 19 MiB/two-iteration/single-lane baseline. `user_profiles` persists failed attempts and a 15-minute lock after the fifth failure; `user_sessions` stores only the current profile's ten-minute parent-unlock pair. The unlock endpoint locks rows in a deadlock-safe order, returns no hash/attempt count/precise retry schedule, and the switch endpoint refuses a locked Kids-to-standard transition. Switching profiles or changing the PIN revokes the unlock. The web exposes secure PIN setup/replacement, hides sensitive management links in Kids mode, and presents a transient parent-access dialog. Existing Kids profiles remain compatible until a parent configures a PIN from a standard profile.
 
-**Verification:** `cargo check -p duskcue`, focused profile-selection unit test, `npm run build` in `clients/web`, `node scripts/verify-profile-selection-integration.mjs`, `node scripts/verify-auth-conformance.mjs`, `node scripts/verify-client-contracts.mjs`, and `scripts/verify-migrations.ps1` against disposable PostgreSQL 18 pass.
+**Hardening order after Kids mode:** (1) enforce first-use shared-TV profile selection, parent-unlock UI, and cache lifecycle on native clients, and (2) consume the already-defined ambient-channel contract in native background players without contributing personal playback activity.
+
+**Verification:** `cargo fmt --check`, `cargo check -p duskcue`, focused profile-selection and parent-PIN unit tests, `npm run build` in `clients/web`, `node scripts/verify-profile-selection-integration.mjs`, `node scripts/verify-profile-parent-unlock-integration.mjs`, `node scripts/verify-auth-conformance.mjs`, `node scripts/verify-client-contracts.mjs`, and `scripts/verify-migrations.ps1` against disposable PostgreSQL 18 pass.
