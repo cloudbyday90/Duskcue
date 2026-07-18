@@ -343,6 +343,7 @@ impl IntoResponse for AppError {
             AppError::RateLimited { .. }
                 | AppError::ServiceUnavailable(_)
                 | AppError::GatewayTimeout(_)
+                | AppError::Auth(crate::domains::auth::AuthError::DeviceLinkingSlowDown { .. })
                 | AppError::Trakt(crate::domains::trakt::TraktError::RateLimited { .. })
                 | AppError::Trakt(crate::domains::trakt::TraktError::ServiceUnavailable)
                 | AppError::Trakt(crate::domains::trakt::TraktError::Timeout)
@@ -353,6 +354,9 @@ impl IntoResponse for AppError {
                 AppError::RateLimited { .. } => "0".to_string(),
                 AppError::GatewayTimeout(_) => "30".to_string(),
                 AppError::ServiceUnavailable(_) => "60".to_string(),
+                AppError::Auth(crate::domains::auth::AuthError::DeviceLinkingSlowDown {
+                    retry_after_seconds,
+                }) => retry_after_seconds.to_string(),
                 AppError::Trakt(crate::domains::trakt::TraktError::RateLimited {
                     retry_after_secs,
                 }) => retry_after_secs.unwrap_or(0).to_string(),
@@ -570,18 +574,20 @@ fn auth_error_to_http(err: &crate::domains::auth::AuthError) -> (StatusCode, &'s
             "Device linking code expired".into(),
         ),
         AuthError::DeviceLinkingDenied => (
-            StatusCode::BAD_REQUEST,
+            StatusCode::FORBIDDEN,
             "AUTH_014",
             "Device linking denied by user".into(),
         ),
         AuthError::DeviceLinkingPending => (
-            StatusCode::BAD_REQUEST,
-            "AUTH_013",
+            StatusCode::PRECONDITION_REQUIRED,
+            "AUTH_023",
             "Authorization pending".into(),
         ),
-        AuthError::DeviceLinkingSlowDown => {
-            (StatusCode::BAD_REQUEST, "AUTH_013", "Slow down".into())
-        }
+        AuthError::DeviceLinkingSlowDown { .. } => (
+            StatusCode::TOO_MANY_REQUESTS,
+            "AUTH_024",
+            "Slow down".into(),
+        ),
         AuthError::ReauthCodeInvalid => (
             StatusCode::UNAUTHORIZED,
             "AUTH_015",

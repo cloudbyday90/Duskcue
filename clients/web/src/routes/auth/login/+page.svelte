@@ -8,6 +8,7 @@
 <script>
     import { m } from '$lib/paraglide/messages.js';
     import { goto } from '$app/navigation';
+    import { page } from '$app/stores';
     import { auth, authLoading, authError } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
 
@@ -16,6 +17,11 @@
     let username = $state('');
     let password = $state('');
     let deviceName = $state('');
+
+    let postLoginDestination = $derived.by(() => {
+        const candidate = $page.url.searchParams.get('return_to');
+        return candidate?.startsWith('/') && !candidate.startsWith('//') ? candidate : '/dashboard';
+    });
 
     function switchMode(newMode) {
         mode = newMode;
@@ -34,7 +40,7 @@
                 device_name: deviceName.trim() || 'Web Browser',
             });
             notifications.success(m.routes_auth_login_page_welcome_to_duskcue());
-            goto('/dashboard');
+            goto(postLoginDestination);
         } catch (err) {
             notifications.error(err.detail || err.message || m.routes_auth_login_page_login_failed());
         }
@@ -53,7 +59,7 @@
                 device_name: deviceName.trim() || 'Web Browser',
             });
             notifications.success(m.routes_auth_login_page_welcome_back());
-            goto('/dashboard');
+            goto(postLoginDestination);
         } catch (err) {
             notifications.error(err.detail || err.message || m.routes_auth_login_page_login_failed());
         }
@@ -68,7 +74,7 @@
                 return await navigator.credentials.get({ publicKey: options });
             });
             notifications.success(m.routes_auth_login_page_welcome_back());
-            goto('/dashboard');
+            goto(postLoginDestination);
         } catch (err) {
             if (err.name === 'NotAllowedError') return;
             notifications.error(err.detail || err.message || m.routes_auth_login_page_passkey_authentication_failed());

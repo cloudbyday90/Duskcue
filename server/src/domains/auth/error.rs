@@ -65,7 +65,7 @@ pub enum AuthError {
     DeviceLinkingPending,
 
     #[error("device linking slow down")]
-    DeviceLinkingSlowDown,
+    DeviceLinkingSlowDown { retry_after_seconds: i32 },
 
     #[error("re-authentication code invalid or expired")]
     ReauthCodeInvalid,

@@ -94,19 +94,22 @@ pub fn extract_client_ip(
     headers: &axum::http::HeaderMap,
     connect_info: Option<&std::net::SocketAddr>,
 ) -> Option<IpAddr> {
-    if let Some(xff) = headers.get("x-forwarded-for")
-        && let Ok(val) = xff.to_str()
-        && let Some(first) = val.split(',').next()
-        && let Ok(ip) = first.trim().parse::<IpAddr>()
-    {
-        return Some(ip);
-    }
+    let trusted_loopback_proxy = connect_info.is_some_and(|peer| peer.ip().is_loopback());
+    if trusted_loopback_proxy {
+        if let Some(xff) = headers.get("x-forwarded-for")
+            && let Ok(val) = xff.to_str()
+            && let Some(first) = val.split(',').next()
+            && let Ok(ip) = first.trim().parse::<IpAddr>()
+        {
+            return Some(ip);
+        }
 
-    if let Some(xri) = headers.get("x-real-ip")
-        && let Ok(val) = xri.to_str()
-        && let Ok(ip) = val.parse::<IpAddr>()
-    {
-        return Some(ip);
+        if let Some(xri) = headers.get("x-real-ip")
+            && let Ok(val) = xri.to_str()
+            && let Ok(ip) = val.parse::<IpAddr>()
+        {
+            return Some(ip);
+        }
     }
     connect_info.map(|ci| ci.ip())
 }
@@ -125,6 +128,25 @@ pub async fn rate_limit_global(
         Ok(()) => Ok(next.run(request).await),
         Err(_) => Err(AppError::RateLimited {
             code: "RATE_LIMITED".to_string(),
+        }),
+    }
+}
+
+pub async fn rate_limit_auth(
+    axum::extract::State(state): axum::extract::State<AppState>,
+    request: Request,
+    next: Next,
+) -> Result<Response, AppError> {
+    let connect_info = request
+        .extensions()
+        .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>();
+    let ip = extract_client_ip(request.headers(), connect_info.map(|value| &value.0))
+        .unwrap_or(IpAddr::from([0, 0, 0, 1]));
+
+    match state.rate_limits.ip_auth.check_key(&ip) {
+        Ok(()) => Ok(next.run(request).await),
+        Err(_) => Err(AppError::RateLimited {
+            code: "RATE_002".to_string(),
         }),
     }
 }
@@ -256,4 +278,40 @@ pub async fn metrics_subnet_guard(
     }
 
     Ok(next.run(request).await)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::{IpAddr, SocketAddr};
+
+    use axum::http::{HeaderMap, HeaderValue};
+
+    use super::extract_client_ip;
+
+    #[test]
+    fn direct_peer_cannot_spoof_forwarded_ip() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", HeaderValue::from_static("203.0.113.10"));
+        let peer: SocketAddr = "198.51.100.4:443".parse().unwrap();
+
+        assert_eq!(
+            extract_client_ip(&headers, Some(&peer)),
+            Some("198.51.100.4".parse::<IpAddr>().unwrap())
+        );
+    }
+
+    #[test]
+    fn loopback_proxy_can_supply_forwarded_ip() {
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            "x-forwarded-for",
+            HeaderValue::from_static("203.0.113.10, 127.0.0.1"),
+        );
+        let peer: SocketAddr = "127.0.0.1:48028".parse().unwrap();
+
+        assert_eq!(
+            extract_client_ip(&headers, Some(&peer)),
+            Some("203.0.113.10".parse::<IpAddr>().unwrap())
+        );
+    }
 }

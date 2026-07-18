@@ -158,6 +158,8 @@ pub struct DeviceCodeResponse {
     pub device_code: String,
     pub user_code: String,
     pub verification_uri: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub verification_uri_complete: Option<String>,
     pub expires_in: i32,
     pub interval: i32,
 }
@@ -174,9 +176,31 @@ pub struct DeviceTokenResponse {
     pub user: UserSummary,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Validate)]
 pub struct DeviceVerifyRequest {
+    #[validate(length(min = 1, max = 32))]
     pub user_code: String,
+    #[serde(default = "default_device_linking_approval")]
+    pub approve: bool,
+}
+
+fn default_device_linking_approval() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+pub struct DeviceLinkingRequestQuery {
+    #[validate(length(min = 1, max = 32))]
+    pub user_code: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct DeviceLinkingRequestResponse {
+    pub user_code: String,
+    pub client_name: Option<String>,
+    pub client_platform: Option<String>,
+    pub client_version: Option<String>,
+    pub expires_at: DateTime<Utc>,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]

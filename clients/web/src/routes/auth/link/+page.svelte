@@ -9,13 +9,14 @@
     import { m } from '$lib/paraglide/messages.js';
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
-    import { verifyDeviceCode } from '$lib/api/auth.js';
+    import { getDeviceLinkingRequest, verifyDeviceCode } from '$lib/api/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
 
     let code = $state('');
     let loading = $state(false);
+    let request = $state(null);
 
-    let urlCode = $derived($page.url.searchParams.get('code') || '');
+    let urlCode = $derived($page.url.searchParams.get('code') || $page.url.searchParams.get('user_code') || '');
 
     $effect(() => {
         if (urlCode) {
@@ -31,17 +32,33 @@
 
     let formattedCode = $derived(formatUserCode(code));
 
-    async function handleVerify(e) {
+    async function handleReview(e) {
         e.preventDefault();
         const clean = code.toUpperCase().replace(/[^A-Z0-9]/g, '');
-        if (clean.length < 6) {
+        if (clean.length !== 8) {
             notifications.error(m.routes_auth_link_page_please_enter_a_valid_device_code());
             return;
         }
         loading = true;
         try {
-            await verifyDeviceCode({ user_code: clean });
-            notifications.success(m.routes_auth_link_page_device_authorized_successfully());
+            request = await getDeviceLinkingRequest({ user_code: clean });
+        } catch (err) {
+            notifications.error(err.detail || err.message || m.routes_auth_link_page_device_verification_failed());
+        } finally {
+            loading = false;
+        }
+    }
+
+    async function handleDecision(approve) {
+        if (!request || loading) return;
+        loading = true;
+        try {
+            await verifyDeviceCode({ user_code: request.user_code, approve });
+            notifications.success(
+                approve
+                    ? m.routes_auth_link_page_device_authorized_successfully()
+                    : 'Device authorization cancelled',
+            );
             goto('/dashboard');
         } catch (err) {
             notifications.error(err.detail || err.message || m.routes_auth_link_page_device_verification_failed());
@@ -64,24 +81,44 @@
             </p>
         </div>
 
-        <form onsubmit={handleVerify} class="auth-form">
-            <label class="field">
-                <span class="field-label">{m.routes_auth_link_page_device_code()}</span>
-                <input
-                    type="text"
-                    value={formattedCode}
-                    oninput={(e) => (code = e.currentTarget.value)}
-                    placeholder={m.routes_auth_link_page_abcd_efgh()}
-                    autocomplete="off"
-                    class="code-input"
-                    required
-                />
-            </label>
+        {#if request}
+            <section class="device-review" aria-live="polite">
+                <h2>Review device</h2>
+                <dl>
+                    <div><dt>Code</dt><dd>{request.user_code}</dd></div>
+                    <div><dt>App</dt><dd>{request.client_name || 'Unknown app'}</dd></div>
+                    <div><dt>Platform</dt><dd>{request.client_platform || 'Unknown platform'}</dd></div>
+                    {#if request.client_version}<div><dt>Version</dt><dd>{request.client_version}</dd></div>{/if}
+                </dl>
+                <p>Confirm that this code matches the one displayed on the device before you continue.</p>
+                <div class="review-actions">
+                    <button class="btn-secondary" onclick={() => (request = null)} disabled={loading}>Back</button>
+                    <button class="btn-secondary deny" onclick={() => handleDecision(false)} disabled={loading}>Deny</button>
+                    <button class="btn-primary" onclick={() => handleDecision(true)} disabled={loading}>
+                        {loading ? 'Authorizing…' : 'Authorize Device'}
+                    </button>
+                </div>
+            </section>
+        {:else}
+            <form onsubmit={handleReview} class="auth-form">
+                <label class="field">
+                    <span class="field-label">{m.routes_auth_link_page_device_code()}</span>
+                    <input
+                        type="text"
+                        value={formattedCode}
+                        oninput={(e) => (code = e.currentTarget.value)}
+                        placeholder={m.routes_auth_link_page_abcd_efgh()}
+                        autocomplete="off"
+                        class="code-input"
+                        required
+                    />
+                </label>
 
-            <button type="submit" class="btn-primary" disabled={loading || code.length < 6}>
-                {loading ? 'Verifying…' : 'Authorize Device'}
-            </button>
-        </form>
+                <button type="submit" class="btn-primary" disabled={loading || code.length < 8}>
+                    {loading ? 'Checking…' : 'Continue'}
+                </button>
+            </form>
+        {/if}
 
         <div class="link-info">
             <p>
@@ -189,6 +226,68 @@
     .btn-primary:disabled {
         opacity: 0.5;
         cursor: not-allowed;
+    }
+
+    .device-review {
+        display: grid;
+        gap: 1rem;
+    }
+
+    .device-review h2 {
+        font-size: 1rem;
+        color: var(--color-text-primary);
+    }
+
+    .device-review dl {
+        display: grid;
+        gap: 0.5rem;
+        margin: 0;
+    }
+
+    .device-review dl div {
+        display: flex;
+        justify-content: space-between;
+        gap: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--color-border-subtle);
+    }
+
+    .device-review dt {
+        color: var(--color-text-muted);
+        font-size: 0.8125rem;
+    }
+
+    .device-review dd {
+        margin: 0;
+        color: var(--color-text-primary);
+        font-size: 0.8125rem;
+        text-align: end;
+        overflow-wrap: anywhere;
+    }
+
+    .device-review p {
+        color: var(--color-text-secondary);
+        font-size: 0.8125rem;
+        line-height: 1.5;
+    }
+
+    .review-actions {
+        display: grid;
+        grid-template-columns: 1fr 1fr 1.4fr;
+        gap: 0.5rem;
+    }
+
+    .btn-secondary {
+        padding: 0.75rem;
+        background-color: var(--color-bg-elevated);
+        border: 1px solid var(--color-border);
+        border-radius: var(--radius-sm);
+        color: var(--color-text-primary);
+        font-size: 0.8125rem;
+    }
+
+    .deny {
+        color: var(--color-error);
     }
 
     .link-info {

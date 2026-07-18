@@ -72,6 +72,10 @@ export async function pollDeviceToken(data) {
     return post('/device/token', data);
 }
 
+export async function getDeviceLinkingRequest(params) {
+    return get('/device/verify', params);
+}
+
 export async function verifyDeviceCode(data) {
     return post('/device/verify', data);
 }

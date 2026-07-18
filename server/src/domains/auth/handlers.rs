@@ -15,11 +15,12 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use axum::Json;
-use axum::extract::State;
+use axum::extract::{ConnectInfo, Query, State};
 use axum::http::HeaderMap;
 use axum::http::header::SET_COOKIE;
 use axum::response::{IntoResponse, Response};
 use sqlx::Row;
+use std::net::SocketAddr;
 use validator::Validate;
 
 use crate::domains::tv::service as tv_service;
@@ -359,14 +360,14 @@ pub async fn totp_verify(
 pub async fn device_code(
     State(state): State<AppState>,
     headers: HeaderMap,
+    ConnectInfo(connect_info): ConnectInfo<SocketAddr>,
     Json(req): Json<DeviceCodeRequest>,
 ) -> Result<Json<DeviceCodeResponse>, AppError> {
-    let ip_address = headers
-        .get("x-forwarded-for")
-        .or_else(|| headers.get("x-real-ip"))
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split(',').next())
-        .map(|v| v.trim().to_string());
+    req.validate()
+        .map_err(|error| validation_error(error, "/api/v1/device/code"))?;
+
+    let ip_address = crate::middleware::extract_client_ip(&headers, Some(&connect_info))
+        .map(|address| address.to_string());
 
     let user_agent = headers
         .get("user-agent")
@@ -375,16 +376,23 @@ pub async fn device_code(
 
     let verification_uri = {
         let config = state.runtime_config.load();
-        let base = match &config.base_url {
-            Some(url) => url.clone(),
-            None => headers
-                .get("host")
-                .and_then(|v| v.to_str().ok())
-                .map(|h| format!("http://{}", h))
-                .unwrap_or_else(|| "http://localhost:48027".to_string()),
+        let base = match config
+            .base_url
+            .as_deref()
+            .map(str::trim)
+            .filter(|url| !url.is_empty())
+        {
+            Some(url) => url.to_string(),
+            None if matches!(config.auth.network_mode, NetworkMode::Exposed) => {
+                return Err(AppError::ServiceUnavailable(
+                    "A canonical public base URL is required for device linking in exposed mode"
+                        .to_string(),
+                ));
+            }
+            None => format!("http://localhost:{}", config.http_port),
         };
         drop(config);
-        format!("{}/link", base.trim_end_matches('/'))
+        format!("{}/auth/link", base.trim_end_matches('/'))
     };
 
     let response = service::create_device_linking_code(
@@ -409,9 +417,25 @@ pub async fn device_token(
     State(state): State<AppState>,
     Json(req): Json<DeviceTokenRequest>,
 ) -> Result<Json<DeviceTokenResponse>, AppError> {
+    req.validate()
+        .map_err(|error| validation_error(error, "/api/v1/device/token"))?;
+
     let response =
         service::poll_device_linking_token(&state.pool, &state, &req.device_code).await?;
 
+    Ok(Json(response))
+}
+
+pub async fn device_linking_request(
+    State(state): State<AppState>,
+    _user: AuthenticatedUser,
+    Query(query): Query<DeviceLinkingRequestQuery>,
+) -> Result<Json<DeviceLinkingRequestResponse>, AppError> {
+    query
+        .validate()
+        .map_err(|error| validation_error(error, "/api/v1/device/verify"))?;
+
+    let response = service::get_device_linking_request(&state.pool, &query.user_code).await?;
     Ok(Json(response))
 }
 
@@ -420,10 +444,35 @@ pub async fn device_verify(
     user: AuthenticatedUser,
     Json(req): Json<DeviceVerifyRequest>,
 ) -> Result<Json<serde_json::Value>, AppError> {
+    req.validate()
+        .map_err(|error| validation_error(error, "/api/v1/device/verify"))?;
+
     let result =
-        service::verify_device_linking_code(&state.pool, user.user_id, &req.user_code).await?;
+        service::verify_device_linking_code(&state.pool, user.user_id, &req.user_code, req.approve)
+            .await?;
 
     Ok(Json(result))
+}
+
+fn validation_error(error: validator::ValidationErrors, instance: &str) -> AppError {
+    AppError::Validation {
+        errors: error
+            .field_errors()
+            .into_iter()
+            .flat_map(|(field, errors)| {
+                errors.iter().map(move |error| crate::error::FieldError {
+                    field: field.to_string(),
+                    code: error.code.to_string(),
+                    message: error
+                        .message
+                        .as_ref()
+                        .map(|message| message.to_string())
+                        .unwrap_or_default(),
+                })
+            })
+            .collect(),
+        instance: Some(instance.to_string()),
+    }
 }
 
 pub async fn reauth(

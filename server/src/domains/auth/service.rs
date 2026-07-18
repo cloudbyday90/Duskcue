@@ -19,7 +19,7 @@ use std::num::NonZeroU32;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use rand::Rng;
-use sqlx::Row;
+use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 use webauthn_rs::prelude::*;
 
@@ -131,17 +131,69 @@ pub async fn resolve_capabilities(
     Ok(caps)
 }
 
+async fn resolve_capabilities_on_connection(
+    connection: &mut PgConnection,
+    user_id: Uuid,
+    role: &str,
+) -> Result<Vec<String>, AuthError> {
+    if role == "owner" {
+        return Ok(ALL_CAPABILITIES
+            .iter()
+            .map(|capability| capability.to_string())
+            .collect());
+    }
+
+    let rows =
+        sqlx::query("SELECT capability, is_granted FROM user_capabilities WHERE user_id = $1")
+            .bind(user_id)
+            .fetch_all(&mut *connection)
+            .await?;
+
+    if rows.is_empty() {
+        return Ok(role_default_capabilities(role));
+    }
+
+    let mut capabilities = role_default_capabilities(role);
+    for row in &rows {
+        let capability: String = row.get("capability");
+        let granted: bool = row.get("is_granted");
+        if granted && !capabilities.contains(&capability) {
+            capabilities.push(capability);
+        } else if !granted {
+            capabilities.retain(|current| current != &capability);
+        }
+    }
+
+    Ok(capabilities)
+}
+
 pub async fn create_session(
     pool: &sqlx::PgPool,
     state: &AppState,
     user_id: Uuid,
     device_info: &DeviceInfo,
 ) -> Result<(String, UserSession), AuthError> {
-    let default_profile_id = ensure_default_profile(pool, user_id).await?;
-    let active_profile_id =
-        remembered_profile_for_device(pool, user_id, device_info.device_id.as_deref())
-            .await?
-            .unwrap_or(default_profile_id);
+    let mut transaction = pool.begin().await?;
+    let result =
+        create_session_on_connection(&mut transaction, state, user_id, device_info).await?;
+    transaction.commit().await?;
+    Ok(result)
+}
+
+async fn create_session_on_connection(
+    connection: &mut PgConnection,
+    state: &AppState,
+    user_id: Uuid,
+    device_info: &DeviceInfo,
+) -> Result<(String, UserSession), AuthError> {
+    let default_profile_id = ensure_default_profile_on_connection(connection, user_id).await?;
+    let active_profile_id = remembered_profile_for_device_on_connection(
+        connection,
+        user_id,
+        device_info.device_id.as_deref(),
+    )
+    .await?
+    .unwrap_or(default_profile_id);
     let token = generate_session_token();
     let token_hash = sha256_hex(&token);
 
@@ -171,7 +223,7 @@ pub async fn create_session(
     .bind(&device_info.user_agent)
     .bind(device_info.is_secure)
     .bind(format!("{}", absolute_timeout_days))
-    .fetch_one(pool)
+    .fetch_one(&mut *connection)
     .await?;
 
     let session_id: Uuid = row.get("id");
@@ -532,8 +584,8 @@ fn row_to_session(row: &sqlx::postgres::PgRow) -> UserSession {
     }
 }
 
-async fn remembered_profile_for_device(
-    pool: &sqlx::PgPool,
+async fn remembered_profile_for_device_on_connection(
+    connection: &mut PgConnection,
     user_id: Uuid,
     device_id: Option<&str>,
 ) -> Result<Option<Uuid>, AuthError> {
@@ -548,8 +600,36 @@ async fn remembered_profile_for_device(
     )
     .bind(user_id)
     .bind(device_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *connection)
     .await?)
+}
+
+async fn ensure_default_profile_on_connection(
+    connection: &mut PgConnection,
+    user_id: Uuid,
+) -> Result<Uuid, AuthError> {
+    if let Some(profile_id) = sqlx::query_scalar::<_, Uuid>(
+        "SELECT id FROM user_profiles WHERE owner_user_id = $1 AND is_default = true",
+    )
+    .bind(user_id)
+    .fetch_optional(&mut *connection)
+    .await?
+    {
+        return Ok(profile_id);
+    }
+
+    let display_name: String = sqlx::query_scalar("SELECT display_name FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_one(&mut *connection)
+        .await?;
+    let profile_id: Uuid = sqlx::query_scalar(
+        "INSERT INTO user_profiles (owner_user_id, name, profile_type, is_default) VALUES ($1, $2, 'standard', true) RETURNING id",
+    )
+    .bind(user_id)
+    .bind(display_name)
+    .fetch_one(&mut *connection)
+    .await?;
+    Ok(profile_id)
 }
 
 async fn ensure_default_profile(pool: &sqlx::PgPool, user_id: Uuid) -> Result<Uuid, AuthError> {
@@ -644,6 +724,22 @@ fn hex_decode(hex: &str) -> Result<Vec<u8>, ()> {
         .step_by(2)
         .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).map_err(|_| ()))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{format_user_code, normalize_device_user_code};
+
+    #[test]
+    fn normalizes_formatted_device_codes_case_insensitively() {
+        assert_eq!(normalize_device_user_code("wdjb-mjht"), "WDJBMJHT");
+        assert_eq!(normalize_device_user_code("WDJB MJHT"), "WDJBMJHT");
+    }
+
+    #[test]
+    fn formats_device_codes_in_two_equal_groups() {
+        assert_eq!(format_user_code("WDJBMJHT"), "WDJB-MJHT");
+    }
 }
 
 fn role_default_capabilities(role: &str) -> Vec<String> {
@@ -1239,8 +1335,8 @@ pub async fn create_device_linking_code(
         r#"
         INSERT INTO device_linking_codes (
             user_code, device_code, device_id, client_name, client_platform, client_version,
-            ip_address, user_agent, expires_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7::inet, $8, now() + ($9 || ' seconds')::interval)
+            ip_address, user_agent, expires_at, poll_interval_seconds
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7::inet, $8, now() + ($9 || ' seconds')::interval, $10)
         "#,
     )
     .bind(&raw_user_code)
@@ -1252,13 +1348,21 @@ pub async fn create_device_linking_code(
     .bind(&params.ip_address)
     .bind(&params.user_agent)
     .bind(format!("{}", expiry_seconds))
+    .bind(poll_interval)
     .execute(pool)
     .await?;
+
+    let verification_uri_complete = format!(
+        "{}?code={}",
+        params.verification_uri,
+        urlencoding::encode(&formatted_user_code)
+    );
 
     Ok(DeviceCodeResponse {
         device_code: device_code_raw,
         user_code: formatted_user_code,
         verification_uri: params.verification_uri,
+        verification_uri_complete: Some(verification_uri_complete),
         expires_in: expiry_seconds,
         interval: poll_interval,
     })
@@ -1270,18 +1374,21 @@ pub async fn poll_device_linking_token(
     device_code_raw: &str,
 ) -> Result<DeviceTokenResponse, AuthError> {
     let device_code_hash = sha256_hex(device_code_raw);
+    let mut transaction = pool.begin().await?;
 
     let row = sqlx::query(
         r#"
         SELECT id, device_id, client_name, client_platform, client_version,
-               ip_address::text as ip_address, user_agent, expires_at,
-               is_approved, approved_by_user_id
+                ip_address::text as ip_address, user_agent, expires_at,
+                is_approved, is_denied, approved_by_user_id, last_polled_at,
+                poll_interval_seconds
         FROM device_linking_codes
         WHERE device_code = $1
+        FOR UPDATE
         "#,
     )
     .bind(&device_code_hash)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *transaction)
     .await?
     .ok_or(AuthError::DeviceLinkingExpired)?;
 
@@ -1289,15 +1396,49 @@ pub async fn poll_device_linking_token(
     let expires_at: DateTime<Utc> = row.get("expires_at");
 
     if expires_at < chrono::Utc::now() {
-        let _ = sqlx::query("DELETE FROM device_linking_codes WHERE id = $1")
+        sqlx::query("DELETE FROM device_linking_codes WHERE id = $1")
             .bind(linking_id)
-            .execute(pool)
-            .await;
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
         return Err(AuthError::DeviceLinkingExpired);
     }
 
+    let is_denied: bool = row.get("is_denied");
+    if is_denied {
+        return Err(AuthError::DeviceLinkingDenied);
+    }
+
+    let last_polled_at: Option<DateTime<Utc>> = row.try_get("last_polled_at").ok();
+    let poll_interval_seconds: i32 = row.get("poll_interval_seconds");
+    let poll_interval_seconds = poll_interval_seconds.max(1);
+    if let Some(last_polled_at) = last_polled_at {
+        let next_allowed_at =
+            last_polled_at + chrono::Duration::seconds(i64::from(poll_interval_seconds));
+        if chrono::Utc::now() < next_allowed_at {
+            let next_interval_seconds = (poll_interval_seconds + 5).min(60);
+            sqlx::query(
+                "UPDATE device_linking_codes SET last_polled_at = now(), poll_interval_seconds = $2 WHERE id = $1",
+            )
+            .bind(linking_id)
+            .bind(next_interval_seconds)
+            .execute(&mut *transaction)
+            .await?;
+            transaction.commit().await?;
+            return Err(AuthError::DeviceLinkingSlowDown {
+                retry_after_seconds: next_interval_seconds,
+            });
+        }
+    }
+
+    sqlx::query("UPDATE device_linking_codes SET last_polled_at = now() WHERE id = $1")
+        .bind(linking_id)
+        .execute(&mut *transaction)
+        .await?;
+
     let is_approved: bool = row.get("is_approved");
     if !is_approved {
+        transaction.commit().await?;
         return Err(AuthError::DeviceLinkingPending);
     }
 
@@ -1316,13 +1457,15 @@ pub async fn poll_device_linking_token(
         is_secure: false,
     };
 
-    let (token, session) = create_session(pool, state, approved_by_user_id, &device_info).await?;
+    let (token, session) =
+        create_session_on_connection(&mut transaction, state, approved_by_user_id, &device_info)
+            .await?;
 
     let user = sqlx::query(
-        r#"SELECT id, username, display_name, role, has_all_library_access FROM users WHERE id = $1 AND deleted_at IS NULL"#,
+        r#"SELECT id, username, display_name, role, has_all_library_access FROM users WHERE id = $1 AND deleted_at IS NULL AND status = 'active'"#,
     )
     .bind(approved_by_user_id)
-    .fetch_optional(pool)
+    .fetch_optional(&mut *transaction)
     .await?
     .ok_or(AuthError::InvalidCredentials)?;
 
@@ -1332,12 +1475,15 @@ pub async fn poll_device_linking_token(
     let role: String = user.get("role");
     let has_all_library_access: bool = user.get("has_all_library_access");
 
-    let capabilities = resolve_capabilities(pool, db_user_id, &role).await?;
+    let capabilities =
+        resolve_capabilities_on_connection(&mut transaction, db_user_id, &role).await?;
 
-    let _ = sqlx::query("DELETE FROM device_linking_codes WHERE id = $1")
+    sqlx::query("DELETE FROM device_linking_codes WHERE id = $1")
         .bind(linking_id)
-        .execute(pool)
-        .await;
+        .execute(&mut *transaction)
+        .await?;
+
+    transaction.commit().await?;
 
     Ok(DeviceTokenResponse {
         session_token: token,
@@ -1353,16 +1499,15 @@ pub async fn poll_device_linking_token(
     })
 }
 
-pub async fn verify_device_linking_code(
+pub async fn get_device_linking_request(
     pool: &sqlx::PgPool,
-    user_id: Uuid,
     user_code: &str,
-) -> Result<serde_json::Value, AuthError> {
-    let normalized: String = user_code.chars().filter(|c| *c != '-').collect();
-
+) -> Result<DeviceLinkingRequestResponse, AuthError> {
+    let normalized = normalize_device_user_code(user_code);
     let row = sqlx::query(
         r#"
-        SELECT id, client_name, client_platform, client_version, expires_at, is_approved
+        SELECT id, user_code, client_name, client_platform, client_version, expires_at,
+               is_approved, is_denied
         FROM device_linking_codes
         WHERE user_code = $1
         "#,
@@ -1374,17 +1519,68 @@ pub async fn verify_device_linking_code(
 
     let linking_id: Uuid = row.get("id");
     let expires_at: DateTime<Utc> = row.get("expires_at");
-
+    let is_approved: bool = row.get("is_approved");
+    let is_denied: bool = row.get("is_denied");
     if expires_at < chrono::Utc::now() {
-        let _ = sqlx::query("DELETE FROM device_linking_codes WHERE id = $1")
+        sqlx::query("DELETE FROM device_linking_codes WHERE id = $1")
             .bind(linking_id)
             .execute(pool)
-            .await;
+            .await?;
+        return Err(AuthError::DeviceLinkingExpired);
+    }
+    if is_denied {
+        return Err(AuthError::DeviceLinkingDenied);
+    }
+    if is_approved {
+        return Err(AuthError::DeviceLinkingExpired);
+    }
+
+    Ok(DeviceLinkingRequestResponse {
+        user_code: format_user_code(&row.get::<String, _>("user_code")),
+        client_name: row.try_get("client_name").ok(),
+        client_platform: row.try_get("client_platform").ok(),
+        client_version: row.try_get("client_version").ok(),
+        expires_at,
+    })
+}
+
+pub async fn verify_device_linking_code(
+    pool: &sqlx::PgPool,
+    user_id: Uuid,
+    user_code: &str,
+    approve: bool,
+) -> Result<serde_json::Value, AuthError> {
+    let normalized = normalize_device_user_code(user_code);
+    let mut transaction = pool.begin().await?;
+
+    let row = sqlx::query(
+        r#"
+        SELECT id, client_name, client_platform, client_version, expires_at, is_approved, is_denied
+        FROM device_linking_codes
+        WHERE user_code = $1
+        FOR UPDATE
+        "#,
+    )
+    .bind(&normalized)
+    .fetch_optional(&mut *transaction)
+    .await?
+    .ok_or(AuthError::DeviceLinkingExpired)?;
+
+    let linking_id: Uuid = row.get("id");
+    let expires_at: DateTime<Utc> = row.get("expires_at");
+
+    if expires_at < chrono::Utc::now() {
+        sqlx::query("DELETE FROM device_linking_codes WHERE id = $1")
+            .bind(linking_id)
+            .execute(&mut *transaction)
+            .await?;
+        transaction.commit().await?;
         return Err(AuthError::DeviceLinkingExpired);
     }
 
     let is_approved: bool = row.get("is_approved");
-    if is_approved {
+    let is_denied: bool = row.get("is_denied");
+    if is_approved || is_denied {
         return Err(AuthError::DeviceLinkingExpired);
     }
 
@@ -1395,23 +1591,39 @@ pub async fn verify_device_linking_code(
     sqlx::query(
         r#"
         UPDATE device_linking_codes
-        SET is_approved = true, approved_by_user_id = $2, approved_at = now()
+        SET is_approved = $2,
+            approved_by_user_id = CASE WHEN $2 THEN $3 ELSE NULL END,
+            approved_at = CASE WHEN $2 THEN now() ELSE NULL END,
+            is_denied = NOT $2,
+            denied_by_user_id = CASE WHEN $2 THEN NULL ELSE $3 END,
+            denied_at = CASE WHEN $2 THEN NULL ELSE now() END
         WHERE id = $1
         "#,
     )
     .bind(linking_id)
+    .bind(approve)
     .bind(user_id)
-    .execute(pool)
+    .execute(&mut *transaction)
     .await?;
 
+    transaction.commit().await?;
+
     Ok(serde_json::json!({
-        "status": "approved",
+        "status": if approve { "approved" } else { "denied" },
         "device": {
             "client_name": client_name,
             "client_platform": client_platform,
             "client_version": client_version,
         }
     }))
+}
+
+fn normalize_device_user_code(user_code: &str) -> String {
+    user_code
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .map(|character| character.to_ascii_uppercase())
+        .collect()
 }
 
 fn extract_code_prefix(full_code: &str) -> String {

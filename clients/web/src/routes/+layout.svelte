@@ -38,7 +38,8 @@
         userHasAnyCapability($currentUser, ['can_manage_server', 'can_manage_users', 'can_manage_libraries']),
     );
 
-    const AUTH_ROUTES = ['/auth/login', '/auth/setup'];
+    const AUTH_ROUTES = ['/auth/login', '/auth/setup', '/auth/link'];
+    const REDIRECT_WHEN_AUTHENTICATED = ['/auth/login', '/auth/setup'];
 
     const navLinks = [
         { href: '/dashboard', label: m.routes_layout_home() },
@@ -66,14 +67,19 @@
         if (!authChecked) return;
         const path = $page.url.pathname;
         const isAuthRoute = AUTH_ROUTES.some((r) => path.startsWith(r));
+        const redirectsWhenAuthenticated = REDIRECT_WHEN_AUTHENTICATED.some((r) => path.startsWith(r));
+        const isDeviceLinkRoute = path.startsWith('/auth/link');
         const isSetupRoute = path.startsWith('/auth/setup');
         if (setupRequired && !$isAuthenticated && !isSetupRoute) {
             goto('/auth/setup');
         } else if (!setupRequired && !$isAuthenticated && isSetupRoute) {
             goto('/auth/login');
+        } else if (!$isAuthenticated && isDeviceLinkRoute) {
+            const returnTo = `${$page.url.pathname}${$page.url.search}`;
+            goto(`/auth/login?return_to=${encodeURIComponent(returnTo)}`);
         } else if (!$isAuthenticated && !isAuthRoute) {
             goto('/auth/login');
-        } else if ($isAuthenticated && isAuthRoute) {
+        } else if ($isAuthenticated && redirectsWhenAuthenticated) {
             goto('/dashboard');
         }
     });

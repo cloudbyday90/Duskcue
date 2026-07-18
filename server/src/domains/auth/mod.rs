@@ -24,10 +24,12 @@ pub use error::AuthError;
 use axum::Router;
 use axum::routing::{delete, get, post};
 
+use crate::cache::{NO_STORE_CACHE_CONTROL, cache_control_layer};
+use crate::middleware::rate_limit_auth;
 use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router<AppState> {
-    Router::new()
+    let public_auth_routes = Router::new()
         .route(
             "/api/v1/setup",
             get(handlers::setup_status).post(handlers::setup),
@@ -47,13 +49,33 @@ pub fn router(state: AppState) -> Router<AppState> {
         )
         .route("/api/v1/auth/totp", post(handlers::totp_verify))
         .route("/api/v1/auth/reauth", post(handlers::reauth))
+        .route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit_auth,
+        ));
+
+    let device_authorization_routes = Router::new()
+        .route("/api/v1/device/code", post(handlers::device_code))
+        .route(
+            "/api/v1/device/verify",
+            get(handlers::device_linking_request).post(handlers::device_verify),
+        )
+        .route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL))
+        .route_layer(axum::middleware::from_fn_with_state(
+            state.clone(),
+            rate_limit_auth,
+        ));
+
+    let device_token_routes = Router::new()
+        .route("/api/v1/device/token", post(handlers::device_token))
+        .route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL));
+
+    let authenticated_routes = Router::new()
         .route(
             "/api/v1/auth/reauth/request",
             post(handlers::reauth_request),
         )
-        .route("/api/v1/device/code", post(handlers::device_code))
-        .route("/api/v1/device/token", post(handlers::device_token))
-        .route("/api/v1/device/verify", post(handlers::device_verify))
         .route("/api/v1/user/sessions", get(handlers::list_user_sessions))
         .route(
             "/api/v1/user/sessions/{id}",
@@ -99,6 +121,11 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/users/{id}/capabilities",
             get(handlers::get_user_capabilities).put(handlers::update_user_capabilities),
-        )
+        );
+
+    public_auth_routes
+        .merge(device_authorization_routes)
+        .merge(device_token_routes)
+        .merge(authenticated_routes)
         .with_state(state)
 }
