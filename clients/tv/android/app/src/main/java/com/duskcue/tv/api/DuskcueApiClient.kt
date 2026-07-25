@@ -254,6 +254,15 @@ data class TvResolveResponse(
     val requires_auth: Boolean,
     val access_revalidated: Boolean,
     val playback_start: TvPlaybackStartHint? = null,
+    val artwork: TvArtworkHints? = null,
+)
+
+@Serializable
+data class TvArtworkHints(
+    val poster_url: String? = null,
+    val backdrop_url: String? = null,
+    val logo_url: String? = null,
+    val thumbnail_url: String? = null,
 )
 
 @Serializable

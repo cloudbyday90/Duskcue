@@ -1,4 +1,6 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-feature
         android:name="android.software.leanback"
         android:required="true" />
@@ -53,5 +55,11 @@
                 <action android:name="android.media.tv.action.WATCH_NEXT_PROGRAM_BROWSABLE_DISABLED" />
             </intent-filter>
         </receiver>
+        <provider
+            android:name=".watchnext.WatchNextArtworkProvider"
+            android:authorities="com.duskcue.tv.watchnext-artwork"
+            android:exported="true"
+            android:grantUriPermissions="true"
+            tools:ignore="ExportedContentProvider" />
     </application>
 </manifest>

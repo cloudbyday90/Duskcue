@@ -18,6 +18,7 @@ import com.duskcue.tv.session.TvAuthenticationService
 import com.duskcue.tv.session.TvLocalStateCleaner
 import com.duskcue.tv.session.TvSessionCoordinator
 import com.duskcue.tv.watchnext.AndroidWatchNextProvider
+import com.duskcue.tv.watchnext.AndroidWatchNextArtworkStore
 import com.duskcue.tv.watchnext.WatchNextPublisher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -41,6 +42,7 @@ class TvApplicationRuntime(context: Context) {
     private val watchNext = WatchNextPublisher(
         provider = AndroidWatchNextProvider(applicationContext.contentResolver),
         store = sessionStore,
+        artwork = AndroidWatchNextArtworkStore(applicationContext, tokenProvider),
     )
     val livingRoom = TvLivingRoomStore(etags = etags)
     private val localStateCleaner = object : TvLocalStateCleaner {

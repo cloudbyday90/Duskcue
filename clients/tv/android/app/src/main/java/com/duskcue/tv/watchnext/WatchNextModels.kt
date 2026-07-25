@@ -27,9 +27,12 @@ internal data class WatchNextCandidate(
     val title: String,
     val description: String?,
     val deepLink: String,
+    val posterUrl: String?,
+    val posterArtUri: String? = null,
     val durationMs: Long,
     val resumePositionMs: Long,
     val lastEngagementTimeMs: Long,
+    val sourceFingerprint: String,
     val fingerprint: String,
 )
 
@@ -106,7 +109,7 @@ internal object WatchNextCandidateFactory {
             return null
         }
         val description = item.description?.trim()?.takeIf { it.isNotEmpty() }
-        val fingerprint = fingerprint(
+        val sourceFingerprint = fingerprint(
             expectedContentId,
             mediaItemId,
             seriesId.orEmpty(),
@@ -134,10 +137,12 @@ internal object WatchNextCandidateFactory {
             title = title,
             description = description,
             deepLink = deepLink,
+            posterUrl = item.poster_url,
             durationMs = durationMs,
             resumePositionMs = resumePositionMs,
             lastEngagementTimeMs = lastEngagementTimeMs,
-            fingerprint = fingerprint,
+            sourceFingerprint = sourceFingerprint,
+            fingerprint = sourceFingerprint,
         )
     }
 
@@ -157,6 +162,11 @@ internal object WatchNextCandidateFactory {
     private fun fingerprint(vararg values: String): String = MessageDigest.getInstance("SHA-256")
         .digest(values.joinToString("\u001F").toByteArray(Charsets.UTF_8))
         .joinToString(separator = "") { byte -> (byte.toInt() and 0xff).toString(16).padStart(2, '0') }
+
+    fun withPosterArtUri(candidate: WatchNextCandidate, posterArtUri: String?): WatchNextCandidate = candidate.copy(
+        posterArtUri = posterArtUri,
+        fingerprint = fingerprint(candidate.sourceFingerprint, posterArtUri.orEmpty()),
+    )
 }
 
 internal object WatchNextReconciler {
@@ -183,9 +193,9 @@ internal object WatchNextReconciler {
             val mapping = canonicalMappings[candidate.platformContentId]
             when {
                 mapping == null && suppressions.none {
-                    it.scope_hash == scopeHash &&
+                        it.scope_hash == scopeHash &&
                         it.platform_content_id == candidate.platformContentId &&
-                        it.fingerprint == candidate.fingerprint
+                        it.fingerprint == candidate.sourceFingerprint
                 } -> operations += WatchNextOperation.Insert(candidate)
                 mapping != null && mapping.fingerprint != candidate.fingerprint -> {
                     operations += WatchNextOperation.Update(mapping, candidate)

@@ -52,6 +52,7 @@ data class PersistedWatchNextMapping(
     val surface_item_id: String,
     val program_id: Long,
     val fingerprint: String,
+    val source_fingerprint: String = fingerprint,
 )
 
 @Serializable
@@ -62,12 +63,22 @@ data class PersistedWatchNextSuppression(
 )
 
 @Serializable
+data class PersistedWatchNextArtwork(
+    val scope_hash: String,
+    val platform_content_id: String,
+    val source_hash: String,
+    val cache_key: String,
+    val etag: String? = null,
+)
+
+@Serializable
 data class SecureTvState(
     val device_id: String,
     val known_servers: List<SavedServer> = emptyList(),
     val session: PersistedAccountSession? = null,
     val watch_next_mappings: List<PersistedWatchNextMapping> = emptyList(),
     val watch_next_suppressions: List<PersistedWatchNextSuppression> = emptyList(),
+    val watch_next_artwork: List<PersistedWatchNextArtwork> = emptyList(),
     val pending_watch_next_program_ids: List<Long> = emptyList(),
 )
 

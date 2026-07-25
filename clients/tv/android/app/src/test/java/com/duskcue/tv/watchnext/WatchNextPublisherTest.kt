@@ -4,6 +4,7 @@ import com.duskcue.tv.api.TvSection
 import com.duskcue.tv.api.TvSurface
 import com.duskcue.tv.home.TvProfileScope
 import com.duskcue.tv.session.PersistedAccountSession
+import com.duskcue.tv.session.PersistedWatchNextArtwork
 import com.duskcue.tv.session.PersistedWatchNextMapping
 import com.duskcue.tv.session.SecureTvState
 import com.duskcue.tv.session.TvSessionStore
@@ -11,6 +12,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -122,6 +124,40 @@ class WatchNextPublisherTest {
         assertTrue(provider.inserted.isEmpty())
     }
 
+    @Test
+    fun accepts_only_a_canonical_relative_poster_path_at_the_tv_artwork_size() {
+        val candidate = WatchNextCandidateFactory.from(movieOnlySurface()).single()
+        val expected = "/api/v1/items/${candidate.mediaItemId}/artwork/poster?size=w500"
+
+        assertEquals(expected, WatchNextArtworkPolicy.posterRequestPath(candidate))
+        assertNull(WatchNextArtworkPolicy.posterRequestPath(candidate.copy(posterUrl = "https://example.invalid/poster")))
+        assertNull(WatchNextArtworkPolicy.posterRequestPath(candidate.copy(posterUrl = "${candidate.posterUrl}?token=secret")))
+        assertNull(WatchNextArtworkPolicy.posterRequestPath(candidate.copy(posterUrl = "/api/v1/items/other/artwork/poster")))
+    }
+
+    @Test
+    fun changes_the_provider_row_only_when_the_local_artwork_uri_changes() = runBlocking {
+        val source = movieOnlySurface()
+        val scope = scope()
+        val store = MemorySessionStore(state(scope, emptyList()))
+        val provider = FakeProvider()
+        val artwork = FakeArtworkStore()
+        val publisher = WatchNextPublisher(provider, store, artwork)
+
+        publisher.sync(scope, source)
+        publisher.sync(scope, source)
+
+        assertEquals(1, provider.inserted.size)
+        assertTrue(provider.updated.isEmpty())
+        assertEquals(1, store.value.watch_next_artwork.size)
+
+        artwork.cacheKey = "77777777-7777-4777-8777-777777777777"
+        publisher.sync(scope, source)
+
+        assertEquals(1, provider.updated.size)
+        assertEquals("content://com.duskcue.tv.watchnext-artwork/poster/77777777-7777-4777-8777-777777777777", provider.updated.single().posterArtUri)
+    }
+
     private fun movieOnlySurface(): TvSurface = surface().copy(
         sections = listOf(surface().sections.first { it.section_type == "continue" }),
     )
@@ -183,6 +219,7 @@ class WatchNextPublisherTest {
         private val deleteResult: WatchNextProviderResult = WatchNextProviderResult.Deleted,
     ) : WatchNextProvider {
         val inserted = mutableListOf<WatchNextCandidate>()
+        val updated = mutableListOf<WatchNextCandidate>()
         val deleted = mutableListOf<Long>()
 
         override fun insert(candidate: WatchNextCandidate): WatchNextProviderResult {
@@ -190,12 +227,39 @@ class WatchNextPublisherTest {
             return WatchNextProviderResult.Inserted(inserted.size.toLong())
         }
 
-        override fun update(programId: Long, candidate: WatchNextCandidate): WatchNextProviderResult = updateResult
+        override fun update(programId: Long, candidate: WatchNextCandidate): WatchNextProviderResult {
+            updated += candidate
+            return updateResult
+        }
 
         override fun delete(programId: Long): WatchNextProviderResult {
             deleted += programId
             return deleteResult
         }
+    }
+
+    private class FakeArtworkStore : WatchNextArtworkStore {
+        var cacheKey = "66666666-6666-4666-8666-666666666666"
+
+        override fun resolve(
+            scope: String,
+            scopeHash: String,
+            candidate: WatchNextCandidate,
+            existing: PersistedWatchNextArtwork?,
+        ): WatchNextArtworkResolution = WatchNextArtworkResolution(
+            posterArtUri = "content://com.duskcue.tv.watchnext-artwork/poster/$cacheKey",
+            record = PersistedWatchNextArtwork(
+                scope_hash = scopeHash,
+                platform_content_id = candidate.platformContentId,
+                source_hash = WatchNextArtworkPolicy.sourceHash(candidate.posterUrl),
+                cache_key = cacheKey,
+                etag = "\"$cacheKey\"",
+            ),
+        )
+
+        override fun remove(records: Collection<PersistedWatchNextArtwork>) = Unit
+
+        override fun clear() = Unit
     }
 
     @Serializable

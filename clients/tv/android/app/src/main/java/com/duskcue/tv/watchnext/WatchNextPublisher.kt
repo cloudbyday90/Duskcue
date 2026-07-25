@@ -8,6 +8,7 @@ import androidx.tvprovider.media.tv.TvContractCompat
 import androidx.tvprovider.media.tv.WatchNextProgram
 import com.duskcue.tv.api.TvSurface
 import com.duskcue.tv.home.TvProfileScope
+import com.duskcue.tv.session.PersistedWatchNextArtwork
 import com.duskcue.tv.session.PersistedWatchNextMapping
 import com.duskcue.tv.session.PersistedWatchNextSuppression
 import com.duskcue.tv.session.SecureTvState
@@ -63,7 +64,7 @@ internal class AndroidWatchNextProvider(
         return if (rows > 0) WatchNextProviderResult.Deleted else WatchNextProviderResult.Missing
     }
 
-    @SuppressLint("RestrictedApi")
+    @SuppressLint("RestrictedApi", "UseKtx")
     private fun program(candidate: WatchNextCandidate): WatchNextProgram {
         val builder = WatchNextProgram.Builder()
             .setType(
@@ -86,6 +87,7 @@ internal class AndroidWatchNextProvider(
                 },
             )
         candidate.description?.let(builder::setDescription)
+        candidate.posterArtUri?.let { builder.setPosterArtUri(Uri.parse(it)) }
         candidate.seriesId?.let { builder.setSeriesId("duskcue:series:$it") }
         candidate.seasonNumber?.let { builder.setSeasonNumber(it) }
         candidate.episodeNumber?.let { builder.setEpisodeNumber(it) }
@@ -101,6 +103,7 @@ internal class AndroidWatchNextProvider(
 internal class WatchNextPublisher(
     private val provider: WatchNextProvider,
     private val store: TvSessionStore,
+    private val artwork: WatchNextArtworkStore? = null,
 ) {
     private val mutex = Mutex()
 
@@ -109,11 +112,32 @@ internal class WatchNextPublisher(
         val scopeHash = scopeHash(scope.origin, scope.userId, scope.profileId)
         var pendingProgramIds = drainPendingRemovals(current.pending_watch_next_program_ids)
         if (activeScopeHash(current) != scopeHash || surface.platform != "android_tv") {
-            persist(current, current.watch_next_mappings, current.watch_next_suppressions, pendingProgramIds)
+            persist(
+                current,
+                current.watch_next_mappings,
+                current.watch_next_suppressions,
+                current.watch_next_artwork,
+                pendingProgramIds,
+            )
             return@withLock
         }
 
-        val candidates = WatchNextCandidateFactory.from(surface)
+        val artworkRecords = current.watch_next_artwork.toMutableList()
+        val replacedArtwork = mutableMapOf<String, PersistedWatchNextArtwork>()
+        val candidates = WatchNextCandidateFactory.from(surface).map { candidate ->
+            val existing = artworkRecords.firstOrNull {
+                it.scope_hash == scopeHash && it.platform_content_id == candidate.platformContentId
+            }
+            val resolution = artwork?.resolve(scope.origin, scopeHash, candidate, existing)
+            if (resolution?.record != null && resolution.record != existing) {
+                existing?.let {
+                    artworkRecords.remove(it)
+                    replacedArtwork[candidate.platformContentId] = it
+                }
+                artworkRecords += resolution.record
+            }
+            WatchNextCandidateFactory.withPosterArtUri(candidate, resolution?.posterArtUri)
+        }
         val plan = WatchNextReconciler.plan(
             scopeHash = scopeHash,
             candidates = candidates,
@@ -126,7 +150,10 @@ internal class WatchNextPublisher(
             when (operation) {
                 is WatchNextOperation.Delete -> {
                     when (provider.delete(operation.mapping.program_id)) {
-                        WatchNextProviderResult.Deleted, WatchNextProviderResult.Missing -> mappings.remove(operation.mapping)
+                        WatchNextProviderResult.Deleted, WatchNextProviderResult.Missing -> {
+                            mappings.remove(operation.mapping)
+                            removeArtwork(artworkRecords, operation.mapping)
+                        }
                         else -> Unit
                     }
                 }
@@ -140,6 +167,7 @@ internal class WatchNextPublisher(
                             }
                             mappings += mapping(scopeHash, operation.candidate, result.programId)
                             removeSuppressions(suppressions, scopeHash, operation.candidate.platformContentId)
+                            removeReplacedArtwork(replacedArtwork, operation.candidate.platformContentId)
                         }
 
                         else -> Unit
@@ -152,15 +180,18 @@ internal class WatchNextPublisher(
                             mappings.remove(operation.mapping)
                             mappings += mapping(scopeHash, operation.candidate, operation.mapping.program_id)
                             removeSuppressions(suppressions, scopeHash, operation.candidate.platformContentId)
+                            removeReplacedArtwork(replacedArtwork, operation.candidate.platformContentId)
                         }
 
                         WatchNextProviderResult.Missing -> {
                             mappings.remove(operation.mapping)
+                            removeArtwork(artworkRecords, operation.mapping)
+                            removeReplacedArtwork(replacedArtwork, operation.candidate.platformContentId)
                             removeSuppressions(suppressions, scopeHash, operation.candidate.platformContentId)
                             suppressions += PersistedWatchNextSuppression(
                                 scope_hash = scopeHash,
                                 platform_content_id = operation.candidate.platformContentId,
-                                fingerprint = operation.candidate.fingerprint,
+                                fingerprint = operation.candidate.sourceFingerprint,
                             )
                         }
 
@@ -169,7 +200,7 @@ internal class WatchNextPublisher(
                 }
             }
         }
-        persist(current, mappings, suppressions, pendingProgramIds)
+        persist(current, mappings, suppressions, artworkRecords, pendingProgramIds)
     }
 
     suspend fun clear() = mutex.withLock {
@@ -177,7 +208,8 @@ internal class WatchNextPublisher(
         val pendingProgramIds = drainPendingRemovals(
             current.pending_watch_next_program_ids + current.watch_next_mappings.map(PersistedWatchNextMapping::program_id),
         )
-        persist(current, emptyList(), emptyList(), pendingProgramIds)
+        artwork?.clear()
+        persist(current, emptyList(), emptyList(), emptyList(), pendingProgramIds)
     }
 
     suspend fun handleProgramDisabled(programId: Long) = mutex.withLock {
@@ -194,18 +226,20 @@ internal class WatchNextPublisher(
             (current.pending_watch_next_program_ids + programId).distinct()
         }
         val suppressions = current.watch_next_suppressions.toMutableList()
+        val artworkRecords = current.watch_next_artwork.toMutableList()
         affected.forEach { mapping ->
             removeSuppressions(suppressions, mapping.scope_hash, mapping.platform_content_id)
             suppressions += PersistedWatchNextSuppression(
                 scope_hash = mapping.scope_hash,
                 platform_content_id = mapping.platform_content_id,
-                fingerprint = mapping.fingerprint,
+                fingerprint = mapping.source_fingerprint,
             )
         }
         persist(
             current,
             current.watch_next_mappings.filterNot { it.program_id == programId },
             suppressions,
+            artworkRecords.also { records -> affected.forEach { mapping -> removeArtwork(records, mapping) } },
             pendingProgramIds,
         )
     }
@@ -220,11 +254,13 @@ internal class WatchNextPublisher(
         current: SecureTvState,
         mappings: List<PersistedWatchNextMapping>,
         suppressions: List<PersistedWatchNextSuppression>,
+        artworkRecords: List<PersistedWatchNextArtwork>,
         pendingProgramIds: List<Long>,
     ) {
         if (
             mappings == current.watch_next_mappings &&
             suppressions == current.watch_next_suppressions &&
+            artworkRecords == current.watch_next_artwork &&
             pendingProgramIds == current.pending_watch_next_program_ids
         ) {
             return
@@ -233,6 +269,7 @@ internal class WatchNextPublisher(
             current.copy(
                 watch_next_mappings = mappings,
                 watch_next_suppressions = suppressions,
+                watch_next_artwork = artworkRecords,
                 pending_watch_next_program_ids = pendingProgramIds,
             ),
         )
@@ -254,6 +291,7 @@ internal class WatchNextPublisher(
         surface_item_id = candidate.surfaceItemId,
         program_id = programId,
         fingerprint = candidate.fingerprint,
+        source_fingerprint = candidate.sourceFingerprint,
     )
 
     private fun removeSuppressions(
@@ -264,6 +302,24 @@ internal class WatchNextPublisher(
         suppressions.removeAll {
             it.scope_hash == scopeHash && it.platform_content_id == platformContentId
         }
+    }
+
+    private fun removeArtwork(
+        records: MutableList<PersistedWatchNextArtwork>,
+        mapping: PersistedWatchNextMapping,
+    ) {
+        val removed = records.filter {
+            it.scope_hash == mapping.scope_hash && it.platform_content_id == mapping.platform_content_id
+        }
+        artwork?.remove(removed)
+        records.removeAll(removed)
+    }
+
+    private fun removeReplacedArtwork(
+        replaced: MutableMap<String, PersistedWatchNextArtwork>,
+        platformContentId: String,
+    ) {
+        replaced.remove(platformContentId)?.let { artwork?.remove(listOf(it)) }
     }
 }
 

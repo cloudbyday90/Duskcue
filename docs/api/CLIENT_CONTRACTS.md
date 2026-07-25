@@ -286,6 +286,8 @@ node scripts/verify-tv-deeplink-conformance.mjs
 
 The verifier checks the manifest coverage, section ordering, cache policy, stable platform IDs, episode-series identity, Android Watch Next one-episode/change-only mapping requirements, API-relative paths, Problem Details shape, adapter coverage, mandatory access revalidation, UTC timestamps, stable UUIDs where applicable, and redaction of tokens, signed URL parameters, and private paths.
 
+Android TV Watch Next treats the authenticated artwork route as an input to an in-app fetch, not as a launcher URL. It may request only the canonical relative poster path for the resolved media UUID, attach the current in-memory bearer header, honor the ETag conditionally, and publish an opaque app-private `content://` URI to TV Provider. That URI must not encode a server URL, bearer/signed credential, raw profile scope, library path, or media lookup. Cache metadata is profile-scoped and cleanup removes it before a new profile/account/server scope publishes rows; a stable title tile is the fallback when artwork cannot be fetched.
+
 ## Phase 16d Accessibility And Input Baselines
 
 Phase 16d Task 7 adds [CLIENT_ACCESSIBILITY_INPUT.md](../design/CLIENT_ACCESSIBILITY_INPUT.md) plus a reusable accessibility/input fixture pack under `docs/api/fixtures/accessibility/v1`. The pack gives downstream clients a common set of release-gate checks instead of leaving accessibility to each platform phase.
