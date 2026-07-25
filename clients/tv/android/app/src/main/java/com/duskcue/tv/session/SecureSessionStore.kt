@@ -44,10 +44,31 @@ data class PersistedAccountSession(
 )
 
 @Serializable
+data class PersistedWatchNextMapping(
+    val scope_hash: String,
+    val platform_content_id: String,
+    val media_item_id: String,
+    val series_id: String? = null,
+    val surface_item_id: String,
+    val program_id: Long,
+    val fingerprint: String,
+)
+
+@Serializable
+data class PersistedWatchNextSuppression(
+    val scope_hash: String,
+    val platform_content_id: String,
+    val fingerprint: String,
+)
+
+@Serializable
 data class SecureTvState(
     val device_id: String,
     val known_servers: List<SavedServer> = emptyList(),
     val session: PersistedAccountSession? = null,
+    val watch_next_mappings: List<PersistedWatchNextMapping> = emptyList(),
+    val watch_next_suppressions: List<PersistedWatchNextSuppression> = emptyList(),
+    val pending_watch_next_program_ids: List<Long> = emptyList(),
 )
 
 interface TvSessionStore {

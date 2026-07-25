@@ -6,7 +6,9 @@ import com.duskcue.tv.api.MemoryEtagStore
 import com.duskcue.tv.api.MutableBearerTokenProvider
 import com.duskcue.tv.api.RetryingTransport
 import com.duskcue.tv.api.ServerOrigin
+import com.duskcue.tv.api.TvSurface
 import com.duskcue.tv.api.UrlConnectionTransport
+import com.duskcue.tv.home.TvHomeLoadState
 import com.duskcue.tv.home.TvLivingRoomStore
 import com.duskcue.tv.home.TvProfileScope
 import com.duskcue.tv.playback.TvInteractivePlayback
@@ -15,6 +17,13 @@ import com.duskcue.tv.session.SecureSessionStore
 import com.duskcue.tv.session.TvAuthenticationService
 import com.duskcue.tv.session.TvLocalStateCleaner
 import com.duskcue.tv.session.TvSessionCoordinator
+import com.duskcue.tv.watchnext.AndroidWatchNextProvider
+import com.duskcue.tv.watchnext.WatchNextPublisher
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 data class ActiveTvSession(
     val origin: ServerOrigin,
@@ -28,15 +37,22 @@ class TvApplicationRuntime(context: Context) {
     private val tokenProvider = MutableBearerTokenProvider()
     private val etags = MemoryEtagStore()
     private val sessionStore = SecureSessionStore(context)
+    private val runtimeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val watchNext = WatchNextPublisher(
+        provider = AndroidWatchNextProvider(applicationContext.contentResolver),
+        store = sessionStore,
+    )
     val livingRoom = TvLivingRoomStore(etags = etags)
     private val localStateCleaner = object : TvLocalStateCleaner {
         override suspend fun clearProfileScope() {
             TvPlaybackService.stop(applicationContext)
+            withContext(Dispatchers.IO) { watchNext.clear() }
             livingRoom.clearProfileScope()
         }
 
         override suspend fun clearIdentityScope() {
             TvPlaybackService.stop(applicationContext)
+            withContext(Dispatchers.IO) { watchNext.clear() }
             livingRoom.clearIdentityScope()
         }
     }
@@ -73,6 +89,43 @@ class TvApplicationRuntime(context: Context) {
     suspend fun activeProfileScope(): TvProfileScope? = activeSession()
         ?.takeUnless(ActiveTvSession::profileSelectionRequired)
         ?.let { TvProfileScope(it.origin.value, it.userId, it.profileId) }
+
+    suspend fun syncWatchNext(scope: TvProfileScope, surface: TvSurface) {
+        withContext(Dispatchers.IO) {
+            try {
+                watchNext.sync(scope, surface)
+            } catch (_: Exception) {
+                Unit
+            }
+        }
+    }
+
+    fun refreshWatchNext() {
+        runtimeScope.launch {
+            val scope = activeProfileScope() ?: return@launch
+            val origin = ServerOrigin.parse(scope.origin).getOrNull() ?: return@launch
+            val home = livingRoom.load(client(origin), scope)
+            if (home is TvHomeLoadState.Ready && !home.stale) {
+                try {
+                    watchNext.sync(scope, home.surface)
+                } catch (_: Exception) {
+                    Unit
+                }
+            }
+        }
+    }
+
+    fun handleWatchNextProgramDisabled(programId: Long, onComplete: () -> Unit) {
+        runtimeScope.launch {
+            try {
+                watchNext.handleProgramDisabled(programId)
+            } catch (_: Exception) {
+                Unit
+            } finally {
+                onComplete()
+            }
+        }
+    }
 
     suspend fun startInteractivePlayback(
         sessionId: String,

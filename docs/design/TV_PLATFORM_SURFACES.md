@@ -185,6 +185,12 @@ Profile, server, and device-linking behavior:
 - Switching user/profile or server must abort profile-scoped requests and clear platform-local launcher mappings, cached TV rows, artwork, preview images, queue state, and user summaries for the old identity before publishing new rows.
 - Ambient playback is app-local and never publishes Watch Next, Top Shelf, launcher, or personal continuation activity. A TV requests `ambient-channels/{id}/next`, retains the returned non-secret channel/item/revision only until start, and echoes the revision to playback start. `PLAY_019` means the TV must discard that selection and resolve again; it must not reuse an old stream URL.
 
+### Android TV Watch Next Implementation — Phase 17 Task 7
+
+The Android adapter now publishes only fresh `continue`, `next_up`, and `new_episodes` feed rows through AndroidX TV Provider. The shared response includes nullable `series_id`: episode rows must carry it and movie rows must not. This allows the local reconciler to choose at most one episode per stable series across Continue, Next, and New, with that priority order, without another media lookup or a client-owned series heuristic. It filters unplayable, ambient, recommended, malformed, stale-cache, and otherwise ineligible rows before a launcher write.
+
+The Android Keystore-encrypted mapping persists a hashed profile scope, Duskcue IDs, platform program ID, and opaque fingerprint only. A profile/account/server/session change clears platform rows before new profile data can publish. Changed rows alone are updated; absent/completed/revoked rows are deleted; failed cleanup retains only a numeric retry ID. The adapter responds to Android's disabled-program broadcast by deleting the row and suppressing an identical fingerprint until the server feed has a legitimate change. It refreshes from a fresh feed on active `tv_surface_changed`, resume, completion, exit, and a five-minute pause interval. Authenticated artwork provider URIs are deferred to Phase 17 Task 8.
+
 Privacy rules:
 
 - Never publish another Duskcue user's resume position, watched state, collection membership, or private recommendation into the active platform profile.

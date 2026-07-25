@@ -351,6 +351,23 @@ class TvAppController(
         runtime.stopPlayback()
         TvPlaybackService.clearPlaybackUi()
         mutableState.update { it.copy(route = TvRoute.Detail, playback = null) }
+        refreshWatchNextAfterPlayback()
+    }
+
+    fun onPlaybackCompleted() {
+        TvPlaybackService.clearPlaybackUi()
+        mutableState.update { current ->
+            current.copy(
+                route = if (current.detail == null) TvRoute.Home else TvRoute.Detail,
+                playback = null,
+                message = null,
+            )
+        }
+        refreshWatchNextAfterPlayback()
+    }
+
+    fun onPlaybackPausedTooLong() {
+        runtime.refreshWatchNext()
     }
 
     fun cycleQualityMode() {
@@ -638,7 +655,17 @@ class TvAppController(
                 showServerSetup("Sign in again to continue.")
                 return@launch
             }
+            if (home is TvHomeLoadState.Ready && !home.stale) {
+                runtime.syncWatchNext(scope, home.surface)
+            }
             mutableState.update { it.copy(home = home, busy = false) }
+        }
+    }
+
+    private fun refreshWatchNextAfterPlayback() {
+        scope.launch {
+            delay(750)
+            refreshHome()
         }
     }
 

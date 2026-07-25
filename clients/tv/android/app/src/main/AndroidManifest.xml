@@ -46,5 +46,12 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+        <receiver
+            android:name=".watchnext.WatchNextProgramReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.media.tv.action.WATCH_NEXT_PROGRAM_BROWSABLE_DISABLED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

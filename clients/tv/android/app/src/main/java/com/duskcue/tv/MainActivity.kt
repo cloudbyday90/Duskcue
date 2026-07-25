@@ -27,6 +27,11 @@ class MainActivity : ComponentActivity() {
         updateDeepLinkRequest(intent.dataString)
     }
 
+    override fun onResume() {
+        super.onResume()
+        runtime.refreshWatchNext()
+    }
+
     override fun onStop() {
         if (!isChangingConfigurations) {
             runtime.pausePlayback()

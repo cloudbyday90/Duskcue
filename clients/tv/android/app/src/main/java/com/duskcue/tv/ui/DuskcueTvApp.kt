@@ -363,6 +363,16 @@ private fun PlayerPage(state: TvAppState, controller: TvAppController) {
     val activeSegment = state.segments.firstOrNull { segment ->
         playbackUi.positionMs >= segment.start_ms && playbackUi.positionMs < segment.end_ms
     }
+    LaunchedEffect(playbackUi.completionVersion) {
+        if (playbackUi.completionVersion > 0) {
+            controller.onPlaybackCompleted()
+        }
+    }
+    LaunchedEffect(playbackUi.pauseRefreshVersion) {
+        if (playbackUi.pauseRefreshVersion > 0) {
+            controller.onPlaybackPausedTooLong()
+        }
+    }
     BackHandler(onBack = controller::exitPlayback)
     DisposableEffect(Unit) {
         onDispose {

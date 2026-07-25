@@ -273,7 +273,7 @@ Phase 16d Task 6 promotes TV surface and deep-link behavior into a versioned con
 
 The pack covers:
 
-- TV surface section order, limits, stable `platform_content_id` values, private cache headers, ETags, access filtering, and empty states;
+- TV surface section order, limits, stable `platform_content_id` values, nullable movie/required-episode `series_id` values, private cache headers, ETags, access filtering, and empty states;
 - deep-link resolve behavior for playable movies, playable episodes, revoked access, unavailable media, and unsupported platform hints;
 - adapter mappings for Android TV Watch Next, Fire TV Watch Activity, Roku Search/Direct to Play, Samsung Smart Hub Preview, LG webOS launch parameters, tvOS Top Shelf/Universal Links, and Xbox URI activation;
 - revalidation when launcher caches are stale, sessions are revoked, library access changes, users switch, or platform IDs are deleted/replaced.
@@ -284,7 +284,7 @@ Run:
 node scripts/verify-tv-deeplink-conformance.mjs
 ```
 
-The verifier checks the manifest coverage, section ordering, cache policy, stable platform IDs, API-relative paths, Problem Details shape, adapter coverage, mandatory access revalidation, UTC timestamps, stable UUIDs where applicable, and redaction of tokens, signed URL parameters, and private paths.
+The verifier checks the manifest coverage, section ordering, cache policy, stable platform IDs, episode-series identity, Android Watch Next one-episode/change-only mapping requirements, API-relative paths, Problem Details shape, adapter coverage, mandatory access revalidation, UTC timestamps, stable UUIDs where applicable, and redaction of tokens, signed URL parameters, and private paths.
 
 ## Phase 16d Accessibility And Input Baselines
 

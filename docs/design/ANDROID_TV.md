@@ -139,6 +139,16 @@ Publication rules:
 
 If the system reports a program as no longer browsable, the adapter removes its local mapping and does not recreate it until the next legitimate Duskcue state change. Google TV's actual home-row display is not inferred from successful provider writes.
 
+#### Task 7 Implementation
+
+The Android application now uses `androidx.tvprovider:tvprovider:1.1.0` to publish `WatchNextProgram` rows from the active profile's fresh `android_tv` surface. The documented builder operations in that artifact carry an over-broad library-only lint annotation, so the single provider-builder function has a scoped `RestrictedApi` suppression rather than disabling lint project-wide. The publisher accepts only `continue`, `next_up`, and `new_episodes`; `recommended`, ambient playback, stale cached feed data, unplayable items, malformed platform IDs, and malformed Duskcue deep links are excluded before the provider API is reached. Movies and episodes must have a positive duration and engagement time. Continue items must exceed the Android start threshold and retain a three-minute end-credits fallback; next/new items require a stable episode `series_id`. Source priority is Continue, Next, then New, so a stable series ID produces one episode per series even when multiple feed sections contain it.
+
+`TvSurfaceItemResponse` now exposes nullable `series_id`. It is null for movies and required for episodes in the versioned and legacy TV fixtures; a client connected to an older server without this field safely declines episode publication instead of risking duplicate-series rows. `platform_content_id` is used as the content ID and internal provider ID, while stable Duskcue series IDs and season/episode numbers populate the episode metadata. Task 8 alone will add authenticated poster/backdrop delivery, so Task 7 does not write an artwork URI or put a bearer/signed URL into TV Provider.
+
+The existing Android Keystore AES-GCM DataStore envelope persists the program mapping. Each entry has only a SHA-256 hash of the origin/user/profile scope, Duskcue media and platform IDs, a platform program ID, and a content fingerprint. There is no raw profile scope, title, bearer token, stream URL, file path, parent PIN, unlock state, or copied resume point. Reconciliation serializes provider access, drains failed cleanup IDs first, inserts missing eligible rows, updates only a changed fingerprint, and deletes mappings absent from the new fresh surface. Profile, identity, server, session-kicked, and logout cleanup stop playback and delete all provider rows before a replacement scope can publish; unresolved deletions retain only a numeric pending ID for retry.
+
+`MainActivity` refreshes publication on resume. The home refresh path also publishes after an active `tv_surface_changed` hint, and the player schedules a fresh feed after completion or explicit exit and after a five-minute paused interval. Android's `ACTION_WATCH_NEXT_PROGRAM_BROWSABLE_DISABLED` receiver removes the provider row and adds a matching fingerprint suppression; unchanged Duskcue state cannot recreate a row the user removed, while a later changed source fingerprint can. Provider success is not a claim that Google TV renders the row: launcher visibility remains an emulator/device and Play/certification gate.
+
 ## Delivery Order
 
 1. Create the standalone Gradle/Kotlin/Compose-for-TV app and prove a TV emulator build/launch with the correct manifest and placeholder assets.
@@ -170,6 +180,8 @@ If the system reports a program as no longer browsable, the adapter removes its 
 - Media3 background playback service: https://developer.android.com/media/media3/session/background-playback
 - Android TV Watch Next guidelines: https://developer.android.com/training/tv/discovery/guidelines-app-developers
 - Android TV Watch Next attributes: https://developer.android.com/training/tv/discovery/watch-next-programs
+- Android TV Watch Next provider operations: https://developer.android.com/training/tv/discovery/watch-next-add-programs
+- AndroidX TV Provider disabled-program broadcast: https://developer.android.com/reference/androidx/tvprovider/media/tv/TvContractCompat
 - Android TV app-quality criteria: https://developer.android.com/docs/quality-guidelines/tv-app-quality
 - Android TV navigation: https://developer.android.com/training/tv/get-started/navigation
 - Android TV layouts and overscan: https://developer.android.com/design/ui/tv/guides/styles/layouts

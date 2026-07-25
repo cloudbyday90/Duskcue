@@ -21,4 +21,4 @@ The checked-in wrapper entry point delegates to the repository's Gradle 8.14 wra
 
 ## Current Scope
 
-The project validates the shared TV fixtures through typed Kotlin models, private ETag revalidation, RFC 9457 error decoding, and a profile-gate boundary. Device linking, persistent secure storage, living-room browsing, Media3 playback, and Watch Next publication follow in later Phase 17 tasks.
+The project validates the shared TV fixtures through typed Kotlin models, private ETag revalidation, RFC 9457 error decoding, encrypted profile-gated session state, living-room browsing, and Media3 playback. AndroidX Watch Next publication is active for fresh eligible Continue Watching, Next Up, and New Episodes rows; mappings are Keystore-encrypted, change-only, profile-isolated, and removed on account/profile/server/logout cleanup or Android's disabled-row signal. Artwork URI publication, CI integration, and physical-device evidence remain later Phase 17 work.

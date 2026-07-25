@@ -112,6 +112,7 @@ pub struct TvSurfaceItemResponse {
     pub platform_content_id: String,
     pub media_item_id: Uuid,
     pub media_type: TvMediaType,
+    pub series_id: Option<Uuid>,
     pub section_type: TvSurfaceSectionType,
     pub title: String,
     pub subtitle: Option<String>,

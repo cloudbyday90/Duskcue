@@ -101,6 +101,11 @@ function assertSurfaceFixture(fixture) {
             assert.equal(item.section_type, section.section_type);
             assert.match(item.media_item_id, uuidPattern);
             assert.match(item.platform_content_id, canonicalIdPattern);
+            if (item.media_type === 'episode') {
+                assert.match(item.series_id, uuidPattern, `${fixture.fixture}.${section.section_type} episode needs series_id`);
+            } else {
+                assert.equal(item.series_id, null, `${fixture.fixture}.${section.section_type} movie must have null series_id`);
+            }
             assert(item.deep_link.includes(item.media_item_id));
             assert(item.web_url.endsWith(item.media_item_id));
             assert(['playable', 'missing_file', 'metadata_incomplete'].includes(item.availability));

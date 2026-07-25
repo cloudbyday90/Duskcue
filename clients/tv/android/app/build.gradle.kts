@@ -58,6 +58,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.10.1")
     implementation("androidx.media3:media3-session:1.10.1")
     implementation("androidx.media3:media3-ui:1.10.1")
+    implementation("androidx.tvprovider:tvprovider:1.1.0")
 
     debugImplementation("androidx.compose.ui:ui-tooling")
     testImplementation("junit:junit:4.13.2")

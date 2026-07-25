@@ -8,7 +8,8 @@
       "surface": "WatchNextProgram",
       "source_section_types": [
         "continue",
-        "next_up"
+        "next_up",
+        "new_episodes"
       ],
       "mapping": {
         "program_id_storage": "app_local_mapping_by_platform_content_id",
@@ -21,6 +22,8 @@
       "requirements": {
         "remove_completed_items": true,
         "refresh_on_tv_surface_changed": true,
+        "one_episode_per_series": true,
+        "update_changed_items_only": true,
         "revalidate_before_playback": true
       }
     },

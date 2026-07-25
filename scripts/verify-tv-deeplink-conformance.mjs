@@ -72,6 +72,11 @@ function assertSurfaceContract(fixture) {
       assert.equal(item.section_type, section.section_type);
       assert.match(item.media_item_id, uuidPattern);
       assert.match(item.platform_content_id, platformContentIdPattern);
+      if (item.media_type === 'episode') {
+        assert.match(item.series_id, uuidPattern, `${section.section_type} episode needs series_id`);
+      } else {
+        assert.equal(item.series_id, null, `${section.section_type} movie must have null series_id`);
+      }
       assert(item.deep_link.startsWith(`duskcue://play/${item.media_type}/`));
       assert(item.deep_link.endsWith(item.media_item_id));
       assert(item.web_url.endsWith(item.media_item_id));
@@ -122,6 +127,8 @@ function assertPlatformAdapters(fixture) {
     assertPlatformIds(adapter.mapping, adapter.id);
   }
   assert.equal(adapters.get('android_tv_watch_next').mapping.watch_next_type, 'continue');
+  assert.equal(adapters.get('android_tv_watch_next').requirements.one_episode_per_series, true);
+  assert.equal(adapters.get('android_tv_watch_next').requirements.update_changed_items_only, true);
   assert.equal(adapters.get('roku_search_direct_to_play').mapping.launch_behavior, 'direct_to_play');
   assert.equal(adapters.get('lg_webos_launch_params').requirements.handle_webOSRelaunch, true);
   assert.equal(adapters.get('apple_tvos_top_shelf_universal_links').mapping.universal_link_required, true);

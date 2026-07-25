@@ -122,6 +122,7 @@ data class TvSurfaceItem(
     val platform_content_id: String,
     val media_item_id: String,
     val media_type: String,
+    val series_id: String? = null,
     val section_type: String,
     val title: String,
     val subtitle: String? = null,

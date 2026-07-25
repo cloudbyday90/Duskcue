@@ -56,6 +56,8 @@ data class TvPlaybackUiState(
     val positionMs: Long = 0,
     val isPlaying: Boolean = false,
     val errorCode: String? = null,
+    val completionVersion: Long = 0,
+    val pauseRefreshVersion: Long = 0,
 )
 
 class TvPlaybackService : MediaSessionService() {
@@ -95,6 +97,14 @@ class TvPlaybackService : MediaSessionService() {
             if (runtime != null) {
                 mainHandler.postDelayed(this, PLAYER_STATE_INTERVAL_MS)
             }
+        }
+    }
+
+    private val pausedWatchNextRunnable = Runnable {
+        val activePlayer = player
+        if (runtime != null && activePlayer?.isPlaying == false && activePlayer.playbackState == Player.STATE_READY) {
+            val current = playbackUiMutable.value
+            playbackUiMutable.value = current.copy(pauseRefreshVersion = current.pauseRefreshVersion + 1)
         }
     }
 
@@ -200,6 +210,7 @@ class TvPlaybackService : MediaSessionService() {
         mainHandler.postDelayed(heartbeatRunnable, HEARTBEAT_INTERVAL_MS)
         mainHandler.removeCallbacks(playerStateRunnable)
         mainHandler.post(playerStateRunnable)
+        mainHandler.removeCallbacks(pausedWatchNextRunnable)
     }
 
     private fun reportHeartbeat() {
@@ -222,12 +233,18 @@ class TvPlaybackService : MediaSessionService() {
 
     private fun publishPlayerState() {
         val activePlayer = player
+        val current = playbackUiMutable.value
         playbackUiMutable.value = if (runtime == null || activePlayer == null) {
-            TvPlaybackUiState()
+            TvPlaybackUiState(
+                completionVersion = current.completionVersion,
+                pauseRefreshVersion = current.pauseRefreshVersion,
+            )
         } else {
             TvPlaybackUiState(
                 positionMs = activePlayer.currentPosition.coerceAtLeast(0),
                 isPlaying = activePlayer.isPlaying,
+                completionVersion = current.completionVersion,
+                pauseRefreshVersion = current.pauseRefreshVersion,
             )
         }
     }
@@ -292,12 +309,17 @@ class TvPlaybackService : MediaSessionService() {
         stopping = true
         mainHandler.removeCallbacks(heartbeatRunnable)
         mainHandler.removeCallbacks(playerStateRunnable)
+        mainHandler.removeCallbacks(pausedWatchNextRunnable)
         runtime = null
         val positionMs = player?.currentPosition?.coerceAtLeast(0) ?: 0
         player?.stop()
         player?.clearMediaItems()
         detachPlayerFromView()
-        playbackUiMutable.value = TvPlaybackUiState(errorCode = failureCode)
+        playbackUiMutable.value = TvPlaybackUiState(
+            errorCode = failureCode,
+            completionVersion = playbackUiMutable.value.completionVersion,
+            pauseRefreshVersion = playbackUiMutable.value.pauseRefreshVersion,
+        )
         reportQoe(activeRuntime, failureCode, failureMessage)
         if (notifyServer) {
             networkExecutor.execute {
@@ -353,6 +375,10 @@ class TvPlaybackService : MediaSessionService() {
             if (runtime != null) {
                 publishPlayerState()
                 reportHeartbeat()
+                mainHandler.removeCallbacks(pausedWatchNextRunnable)
+                if (!isPlaying && player?.playbackState == Player.STATE_READY) {
+                    mainHandler.postDelayed(pausedWatchNextRunnable, PAUSED_WATCH_NEXT_DELAY_MS)
+                }
             }
         }
 
@@ -370,6 +396,8 @@ class TvPlaybackService : MediaSessionService() {
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_ENDED) {
+                val current = playbackUiMutable.value
+                playbackUiMutable.value = current.copy(completionVersion = current.completionVersion + 1)
                 stopPlayback(notifyServer = true)
                 stopSelf()
             }
@@ -450,6 +478,7 @@ class TvPlaybackService : MediaSessionService() {
         private const val EXTRA_SUBTITLE_LANGUAGE = "subtitle_language"
         private const val HEARTBEAT_INTERVAL_MS = 15_000L
         private const val PLAYER_STATE_INTERVAL_MS = 1_000L
+        private const val PAUSED_WATCH_NEXT_DELAY_MS = 5 * 60_000L
         private const val SEEK_BACK_INCREMENT_MS = 10_000L
         private const val SEEK_FORWARD_INCREMENT_MS = 30_000L
 

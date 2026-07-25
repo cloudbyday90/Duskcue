@@ -198,6 +198,7 @@ SELECT mi.id,
        uid.last_played_at AS last_engaged_at,
        sn.season_number,
        ep.episode_number,
+       ep.series_id,
        series_mi.title AS series_title,
        COALESCE(mf.file_count, 0) AS file_count
 FROM user_item_data uid
@@ -300,6 +301,7 @@ SELECT mi.id,
        ne.last_played_at AS last_engaged_at,
        sn.season_number,
        ep.episode_number,
+       ep.series_id,
        series_mi.title AS series_title,
        COALESCE(mf.file_count, 0) AS file_count
 FROM next_episode ne
@@ -337,6 +339,7 @@ latest_per_series AS (
            mi.created_at AS last_engaged_at,
            sn.season_number,
            ep.episode_number,
+           ep.series_id,
            series_mi.title AS series_title,
            COALESCE(mf.file_count, 0) AS file_count
     FROM started_series ss
@@ -459,6 +462,7 @@ SELECT mi.id,
        mi.created_at AS last_engaged_at,
        sn.season_number,
        ep.episode_number,
+       ep.series_id,
        series_mi.title AS series_title,
        COALESCE(mf.file_count, 0) AS file_count,
        COALESCE(cand.recommendation_score, 0) AS recommendation_score
@@ -973,6 +977,7 @@ fn row_to_surface_item(
     let last_engaged_at: Option<DateTime<Utc>> = row.try_get("last_engaged_at")?;
     let season_number: Option<i32> = row.try_get("season_number")?;
     let episode_number: Option<i32> = row.try_get("episode_number")?;
+    let series_id: Option<Uuid> = row.try_get("series_id")?;
     let series_title: Option<String> = row.try_get("series_title")?;
     let file_count: i64 = row.try_get("file_count")?;
 
@@ -1000,6 +1005,7 @@ fn row_to_surface_item(
         platform_content_id,
         media_item_id,
         media_type,
+        series_id,
         section_type,
         title,
         subtitle: item_subtitle(
