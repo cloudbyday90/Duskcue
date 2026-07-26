@@ -41,7 +41,7 @@ internal data class TvDiagnosticsBundle(
 )
 
 @Serializable
-internal data class TvDeviceCapabilityReport(
+data class TvDeviceCapabilityReport(
     val platform: String = "android_tv",
     val os_family: String = "android",
     val app_version: String,
@@ -49,6 +49,18 @@ internal data class TvDeviceCapabilityReport(
     val hls_support: Boolean = true,
     val hdr_audio_subtitle_summary: String = "reported_by_playback_profile",
     val current_route_or_screen: String,
+    val device_family: String = "android_tv",
+    val device_model: String = "unknown",
+    val android_release: String = "unknown",
+    val android_api_level: Int? = null,
+    val display_mode: String = "unknown",
+    val display_hdr_types: List<String> = emptyList(),
+    val video_decoder_mime_types: List<String> = emptyList(),
+    val audio_output_types: List<String> = emptyList(),
+    val audio_output_encodings: List<String> = emptyList(),
+    val network_connection_class: String = "unknown",
+    val network_metered_if_known: Boolean? = null,
+    val vpn_or_proxy_hint: String = "unknown",
 )
 
 @Serializable
@@ -87,6 +99,12 @@ internal data class TvRequestIdSummary(
 
 class TvDiagnostics(
     private val clientVersion: String,
+    private val capabilityReportProvider: (String) -> TvDeviceCapabilityReport = { route ->
+        TvDeviceCapabilityReport(
+            app_version = clientVersion,
+            current_route_or_screen = route,
+        )
+    },
     private val now: () -> Instant = { Instant.now() },
 ) {
     private val records = ArrayDeque<TvDiagnosticRecord>()
@@ -231,13 +249,11 @@ class TvDiagnostics(
     private fun bundle(): TvDiagnosticsBundle {
         prune()
         val snapshot = records.toList()
+        val capabilityReport = capabilityReportProvider(currentRoute)
         return TvDiagnosticsBundle(
             exported_at = now().toString(),
             app_logs = snapshot,
-            device_capability_report = TvDeviceCapabilityReport(
-                app_version = clientVersion,
-                current_route_or_screen = currentRoute,
-            ),
+            device_capability_report = capabilityReport,
             server_url_redacted = lastServerOrigin?.let { host ->
                 TvServerUrlRedacted(
                     server_origin_host_only = host,
@@ -259,6 +275,9 @@ class TvDiagnostics(
                 },
             network_state = TvNetworkState(
                 online = if (lastNetworkFailure == null) null else false,
+                connection_class = capabilityReport.network_connection_class,
+                metered_if_known = capabilityReport.network_metered_if_known,
+                vpn_or_proxy_hint = capabilityReport.vpn_or_proxy_hint,
                 last_reachability_error_code = lastNetworkFailure,
             ),
             recent_request_ids = snapshot.filter { it.request_id != "unavailable" }

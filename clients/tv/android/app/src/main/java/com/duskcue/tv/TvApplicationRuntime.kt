@@ -8,6 +8,7 @@ import com.duskcue.tv.api.RetryingTransport
 import com.duskcue.tv.api.ServerOrigin
 import com.duskcue.tv.api.TvSurface
 import com.duskcue.tv.api.UrlConnectionTransport
+import com.duskcue.tv.diagnostics.TvDeviceCapabilityCollector
 import com.duskcue.tv.diagnostics.TvDiagnostics
 import com.duskcue.tv.home.TvHomeLoadState
 import com.duskcue.tv.home.TvLivingRoomStore
@@ -39,7 +40,12 @@ class TvApplicationRuntime(context: Context) {
     private val tokenProvider = MutableBearerTokenProvider()
     private val etags = MemoryEtagStore()
     private val sessionStore = SecureSessionStore(context)
-    val diagnostics = TvDiagnostics(BuildConfig.VERSION_NAME)
+    val diagnostics = TvDiagnostics(
+        clientVersion = BuildConfig.VERSION_NAME,
+        capabilityReportProvider = { route ->
+            TvDeviceCapabilityCollector.collect(applicationContext, BuildConfig.VERSION_NAME, route)
+        },
+    )
     private val runtimeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val watchNext = WatchNextPublisher(
         provider = AndroidWatchNextProvider(applicationContext.contentResolver),

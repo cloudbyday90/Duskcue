@@ -38,6 +38,7 @@ for (const token of [
   'scripts/client-smoke-harness.mjs --plan',
   'scripts/verify-client-ci-smoke.mjs',
   'scripts/verify-android-tv-release-readiness.mjs',
+  'scripts/verify-nvidia-shield-validation.mjs',
   'scripts/android-tv-emulator-smoke.mjs',
   'target: android-tv',
   'profile: tv_1080p',
@@ -55,7 +56,7 @@ for (const jobId of ['android_tv_conformance', 'android_tv_emulator_smoke']) {
   assert(jobs.jobs.some((job) => job.id === jobId), `client CI jobs fixture missing ${jobId}`);
 }
 
-for (const command of ['node scripts/verify-android-tv-ci.mjs', 'node scripts/verify-android-tv-release-readiness.mjs']) {
+for (const command of ['node scripts/verify-android-tv-ci.mjs', 'node scripts/verify-android-tv-release-readiness.mjs', 'node scripts/verify-nvidia-shield-validation.mjs']) {
   assert(manifest.required_verifiers.includes(command.replace('node ', '')), `client CI manifest missing ${command}`);
   assert(harnessPlan.contract_verifier_commands.includes(command), `client CI harness plan missing ${command}`);
 }

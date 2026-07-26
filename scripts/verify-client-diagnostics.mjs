@@ -68,6 +68,9 @@ function assertBundleManifest(fixture) {
   assert(sections.get('app_logs').limit.max_records <= 1000, 'app log cap too large');
   assert(sections.get('recent_request_ids').limit.max_records <= 100, 'request id cap too large');
   assert(sections.get('user_consented_private_context').requires_explicit_consent, 'private context must require consent');
+  for (const field of ['device_family', 'device_model', 'android_release', 'display_hdr_types', 'audio_output_encodings', 'network_connection_class']) {
+    assert(sections.get('device_capability_report').contents.includes(field), `device capability report missing ${field}`);
+  }
 }
 
 function assertRedactionRules(fixture) {

@@ -33,6 +33,7 @@
       "id": "android_tv",
       "required_checks": [
         "include remote/focus and playback launch context",
+        "include current display, audio-route, and network capability summaries without hardware serials",
         "exclude account/profile details from communal display",
         "include TV surface event IDs where available",
         "avoid signed artwork or playback URLs"

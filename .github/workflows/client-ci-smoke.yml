@@ -21,6 +21,8 @@ on:
       - scripts/client-smoke-harness.mjs
       - scripts/android-tv-emulator-smoke.mjs
       - scripts/verify-android-tv-release-readiness.mjs
+      - scripts/nvidia-shield-validation.mjs
+      - scripts/verify-nvidia-shield-validation.mjs
       - scripts/verify-client-*.mjs
       - scripts/verify-android-tv-ci.mjs
       - scripts/verify-playback-conformance.mjs
@@ -50,6 +52,8 @@ on:
       - scripts/client-smoke-harness.mjs
       - scripts/android-tv-emulator-smoke.mjs
       - scripts/verify-android-tv-release-readiness.mjs
+      - scripts/nvidia-shield-validation.mjs
+      - scripts/verify-nvidia-shield-validation.mjs
       - scripts/verify-client-*.mjs
       - scripts/verify-android-tv-ci.mjs
       - scripts/verify-playback-conformance.mjs
@@ -201,6 +205,7 @@ jobs:
           node scripts/verify-client-ci-smoke.mjs
           node scripts/verify-android-tv-ci.mjs
           node scripts/verify-android-tv-release-readiness.mjs
+          node scripts/verify-nvidia-shield-validation.mjs
 
       - name: Run Android TV unit, lint, and debug build checks
         working-directory: clients/tv/android

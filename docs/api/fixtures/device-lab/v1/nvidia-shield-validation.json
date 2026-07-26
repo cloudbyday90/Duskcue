@@ -1,0 +1,126 @@
+{
+  "fixture": "nvidia-shield-validation",
+  "status": "repository_ready_physical_evidence_pending",
+  "platform": "android_tv_google_tv",
+  "purpose": "Phase 17 Task 13 high-capability Android TV reference-device validation without claiming unobserved SHIELD behavior.",
+  "device_targets": [
+    {
+      "id": "shield_tv",
+      "name": "NVIDIA SHIELD TV",
+      "hardware_class": "physical",
+      "required_for": "High-capability Android TV compatibility claim"
+    },
+    {
+      "id": "shield_tv_pro",
+      "name": "NVIDIA SHIELD TV Pro",
+      "hardware_class": "physical",
+      "required_for": "High-capability Android TV compatibility claim"
+    }
+  ],
+  "preflight": {
+    "firmware_rule": "Install the current NVIDIA SHIELD Experience system update and record the observed system version before each run.",
+    "display_chain_rule": "Record the exact TV or AVR, HDMI topology, HDMI/HDCP capability, HDR mode, and audio route. Do not infer an output format from SHIELD or Android codec APIs alone.",
+    "network_rule": "Run the same legal test profile once on Ethernet and once on Wi-Fi. NVIDIA recommends Ethernet for maximum performance; record only the transport class, never SSID, IP address, MAC address, or credential.",
+    "test_media_rule": "Use legal, non-private test media representing the declared stream decisions and tracks. Do not commit media, account details, signed URLs, support bundles, or screenshots containing private catalog data."
+  },
+  "machine_preflight": {
+    "command": "node scripts/nvidia-shield-validation.mjs --serial <adb-serial> --network <ethernet|wifi> [--apk <debug-apk>]",
+    "checks": [
+      "ADB target is a physical NVIDIA SHIELD with Leanback support",
+      "Duskcue package is installed or the supplied APK installs",
+      "Leanback launcher and valid-shape Duskcue deep-link handoff succeed",
+      "Reported Android release/API, display size, advertised HDR tokens, app version, and chosen network transport are emitted as a privacy-safe preflight record"
+    ],
+    "scope_limit": "The command does not prove authentication, media decode, HDR output, AVR passthrough, AI upscaling, Watch Next visibility, or standby/resume. Those remain manual observations."
+  },
+  "test_cases": [
+    {
+      "id": "google_play_visibility",
+      "observation": "On the intended Play Android TV track, confirm listing/install visibility and capture the result without account data.",
+      "evidence": "Play track, app version, SHIELD model/firmware, observed install outcome",
+      "external_gate": true
+    },
+    {
+      "id": "ethernet_playback",
+      "observation": "Run browse, device link, direct play, direct stream, HLS transcode, seek, resume, stop, and diagnostics export over Ethernet.",
+      "evidence": "Preflight record with network_transport=ethernet plus redacted Duskcue diagnostics and server playback decision summary",
+      "external_gate": false
+    },
+    {
+      "id": "wifi_playback",
+      "observation": "Repeat the same smoke path on Wi-Fi and compare startup, rebuffer, resume, and fallback outcome without recording SSID or IP address.",
+      "evidence": "Preflight record with network_transport=wifi plus redacted Duskcue diagnostics and server playback decision summary",
+      "external_gate": false
+    },
+    {
+      "id": "hdr_display_modes",
+      "observation": "Validate SDR, 4K HDR10, and Dolby Vision where the SHIELD, HDMI path, and display advertise support. Record actual display/AVR mode and any fallback; do not claim display-mode matching from a capability list.",
+      "evidence": "SHIELD display setting, display/AVR mode readout, Duskcue capability report, and result per sample",
+      "external_gate": false
+    },
+    {
+      "id": "audio_route_and_passthrough",
+      "observation": "With SHIELD connected through an AVR or supported TV chain, test AAC/PCM fallback, AC-3, E-AC-3/Atmos, TrueHD, DTS, and DTS-HD where legal samples and the route allow them. Confirm the actual AVR readout and capture no audio result as a compatibility finding, not a success.",
+      "evidence": "HDMI topology, AVR/TV readout, selected audio track, Duskcue output-encoding report, and explicit passed/failed/not_supported result per sample",
+      "external_gate": false
+    },
+    {
+      "id": "subtitle_caption_fallback",
+      "observation": "Switch supported text tracks and exercise image-subtitle or unsupported-track fallback through Duskcue's server decision.",
+      "evidence": "Subtitle type, visible result, server stream decision, and redacted diagnostics",
+      "external_gate": false
+    },
+    {
+      "id": "ai_upscaling_interaction",
+      "observation": "Compare SHIELD Basic, Enhanced, and AI-Enhanced behavior with eligible HD content, then record expected fallback for content below 480p, over 30 Hz, or RGB color space. Duskcue must not override the user-selected SHIELD display/upscaling setting.",
+      "evidence": "SHIELD setting, sample class, observed result, and no-app-override confirmation",
+      "external_gate": false
+    },
+    {
+      "id": "remote_and_gamepad",
+      "observation": "Use the SHIELD remote for D-pad, Select, Back, Home return, play/pause, seek, captions, audio, and Settings paths; repeat core playback controls with a paired gamepad when available.",
+      "evidence": "Checklist or short video, input type, focus/Back result, and playback-control result",
+      "external_gate": false
+    },
+    {
+      "id": "standby_resume",
+      "observation": "Start playback, trigger SHIELD standby with the configured HDMI-CEC route, wake, and verify the app pauses/revalidates/reconnects without reusing a stale stream URL.",
+      "evidence": "Sleep/wake sequence, playback/heartbeat result, server decision after resume, and redacted diagnostics",
+      "external_gate": false
+    },
+    {
+      "id": "watch_next",
+      "observation": "Start and stop a movie, verify a Continue Watching entry; complete an episode and verify Next Up replacement. Confirm launcher visibility separately from successful provider writes.",
+      "evidence": "Google TV/Android TV launcher observation, profile scope, deep-link resume result, and Watch Next diagnostics aggregate",
+      "external_gate": false
+    },
+    {
+      "id": "diagnostics_capture",
+      "observation": "Export the user-initiated support bundle after the run and verify it contains model-class, Android, display, audio-route, decoder, HDR, and coarse network capability information while omitting secrets and personal media context.",
+      "evidence": "Manual redaction review and external retention reference only; the bundle itself is not committed",
+      "external_gate": false
+    }
+  ],
+  "evidence_contract": {
+    "required_fields": [
+      "test_case_id",
+      "result",
+      "device_target",
+      "android_release",
+      "firmware_version",
+      "app_build_identifier",
+      "network_transport",
+      "display_and_audio_chain",
+      "stream_decision_or_fallback",
+      "redacted_diagnostics_reference"
+    ],
+    "result_values": [
+      "passed",
+      "failed",
+      "not_supported",
+      "not_tested"
+    ],
+    "retention": "Keep evidence in the protected release record or issue/PR artifact. Do not commit raw diagnostics bundles, credentials, private media, screenshots with personal catalogs, serial numbers, MAC addresses, IP addresses, SSIDs, or signed URLs."
+  },
+  "release_gate": "Task 13 is complete only after at least one SHIELD target has a complete evidence contract for every non-external test case. A public SHIELD high-capability claim additionally requires the intended signed Play artifact and Google Play visibility evidence."
+}

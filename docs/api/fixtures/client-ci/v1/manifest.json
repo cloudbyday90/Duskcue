@@ -79,7 +79,8 @@
     "scripts/verify-release-readiness.mjs",
     "scripts/verify-client-ci-smoke.mjs",
     "scripts/verify-android-tv-ci.mjs",
-    "scripts/verify-android-tv-release-readiness.mjs"
+    "scripts/verify-android-tv-release-readiness.mjs",
+    "scripts/verify-nvidia-shield-validation.mjs"
   ],
   "required_downstream_phases": [
     "phase17_android_tv",

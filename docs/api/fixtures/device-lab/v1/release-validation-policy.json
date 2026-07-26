@@ -1,6 +1,6 @@
 {
   "fixture": "release-validation-policy",
-  "updated": "2026-07-02",
+  "updated": "2026-07-25",
   "policy": {
     "release_claim_rule": "A platform phase may claim release readiness only after its release_required targets pass the manual smoke script or the gap report marks the missing hardware as non-release-blocking for that phase.",
     "simulator_rule": "Simulator or emulator evidence is acceptable for navigation, layout, auth, and fixture conformance but not for hardware codec, HDR, surround audio, remote-control, store-surface, or device-storage claims.",
@@ -40,7 +40,7 @@
     },
     {
       "platform": "android_tv_google_tv",
-      "release_required": ["Android TV emulator", "Current Google TV physical device"],
+      "release_required": ["Android TV emulator", "Current Google TV physical device", "NVIDIA SHIELD TV or NVIDIA SHIELD TV Pro physical evidence before a SHIELD high-capability claim"],
       "best_effort": ["Sony BRAVIA Android/Google TV", "Older Android TV device"],
       "blocked_without_hardware": true
     },

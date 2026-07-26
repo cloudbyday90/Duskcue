@@ -52,6 +52,39 @@ class TvDiagnosticsTest {
     }
 
     @Test
+    fun exportsCurrentCapabilityReportWithoutHardwareIdentifiers() {
+        val diagnostics = TvDiagnostics(
+            clientVersion = "0.1.0-test",
+            capabilityReportProvider = { route ->
+                TvDeviceCapabilityReport(
+                    app_version = "0.1.0-test",
+                    current_route_or_screen = route,
+                    device_family = "nvidia_shield",
+                    device_model = "SHIELD_TV_Pro",
+                    android_release = "14",
+                    android_api_level = 34,
+                    display_mode = "3840x2160@60hz",
+                    display_hdr_types = listOf("hdr10", "dolby_vision"),
+                    video_decoder_mime_types = listOf("h264", "hevc"),
+                    audio_output_types = listOf("hdmi"),
+                    audio_output_encodings = listOf("eac3", "dolby_truehd"),
+                    network_connection_class = "ethernet",
+                    network_metered_if_known = false,
+                )
+            },
+        )
+        diagnostics.recordScreen("player")
+
+        val bundle = diagnostics.exportBundleJson()
+
+        assertTrue(bundle.contains("nvidia_shield"))
+        assertTrue(bundle.contains("3840x2160@60hz"))
+        assertTrue(bundle.contains("dolby_truehd"))
+        assertFalse(bundle.contains("serial_number"))
+        assertFalse(bundle.contains("build_fingerprint"))
+    }
+
+    @Test
     fun sharedFixturesRetainTheAndroidTvExportRequirements() {
         val root = Json.parseToJsonElement(loadFixture("platform-export-checklists.json")).jsonObject
         val androidTv = root.getValue("platforms").jsonArray
@@ -60,6 +93,7 @@ class TvDiagnosticsTest {
         val checks = androidTv.getValue("required_checks").jsonArray.map { it.jsonPrimitive.content }.toSet()
         assertTrue(checks.containsAll(setOf(
             "include remote/focus and playback launch context",
+            "include current display, audio-route, and network capability summaries without hardware serials",
             "exclude account/profile details from communal display",
             "include TV surface event IDs where available",
             "avoid signed artwork or playback URLs",

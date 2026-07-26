@@ -38,6 +38,7 @@ assertManualSmokeScripts(fixtures.get('manual-smoke-scripts'));
 assertReleaseValidationPolicy(fixtures.get('release-validation-policy'));
 assertKnownPlatformLimitations(fixtures.get('known-platform-limitations'));
 assertHardwareGapReport(fixtures.get('hardware-gap-report'));
+assertNvidiaShieldValidation(fixtures.get('nvidia-shield-validation'));
 assertNoFixtureLeaks();
 
 console.log(`Verified ${fixtures.size} device lab fixtures for ${requiredPlatforms.length} platforms.`);
@@ -142,6 +143,21 @@ function assertHardwareGapReport(fixture) {
     assert(nonEmpty(entry.required_before), `${platform} gap missing required_before`);
     assert.equal(typeof entry.release_blocking, 'boolean', `${platform} gap missing release_blocking boolean`);
   }
+}
+
+function assertNvidiaShieldValidation(fixture) {
+  assert.equal(fixture.status, 'repository_ready_physical_evidence_pending', 'SHIELD fixture must preserve physical evidence boundary');
+  assert.equal(fixture.platform, 'android_tv_google_tv', 'SHIELD fixture platform mismatch');
+  assert.deepEqual(fixture.device_targets.map((target) => target.id), ['shield_tv', 'shield_tv_pro'], 'SHIELD target set drift');
+  const cases = byId(fixture.test_cases, 'id');
+  for (const id of ['ethernet_playback', 'wifi_playback', 'hdr_display_modes', 'audio_route_and_passthrough', 'ai_upscaling_interaction', 'remote_and_gamepad', 'standby_resume', 'watch_next', 'diagnostics_capture']) {
+    const entry = cases.get(id);
+    assert(entry, `SHIELD fixture missing ${id}`);
+    assert(nonEmpty(entry.observation), `SHIELD ${id} missing observation`);
+    assert(nonEmpty(entry.evidence), `SHIELD ${id} missing evidence`);
+  }
+  assert(fixture.machine_preflight.command.includes('nvidia-shield-validation.mjs'), 'SHIELD fixture missing capture command');
+  assert(fixture.evidence_contract.retention.includes('Do not commit'), 'SHIELD fixture must forbid committing private evidence');
 }
 
 function byId(items, key) {

@@ -1,7 +1,7 @@
 {
   "fixture_pack": "duskcue-client-device-lab",
   "version": 1,
-  "updated": "2026-07-02",
+  "updated": "2026-07-25",
   "purpose": "Reusable Phase 16d device lab, compatibility matrix, and Docker-backed manual smoke scripts for Duskcue clients.",
   "design_doc": "docs/design/CLIENT_DEVICE_LAB.md",
   "docker_target": {
@@ -104,12 +104,22 @@
         "allowed temporary gaps",
         "release blockers"
       ]
+    },
+    {
+      "id": "nvidia-shield-validation",
+      "file": "nvidia-shield-validation.json",
+      "covers": [
+        "SHIELD and SHIELD Pro physical-device preflight",
+        "HDR, HDMI audio, network, remote, standby, Watch Next, and diagnostics evidence",
+        "privacy-safe external evidence contract"
+      ]
     }
   ],
   "sources": [
     "Android supported media formats",
     "Android Media3 supported formats",
     "Android TV app creation and testing",
+    "NVIDIA SHIELD support, HDR, surround-audio, network, AI-upscaling, and software-update guidance",
     "Apple AVFoundation and HLS authoring",
     "Apple TestFlight",
     "Amazon Fire TV device testing and ADB",

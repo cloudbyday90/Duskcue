@@ -218,6 +218,18 @@
           "release_validation": "required_physical"
         },
         {
+          "name": "NVIDIA SHIELD TV",
+          "os_version": "Current NVIDIA SHIELD Experience release",
+          "hardware_class": "physical",
+          "release_validation": "required_physical_for_high_capability_claim"
+        },
+        {
+          "name": "NVIDIA SHIELD TV Pro",
+          "os_version": "Current NVIDIA SHIELD Experience release",
+          "hardware_class": "physical",
+          "release_validation": "required_physical_for_high_capability_claim"
+        },
+        {
           "name": "Sony BRAVIA Android/Google TV",
           "os_version": "Supported TV firmware",
           "hardware_class": "physical",

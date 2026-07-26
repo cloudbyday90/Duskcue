@@ -103,6 +103,7 @@
     "node scripts/verify-release-readiness.mjs",
     "node scripts/verify-client-ci-smoke.mjs",
     "node scripts/verify-android-tv-ci.mjs",
-    "node scripts/verify-android-tv-release-readiness.mjs"
+    "node scripts/verify-android-tv-release-readiness.mjs",
+    "node scripts/verify-nvidia-shield-validation.mjs"
   ]
 }

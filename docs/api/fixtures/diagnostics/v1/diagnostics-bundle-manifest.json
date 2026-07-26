@@ -1,6 +1,6 @@
 {
   "fixture": "diagnostics-bundle-manifest",
-  "updated": "2026-07-02",
+  "updated": "2026-07-25",
   "bundle_format": "json_directory_or_zip",
   "default_time_window_hours": 24,
   "manual_sharing_only": true,
@@ -29,7 +29,18 @@
         "app_version",
         "codec_support_summary",
         "hls_support",
-        "hdr_audio_subtitle_summary"
+        "hdr_audio_subtitle_summary",
+        "device_family",
+        "device_model",
+        "android_release",
+        "android_api_level",
+        "display_mode",
+        "display_hdr_types",
+        "video_decoder_mime_types",
+        "audio_output_types",
+        "audio_output_encodings",
+        "network_connection_class",
+        "network_metered_if_known"
       ]
     },
     {

@@ -74,6 +74,8 @@ Automated evidence includes the shared client contracts/fixtures, Android TV uni
 - NVIDIA SHIELD and Sony BRAVIA playback, HDR/audio/subtitle, standby/resume, and diagnostics export;
 - full Android TV quality checklist evidence for the signed candidate AAB.
 
+The NVIDIA SHIELD TV / Pro high-capability evidence sequence is defined in [NVIDIA_SHIELD_VALIDATION.md](NVIDIA_SHIELD_VALIDATION.md). It is a physical-device release gate and does not replace the separate Sony BRAVIA validation.
+
 For rollback, never reuse or lower a `versionCode`. Halt a staged rollout where possible, retain the previous Play artifact reference, and publish a higher-version-code hotfix or follow the approved Play rollback path. Any rollback must preserve or explicitly migrate encrypted session, profile, Watch Next, and artwork state.
 
 ## Official Sources

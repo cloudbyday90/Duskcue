@@ -100,6 +100,7 @@ Release-required hardware means a platform phase cannot claim release readiness 
 | [release-validation-policy.json](../api/fixtures/device-lab/v1/release-validation-policy.json) | Release-required and best-effort hardware policy per platform. |
 | [known-platform-limitations.json](../api/fixtures/device-lab/v1/known-platform-limitations.json) | Known limitations, workarounds, and fallback behavior. |
 | [hardware-gap-report.json](../api/fixtures/device-lab/v1/hardware-gap-report.json) | Allowed Phase 16d hardware gaps and downstream release blockers. |
+| [nvidia-shield-validation.json](../api/fixtures/device-lab/v1/nvidia-shield-validation.json) | Phase 17 SHIELD/SHIELD Pro preflight, manual hardware matrix, and protected evidence contract. |
 
 Run:
 
@@ -108,6 +109,12 @@ node scripts/verify-device-lab.mjs
 ```
 
 The verifier checks required platform coverage, required capability fields, Docker port `48027`, smoke-step coverage, release-required/best-effort classifications, hardware-gap coverage, and fixture leak patterns.
+
+### NVIDIA SHIELD High-Capability Reference
+
+Phase 17 Task 13 adds [NVIDIA_SHIELD_VALIDATION.md](../ci/NVIDIA_SHIELD_VALIDATION.md) and an executable boundary: `node scripts/nvidia-shield-validation.mjs --plan` documents every manual observation, while `node scripts/nvidia-shield-validation.mjs --serial <adb-serial> --network <ethernet|wifi>` validates a physical SHIELD preflight without collecting network identifiers or committing evidence. The Android TV diagnostics export reports bounded display/audio/network capability context for the later run.
+
+SHIELD TV and NVIDIA SHIELD TV Pro are high-capability reference devices, not replacements for the required Google TV and Sony BRAVIA profiles. HDMI/AVR/display routing, HDR, passthrough, AI upscaling, standby/resume, Play visibility, and launcher behavior remain physical observations. The fixture uses `not_tested` rather than inferring a pass until protected external evidence exists.
 
 ## Relationship to Capability Profiles
 

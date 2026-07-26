@@ -6,7 +6,7 @@ This document is the implementation authority for Phase 17. It turns the shared 
 
 ## Status
 
-Phase 17 Tasks 0–12 are complete as of July 25, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, store-ready runtime banner/icon source assets, Compose for TV entry point, device linking and profile lifecycle, profile-gated home/browse/detail/search/settings screens, an in-memory Media3 playback service, strict playback deep-link revalidation, Watch Next publication with authenticated local artwork delivery, explicit living-room input/accessibility policy, privacy-safe diagnostics export, debug APK build, fixture-backed contract unit tests, Android lint verification, and a machine-checked Google Play readiness baseline. It is intentionally separate from the Flutter phone/tablet client.
+Phase 17 Tasks 0–12 are complete as of July 25, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, store-ready runtime banner/icon source assets, Compose for TV entry point, device linking and profile lifecycle, profile-gated home/browse/detail/search/settings screens, an in-memory Media3 playback service, strict playback deep-link revalidation, Watch Next publication with authenticated local artwork delivery, explicit living-room input/accessibility policy, privacy-safe diagnostics export, debug APK build, fixture-backed contract unit tests, Android lint verification, and a machine-checked Google Play readiness baseline. Task 13 now has a repository-ready NVIDIA SHIELD evidence harness; its physical-device observations remain pending. It is intentionally separate from the Flutter phone/tablet client.
 
 ## Research Outcome
 
@@ -196,6 +196,12 @@ The checked-in [Android TV release-readiness runbook](../ci/ANDROID_TV_RELEASE_R
 
 The readiness fixture requires screenshots to remain `pending_real_capture` until an approved real Android TV AVD or physical-TV reviewer flow is captured. It likewise preserves Play registration, signing, policy declarations, reviewer access, Google TV launcher visibility, physical-device quality evidence, SBOM, provenance, and staged-rollout approval as external evidence. The static [verify-android-tv-release-readiness.mjs](../../scripts/verify-android-tv-release-readiness.mjs) gate checks that those boundaries, assets, Gradle policy, manifest, shared release fixtures, and runbook cannot silently drift.
 
+#### Task 13 Repository Implementation
+
+[NVIDIA_SHIELD_VALIDATION.md](../ci/NVIDIA_SHIELD_VALIDATION.md) and the versioned SHIELD fixture turn the Task 13 physical-device requirement into an auditable plan for NVIDIA SHIELD TV and NVIDIA SHIELD TV Pro. The ADB helper proves only that a connected non-emulated SHIELD has Leanback, the Duskcue package, a launchable banner activity, and valid-shape deep-link handoff; it records bounded Android/display/app information and the tester-declared Ethernet or Wi-Fi transport without serials, IP addresses, SSIDs, credentials, or media context.
+
+The support-bundle capability report now refreshes the current Android TV device family/model, Android release/API, display mode/advertised HDR types, advertised decoders, output audio types/encodings, and coarse network state at export. It is diagnostic context, not playback proof. HDR/Dolby Vision output, TrueHD/DTS/Atmos passthrough, AI-upscaling behavior, CEC standby/resume, remote/gamepad behavior, Google Play visibility, and Watch Next launcher rendering remain manual physical evidence. Task 13 is not complete until that physical evidence contract is captured for a SHIELD target.
+
 ## Delivery Order
 
 1. Create the standalone Gradle/Kotlin/Compose-for-TV app and prove a TV emulator build/launch with the correct manifest and placeholder assets.
@@ -237,6 +243,11 @@ The readiness fixture requires screenshots to remain `pending_real_capture` unti
 - AndroidX TV Provider disabled-program broadcast: https://developer.android.com/reference/androidx/tvprovider/media/tv/TvContractCompat
 - Android TV app-quality criteria: https://developer.android.com/docs/quality-guidelines/tv-app-quality
 - Android TV app icon and banner guidelines: https://developer.android.com/design/ui/tv/guides/system/tv-app-icon-guidelines
+- NVIDIA SHIELD product and capability overview: https://www.nvidia.com/en-us/shield/
+- NVIDIA SHIELD HDR/Dolby Vision display setup: https://www.nvidia.com/en-us/shield/support/shield-tv-pro/4k-hdr-dolby-vision-display-setup/
+- NVIDIA SHIELD AVR/surround-audio setup: https://www.nvidia.com/en-us/shield/support/shield-tv-pro/avr-surround-audio-setup/
+- NVIDIA SHIELD AI upscaling: https://www.nvidia.com/en-us/shield/support/shield-tv-pro/ai-upscaling/
+- Android TV audio capabilities: https://developer.android.com/training/tv/playback/audio-capabilities
 - Android TV navigation: https://developer.android.com/training/tv/get-started/navigation
 - Android TV focus system: https://developer.android.com/design/ui/tv/guides/styles/focus-system
 - Android TV layouts and overscan: https://developer.android.com/design/ui/tv/guides/styles/layouts
