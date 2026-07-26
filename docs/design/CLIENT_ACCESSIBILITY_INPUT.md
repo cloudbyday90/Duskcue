@@ -98,6 +98,12 @@ node scripts/verify-accessibility-input.mjs
 
 The verifier checks that [../api/fixtures/accessibility/v1](../api/fixtures/accessibility/v1) covers every required platform family, baseline category, focus-order case, remote-navigation case, platform review checklist, and localization/RTL case.
 
+## Android TV / Google TV Binding
+
+Phase 17 Task 9 binds the Android TV client to this pack through `TvQualityPolicyTest`. The test asserts the Android TV review checklist and required home/player remote cases; the client applies conservative overscan margins, initial and restored focus targets, visible focus/pressed/disabled states, immediate reduced-motion-safe state changes, TalkBack semantics/live error announcements, and player-time audio/caption selection.
+
+Automated checks cannot prove a specific television's TalkBack speech, overscan, remote firmware, caption preference, or launcher behavior. Those remain recorded emulator/device release evidence in [ANDROID_TV.md](ANDROID_TV.md), not an implied pass from fixture verification.
+
 ## Relationship To Other Docs
 
 | Document | Relationship |

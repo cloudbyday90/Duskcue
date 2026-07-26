@@ -518,6 +518,42 @@ class TvPlaybackService : MediaSessionService() {
             }
         }
 
+        fun togglePlayback() {
+            activeService?.mainHandler?.post {
+                val activePlayer = activeService?.player ?: return@post
+                if (activePlayer.isPlaying) activePlayer.pause() else activePlayer.play()
+                activeService?.reportHeartbeat()
+            }
+        }
+
+        fun seekBy(offsetMs: Long) {
+            activeService?.mainHandler?.post {
+                val activePlayer = activeService?.player ?: return@post
+                activePlayer.seekTo((activePlayer.currentPosition + offsetMs).coerceAtLeast(0))
+            }
+        }
+
+        fun selectAudioLanguage(language: String?) {
+            activeService?.mainHandler?.post {
+                val activePlayer = activeService?.player ?: return@post
+                activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
+                    .buildUpon()
+                    .setPreferredAudioLanguage(language)
+                    .build()
+            }
+        }
+
+        fun selectSubtitleLanguage(language: String?) {
+            activeService?.mainHandler?.post {
+                val activePlayer = activeService?.player ?: return@post
+                activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
+                    .buildUpon()
+                    .setPreferredTextLanguage(language)
+                    .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, language == null)
+                    .build()
+            }
+        }
+
         fun seekTo(positionMs: Long) {
             activeService?.mainHandler?.post {
                 activeService?.player?.seekTo(positionMs.coerceAtLeast(0))

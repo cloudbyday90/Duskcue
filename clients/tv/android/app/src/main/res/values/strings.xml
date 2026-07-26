@@ -31,6 +31,9 @@
     <string name="tv_captions_off">Off</string>
     <string name="tv_quality_mode">Quality: %1$s</string>
     <string name="tv_playback_status">Playback: %1$s</string>
+    <string name="tv_pause">Pause</string>
+    <string name="tv_resume">Resume</string>
+    <string name="tv_playback_remote_shortcuts">Left and right seek. Select plays or pauses. Menu changes captions.</string>
     <string name="tv_skip_segment">Skip %1$s</string>
     <string name="tv_playback_error">Playback could not continue: %1$s</string>
     <string name="tv_return_to_details">Return to details</string>

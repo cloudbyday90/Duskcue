@@ -6,7 +6,7 @@ This document is the implementation authority for Phase 17. It turns the shared 
 
 ## Status
 
-Phase 17 Tasks 0–8 are complete as of July 25, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, 16:9 placeholder banner/icon, Compose for TV entry point, device linking and profile lifecycle, profile-gated home/browse/detail/search/settings screens, an in-memory Media3 playback service, strict playback deep-link revalidation, Watch Next publication with authenticated local artwork delivery, debug APK build, fixture-backed contract unit tests, and Android lint verification. It is intentionally separate from the Flutter phone/tablet client.
+Phase 17 Tasks 0–9 are complete as of July 25, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, 16:9 placeholder banner/icon, Compose for TV entry point, device linking and profile lifecycle, profile-gated home/browse/detail/search/settings screens, an in-memory Media3 playback service, strict playback deep-link revalidation, Watch Next publication with authenticated local artwork delivery, explicit living-room input/accessibility policy, debug APK build, fixture-backed contract unit tests, and Android lint verification. It is intentionally separate from the Flutter phone/tablet client.
 
 ## Research Outcome
 
@@ -157,6 +157,23 @@ Downloaded bytes live only in app-private cache files. The provider receives an 
 
 Android TV sizing is explicit: Watch Next poster is `w500`; app-local backdrops, thumbnails, and logos use `w1280`, `w300`, and `original` respectively when their later UI surfaces consume the typed `TvArtworkHints` response. `setPosterArtUri` is now populated alongside the existing stable content/internal-provider IDs and episode metadata. The reconciler distinguishes a source fingerprint from a rendering fingerprint: artwork changes can update an existing row, but an Android-disabled row stays suppressed until the underlying Duskcue content state changes. The current `tv_surface_changed` publication path conditionally revalidates the poster as well as the row metadata.
 
+#### Task 9 Implementation
+
+`TvQualityPolicy` defines the conservative 58dp horizontal and 28dp vertical safe area, a 20sp minimum client-owned supporting-text size, logical Back destinations, and player remote shortcuts. Setup starts on the server field, linking starts on Cancel, search starts on its input, detail and playback return to a focused primary action, and all other authenticated routes return to Home before the activity can exit to the launcher. Focused, pressed, and disabled controls use a border plus distinct surfaces; the UI has no animated route or focus transition, so reduced-motion operation remains fully legible without a motion-dependent cue.
+
+The player intercepts D-pad left/right, gamepad A, media transport buttons, Menu, and Captions only for the documented playback operations. Its visible remote controls expose play/pause, current captions, and current audio tracks; in-playback track changes update the active Media3 track-selection parameters rather than only changing the displayed label. Async messages use polite accessibility live regions, failures use assertive live regions and a focused retry action, and client-owned labels identify cards, actions, inputs, and disabled controls to TalkBack.
+
+`TvQualityPolicyTest` verifies Back destinations, D-pad/gamepad/media/caption mappings, safe-area and type minima, and the Android TV entries in the shared accessibility fixture pack. The Android test source set consumes that fixture pack directly, while `node scripts/verify-accessibility-input.mjs` verifies its cross-client schema.
+
+### Task 9 Manual Release Evidence
+
+| Check | Required evidence | Automation boundary |
+|---|---|---|
+| D-pad, gamepad, and remote traversal | Emulator/device walkthrough of home rows, search keyboard return, details, player, Settings, profile picker, and error retry. | Policy mappings and shared remote cases are unit/fixture checked; physical traversal is not emulated here. |
+| TalkBack and captions | TalkBack labels/roles/state walkthrough and a real subtitle/audio-track change during playback. | Compose semantics and active Media3 track updates are code covered; screen-reader output requires a device. |
+| Overscan, focus, and reduced motion | Screenshots on representative Android TV/Google TV hardware, including player chrome and a reduced-motion system setting. | Conservative layout constants and no animated focus/route transitions are verified in code. |
+| Android TV quality checklist | Record app-quality criteria, Watch Next launch focus, lifecycle pause, media buttons, and Back-to-launcher behavior in release evidence. | Task 11/12 add CI/release artifact collection; Google TV launcher visibility remains hardware/store evidence. |
+
 ## Delivery Order
 
 1. Create the standalone Gradle/Kotlin/Compose-for-TV app and prove a TV emulator build/launch with the correct manifest and placeholder assets.
@@ -172,6 +189,7 @@ Android TV sizing is explicit: Watch Next poster is `w500`; app-local backdrops,
 - Google Play account, upload/app-signing keys, Data Safety declarations, content rating, store listing, and reviewer credentials remain external secrets/release work.
 - Google TV launcher visibility, certification, and region/device availability need empirical hardware and store evidence.
 - NVIDIA SHIELD and Sony BRAVIA HDR, Dolby Vision, audio passthrough/downmix, subtitles, standby/resume, and remote/gamepad behavior require real devices.
+- TalkBack behavior, actual overscan screenshots, reduced-motion settings, physical remote/gamepad traversal, and platform caption-preference behavior require the Task 11/12 emulator/device evidence; this task does not claim those observations without a target TV.
 - A future Fire TV client may reuse non-UI Kotlin API, profile, playback, and diagnostics abstractions only after its Android/Fire OS divergence is evaluated.
 
 ## Official Sources
@@ -192,6 +210,7 @@ Android TV sizing is explicit: Watch Next poster is `w500`; app-local backdrops,
 - AndroidX TV Provider disabled-program broadcast: https://developer.android.com/reference/androidx/tvprovider/media/tv/TvContractCompat
 - Android TV app-quality criteria: https://developer.android.com/docs/quality-guidelines/tv-app-quality
 - Android TV navigation: https://developer.android.com/training/tv/get-started/navigation
+- Android TV focus system: https://developer.android.com/design/ui/tv/guides/styles/focus-system
 - Android TV layouts and overscan: https://developer.android.com/design/ui/tv/guides/styles/layouts
 - Android Keystore: https://developer.android.com/privacy-and-security/keystore
 - Android cryptography: https://developer.android.com/privacy-and-security/cryptography

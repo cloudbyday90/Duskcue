@@ -4,6 +4,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -37,10 +38,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.LiveRegionMode
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -75,6 +87,8 @@ private val TvSecondary = Color(0xFF9B9BA4)
 private val TvAccent = Color(0xFFC8965A)
 private val TvError = Color(0xFFC95C5C)
 private val TvSuccess = Color(0xFF6ABF69)
+private val TvPressed = Color(0xFF654B30)
+private val TvDisabled = Color(0xFF12141A)
 
 @Composable
 fun DuskcueTvApp(runtime: TvApplicationRuntime, deepLinkRequest: TvDeepLinkRequest) {
@@ -88,6 +102,15 @@ fun DuskcueTvApp(runtime: TvApplicationRuntime, deepLinkRequest: TvDeepLinkReque
 
     LaunchedEffect(deepLinkRequest.sequence) {
         controller.handleDeepLink(deepLinkRequest.uri)
+    }
+
+    if (state.phase == TvAppPhase.DeviceLink) {
+        BackHandler(onBack = controller::changeServer)
+    }
+    if (state.phase == TvAppPhase.SignedIn && state.route != TvRoute.Player &&
+        TvQualityPolicy.backDestination(state.route, state.detail != null) != null
+    ) {
+        BackHandler(onBack = controller::goHome)
     }
 
     MaterialTheme {
@@ -117,6 +140,7 @@ private fun ServerSetupPage(state: TvAppState, controller: TvAppController) {
             placeholder = stringResource(R.string.tv_server_url_placeholder),
             onValueChange = controller::updateOrigin,
             keyboardType = KeyboardType.Uri,
+            initialFocus = true,
         )
         Spacer(Modifier.height(22.dp))
         TvAction(stringResource(R.string.tv_link_this_tv), enabled = !state.busy, onClick = controller::beginDeviceLink)
@@ -139,7 +163,7 @@ private fun DeviceLinkPage(state: TvAppState, controller: TvAppController) {
         Text(stringResource(R.string.tv_link_waiting), fontSize = 20.sp, color = TvSecondary)
         TvMessage(state.message)
         Spacer(Modifier.height(28.dp))
-        TvAction(stringResource(R.string.tv_cancel), onClick = controller::changeServer)
+        TvAction(stringResource(R.string.tv_cancel), initialFocus = true, onClick = controller::changeServer)
     }
 }
 
@@ -160,17 +184,26 @@ private fun SignedInPage(state: TvAppState, controller: TvAppController) {
 private fun HomePage(state: TvAppState, controller: TvAppController) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(TvBackground),
-        contentPadding = PaddingValues(horizontal = 48.dp, vertical = 30.dp),
+        contentPadding = PaddingValues(
+            horizontal = TvQualityPolicy.HorizontalSafeAreaDp.dp,
+            vertical = TvQualityPolicy.VerticalSafeAreaDp.dp,
+        ),
         verticalArrangement = Arrangement.spacedBy(28.dp),
     ) {
-        item { TvNavigation(state, controller) }
+        item { TvNavigation(controller) }
         when (val home = state.home) {
             TvHomeLoadState.Loading -> item { TvStatusPage(stringResource(R.string.tv_loading_home), compact = true) }
             is TvHomeLoadState.Failure -> item { TvErrorPanel(home.title, controller::goHome) }
             TvHomeLoadState.SessionExpired -> item { TvErrorPanel(stringResource(R.string.tv_sign_in_again), controller::changeServer) }
             is TvHomeLoadState.Ready -> {
                 if (home.stale) {
-                    item { Text(stringResource(R.string.tv_showing_cached_home), fontSize = 18.sp, color = TvSecondary) }
+                    item {
+                        Text(
+                            stringResource(R.string.tv_showing_cached_home),
+                            fontSize = TvQualityPolicy.MinimumReadableTextSp.sp,
+                            color = TvSecondary,
+                        )
+                    }
                 }
                 items(home.surface.sections, key = TvSection::section_type) { section ->
                     TvSurfaceRow(section, controller)
@@ -207,10 +240,13 @@ private fun TvSurfaceRow(section: TvSection, controller: TvAppController) {
 private fun BrowsePage(state: TvAppState, controller: TvAppController) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(TvBackground),
-        contentPadding = PaddingValues(horizontal = 48.dp, vertical = 30.dp),
+        contentPadding = PaddingValues(
+            horizontal = TvQualityPolicy.HorizontalSafeAreaDp.dp,
+            vertical = TvQualityPolicy.VerticalSafeAreaDp.dp,
+        ),
         verticalArrangement = Arrangement.spacedBy(26.dp),
     ) {
-        item { TvNavigation(state, controller) }
+        item { TvNavigation(controller) }
         if (state.busy && state.libraries.isEmpty() && state.collections.isEmpty()) {
             item { TvStatusPage(stringResource(R.string.tv_loading_browse), compact = true) }
         } else {
@@ -264,10 +300,13 @@ private fun TvBrowseChoices(title: String, labels: List<String>, actions: List<(
 private fun SearchPage(state: TvAppState, controller: TvAppController) {
     LazyColumn(
         modifier = Modifier.fillMaxSize().background(TvBackground),
-        contentPadding = PaddingValues(horizontal = 48.dp, vertical = 30.dp),
+        contentPadding = PaddingValues(
+            horizontal = TvQualityPolicy.HorizontalSafeAreaDp.dp,
+            vertical = TvQualityPolicy.VerticalSafeAreaDp.dp,
+        ),
         verticalArrangement = Arrangement.spacedBy(22.dp),
     ) {
-        item { TvNavigation(state, controller) }
+        item { TvNavigation(controller, requestInitialFocus = false) }
         item {
             Text(stringResource(R.string.tv_search_heading), fontSize = 34.sp, fontWeight = FontWeight.SemiBold, color = TvText)
             Spacer(Modifier.height(16.dp))
@@ -275,6 +314,7 @@ private fun SearchPage(state: TvAppState, controller: TvAppController) {
                 value = state.searchQuery,
                 placeholder = stringResource(R.string.tv_search_placeholder),
                 onValueChange = controller::updateSearchQuery,
+                initialFocus = true,
             )
             Spacer(Modifier.height(16.dp))
             TvAction(stringResource(R.string.tv_search_action), enabled = !state.busy, onClick = controller::search)
@@ -294,7 +334,7 @@ private fun SearchPage(state: TvAppState, controller: TvAppController) {
 private fun DetailPage(state: TvAppState, controller: TvAppController) {
     val detail = state.detail
     TvPage {
-        TvNavigation(state, controller)
+        TvNavigation(controller, requestInitialFocus = false)
         Spacer(Modifier.height(36.dp))
         if (detail == null) {
             Text(stringResource(R.string.tv_nothing_here), fontSize = 22.sp, color = TvSecondary)
@@ -309,7 +349,12 @@ private fun DetailPage(state: TvAppState, controller: TvAppController) {
             Text(it, fontSize = 23.sp, color = TvText)
         }
         Spacer(Modifier.height(30.dp))
-        TvAction(stringResource(R.string.tv_play), enabled = !state.busy, onClick = controller::startPlayback)
+        TvAction(
+            stringResource(R.string.tv_play),
+            enabled = !state.busy,
+            initialFocus = true,
+            onClick = controller::startPlayback,
+        )
         Spacer(Modifier.height(14.dp))
         if (state.audioTracks.isNotEmpty()) {
             TvAction(
@@ -379,7 +424,38 @@ private fun PlayerPage(state: TvAppState, controller: TvAppController) {
             playerView?.let(TvPlaybackService::detach)
         }
     }
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black)
+            .onPreviewKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) {
+                    false
+                } else {
+                    when (TvQualityPolicy.playerRemoteShortcut(event.key.keyCode.toInt())) {
+                        TvPlayerRemoteShortcut.SeekBackward -> {
+                            controller.seekBackward()
+                            true
+                        }
+                        TvPlayerRemoteShortcut.SeekForward -> {
+                            controller.seekForward()
+                            true
+                        }
+                        TvPlayerRemoteShortcut.TogglePlayback -> {
+                            controller.togglePlayback()
+                            true
+                        }
+                        TvPlayerRemoteShortcut.CycleCaptions -> {
+                            if (state.subtitleTracks.isEmpty()) false else {
+                                controller.cycleSubtitleTrack()
+                                true
+                            }
+                        }
+                        null -> false
+                    }
+                }
+            },
+    ) {
         AndroidView(
             factory = { context ->
                 PlayerView(context).also { view ->
@@ -393,7 +469,12 @@ private fun PlayerPage(state: TvAppState, controller: TvAppController) {
         state.detail?.title?.let { title ->
             Text(
                 title,
-                modifier = Modifier.align(Alignment.TopStart).padding(36.dp),
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(
+                        start = TvQualityPolicy.HorizontalSafeAreaDp.dp,
+                        top = TvQualityPolicy.VerticalSafeAreaDp.dp,
+                    ),
                 fontSize = 23.sp,
                 color = TvText,
             )
@@ -404,8 +485,13 @@ private fun PlayerPage(state: TvAppState, controller: TvAppController) {
                     R.string.tv_playback_status,
                     "${playback.stream_decision.replace('_', ' ')} · ${state.qualityMode}",
                 ),
-                modifier = Modifier.align(Alignment.TopEnd).padding(36.dp),
-                fontSize = 18.sp,
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(
+                        end = TvQualityPolicy.HorizontalSafeAreaDp.dp,
+                        top = TvQualityPolicy.VerticalSafeAreaDp.dp,
+                    ),
+                fontSize = TvQualityPolicy.MinimumReadableTextSp.sp,
                 color = TvSecondary,
             )
         }
@@ -413,7 +499,10 @@ private fun PlayerPage(state: TvAppState, controller: TvAppController) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(36.dp),
+                    .padding(
+                        end = TvQualityPolicy.HorizontalSafeAreaDp.dp,
+                        bottom = TvQualityPolicy.VerticalSafeAreaDp.dp,
+                    ),
             ) {
                 TvAction(
                     stringResource(
@@ -422,6 +511,45 @@ private fun PlayerPage(state: TvAppState, controller: TvAppController) {
                     ),
                     compact = true,
                     onClick = { controller.skipSegment(segment) },
+                )
+            }
+        }
+        Column(
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(
+                    start = TvQualityPolicy.HorizontalSafeAreaDp.dp,
+                    bottom = TvQualityPolicy.VerticalSafeAreaDp.dp,
+                ),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            TvAction(
+                label = stringResource(if (playbackUi.isPlaying) R.string.tv_pause else R.string.tv_resume),
+                supporting = stringResource(R.string.tv_playback_remote_shortcuts),
+                compact = true,
+                initialFocus = true,
+                onClick = controller::togglePlayback,
+            )
+            if (state.subtitleTracks.isNotEmpty()) {
+                TvAction(
+                    label = stringResource(
+                        R.string.tv_subtitle_track,
+                        state.subtitleTracks.find { it.index == state.selectedSubtitleTrackIndex }?.label
+                            ?: stringResource(R.string.tv_captions_off),
+                    ),
+                    compact = true,
+                    onClick = controller::cycleSubtitleTrack,
+                )
+            }
+            if (state.audioTracks.isNotEmpty()) {
+                TvAction(
+                    label = stringResource(
+                        R.string.tv_audio_track,
+                        state.audioTracks.find { it.index == state.selectedAudioTrackIndex }?.label
+                            ?: stringResource(R.string.tv_track_default),
+                    ),
+                    compact = true,
+                    onClick = controller::cycleAudioTrack,
                 )
             }
         }
@@ -434,7 +562,12 @@ private fun PlayerPage(state: TvAppState, controller: TvAppController) {
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 Text(stringResource(R.string.tv_playback_error, errorCode), fontSize = 23.sp, color = TvError)
-                TvAction(stringResource(R.string.tv_return_to_details), compact = true, onClick = controller::exitPlayback)
+                TvAction(
+                    stringResource(R.string.tv_return_to_details),
+                    compact = true,
+                    initialFocus = true,
+                    onClick = controller::exitPlayback,
+                )
             }
         }
     }
@@ -443,7 +576,7 @@ private fun PlayerPage(state: TvAppState, controller: TvAppController) {
 @Composable
 private fun SettingsPage(state: TvAppState, controller: TvAppController) {
     TvPage {
-        TvNavigation(state, controller)
+        TvNavigation(controller)
         Spacer(Modifier.height(36.dp))
         Text(stringResource(R.string.tv_settings_heading), fontSize = 34.sp, fontWeight = FontWeight.SemiBold, color = TvText)
         Spacer(Modifier.height(22.dp))
@@ -480,7 +613,7 @@ private fun ProfilePickerPage(state: TvAppState, controller: TvAppController, al
     val profiles = state.profiles
     TvPage {
         if (allowBack) {
-            TvNavigation(state, controller)
+            TvNavigation(controller, requestInitialFocus = false)
             Spacer(Modifier.height(36.dp))
         }
         Text(stringResource(R.string.tv_choose_profile), fontSize = 38.sp, fontWeight = FontWeight.SemiBold, color = TvText)
@@ -490,6 +623,7 @@ private fun ProfilePickerPage(state: TvAppState, controller: TvAppController, al
         TvAction(
             if (state.rememberProfile) stringResource(R.string.tv_remember_profile_on) else stringResource(R.string.tv_remember_profile_off),
             enabled = !state.busy,
+            initialFocus = true,
             onClick = { controller.setRememberProfile(!state.rememberProfile) },
         )
         Spacer(Modifier.height(24.dp))
@@ -525,9 +659,14 @@ private fun TvProfileAction(profile: ProfileSummary, active: Boolean, busy: Bool
 }
 
 @Composable
-private fun TvNavigation(state: TvAppState, controller: TvAppController) {
+private fun TvNavigation(controller: TvAppController, requestInitialFocus: Boolean = true) {
     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-        TvAction(stringResource(R.string.tv_home), compact = true, onClick = controller::goHome)
+        TvAction(
+            stringResource(R.string.tv_home),
+            compact = true,
+            initialFocus = requestInitialFocus,
+            onClick = controller::goHome,
+        )
         TvAction(stringResource(R.string.tv_browse), compact = true, onClick = controller::openBrowse)
         TvAction(stringResource(R.string.tv_search), compact = true, onClick = controller::openSearch)
         TvAction(stringResource(R.string.tv_profiles), compact = true, onClick = controller::openProfiles)
@@ -547,16 +686,25 @@ private fun TvResultRow(item: TvMediaItem, onClick: (TvMediaItem) -> Unit) {
 @Composable
 private fun TvMediaCard(title: String, subtitle: String?, progress: Double?, availability: String, onClick: () -> Unit) {
     var focused by remember { mutableStateOf(false) }
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
     val cardShape = RoundedCornerShape(10.dp)
     Column(
         modifier = Modifier
             .width(260.dp)
             .clip(cardShape)
-            .background(if (focused) TvHover else TvSurface)
-            .border(if (focused) 3.dp else 1.dp, if (focused) TvAccent else TvElevated, cardShape)
+            .background(if (pressed) TvPressed else if (focused) TvHover else TvSurface)
+            .border(
+                if (pressed || focused) 3.dp else 1.dp,
+                if (pressed) TvText else if (focused) TvAccent else TvElevated,
+                cardShape,
+            )
             .onFocusChanged { focused = it.isFocused }
-            .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null, onClick = onClick)
-            .semantics { contentDescription = listOfNotNull(title, subtitle, availability.replace('_', ' ')).joinToString(", ") }
+            .clickable(interactionSource = interactionSource, indication = null, onClick = onClick)
+            .semantics {
+                contentDescription = listOfNotNull(title, subtitle, availability.replace('_', ' ')).joinToString(", ")
+                role = Role.Button
+            }
             .padding(12.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -568,9 +716,17 @@ private fun TvMediaCard(title: String, subtitle: String?, progress: Double?, ava
                 .background(Brush.linearGradient(listOf(Color(0xFF303747), Color(0xFF171A22)))),
         )
         Text(title, fontSize = 20.sp, fontWeight = FontWeight.SemiBold, color = TvText, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        subtitle?.let { Text(it, fontSize = 16.sp, color = TvSecondary, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        subtitle?.let {
+            Text(
+                it,
+                fontSize = TvQualityPolicy.MinimumReadableTextSp.sp,
+                color = TvSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
         if (progress != null && progress > 0.0) {
-            Text("${progress.toInt()}%", fontSize = 15.sp, color = TvAccent)
+            Text("${progress.toInt()}%", fontSize = 18.sp, color = TvAccent)
         }
     }
 }
@@ -581,35 +737,84 @@ private fun TvAction(
     supporting: String? = null,
     enabled: Boolean = true,
     compact: Boolean = false,
+    initialFocus: Boolean = false,
     onClick: () -> Unit,
 ) {
     var focused by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    val interactionSource = remember { MutableInteractionSource() }
+    val pressed by interactionSource.collectIsPressedAsState()
     val shape = RoundedCornerShape(8.dp)
+    if (initialFocus) {
+        LaunchedEffect(Unit) {
+            focusRequester.requestFocus()
+        }
+    }
     Column(
         modifier = Modifier
             .then(if (compact) Modifier else Modifier.fillMaxWidth())
             .clip(shape)
-            .background(if (focused && enabled) TvHover else TvElevated)
-            .border(if (focused && enabled) 3.dp else 1.dp, if (focused && enabled) TvAccent else TvSurface, shape)
+            .background(
+                when {
+                    !enabled -> TvDisabled
+                    pressed -> TvPressed
+                    focused -> TvHover
+                    else -> TvElevated
+                },
+            )
+            .border(
+                if (enabled && (pressed || focused)) 3.dp else 1.dp,
+                when {
+                    !enabled -> TvSecondary
+                    pressed -> TvText
+                    focused -> TvAccent
+                    else -> TvSurface
+                },
+                shape,
+            )
             .onFocusChanged { focused = it.isFocused }
+            .focusRequester(focusRequester)
             .clickable(
                 enabled = enabled,
-                interactionSource = remember { MutableInteractionSource() },
+                interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick,
             )
-            .semantics { contentDescription = listOfNotNull(label, supporting).joinToString(", ") }
+            .semantics {
+                contentDescription = listOfNotNull(label, supporting).joinToString(", ")
+                role = Role.Button
+                if (!enabled) disabled()
+            }
             .padding(horizontal = if (compact) 18.dp else 22.dp, vertical = if (compact) 11.dp else 18.dp),
     ) {
-        Text(label, fontSize = if (compact) 18.sp else 22.sp, fontWeight = FontWeight.SemiBold, color = if (enabled) TvText else TvSecondary)
-        supporting?.takeIf { it.isNotBlank() }?.let { Text(it, fontSize = 17.sp, color = TvSecondary) }
+        Text(
+            label,
+            fontSize = if (compact) TvQualityPolicy.MinimumReadableTextSp.sp else 22.sp,
+            fontWeight = FontWeight.SemiBold,
+            color = if (enabled) TvText else TvSecondary,
+        )
+        supporting?.takeIf { it.isNotBlank() }?.let {
+            Text(it, fontSize = TvQualityPolicy.MinimumReadableTextSp.sp, color = TvSecondary)
+        }
     }
 }
 
 @Composable
-private fun TvTextInput(value: String, placeholder: String, onValueChange: (String) -> Unit, keyboardType: KeyboardType = KeyboardType.Text) {
+private fun TvTextInput(
+    value: String,
+    placeholder: String,
+    onValueChange: (String) -> Unit,
+    keyboardType: KeyboardType = KeyboardType.Text,
+    initialFocus: Boolean = false,
+) {
     var focused by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
     val shape = RoundedCornerShape(8.dp)
+    if (initialFocus) {
+        LaunchedEffect(Unit) {
+            focusRequester.requestFocus()
+        }
+    }
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
@@ -622,6 +827,7 @@ private fun TvTextInput(value: String, placeholder: String, onValueChange: (Stri
             .background(TvSurface)
             .border(if (focused) 3.dp else 1.dp, if (focused) TvAccent else TvElevated, shape)
             .onFocusChanged { focused = it.isFocused }
+            .focusRequester(focusRequester)
             .semantics { contentDescription = placeholder }
             .padding(18.dp),
         decorationBox = { innerTextField ->
@@ -640,7 +846,10 @@ private fun TvPage(content: @Composable ColumnScope.() -> Unit) {
             .fillMaxSize()
             .background(TvBackground)
             .verticalScroll(rememberScrollState())
-            .padding(horizontal = 48.dp, vertical = 30.dp),
+            .padding(
+                horizontal = TvQualityPolicy.HorizontalSafeAreaDp.dp,
+                vertical = TvQualityPolicy.VerticalSafeAreaDp.dp,
+            ),
         verticalArrangement = Arrangement.spacedBy(0.dp),
         content = content,
     )
@@ -659,8 +868,13 @@ private fun TvStatusPage(message: String, compact: Boolean = false) {
 @Composable
 private fun TvErrorPanel(message: String, onRetry: () -> Unit) {
     Column(verticalArrangement = Arrangement.spacedBy(20.dp)) {
-        Text(message, fontSize = 24.sp, color = TvError)
-        TvAction(stringResource(R.string.tv_retry), onClick = onRetry)
+        Text(
+            message,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
+            fontSize = 24.sp,
+            color = TvError,
+        )
+        TvAction(stringResource(R.string.tv_retry), initialFocus = true, onClick = onRetry)
     }
 }
 
@@ -668,6 +882,11 @@ private fun TvErrorPanel(message: String, onRetry: () -> Unit) {
 private fun TvMessage(message: String?) {
     message?.let {
         Spacer(Modifier.height(20.dp))
-        Text(it, fontSize = 19.sp, color = TvSecondary)
+        Text(
+            it,
+            modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite },
+            fontSize = TvQualityPolicy.MinimumReadableTextSp.sp,
+            color = TvSecondary,
+        )
     }
 }

@@ -350,7 +350,12 @@ class TvAppController(
     fun exitPlayback() {
         runtime.stopPlayback()
         TvPlaybackService.clearPlaybackUi()
-        mutableState.update { it.copy(route = TvRoute.Detail, playback = null) }
+        mutableState.update { current ->
+            current.copy(
+                route = TvQualityPolicy.backDestination(TvRoute.Player, current.detail != null) ?: TvRoute.Home,
+                playback = null,
+            )
+        }
         refreshWatchNextAfterPlayback()
     }
 
@@ -382,22 +387,32 @@ class TvAppController(
     }
 
     fun cycleAudioTrack() {
-        mutableState.update { current ->
-            val next = nextTrackIndex(current.audioTracks, current.selectedAudioTrackIndex)
-            current.copy(selectedAudioTrackIndex = next)
+        val current = state.value
+        val next = nextTrackIndex(current.audioTracks, current.selectedAudioTrackIndex)
+        mutableState.update { it.copy(selectedAudioTrackIndex = next) }
+        if (current.route == TvRoute.Player) {
+            TvPlaybackService.selectAudioLanguage(current.audioTracks.find { it.index == next }?.language)
         }
     }
 
     fun cycleSubtitleTrack() {
-        mutableState.update { current ->
-            val next = nextTrackIndex(current.subtitleTracks, current.selectedSubtitleTrackIndex)
-            current.copy(selectedSubtitleTrackIndex = next)
+        val current = state.value
+        val next = nextTrackIndex(current.subtitleTracks, current.selectedSubtitleTrackIndex)
+        mutableState.update { it.copy(selectedSubtitleTrackIndex = next) }
+        if (current.route == TvRoute.Player) {
+            TvPlaybackService.selectSubtitleLanguage(current.subtitleTracks.find { it.index == next }?.language)
         }
     }
 
     fun skipSegment(segment: TvSegment) {
         TvPlaybackService.seekTo(segment.skip_to_ms)
     }
+
+    fun togglePlayback() = TvPlaybackService.togglePlayback()
+
+    fun seekBackward() = TvPlaybackService.seekBy(-10_000)
+
+    fun seekForward() = TvPlaybackService.seekBy(30_000)
 
     fun openSettings() {
         mutableState.update { it.copy(route = TvRoute.Settings, busy = true, message = null) }
