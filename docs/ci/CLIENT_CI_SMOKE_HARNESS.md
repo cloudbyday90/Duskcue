@@ -33,6 +33,8 @@ The run mode creates deterministic representative media under `media/`, starts `
 | `fixture_drift` | PR and `main` | Client, playback, auth, TV, accessibility, design, diagnostics, device-lab, release, and CI fixture drift |
 | `binding_generation_readiness` | PR and `main` | TypeScript/Tauri, Dart/Flutter, Kotlin Android/Fire TV, and Swift iOS/tvOS target coverage |
 | `tv_console_fixture_smoke` | PR and `main` | TV/deep-link, TV-surface, and device-lab baseline |
+| `android_tv_conformance` | PR and `main` when Android TV inputs change | Android TV contract/conformance verification, Kotlin unit tests, lint, debug APK, and debug evidence artifact |
+| `android_tv_emulator_smoke` | `workflow_dispatch` with `run_android_tv_emulator_smoke=true` | API 36 Android TV AVD installation, Leanback launcher, and custom deep-link handoff smoke |
 | `docker_smoke_plan` | PR and `main` | Cheap validation that the Docker smoke harness still has the expected steps |
 | `docker_smoke_run_manual` | `workflow_dispatch` with `run_docker_smoke=true` | Real Docker `:48027` deployment smoke |
 | `desktop_tauri_smoke` | `workflow_dispatch` with `run_platform_smoke=true` | Tauri/web build smoke when maintainers request heavier evidence |
@@ -53,6 +55,12 @@ node scripts/verify-client-bindings.mjs
 ```
 
 Platform phases must then add their platform-specific build, emulator, simulator, or hardware checks. Long-running playback, HDR, passthrough audio, remote-control, store review, signing, wake/resume, and physical-device checks remain manual or release-gate checks when GitHub-hosted CI cannot run them truthfully.
+
+### Android TV Consumption
+
+Phase 17 adds an automatic `android_tv_conformance` job to this workflow. It is deliberately a debug-build and contract lane: its uploaded APK, lint report, and unit-test output are troubleshooting artifacts rather than publishable release evidence. The job consumes the normal shared checks and then runs the native Android TV Gradle test/lint/assembly gate.
+
+Maintainers can request `android_tv_emulator_smoke` from `workflow_dispatch`. It creates an Android TV API 36 `tv_1080p` AVD, installs the debug APK, verifies the Leanback feature/launcher, and starts a valid-shape custom playback URI. The portable `node scripts/android-tv-emulator-smoke.mjs --apk clients/tv/android/app/build/outputs/apk/debug/app-debug.apk` command may also be run against one already-booted local Android TV AVD. This is installation/intent evidence, not playback, Watch Next, hardware remote, HDR/audio, accessibility, document-picker, or release readiness evidence.
 
 ## Research Basis
 

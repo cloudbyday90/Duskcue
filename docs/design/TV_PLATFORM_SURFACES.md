@@ -197,6 +197,8 @@ Task 9 adds conservative overscan-safe layout, one clear focus target at route e
 
 Task 10 adds a bounded in-memory diagnostic ledger and manual user-selected JSON export. Watch Next records only aggregate reconcile outcomes and opaque surface event IDs; it never writes a launcher row's content ID, title, raw URL, artwork path, or profile scope into diagnostic output. The exported support evidence retains request/trace/playback correlation IDs and route templates, but omits credentials, signed artwork/playback URLs, private paths, media identifiers, and account/profile details. See [CLIENT_DIAGNOSTICS.md](CLIENT_DIAGNOSTICS.md) and [ANDROID_TV.md](ANDROID_TV.md).
 
+Task 11 adds an automatic native Android TV conformance lane and an opt-in Android TV AVD smoke. CI consumes the shared contract, playback, auth, TV/deep-link, accessibility, diagnostics, smoke-plan, and client-CI verifiers before running Android unit tests, lint, and debug APK assembly. The AVD smoke verifies only package installation, `android.software.leanback`, launcher entry, and valid-shape Duskcue deep-link delivery. It is intentionally not evidence of launcher-row visibility, authenticated playback, TV accessibility output, remote hardware, HDR/audio capabilities, standby/resume, or store readiness; those remain device and release gates in [ANDROID_TV.md](ANDROID_TV.md).
+
 Privacy rules:
 
 - Never publish another Duskcue user's resume position, watched state, collection membership, or private recommendation into the active platform profile.

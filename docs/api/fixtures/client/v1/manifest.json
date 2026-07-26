@@ -1,7 +1,7 @@
 {
   "fixture_pack": "duskcue-client-contract-fixtures",
   "version": 1,
-  "updated": "2026-07-01",
+  "updated": "2026-07-25",
   "contract_manifest": "docs/api/client-contracts.v1.json",
   "schema_dialect": "JSON Schema 2020-12 target; curated structural checks until server schemas exist",
   "pinning": {
@@ -25,6 +25,8 @@
     "playback",
     "subtitles",
     "segments_storyboards",
+    "profiles",
+    "ambient_channels",
     "collections",
     "quality",
     "tv",
@@ -41,6 +43,8 @@
     "libraries-list-empty",
     "media-item-detail-success",
     "search-facets-success",
+    "profiles-profile-switch-success",
+    "ambient-channel-next-success",
     "collections-row-success",
     "playback-start-resume-success",
     "playback-heartbeat-stop-success",
@@ -143,6 +147,32 @@
       "covers": [
         "search results",
         "facets"
+      ]
+    },
+    {
+      "id": "profiles-profile-switch-success",
+      "file": "profiles-profile-switch-success.json",
+      "domains": [
+        "profiles"
+      ],
+      "covers": [
+        "profile gate",
+        "remembered profile state",
+        "profile switching",
+        "parent unlock expiry"
+      ]
+    },
+    {
+      "id": "ambient-channel-next-success",
+      "file": "ambient-channel-next-success.json",
+      "domains": [
+        "ambient_channels"
+      ],
+      "covers": [
+        "profile-scoped ambient channel list",
+        "next-item handoff",
+        "ambient playback mode",
+        "channel revision timestamp"
       ]
     },
     {

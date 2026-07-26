@@ -1,0 +1,99 @@
+{
+  "fixture": "profiles-profile-switch-success",
+  "sequence": [
+    {
+      "id": "list_profiles",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/profiles"
+      },
+      "status": 200,
+      "body": {
+        "active_profile_id": "21212121-2121-4121-8121-212121212121",
+        "profile_selection_required": true,
+        "remembered_profile_id": null,
+        "device_can_remember_profile": true,
+        "parent_unlock_required": true,
+        "parent_unlock_expires_at": null,
+        "items": [
+          {
+            "id": "21212121-2121-4121-8121-212121212121",
+            "name": "Kids",
+            "avatar": null,
+            "profile_type": "kids",
+            "is_default": false,
+            "max_content_rating": "PG",
+            "library_ids": [
+              "22222222-2222-4222-8222-222222222222"
+            ],
+            "allow_search": true,
+            "allow_downloads": false,
+            "allow_external_links": false,
+            "allow_ambient_channels": true,
+            "parent_pin_configured": true,
+            "created_at": "2026-07-01T12:00:00Z",
+            "updated_at": "2026-07-01T12:00:00Z"
+          },
+          {
+            "id": "23232323-2323-4232-8232-232323232323",
+            "name": "Parent",
+            "avatar": null,
+            "profile_type": "standard",
+            "is_default": true,
+            "max_content_rating": "R",
+            "library_ids": [],
+            "allow_search": true,
+            "allow_downloads": true,
+            "allow_external_links": true,
+            "allow_ambient_channels": true,
+            "parent_pin_configured": false,
+            "created_at": "2026-07-01T12:00:00Z",
+            "updated_at": "2026-07-01T12:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "id": "switch_profile",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/profiles/23232323-2323-4232-8232-232323232323/switch"
+      },
+      "status": 200,
+      "body": {
+        "active_profile": {
+          "id": "23232323-2323-4232-8232-232323232323",
+          "name": "Parent",
+          "avatar": null,
+          "profile_type": "standard",
+          "is_default": true,
+          "max_content_rating": "R",
+          "library_ids": [],
+          "allow_search": true,
+          "allow_downloads": true,
+          "allow_external_links": true,
+          "allow_ambient_channels": true,
+          "parent_pin_configured": false,
+          "created_at": "2026-07-01T12:00:00Z",
+          "updated_at": "2026-07-01T12:00:00Z"
+        },
+        "profile_selection_required": false,
+        "remembered_profile_id": "23232323-2323-4232-8232-232323232323",
+        "device_can_remember_profile": true,
+        "parent_unlock_required": false,
+        "parent_unlock_expires_at": "2026-07-01T12:15:00Z"
+      }
+    },
+    {
+      "id": "parent_unlock",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/profiles/parent-unlock"
+      },
+      "status": 200,
+      "body": {
+        "unlocked_until": "2026-07-01T12:15:00Z"
+      }
+    }
+  ]
+}

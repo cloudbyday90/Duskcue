@@ -26,3 +26,11 @@ The project validates the shared TV fixtures through typed Kotlin models, privat
 The current UI has conservative TV safe-area margins, minimum 20sp supporting text, visible focus/pressed/disabled states, logical Back handling, remote/gamepad/media shortcuts, live Media3 audio/caption selection, and TalkBack-oriented semantics. Run `node scripts/verify-accessibility-input.mjs` from the repository root together with the Gradle checks. Physical TalkBack, overscan, reduced-motion, remote, and launcher evidence remain later Phase 17 device/release work.
 
 Settings can export a manually shared, privacy-safe support JSON bundle through Android's document picker. It is generated from an in-memory 24-hour/1,000-record ledger with host-only server information, bounded request/trace/playback/TV-surface correlation IDs, playback and Watch Next summaries, and no tokens, signed URLs, private paths, media IDs, titles, or profile/account data. Run `node scripts/verify-client-diagnostics.mjs` with the Gradle checks. Device validation of the document-picker handoff remains a later Phase 17 gate.
+
+The shared CI workflow automatically runs the Android TV contract/conformance suite, `:app:testDebugUnitTest`, `:app:lintDebug`, and `:app:assembleDebug`, then retains the debug APK and reports for diagnosis. A maintainer can request the optional Android TV AVD smoke or run it locally after booting exactly one Android TV AVD:
+
+```powershell
+node scripts/android-tv-emulator-smoke.mjs --apk clients/tv/android/app/build/outputs/apk/debug/app-debug.apk
+```
+
+It verifies the TV runtime feature, APK install, Leanback launcher, and valid custom deep-link handoff. It does not replace authenticated playback, Watch Next, accessibility, remote, HDR/audio, standby/resume, document-picker, Google Play, or physical-device release evidence.

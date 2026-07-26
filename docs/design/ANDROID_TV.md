@@ -182,6 +182,14 @@ The player intercepts D-pad left/right, gamepad A, media transport buttons, Menu
 
 Settings now offers a user-initiated **Export support bundle** action. Android's document creator receives one redacted JSON file only after the user selects a destination; Duskcue tells the user to share it manually with their server administrator. `TvDiagnosticsTest` covers bundle redaction, retention, and the Android TV export checklist, while `DuskcueApiClientTest` proves request/trace correlation does not export a raw media identifier or bearer token. `node scripts/verify-client-diagnostics.mjs` verifies the shared fixture schema.
 
+#### Task 11 Implementation
+
+The shared client smoke workflow now has an automatic `android_tv_conformance` lane for Android TV source, contract, fixture, workflow, and documentation changes. It installs Android SDK Platform/Build-Tools 36 and Temurin 17, runs the TV/client/playback/auth/deep-link/accessibility/diagnostics verifiers plus the shared smoke-harness plan and CI-fixture verifier, then runs `:app:testDebugUnitTest`, `:app:lintDebug`, and `:app:assembleDebug`. The job uploads the unsigned debug APK, lint HTML report, and unit-test results as short-retention debugging evidence only; it performs no signing, publishing, SBOM, provenance, or release assertion.
+
+`android_tv_emulator_smoke` is an opt-in `workflow_dispatch` job. It boots an API 36 `android-tv`/`tv_1080p` AVD, installs the debug APK, confirms the target exposes `android.software.leanback`, starts the `LEANBACK_LAUNCHER` activity, and exercises an intentionally non-secret valid-shape `duskcue://play/...` handoff. The same portable [android-tv-emulator-smoke.mjs](../../scripts/android-tv-emulator-smoke.mjs) script can run against a locally booted Android TV AVD or a USB/Wi-Fi-debugged TV. It checks installation and intent handling only; it does not claim authenticated browse/playback, Watch Next launcher visibility, TalkBack, captions, HDR, audio, remote hardware, standby/resume, document-picker sharing, or Google Play behavior.
+
+The static [verify-android-tv-ci.mjs](../../scripts/verify-android-tv-ci.mjs) gate keeps the workflow, fixture matrix, manual AVD job, required conformance commands, and debug evidence paths connected. It is included in the shared client-CI verifier list so a Docker smoke-plan check cannot silently omit the Android TV lane.
+
 ## Delivery Order
 
 1. Create the standalone Gradle/Kotlin/Compose-for-TV app and prove a TV emulator build/launch with the correct manifest and placeholder assets.
@@ -189,7 +197,7 @@ Settings now offers a user-initiated **Export support bundle** action. Android's
 3. Build the home/browse/details/search/settings surfaces from the scoped feed before native playback.
 4. Add the Media3 playback/session lifecycle and strict deep-link revalidation.
 5. Add the Watch Next mapping store/reconciler and artwork handling.
-6. Consume all Phase 16d verifiers, then add Android lint/unit/emulator checks and physical NVIDIA SHIELD/Sony BRAVIA evidence.
+6. Consume all Phase 16d verifiers and run Android lint/unit/debug-build checks; use the opt-in Android TV AVD smoke for installation, Leanback launcher, and deep-link handoff evidence.
 7. Complete Play artifacts, signing slots, Data Safety, content rating, TV banner/screenshots, support runbook, and staged-release evidence before a public claim.
 
 ## Deferred Release Gates
@@ -197,13 +205,16 @@ Settings now offers a user-initiated **Export support bundle** action. Android's
 - Google Play account, upload/app-signing keys, Data Safety declarations, content rating, store listing, and reviewer credentials remain external secrets/release work.
 - Google TV launcher visibility, certification, and region/device availability need empirical hardware and store evidence.
 - NVIDIA SHIELD and Sony BRAVIA HDR, Dolby Vision, audio passthrough/downmix, subtitles, standby/resume, and remote/gamepad behavior require real devices.
-- TalkBack behavior, actual overscan screenshots, reduced-motion settings, physical remote/gamepad traversal, and platform caption-preference behavior require the Task 11/12 emulator/device evidence; this task does not claim those observations without a target TV.
+- TalkBack behavior, actual overscan screenshots, reduced-motion settings, physical remote/gamepad traversal, and platform caption-preference behavior require dedicated emulator/device evidence; the Task 11 AVD smoke intentionally does not claim those observations.
 - The system document-picker interaction, selected-destination behavior, and manual support-bundle sharing require emulator/device evidence. Support exports remain local and manual; no diagnostics upload endpoint is implemented or implied.
 - A future Fire TV client may reuse non-UI Kotlin API, profile, playback, and diagnostics abstractions only after its Android/Fire OS divergence is evaluated.
 
 ## Official Sources
 
 - Android TV app creation: https://developer.android.com/training/tv/get-started/create
+- Android Virtual Device command-line management: https://developer.android.com/tools/avdmanager
+- Android Emulator command-line usage: https://developer.android.com/studio/run/emulator-commandline
+- Android Debug Bridge: https://developer.android.com/tools/adb
 - Compose for TV: https://developer.android.com/training/tv/playback/compose
 - Media3 background playback service: https://developer.android.com/media/media3/session/background-playback
 - Media3 playback control/session: https://developer.android.com/media/media3/session/control-playback

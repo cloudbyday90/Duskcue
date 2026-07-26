@@ -1,0 +1,42 @@
+{
+  "fixture": "ambient-channel-next-success",
+  "sequence": [
+    {
+      "id": "list_channels",
+      "request": {
+        "method": "GET",
+        "path": "/api/v1/ambient-channels"
+      },
+      "status": 200,
+      "body": {
+        "items": [
+          {
+            "id": "24242424-2424-4242-8242-242424242424",
+            "name": "Science and nature",
+            "description": "Easy viewing from the family library.",
+            "audience": "standard",
+            "is_enabled": true,
+            "item_count": 2,
+            "created_at": "2026-07-01T12:00:00Z",
+            "updated_at": "2026-07-01T12:00:00Z"
+          }
+        ]
+      }
+    },
+    {
+      "id": "next_channel_item",
+      "request": {
+        "method": "POST",
+        "path": "/api/v1/ambient-channels/24242424-2424-4242-8242-242424242424/next"
+      },
+      "status": 200,
+      "body": {
+        "channel_id": "24242424-2424-4242-8242-242424242424",
+        "channel_name": "Science and nature",
+        "media_item_id": "25252525-2525-4252-8252-252525252525",
+        "playback_mode": "ambient",
+        "channel_updated_at": "2026-07-01T12:00:00Z"
+      }
+    }
+  ]
+}

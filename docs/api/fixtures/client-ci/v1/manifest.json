@@ -59,6 +59,8 @@
     "desktop_tauri_smoke",
     "mobile_flutter_smoke",
     "tv_console_fixture_smoke",
+    "android_tv_conformance",
+    "android_tv_emulator_smoke",
     "docker_smoke_plan",
     "docker_smoke_run_manual"
   ],
@@ -75,7 +77,8 @@
     "scripts/verify-client-diagnostics.mjs",
     "scripts/verify-device-lab.mjs",
     "scripts/verify-release-readiness.mjs",
-    "scripts/verify-client-ci-smoke.mjs"
+    "scripts/verify-client-ci-smoke.mjs",
+    "scripts/verify-android-tv-ci.mjs"
   ],
   "required_downstream_phases": [
     "phase17_android_tv",

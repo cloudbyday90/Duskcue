@@ -195,6 +195,8 @@ Phase 16d Task 3 adds a versioned client fixture pack under `docs/api/fixtures/c
 - user preferences and reviewed locale metadata;
 - library success and empty states;
 - media detail, artwork URLs, search facets, and collection rows;
+- profile selection, remembered-device state, profile switching, and parent-unlock expiry without a PIN value;
+- profile-scoped ambient channel list and next-item handoff with an opaque media ID and revision timestamp;
 - playback start/resume plus heartbeat/seek/stop sequence examples;
 - subtitles, audio tracks, segments, storyboard metadata, and artwork variants;
 - device quality, bandwidth, and QoE payloads;
