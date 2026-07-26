@@ -5,6 +5,7 @@ import java.net.URL
 import java.net.URLEncoder
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
+import com.duskcue.tv.diagnostics.TvDiagnostics
 import kotlinx.serialization.json.JsonObject
 
 @Serializable
@@ -400,6 +401,7 @@ class DuskcueApiClient(
     private val transport: HttpTransport,
     private val tokenProvider: BearerTokenProvider,
     private val etagStore: EtagStore,
+    private val diagnostics: TvDiagnostics? = null,
     private val json: Json = Json { ignoreUnknownKeys = true },
 ) : TvSessionApi {
     fun tvSurface(
@@ -409,17 +411,17 @@ class DuskcueApiClient(
     ): ApiResult<TvSurface> {
         require(limit in 1..100)
         val cacheKey = "$cacheScope:tv-surface:${platform.apiValue}:$limit"
-        val response = execute(
-            request(
-                path = "/api/v1/users/me/tv-surface?platform=${platform.apiValue}&limit=$limit",
-                etag = etagStore.read(cacheKey),
-            ),
-        ) ?: return ApiResult.NetworkFailure
+        val request = request(
+            path = "/api/v1/users/me/tv-surface?platform=${platform.apiValue}&limit=$limit",
+            etag = etagStore.read(cacheKey),
+        )
+        val response = execute(request) ?: return ApiResult.NetworkFailure
         if (response.status == HttpURLConnection.HTTP_NOT_MODIFIED) {
+            diagnostics?.recordRequest(request.path, response.status, response.headers.header("x-request-id"))
             return ApiResult.NotModified
         }
         if (response.status !in 200..299) {
-            return failure(response)
+            return failure(request, response)
         }
         val etag = response.headers.header("etag")
         if (etag != null) {
@@ -433,10 +435,11 @@ class DuskcueApiClient(
         platform: TvPlatform = TvPlatform.AndroidTv,
     ): ApiResult<TvResolveResponse> {
         val encodedId = java.net.URLEncoder.encode(platformContentId, "UTF-8")
-        val response = execute(request(path = "/api/v1/tv/resolve/$encodedId?platform=${platform.apiValue}"))
+        val request = request(path = "/api/v1/tv/resolve/$encodedId?platform=${platform.apiValue}")
+        val response = execute(request)
             ?: return ApiResult.NetworkFailure
         if (response.status !in 200..299) {
-            return failure(response)
+            return failure(request, response)
         }
         return ApiResult.Success(json.decodeFromString<TvResolveResponse>(response.body), null)
     }
@@ -568,9 +571,10 @@ class DuskcueApiClient(
 
     override fun logout(allSessions: Boolean): ApiResult<Unit> {
         val path = if (allSessions) "/api/v1/auth/logout-all" else "/api/v1/auth/logout"
-        val response = execute(request(method = "POST", path = path)) ?: return ApiResult.NetworkFailure
+        val request = request(method = "POST", path = path)
+        val response = execute(request) ?: return ApiResult.NetworkFailure
         if (response.status !in 200..299) {
-            return failure(response)
+            return failure(request, response)
         }
         return ApiResult.Success(Unit, null)
     }
@@ -578,7 +582,7 @@ class DuskcueApiClient(
     private inline fun <reified T> executeJson(request: ApiRequest): ApiResult<T> {
         val response = execute(request) ?: return ApiResult.NetworkFailure
         if (response.status !in 200..299) {
-            return failure(response)
+            return failure(request, response)
         }
         return ApiResult.Success(json.decodeFromString<T>(response.body), response.headers.header("etag"))
     }
@@ -586,7 +590,7 @@ class DuskcueApiClient(
     private fun executeEmpty(request: ApiRequest): ApiResult<Unit> {
         val response = execute(request) ?: return ApiResult.NetworkFailure
         if (response.status !in 200..299) {
-            return failure(response)
+            return failure(request, response)
         }
         return ApiResult.Success(Unit, null)
     }
@@ -613,12 +617,19 @@ class DuskcueApiClient(
 
     private fun pathSegment(value: String): String = URLEncoder.encode(value, "UTF-8")
 
-    private fun failure(response: ApiResponse): ApiResult.Failure {
+    private fun failure(request: ApiRequest, response: ApiResponse): ApiResult.Failure {
         val problem = runCatching {
             json.decodeFromString<ProblemDetails>(response.body)
         }.getOrElse {
             ProblemDetails(status = response.status, title = "HTTP_${response.status}")
         }
+        diagnostics?.recordRequestFailure(
+            url = request.path,
+            statusCode = response.status,
+            requestId = response.headers.header("x-request-id"),
+            traceId = problem.trace_id,
+            errorCode = DiagnosticsRedactor.errorCode(problem),
+        )
         return ApiResult.Failure(
             problem = problem,
             status = response.status,
@@ -627,8 +638,13 @@ class DuskcueApiClient(
     }
 
     private fun execute(request: ApiRequest): ApiResponse? = try {
-        transport.execute(request)
+        transport.execute(request).also { response ->
+            if (response.status in 200..299) {
+                diagnostics?.recordRequest(request.path, response.status, response.headers.header("x-request-id"))
+            }
+        }
     } catch (_: java.io.IOException) {
+        diagnostics?.recordNetworkFailure(request.path)
         null
     }
 }

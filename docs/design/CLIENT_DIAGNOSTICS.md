@@ -144,6 +144,12 @@ When a support bundle is shared with an admin, these IDs let the admin correlate
 | tvOS | Use user-initiated export or on-screen code-based handoff; respect Apple privacy disclosure requirements. |
 | Windows/Xbox | Include request IDs, media stack summary, capability state, and controller/focus failures; align with Microsoft diagnostic-data transparency expectations. |
 
+## Android TV / Google TV Binding
+
+Phase 17 Task 10 implements an in-memory-only Android TV ledger capped at 1,000 records and 24 hours. It records the shared required log fields, host-only server origin, bounded route templates, HTTP `x-request-id`, RFC 9457 `trace_id`, sanitized error codes, playback session IDs, Watch Next aggregate outcomes, and opaque TV-surface event IDs. Account, server, and profile cleanup clears the ledger before another household identity can use the TV.
+
+The Settings export action uses Android's user-selected document destination and writes one redacted JSON bundle for manual sharing. It includes the required bundle sections with explicit `unknown` values where an Android TV capability or network fact has not been observed. It excludes headers, bodies, bearer tokens, signed URLs, raw origins, profile/account data, titles, media IDs, paths, and filenames. No client-to-server diagnostic upload is implemented. The document-picker interaction remains an emulator/device release check in [ANDROID_TV.md](ANDROID_TV.md).
+
 ## Implementation Notes
 
 Phase 16d Task 9 adds:

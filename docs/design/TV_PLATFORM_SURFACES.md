@@ -195,6 +195,8 @@ Task 8 resolves only a canonical API-relative poster URL for the canonical media
 
 Task 9 adds conservative overscan-safe layout, one clear focus target at route entry, visible focus/pressed/disabled states, logical Back behavior, and player D-pad/gamepad/media/Menu/Captions shortcuts. Current caption and audio controls are reachable during playback and update active Media3 selection. The implementation consumes the shared accessibility fixture pack; physical TalkBack, overscan, reduced-motion, remote, and Watch Next launch-focus evidence remains a Task 11/12/13/14 release gate in [ANDROID_TV.md](ANDROID_TV.md).
 
+Task 10 adds a bounded in-memory diagnostic ledger and manual user-selected JSON export. Watch Next records only aggregate reconcile outcomes and opaque surface event IDs; it never writes a launcher row's content ID, title, raw URL, artwork path, or profile scope into diagnostic output. The exported support evidence retains request/trace/playback correlation IDs and route templates, but omits credentials, signed artwork/playback URLs, private paths, media identifiers, and account/profile details. See [CLIENT_DIAGNOSTICS.md](CLIENT_DIAGNOSTICS.md) and [ANDROID_TV.md](ANDROID_TV.md).
+
 Privacy rules:
 
 - Never publish another Duskcue user's resume position, watched state, collection membership, or private recommendation into the active platform profile.

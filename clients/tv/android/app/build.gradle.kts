@@ -21,6 +21,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     compileOptions {
@@ -38,6 +39,7 @@ android {
             resources.srcDir("../../../../docs/api/fixtures/playback/v1")
             resources.srcDir("../../../../docs/api/fixtures/auth/v1")
             resources.srcDir("../../../../docs/api/fixtures/accessibility/v1")
+            resources.srcDir("../../../../docs/api/fixtures/diagnostics/v1")
         }
     }
 }

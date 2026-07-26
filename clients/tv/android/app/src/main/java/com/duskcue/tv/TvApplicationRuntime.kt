@@ -8,6 +8,7 @@ import com.duskcue.tv.api.RetryingTransport
 import com.duskcue.tv.api.ServerOrigin
 import com.duskcue.tv.api.TvSurface
 import com.duskcue.tv.api.UrlConnectionTransport
+import com.duskcue.tv.diagnostics.TvDiagnostics
 import com.duskcue.tv.home.TvHomeLoadState
 import com.duskcue.tv.home.TvLivingRoomStore
 import com.duskcue.tv.home.TvProfileScope
@@ -38,6 +39,7 @@ class TvApplicationRuntime(context: Context) {
     private val tokenProvider = MutableBearerTokenProvider()
     private val etags = MemoryEtagStore()
     private val sessionStore = SecureSessionStore(context)
+    val diagnostics = TvDiagnostics(BuildConfig.VERSION_NAME)
     private val runtimeScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val watchNext = WatchNextPublisher(
         provider = AndroidWatchNextProvider(applicationContext.contentResolver),
@@ -47,12 +49,14 @@ class TvApplicationRuntime(context: Context) {
     val livingRoom = TvLivingRoomStore(etags = etags)
     private val localStateCleaner = object : TvLocalStateCleaner {
         override suspend fun clearProfileScope() {
+            diagnostics.clear()
             TvPlaybackService.stop(applicationContext)
             withContext(Dispatchers.IO) { watchNext.clear() }
             livingRoom.clearProfileScope()
         }
 
         override suspend fun clearIdentityScope() {
+            diagnostics.clear()
             TvPlaybackService.stop(applicationContext)
             withContext(Dispatchers.IO) { watchNext.clear() }
             livingRoom.clearIdentityScope()
@@ -70,11 +74,16 @@ class TvApplicationRuntime(context: Context) {
         apiFor = { origin, _ -> client(origin) },
     )
 
+    init {
+        TvPlaybackService.configureDiagnostics(diagnostics)
+    }
+
     fun client(origin: ServerOrigin): DuskcueApiClient = DuskcueApiClient(
         origin = origin,
         transport = RetryingTransport(UrlConnectionTransport()),
         tokenProvider = tokenProvider,
         etagStore = etags,
+        diagnostics = diagnostics,
     )
 
     suspend fun activeSession(): ActiveTvSession? {
@@ -95,9 +104,11 @@ class TvApplicationRuntime(context: Context) {
     suspend fun syncWatchNext(scope: TvProfileScope, surface: TvSurface) {
         withContext(Dispatchers.IO) {
             try {
-                watchNext.sync(scope, surface)
+                watchNext.sync(scope, surface).also { outcome ->
+                    diagnostics.recordWatchNextSync(outcome.inserted, outcome.updated, outcome.deleted, outcome.failed)
+                }
             } catch (_: Exception) {
-                Unit
+                diagnostics.recordWatchNextSync(0, 0, 0, 1)
             }
         }
     }
@@ -109,9 +120,11 @@ class TvApplicationRuntime(context: Context) {
             val home = livingRoom.load(client(origin), scope)
             if (home is TvHomeLoadState.Ready && !home.stale) {
                 try {
-                    watchNext.sync(scope, home.surface)
+                    watchNext.sync(scope, home.surface).also { outcome ->
+                        diagnostics.recordWatchNextSync(outcome.inserted, outcome.updated, outcome.deleted, outcome.failed)
+                    }
                 } catch (_: Exception) {
-                    Unit
+                    diagnostics.recordWatchNextSync(0, 0, 0, 1)
                 }
             }
         }
@@ -121,6 +134,7 @@ class TvApplicationRuntime(context: Context) {
         runtimeScope.launch {
             try {
                 watchNext.handleProgramDisabled(programId)
+                diagnostics.recordWatchNextDisabled()
             } catch (_: Exception) {
                 Unit
             } finally {
@@ -136,6 +150,7 @@ class TvApplicationRuntime(context: Context) {
         title: String,
         startPositionMs: Long,
         qualityMode: String,
+        streamDecision: String,
         audioLanguage: String?,
         subtitleLanguage: String?,
     ): Boolean {
@@ -152,6 +167,7 @@ class TvApplicationRuntime(context: Context) {
                 title = title,
                 startPositionMs = startPositionMs,
                 qualityMode = qualityMode,
+                streamDecision = streamDecision,
                 audioLanguage = audioLanguage,
                 subtitleLanguage = subtitleLanguage,
             ),
@@ -166,4 +182,6 @@ class TvApplicationRuntime(context: Context) {
     fun stopPlayback() {
         TvPlaybackService.stop(applicationContext)
     }
+
+    fun exportDiagnosticsBundle(): String = diagnostics.exportBundleJson()
 }

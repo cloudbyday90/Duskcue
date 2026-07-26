@@ -31,6 +31,7 @@ import com.duskcue.tv.api.TvPlaybackSeekRequest
 import com.duskcue.tv.api.TvPlaybackStopRequest
 import com.duskcue.tv.api.TvQoeReportRequest
 import com.duskcue.tv.api.UrlConnectionTransport
+import com.duskcue.tv.diagnostics.TvDiagnostics
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.lang.ref.WeakReference
@@ -48,6 +49,7 @@ data class TvInteractivePlayback(
     val title: String,
     val startPositionMs: Long,
     val qualityMode: String,
+    val streamDecision: String,
     val audioLanguage: String?,
     val subtitleLanguage: String?,
 )
@@ -179,6 +181,7 @@ class TvPlaybackService : MediaSessionService() {
             transport = RetryingTransport(UrlConnectionTransport()),
             tokenProvider = tokenProvider,
             etagStore = MemoryEtagStore(),
+            diagnostics = diagnostics,
         )
         val activeRuntime = Runtime(launch, api, System.currentTimeMillis())
         runtime = activeRuntime
@@ -211,6 +214,7 @@ class TvPlaybackService : MediaSessionService() {
         mainHandler.removeCallbacks(playerStateRunnable)
         mainHandler.post(playerStateRunnable)
         mainHandler.removeCallbacks(pausedWatchNextRunnable)
+        diagnostics?.recordPlaybackStarted(launch.sessionId, launch.streamDecision)
     }
 
     private fun reportHeartbeat() {
@@ -321,6 +325,7 @@ class TvPlaybackService : MediaSessionService() {
             pauseRefreshVersion = playbackUiMutable.value.pauseRefreshVersion,
         )
         reportQoe(activeRuntime, failureCode, failureMessage)
+        failureCode?.let { diagnostics?.recordPlaybackFailure(activeRuntime.playback.sessionId, activeRuntime.playback.streamDecision, it) }
         if (notifyServer) {
             networkExecutor.execute {
                 activeRuntime.api.stopTvPlayback(
@@ -458,6 +463,7 @@ class TvPlaybackService : MediaSessionService() {
             title = title,
             startPositionMs = getLongExtra(EXTRA_START_POSITION_MS, 0),
             qualityMode = qualityMode,
+            streamDecision = getStringExtra(EXTRA_STREAM_DECISION) ?: "unknown",
             audioLanguage = getStringExtra(EXTRA_AUDIO_LANGUAGE),
             subtitleLanguage = getStringExtra(EXTRA_SUBTITLE_LANGUAGE),
         )
@@ -474,6 +480,7 @@ class TvPlaybackService : MediaSessionService() {
         private const val EXTRA_TITLE = "title"
         private const val EXTRA_START_POSITION_MS = "start_position_ms"
         private const val EXTRA_QUALITY_MODE = "quality_mode"
+        private const val EXTRA_STREAM_DECISION = "stream_decision"
         private const val EXTRA_AUDIO_LANGUAGE = "audio_language"
         private const val EXTRA_SUBTITLE_LANGUAGE = "subtitle_language"
         private const val HEARTBEAT_INTERVAL_MS = 15_000L
@@ -484,6 +491,7 @@ class TvPlaybackService : MediaSessionService() {
 
         @Volatile private var activeService: TvPlaybackService? = null
         @Volatile private var attachedPlayerView: WeakReference<PlayerView>? = null
+        @Volatile private var diagnostics: TvDiagnostics? = null
         private val playbackUiMutable = MutableStateFlow(TvPlaybackUiState())
         val playbackUi: StateFlow<TvPlaybackUiState> = playbackUiMutable.asStateFlow()
 
@@ -498,6 +506,7 @@ class TvPlaybackService : MediaSessionService() {
                 putExtra(EXTRA_TITLE, playback.title)
                 putExtra(EXTRA_START_POSITION_MS, playback.startPositionMs)
                 putExtra(EXTRA_QUALITY_MODE, playback.qualityMode)
+                putExtra(EXTRA_STREAM_DECISION, playback.streamDecision)
                 putExtra(EXTRA_AUDIO_LANGUAGE, playback.audioLanguage)
                 putExtra(EXTRA_SUBTITLE_LANGUAGE, playback.subtitleLanguage)
             }
@@ -509,6 +518,10 @@ class TvPlaybackService : MediaSessionService() {
                 activeService?.stopPlayback(notifyServer = true)
                 activeService?.stopSelf()
             } ?: context.stopService(Intent(context, TvPlaybackService::class.java))
+        }
+
+        fun configureDiagnostics(value: TvDiagnostics) {
+            diagnostics = value
         }
 
         fun pause() {

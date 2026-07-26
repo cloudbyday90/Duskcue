@@ -157,5 +157,12 @@ object DiagnosticsRedactor {
         URI(uri.scheme, null, uri.host, uri.port, uri.path, null, null).toString()
     }.getOrElse { "invalid-url" }
 
-    fun errorCode(problem: ProblemDetails): String = problem.title ?: "HTTP_${problem.status ?: 0}"
+    fun hostOnly(value: String): String = runCatching {
+        URI(value).host ?: "invalid-server"
+    }.getOrElse { "invalid-server" }
+
+    fun errorCode(problem: ProblemDetails): String = sequenceOf(
+        problem.type?.substringAfterLast('/'),
+        problem.title,
+    ).filterNotNull().firstOrNull { it.matches(Regex("^[A-Z][A-Z0-9]{1,31}_[0-9]{3}$")) } ?: "HTTP_${problem.status ?: 0}"
 }

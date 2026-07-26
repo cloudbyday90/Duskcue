@@ -6,7 +6,7 @@ This document is the implementation authority for Phase 17. It turns the shared 
 
 ## Status
 
-Phase 17 Tasks 0–9 are complete as of July 25, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, 16:9 placeholder banner/icon, Compose for TV entry point, device linking and profile lifecycle, profile-gated home/browse/detail/search/settings screens, an in-memory Media3 playback service, strict playback deep-link revalidation, Watch Next publication with authenticated local artwork delivery, explicit living-room input/accessibility policy, debug APK build, fixture-backed contract unit tests, and Android lint verification. It is intentionally separate from the Flutter phone/tablet client.
+Phase 17 Tasks 0–10 are complete as of July 25, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, 16:9 placeholder banner/icon, Compose for TV entry point, device linking and profile lifecycle, profile-gated home/browse/detail/search/settings screens, an in-memory Media3 playback service, strict playback deep-link revalidation, Watch Next publication with authenticated local artwork delivery, explicit living-room input/accessibility policy, privacy-safe diagnostics export, debug APK build, fixture-backed contract unit tests, and Android lint verification. It is intentionally separate from the Flutter phone/tablet client.
 
 ## Research Outcome
 
@@ -174,6 +174,14 @@ The player intercepts D-pad left/right, gamepad A, media transport buttons, Menu
 | Overscan, focus, and reduced motion | Screenshots on representative Android TV/Google TV hardware, including player chrome and a reduced-motion system setting. | Conservative layout constants and no animated focus/route transitions are verified in code. |
 | Android TV quality checklist | Record app-quality criteria, Watch Next launch focus, lifecycle pause, media buttons, and Back-to-launcher behavior in release evidence. | Task 11/12 add CI/release artifact collection; Google TV launcher visibility remains hardware/store evidence. |
 
+#### Task 10 Implementation
+
+`TvDiagnostics` is an application-memory-only, 1,000-record/24-hour bounded ledger. Each record uses the shared client log fields: RFC3339 timestamp, generated app version, `android_tv`, bounded route/screen, opaque request ID or `unavailable`, stable event type, severity, and operational privacy classification. The ledger never accepts a request body, header, bearer token, signed URL, title, profile, private path, or media ID. Profile/account/server cleanup clears the entire ledger before replacement identity data can appear.
+
+`DuskcueApiClient` records successful HTTP status/request IDs, network failures, and RFC 9457 failures using only route templates, `x-request-id`, `trace_id`, and a validated error code. Player startup and failure records retain only the playback session ID, stream decision, and bounded failure code. Watch Next refresh records use aggregate insert/update/delete/failure counts, and active `tv_surface_changed` messages retain their opaque event ID without the SSE payload. The support bundle uses host-only server origin, explicit `unknown` network/capability values where the client has not observed the fact, bounded playback-failure/request-ID summaries, and no automatic upload.
+
+Settings now offers a user-initiated **Export support bundle** action. Android's document creator receives one redacted JSON file only after the user selects a destination; Duskcue tells the user to share it manually with their server administrator. `TvDiagnosticsTest` covers bundle redaction, retention, and the Android TV export checklist, while `DuskcueApiClientTest` proves request/trace correlation does not export a raw media identifier or bearer token. `node scripts/verify-client-diagnostics.mjs` verifies the shared fixture schema.
+
 ## Delivery Order
 
 1. Create the standalone Gradle/Kotlin/Compose-for-TV app and prove a TV emulator build/launch with the correct manifest and placeholder assets.
@@ -190,6 +198,7 @@ The player intercepts D-pad left/right, gamepad A, media transport buttons, Menu
 - Google TV launcher visibility, certification, and region/device availability need empirical hardware and store evidence.
 - NVIDIA SHIELD and Sony BRAVIA HDR, Dolby Vision, audio passthrough/downmix, subtitles, standby/resume, and remote/gamepad behavior require real devices.
 - TalkBack behavior, actual overscan screenshots, reduced-motion settings, physical remote/gamepad traversal, and platform caption-preference behavior require the Task 11/12 emulator/device evidence; this task does not claim those observations without a target TV.
+- The system document-picker interaction, selected-destination behavior, and manual support-bundle sharing require emulator/device evidence. Support exports remain local and manual; no diagnostics upload endpoint is implemented or implied.
 - A future Fire TV client may reuse non-UI Kotlin API, profile, playback, and diagnostics abstractions only after its Android/Fire OS divergence is evaluated.
 
 ## Official Sources

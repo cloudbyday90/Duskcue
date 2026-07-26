@@ -31,6 +31,13 @@ internal interface WatchNextProvider {
     fun delete(programId: Long): WatchNextProviderResult
 }
 
+internal data class WatchNextSyncOutcome(
+    val inserted: Int,
+    val updated: Int,
+    val deleted: Int,
+    val failed: Int,
+)
+
 internal class AndroidWatchNextProvider(
     private val contentResolver: ContentResolver,
 ) : WatchNextProvider {
@@ -107,7 +114,7 @@ internal class WatchNextPublisher(
 ) {
     private val mutex = Mutex()
 
-    suspend fun sync(scope: TvProfileScope, surface: TvSurface) = mutex.withLock {
+    suspend fun sync(scope: TvProfileScope, surface: TvSurface): WatchNextSyncOutcome = mutex.withLock {
         val current = store.current()
         val scopeHash = scopeHash(scope.origin, scope.userId, scope.profileId)
         var pendingProgramIds = drainPendingRemovals(current.pending_watch_next_program_ids)
@@ -119,7 +126,7 @@ internal class WatchNextPublisher(
                 current.watch_next_artwork,
                 pendingProgramIds,
             )
-            return@withLock
+            return@withLock WatchNextSyncOutcome(0, 0, 0, 0)
         }
 
         val artworkRecords = current.watch_next_artwork.toMutableList()
@@ -146,6 +153,10 @@ internal class WatchNextPublisher(
         )
         val mappings = current.watch_next_mappings.toMutableList()
         val suppressions = current.watch_next_suppressions.toMutableList()
+        var inserted = 0
+        var updated = 0
+        var deleted = 0
+        var failed = 0
         plan.operations.forEach { operation ->
             when (operation) {
                 is WatchNextOperation.Delete -> {
@@ -153,8 +164,9 @@ internal class WatchNextPublisher(
                         WatchNextProviderResult.Deleted, WatchNextProviderResult.Missing -> {
                             mappings.remove(operation.mapping)
                             removeArtwork(artworkRecords, operation.mapping)
+                            deleted += 1
                         }
-                        else -> Unit
+                        else -> failed += 1
                     }
                 }
 
@@ -168,9 +180,10 @@ internal class WatchNextPublisher(
                             mappings += mapping(scopeHash, operation.candidate, result.programId)
                             removeSuppressions(suppressions, scopeHash, operation.candidate.platformContentId)
                             removeReplacedArtwork(replacedArtwork, operation.candidate.platformContentId)
+                            inserted += 1
                         }
 
-                        else -> Unit
+                        else -> failed += 1
                     }
                 }
 
@@ -181,6 +194,7 @@ internal class WatchNextPublisher(
                             mappings += mapping(scopeHash, operation.candidate, operation.mapping.program_id)
                             removeSuppressions(suppressions, scopeHash, operation.candidate.platformContentId)
                             removeReplacedArtwork(replacedArtwork, operation.candidate.platformContentId)
+                            updated += 1
                         }
 
                         WatchNextProviderResult.Missing -> {
@@ -193,14 +207,16 @@ internal class WatchNextPublisher(
                                 platform_content_id = operation.candidate.platformContentId,
                                 fingerprint = operation.candidate.sourceFingerprint,
                             )
+                            deleted += 1
                         }
 
-                        else -> Unit
+                        else -> failed += 1
                     }
                 }
             }
         }
         persist(current, mappings, suppressions, artworkRecords, pendingProgramIds)
+        WatchNextSyncOutcome(inserted, updated, deleted, failed)
     }
 
     suspend fun clear() = mutex.withLock {

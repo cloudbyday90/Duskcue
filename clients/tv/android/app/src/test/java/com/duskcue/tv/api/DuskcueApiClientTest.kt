@@ -1,5 +1,6 @@
 package com.duskcue.tv.api
 
+import com.duskcue.tv.diagnostics.TvDiagnostics
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonArray
@@ -53,6 +54,37 @@ class DuskcueApiClientTest {
         assertEquals("fixture-tv-revoked-access", failure.problem.trace_id)
         assertTrue(transport.requests.single().path.contains("platform=android_tv"))
         assertNull(transport.requests.single().headers["If-None-Match"])
+    }
+
+    @Test
+    fun records_server_correlation_without_exporting_the_raw_request_path() {
+        val diagnostics = TvDiagnostics("0.1.0-test")
+        val transport = RecordingTransport(
+            ApiResponse(
+                status = 403,
+                headers = mapOf("X-Request-Id" to "request-123"),
+                body = """{"title":"TV_003","status":403,"trace_id":"trace-123"}""",
+            ),
+        )
+        val client = DuskcueApiClient(
+            origin = ServerOrigin.parse("https://duskcue.example").getOrThrow(),
+            transport = transport,
+            tokenProvider = object : BearerTokenProvider {
+                override fun currentToken(): String = "fixture-token"
+            },
+            etagStore = MemoryEtagStore(),
+            diagnostics = diagnostics,
+        )
+
+        client.resolveTvItem("duskcue:movie:99999999-9999-4999-8999-999999999999")
+
+        val bundle = diagnostics.exportBundleJson()
+        assertTrue(bundle.contains("request-123"))
+        assertTrue(bundle.contains("trace-123"))
+        assertTrue(bundle.contains("TV_003"))
+        assertTrue(bundle.contains("/api/v1/tv/resolve/:id"))
+        assertTrue(!bundle.contains("99999999-9999-4999-8999-999999999999"))
+        assertTrue(!bundle.contains("fixture-token"))
     }
 
     @Test

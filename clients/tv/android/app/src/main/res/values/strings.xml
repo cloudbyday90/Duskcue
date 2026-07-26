@@ -49,6 +49,12 @@
     <string name="tv_publication_disabled">Duskcue will keep TV recommendations inside the app.</string>
     <string name="tv_disable_publication">Disable home-screen publication</string>
     <string name="tv_enable_publication">Enable home-screen publication</string>
+    <string name="tv_troubleshooting">Troubleshooting</string>
+    <string name="tv_troubleshooting_description">Create a privacy-safe support bundle to save and share manually with your server administrator.</string>
+    <string name="tv_export_support_bundle">Export support bundle</string>
+    <string name="tv_support_bundle_saved">Support bundle saved. Share it manually with your server administrator.</string>
+    <string name="tv_support_bundle_failed">Duskcue could not save the support bundle.</string>
+    <string name="tv_support_bundle_cancelled">Support bundle export cancelled.</string>
     <string name="tv_sign_out">Sign out</string>
     <string name="tv_choose_profile">Who’s watching?</string>
     <string name="tv_choose_profile_description">Choose a profile before Duskcue loads personal recommendations or watch progress.</string>

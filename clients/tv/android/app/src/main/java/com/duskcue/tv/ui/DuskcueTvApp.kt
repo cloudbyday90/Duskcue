@@ -60,8 +60,11 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
@@ -77,6 +80,7 @@ import com.duskcue.tv.api.TvSurfaceItem
 import com.duskcue.tv.home.TvHomeLoadState
 import com.duskcue.tv.playback.TvPlaybackService
 import androidx.media3.ui.PlayerView
+import kotlinx.coroutines.launch
 
 private val TvBackground = Color(0xFF0E0F13)
 private val TvSurface = Color(0xFF16181F)
@@ -102,6 +106,10 @@ fun DuskcueTvApp(runtime: TvApplicationRuntime, deepLinkRequest: TvDeepLinkReque
 
     LaunchedEffect(deepLinkRequest.sequence) {
         controller.handleDeepLink(deepLinkRequest.uri)
+    }
+
+    LaunchedEffect(state.phase, state.route) {
+        runtime.diagnostics.recordScreen("${state.phase.name}_${state.route.name}")
     }
 
     if (state.phase == TvAppPhase.DeviceLink) {
@@ -575,6 +583,28 @@ private fun PlayerPage(state: TvAppState, controller: TvAppController) {
 
 @Composable
 private fun SettingsPage(state: TvAppState, controller: TvAppController) {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val supportBundleCancelled = stringResource(R.string.tv_support_bundle_cancelled)
+    val supportBundleSaved = stringResource(R.string.tv_support_bundle_saved)
+    val supportBundleFailed = stringResource(R.string.tv_support_bundle_failed)
+    var supportMessage by remember { mutableStateOf<String?>(null) }
+    val exportBundle = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        if (uri == null) {
+            supportMessage = supportBundleCancelled
+        } else {
+            scope.launch {
+                val written = runCatching {
+                    context.contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { writer ->
+                        writer.write(controller.exportDiagnosticsBundle())
+                    } ?: error("Could not open the selected support-bundle destination.")
+                }.isSuccess
+                supportMessage = if (written) supportBundleSaved else supportBundleFailed
+            }
+        }
+    }
     TvPage {
         TvNavigation(controller)
         Spacer(Modifier.height(36.dp))
@@ -602,6 +632,17 @@ private fun SettingsPage(state: TvAppState, controller: TvAppController) {
                 onClick = { controller.setTvPublication(!settings.tv_publication_enabled) },
             )
         }
+        Spacer(Modifier.height(30.dp))
+        Text(stringResource(R.string.tv_troubleshooting), fontSize = 26.sp, fontWeight = FontWeight.SemiBold, color = TvText)
+        Spacer(Modifier.height(12.dp))
+        Text(stringResource(R.string.tv_troubleshooting_description), fontSize = 21.sp, color = TvSecondary)
+        Spacer(Modifier.height(16.dp))
+        TvAction(
+            stringResource(R.string.tv_export_support_bundle),
+            enabled = !state.busy,
+            onClick = { exportBundle.launch("duskcue-tv-support.json") },
+        )
+        TvMessage(supportMessage)
         Spacer(Modifier.height(30.dp))
         TvAction(stringResource(R.string.tv_sign_out), enabled = !state.busy, onClick = { controller.logout() })
         TvMessage(state.message)

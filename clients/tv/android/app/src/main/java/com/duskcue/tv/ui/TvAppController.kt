@@ -336,6 +336,7 @@ class TvAppController(
                 title = detail.title,
                 startPositionMs = resolved.resume_position_ms,
                 qualityMode = playbackState.qualityMode,
+                streamDecision = playback.stream_decision,
                 audioLanguage = playbackState.audioTracks.find { it.index == playbackState.selectedAudioTrackIndex }?.language,
                 subtitleLanguage = playbackState.subtitleTracks.find { it.index == playbackState.selectedSubtitleTrackIndex }?.language,
             )
@@ -475,7 +476,10 @@ class TvAppController(
         }
     }
 
+    fun exportDiagnosticsBundle(): String = runtime.exportDiagnosticsBundle()
+
     fun onForegroundSurfaceEvent(event: ServerSentEvent) {
+        runtime.diagnostics.recordTvSurfaceEvent(event.id)
         scope.launch {
             val scope = runtime.activeProfileScope() ?: return@launch
             if (runtime.livingRoom.shouldRefresh(event, scope)) {
@@ -631,6 +635,7 @@ class TvAppController(
                 title = "Duskcue",
                 startPositionMs = resolved.resume_position_ms,
                 qualityMode = "auto",
+                streamDecision = playback.stream_decision,
                 audioLanguage = null,
                 subtitleLanguage = null,
             )
