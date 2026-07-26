@@ -1,6 +1,6 @@
 {
   "fixture": "device-matrix",
-  "updated": "2026-07-02",
+  "updated": "2026-07-25",
   "platforms": [
     {
       "id": "android_mobile",
@@ -230,10 +230,16 @@
           "release_validation": "required_physical_for_high_capability_claim"
         },
         {
-          "name": "Sony BRAVIA Android/Google TV",
-          "os_version": "Supported TV firmware",
+          "name": "Sony BRAVIA Google TV",
+          "os_version": "Current supported Sony Google TV firmware",
           "hardware_class": "physical",
-          "release_validation": "best_effort"
+          "release_validation": "required_physical"
+        },
+        {
+          "name": "Sony BRAVIA Android TV",
+          "os_version": "Supported older Sony Android TV firmware",
+          "hardware_class": "physical",
+          "release_validation": "required_physical"
         }
       ],
       "browser_webview_engine": "Android WebView/Chromium only for web content; playback uses Media3/ExoPlayer.",

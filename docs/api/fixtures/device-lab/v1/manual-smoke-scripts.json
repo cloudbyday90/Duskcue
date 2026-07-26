@@ -91,9 +91,9 @@
     },
     {
       "platform": "android_tv_google_tv",
-      "setup": ["Install on Android TV emulator and at least one Google TV device.", "Run NVIDIA SHIELD TV or SHIELD TV Pro preflight with scripts/nvidia-shield-validation.mjs before high-capability validation.", "Use D-pad remote input only after setup."],
-      "extra_steps": ["Validate TV surface/deep-link revalidation.", "Check playback with HLS transcode and direct-compatible media.", "Run Ethernet and Wi-Fi SHIELD smoke paths, HDMI HDR/audio-route validation, AI-upscaling interaction, standby/resume, and Watch Next observation."],
-      "evidence": ["Device model/firmware", "Remote-navigation video or checklist", "Codec/HDR/audio capability report", "External SHIELD evidence contract without diagnostics bundle or network identifiers"]
+      "setup": ["Install on Android TV emulator and at least one Google TV device.", "Run NVIDIA SHIELD TV or SHIELD TV Pro preflight with scripts/nvidia-shield-validation.mjs before high-capability validation.", "Run Sony BRAVIA Google TV and Android TV preflight with scripts/sony-bravia-validation.mjs before BRAVIA compatibility validation.", "Use D-pad remote input only after setup."],
+      "extra_steps": ["Validate TV surface/deep-link revalidation.", "Check playback with HLS transcode and direct-compatible media.", "Run Ethernet and Wi-Fi SHIELD smoke paths, HDMI HDR/audio-route validation, AI-upscaling interaction, standby/resume, and Watch Next observation.", "Run BRAVIA Google TV and Android TV Play, launcher, HDR/audio route, remote, standby/resume, voice/deep-link, and Watch Next observations separately."],
+      "evidence": ["Device model/firmware", "Remote-navigation video or checklist", "Codec/HDR/audio capability report", "External SHIELD evidence contract without diagnostics bundle or network identifiers", "External BRAVIA evidence contract without diagnostics bundle, account data, or network identifiers"]
     },
     {
       "platform": "fire_tv",

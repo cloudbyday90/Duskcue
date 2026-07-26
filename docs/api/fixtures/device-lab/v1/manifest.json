@@ -113,6 +113,15 @@
         "HDR, HDMI audio, network, remote, standby, Watch Next, and diagnostics evidence",
         "privacy-safe external evidence contract"
       ]
+    },
+    {
+      "id": "sony-bravia-validation",
+      "file": "sony-bravia-validation.json",
+      "covers": [
+        "Sony BRAVIA Google TV and Android TV physical-device preflight",
+        "Play, launcher, HDR, audio, remote, standby, voice, Watch Next, and diagnostics evidence",
+        "privacy-safe external evidence contract"
+      ]
     }
   ],
   "sources": [
@@ -120,6 +129,7 @@
     "Android Media3 supported formats",
     "Android TV app creation and testing",
     "NVIDIA SHIELD support, HDR, surround-audio, network, AI-upscaling, and software-update guidance",
+    "Sony BRAVIA Google TV and Android TV app, HDR, audio, and voice guidance",
     "Apple AVFoundation and HLS authoring",
     "Apple TestFlight",
     "Amazon Fire TV device testing and ADB",

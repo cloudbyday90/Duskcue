@@ -40,8 +40,8 @@
     },
     {
       "platform": "android_tv_google_tv",
-      "release_required": ["Android TV emulator", "Current Google TV physical device", "NVIDIA SHIELD TV or NVIDIA SHIELD TV Pro physical evidence before a SHIELD high-capability claim"],
-      "best_effort": ["Sony BRAVIA Android/Google TV", "Older Android TV device"],
+      "release_required": ["Android TV emulator", "Current Google TV physical device", "NVIDIA SHIELD TV or NVIDIA SHIELD TV Pro physical evidence before a SHIELD high-capability claim", "Sony BRAVIA Google TV physical evidence", "Sony BRAVIA Android TV physical evidence"],
+      "best_effort": ["Older Android TV device"],
       "blocked_without_hardware": true
     },
     {

@@ -101,6 +101,7 @@ Release-required hardware means a platform phase cannot claim release readiness 
 | [known-platform-limitations.json](../api/fixtures/device-lab/v1/known-platform-limitations.json) | Known limitations, workarounds, and fallback behavior. |
 | [hardware-gap-report.json](../api/fixtures/device-lab/v1/hardware-gap-report.json) | Allowed Phase 16d hardware gaps and downstream release blockers. |
 | [nvidia-shield-validation.json](../api/fixtures/device-lab/v1/nvidia-shield-validation.json) | Phase 17 SHIELD/SHIELD Pro preflight, manual hardware matrix, and protected evidence contract. |
+| [sony-bravia-validation.json](../api/fixtures/device-lab/v1/sony-bravia-validation.json) | Phase 17 Sony BRAVIA Google TV/Android TV preflight, manual hardware matrix, and protected evidence contract. |
 
 Run:
 
@@ -115,6 +116,12 @@ The verifier checks required platform coverage, required capability fields, Dock
 Phase 17 Task 13 adds [NVIDIA_SHIELD_VALIDATION.md](../ci/NVIDIA_SHIELD_VALIDATION.md) and an executable boundary: `node scripts/nvidia-shield-validation.mjs --plan` documents every manual observation, while `node scripts/nvidia-shield-validation.mjs --serial <adb-serial> --network <ethernet|wifi>` validates a physical SHIELD preflight without collecting network identifiers or committing evidence. The Android TV diagnostics export reports bounded display/audio/network capability context for the later run.
 
 SHIELD TV and NVIDIA SHIELD TV Pro are high-capability reference devices, not replacements for the required Google TV and Sony BRAVIA profiles. HDMI/AVR/display routing, HDR, passthrough, AI upscaling, standby/resume, Play visibility, and launcher behavior remain physical observations. The fixture uses `not_tested` rather than inferring a pass until protected external evidence exists.
+
+### Sony BRAVIA Google TV And Android TV Reference
+
+Phase 17 Task 14 adds [SONY_BRAVIA_VALIDATION.md](../ci/SONY_BRAVIA_VALIDATION.md) and a paired evidence boundary: `node scripts/sony-bravia-validation.mjs --plan` documents the required observations, while `node scripts/sony-bravia-validation.mjs --serial <adb-serial> --experience <google_tv|android_tv>` validates a physical Sony Leanback/Play/package/launcher/deep-link preflight without collecting account or network identifiers. The Android TV diagnostics export classifies the device as `sony_bravia` and reports only bounded display/audio/network context.
+
+Sony BRAVIA Google TV and Android TV are distinct required Phase 17 target classes. The fixture preserves `not_tested` until external evidence records target model, firmware, UI generation, Play visibility, playback decision, HDR/audio route, remote/standby behavior, voice/deep-link outcome, and Watch Next placement. Neither ADB package presence nor a valid custom deep link proves Google Play listing, Google Assistant discovery, or system launcher rendering.
 
 ## Relationship to Capability Profiles
 

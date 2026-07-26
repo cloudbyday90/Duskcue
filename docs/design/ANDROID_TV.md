@@ -6,7 +6,7 @@ This document is the implementation authority for Phase 17. It turns the shared 
 
 ## Status
 
-Phase 17 Tasks 0–12 are complete as of July 25, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, store-ready runtime banner/icon source assets, Compose for TV entry point, device linking and profile lifecycle, profile-gated home/browse/detail/search/settings screens, an in-memory Media3 playback service, strict playback deep-link revalidation, Watch Next publication with authenticated local artwork delivery, explicit living-room input/accessibility policy, privacy-safe diagnostics export, debug APK build, fixture-backed contract unit tests, Android lint verification, and a machine-checked Google Play readiness baseline. Task 13 now has a repository-ready NVIDIA SHIELD evidence harness; its physical-device observations remain pending. It is intentionally separate from the Flutter phone/tablet client.
+Phase 17 Tasks 0–12 are complete as of July 25, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, store-ready runtime banner/icon source assets, Compose for TV entry point, device linking and profile lifecycle, profile-gated home/browse/detail/search/settings screens, an in-memory Media3 playback service, strict playback deep-link revalidation, Watch Next publication with authenticated local artwork delivery, explicit living-room input/accessibility policy, privacy-safe diagnostics export, debug APK build, fixture-backed contract unit tests, Android lint verification, and a machine-checked Google Play readiness baseline. Tasks 13 and 14 now have repository-ready NVIDIA SHIELD and Sony BRAVIA evidence harnesses; physical-device observations remain pending. It is intentionally separate from the Flutter phone/tablet client.
 
 ## Research Outcome
 
@@ -202,6 +202,12 @@ The readiness fixture requires screenshots to remain `pending_real_capture` unti
 
 The support-bundle capability report now refreshes the current Android TV device family/model, Android release/API, display mode/advertised HDR types, advertised decoders, output audio types/encodings, and coarse network state at export. It is diagnostic context, not playback proof. HDR/Dolby Vision output, TrueHD/DTS/Atmos passthrough, AI-upscaling behavior, CEC standby/resume, remote/gamepad behavior, Google Play visibility, and Watch Next launcher rendering remain manual physical evidence. Task 13 is not complete until that physical evidence contract is captured for a SHIELD target.
 
+#### Task 14 Repository Implementation
+
+[SONY_BRAVIA_VALIDATION.md](../ci/SONY_BRAVIA_VALIDATION.md) and the versioned BRAVIA fixture turn the Task 14 physical-device requirement into separate auditable plans for Sony BRAVIA Google TV and Sony BRAVIA Android TV. The ADB helper verifies only a connected non-emulated Sony Leanback target, Google Play package presence, the Duskcue package, a launchable banner activity, and valid-shape deep-link handoff. It records bounded Android/display/app information and a tester-declared UI generation without serials, account data, IP addresses, SSIDs, credentials, or media context.
+
+Sony TV support-bundle classification is `sony_bravia`; it is diagnostic context rather than a hardware compatibility verdict. Play listing visibility, Google TV versus Android TV home behavior, HLS/direct/direct-stream outcome, HDR10/Dolby Vision output, eARC/ARC passthrough or downmix, remote focus, standby/resume, voice discovery, and Watch Next rendering remain physical evidence. Task 14 is not complete until protected evidence covers both Sony BRAVIA UI generations.
+
 ## Delivery Order
 
 1. Create the standalone Gradle/Kotlin/Compose-for-TV app and prove a TV emulator build/launch with the correct manifest and placeholder assets.
@@ -218,6 +224,7 @@ The support-bundle capability report now refreshes the current Android TV device
 - The August 1, 2026 Android TV 32-bit/64-bit and 16 KB page-size policy must be proven for the exact signed upload artifact; Task 12 records it but does not claim it is satisfied.
 - Google TV launcher visibility, certification, and region/device availability need empirical hardware and store evidence.
 - NVIDIA SHIELD and Sony BRAVIA HDR, Dolby Vision, audio passthrough/downmix, subtitles, standby/resume, and remote/gamepad behavior require real devices.
+- Sony Google TV and Android TV Play visibility, voice discovery, and Watch Next placement additionally vary by model, firmware, country, language, remote, and account and require target-specific evidence.
 - TalkBack behavior, actual overscan screenshots, reduced-motion settings, physical remote/gamepad traversal, and platform caption-preference behavior require dedicated emulator/device evidence; the Task 11 AVD smoke intentionally does not claim those observations.
 - The system document-picker interaction, selected-destination behavior, and manual support-bundle sharing require emulator/device evidence. Support exports remain local and manual; no diagnostics upload endpoint is implemented or implied.
 - A future Fire TV client may reuse non-UI Kotlin API, profile, playback, and diagnostics abstractions only after its Android/Fire OS divergence is evaluated.
@@ -248,6 +255,11 @@ The support-bundle capability report now refreshes the current Android TV device
 - NVIDIA SHIELD AVR/surround-audio setup: https://www.nvidia.com/en-us/shield/support/shield-tv-pro/avr-surround-audio-setup/
 - NVIDIA SHIELD AI upscaling: https://www.nvidia.com/en-us/shield/support/shield-tv-pro/ai-upscaling/
 - Android TV audio capabilities: https://developer.android.com/training/tv/playback/audio-capabilities
+- Sony app installation on Google TV / Android TV: https://www.sony.com/electronics/support/articles/00147386
+- Sony BRAVIA app compatibility: https://www.sony.com/electronics/support/televisions-projectors-lcd-tvs/xbr-65x900a/articles/00114472
+- Sony BRAVIA HDR compatibility: https://www.sony.com/electronics/support/televisions-projectors-lcd-tvs-android-/xbr-75x950h/articles/00167110
+- Sony ARC/eARC audio behavior: https://www.sony.com/electronics/support/articles/00020051
+- Sony remote voice-search prerequisites: https://www.sony.com/electronics/support/televisions-projectors-lcd-tvs-android-/kd-65x80j/articles/00127005
 - Android TV navigation: https://developer.android.com/training/tv/get-started/navigation
 - Android TV focus system: https://developer.android.com/design/ui/tv/guides/styles/focus-system
 - Android TV layouts and overscan: https://developer.android.com/design/ui/tv/guides/styles/layouts

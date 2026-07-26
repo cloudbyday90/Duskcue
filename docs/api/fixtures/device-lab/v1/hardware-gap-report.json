@@ -39,8 +39,8 @@
     },
     {
       "platform": "android_tv_google_tv",
-      "gap": "Physical Google TV/Android TV device evidence is required before Android TV release claim; NVIDIA SHIELD TV or SHIELD TV Pro evidence is additionally required before a high-capability SHIELD claim.",
-      "required_before": "Phase 17 release claim or SHIELD high-capability claim",
+      "gap": "Physical Google TV/Android TV device evidence is required before Android TV release claim; NVIDIA SHIELD TV or SHIELD TV Pro evidence is additionally required before a high-capability SHIELD claim, while Sony BRAVIA Google TV and Android TV evidence closes the Phase 17 Sony hardware gate.",
+      "required_before": "Phase 17 release claim, SHIELD high-capability claim, or Sony BRAVIA compatibility claim",
       "release_blocking": true
     },
     {

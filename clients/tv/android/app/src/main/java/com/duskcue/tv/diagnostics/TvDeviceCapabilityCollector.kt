@@ -96,6 +96,7 @@ internal object TvDeviceCapabilityCollector {
 internal object TvDeviceCapabilityClassifier {
     fun deviceFamily(manufacturer: String?, model: String?): String = when {
         manufacturer.orEmpty().contains("nvidia", ignoreCase = true) && model.orEmpty().contains("shield", ignoreCase = true) -> "nvidia_shield"
+        manufacturer.orEmpty().contains("sony", ignoreCase = true) -> "sony_bravia"
         else -> "android_tv"
     }
 

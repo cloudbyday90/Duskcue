@@ -8,6 +8,7 @@ class TvDeviceCapabilityCollectorTest {
     @Test
     fun classifiesShieldWithoutPersistingABuildFingerprint() {
         assertEquals("nvidia_shield", TvDeviceCapabilityClassifier.deviceFamily("NVIDIA", "SHIELD Android TV Pro"))
+        assertEquals("sony_bravia", TvDeviceCapabilityClassifier.deviceFamily("Sony", "XR-65X90L"))
         assertEquals("android_tv", TvDeviceCapabilityClassifier.deviceFamily("Google", "Chromecast"))
         assertEquals("SHIELD_TV_Pro", TvDeviceCapabilityClassifier.safeLabel("SHIELD TV Pro"))
         assertEquals("unknown", TvDeviceCapabilityClassifier.safeLabel(null))

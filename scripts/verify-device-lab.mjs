@@ -39,6 +39,7 @@ assertReleaseValidationPolicy(fixtures.get('release-validation-policy'));
 assertKnownPlatformLimitations(fixtures.get('known-platform-limitations'));
 assertHardwareGapReport(fixtures.get('hardware-gap-report'));
 assertNvidiaShieldValidation(fixtures.get('nvidia-shield-validation'));
+assertSonyBraviaValidation(fixtures.get('sony-bravia-validation'));
 assertNoFixtureLeaks();
 
 console.log(`Verified ${fixtures.size} device lab fixtures for ${requiredPlatforms.length} platforms.`);
@@ -158,6 +159,21 @@ function assertNvidiaShieldValidation(fixture) {
   }
   assert(fixture.machine_preflight.command.includes('nvidia-shield-validation.mjs'), 'SHIELD fixture missing capture command');
   assert(fixture.evidence_contract.retention.includes('Do not commit'), 'SHIELD fixture must forbid committing private evidence');
+}
+
+function assertSonyBraviaValidation(fixture) {
+  assert.equal(fixture.status, 'repository_ready_physical_evidence_pending', 'BRAVIA fixture must preserve physical evidence boundary');
+  assert.equal(fixture.platform, 'android_tv_google_tv', 'BRAVIA fixture platform mismatch');
+  assert.deepEqual(fixture.device_targets.map((target) => target.id), ['bravia_google_tv', 'bravia_android_tv'], 'BRAVIA target set drift');
+  const cases = byId(fixture.test_cases, 'id');
+  for (const id of ['google_play_visibility', 'launcher_and_hls_playback', 'hdr_dolby_vision_behavior', 'audio_passthrough_or_downmix', 'remote_focus_and_back', 'standby_resume', 'voice_and_deep_link_entry', 'watch_next', 'diagnostics_capture']) {
+    const entry = cases.get(id);
+    assert(entry, `BRAVIA fixture missing ${id}`);
+    assert(nonEmpty(entry.observation), `BRAVIA ${id} missing observation`);
+    assert(nonEmpty(entry.evidence), `BRAVIA ${id} missing evidence`);
+  }
+  assert(fixture.machine_preflight.command.includes('sony-bravia-validation.mjs'), 'BRAVIA fixture missing capture command');
+  assert(fixture.evidence_contract.retention.includes('Do not commit'), 'BRAVIA fixture must forbid committing private evidence');
 }
 
 function byId(items, key) {

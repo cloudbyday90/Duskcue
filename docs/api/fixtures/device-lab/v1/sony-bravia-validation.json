@@ -1,0 +1,129 @@
+{
+  "fixture": "sony-bravia-validation",
+  "status": "repository_ready_physical_evidence_pending",
+  "platform": "android_tv_google_tv",
+  "purpose": "Phase 17 Task 14 Sony BRAVIA Google TV and Android TV validation without claiming unobserved model, region, HDMI-route, or launcher behavior.",
+  "device_targets": [
+    {
+      "id": "bravia_google_tv",
+      "name": "Sony BRAVIA Google TV",
+      "hardware_class": "physical",
+      "required_for": "Current Google TV installation, launcher, playback, and Watch Next evidence"
+    },
+    {
+      "id": "bravia_android_tv",
+      "name": "Sony BRAVIA Android TV",
+      "hardware_class": "physical",
+      "required_for": "Older Android TV installation, launcher, playback, and compatibility-difference evidence"
+    }
+  ],
+  "preflight": {
+    "firmware_rule": "Install the current model-supported Sony firmware and record the observed Android/Google TV generation and firmware before each run.",
+    "store_rule": "Confirm the intended signed Play Android TV track is visible and installable on the exact model, account, country, and firmware. Play package presence or ADB installation does not prove listing visibility.",
+    "display_audio_rule": "Record the exact BRAVIA model, display mode, HDMI input, AVR or soundbar topology, eARC/ARC or pass-through setting, and observed TV/audio-device readout. HDR and audio output vary by model, input, cable, settings, and connected equipment.",
+    "voice_rule": "Record remote and region/language prerequisites before attempting voice entry. A voice result that does not expose Duskcue must be recorded as not_supported or failed for that route, not inferred from local deep-link success.",
+    "test_media_rule": "Use legal, non-private test media representing the declared stream decisions and tracks. Do not commit media, account details, signed URLs, support bundles, or screenshots containing private catalog data."
+  },
+  "machine_preflight": {
+    "command": "node scripts/sony-bravia-validation.mjs --serial <adb-serial> --experience <google_tv|android_tv> [--apk <debug-apk>]",
+    "checks": [
+      "ADB target is a physical Sony Android TV device with Leanback support",
+      "Google Play Store package is present, without asserting listing or track visibility",
+      "Duskcue package is installed or the supplied APK installs",
+      "Leanback launcher and valid-shape Duskcue deep-link handoff succeed",
+      "Reported Android release/API, display size, advertised HDR tokens, app version, and declared UI generation are emitted as a privacy-safe preflight record"
+    ],
+    "scope_limit": "The command does not prove Google Play availability, Google TV versus Android TV home behavior, media decode, HDR output, audio passthrough, voice discovery, Watch Next visibility, or standby/resume. Those remain manual observations."
+  },
+  "test_cases": [
+    {
+      "id": "google_play_visibility",
+      "observation": "On the intended Play Android TV track, confirm listing and install visibility on each declared BRAVIA target without retaining account data.",
+      "evidence": "Play track, app version, BRAVIA model/firmware, country or region class if permitted, and observed install outcome",
+      "external_gate": true
+    },
+    {
+      "id": "launcher_and_hls_playback",
+      "observation": "Run device link, browse, HLS transcode start, seek, resume, stop, and diagnostics export from the Leanback launcher on each target.",
+      "evidence": "Preflight record, redacted Duskcue diagnostics, and server playback decision summary",
+      "external_gate": false
+    },
+    {
+      "id": "direct_play_and_direct_stream_fallback",
+      "observation": "Exercise direct play and direct stream with legal compatible samples, then capture the server-selected fallback when the BRAVIA route cannot sustain the requested path.",
+      "evidence": "Sample class, selected stream decision, visible playback result, and redacted diagnostics",
+      "external_gate": false
+    },
+    {
+      "id": "hdr_dolby_vision_behavior",
+      "observation": "Validate SDR, HDR10, and Dolby Vision only where the exact BRAVIA model, app path, HDMI input, and display/audio route advertise support. Record the actual TV or AVR readout and fallback.",
+      "evidence": "BRAVIA model/input setting, HDMI topology, TV or AVR mode readout, Duskcue capability report, and result per sample",
+      "external_gate": false
+    },
+    {
+      "id": "audio_passthrough_or_downmix",
+      "observation": "Test PCM or AAC fallback, AC-3, E-AC-3 or Atmos, and DTS where the exact BRAVIA/audio-system route allows them. A downmix, no-audio result, or unsupported codec is a route finding, not a global compatibility pass.",
+      "evidence": "Audio topology, eARC/ARC or pass-through setting, audio-device readout, selected audio track, and explicit passed/failed/not_supported result per sample",
+      "external_gate": false
+    },
+    {
+      "id": "subtitle_caption_fallback",
+      "observation": "Switch supported text tracks and exercise image-subtitle or unsupported-track fallback through Duskcue's server decision.",
+      "evidence": "Subtitle type, visible result, server stream decision, and redacted diagnostics",
+      "external_gate": false
+    },
+    {
+      "id": "remote_focus_and_back",
+      "observation": "Use the supplied BRAVIA remote for D-pad, Select, Back, Home return, play/pause, seek, captions, audio, and Settings paths. Validate focus return after launcher and playback transitions.",
+      "evidence": "Checklist or short video, input type, focus or Back result, and playback-control result",
+      "external_gate": false
+    },
+    {
+      "id": "standby_resume",
+      "observation": "Start playback, trigger the configured BRAVIA standby or HDMI-CEC route, wake, and verify Duskcue pauses, revalidates, and reconnects without reusing a stale stream URL.",
+      "evidence": "Sleep/wake sequence, playback or heartbeat result, server decision after resume, and redacted diagnostics",
+      "external_gate": false
+    },
+    {
+      "id": "voice_and_deep_link_entry",
+      "observation": "Test remote voice search or Google Assistant only where model, remote, country, language, account, and settings support it; separately test the Duskcue custom deep-link handoff. Do not equate a local deep link with system voice discovery.",
+      "evidence": "Declared voice prerequisites, observed voice result or not_supported status, deep-link result, and no-account-data confirmation",
+      "external_gate": false
+    },
+    {
+      "id": "watch_next",
+      "observation": "Start and stop a movie, verify a Continue Watching entry; complete an episode and verify Next Up replacement. Confirm launcher visibility separately from successful provider writes on both UI generations.",
+      "evidence": "Google TV or Android TV launcher observation, profile scope, deep-link resume result, and Watch Next diagnostics aggregate",
+      "external_gate": false
+    },
+    {
+      "id": "diagnostics_capture",
+      "observation": "Export the user-initiated support bundle after the run and verify it contains bounded Sony model family, Android, display, audio-route, decoder, HDR, and coarse network capability information while omitting secrets and personal media context.",
+      "evidence": "Manual redaction review and external retention reference only; the bundle itself is not committed",
+      "external_gate": false
+    }
+  ],
+  "evidence_contract": {
+    "required_fields": [
+      "test_case_id",
+      "result",
+      "device_target",
+      "bravia_model",
+      "experience_generation",
+      "android_release",
+      "firmware_version",
+      "app_build_identifier",
+      "display_and_audio_chain",
+      "stream_decision_or_fallback",
+      "redacted_diagnostics_reference"
+    ],
+    "result_values": [
+      "passed",
+      "failed",
+      "not_supported",
+      "not_tested"
+    ],
+    "retention": "Keep evidence in the protected release record or issue/PR artifact. Do not commit raw diagnostics bundles, credentials, private media, screenshots with personal catalogs, serial numbers, MAC addresses, IP addresses, SSIDs, or signed URLs."
+  },
+  "release_gate": "Task 14 is complete only after both a Sony BRAVIA Google TV target and a Sony BRAVIA Android TV target have a complete evidence contract for every non-external test case. A public BRAVIA compatibility claim additionally requires the intended signed Play artifact and Google Play visibility evidence on the claimed target class."
+}
