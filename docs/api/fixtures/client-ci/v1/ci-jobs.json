@@ -95,6 +95,7 @@
         "node scripts/client-smoke-harness.mjs --plan",
         "node scripts/verify-client-ci-smoke.mjs",
         "node scripts/verify-android-tv-ci.mjs",
+        "node scripts/verify-android-tv-release-readiness.mjs",
         "./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug"
       ],
       "purpose": "Build the native Android TV debug APK and fail fixture, API, playback, auth, deep-link, accessibility, diagnostics, lint, or unit-test drift."

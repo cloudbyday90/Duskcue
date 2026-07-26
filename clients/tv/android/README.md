@@ -34,3 +34,15 @@ node scripts/android-tv-emulator-smoke.mjs --apk clients/tv/android/app/build/ou
 ```
 
 It verifies the TV runtime feature, APK install, Leanback launcher, and valid custom deep-link handoff. It does not replace authenticated playback, Watch Next, accessibility, remote, HDR/audio, standby/resume, document-picker, Google Play, or physical-device release evidence.
+
+## Release Preparation
+
+The Android TV / Google TV release baseline is documented in [ANDROID_TV_RELEASE_READINESS.md](../../../docs/ci/ANDROID_TV_RELEASE_READINESS.md). It defines the Play-ready package/version policy, candidate AAB command, signing secret slots, real store icon/banner sources, Data Safety/content-rating/App Access ownership, reviewer access, and device/rollback evidence without claiming that any external Play Console step is complete.
+
+Use a fresh, unused Play-valid version code for a candidate bundle:
+
+```powershell
+.\gradlew.bat :app:bundleRelease "-PduskcueVersionCode=2026072501" "-PduskcueVersionName=0.1.0"
+```
+
+This produces a candidate artifact only. Do not upload it until protected upload-key signing, Play App Signing, package registration, policy declarations, real TV screenshots, reviewer access, and release evidence are complete.

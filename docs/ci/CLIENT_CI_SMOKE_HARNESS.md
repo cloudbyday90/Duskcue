@@ -33,7 +33,7 @@ The run mode creates deterministic representative media under `media/`, starts `
 | `fixture_drift` | PR and `main` | Client, playback, auth, TV, accessibility, design, diagnostics, device-lab, release, and CI fixture drift |
 | `binding_generation_readiness` | PR and `main` | TypeScript/Tauri, Dart/Flutter, Kotlin Android/Fire TV, and Swift iOS/tvOS target coverage |
 | `tv_console_fixture_smoke` | PR and `main` | TV/deep-link, TV-surface, and device-lab baseline |
-| `android_tv_conformance` | PR and `main` when Android TV inputs change | Android TV contract/conformance verification, Kotlin unit tests, lint, debug APK, and debug evidence artifact |
+| `android_tv_conformance` | PR and `main` when Android TV inputs change | Android TV contract/conformance and release-readiness verification, Kotlin unit tests, lint, debug APK, and debug evidence artifact |
 | `android_tv_emulator_smoke` | `workflow_dispatch` with `run_android_tv_emulator_smoke=true` | API 36 Android TV AVD installation, Leanback launcher, and custom deep-link handoff smoke |
 | `docker_smoke_plan` | PR and `main` | Cheap validation that the Docker smoke harness still has the expected steps |
 | `docker_smoke_run_manual` | `workflow_dispatch` with `run_docker_smoke=true` | Real Docker `:48027` deployment smoke |
@@ -58,7 +58,7 @@ Platform phases must then add their platform-specific build, emulator, simulator
 
 ### Android TV Consumption
 
-Phase 17 adds an automatic `android_tv_conformance` job to this workflow. It is deliberately a debug-build and contract lane: its uploaded APK, lint report, and unit-test output are troubleshooting artifacts rather than publishable release evidence. The job consumes the normal shared checks and then runs the native Android TV Gradle test/lint/assembly gate.
+Phase 17 adds an automatic `android_tv_conformance` job to this workflow. It is deliberately a debug-build and contract lane: its uploaded APK, lint report, and unit-test output are troubleshooting artifacts rather than publishable release evidence. The job consumes the normal shared checks, the Android TV / Google TV release-readiness verifier, and then runs the native Android TV Gradle test/lint/assembly gate. The release verifier checks policy, asset, artifact, signing-placeholder, and external-evidence boundaries; it does not sign or publish an app.
 
 Maintainers can request `android_tv_emulator_smoke` from `workflow_dispatch`. It creates an Android TV API 36 `tv_1080p` AVD, installs the debug APK, verifies the Leanback feature/launcher, and starts a valid-shape custom playback URI. The portable `node scripts/android-tv-emulator-smoke.mjs --apk clients/tv/android/app/build/outputs/apk/debug/app-debug.apk` command may also be run against one already-booted local Android TV AVD. This is installation/intent evidence, not playback, Watch Next, hardware remote, HDR/audio, accessibility, document-picker, or release readiness evidence.
 

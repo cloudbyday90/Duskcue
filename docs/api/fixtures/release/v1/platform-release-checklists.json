@@ -115,7 +115,7 @@
     {
       "platform": "android_tv_google_tv",
       "app_identifier": "Duskcue Android TV",
-      "bundle_or_package_name": "app.duskcue.tv.android",
+      "bundle_or_package_name": "com.duskcue.tv",
       "display_name": "Duskcue",
       "store_or_distribution": "Google Play TV track.",
       "signing_identity": "Google Play App Signing app signing key plus CI upload key placeholder.",
@@ -126,14 +126,14 @@
         "Leanback launcher",
         "Internet/network state",
         "Media playback",
-        "Watch Next integration only after platform phase implements it"
+        "Watch Next integration with per-profile privacy cleanup"
       ],
       "privacy_disclosures": [
         "Data Safety declarations for account, diagnostics, device, and playback activity data",
         "No advertising or third-party tracking unless added later"
       ],
       "age_or_content_rating": "Complete Google Play TV content rating questionnaire for user-owned catalog playback.",
-      "review_notes": "Explain device-linking, remote-only navigation, self-hosted server, and no bundled catalog."
+      "review_notes": "Explain device-linking, profile selection, remote-only navigation, self-hosted server, no bundled catalog, and the reviewer App Access path."
     },
     {
       "platform": "fire_tv",

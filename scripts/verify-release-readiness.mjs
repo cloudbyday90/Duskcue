@@ -35,6 +35,7 @@ assertVersioningPolicy(fixtures.get('versioning-policy'));
 assertReleaseChannelPolicy(fixtures.get('release-channel-policy'));
 assertSmokeRollbackPolicy(fixtures.get('smoke-rollback-policy'));
 assertPrivacyPermissionsReview(fixtures.get('privacy-permissions-review'));
+assertAndroidTvGooglePlayReadiness(fixtures.get('android-tv-google-tv-readiness'));
 assertNoFixtureLeaks();
 
 console.log(`Verified ${fixtures.size} release readiness fixtures for ${requiredPlatforms.length} platforms.`);
@@ -153,6 +154,24 @@ function assertPrivacyPermissionsReview(fixture) {
     assertNonEmptyArray(entry.review_notes, `${platform} missing review notes`);
     assert(entry.review_notes.some((note) => /catalog|self-hosted|server/i.test(note)), `${platform} review notes must explain self-hosted/no-catalog posture`);
   }
+}
+
+function assertAndroidTvGooglePlayReadiness(fixture) {
+  assert.equal(fixture.application.application_id, 'com.duskcue.tv', 'Android TV package must match native application id');
+  assert(fixture.application.target_sdk >= fixture.application.play_tv_target_sdk_floor, 'Android TV target SDK falls below Play TV policy floor');
+  assert.equal(fixture.application.package_registration.status, 'external_pending', 'Android TV package registration remains external evidence');
+  assert.equal(fixture.application.package_registration.deadline, '2026-09-30', 'Android TV package registration deadline must be recorded');
+  assertNonEmptyArray(fixture.artifacts, 'Android TV release artifacts missing');
+  assertNonEmptyArray(fixture.signing.secret_slots, 'Android TV signing secret slots missing');
+  assert(fixture.signing.repository_rule.includes('No signing file'), 'Android TV signing rule must forbid repository secrets');
+  const assets = byId(fixture.store_assets, 'id');
+  for (const asset of ['play_icon', 'play_tv_banner', 'runtime_tv_banner', 'tv_screenshots']) {
+    assert(assets.has(asset), `Android TV release assets missing ${asset}`);
+  }
+  assert.equal(assets.get('tv_screenshots').status, 'pending_real_capture', 'Android TV screenshots must not be faked');
+  assert(fixture.play_app_content.data_safety.includes('external_pending'), 'Android TV Data Safety evidence must remain owner-verified');
+  assert(fixture.play_app_content.content_rating.includes('external_pending'), 'Android TV content rating must remain external evidence');
+  assert.equal(fixture.reviewer_access.status, 'external_pending', 'Android TV reviewer access must remain external evidence');
 }
 
 function byId(items, key) {

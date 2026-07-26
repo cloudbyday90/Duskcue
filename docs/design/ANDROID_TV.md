@@ -6,7 +6,7 @@ This document is the implementation authority for Phase 17. It turns the shared 
 
 ## Status
 
-Phase 17 Tasks 0–10 are complete as of July 25, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, 16:9 placeholder banner/icon, Compose for TV entry point, device linking and profile lifecycle, profile-gated home/browse/detail/search/settings screens, an in-memory Media3 playback service, strict playback deep-link revalidation, Watch Next publication with authenticated local artwork delivery, explicit living-room input/accessibility policy, privacy-safe diagnostics export, debug APK build, fixture-backed contract unit tests, and Android lint verification. It is intentionally separate from the Flutter phone/tablet client.
+Phase 17 Tasks 0–12 are complete as of July 25, 2026. `clients/tv/android/` is a buildable native Kotlin application with a TV launcher manifest, store-ready runtime banner/icon source assets, Compose for TV entry point, device linking and profile lifecycle, profile-gated home/browse/detail/search/settings screens, an in-memory Media3 playback service, strict playback deep-link revalidation, Watch Next publication with authenticated local artwork delivery, explicit living-room input/accessibility policy, privacy-safe diagnostics export, debug APK build, fixture-backed contract unit tests, Android lint verification, and a machine-checked Google Play readiness baseline. It is intentionally separate from the Flutter phone/tablet client.
 
 ## Research Outcome
 
@@ -190,6 +190,12 @@ The shared client smoke workflow now has an automatic `android_tv_conformance` l
 
 The static [verify-android-tv-ci.mjs](../../scripts/verify-android-tv-ci.mjs) gate keeps the workflow, fixture matrix, manual AVD job, required conformance commands, and debug evidence paths connected. It is included in the shared client-CI verifier list so a Docker smoke-plan check cannot silently omit the Android TV lane.
 
+#### Task 12 Implementation
+
+The checked-in [Android TV release-readiness runbook](../ci/ANDROID_TV_RELEASE_READINESS.md), machine-readable release fixture, and static verifier now keep the native package identity (`com.duskcue.tv`), min/target SDK policy, Play-valid Gradle version properties, candidate AAB/APK paths, dedicated Android TV release-track decision, signing secret slots, Data Safety/content-rating/App Access ownership, store asset dimensions, reviewer runbook requirements, supply-chain placeholders, and rollback rule aligned. The runtime launcher banner is a real 320×180 non-transparent PNG, the Play TV banner is a real 1280×720 non-transparent PNG, and the Play icon is a 512×512 PNG. The AAB command is deliberately a candidate-artifact command, not a claim that protected signing or Play upload exists.
+
+The readiness fixture requires screenshots to remain `pending_real_capture` until an approved real Android TV AVD or physical-TV reviewer flow is captured. It likewise preserves Play registration, signing, policy declarations, reviewer access, Google TV launcher visibility, physical-device quality evidence, SBOM, provenance, and staged-rollout approval as external evidence. The static [verify-android-tv-release-readiness.mjs](../../scripts/verify-android-tv-release-readiness.mjs) gate checks that those boundaries, assets, Gradle policy, manifest, shared release fixtures, and runbook cannot silently drift.
+
 ## Delivery Order
 
 1. Create the standalone Gradle/Kotlin/Compose-for-TV app and prove a TV emulator build/launch with the correct manifest and placeholder assets.
@@ -198,11 +204,12 @@ The static [verify-android-tv-ci.mjs](../../scripts/verify-android-tv-ci.mjs) ga
 4. Add the Media3 playback/session lifecycle and strict deep-link revalidation.
 5. Add the Watch Next mapping store/reconciler and artwork handling.
 6. Consume all Phase 16d verifiers and run Android lint/unit/debug-build checks; use the opt-in Android TV AVD smoke for installation, Leanback launcher, and deep-link handoff evidence.
-7. Complete Play artifacts, signing slots, Data Safety, content rating, TV banner/screenshots, support runbook, and staged-release evidence before a public claim.
+7. Use the Task 12 release baseline to complete external Play artifacts, protected signing, policy declarations, TV screenshots, reviewer access, and staged-release evidence before a public claim.
 
 ## Deferred Release Gates
 
-- Google Play account, upload/app-signing keys, Data Safety declarations, content rating, store listing, and reviewer credentials remain external secrets/release work.
+- Google Play account/package registration, upload/app-signing keys, Data Safety declarations, content rating, target-audience/ads declarations, App Access, store listing, reviewer credentials, and final screenshots remain external secrets/release work.
+- The August 1, 2026 Android TV 32-bit/64-bit and 16 KB page-size policy must be proven for the exact signed upload artifact; Task 12 records it but does not claim it is satisfied.
 - Google TV launcher visibility, certification, and region/device availability need empirical hardware and store evidence.
 - NVIDIA SHIELD and Sony BRAVIA HDR, Dolby Vision, audio passthrough/downmix, subtitles, standby/resume, and remote/gamepad behavior require real devices.
 - TalkBack behavior, actual overscan screenshots, reduced-motion settings, physical remote/gamepad traversal, and platform caption-preference behavior require dedicated emulator/device evidence; the Task 11 AVD smoke intentionally does not claim those observations.
@@ -229,6 +236,7 @@ The static [verify-android-tv-ci.mjs](../../scripts/verify-android-tv-ci.mjs) ga
 - Android TV Watch Next provider operations: https://developer.android.com/training/tv/discovery/watch-next-add-programs
 - AndroidX TV Provider disabled-program broadcast: https://developer.android.com/reference/androidx/tvprovider/media/tv/TvContractCompat
 - Android TV app-quality criteria: https://developer.android.com/docs/quality-guidelines/tv-app-quality
+- Android TV app icon and banner guidelines: https://developer.android.com/design/ui/tv/guides/system/tv-app-icon-guidelines
 - Android TV navigation: https://developer.android.com/training/tv/get-started/navigation
 - Android TV focus system: https://developer.android.com/design/ui/tv/guides/styles/focus-system
 - Android TV layouts and overscan: https://developer.android.com/design/ui/tv/guides/styles/layouts

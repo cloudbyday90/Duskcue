@@ -5,6 +5,16 @@ plugins {
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
+val duskcueVersionCode = providers.gradleProperty("duskcueVersionCode")
+    .orElse("1")
+    .map { value ->
+        value.toIntOrNull()?.takeIf { it in 1..2_100_000_000 }
+            ?: error("duskcueVersionCode must be a positive Play-valid integer")
+    }
+val duskcueVersionName = providers.gradleProperty("duskcueVersionName")
+    .orElse("0.1.0")
+    .map { value -> value.trim().takeIf { it.isNotEmpty() } ?: error("duskcueVersionName must not be blank") }
+
 android {
     namespace = "com.duskcue.tv"
     compileSdk = 36
@@ -13,8 +23,8 @@ android {
         applicationId = "com.duskcue.tv"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = duskcueVersionCode.get()
+        versionName = duskcueVersionName.get()
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

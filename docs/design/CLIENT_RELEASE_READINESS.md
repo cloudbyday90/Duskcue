@@ -25,7 +25,7 @@ Reviewed July 2, 2026.
 
 ### Release Checklist Pack
 
-Task 11 adds the versioned release-readiness pack under [docs/api/fixtures/release/v1](../api/fixtures/release/v1/manifest.json). It is intentionally machine-readable so platform phases cannot hand-wave release requirements in prose.
+Task 11 adds the versioned release-readiness pack under [docs/api/fixtures/release/v1](../api/fixtures/release/v1/manifest.json). It is intentionally machine-readable so platform phases cannot hand-wave release requirements in prose. Phase 17 Task 12 extends it with an Android TV / Google TV-specific [release-readiness fixture](../api/fixtures/release/v1/android-tv-google-tv-readiness.json) and [runbook](../ci/ANDROID_TV_RELEASE_READINESS.md); it preserves external Play, signing, reviewer, screenshot, and hardware evidence as pending rather than treating placeholders as approval.
 
 The pack covers:
 
@@ -80,7 +80,7 @@ Advertising or third-party tracking must stay absent from disclosures unless a f
 
 ### CI, SBOM, And Provenance
 
-Task 11 defines placeholders only. Task 12 owns the executable CI/smoke harness. The release checklist requires that future build jobs produce:
+The generic pack defines placeholders, and the shared CI/smoke harness is implemented. The Android TV-specific Task 12 baseline adds static readiness verification but deliberately leaves protected signing and release publication for a future trusted workflow. The release checklist requires that future build jobs produce:
 
 - named platform artifacts;
 - checksums;
@@ -127,7 +127,7 @@ Rollback expectations are platform-specific. Mobile and store platforms generall
 
 - Real store automation remains deferred until each platform client exists and has a platform account.
 - Real signing/notarization credentials are never added to the repo.
-- Task 12 will add CI and smoke harness jobs that consume this checklist.
+- The shared CI/smoke harness exists; each platform phase must still add its executable signing/release lane only after protected credentials and store authority exist.
 - Platform phases own final store screenshots, localized listing copy, and certification uploads.
 
 ## Research Sources

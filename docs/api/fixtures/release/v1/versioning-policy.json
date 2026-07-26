@@ -48,6 +48,13 @@
       "monotonic_field": "platform build number or package revision",
       "display_field": "TV client semantic version",
       "rule": "TV clients must declare supported server contract version and platform surface fixture version."
+    },
+    {
+      "target": "android_tv_google_tv",
+      "version_source": "clients/tv/android Gradle duskcueVersionCode and duskcueVersionName properties",
+      "monotonic_field": "versionCode",
+      "display_field": "versionName",
+      "rule": "Android TV versionCode must be an unused increasing positive integer at or below the Google Play limit; versionName follows the Duskcue SemVer-compatible release train."
     }
   ]
 }

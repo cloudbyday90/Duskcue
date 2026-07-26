@@ -1,7 +1,7 @@
 {
   "fixture_pack": "duskcue-client-release-readiness",
   "version": 1,
-  "updated": "2026-07-02",
+  "updated": "2026-07-25",
   "purpose": "Phase 16d release and store-readiness contract for desktop, mobile, TV, and console clients.",
   "required_platforms": [
     "android_mobile",
@@ -80,6 +80,10 @@
     {
       "id": "privacy-permissions-review",
       "file": "privacy-permissions-review.json"
+    },
+    {
+      "id": "android-tv-google-tv-readiness",
+      "file": "android-tv-google-tv-readiness.json"
     }
   ],
   "official_source_themes": [

@@ -7,6 +7,7 @@ on:
       - .github/workflows/client-ci-smoke.yml
       - docker-compose.yml
       - docs/api/**
+      - docs/branding/assets/store/android-tv/**
       - docs/ci/**
       - docs/design/CLIENT_PLATFORM_READINESS.md
       - docs/design/CLIENT_ACCESSIBILITY_INPUT.md
@@ -19,6 +20,7 @@ on:
       - clients/tv/android/**
       - scripts/client-smoke-harness.mjs
       - scripts/android-tv-emulator-smoke.mjs
+      - scripts/verify-android-tv-release-readiness.mjs
       - scripts/verify-client-*.mjs
       - scripts/verify-android-tv-ci.mjs
       - scripts/verify-playback-conformance.mjs
@@ -34,6 +36,7 @@ on:
       - .github/workflows/client-ci-smoke.yml
       - docker-compose.yml
       - docs/api/**
+      - docs/branding/assets/store/android-tv/**
       - docs/ci/**
       - docs/design/CLIENT_PLATFORM_READINESS.md
       - docs/design/CLIENT_ACCESSIBILITY_INPUT.md
@@ -46,6 +49,7 @@ on:
       - clients/tv/android/**
       - scripts/client-smoke-harness.mjs
       - scripts/android-tv-emulator-smoke.mjs
+      - scripts/verify-android-tv-release-readiness.mjs
       - scripts/verify-client-*.mjs
       - scripts/verify-android-tv-ci.mjs
       - scripts/verify-playback-conformance.mjs
@@ -196,6 +200,7 @@ jobs:
           node scripts/client-smoke-harness.mjs --plan
           node scripts/verify-client-ci-smoke.mjs
           node scripts/verify-android-tv-ci.mjs
+          node scripts/verify-android-tv-release-readiness.mjs
 
       - name: Run Android TV unit, lint, and debug build checks
         working-directory: clients/tv/android

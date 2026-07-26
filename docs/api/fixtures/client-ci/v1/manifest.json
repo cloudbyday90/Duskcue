@@ -78,7 +78,8 @@
     "scripts/verify-device-lab.mjs",
     "scripts/verify-release-readiness.mjs",
     "scripts/verify-client-ci-smoke.mjs",
-    "scripts/verify-android-tv-ci.mjs"
+    "scripts/verify-android-tv-ci.mjs",
+    "scripts/verify-android-tv-release-readiness.mjs"
   ],
   "required_downstream_phases": [
     "phase17_android_tv",

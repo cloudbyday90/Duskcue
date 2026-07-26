@@ -1,0 +1,170 @@
+{
+  "fixture": "android-tv-google-tv-readiness",
+  "status": "phase17_task12_release_placeholders_only",
+  "application": {
+    "application_id": "com.duskcue.tv",
+    "display_name": "Duskcue",
+    "minimum_sdk": 26,
+    "target_sdk": 36,
+    "play_tv_target_sdk_floor": 34,
+    "package_registration": {
+      "status": "external_pending",
+      "deadline": "2026-09-30",
+      "evidence": "Play Console package-registration record; do not store account details in this repository."
+    }
+  },
+  "versioning": {
+    "default_version_code": 1,
+    "default_version_name": "0.1.0",
+    "gradle_properties": [
+      "duskcueVersionCode",
+      "duskcueVersionName"
+    ],
+    "release_rule": "Every Play upload uses an unused increasing positive versionCode at or below 2100000000; versionName is the user-visible SemVer-compatible release train version.",
+    "recommended_code_format": "YYYYMMDDNN, for example 2026072501"
+  },
+  "artifacts": [
+    {
+      "id": "debug_apk",
+      "path": "clients/tv/android/app/build/outputs/apk/debug/app-debug.apk",
+      "command": "./gradlew :app:assembleDebug",
+      "purpose": "CI and AVD troubleshooting only",
+      "play_upload_artifact": false,
+      "ready_now": true
+    },
+    {
+      "id": "play_release_bundle",
+      "path": "clients/tv/android/app/build/outputs/bundle/release/app-release.aab",
+      "command": "./gradlew :app:bundleRelease \"-PduskcueVersionCode=<unused-positive-code>\" \"-PduskcueVersionName=<semver>\"",
+      "purpose": "Candidate AAB for the dedicated Android TV Play track; it becomes uploadable only after a protected upload-key signing lane and Play App Signing setup.",
+      "play_upload_artifact": true,
+      "ready_now": false
+    },
+    {
+      "id": "release_apk",
+      "path": "clients/tv/android/app/build/outputs/apk/release/app-release.apk",
+      "command": "./gradlew :app:assembleRelease \"-PduskcueVersionCode=<unused-positive-code>\" \"-PduskcueVersionName=<semver>\"",
+      "purpose": "Controlled device-lab or recovery artifact only; not the normal Play upload",
+      "play_upload_artifact": false,
+      "ready_now": false
+    }
+  ],
+  "signing": {
+    "play_app_signing": "Google manages the distribution app-signing key after Play App Signing is configured.",
+    "upload_key": "A separate upload keystore signs the AAB before upload; its file, alias, and passwords remain protected CI secrets or vault references.",
+    "secret_slots": [
+      "DUSKCUE_ANDROID_TV_UPLOAD_KEYSTORE",
+      "DUSKCUE_ANDROID_TV_UPLOAD_KEY_ALIAS",
+      "DUSKCUE_ANDROID_TV_UPLOAD_STORE_PASSWORD",
+      "DUSKCUE_ANDROID_TV_UPLOAD_KEY_PASSWORD"
+    ],
+    "repository_rule": "No signing file, alias value, password, certificate, or Play service-account credential is committed.",
+    "compromise_action": "Revoke or reset the upload key through Play Console, rotate protected CI references, and record the incident in release evidence."
+  },
+  "play_distribution": {
+    "form_factor": "Android TV",
+    "track_strategy": "Use the dedicated Android TV release track after Android TV form-factor opt-in; do not duplicate TV artifacts on the mobile release track after that choice.",
+    "internal_gate": "Signed AAB, current Data Safety and App Content declarations, reviewer access, TV screenshots/banner, all automated gates, Android TV AVD evidence, and required device-lab evidence.",
+    "beta_gate": "Internal gate plus NVIDIA SHIELD and current Google TV physical-device evidence, release notes, SBOM, provenance, and approved rollout owner.",
+    "stable_gate": "Beta observations accepted, Sony BRAVIA coverage, full quality checklist evidence, Play review approval, staged rollout/rollback approval, and durable release evidence."
+  },
+  "store_assets": [
+    {
+      "id": "play_icon",
+      "path": "docs/branding/assets/store/android-tv/play-icon-512.png",
+      "format": "PNG",
+      "dimensions": "512x512",
+      "status": "ready_for_store_review",
+      "alt_text": "Amber play symbol in a dark navy rounded media tile."
+    },
+    {
+      "id": "play_tv_banner",
+      "path": "docs/branding/assets/store/android-tv/play-banner-1280x720.png",
+      "format": "PNG",
+      "dimensions": "1280x720",
+      "status": "ready_for_store_review",
+      "alt_text": "Duskcue wordmark beside an amber play symbol on a dark navy background."
+    },
+    {
+      "id": "runtime_tv_banner",
+      "path": "clients/tv/android/app/src/main/res/mipmap-xhdpi/tv_banner.png",
+      "format": "PNG",
+      "dimensions": "320x180",
+      "status": "checked_in",
+      "alt_text": "Duskcue wordmark beside an amber play symbol on a dark navy background.",
+      "density_variants": [
+        {
+          "path": "clients/tv/android/app/src/main/res/mipmap-mdpi/tv_banner.png",
+          "dimensions": "160x90"
+        },
+        {
+          "path": "clients/tv/android/app/src/main/res/mipmap-hdpi/tv_banner.png",
+          "dimensions": "240x135"
+        },
+        {
+          "path": "clients/tv/android/app/src/main/res/mipmap-xhdpi/tv_banner.png",
+          "dimensions": "320x180"
+        },
+        {
+          "path": "clients/tv/android/app/src/main/res/mipmap-xxhdpi/tv_banner.png",
+          "dimensions": "480x270"
+        },
+        {
+          "path": "clients/tv/android/app/src/main/res/mipmap-xxxhdpi/tv_banner.png",
+          "dimensions": "640x360"
+        }
+      ]
+    },
+    {
+      "id": "tv_screenshots",
+      "status": "pending_real_capture",
+      "requirement": "Capture at least one unaltered current Android TV screen from an AVD or physical TV after the approved test server/device-link flow is available; do not substitute mockups or private media."
+    }
+  ],
+  "play_app_content": {
+    "privacy_policy": "external_pending",
+    "data_safety": "external_pending_owner_verified",
+    "content_rating": "external_pending_questionnaire",
+    "target_audience": "external_pending_policy_review",
+    "ads_declaration": "external_pending_owner_verified",
+    "app_access": "external_pending_reviewer_runbook",
+    "candidate_data_categories": [
+      "account identifiers needed for authentication",
+      "app-scoped random device identifier used for device linking and remembered-profile preference",
+      "profile-scoped playback activity sent to the selected self-hosted server",
+      "manual privacy-redacted support bundle content only when a user exports and shares it"
+    ],
+    "declaration_rule": "A privacy or policy owner must confirm actual transmitted data, purposes, sharing, encryption, retention, ads, target audience, and account-deletion obligations for every distributed artifact. Never predeclare that the app collects no data."
+  },
+  "reviewer_access": {
+    "status": "external_pending",
+    "runbook_requirements": [
+      "Use a non-production Duskcue server with legal test media only.",
+      "Provide a time-bounded reviewer account or device-link path through Play Console App Access without committing credentials.",
+      "Describe remote-only server selection, device linking, profile selection, playback, captions/audio, Watch Next setting, and manual support-bundle export.",
+      "State that Duskcue bundles no catalog and accesses only the selected user-controlled server."
+    ]
+  },
+  "quality_evidence": {
+    "automated": [
+      "Android TV unit tests, lint, and debug assembly",
+      "Shared contract, client fixture, playback, auth, TV/deep-link, accessibility, diagnostics, client-CI, and release-readiness verifiers",
+      "Android TV AVD installation, Leanback launcher, and valid custom deep-link smoke"
+    ],
+    "manual_release_required": [
+      "Unaltered Android TV screenshots and Play store asset review",
+      "Google TV launcher/Watch Next visibility and direct deep-link launch",
+      "Remote focus, TalkBack, captions/audio, overscan, reduced motion, and Back-to-launcher walkthrough",
+      "NVIDIA SHIELD and Sony BRAVIA playback, HDR/audio/subtitle, standby/resume, and diagnostic export evidence"
+    ]
+  },
+  "supply_chain": {
+    "sbom": "cyclonedx-android-tv.json placeholder; generate from the protected release build and retain with the release evidence manifest.",
+    "provenance": "GitHub artifact attestation placeholder; create only from the protected release workflow after signing boundaries are approved.",
+    "retention": "Debug CI artifacts are short-lived. Release bundle digest, SBOM, provenance, and approval/runbook evidence follow RELEASE_ARTIFACT_RETENTION.md."
+  },
+  "rollback": {
+    "rule": "Do not reuse or lower versionCode. Halt a staged rollout when possible, retain the prior Play artifact reference, and publish a higher-versionCode hotfix or use the approved Play rollback path.",
+    "local_state": "A rollback must preserve or explicitly migrate encrypted session/profile/Watch Next/artwork state before a release claim."
+  }
+}

@@ -59,7 +59,7 @@
     {
       "platform": "android_tv_google_tv",
       "artifact": "duskcue-android-tv.aab",
-      "build_command": "gradle bundleRelease",
+      "build_command": "./gradlew :app:bundleRelease \"-PduskcueVersionCode=<unused-positive-code>\" \"-PduskcueVersionName=<semver>\"",
       "signing_hook": "android-tv-upload-keystore-ci-secret",
       "notarization_hook": "play-app-signing",
       "sbom": "spdx-or-cyclonedx-android-tv.json",
