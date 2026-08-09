@@ -4276,7 +4276,7 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 **Tasks:**
 
-0. Research, design, and phase enrichment — verify 2026 Fire TV, Fire OS, Vega, Watch Activity, Content Personalization, EMBER/catalog, and appstore guidance from official Amazon sources; update docs and this phase before implementation.
+0. ~~Research, design, and phase enrichment — verify 2026 Fire TV, Fire OS, Vega, Watch Activity, Content Personalization, EMBER/catalog, and appstore guidance from official Amazon sources; update docs and this phase before implementation.~~ **DONE** — [FIRE_TV.md](docs/design/FIRE_TV.md) records the August 2026 official-source review and selects a dedicated Fire OS Android target, Fire OS 7+/API 28 baseline, feature-gated standard-profile-only Watch Activity, exact accepted Amazon catalog IDs, partner-gated EMBER, and separate Vega track. Shared Fire TV fixtures now prevent a Duskcue `platform_content_id` from being treated as an Amazon catalog ID.
 1. Add Fire TV app target — reuse Android architecture where Fire OS supports it; document any divergence from Android TV.
 2. Implement Fire TV Watch Activity event reporting for playback start/progress/pause/resume/exit/completion.
 3. Implement stable Amazon content IDs from Duskcue `platform_content_id`.

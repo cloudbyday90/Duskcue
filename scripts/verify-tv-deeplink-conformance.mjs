@@ -129,10 +129,28 @@ function assertPlatformAdapters(fixture) {
   assert.equal(adapters.get('android_tv_watch_next').mapping.watch_next_type, 'continue');
   assert.equal(adapters.get('android_tv_watch_next').requirements.one_episode_per_series, true);
   assert.equal(adapters.get('android_tv_watch_next').requirements.update_changed_items_only, true);
+  assertFireTvWatchActivity(adapters.get('fire_tv_watch_activity'));
   assert.equal(adapters.get('roku_search_direct_to_play').mapping.launch_behavior, 'direct_to_play');
   assert.equal(adapters.get('lg_webos_launch_params').requirements.handle_webOSRelaunch, true);
   assert.equal(adapters.get('apple_tvos_top_shelf_universal_links').mapping.universal_link_required, true);
   assert.equal(adapters.get('xbox_uri_activation').requirements.handle_protocol_activation, true);
+}
+
+function assertFireTvWatchActivity(adapter) {
+  assert.match(adapter.mapping.duskcue_platform_content_id, platformContentIdPattern);
+  assert.equal(adapter.mapping.amazon_catalog_content_id, null);
+  assert.equal(adapter.mapping.amazon_catalog_content_id_status, 'partner_catalog_acceptance_required');
+  assert.equal(adapter.mapping.activity, 'active_current_device');
+  assert(adapter.mapping.obfuscated_fire_profile_key.startsWith('fixture-opaque-'));
+  assert(adapter.mapping.app_internal_deep_link_intent_uri.startsWith('duskcue://play/'));
+  assert.equal(adapter.mapping.amazon_catalog_deep_link, null);
+  assert.equal(adapter.requirements.report_active_event_on_state_change_seek_and_each_seconds, 60);
+  assert.equal(adapter.requirements.require_exact_accepted_amazon_catalog_content_id, true);
+  assert.equal(adapter.requirements.require_customer_content_personalization_opt_in, true);
+  assert.equal(adapter.requirements.require_standard_duskcue_profile, true);
+  assert.equal(adapter.requirements.kids_and_ambient_activity_not_reported, true);
+  assert.equal(adapter.requirements.catalog_integration_partner_gated, true);
+  assert.equal(adapter.requirements.off_device_events_require_truthful_timestamp, true);
 }
 
 function assertAccessRevalidation(fixture) {
@@ -162,10 +180,10 @@ function assertAccessRevalidation(fixture) {
 function assertPlatformIds(value, context) {
   visit(value, (key, nested, nestedContext) => {
     if (typeof nested !== 'string') return;
-    if (['content_id', 'contentId', 'preview_id', 'top_shelf_identifier', 'platform_content_id'].includes(key)) {
+    if (['content_id', 'contentId', 'preview_id', 'top_shelf_identifier', 'platform_content_id', 'duskcue_platform_content_id'].includes(key)) {
       assert.match(nested, platformContentIdPattern, `${nestedContext} must be a Duskcue platform content ID`);
     }
-    if (['intent_uri', 'deep_link_intent_uri', 'deeplink_data', 'uri'].includes(key)) {
+    if (['intent_uri', 'deep_link_intent_uri', 'app_internal_deep_link_intent_uri', 'deeplink_data', 'uri'].includes(key)) {
       assert(nested.startsWith('duskcue://play/'), `${nestedContext} must be Duskcue playback URI`);
     }
   }, context);
@@ -217,7 +235,7 @@ function assertDateTimes(value, context) {
 function assertUuidFields(value, context) {
   visit(value, (key, nested, nestedContext) => {
     if (nested === null || typeof nested !== 'string') return;
-    if (key.endsWith('_id') && !['app_id', 'content_id', 'platform_content_id', 'preview_id', 'surface_item_id', 'trace_id'].includes(key)) {
+    if (key.endsWith('_id') && !['app_id', 'content_id', 'platform_content_id', 'duskcue_platform_content_id', 'preview_id', 'surface_item_id', 'trace_id'].includes(key)) {
       assert.match(nested, uuidPattern, `${nestedContext} must be a stable UUID`);
     }
   }, context);

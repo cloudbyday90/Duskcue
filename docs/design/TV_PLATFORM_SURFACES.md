@@ -699,41 +699,18 @@ Google TV's visible home-screen behavior may require platform approval, certific
 
 ## Fire TV Adapter
 
-Fire TV is the second target because it can reuse much of the Android client architecture on Fire OS devices, while adding Amazon-specific catalog, launcher, and personalization integrations.
+Fire TV is the second target because its Fire OS path can reuse selected Android architecture while Amazon services, package identity, catalog IDs, and release evidence stay independent. [FIRE_TV.md](FIRE_TV.md) is the authoritative Phase 18 design and research outcome.
 
-Amazon now has two relevant implementation paths:
+The selected first path is a dedicated Fire OS Android application that reuses platform-neutral Kotlin behavior only. It supports Fire OS 7/API 28 and later, uses the Amazon Appstore, and excludes Android TV Watch Next, Google Play dependencies, and Leanback `SearchFragment`. Vega is a separate non-Android track, not a build flavor.
 
-- **Fire OS Android app path** — Android-based Fire TV app using Amazon Fire TV Integration SDK, Watch Activity, launcher integration, and EMBER catalog integration.
-- **Vega path** — Amazon's newer Vega app stack and Vega Content Personalization APIs. As of the researched docs, Vega Content Personalization is open beta and should be tracked separately from the Android Fire OS client.
-
-### Client Responsibilities
-
-- Reuse the Android TV client where Fire OS remains Android-based.
-- Publish playback events through Fire TV Watch Activity during active playback.
-- Implement Amazon catalog/launcher deep links where eligible.
-- Keep Amazon content IDs stable and aligned with Duskcue media IDs.
-- Support authenticated and unauthenticated deep-link flows.
-- Route authenticated deep links directly to playback.
-- Report accurate playback exit/completion events so Fire TV can remove completed items.
-- Respect the customer's Fire TV privacy and sharing settings.
-
-### Fire TV Mapping
-
-| Duskcue surface type | Fire TV usage |
+| Duskcue surface type | Fire TV first-release behavior |
 |---|---|
-| `continue` movie | Watch Activity event stream drives Continue Watching. |
-| `continue` episode | Watch Activity event stream drives Continue Watching after meaningful progress. |
-| `next_up` | Completion/exit events let Fire TV show the next episode when catalog metadata supports it. |
-| `new_episodes` | Amazon recommendation/catalog behavior, not a direct app-owned row by default. |
-| `recommended` | Content Personalization / recommendation rows where available; app-local recommendations remain the fallback. |
+| `continue`, `next_up`, `new_episodes`, `recommended` | App-local rows from the authenticated, active Duskcue profile. |
+| Eligible standard-profile playback | A feature-gated Watch Activity adapter may report truthful current-device activity only after Amazon access, customer opt-in, an opaque Fire profile key, and exact accepted catalog ID exist. |
+| Amazon Continue Watching / recommendation rows | Event-driven and catalog-dependent; user-visible timing and placement are controlled by Fire TV and must not be promised by Duskcue. |
+| Fire TV catalog, global search, and Alexa discovery | Partner/rights/catalog-gated; unavailable for private user libraries and absent until Amazon accepts the integration. |
 
-### Fire TV Design Decisions
-
-- **Event-driven, not row-owned** — Unlike Android TV Watch Next, Fire TV Continue Watching is primarily driven by app-reported playback activity. Duskcue should not model Fire TV as a direct list of launcher entries.
-- **Catalog IDs matter** — Amazon's watch activity and deep-link flows depend on content IDs matching catalog integration. Duskcue should generate stable, platform-safe content IDs from `media_item_id`.
-- **Off-device progress is limited** — Amazon documentation says current Fire TV services are not using off-device activity to influence the Continue Watching row. Duskcue should still sync server progress into the Fire TV app before playback starts, but should not promise immediate home-row updates from web/mobile playback alone.
-- **EMBER is partner-gated** — Fire TV catalog integration is available to select partners. Self-hosted Duskcue should implement local app playback and active Watch Activity first; catalog/search integration is a release-channel task.
-- **Vega is tracked separately** — Vega support should be a second Fire TV adapter if Amazon's non-Android Fire TV platform becomes required for broad device coverage.
+`platform_content_id` is Duskcue's authenticated app-routing identifier. It is not an Amazon catalog/CDF ID. A Watch Activity event or Amazon catalog launch must use only the exact, accepted Amazon mapping and must revalidate Duskcue authentication, profile policy, availability, and resume state before playback. Kids and ambient activity are app-local in the initial Fire release: neither is reported to Amazon Content Personalization.
 
 ## Roku Adapter
 
@@ -1103,7 +1080,7 @@ Household Profiles add a profile identity layer to the first server feed:
 - `artwork` for posters and backdrops
 - user/library access tables for authorization
 
-The TV feed uses the active profile's history and applies its media policy before returning an item. A Kids profile therefore cannot receive a launcher tile, deep-link resolution, or resume point for content that its library/rating policy denies. See [PROFILES_AND_AMBIENT_CHANNELS.md](PROFILES_AND_AMBIENT_CHANNELS.md). Android Watch Next program IDs should remain local to the Android client unless multi-device Android TV synchronization proves necessary. Fire TV and Roku content IDs should be deterministic strings derived from Duskcue IDs, so they do not need a database table for the first implementation.
+The TV feed uses the active profile's history and applies its media policy before returning an item. A Kids profile therefore cannot receive a launcher tile, deep-link resolution, or resume point for content that its library/rating policy denies. See [PROFILES_AND_AMBIENT_CHANNELS.md](PROFILES_AND_AMBIENT_CHANNELS.md). Android Watch Next program IDs should remain local to the Android client unless multi-device Android TV synchronization proves necessary. Roku content IDs can remain deterministic Duskcue platform IDs. Fire TV's `platform_content_id` remains a Duskcue-local identifier, while any Amazon Watch Activity/catalog ID requires a separate accepted catalog mapping; see [FIRE_TV.md](FIRE_TV.md).
 
 ## Security
 

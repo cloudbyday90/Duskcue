@@ -16,6 +16,7 @@ on:
       - docs/design/CLIENT_DEVICE_LAB.md
       - docs/design/CLIENT_RELEASE_READINESS.md
       - docs/design/ANDROID_TV.md
+      - docs/design/FIRE_TV.md
       - docs/design/TV_PLATFORM_SURFACES.md
       - clients/tv/android/**
       - scripts/client-smoke-harness.mjs
@@ -49,6 +50,7 @@ on:
       - docs/design/CLIENT_DEVICE_LAB.md
       - docs/design/CLIENT_RELEASE_READINESS.md
       - docs/design/ANDROID_TV.md
+      - docs/design/FIRE_TV.md
       - docs/design/TV_PLATFORM_SURFACES.md
       - clients/tv/android/**
       - scripts/client-smoke-harness.mjs

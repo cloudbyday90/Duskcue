@@ -35,15 +35,24 @@
         "continue"
       ],
       "mapping": {
-        "content_id": "duskcue:movie:11111111-1111-4111-8111-111111111111",
-        "activity": "progress",
+        "duskcue_platform_content_id": "duskcue:movie:11111111-1111-4111-8111-111111111111",
+        "amazon_catalog_content_id": null,
+        "amazon_catalog_content_id_status": "partner_catalog_acceptance_required",
+        "activity": "active_current_device",
         "progress_ms": 2400000,
         "duration_ms": 7200000,
-        "deep_link_intent_uri": "duskcue://play/movie/11111111-1111-4111-8111-111111111111"
+        "obfuscated_fire_profile_key": "fixture-opaque-fire-profile-key",
+        "app_internal_deep_link_intent_uri": "duskcue://play/movie/11111111-1111-4111-8111-111111111111",
+        "amazon_catalog_deep_link": null
       },
       "requirements": {
-        "report_in_player_progress_every_seconds": 60,
-        "catalog_integration_optional_partner_gated": true,
+        "report_active_event_on_state_change_seek_and_each_seconds": 60,
+        "require_exact_accepted_amazon_catalog_content_id": true,
+        "require_customer_content_personalization_opt_in": true,
+        "require_standard_duskcue_profile": true,
+        "kids_and_ambient_activity_not_reported": true,
+        "catalog_integration_partner_gated": true,
+        "off_device_events_require_truthful_timestamp": true,
         "revalidate_before_playback": true
       }
     },
