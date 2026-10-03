@@ -112,6 +112,15 @@
       "purpose": "On maintainer request, boot an Android TV AVD and verify debug APK installation, Leanback launcher entry, and custom playback deep-link handoff."
     },
     {
+      "id": "fire_tv_conformance",
+      "runner": "ubuntu-latest",
+      "commands": [
+        "node scripts/verify-fire-tv-target.mjs",
+        "./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug"
+      ],
+      "purpose": "Verify Fire TV target isolation, then build its Android app-local baseline without claiming unavailable Amazon partner integrations or physical-device behavior."
+    },
+    {
       "id": "docker_smoke_plan",
       "runner": "ubuntu-latest",
       "commands": [

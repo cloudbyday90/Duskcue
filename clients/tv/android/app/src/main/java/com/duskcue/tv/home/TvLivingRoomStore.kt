@@ -5,6 +5,7 @@ import com.duskcue.tv.api.DuskcueApiClient
 import com.duskcue.tv.api.EtagStore
 import com.duskcue.tv.api.ServerSentEvent
 import com.duskcue.tv.api.TvSurface
+import com.duskcue.tv.api.TvPlatform
 import com.duskcue.tv.api.tvSurfaceChangedHint
 import com.duskcue.tv.session.TvLocalStateCleaner
 
@@ -57,10 +58,11 @@ class MemoryTvSurfaceCache : TvSurfaceCache {
 class TvLivingRoomStore(
     private val cache: TvSurfaceCache = MemoryTvSurfaceCache(),
     private val etags: EtagStore,
+    private val platform: TvPlatform = TvPlatform.AndroidTv,
 ) : TvLocalStateCleaner {
     fun load(client: DuskcueApiClient, scope: TvProfileScope): TvHomeLoadState {
         val cached = cache.read(scope)
-        return when (val result = client.tvSurface(limit = 8, cacheScope = scope.cacheKey)) {
+        return when (val result = client.tvSurface(limit = 8, cacheScope = scope.cacheKey, platform = platform)) {
             is ApiResult.Success -> {
                 cache.write(scope, result.value)
                 TvHomeLoadState.Ready(result.value)

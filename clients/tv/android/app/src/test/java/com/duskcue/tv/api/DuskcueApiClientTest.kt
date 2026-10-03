@@ -57,6 +57,18 @@ class DuskcueApiClientTest {
     }
 
     @Test
+    fun sendsFireTvResolveRequestsWithTheFirePlatformHint() {
+        val transport = RecordingTransport(ApiResponse(status = 404, body = """{"title":"TV_003","status":404,"trace_id":"fixture-fire-resolve"}"""))
+
+        client(transport).resolveTvItem(
+            "duskcue:movie:99999999-9999-4999-8999-999999999999",
+            platform = TvPlatform.FireTv,
+        )
+
+        assertTrue(transport.requests.single().path.contains("platform=fire_tv"))
+    }
+
+    @Test
     fun records_server_correlation_without_exporting_the_raw_request_path() {
         val diagnostics = TvDiagnostics("0.1.0-test")
         val transport = RecordingTransport(

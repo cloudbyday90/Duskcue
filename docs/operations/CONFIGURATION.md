@@ -1,5 +1,9 @@
 # Configuration Strategy
 
+## Fire TV integration configuration
+
+`server_config.integrations.fire_tv` adds `watch_activity_enabled` (default `false`), `catalog_reference` (default empty), and `partner_approval_reference` (default empty). All three must be explicitly configured before the server can issue Fire playback authorization. Existing subtitle/Trakt configuration remains compatible because the Fire group defaults when absent. These are operator-owned evidence references, not Amazon credentials or automatic proof of admission. Registration also requires explicit accepted-ID and distribution-rights references with expiry; device customer consent remains separate and unknown by default. See [FIRE_TV.md](../design/FIRE_TV.md).
+
 ## Overview
 
 Two-tier configuration: a minimal **bootstrap** layer (file + environment + CLI) to reach the database, and a **runtime** layer loaded from `server_config` for everything else. This avoids two sources of truth — the database is the single source of truth for server behavior.

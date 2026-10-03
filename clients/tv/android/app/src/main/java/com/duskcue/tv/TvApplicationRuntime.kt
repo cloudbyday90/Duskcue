@@ -6,6 +6,8 @@ import com.duskcue.tv.api.MemoryEtagStore
 import com.duskcue.tv.api.MutableBearerTokenProvider
 import com.duskcue.tv.api.RetryingTransport
 import com.duskcue.tv.api.ServerOrigin
+import com.duskcue.tv.api.TvDeviceProfile
+import com.duskcue.tv.api.TvPlatform
 import com.duskcue.tv.api.TvSurface
 import com.duskcue.tv.api.UrlConnectionTransport
 import com.duskcue.tv.diagnostics.TvDeviceCapabilityCollector
@@ -33,6 +35,7 @@ data class ActiveTvSession(
     val userId: String,
     val profileId: String,
     val profileSelectionRequired: Boolean,
+    val scopeVersion: Long,
 )
 
 class TvApplicationRuntime(context: Context) {
@@ -52,7 +55,7 @@ class TvApplicationRuntime(context: Context) {
         store = sessionStore,
         artwork = AndroidWatchNextArtworkStore(applicationContext, tokenProvider),
     )
-    val livingRoom = TvLivingRoomStore(etags = etags)
+    val livingRoom = TvLivingRoomStore(etags = etags, platform = TvPlatform.AndroidTv)
     private val localStateCleaner = object : TvLocalStateCleaner {
         override suspend fun clearProfileScope() {
             diagnostics.clear()
@@ -92,14 +95,22 @@ class TvApplicationRuntime(context: Context) {
         diagnostics = diagnostics,
     )
 
+    fun deviceProfile(): TvDeviceProfile = TvDeviceProfile.androidTv()
+
+    fun platform(): TvPlatform = TvPlatform.AndroidTv
+
+    fun resolveTvItem(origin: ServerOrigin, platformContentId: String) =
+        client(origin).resolveTvItem(platformContentId, platform = platform())
+
     suspend fun activeSession(): ActiveTvSession? {
-        val session = sessionStore.current().session ?: return null
+        val (session, version) = coordinator.sessionSnapshot() ?: return null
         val origin = ServerOrigin.parse(session.origin).getOrNull() ?: return null
         return ActiveTvSession(
             origin = origin,
             userId = session.user_id,
             profileId = session.active_profile_id,
             profileSelectionRequired = session.profile_selection_required,
+            scopeVersion = version,
         )
     }
 
@@ -107,7 +118,7 @@ class TvApplicationRuntime(context: Context) {
         ?.takeUnless(ActiveTvSession::profileSelectionRequired)
         ?.let { TvProfileScope(it.origin.value, it.userId, it.profileId) }
 
-    suspend fun syncWatchNext(scope: TvProfileScope, surface: TvSurface) {
+    suspend fun refreshPlatformSurface(scope: TvProfileScope, surface: TvSurface) {
         withContext(Dispatchers.IO) {
             try {
                 watchNext.sync(scope, surface).also { outcome ->
@@ -119,7 +130,7 @@ class TvApplicationRuntime(context: Context) {
         }
     }
 
-    fun refreshWatchNext() {
+    fun refreshPlatformSurface() {
         runtimeScope.launch {
             val scope = activeProfileScope() ?: return@launch
             val origin = ServerOrigin.parse(scope.origin).getOrNull() ?: return@launch
@@ -159,9 +170,13 @@ class TvApplicationRuntime(context: Context) {
         streamDecision: String,
         audioLanguage: String?,
         subtitleLanguage: String?,
+        expectedSession: ActiveTvSession? = null,
+        requestIsCurrent: () -> Boolean = { true },
     ): Boolean {
+        if (!requestIsCurrent() || (expectedSession != null && activeSession() != expectedSession)) return false
         val session = sessionStore.current().session ?: return false
         if (session.profile_selection_required) return false
+        if (!requestIsCurrent() || (expectedSession != null && activeSession() != expectedSession)) return false
         TvPlaybackService.start(
             applicationContext,
             TvInteractivePlayback(

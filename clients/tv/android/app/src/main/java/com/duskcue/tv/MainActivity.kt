@@ -29,7 +29,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
-        runtime.refreshWatchNext()
+        runtime.refreshPlatformSurface()
     }
 
     override fun onStop() {

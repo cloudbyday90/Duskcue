@@ -35,6 +35,7 @@ The run mode creates deterministic representative media under `media/`, starts `
 | `tv_console_fixture_smoke` | PR and `main` | TV/deep-link, TV-surface, and device-lab baseline |
 | `android_tv_conformance` | PR and `main` when Android TV inputs change | Android TV contract/conformance, release-readiness, NVIDIA SHIELD and Sony BRAVIA evidence-harness verification, Kotlin unit tests, lint, debug APK, and debug evidence artifact |
 | `android_tv_emulator_smoke` | `workflow_dispatch` with `run_android_tv_emulator_smoke=true` | API 36 Android TV AVD installation, Leanback launcher, and custom deep-link handoff smoke |
+| `fire_tv_conformance` | PR and `main` when Fire TV inputs change | Fire target-isolation verification, Kotlin unit tests, lint, debug APK, and diagnostics-only artifact; physical Fire/Amazon evidence remains outside CI |
 | `docker_smoke_plan` | PR and `main` | Cheap validation that the Docker smoke harness still has the expected steps |
 | `docker_smoke_run_manual` | `workflow_dispatch` with `run_docker_smoke=true` | Real Docker `:48027` deployment smoke |
 | `desktop_tauri_smoke` | `workflow_dispatch` with `run_platform_smoke=true` | Tauri/web build smoke when maintainers request heavier evidence |

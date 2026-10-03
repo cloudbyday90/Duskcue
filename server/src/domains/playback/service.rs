@@ -825,10 +825,46 @@ pub async fn stop_playback(
     user_id: Uuid,
     session_id: Uuid,
     final_position_ms: Option<i32>,
+    cancelled_before_start: bool,
 ) -> Result<StopPlaybackResponse, PlaybackError> {
+    if cancelled_before_start {
+        let row = sqlx::query(
+            "UPDATE play_sessions SET stopped_at = COALESCE(stopped_at, now()), duration_seconds = 0, \
+             percent_complete = NULL, metadata = metadata || '{\"current_state\":\"stopped\",\"cancelled_before_start\":true}'::jsonb, \
+             updated_at = now() WHERE id = $1 AND user_id = $2 AND \
+             ((stopped_at IS NULL AND NOT (metadata ? 'last_heartbeat_at') \
+             AND COALESCE(metadata ->> 'current_position_ms', '0') = '0' \
+             AND NOT EXISTS (SELECT 1 FROM play_events e WHERE e.play_session_id = play_sessions.id \
+             AND e.event_type IN ('heartbeat', 'seek', 'pause', 'resume', 'buffer_start', 'buffer_end'))) \
+             OR metadata -> 'cancelled_before_start' = 'true'::jsonb) \
+             RETURNING media_item_id, playback_mode, metadata",
+        )
+        .bind(session_id)
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?
+        .ok_or(PlaybackError::SessionNotFound)?;
+        let metadata: serde_json::Value = row.try_get("metadata")?;
+        if let Some(transcode_id) = metadata
+            .get("transcode_session_id")
+            .and_then(serde_json::Value::as_str)
+            .and_then(|value| Uuid::parse_str(value).ok())
+        {
+            let _ = transcode_manager.stop_session(transcode_id).await;
+        }
+        return Ok(StopPlaybackResponse {
+            session_id,
+            media_item_id: row.try_get("media_item_id")?,
+            duration_seconds: 0,
+            percent_complete: None,
+            is_watched: false,
+            play_count: 0,
+            playback_mode: row.try_get("playback_mode")?,
+        });
+    }
     let row = sqlx::query(
         "SELECT id, user_id, profile_id, playback_mode, media_item_id, started_at, metadata \
-         FROM play_sessions WHERE id = $1",
+         FROM play_sessions WHERE id = $1 AND metadata -> 'cancelled_before_start' IS DISTINCT FROM 'true'::jsonb",
     )
     .bind(session_id)
     .fetch_optional(pool)
@@ -1304,9 +1340,9 @@ async fn upsert_user_item_data_stop(
          ON CONFLICT (profile_id, media_item_id) \
          DO UPDATE SET play_count = user_item_data.play_count + 1, \
                        last_played_at = now(), \
-                       is_watched = user_item_data.is_watched OR $3, \
-                       resume_position_ms = $4, \
-                       last_played_media_file_id = COALESCE($5, user_item_data.last_played_media_file_id), \
+                       is_watched = user_item_data.is_watched OR $4, \
+                       resume_position_ms = $5, \
+                       last_played_media_file_id = COALESCE($6, user_item_data.last_played_media_file_id), \
                        updated_at = now() \
          RETURNING play_count"
     )

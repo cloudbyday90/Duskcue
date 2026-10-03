@@ -8,12 +8,54 @@ import com.duskcue.tv.api.ProfileSummary
 import com.duskcue.tv.api.ServerOrigin
 import com.duskcue.tv.api.SwitchProfileResponse
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.async
+import kotlinx.coroutines.yield
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class TvSessionCoordinatorTest {
+    @Test
+    fun a_scope_snapshot_waits_for_cleanup_and_profile_replacement() = runBlocking<Unit> {
+        val store = MemorySessionStore(sessionState(userId = "user", profileId = "kids"))
+        val cleaning = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val cleaner = object : TvLocalStateCleaner {
+            override suspend fun clearProfileScope() { cleaning.complete(Unit); finish.await() }
+            override suspend fun clearIdentityScope() = Unit
+        }
+        val coordinator = TvSessionCoordinator(store, MutableBearerTokenProvider("token"), cleaner)
+        val before = requireNotNull(coordinator.sessionSnapshot())
+        val switch = async(start = CoroutineStart.UNDISPATCHED) {
+            coordinator.applyProfileSwitch(SwitchProfileResponse(profile("standard", "standard"), false, null, true, false))
+        }
+        cleaning.await()
+        val snapshot = async(start = CoroutineStart.UNDISPATCHED) { coordinator.sessionSnapshot() }
+        yield()
+        assertFalse(snapshot.isCompleted)
+        finish.complete(Unit)
+        switch.await()
+        val after = requireNotNull(snapshot.await())
+        assertEquals("standard", after.first.active_profile_id)
+        assertTrue(after.second > before.second)
+    }
+
+    @Test
+    fun switching_away_and_back_changes_the_scope_version() = runBlocking<Unit> {
+        val store = MemorySessionStore(sessionState(userId = "user", profileId = "standard"))
+        val coordinator = TvSessionCoordinator(store, MutableBearerTokenProvider("token"), RecordingCleaner())
+        val before = requireNotNull(coordinator.sessionSnapshot())
+        coordinator.applyProfileSwitch(SwitchProfileResponse(profile("other", "standard"), false, null, true, false))
+        coordinator.applyProfileSwitch(SwitchProfileResponse(profile("standard", "standard"), false, null, true, false))
+        val after = requireNotNull(coordinator.sessionSnapshot())
+        assertEquals(before.first, after.first)
+        assertTrue(after.second > before.second)
+    }
+
     @Test
     fun device_link_for_a_different_account_clears_identity_before_replacing_the_token() = runBlocking {
         val store = MemorySessionStore(sessionState(userId = "first-user", origin = "https://first.example:48027"))

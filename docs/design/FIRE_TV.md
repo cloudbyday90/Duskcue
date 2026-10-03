@@ -4,7 +4,7 @@
 
 This document is the authoritative Phase 18 design decision. Duskcue will build a dedicated Android-based Fire TV application that reuses platform-neutral Kotlin logic from the Android TV client, but has its own application identity, build target, launcher integration, release path, and Amazon adapter boundary. It will not ship AndroidX Watch Next APIs, Google Play assumptions, or a synthetic Amazon catalog into the Fire TV target.
 
-The first deliverable is a fully usable Duskcue Fire OS app: profile-gated app-local browsing and Media3 playback, authenticated Duskcue deep-link handoff, remote/focus/accessibility support, and diagnostics. Amazon Content Personalization, Watch Activity, and catalog discovery are opt-in integrations with independent technical and partner gates. Vega is a separate, non-Android product track.
+Tasks 0–3 are complete: the first deliverable is a fully usable Duskcue Fire OS app at `clients/tv/fire/`, with profile-gated app-local browsing and Media3 playback, authenticated Duskcue deep-link handoff, remote/focus/accessibility support, diagnostics, a Fire-specific server playback profile, CI build evidence, and a default-disabled Watch Activity adapter. Amazon Content Personalization, Watch Activity, and catalog discovery are opt-in integrations with independent technical and partner gates. Vega is a separate, non-Android product track.
 
 ## Official Research Rechecked
 
@@ -35,7 +35,7 @@ Reviewed August 9, 2026. The implementation must be rechecked against these sour
 
 ### Target layout
 
-Task 1 creates `clients/tv/fire/` with package identity separate from `com.duskcue.tv`. It may consume an extracted neutral Kotlin module for:
+Task 1 creates `clients/tv/fire/` with the independent Appstore application ID `com.duskcue.firetv`. It initially consumes selected `com.duskcue.tv` source directories through explicit Gradle source sets so the existing neutral Kotlin path is compiled by both targets while Android TV-only files remain out of the Fire build. The Kotlin namespace does not determine the Appstore application identity; extract a standalone shared module only when the first divergent implementation makes the ownership boundary clearer. It may reuse:
 
 - server origin selection, authenticated API client, and fixture DTOs;
 - server-authoritative profile picker, remembered-device preference, switch invalidation, and Kids parent-unlock flow;
@@ -60,6 +60,26 @@ Kids profiles retain the server's library, rating, search, external-link, downlo
 
 ## Amazon Integration Gates
 
+### Task 2 research and implementation decision — October 3, 2026
+
+Rechecked the official [SDK setup](https://developer.amazon.com/docs/fire-tv/get-started-with-firetv-integration-sdk.html), [Watch Activity](https://developer.amazon.com/docs/fire-tv/watch-activity.html), and [customer opt-in guidance](https://developer.amazon.com/docs/fire-tv/introduction-content-personalization.html). The downloaded SDK API was inspected before choosing builder methods; the setup page's Kotlin example differs from the published JAR, so the implementation uses the JAR's verified fluent builders.
+
+| Option | Benefit | Cost | Decision |
+|---|---|---|---|
+| Compile-only official SDK with an optional system library | Typed calls, no Amazon implementation in the APK, consistent with Amazon's setup guidance | Requires a checksum-pinned build download and a feature check before SDK access | Selected |
+| Reflection against device classes | No compile dependency | Weak API checking and harder failure diagnosis | Rejected |
+| Package the SDK implementation in the application | Direct class availability | Conflicts with Amazon's system-library integration model | Rejected |
+
+The build downloads the official SDK archive into ignored build storage, verifies SHA-256 `f3094973bbb18b5a58807ad043d31055ade6a2f6646bcae54a4d1022b9cdf593`, and exposes only its compile-time JAR. The manifest declares the optional `com.amazon.tv.developer.sdk.content` library and `USE_SDK` permission. Builds default `duskcueFireWatchActivityEnabled` to false. Enabling that flag alone never authorizes an event.
+
+A composable playback observer receives loaded content position/duration, play/pause changes, seeks, periodic samples, and exit before Media3 is cleared. A Fire-only reporter converts eligible samples to active SDK events with `cdf_id` content and `app_internal` profile namespaces. It waits for the first rendered frame and a valid content duration, sends the truthful loaded resume position, uses content position during interstitials, and reports every 60 seconds while the player is open even when paused. Completion and explicit/error/service exit use `EXIT`; no active event is queued or replayed after a failure.
+
+Authorization is an in-memory, expiring playback-session binding supplied by the server integration boundary. Feature enablement, Amazon integration/device availability, customer opt-in, standard profile, completed profile selection, interactive playback, current content authorization, an exact accepted catalog ID, and an opaque Fire profile key must all pass. Unknown consent is denied. Amazon's public SDK does not document a customer-opt-in query; the provider must obtain positive consent through the approved integration, and Amazon's service retains the platform opt-out boundary. Do not infer consent from library availability or TV publication settings.
+
+Profile/account/server/session cleanup clears the reporter before stopping playback, preventing an old profile's exit event after its scope is revoked. Reporter bindings, payloads, catalog IDs, and profile keys never enter preferences, logs, diagnostics, or a retry queue. Task 3 supplies the auditable accepted-catalog and profile-key source. The production source queries it only after positive device consent; unknown consent remains denied. Off-device historical synchronization requires a real timestamped server history source and is deferred rather than represented as active local playback.
+
+Task 2 verification: Fire `:app:testDebugUnitTest :app:lintDebug :app:assembleDebug` passes with 10 tests, including nine reporter tests; the same Android TV commands pass with 42 tests. Both lint reports have zero errors and only existing dependency/resource/manifest/API-style warnings. Shared client-contract, CI/smoke-plan, playback, auth, TV/deep-link/surface, accessibility, and diagnostics checks pass. Inspection of the generated Fire APK's DEX class definitions confirms the Duskcue SDK bridge is present while Amazon implementation classes and AndroidX `tvprovider` are absent. Physical customer-opted-in Continue Watching validation remains open.
+
 ### Watch Activity and Content Personalization — Task 2
 
 The adapter remains unavailable unless all of these conditions are true:
@@ -74,6 +94,22 @@ When enabled, the adapter reports an active event on start, pause, resume, seek,
 
 ### Stable ID strategy — Task 3
 
+Task 3 research rechecked October 3, 2026: [EMBER best practices](https://developer.amazon.com/docs/catalog/ember-best-practices.html) require durable identifiers, permanent retirement rather than reuse, and staging/acceptance before production. The [SDK identifier contract](https://developer.amazon.com/docs/fire-tv/get-started-with-firetv-integration-sdk.html) uses the exact accepted program ID with `cdf_id`, and a consistent, non-identifying profile key with `app_internal`.
+
+| Option | Benefit | Cost | Decision |
+|---|---|---|---|
+| Derive an Amazon ID from a Duskcue UUID/title | No registry | Cannot prove catalog acceptance and can confuse private library identity with Amazon identity | Rejected; remove the legacy synthetic Amazon encoder |
+| Store accepted mappings in media metadata | Small schema change | Weak uniqueness, permanent retirement, concurrency, and audit semantics | Rejected |
+| Dedicated versioned registry and random per-profile keys | Exact identity, immutable binding, retirement, revision checks, auditable rights/acceptance changes | Adds a migration and scoped API | Selected |
+
+The registry binds a catalog reference and exact accepted content ID to the original movie/episode identity. Deleting local media leaves a retired tombstone; a content ID cannot be rebound to another item. Admin writes require current media access, explicit acceptance/distribution-rights references, a future rights expiry, and the current revision for updates. Each successful registration/update records a transactional revision snapshot. Disabling a mapping, expiry, deleted media, missing catalog admission, user TV-publication opt-out, profile-selection state, Kids scope, ambient/stopped playback, or revoked media access prevents authorization.
+
+`integrations.fire_tv` defaults disabled and carries only the selected catalog reference and an operator-owned partner-approval reference. Those references are evidence locators, not credentials or a claim that Amazon has admitted Duskcue. Admin registration uses `/api/v1/tv/fire/catalog/{platform_content_id}`; playback reads use `/api/v1/tv/fire/playback/{session_id}/authorization`. The latter is private/no-store, checks the authenticated owner and active profile against an active interactive play session and current media policy, and returns an opaque random 32-byte profile key only with an eligible mapping. Keys are stable across that profile's devices and unrelated to account/profile UUIDs or titles. Positive customer consent remains a separate device integration boundary; the server never infers it from publication preferences.
+
+Playback authorization is short-lived and must be refreshed while playback continues. Client refreshes must discard replies from an old session/profile scope, clear a denied binding immediately, and sample current Media3 position when sending rather than replay an older event after network completion. The physical Amazon admission/consent path remains a release gate, while registry identity, concurrency, access denial, expiry, withdrawal, and tombstone behavior are repository-verifiable.
+
+Task 3 verification: disposable PostgreSQL 18 applies every migration and passes the registry contract for default/disabled integration, missing/stopped/ambient playback, publication opt-out, unhealthy files, library denial, profile-selection/Kids denial, different profile keys, admin restrictions, immutable accepted identity, competing revision writes, withdrawal, rights expiry, and deletion tombstones that cannot be reused. Fire's 15 tests and Android TV's 42 tests, both lint/debug APK builds, `cargo fmt --all -- --check`, `cargo clippy -p duskcue --all-targets`, and the shared API/auth/playback/TV conformance checks pass. Clippy reports only existing unrelated diagnostics. The full server suite passed with 776 tests; the separately enabled database contract also passes. The verification uncovered and corrected pre-seed audit partitions and the default-language full-text trigger, documented in [DATABASE.md](DATABASE.md) and [SEARCH.md](SEARCH.md).
+
 `platform_content_id` remains Duskcue's stable internal cross-platform identifier. It is neither an Amazon CDF/catalog ID nor permission to publish a user's private catalog. Task 3 adds a versioned, server-owned mapping for distributable items only:
 
 | Value | Owner | Permitted use |
@@ -82,15 +118,55 @@ When enabled, the adapter reports an active event on start, pause, resume, seek,
 | Opaque Fire profile key | Server | Fire SDK `app_internal` profile namespace after the integration gates pass. It has no reversibility to a Duskcue profile ID. |
 | Exact Amazon catalog/CDF ID | Amazon-accepted catalog mapping | Watch Activity and Amazon catalog launch only. No mapping means no Amazon event. |
 
-The mapping will have no fallback derived from a title, path, raw UUID, or private source. It is versioned/auditable, withdrawn when catalog eligibility or rights change, and never exposed to an unauthorized client. The shared TV adapter fixture expresses this `not yet cataloged` baseline so future code cannot confuse the two identifier domains.
+The implemented mapping has no fallback derived from a title, path, raw UUID, or private source. It is versioned/auditable, withdrawn when catalog eligibility or rights change, and never exposed to an unauthorized client. The shared TV adapter fixture expresses this `not yet cataloged` baseline so future code cannot confuse the two identifier domains.
 
 ### Catalog, deep links, and voice — Task 4
 
+Task 4 research rechecked October 3, 2026: Amazon's [launcher integration](https://developer.amazon.com/docs/catalog/integrate-with-launcher.html) distinguishes sign-in and playback intents and requires current entitlement handling. [EMBER onboarding](https://developer.amazon.com/docs/catalog/ember-catalog-integration-overview.html) and [production admission](https://developer.amazon.com/docs/catalog/upload-your-catalog-production.html) remain limited to approved partners. No approval, accepted staging catalog, or approved launcher configuration has been verified in this workspace.
+
+The Duskcue-owned authenticated launch path is independently deliverable. Review found that its resolve/start requests could complete after a profile switch or a replacement intent. A shared composable launch coordinator binds each attempt to a monotonically versioned account/profile scope and request generation, rechecks after each server call, discards known abandoned server sessions, and uses only the newly resolved server resume position. The runtime checks the same expected scope across Fire authorization preparation before handing a stream to Media3. No inbound URL carries a bearer, stream URL, PIN, or resume position.
+
+An abandoned launch uses the optional `cancelled_before_start` flag on the authenticated playback-stop API. The server accepts it only for the caller's session with no heartbeat and zero recorded position, or for an already-cancelled session. Cancellation records a stopped diagnostic session and releases any transcode, while leaving history, play count, resume, and TV surfaces unchanged. A normally stopped or already-progressed session cannot be relabeled as an unplayed cancellation. This preserves existing stop behavior for all requests that omit the flag.
+
+The ordinary-stop comparison in the disposable test also exposed three stale parameter references in the profile-scoped watch-history upsert: the conflict branch used the media UUID as a Boolean, the watched flag as a position, and the position as a media-file UUID. The correction binds watched state, resume, and file identity to the same parameters as the insert branch. The database test verifies both history-preserving cancellation and ordinary stop persistence.
+
+| Option | Benefit | Cost | Decision |
+|---|---|---|---|
+| Keep launch orchestration inside the UI controller | Small local edits | Hard to exercise real suspended-response and scope-change behavior | Rejected |
+| Shared launch coordinator with explicit server/runtime boundaries | Testable authentication, profile gating, resume, revocation, and replacement semantics in both targets | Adds a small shared service and scope version | Selected |
+| Publish an EMBER feed before admission is confirmed | Early export code | Cannot validate partner schema/configuration, distribution rights, ingestion, or private-library exposure | Deferred until the required evidence exists |
+
 An Amazon catalog launch must enter the Fire app, require or resume normal Duskcue account authentication, select the correct Duskcue profile under the existing server rules, resolve the original content through `/api/v1/tv/resolve/...`, and start only after current authorization, library/rating policy, availability, and resume position are rechecked. It must not trust an inbound catalog ID, cached URL, prior permission, or launcher-provided position.
 
-Task 4 is blocked until Amazon partner/onboarding approval, valid distribution rights, accepted staging catalog, production admission, and Amazon-provided launcher/deep-link configuration exist. If those gates are absent, the Fire app remains fully supported with app-local search/browse and Duskcue-owned deep links; it makes no Alexa/global-search or Fire home-row promise.
+The Amazon-specific exporter and launcher portion of Task 4 awaits confirmed partner onboarding, distributable content with valid rights, and the applicable schema/launcher requirements. Accepted staging results and production admission are subsequent publication/release gates. Without those prerequisites, the Fire app supports app-local search/browse and authenticated Duskcue-owned deep links; it makes no Alexa/global-search or Fire home-row promise.
+
+Task 4 repository verification: Fire has 37 passing tests and Android TV has 55, including the shared eleven authenticated-launch tests and serialized profile-snapshot tests. Both lint/debug APK builds pass with zero lint errors and existing warnings. The full server suite passed with 776 tests; the separately enabled PostgreSQL contract passes current cancellation ownership, repeat cancellation, cancellation after progress/seek/normal stop denial, cancelled-session ordinary-stop denial, unchanged resume/play count, and ordinary-stop media-file persistence. Formatting, clippy, and shared contract/conformance checks pass; clippy retains existing unrelated diagnostics. A local ADB inventory found zero connected ready devices, so no physical launch, opted-in Watch Activity, or Continue Watching result is claimed.
+
+## Separate Vega Track — Task 5
+
+Research refreshed October 3, 2026. Amazon's [Vega SDK overview](https://www.developer.amazon.com/apps-and-games/sdks) identifies Vega as a React Native platform for a separate generation of Fire TV devices. The [Vega build guide](https://www.developer.amazon.com/docs/vega/0.23/build-an-app) supports a virtual device for initial development and requires physical Fire TV testing before Appstore submission. Amazon's [native Fire OS porting workflow](https://developer.amazon.com/docs/adbt/port-fire-os-app-to-vega), updated September 30, describes Kotlin/Java to React Native migration as a rewrite requiring manual review; generated output is not proof of API compatibility.
+
+**Tracking complete; implementation not triggered.** The current release target is Android-based Fire OS 7+/API 28. No release requirement for a Vega device has been established. The Fire APK cannot be counted as a Vega deliverable. A future Vega project is reserved separately at `clients/tv/fire-vega/`; no scaffold, SDK credential, build lane, package identity, or hardware-support claim is created by this tracking decision.
+
+| Option | Benefit | Cost | Recommendation |
+|---|---|---|---|
+| Separate React Native for Vega client | Native platform lifecycle, playback, and remote integration can be validated directly | New UI/runtime implementation and SDK-specific dependencies | Preferred if Vega becomes required |
+| Vega WebView wrapper | Greater reuse of existing web views | Native playback, credential storage, focus, lifecycle, and platform integration still need proof | Evaluate only against the same functional gates |
+| Reuse the Fire OS APK | Existing binary | Android build/runtime APIs do not constitute a Vega application | Unsupported |
+
+Trigger implementation when the release explicitly includes a device whose current official model/OS specification requires Vega, with a supported SDK/toolchain and access to physical validation. Recheck the model, territory, SDK version, and Appstore distribution requirements at that point; an Amazon model name alone does not prove its operating system.
+
+The separate implementation backlog is:
+
+1. Confirm target devices, SDK/toolchain versions, distribution feasibility, and current official API contracts; record the decision before generating a project.
+2. Create the independent Vega target and implement server selection, secure credentials, device linking, profile selection/remembering, parent unlock, and account/profile/session cleanup using Vega APIs.
+3. Implement native playback, fresh server resume, audio/caption selection, remote focus/media controls, heartbeat/stop/cancellation, lifecycle interruption, and diagnostics redaction. Android Keystore, Compose, Media3, and the Android Amazon SDK JAR are not reused as Vega implementations.
+4. Reuse server-owned API contracts, fixtures, exact accepted catalog mappings, and eligibility rules. Implement Vega launcher/personalization adapters only against the approved Vega interface, keeping customer consent, Kids/ambient exclusion, and distribution-rights checks intact.
+5. Add a distinct build/test lane and virtual-device smoke checks, then physical playback/remote/accessibility/standby and Appstore evidence before claiming support. Pin actual SDK/package versions when implementation begins.
 
 ## Delivery Sequence and Evidence
+
+Current completion audit: Tasks 0–3 and Task 5 tracking are complete. Task 4's authenticated Duskcue-owned path is implemented and repository-verified; Amazon catalog/EMBER integration awaits partner requirements. The phase's live Watch Activity/Continue Watching and deep-link playback evidence is missing. No repository test substitutes for those physical observations, so the phase is not marked complete. The final Fire APK class-definition audit confirms the SDK bridge and launch coordinator are present with no Amazon implementation or Android TV provider classes packaged.
 
 | Task | Deliverable | Must not claim before evidence |
 |---|---|---|

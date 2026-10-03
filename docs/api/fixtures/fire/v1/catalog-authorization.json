@@ -1,0 +1,35 @@
+{
+  "version": 1,
+  "fixture_id": "fire-catalog-authorization",
+  "server_endpoint": "/api/v1/tv/fire/playback/{session_id}/authorization",
+  "cache_control": "private, no-store",
+  "accepted": {
+    "eligible": true,
+    "catalog_content_id": "ACCEPTED_MOVIE_1",
+    "opaque_profile_key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "mapping_revision": 1,
+    "expires_at": "1970-01-01T00:01:01Z"
+  },
+  "denied": {
+    "eligible": false,
+    "catalog_content_id": null,
+    "opaque_profile_key": null,
+    "mapping_revision": null,
+    "expires_at": null
+  },
+  "denial_cases": [
+    "partner_disabled",
+    "unknown_customer_consent",
+    "profile_selection_required",
+    "kids_profile",
+    "ambient_playback",
+    "stopped_or_foreign_playback",
+    "revoked_library_access",
+    "publication_disabled",
+    "unavailable_media",
+    "unaccepted_catalog_identity",
+    "rights_expired",
+    "mapping_withdrawn",
+    "retired_mapping"
+  ]
+}

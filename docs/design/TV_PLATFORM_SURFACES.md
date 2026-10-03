@@ -286,7 +286,8 @@ Phase 16b Task 2 added platform content ID utility targets:
 | Target | Shape |
 |---|---|
 | Canonical | `duskcue:{movie|episode}:{uuid}` |
-| Roku/Amazon-style strict IDs | `duskcue_{movie|episode}_{uuid_without_dashes}` |
+| Roku strict IDs | `duskcue_{movie|episode}_{uuid_without_dashes}` |
+| Amazon accepted catalog IDs | Exact server-owned accepted mapping; no synthetic encoding from Duskcue IDs. See [FIRE_TV.md](FIRE_TV.md). |
 | URL path/query IDs | Percent-encoded canonical IDs |
 
 Optional query parameters:

@@ -15,6 +15,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 pub mod error;
+pub mod fire;
 pub mod handlers;
 pub mod service;
 pub mod types;
@@ -44,5 +45,6 @@ pub fn router(state: AppState) -> Router<AppState> {
             get(handlers::get_tv_settings).put(handlers::update_tv_settings),
         )
         .route("/api/v1/tv/diagnostics", get(handlers::get_tv_diagnostics))
+        .merge(fire::router(state.clone()))
         .with_state(state)
 }

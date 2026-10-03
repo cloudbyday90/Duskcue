@@ -711,6 +711,24 @@ impl Default for BackupConfig {
 pub struct IntegrationsConfig {
     pub subtitle_providers: SubtitleProviderConfig,
     pub trakt: TraktConfig,
+    #[serde(default)]
+    pub fire_tv: FireTvIntegrationConfig,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct FireTvIntegrationConfig {
+    pub watch_activity_enabled: bool,
+    pub catalog_reference: String,
+    pub partner_approval_reference: String,
+}
+
+impl FireTvIntegrationConfig {
+    pub fn is_enabled(&self) -> bool {
+        self.watch_activity_enabled
+            && !self.catalog_reference.trim().is_empty()
+            && !self.partner_approval_reference.trim().is_empty()
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

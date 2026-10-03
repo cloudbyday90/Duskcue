@@ -28,6 +28,12 @@ The decision documented here: **PostgreSQL FTS as the default search engine for 
 
 ## Current State — PostgreSQL FTS (Phase 2)
 
+### October 3, 2026 language-configuration correction
+
+The Phase 18 disposable database test found that the existing trigger cast the default metadata language `en` directly to `regconfig`, preventing media insertion. [20261003000000_fix_search_language_configs.sql](../../server/migrations/20261003000000_fix_search_language_configs.sql) replaces the trigger function without changing applied migrations. An allowlist maps ISO language bases and supported configuration names to built-in `pg_catalog` configurations, with a `pg_ts_config` catalog lookup and `simple` fallback. Title, overview, people, genre, and tag weights remain intact. This follows PostgreSQL's [configuration model](https://www.postgresql.org/docs/18/textsearch-configuration.html).
+
+Direct casts are compact but fail on normal language codes. Changing library metadata to PostgreSQL configuration names would couple metadata-provider settings to database internals. The selected allowlist keeps language settings usable by metadata providers and avoids missing-configuration failures, at the cost of maintaining a bounded mapping. The disposable registry test exercises insertion with the default language and trigger updates for regional and unsupported languages.
+
 Duskcue v1.0 ships with PostgreSQL full-text search. The Phase 2 migration (`20260530060200_create_full_text_search.sql`) created a sophisticated FTS setup that is already better-than-typical for PG:
 
 ### Schema
@@ -39,7 +45,7 @@ Duskcue v1.0 ships with PostgreSQL full-text search. The Phase 2 migration (`202
   - Weight `C`: aggregated cast names (`media_credits` JOIN `people`)
   - Weight `D` (lowest): aggregated genres, tags
 - **Trigger-based real-time updates** — `rebuild_media_search_vector()` plpgsql function re-runs on any INSERT/UPDATE/DELETE against `media_items`, `media_credits`, `media_genres`, `media_tags`
-- **Per-library language config** — each library's `metadata_language` selects the text-search configuration (`regconfig`); a Japanese library uses the Japanese tokenizer, an English library uses English stemming
+- **Per-library language config** — supported language codes select a built-in, schema-qualified configuration. Regional codes such as `en-GB` use the base language. Unavailable or unsupported configurations, including Japanese, use `pg_catalog.simple`; this does not provide Japanese word segmentation.
 - **Trigram index** (`pg_trgm` extension) — `idx_media_items_title_trgm` GIN index on `title` for fuzzy substring matching (handles "avngers" → "Avengers")
 - **GIN index** on `search_vector` (created in Phase 2 core media tables migration)
 
@@ -58,7 +64,7 @@ LIMIT 20;
 | Capability | Status |
 |---|---|
 | Weighted relevance ranking | ✅ A/B/C/D weights |
-| Multilingual stemming | ✅ Per-library `regconfig` (auto-selects stemmer) |
+| Multilingual stemming | ✅ Supported built-in language configurations; unsupported languages use `simple` |
 | Fuzzy substring match (typo tolerance for titles) | ✅ via `pg_trgm` ILIKE / similarity |
 | Real-time index updates | ✅ Trigger-based, no sync lag |
 | Stopword filtering | ✅ Built into PG text-search configurations |
@@ -77,7 +83,7 @@ LIMIT 20;
 2. **Zero deployment complexity** — No extra process, no extra container, no extra port, no extra data directory to manage. Single PostgreSQL database handles search alongside all other data. Critical for self-hosted NAS deployments where simplicity is paramount.
 3. **Sufficient for 95%+ of deployments** — Typical home media servers have 500–5000 items. PG FTS at this scale returns queries in <10ms. Even at 10k items, latency is comfortable (10–50ms).
 4. **Real-time consistency** — Trigger-based updates mean search results are never stale. Dedicated engines require sync infrastructure (debezium, polling, batch) that introduces lag and complexity.
-5. **Multilingual** — PG's per-language regconfigs (english, german, japanese, etc.) handle stemming and stopwords correctly. Each library uses its own language.
+5. **Multilingual** — available built-in configurations such as English and German provide language-specific stemming and stopwords. Other languages use `simple`; no Japanese tokenizer is bundled.
 6. **No new dependency** — PostgreSQL is already required; FTS comes free. Adding Meilisearch/Typesense adds a second binary operators must install and update.
 
 ### Why Meilisearch as the Migration Target
@@ -309,7 +315,7 @@ This is a key UX advantage for large libraries — instant facet counts without 
 
 ### PG FTS Limitation
 
-Each PG query uses one `regconfig`. A Japanese library (`regconfig = 'japanese'`) and an English library (`regconfig = 'english'`) cannot be searched together in one query — Japanese stemming rules don't apply to English text and vice versa.
+Each text-search conversion uses one `regconfig`. A Japanese library uses `simple`, while an English library uses `english`. A query normalized with English stemming can miss tokens indexed with another configuration. Native Japanese segmentation requires a separate tokenizer and is not part of the current PostgreSQL deployment.
 
 For v1.0, this is acceptable: users searching across mixed-language libraries get results from whichever language wins the stemming. The trigram title index partially compensates (substring match is language-agnostic).
 
@@ -325,7 +331,7 @@ Meilisearch auto-detects document language at index time and applies the appropr
 | Search API (`GET /api/v1/search?q=...`) | ✅ Implemented (Pre-v1.0 Task 3) |
 | Trigram fuzzy title matching | ✅ Already built (Phase 2 `pg_trgm` index) |
 | Weighted relevance (A/B/C/D) | ✅ Already built (Phase 2 trigger) |
-| Per-library language stemming | ✅ Already built (Phase 2 `metadata_language` → `regconfig`) |
+| Per-library language stemming | ✅ Supported language codes map to built-in configurations; other languages use `simple` |
 | Faceted filtering UI | ✅ Implemented (Pre-v1.0 Task 3) |
 | Meilisearch integration | Post-v1.0 — enabled when trigger threshold crossed |
 | Search backend abstraction layer | Post-v1.0 — added when Meilisearch integration lands |

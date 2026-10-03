@@ -1460,7 +1460,7 @@ pub async fn publish_tv_surface_changed_for_library(
 pub fn encode_platform_content_id(id: &PlatformContentId, target: TvPlatformIdTarget) -> String {
     match target {
         TvPlatformIdTarget::Canonical => build_platform_content_id(id.media_type, id.media_item_id),
-        TvPlatformIdTarget::RokuFeed | TvPlatformIdTarget::AmazonCatalog => {
+        TvPlatformIdTarget::RokuFeed => {
             format!(
                 "duskcue_{}_{}",
                 media_type_slug(id.media_type),
@@ -1480,9 +1480,7 @@ pub fn decode_platform_content_id(
 ) -> Result<PlatformContentId, TvError> {
     match target {
         TvPlatformIdTarget::Canonical => parse_platform_content_id(value),
-        TvPlatformIdTarget::RokuFeed | TvPlatformIdTarget::AmazonCatalog => {
-            parse_strict_platform_content_id(value)
-        }
+        TvPlatformIdTarget::RokuFeed => parse_strict_platform_content_id(value),
         TvPlatformIdTarget::UrlPath | TvPlatformIdTarget::UrlQuery => {
             let decoded = urlencoding::decode(value)
                 .map_err(|_| TvError::InvalidPlatformContentId(value.to_string()))?;
@@ -1915,17 +1913,12 @@ mod tests {
         };
 
         let roku = encode_platform_content_id(&id, TvPlatformIdTarget::RokuFeed);
-        let amazon = encode_platform_content_id(&id, TvPlatformIdTarget::AmazonCatalog);
 
         assert!(roku.starts_with("duskcue_episode_"));
         assert!(!roku.contains(':'));
         assert!(!roku.contains('-'));
         assert_eq!(
             decode_platform_content_id(&roku, TvPlatformIdTarget::RokuFeed).unwrap(),
-            id
-        );
-        assert_eq!(
-            decode_platform_content_id(&amazon, TvPlatformIdTarget::AmazonCatalog).unwrap(),
             id
         );
     }

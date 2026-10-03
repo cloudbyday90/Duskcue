@@ -225,6 +225,8 @@ pub struct StopPlaybackRequest {
     #[validate(required)]
     pub session_id: Option<Uuid>,
     pub position_ms: Option<i32>,
+    #[serde(default)]
+    pub cancelled_before_start: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

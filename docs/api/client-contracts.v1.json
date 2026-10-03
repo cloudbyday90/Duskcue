@@ -2547,6 +2547,123 @@
               ]
             }
           }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/tv/fire/catalog/{platform_content_id}",
+          "auth": "can_manage_server",
+          "response": "FireCatalogMappingResponse",
+          "web_helpers": [],
+          "contract": {
+            "success": {
+              "response_schema": "FireCatalogMappingResponse",
+              "cache_profile": "no_store_read",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "platform_content_id",
+                  "required": true,
+                  "validation": "canonical movie/episode platform ID"
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "TV_002",
+                "TV_005",
+                "VALID_001",
+                "CONFLICT",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "PUT",
+          "path": "/api/v1/tv/fire/catalog/{platform_content_id}",
+          "auth": "can_manage_server",
+          "response": "FireCatalogMappingResponse",
+          "web_helpers": [],
+          "contract": {
+            "success": {
+              "response_schema": "FireCatalogMappingResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "platform_content_id",
+                  "required": true,
+                  "validation": "canonical movie/episode platform ID"
+                }
+              ],
+              "query_params": [],
+              "request_schema": "FireCatalogMappingRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "TV_002",
+                "TV_005",
+                "VALID_001",
+                "CONFLICT",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/tv/fire/playback/{session_id}/authorization",
+          "auth": "user",
+          "response": "FirePlaybackAuthorizationResponse",
+          "web_helpers": [],
+          "contract": {
+            "success": {
+              "response_schema": "FirePlaybackAuthorizationResponse",
+              "cache_profile": "no_store_read",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "session_id",
+                  "required": true,
+                  "validation": "owned active interactive playback UUID"
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "TV_002",
+                "TV_005",
+                "VALID_001",
+                "CONFLICT",
+                "NOT_FOUND",
+                "INTERNAL"
+              ]
+            }
+          }
         }
       ],
       "phase16d_priority": "required"

@@ -8,6 +8,7 @@ import com.duskcue.tv.api.HttpTransport
 import com.duskcue.tv.api.MemoryEtagStore
 import com.duskcue.tv.api.ServerOrigin
 import com.duskcue.tv.api.ServerSentEvent
+import com.duskcue.tv.api.TvPlatform
 import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
@@ -65,6 +66,18 @@ class TvLivingRoomStoreTest {
 
         assertTrue(store.shouldRefresh(matching, scope))
         assertFalse(store.shouldRefresh(otherUser, scope))
+    }
+
+    @Test
+    fun usesTheOwningPlatformHintForFireTvSurfaceRequests() {
+        val etags = MemoryEtagStore()
+        val transport = QueueTransport(ApiResponse(status = 200, body = surfaceBody()))
+        val store = TvLivingRoomStore(etags = etags, platform = TvPlatform.FireTv)
+        val scope = TvProfileScope("https://duskcue.example:48027", "user-a", "profile-a")
+
+        store.load(client(transport, etags), scope)
+
+        assertTrue(transport.requests.single().path.contains("platform=fire_tv"))
     }
 
     private fun client(transport: HttpTransport, etags: MemoryEtagStore): DuskcueApiClient = DuskcueApiClient(

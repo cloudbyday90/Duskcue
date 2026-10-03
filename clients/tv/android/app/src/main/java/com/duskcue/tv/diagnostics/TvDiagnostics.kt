@@ -99,6 +99,7 @@ internal data class TvRequestIdSummary(
 
 class TvDiagnostics(
     private val clientVersion: String,
+    private val platform: String = "android_tv",
     private val capabilityReportProvider: (String) -> TvDeviceCapabilityReport = { route ->
         TvDeviceCapabilityReport(
             app_version = clientVersion,
@@ -313,6 +314,7 @@ class TvDiagnostics(
         records += TvDiagnosticRecord(
             timestamp = now().toString(),
             client_version = clientVersion,
+            platform = platform,
             route_or_screen = boundedRoute(routeOrScreen),
             request_id = requestId?.takeIf(::isOpaqueId) ?: "unavailable",
             event_type = eventType,

@@ -61,6 +61,7 @@
     "tv_console_fixture_smoke",
     "android_tv_conformance",
     "android_tv_emulator_smoke",
+    "fire_tv_conformance",
     "docker_smoke_plan",
     "docker_smoke_run_manual"
   ],
@@ -81,7 +82,8 @@
     "scripts/verify-android-tv-ci.mjs",
     "scripts/verify-android-tv-release-readiness.mjs",
     "scripts/verify-nvidia-shield-validation.mjs",
-    "scripts/verify-sony-bravia-validation.mjs"
+    "scripts/verify-sony-bravia-validation.mjs",
+    "scripts/verify-fire-tv-target.mjs"
   ],
   "required_downstream_phases": [
     "phase17_android_tv",

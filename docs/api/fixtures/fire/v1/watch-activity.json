@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "fixture_id": "fire-watch-activity",
+  "event_type": "active",
+  "content_namespace": "cdf_id",
+  "profile_namespace": "app_internal",
+  "samples": [
+    { "trigger": "Tick", "elapsed_ms": 0, "position_ms": 0, "loaded": false, "playing": true, "total_events": 0 },
+    { "trigger": "Loaded", "elapsed_ms": 500, "position_ms": 45000, "loaded": true, "playing": true, "expected_state": "PLAYING", "total_events": 1 },
+    { "trigger": "Tick", "elapsed_ms": 60499, "position_ms": 104999, "loaded": true, "playing": true, "total_events": 1 },
+    { "trigger": "Tick", "elapsed_ms": 60500, "position_ms": 105000, "loaded": true, "playing": true, "expected_state": "PLAYING", "total_events": 2 },
+    { "trigger": "StateChanged", "elapsed_ms": 61000, "position_ms": 105500, "loaded": true, "playing": false, "expected_state": "PAUSED", "total_events": 3 },
+    { "trigger": "Tick", "elapsed_ms": 121000, "position_ms": 105500, "loaded": true, "playing": false, "expected_state": "PAUSED", "total_events": 4 },
+    { "trigger": "Seek", "elapsed_ms": 122000, "position_ms": 120000, "loaded": true, "playing": false, "expected_state": "PAUSED", "total_events": 5 },
+    { "trigger": "StateChanged", "elapsed_ms": 123000, "position_ms": 120000, "loaded": true, "playing": true, "expected_state": "PLAYING", "total_events": 6 },
+    { "trigger": "Exit", "elapsed_ms": 124000, "position_ms": 121000, "loaded": true, "playing": true, "expected_state": "EXIT", "total_events": 7 },
+    { "trigger": "Tick", "elapsed_ms": 184000, "position_ms": 121000, "loaded": true, "playing": false, "total_events": 7 }
+  ]
+}

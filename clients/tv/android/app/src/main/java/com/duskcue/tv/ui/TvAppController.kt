@@ -12,6 +12,7 @@ import com.duskcue.tv.api.TvLibrary
 import com.duskcue.tv.api.TvMediaItem
 import com.duskcue.tv.api.TvMediaFile
 import com.duskcue.tv.api.TvPlaybackStartResponse
+import com.duskcue.tv.api.TvPlaybackStopRequest
 import com.duskcue.tv.api.TvResolveResponse
 import com.duskcue.tv.api.TvSearchResponse
 import com.duskcue.tv.api.TvSegment
@@ -21,6 +22,8 @@ import com.duskcue.tv.api.UpdateTvSurfaceSettingsRequest
 import com.duskcue.tv.api.ServerSentEvent
 import com.duskcue.tv.home.TvHomeLoadState
 import com.duskcue.tv.playback.TvPlaybackService
+import com.duskcue.tv.playback.TvAuthenticatedDeepLinkPlayer
+import com.duskcue.tv.playback.TvDeepLinkPlaybackResult
 import com.duskcue.tv.session.DeviceLinkChallenge
 import com.duskcue.tv.session.DeviceLinkPollResult
 import kotlinx.coroutines.CoroutineScope
@@ -109,6 +112,37 @@ class TvAppController(
     val state: StateFlow<TvAppState> = mutableState.asStateFlow()
     private var pendingDeepLink: TvDeepLink.Playback? = null
     private var pendingDeepLinkFailure = false
+    private val deepLinkPlayer = TvAuthenticatedDeepLinkPlayer(
+        currentSession = runtime::activeSession,
+        resolve = { session, contentId -> withContext(Dispatchers.IO) { runtime.resolveTvItem(session.origin, contentId) } },
+        create = { session, mediaItemId ->
+            withContext(Dispatchers.IO) {
+                runtime.client(session.origin).startTvPlayback(
+                    StartTvPlaybackRequest(media_item_id = mediaItemId, device_profile = runtime.deviceProfile()),
+                )
+            }
+        },
+        start = { session, resolved, playback, isCurrent ->
+            runtime.startInteractivePlayback(
+                sessionId = playback.session_id,
+                streamUrl = playback.stream_url,
+                mediaItemId = playback.media_item_id,
+                title = "Duskcue",
+                startPositionMs = resolved.resume_position_ms,
+                qualityMode = "auto",
+                streamDecision = playback.stream_decision,
+                audioLanguage = null,
+                subtitleLanguage = null,
+                expectedSession = session,
+                requestIsCurrent = isCurrent,
+            )
+        },
+        discard = { session, playback, positionMs ->
+            withContext(Dispatchers.IO) {
+                runtime.client(session.origin).stopTvPlayback(TvPlaybackStopRequest(playback.session_id, positionMs, cancelled_before_start = true))
+            }
+        },
+    )
 
     fun bootstrap() {
         scope.launch {
@@ -132,11 +166,13 @@ class TvAppController(
         when (val deepLink = TvDeepLink.parse(rawUri)) {
             TvDeepLink.Absent -> Unit
             TvDeepLink.Invalid -> {
+                deepLinkPlayer.invalidate()
                 pendingDeepLink = null
                 pendingDeepLinkFailure = true
                 openPendingDeepLink()
             }
             is TvDeepLink.Playback -> {
+                deepLinkPlayer.invalidate()
                 pendingDeepLink = deepLink
                 pendingDeepLinkFailure = false
                 openPendingDeepLink()
@@ -189,6 +225,7 @@ class TvAppController(
     }
 
     fun selectProfile(profileId: String) {
+        deepLinkPlayer.invalidate()
         scope.launch {
             mutableState.update { it.copy(busy = true, message = null) }
             when (val result = withContext(Dispatchers.IO) {
@@ -206,6 +243,8 @@ class TvAppController(
     }
 
     fun goHome() {
+        deepLinkPlayer.invalidate()
+        pendingDeepLink = null
         mutableState.update { it.copy(route = TvRoute.Home, detail = null, prePlayback = null, message = null) }
         refreshHome()
     }
@@ -282,7 +321,7 @@ class TvAppController(
         scope.launch {
             mutableState.update { it.copy(busy = true, prePlayback = null, message = null) }
             val session = runtime.activeSession() ?: return@launch showServerSetup("Sign in again to continue.")
-            val result = withContext(Dispatchers.IO) { runtime.client(session.origin).resolveTvItem(detail.platformContentId) }
+            val result = withContext(Dispatchers.IO) { runtime.resolveTvItem(session.origin, detail.platformContentId) }
             if (result is ApiResult.Failure && result.status == 401) {
                 withContext(Dispatchers.IO) { runtime.authentication.handleSessionKicked() }
                 showServerSetup("Sign in again to continue.")
@@ -298,7 +337,7 @@ class TvAppController(
             val playbackState = state.value
             mutableState.update { it.copy(busy = true, prePlayback = null, message = null) }
             val session = runtime.activeSession() ?: return@launch showServerSetup("Sign in again to continue.")
-            val resolve = withContext(Dispatchers.IO) { runtime.client(session.origin).resolveTvItem(detail.platformContentId) }
+            val resolve = withContext(Dispatchers.IO) { runtime.resolveTvItem(session.origin, detail.platformContentId) }
             if (expireIfUnauthorized(resolve)) {
                 return@launch
             }
@@ -317,7 +356,7 @@ class TvAppController(
                         media_file_id = playbackState.playbackFileId,
                         audio_stream_index = playbackState.selectedAudioTrackIndex,
                         subtitle_stream_index = playbackState.selectedSubtitleTrackIndex,
-                        device_profile = TvDeviceProfile.androidTv(),
+                        device_profile = runtime.deviceProfile(),
                         quality_mode = playbackState.qualityMode,
                     ),
                 )
@@ -339,6 +378,7 @@ class TvAppController(
                 streamDecision = playback.stream_decision,
                 audioLanguage = playbackState.audioTracks.find { it.index == playbackState.selectedAudioTrackIndex }?.language,
                 subtitleLanguage = playbackState.subtitleTracks.find { it.index == playbackState.selectedSubtitleTrackIndex }?.language,
+                expectedSession = session,
             )
             if (!started) {
                 mutableState.update { it.copy(busy = false, message = "Choose a profile before playback starts.") }
@@ -357,7 +397,7 @@ class TvAppController(
                 playback = null,
             )
         }
-        refreshWatchNextAfterPlayback()
+        refreshHomeAfterPlayback()
     }
 
     fun onPlaybackCompleted() {
@@ -369,11 +409,11 @@ class TvAppController(
                 message = null,
             )
         }
-        refreshWatchNextAfterPlayback()
+        refreshHomeAfterPlayback()
     }
 
     fun onPlaybackPausedTooLong() {
-        runtime.refreshWatchNext()
+        runtime.refreshPlatformSurface()
     }
 
     fun cycleQualityMode() {
@@ -448,6 +488,7 @@ class TvAppController(
     }
 
     fun openProfiles() {
+        deepLinkPlayer.invalidate()
         scope.launch {
             mutableState.update { it.copy(route = TvRoute.Profiles, busy = true, message = null) }
             val result = withContext(Dispatchers.IO) { runtime.authentication.refreshProfiles() }
@@ -462,6 +503,7 @@ class TvAppController(
     }
 
     fun changeServer() {
+        deepLinkPlayer.invalidate()
         mutableState.value = TvAppState(
             phase = TvAppPhase.ServerSetup,
             originInput = state.value.originInput,
@@ -469,6 +511,7 @@ class TvAppController(
     }
 
     fun logout(allSessions: Boolean = false) {
+        deepLinkPlayer.invalidate()
         scope.launch {
             mutableState.update { it.copy(busy = true, message = null) }
             withContext(Dispatchers.IO) { runtime.authentication.logout(allSessions) }
@@ -588,70 +631,25 @@ class TvAppController(
         }
         val deepLink = pendingDeepLink ?: return false
         scope.launch {
-            val session = runtime.activeSession() ?: return@launch showServerSetup("Link this TV to continue.")
-            if (session.profileSelectionRequired) return@launch openProfiles()
             mutableState.update { it.copy(busy = true, message = null, prePlayback = null) }
-            val resolve = withContext(Dispatchers.IO) {
-                runtime.client(session.origin).resolveTvItem(deepLink.platformContentId)
-            }
-            if (resolve is ApiResult.Failure && resolve.status == 401) {
-                withContext(Dispatchers.IO) { runtime.authentication.handleSessionKicked() }
-                showServerSetup("Link this TV to continue.")
-                return@launch
-            }
-            val resolved = (resolve as? ApiResult.Success)?.value
-            if (resolved == null ||
-                !resolved.access_revalidated ||
-                resolved.availability != "playable" ||
-                resolved.playback_action != "start_playback"
-            ) {
-                pendingDeepLink = null
-                showDeepLinkUnavailable()
-                return@launch
-            }
-            val start = withContext(Dispatchers.IO) {
-                runtime.client(session.origin).startTvPlayback(
-                    StartTvPlaybackRequest(
-                        media_item_id = resolved.media_item_id,
-                        device_profile = TvDeviceProfile.androidTv(),
-                    ),
-                )
-            }
-            if (start is ApiResult.Failure && start.status == 401) {
-                withContext(Dispatchers.IO) { runtime.authentication.handleSessionKicked() }
-                showServerSetup("Link this TV to continue.")
-                return@launch
-            }
-            val playback = (start as? ApiResult.Success)?.value
-            if (playback == null) {
-                pendingDeepLink = null
-                showDeepLinkUnavailable()
-                return@launch
-            }
-            val started = runtime.startInteractivePlayback(
-                sessionId = playback.session_id,
-                streamUrl = playback.stream_url,
-                mediaItemId = playback.media_item_id,
-                title = "Duskcue",
-                startPositionMs = resolved.resume_position_ms,
-                qualityMode = "auto",
-                streamDecision = playback.stream_decision,
-                audioLanguage = null,
-                subtitleLanguage = null,
-            )
-            if (!started) {
-                mutableState.update { it.copy(busy = false, message = "Choose a profile before playback starts.") }
-                return@launch
-            }
-            pendingDeepLink = null
-            mutableState.update {
-                it.copy(
-                    route = TvRoute.Player,
-                    detail = null,
-                    playback = playback,
-                    busy = false,
-                    message = null,
-                )
+            when (val result = deepLinkPlayer.launch(deepLink)) {
+                TvDeepLinkPlaybackResult.AuthenticationRequired -> showServerSetup("Link this TV to continue.")
+                TvDeepLinkPlaybackResult.ProfileRequired -> openProfiles()
+                TvDeepLinkPlaybackResult.SessionExpired -> {
+                    withContext(Dispatchers.IO) { runtime.authentication.handleSessionKicked() }
+                    showServerSetup("Link this TV to continue.")
+                }
+                TvDeepLinkPlaybackResult.Unavailable -> {
+                    pendingDeepLink = null
+                    showDeepLinkUnavailable()
+                }
+                TvDeepLinkPlaybackResult.Superseded -> Unit
+                is TvDeepLinkPlaybackResult.Started -> {
+                    pendingDeepLink = null
+                    mutableState.update {
+                        it.copy(route = TvRoute.Player, detail = null, playback = result.playback, busy = false, message = null)
+                    }
+                }
             }
         }
         return true
@@ -676,13 +674,13 @@ class TvAppController(
                 return@launch
             }
             if (home is TvHomeLoadState.Ready && !home.stale) {
-                runtime.syncWatchNext(scope, home.surface)
+                runtime.refreshPlatformSurface(scope, home.surface)
             }
             mutableState.update { it.copy(home = home, busy = false) }
         }
     }
 
-    private fun refreshWatchNextAfterPlayback() {
+    private fun refreshHomeAfterPlayback() {
         scope.launch {
             delay(750)
             refreshHome()
@@ -752,6 +750,7 @@ class TvAppController(
         .orEmpty()
 
     private fun showServerSetup(message: String? = null) {
+        deepLinkPlayer.invalidate()
         mutableState.value = TvAppState(
             phase = TvAppPhase.ServerSetup,
             originInput = state.value.originInput,

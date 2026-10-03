@@ -259,6 +259,15 @@ data class TvResolveResponse(
 )
 
 @Serializable
+data class TvFirePlaybackAuthorization(
+    val eligible: Boolean,
+    val catalog_content_id: String? = null,
+    val opaque_profile_key: String? = null,
+    val mapping_revision: Long? = null,
+    val expires_at: String? = null,
+)
+
+@Serializable
 data class TvArtworkHints(
     val poster_url: String? = null,
     val backdrop_url: String? = null,
@@ -306,6 +315,11 @@ data class TvDeviceProfile(
             supports_dolby_vision = false,
             allow_client_side_dv_fallback = false,
             max_video_bit_depth = 8,
+        )
+
+        fun fireTv(): TvDeviceProfile = androidTv().copy(
+            client = "duskcue_fire_tv",
+            platform = "fire_tv",
         )
     }
 }
@@ -355,6 +369,7 @@ data class TvPlaybackSeekRequest(
 data class TvPlaybackStopRequest(
     val session_id: String,
     val position_ms: Long,
+    val cancelled_before_start: Boolean = false,
 )
 
 @Serializable
@@ -481,6 +496,10 @@ class DuskcueApiClient(
 
     fun tvSettings(): ApiResult<TvSurfaceSettings> = executeJson(
         request(path = "/api/v1/tv/settings"),
+    )
+
+    fun firePlaybackAuthorization(sessionId: String): ApiResult<TvFirePlaybackAuthorization> = executeJson(
+        request(path = "/api/v1/tv/fire/playback/${URLEncoder.encode(sessionId, Charsets.UTF_8.name())}/authorization"),
     )
 
     fun updateTvSettings(update: UpdateTvSurfaceSettingsRequest): ApiResult<TvSurfaceSettings> = executeJson(

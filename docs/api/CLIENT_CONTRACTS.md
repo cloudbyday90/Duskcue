@@ -1,6 +1,14 @@
 # Client Contracts
 
+## Fire TV accepted catalog contract
+
+Phase 18 adds private/no-store `GET`/`PUT /api/v1/tv/fire/catalog/{platform_content_id}` for capability-gated admin registry reads/writes and `GET /api/v1/tv/fire/playback/{session_id}/authorization` for the authenticated active profile. Admin updates require the current mapping revision and preserve accepted identity permanently. Playback reads revalidate ownership, profile policy, current media access/availability, publication settings, partner configuration, rights, and mapping state. An ineligible response returns no catalog ID, profile key, revision, or expiry. An eligible response grants at most a 60-second lease; it does not assert device customer consent.
+
+The fixture is [catalog-authorization.json](fixtures/fire/v1/catalog-authorization.json). The Fire client requires positive consent independently, refreshes leases during playback, and clears denied or stale scope replies without replaying old active events. Synthetic Amazon ID encoding was removed; [FIRE_TV.md](../design/FIRE_TV.md) owns the accepted-ID and opaque-profile-key design. Registry database verification runs through `scripts/verify-migrations.ps1 -RunFireRegistryTests` on disposable PostgreSQL 18.
+
 ## Purpose
+
+The playback-stop request accepts optional `cancelled_before_start` (default false). It releases a known abandoned launch only if the authenticated caller owns an unprogressed session, or the session was already cancelled this way. No heartbeat or recorded position may exist. Cancellation preserves watch history, play count, resume, and launcher surfaces. Regular stopping retains its prior behavior. Shared Android/Fire launch code uses this path for stale, replaced, or cancelled attempts before Media3 starts; see [FIRE_TV.md](../design/FIRE_TV.md).
 
 This document defines the Phase 16a desktop/mobile client contract strategy and its Phase 16d promotion into shared client contracts for desktop, mobile, TV, and console platforms. It supports the task list in [BUILD_ORDER.md](../../BUILD_ORDER.md).
 

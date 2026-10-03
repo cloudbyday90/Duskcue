@@ -52,6 +52,15 @@ class TvDiagnosticsTest {
     }
 
     @Test
+    fun recordsTheOwningPlatformWithoutChangingAndroidTvDefault() {
+        val fireDiagnostics = TvDiagnostics(clientVersion = "0.1.0-test", platform = "fire_tv")
+
+        fireDiagnostics.recordScreen("home")
+
+        assertEquals("fire_tv", fireDiagnostics.snapshot().single().platform)
+    }
+
+    @Test
     fun exportsCurrentCapabilityReportWithoutHardwareIdentifiers() {
         val diagnostics = TvDiagnostics(
             clientVersion = "0.1.0-test",

@@ -64,7 +64,6 @@ pub enum TvAvailabilityState {
 pub enum TvPlatformIdTarget {
     Canonical,
     RokuFeed,
-    AmazonCatalog,
     UrlPath,
     UrlQuery,
 }

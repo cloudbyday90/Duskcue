@@ -96,6 +96,7 @@ class TvPlaybackService : MediaSessionService() {
     private val playerStateRunnable = object : Runnable {
         override fun run() {
             publishPlayerState()
+            reportObserverSample(TvPlaybackSignal.Tick)
             if (runtime != null) {
                 mainHandler.postDelayed(this, PLAYER_STATE_INTERVAL_MS)
             }
@@ -146,7 +147,6 @@ class TvPlaybackService : MediaSessionService() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        player?.pause()
         stopPlayback(notifyServer = true)
         stopSelf()
     }
@@ -185,6 +185,7 @@ class TvPlaybackService : MediaSessionService() {
         )
         val activeRuntime = Runtime(launch, api, System.currentTimeMillis())
         runtime = activeRuntime
+        observePlayback { it.started(launch) }
         playbackUiMutable.value = TvPlaybackUiState()
         val activePlayer = player ?: return
         activePlayer.trackSelectionParameters = activePlayer.trackSelectionParameters
@@ -233,6 +234,35 @@ class TvPlaybackService : MediaSessionService() {
             is_buffering = activePlayer.isLoading,
         )
         networkExecutor.execute { activeRuntime.api.playbackHeartbeat(request) }
+    }
+
+    private fun observerSample(): TvPlaybackSample? {
+        val activeRuntime = runtime ?: return null
+        val activePlayer = player ?: return null
+        return TvPlaybackSample(
+            sessionId = activeRuntime.playback.sessionId,
+            positionMs = activePlayer.contentPosition,
+            durationMs = activePlayer.contentDuration,
+            loaded = activeRuntime.firstFrameAtMs != null,
+            playWhenReady = activePlayer.playWhenReady,
+            interstitial = activePlayer.isPlayingAd,
+        )
+    }
+
+    private fun reportObserverSample(signal: TvPlaybackSignal) {
+        val sample = observerSample() ?: return
+        observePlayback { it.sample(sample, signal) }
+    }
+
+    private fun observePlayback(action: (TvPlaybackObserver) -> Unit) {
+        val observer = playbackObserver ?: return
+        try {
+            action(observer)
+        } catch (_: RuntimeException) {
+            observer.clear()
+        } catch (_: LinkageError) {
+            observer.clear()
+        }
     }
 
     private fun publishPlayerState() {
@@ -311,6 +341,8 @@ class TvPlaybackService : MediaSessionService() {
         if (stopping) return
         val activeRuntime = runtime ?: return
         stopping = true
+        val finalSample = observerSample()
+        observePlayback { it.exited(finalSample) }
         mainHandler.removeCallbacks(heartbeatRunnable)
         mainHandler.removeCallbacks(playerStateRunnable)
         mainHandler.removeCallbacks(pausedWatchNextRunnable)
@@ -358,6 +390,7 @@ class TvPlaybackService : MediaSessionService() {
             if (activeRuntime.firstFrameAtMs == null) {
                 activeRuntime.firstFrameAtMs = System.currentTimeMillis()
                 reportHeartbeat()
+                reportObserverSample(TvPlaybackSignal.Loaded)
             }
         }
 
@@ -387,6 +420,10 @@ class TvPlaybackService : MediaSessionService() {
             }
         }
 
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (runtime != null && !stopping) reportObserverSample(TvPlaybackSignal.StateChanged)
+        }
+
         override fun onPositionDiscontinuity(
             oldPosition: Player.PositionInfo,
             newPosition: Player.PositionInfo,
@@ -396,6 +433,7 @@ class TvPlaybackService : MediaSessionService() {
                 publishPlayerState()
                 reportSeek(newPosition.positionMs)
                 reportHeartbeat()
+                reportObserverSample(TvPlaybackSignal.Seek)
             }
         }
 
@@ -492,6 +530,7 @@ class TvPlaybackService : MediaSessionService() {
         @Volatile private var activeService: TvPlaybackService? = null
         @Volatile private var attachedPlayerView: WeakReference<PlayerView>? = null
         @Volatile private var diagnostics: TvDiagnostics? = null
+        @Volatile private var playbackObserver: TvPlaybackObserver? = null
         private val playbackUiMutable = MutableStateFlow(TvPlaybackUiState())
         val playbackUi: StateFlow<TvPlaybackUiState> = playbackUiMutable.asStateFlow()
 
@@ -522,6 +561,11 @@ class TvPlaybackService : MediaSessionService() {
 
         fun configureDiagnostics(value: TvDiagnostics) {
             diagnostics = value
+        }
+
+        fun configurePlaybackObserver(value: TvPlaybackObserver) {
+            playbackObserver?.clear()
+            playbackObserver = value
         }
 
         fun pause() {

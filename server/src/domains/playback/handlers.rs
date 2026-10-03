@@ -221,6 +221,7 @@ pub async fn stop_playback(
         user.user_id,
         session_id,
         req.position_ms,
+        req.cancelled_before_start,
     )
     .await?;
 
@@ -229,7 +230,7 @@ pub async fn stop_playback(
     } else {
         "playback_stopped"
     };
-    if result.playback_mode == "interactive" {
+    if result.playback_mode == "interactive" && !req.cancelled_before_start {
         tv_service::publish_tv_surface_changed(
             &state.event_bus,
             user.user_id,

@@ -21,6 +21,7 @@ param(
     [string]$Database = "duskcue_migration",
     [string]$User = "duskcue",
     [switch]$RunTests,
+    [switch]$RunFireRegistryTests,
     [switch]$KeepAlive
 )
 
@@ -37,6 +38,7 @@ $previousPort = $env:DUSKCUE_MIGRATION_POSTGRES_PORT
 $previousDb = $env:DUSKCUE_MIGRATION_POSTGRES_DB
 $previousUser = $env:DUSKCUE_MIGRATION_POSTGRES_USER
 $previousPassword = $env:DUSKCUE_MIGRATION_POSTGRES_PASSWORD
+$previousFireRegistryTests = $env:DUSKCUE_FIRE_REGISTRY_TESTS
 
 function Invoke-Checked {
     param(
@@ -125,6 +127,17 @@ try {
         }
     }
 
+    if ($RunFireRegistryTests) {
+        $env:DUSKCUE_FIRE_REGISTRY_TESTS = "disposable"
+        Push-Location $repoRoot
+        try {
+            Invoke-Checked -FilePath "cargo" -Arguments @("test", "-p", "duskcue", "fire_registry_database_contract", "--", "--ignored")
+        }
+        finally {
+            Pop-Location
+        }
+    }
+
     Write-Host "Migration verification completed successfully"
 }
 finally {
@@ -143,4 +156,5 @@ finally {
     $env:DUSKCUE_MIGRATION_POSTGRES_DB = $previousDb
     $env:DUSKCUE_MIGRATION_POSTGRES_USER = $previousUser
     $env:DUSKCUE_MIGRATION_POSTGRES_PASSWORD = $previousPassword
+    $env:DUSKCUE_FIRE_REGISTRY_TESTS = $previousFireRegistryTests
 }

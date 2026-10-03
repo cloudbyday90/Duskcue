@@ -1,5 +1,13 @@
 # Database Design
 
+## Phase 18 Fire catalog registry
+
+The Fire integration adds `fire_catalog_mappings`, `fire_catalog_mapping_events`, and `fire_profile_keys` through [20261003010000_create_fire_catalog_registry.sql](../../server/migrations/20261003010000_create_fire_catalog_registry.sql). Mappings preserve exact accepted IDs and original media identities, retain tombstones after local deletion, enforce per-catalog uniqueness, and record transactional revision snapshots. Profile keys are independent random 32-byte URL-safe values, stable per profile and removed with that profile. See [FIRE_TV.md](FIRE_TV.md) for eligibility, privacy, and catalog-admission boundaries.
+
+Fresh installations after the initial June/July 2026 partitions require a current audit partition before seed data triggers audited writes. [20260530065000_ensure_seed_audit_partitions.sql](../../server/migrations/20260530065000_ensure_seed_audit_partitions.sql) runs before the seed migration and creates the current and next month idempotently without changing any applied migration. `server/build.rs` tracks the migrations directory so additions are included by SQLx's embedded migrator.
+
+The same disposable verification exposed the original full-text trigger's invalid `en` to `regconfig` cast. [20261003000000_fix_search_language_configs.sql](../../server/migrations/20261003000000_fix_search_language_configs.sql) preserves weighted indexing and resolves supported language bases through an allowlist of schema-qualified built-ins, falling back to `simple` when unavailable. [SEARCH.md](SEARCH.md) records the language coverage and database regression cases.
+
 ## Database Platform
 
 **PostgreSQL 18** (released September 25, 2025)
