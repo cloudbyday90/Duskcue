@@ -32,6 +32,7 @@ use crate::state::{CpuConfig, RuntimeConfig};
 pub mod arguments;
 mod launcher;
 mod lifecycle;
+mod readiness;
 use arguments::{
     build_ffmpeg_input_args, build_hls_output_args, build_stream_mapping_args,
     build_subtitle_burn_in_filter, compose_video_filters,
@@ -466,24 +467,26 @@ impl TranscodeManager {
         );
 
         self.sessions.insert(session_id, session.clone());
-        self.confirm_bootstrap(session_id, spawned.readiness)
-            .await?;
+        self.confirm_startup(&session, spawned.readiness).await?;
 
         Ok(session)
     }
 
-    async fn confirm_bootstrap(
+    async fn confirm_startup(
         &self,
-        session_id: Uuid,
-        readiness: LaunchReadiness,
+        session: &TranscodeSession,
+        launch: LaunchReadiness,
     ) -> Result<(), PlaybackError> {
-        let pending = self.pending_session(session_id);
-        if let Err(error) = readiness.wait().await {
-            self.stop_session(session_id).await?;
-            return Err(error);
-        }
-        pending.acknowledge();
-        Ok(())
+        let deadline = tokio::time::Instant::now() + readiness::STARTUP_TIMEOUT;
+        readiness::confirm(
+            &self.workers,
+            session.id,
+            &session.segment_dir,
+            &session.manifest_path,
+            launch.wait(),
+            deadline,
+        )
+        .await
     }
 
     pub async fn stop_session(&self, session_id: Uuid) -> Result<(), PlaybackError> {
@@ -655,8 +658,7 @@ impl TranscodeManager {
         );
 
         self.sessions.insert(session_id, session.clone());
-        self.confirm_bootstrap(session_id, spawned.readiness)
-            .await?;
+        self.confirm_startup(&session, spawned.readiness).await?;
 
         Ok(session)
     }

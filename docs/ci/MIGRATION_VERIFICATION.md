@@ -4,6 +4,8 @@
 
 Duskcue validates SQL migrations against a disposable PostgreSQL 18 database before they are trusted for merge or release. Static review and Rust compilation are not enough for this project because migrations use PostgreSQL-specific DDL, extensions, generated columns, partitions, triggers, and seed data.
 
+Copyright tooling preserves migration bytes. The original legacy cutoff remains unchanged; the two pre-existing October 3 migrations without notices are additionally protected by exact SHA256 identities in `scripts/copyright-migrations.mjs`. The checker verifies those identities, and both notice-writing scripts refuse altered frozen bytes rather than modifying them. Future migrations and other filenames still require normal notices. Three thin tests cover the actual unchanged files, added header/newline refusal, path normalization and future-version boundaries. This metadata repair does not run migrations or replace PostgreSQL/SQLx verification.
+
 The local implementation is:
 
 ```powershell

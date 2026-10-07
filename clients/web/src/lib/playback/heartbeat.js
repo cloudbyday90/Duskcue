@@ -1,3 +1,9 @@
+/*
+ * Duskcue — Self-hosted media streaming server
+ * Copyright (C) 2026-2026 Duskcue Contributors
+ * Licensed under AGPL-3.0. See LICENSE for details.
+ */
+
 export function createPlaybackHeartbeat({ readState, send, intervalMs = 15000 }) {
     if (typeof readState !== 'function' || typeof send !== 'function') throw new TypeError('Heartbeat requires state and transport functions.');
     if (!Number.isSafeInteger(intervalMs) || intervalMs <= 0 || intervalMs > 2147483647) throw new RangeError('Heartbeat interval must be a positive supported duration.');

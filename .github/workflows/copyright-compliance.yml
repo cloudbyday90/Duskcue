@@ -31,4 +31,6 @@ jobs:
         with:
           node-version: '24'
       - name: Check copyright headers
-        run: node scripts/check-copyright.mjs
+        run: |
+          node --max-old-space-size=64 --test --test-concurrency=1 scripts/copyright-migrations.test.mjs
+          node scripts/check-copyright.mjs

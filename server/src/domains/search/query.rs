@@ -1,3 +1,7 @@
+// Duskcue — Self-hosted media streaming server
+// Copyright (C) 2026-2026 Duskcue Contributors
+// Licensed under AGPL-3.0. See LICENSE for details.
+
 use sqlx::{Postgres, QueryBuilder};
 
 use crate::domains::media::access::scoped_media_query;

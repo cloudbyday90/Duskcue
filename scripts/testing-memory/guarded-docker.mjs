@@ -1,3 +1,9 @@
+/*
+ * Duskcue — Self-hosted media streaming server
+ * Copyright (C) 2026-2026 Duskcue Contributors
+ * Licensed under AGPL-3.0. See LICENSE for details.
+ */
+
 import { spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { appendFile, realpath } from 'node:fs/promises';

@@ -1,3 +1,9 @@
+/*
+ * Duskcue — Self-hosted media streaming server
+ * Copyright (C) 2026-2026 Duskcue Contributors
+ * Licensed under AGPL-3.0. See LICENSE for details.
+ */
+
 import { resolveNextEpisode } from './next-episode.js';
 
 export const AUTOPLAY_DELAY_MS = 10_000;

@@ -1,3 +1,7 @@
+// Duskcue — Self-hosted media streaming server
+// Copyright (C) 2026-2026 Duskcue Contributors
+// Licensed under AGPL-3.0. See LICENSE for details.
+
 pub(super) fn build_ffmpeg_filter() -> Result<seccompiler::BpfProgram, std::io::Error> {
     use seccompiler::{SeccompAction, SeccompFilter, SeccompRule};
     use std::collections::BTreeMap;

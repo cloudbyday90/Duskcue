@@ -2,6 +2,7 @@ import { stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { mediaIds, profileIds } from './catalog.js';
 import { createMediaResponder } from './media-response.mjs';
+import { createProgressiveHlsResponder } from './progressive-hls.mjs';
 
 const sessionId = (number) => `00000000-0000-7000-8000-${String(700 + number).padStart(12, '0')}`;
 
@@ -29,6 +30,8 @@ export async function installPlaybackApi(page, scenario, media, options = null) 
     const state = { sessions, starts: [], stops: [], stopAttempts: [], seeks: [], heartbeats: [], qoe: [], failureResponses: [] };
     let lostStopAcknowledgements = options.lostStopAcknowledgements || 0;
     const serve = createMediaResponder(media);
+    const progressive = options.progressiveHls ? await createProgressiveHlsResponder(media, { clip }) : null;
+    state.progressive = progressive;
 
     await page.route(/\/api\/v1(?:\/|$)/, async (route) => {
         const request = route.request();
@@ -106,7 +109,8 @@ export async function installPlaybackApi(page, scenario, media, options = null) 
         if (method === 'GET' && hls) {
             if (![...sessions.values()].some((session) => session.transcodeId === hls[1])) return json({ status: 404 }, 404);
             const name = hls[2].replace('v0/', '');
-            return serve(route, `${clip}/${name}`, name.endsWith('.ts') ? 'video/mp2t' : 'application/vnd.apple.mpegurl');
+            const responder = progressive ? progressive.serve : serve;
+            return responder(route, `${clip}/${name}`, name.endsWith('.ts') ? 'video/mp2t' : 'application/vnd.apple.mpegurl');
         }
         if (method === 'GET' && path.endsWith('/segments')) return json({ segments: options.segments || [] });
         if (method === 'GET' && path.endsWith('/storyboard/index.vtt')) return route.fulfill({ contentType: 'text/vtt', body: `WEBVTT\n\n00:00:00.000 --> 00:00:${String(duration).padStart(2, '0')}.000\nsprite-000.webp#xywh=0,0,160,90\n` });

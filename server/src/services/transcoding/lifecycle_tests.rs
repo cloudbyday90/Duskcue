@@ -1,3 +1,19 @@
+// Duskcue — Self-hosted media streaming server
+// Copyright (C) 2026-2026 Duskcue Contributors
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::*;
@@ -18,7 +34,7 @@ fn a_successful_wait_timeout_does_not_confirm_physical_exit() {
     ));
 }
 
-fn child(code: &str) -> anyhow::Result<FfmpegHandle> {
+pub(super) fn child(code: &str) -> anyhow::Result<FfmpegHandle> {
     let mut command = Command::new("node");
     command
         .args(["--max-old-space-size=16", "-e", code])
@@ -113,7 +129,7 @@ async fn actual_long_running_ffmpeg_is_terminated_before_its_permit_and_cache_ar
     Ok(())
 }
 
-async fn directory() -> anyhow::Result<PathBuf> {
+pub(super) async fn directory() -> anyhow::Result<PathBuf> {
     let path = std::env::temp_dir().join(format!("duskcue-worker-fixture-{}", Uuid::now_v7()));
     tokio::fs::create_dir_all(&path).await?;
     Ok(path)
@@ -129,7 +145,7 @@ async fn ready(seen: &AtomicBool) -> anyhow::Result<()> {
     Ok(())
 }
 
-fn shutdown() -> GracefulShutdown {
+pub(super) fn shutdown() -> GracefulShutdown {
     GracefulShutdown::builder()
         .unix_sigterm(Duration::from_millis(100))
         .windows_ctrl_break(Duration::from_millis(100))

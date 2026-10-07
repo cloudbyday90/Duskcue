@@ -34,6 +34,7 @@
     } from '../stores/player.js';
     import { preferences } from '../stores/user.js';
     import { createMediaSource } from '../playback/source.js';
+    import { canCompleteSource, sourcePlaybackDuration } from '../playback/timing.js';
     import { createPlaybackTelemetry } from '../playback/telemetry.js';
     import { createPlaybackAnnotations } from '../playback/annotations.js';
     import { formatTimestamp, formatDuration } from '../utils/format.js';
@@ -59,6 +60,7 @@
     let videoStage = null;
     let containerEl = null;
     let mediaSource;
+    let sourceTimeline = $state(null);
     let captionLayout;
 
     let isMounted = $state(false);
@@ -138,7 +140,11 @@
         if (preferenceContext) player.setContext(preferenceContext);
         containerEl?.focus();
         captionLayout = createCaptionLayout({ container: containerEl, stage: videoStage, video: videoEl, readObstructions: () => [...containerEl.querySelectorAll('.player-heading, .player-controls, .track-fallback:not(:empty), .player-popover:not([hidden]), .autoplay-card, .fullscreen-error, .skip-button, .seek-preview')] });
-        mediaSource = createMediaSource({ video: videoEl, onError: () => { sourceError = true; player.setPlaying(false); }, onPlaybackBlocked: () => player.setPlaying(false) });
+        mediaSource = createMediaSource({ video: videoEl, onError: () => { sourceError = true; player.setPlaying(false); }, onPlaybackBlocked: () => player.setPlaying(false), onTimelineChange: (timeline) => {
+            if (!isMounted) return;
+            sourceTimeline = timeline;
+            if (timeline.mode === 'hls-mse' && timeline.complete !== null) handleDurationChange();
+        } });
         fullscreenController = createFullscreenController({ element: containerEl, onChange: (state) => {
             player.setFullscreen(state.fullscreen);
             fullscreenError = !!state.error;
@@ -217,9 +223,11 @@
     }
 
     function handleDocumentVisibility() { autoplay.setPaused({ documentHidden: document.hidden }); }
-    function handleEnded() {
+    function handleEnded(event) {
         const state = runtime.getState();
-        if (!isMounted || closing || state.loading || state.error || $playerLoading) return;
+        if (!isMounted || closing || exitRequested || state.loading || state.error || $playerLoading
+            || !event?.isTrusted || !videoEl?.ended || sourceTimeline?.url !== $streamUrl || !canCompleteSource(sourceTimeline)) return;
+        updateDuration(true);
         if (Number.isFinite(videoEl?.currentTime)) player.setPosition(videoEl.currentTime * 1000 + ($player.streamOffsetMs || 0));
         player.setPlaying(false);
         autoplay.ended({ item: state.item, profileId, autoplayEnabled: state.autoplayEnabled, preferencesReady: state.preferencesReady });
@@ -291,14 +299,19 @@
     }
 
     function handleDurationChange() {
-        if (videoEl && Number.isFinite(videoEl.duration)) {
-            player.setDuration(videoEl.duration * 1000 + ($player.streamOffsetMs || 0));
-        }
+        updateDuration();
+    }
+
+    function updateDuration(naturalEnded = false) {
+        if (!isMounted || closing || exitRequested || !videoEl || sourceTimeline?.url !== $streamUrl || sourceTimeline?.mode === 'detached') return;
+        const runtimeSeconds = playbackState?.item?.runtime_seconds || $currentMediaItem?.runtime_seconds || mediaItem?.runtime_seconds || playbackState?.file?.runtime_seconds;
+        const duration = sourcePlaybackDuration({ source: sourceTimeline, mediaDurationSeconds: videoEl.duration, runtimeSeconds, streamOffsetMs: $player.streamOffsetMs, naturalEnded });
+        if (duration > 0 && duration !== $player.durationMs) player.setDuration(duration);
     }
 
     function handleLoadedMetadata() {
-        if (videoEl && Number.isFinite(videoEl.duration)) {
-            player.setDuration(videoEl.duration * 1000 + ($player.streamOffsetMs || 0));
+        if (isMounted && !closing && !exitRequested && videoEl && sourceTimeline?.url === $streamUrl && sourceTimeline?.mode !== 'detached') {
+            handleDurationChange();
             const position = $player.positionMs;
             if ($streamDecision === 'direct_play' && position > 0 && videoEl.currentTime === 0) videoEl.currentTime = position / 1000;
             for (const track of videoEl.textTracks) track.mode = 'disabled';
@@ -306,9 +319,9 @@
     }
 
     function updateBuffered() {
-        if (!videoEl || !videoEl.buffered.length || !videoEl.duration) return;
+        if (!videoEl || !videoEl.buffered.length || !durationMs) return;
         const end = videoEl.buffered.end(videoEl.buffered.length - 1);
-        bufferedPercent = ((end * 1000 + ($player.streamOffsetMs || 0)) / durationMs) * 100;
+        bufferedPercent = Math.max(0, Math.min(100, ((end * 1000 + ($player.streamOffsetMs || 0)) / durationMs) * 100));
     }
 
     function togglePlayPause() {

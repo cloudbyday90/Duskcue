@@ -8,6 +8,7 @@
  */
 
 import fs from 'node:fs';
+import { preserveMigrationCopyright } from './copyright-migrations.mjs';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const COPYRIGHT_YEAR = `2026-${CURRENT_YEAR}`;
@@ -179,6 +180,7 @@ function hasHeader(content) {
 
 function addHeader(filePath) {
   const content = fs.readFileSync(filePath, 'utf8');
+  if (preserveMigrationCopyright(filePath, content)) return false;
 
   if (hasHeader(content)) {
     return false;

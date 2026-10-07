@@ -1,3 +1,9 @@
+<!--
+  Duskcue — Self-hosted media streaming server
+  Copyright (C) 2026-2026 Duskcue Contributors
+  Licensed under AGPL-3.0. See LICENSE for details.
+-->
+
 <script>
     import { getArtwork } from '$lib/api/artwork.js';
     import posterPlaceholder from '$lib/assets/placeholder-poster.svg';

@@ -9,6 +9,7 @@
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import { preserveMigrationCopyright } from './copyright-migrations.mjs';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const COPYRIGHT_YEAR = `2026-${CURRENT_YEAR}`;
@@ -197,6 +198,7 @@ function getExt(filePath) {
 
 function processFile(filePath) {
   const content = fs.readFileSync(filePath, 'utf8');
+  if (preserveMigrationCopyright(filePath, content)) return 'unchanged';
 
   if (!content.includes('Copyright (C)')) {
     const ext = getExt(filePath);

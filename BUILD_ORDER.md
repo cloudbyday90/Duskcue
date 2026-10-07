@@ -4494,6 +4494,8 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 **Durable progress:** The user's October 7 instruction authorizes normal commit/push checkpoints to `origin/main` between coherent tasks. Coordinate a stable source boundary across agents, preserve ignored local/runtime artifacts, and label unverified source precisely. A checkpoint does not complete T01–T08 or authorize merge/deployment/release; continue from the pushed state under the same resource and verification requirements. The implementation plan owns this standing workflow.
 
+**Source follow-up:** The icon asset repair is pushed as `c6dd202`. Progressive client timing, bounded startup readiness and the normal-gated Linux compiler helper are source coherent. Twenty-six thin Node cases pass and current Rust formatting passes; ten readiness Rust tests and actual complete shared/backend/native/progressive runtime proof remain pending. Current copyright checking passes with frozen migration bytes protected. Remote checkpoint CI exposed the Linux shutdown builder error; its source repair uses the locked API and requires a fresh compile. Production playlist/filter policy remains unchanged until the required publication/syscall/runtime proof.
+
 **Completion:** actual in-scope application behavior and relevant builds/tests/journey evidence, with external native/assistive-technology qualification accurately recorded. Milestones remain open until their required evidence is complete; do not ship mock data or deploy/publish under this workstream.
 
 ## Dependency Graph

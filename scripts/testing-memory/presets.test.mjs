@@ -1,3 +1,9 @@
+/*
+ * Duskcue — Self-hosted media streaming server
+ * Copyright (C) 2026-2026 Duskcue Contributors
+ * Licensed under AGPL-3.0. See LICENSE for details.
+ */
+
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PRESETS, workloadEnvironment, validateExtraArguments } from './presets.mjs';

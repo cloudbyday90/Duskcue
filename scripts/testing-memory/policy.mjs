@@ -1,3 +1,9 @@
+/*
+ * Duskcue — Self-hosted media streaming server
+ * Copyright (C) 2026-2026 Duskcue Contributors
+ * Licensed under AGPL-3.0. See LICENSE for details.
+ */
+
 export const GiB = 1024 ** 3;
 
 const buildPolicy = Object.freeze({ minAvailableBytes: 4 * GiB, minCommitHeadroomBytes: 12 * GiB, maxCommitPercent: 85 });

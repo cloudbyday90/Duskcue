@@ -2,6 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const project = new URL('../project.inlang/settings.json', import.meta.url);
+const legalNotice = '/*\n * Duskcue — Self-hosted media streaming server\n * Copyright (C) 2026-2026 Duskcue Contributors\n * Licensed under AGPL-3.0. See LICENSE for details.\n */\n\n';
 
 export function buildMessageAvailability(catalogs, locales, baseLocale) {
     return Object.fromEntries(Object.keys(catalogs[baseLocale]).filter((key) => !key.startsWith('$') && !key.startsWith('__')).sort().flatMap((key) => {
@@ -18,5 +19,5 @@ export async function readMessageAvailability() {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
     const { incompleteMessages } = await readMessageAvailability();
-    await writeFile(new URL('../src/lib/localization/message-availability.js', import.meta.url), `export const incompleteMessages = ${JSON.stringify(incompleteMessages, null, 4)};\n`);
+    await writeFile(new URL('../src/lib/localization/message-availability.js', import.meta.url), `${legalNotice}export const incompleteMessages = ${JSON.stringify(incompleteMessages, null, 4)};\n`);
 }

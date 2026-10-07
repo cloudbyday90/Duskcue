@@ -75,6 +75,33 @@ describe('media source lifecycle and credentials', () => {
         source.dispose();
     });
 
+    it('observes progressive and final playlists without turning publication into playback completion', async () => {
+        const media = video();
+        const changes = vi.fn((_timeline: unknown) => {});
+        const handlers = new Map<string, (...args: any[]) => void>();
+        const destroyed = vi.fn();
+        class Hls {
+            static Events = { MANIFEST_PARSED: 'manifest', LEVEL_UPDATED: 'level', ERROR: 'error' };
+            static isSupported() { return true; }
+            on(name: string, handler: (...args: any[]) => void) { handlers.set(name, handler); }
+            loadSource() {}
+            attachMedia() {}
+            destroy() { destroyed(); handlers.clear(); }
+        }
+        const source = createMediaSource({ video: media, loadHls: async () => Hls, requiresHeaders: () => false, onTimelineChange: changes });
+        await source.attach('/api/v1/transcode/progressive/manifest.m3u8');
+        handlers.get('manifest')!();
+        expect(media.play).toHaveBeenCalledOnce();
+        handlers.get('level')!('level', { details: { type: 'EVENT', live: true, totalduration: 6, edge: 6 } });
+        expect(source.getTimeline()).toMatchObject({ mode: 'hls-mse', playlistType: 'EVENT', complete: false, producedDurationMs: 6000 });
+        handlers.get('level')!('level', { details: { type: 'EVENT', live: false, totalduration: 20, edge: 20 } });
+        expect(source.getTimeline()).toMatchObject({ complete: true, streamEndMs: 20_000 });
+        expect(media.play).toHaveBeenCalledOnce();
+        source.dispose();
+        expect(destroyed).toHaveBeenCalledOnce();
+        expect(source.getTimeline().mode).toBe('detached');
+    });
+
     it('never returns bearer headers for a foreign host or non-API URL', () => {
         setServerOrigin('https://selected.example');
         setBearerToken('test-session');

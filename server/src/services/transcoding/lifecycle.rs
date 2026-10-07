@@ -1,3 +1,19 @@
+// Duskcue — Self-hosted media streaming server
+// Copyright (C) 2026-2026 Duskcue Contributors
+//
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as published by
+// the Free Software Foundation, either version 3 of the License, or
+// (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <https://www.gnu.org/licenses/>.
+
 use std::borrow::Cow;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -11,9 +27,14 @@ use uuid::Uuid;
 use super::FfmpegHandle;
 use crate::domains::playback::PlaybackError;
 
+#[path = "lifecycle_execution.rs"]
+mod execution;
+pub(super) use execution::{ExecutionMonitor, ExecutionState};
+
 struct WorkerControl {
     cancellation: watch::Sender<u64>,
     result: watch::Receiver<Option<Completion>>,
+    execution: watch::Receiver<ExecutionState>,
 }
 
 #[derive(Clone)]
@@ -82,11 +103,13 @@ impl TranscodeWorkers {
         } = launch;
         let (cancellation, mut requests) = watch::channel(0);
         let (completion, result) = watch::channel(None);
+        let (execution, execution_state) = watch::channel(ExecutionState::Running);
         self.workers.insert(
             session_id,
             Arc::new(WorkerControl {
                 cancellation,
                 result,
+                execution: execution_state,
             }),
         );
         let registry = Arc::clone(&self.workers);
@@ -105,24 +128,37 @@ impl TranscodeWorkers {
                         _ = wait_for_cancellation(&mut requests) => true,
                     };
                     if terminate {
+                        execution.send_replace(ExecutionState::Cancelled);
                         process
                             .terminate(shutdown.clone())
                             .await
-                            .map(|_| ())
+                            .map(|_| ExecutionState::Cancelled)
                             .map_err(|_| ())
                     } else {
                         tokio::select! {
-                            result = process.wait_for_completion(Duration::from_secs(3600)).or_terminate(shutdown.clone()) => result.map(|_| ()).map_err(|_| ()),
-                            _ = wait_for_cancellation(&mut requests) => process.terminate(shutdown.clone()).await.map(|_| ()).map_err(|_| ()),
+                            result = process.wait_for_completion(Duration::from_secs(3600)).or_terminate(shutdown.clone()) => result.map(execution_result).map_err(|_| ()),
+                            _ = wait_for_cancellation(&mut requests) => {
+                                execution.send_replace(ExecutionState::Cancelled);
+                                process.terminate(shutdown.clone()).await.map(|_| ExecutionState::Cancelled).map_err(|_| ())
+                            },
                         }
                     }
                 }
-                Err(_) => process
-                    .terminate(shutdown.clone())
-                    .await
-                    .map(|_| ())
-                    .map_err(|_| ()),
+                Err(_) => {
+                    execution.send_replace(ExecutionState::Failed);
+                    process
+                        .terminate(shutdown.clone())
+                        .await
+                        .map(|_| ExecutionState::Failed)
+                        .map_err(|_| ())
+                }
             };
+            let terminal_state = outcome.as_ref().copied().unwrap_or(ExecutionState::Failed);
+            execution.send_replace(if *requests.borrow() > 0 {
+                ExecutionState::Cancelled
+            } else {
+                terminal_state
+            });
             if outcome.is_err() {
                 report(
                     &completion,
@@ -224,6 +260,25 @@ impl TranscodeWorkers {
                 armed: true,
             })
     }
+
+    pub(super) fn execution(&self, session_id: Uuid) -> Option<ExecutionMonitor> {
+        self.workers.get(&session_id).map(|entry| {
+            ExecutionMonitor::new(entry.execution.clone(), entry.cancellation.subscribe())
+        })
+    }
+}
+
+fn execution_result(
+    result: tokio_process_tools::WaitForCompletionOrTerminateResult,
+) -> ExecutionState {
+    match result {
+        tokio_process_tools::WaitForCompletionOrTerminateResult::Completed(status)
+            if status.success() =>
+        {
+            ExecutionState::Succeeded
+        }
+        _ => ExecutionState::Failed,
+    }
 }
 
 async fn wait_for_cancellation(requests: &mut watch::Receiver<u64>) {
@@ -257,3 +312,7 @@ impl Drop for TranscodeWorkers {
 #[cfg(test)]
 #[path = "lifecycle_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "lifecycle_readiness_tests.rs"]
+mod readiness_tests;

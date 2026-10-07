@@ -1,3 +1,7 @@
+// Duskcue — Self-hosted media streaming server
+// Copyright (C) 2026-2026 Duskcue Contributors
+// Licensed under AGPL-3.0. See LICENSE for details.
+
 use serde_json::Value;
 
 pub(crate) fn default_audio_stream_index(streams: &Value) -> Option<i32> {

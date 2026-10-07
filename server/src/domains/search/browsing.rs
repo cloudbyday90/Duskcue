@@ -1,3 +1,7 @@
+// Duskcue — Self-hosted media streaming server
+// Copyright (C) 2026-2026 Duskcue Contributors
+// Licensed under AGPL-3.0. See LICENSE for details.
+
 use crate::domains::media::projection::{
     BROWSE_SELECT_SQL, browse_row_to_response, push_browse_children,
 };

@@ -9,6 +9,7 @@
 
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import { preserveMigrationCopyright } from './copyright-migrations.mjs';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const EXPECTED_PATTERN = `2026-${CURRENT_YEAR}`;
@@ -61,6 +62,7 @@ const sourceFiles = () =>
 
 function checkFile(filePath) {
   const content = fs.readFileSync(filePath, 'utf8');
+  if (preserveMigrationCopyright(filePath, content)) return { valid: true };
   const firstLines = content.split('\n').slice(0, 12).join('\n');
 
   const match = firstLines.match(COPYRIGHT_RE);

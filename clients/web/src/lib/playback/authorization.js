@@ -1,3 +1,9 @@
+/*
+ * Duskcue — Self-hosted media streaming server
+ * Copyright (C) 2026-2026 Duskcue Contributors
+ * Licensed under AGPL-3.0. See LICENSE for details.
+ */
+
 import { get } from 'svelte/store';
 import { auth as sharedAuth } from '../stores/auth.js';
 import { getServerOrigin } from '../api/core.js';

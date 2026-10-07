@@ -1,3 +1,7 @@
+// Duskcue — Self-hosted media streaming server
+// Copyright (C) 2026-2026 Duskcue Contributors
+// Licensed under AGPL-3.0. See LICENSE for details.
+
 use std::path::Path;
 
 pub fn build_ffmpeg_input_args(seek_position_ms: Option<i64>, source_path: &Path) -> Vec<String> {

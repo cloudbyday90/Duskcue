@@ -1,3 +1,9 @@
+// Duskcue — Self-hosted media streaming server
+// Copyright (C) 2026-2026 Duskcue Contributors
+//
+// This program is free software: licensed under AGPL-3.0
+// See LICENSE file for details.
+
 export const PRESETS = {
     'web-unit': { policy: 'unit', heapMiB: 1536, args: ['--prefix', 'clients/web', 'run', 'test:unit', '--', '--run', '--maxWorkers=1'] },
     'web-e2e': { policy: 'browser', heapMiB: 3072, args: ['--prefix', 'clients/web', 'run', 'test:e2e', '--', '--workers=1'] },
@@ -6,6 +12,7 @@ export const PRESETS = {
     'desktop-build': { policy: 'build', heapMiB: 3072, args: ['--prefix', 'clients/desktop', 'run', 'build'] },
     'tauri-build': { policy: 'native', heapMiB: 3072, args: ['--prefix', 'clients/desktop', 'run', 'tauri:build', '--'] },
     'cargo-check': { policy: 'cargo', command: 'cargo.exe', args: ['check', '-p', 'duskcue', '--locked', '-j', '2'] },
+    'linux-cargo-check': { policy: 'cargo', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/run-linux-cargo-check.mjs'] },
     'cargo-clippy': { policy: 'cargo', command: 'cargo.exe', args: ['clippy', '-p', 'duskcue', '--all-targets', '--locked', '-j', '2', '--', '-D', 'warnings'] },
     'cargo-test': { policy: 'cargo', command: 'cargo.exe', args: ['test', '-p', 'duskcue', '--locked', '-j', '2'] },
     'rust-cached-unit': { policy: 'unit', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/run-cached-rust-tests.mjs'] },
