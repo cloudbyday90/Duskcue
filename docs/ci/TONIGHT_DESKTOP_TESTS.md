@@ -2,6 +2,8 @@
 
 ## Status and scope
 
+Fresh-checkout packaging follow-up: GitHub Actions for checkpoint `36c9fd3` compiled the shared frontend, then Linux/macOS Tauri compilation failed because the default `icons/icon.png` was absent. The icon set now derives from the existing approved `docs/branding/assets/app-icon.svg`; PNG dimensions/alpha, ICO layers, ICNS chunks and all seven explicit bundle paths pass bounded asset checks. The 512-pixel icon was inspected. This fixes the missing source asset; fresh Tauri compilation and runtime after the asset correction remain unverified. No local full build or native application was launched for this repair.
+
 Prepared October 7, 2026. The current isolated native executable built successfully and its first actual run completed the baseline journeys, then **failed the strict Home search exposure check at genuine 400% engine zoom**. Overall native qualification remains incomplete. Do not treat the browser-only desktop bridge fixtures as native evidence.
 
 This qualifies the actual shared static SvelteKit client running in the current Windows Tauri application, with real native IPC, file persistence, Windows keyring operations, window fullscreen and WebView2 media decoding. Backend API responses use the isolated fixtures shared with the web suite. It does not claim real database authentication, FFmpeg session execution, native menu/tray clicks, notification delivery or screen-reader speech.
