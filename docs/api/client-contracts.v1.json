@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updated": "2026-07-18",
+  "updated": "2026-10-03",
   "base_origin": "http(s)://<server>:48027",
   "base_api_path": "/api/v1",
   "source_of_truth": {
@@ -1054,14 +1054,14 @@
           "method": "GET",
           "path": "/api/v1/media-items",
           "auth": "user",
-          "response": "MediaItemPageResponse",
+          "response": "MediaBrowseListResponse",
           "web_helpers": [
             "listMediaItems"
           ],
           "contract": {
             "success": {
-              "response_schema": "MediaItemPageResponse",
-              "cache_profile": "private_json",
+              "response_schema": "MediaBrowseListResponse",
+              "cache_profile": "no_store_read",
               "pagination": "cursor"
             },
             "validation": {
@@ -1070,12 +1070,52 @@
                 {
                   "name": "limit",
                   "required": false,
-                  "validation": "1..100 unless route-specific docs narrow it"
+                  "validation": "1..100"
                 },
                 {
                   "name": "cursor",
                   "required": false,
-                  "validation": "opaque cursor"
+                  "validation": "Opaque cursor bound to endpoint, active profile, and filters"
+                },
+                {
+                  "name": "library_id",
+                  "required": false,
+                  "validation": "Accessible library UUID"
+                },
+                {
+                  "name": "type",
+                  "required": false,
+                  "validation": "movie|series|season|episode"
+                },
+                {
+                  "name": "sort",
+                  "required": false,
+                  "validation": "added|title|year"
+                },
+                {
+                  "name": "order",
+                  "required": false,
+                  "validation": "asc|desc"
+                },
+                {
+                  "name": "watch",
+                  "required": false,
+                  "validation": "all|watched|unwatched|in_progress"
+                },
+                {
+                  "name": "favorite",
+                  "required": false,
+                  "validation": "Boolean"
+                },
+                {
+                  "name": "genre_id",
+                  "required": false,
+                  "validation": "Genre UUID"
+                },
+                {
+                  "name": "year",
+                  "required": false,
+                  "validation": "Valid year"
                 }
               ],
               "request_schema": null
@@ -1231,6 +1271,142 @@
               ]
             }
           }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/media-items/continue-watching",
+          "auth": "user",
+          "response": "MediaBrowseListResponse",
+          "web_helpers": [
+            "listContinueWatching"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "MediaBrowseListResponse",
+              "cache_profile": "no_store_read",
+              "pagination": "cursor"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                {
+                  "name": "limit",
+                  "required": false,
+                  "validation": "1..100"
+                },
+                {
+                  "name": "cursor",
+                  "required": false,
+                  "validation": "Opaque cursor bound to endpoint, active profile, and filters"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PROFILE_003",
+                "VALID_001",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/media-items/{id}/seasons",
+          "auth": "user",
+          "response": "MediaBrowseListResponse",
+          "web_helpers": [
+            "listSeriesSeasons"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "MediaBrowseListResponse",
+              "cache_profile": "no_store_read",
+              "pagination": "cursor"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [
+                {
+                  "name": "limit",
+                  "required": false,
+                  "validation": "1..100"
+                },
+                {
+                  "name": "cursor",
+                  "required": false,
+                  "validation": "Opaque cursor bound to endpoint, active profile, and filters"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PROFILE_003",
+                "VALID_001",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/media-items/{id}/episodes",
+          "auth": "user",
+          "response": "MediaBrowseListResponse",
+          "web_helpers": [
+            "listSeasonEpisodes"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "MediaBrowseListResponse",
+              "cache_profile": "no_store_read",
+              "pagination": "cursor"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [
+                {
+                  "name": "limit",
+                  "required": false,
+                  "validation": "1..100"
+                },
+                {
+                  "name": "cursor",
+                  "required": false,
+                  "validation": "Opaque cursor bound to endpoint, active profile, and filters"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PROFILE_003",
+                "VALID_001",
+                "INTERNAL"
+              ]
+            }
+          }
         }
       ],
       "phase16d_priority": "required"
@@ -1250,21 +1426,66 @@
           "contract": {
             "success": {
               "response_schema": "SearchResponse",
-              "cache_profile": "private_json",
+              "cache_profile": "no_store_read",
               "pagination": "cursor"
             },
             "validation": {
               "path_params": [],
               "query_params": [
                 {
+                  "name": "q",
+                  "required": false,
+                  "validation": "trimmed plain text; at most 200 Unicode characters"
+                },
+                {
+                  "name": "type",
+                  "required": false,
+                  "validation": "movie, series, season, episode"
+                },
+                {
+                  "name": "genre",
+                  "required": false,
+                  "validation": "genre slug; at most 128 bytes"
+                },
+                {
+                  "name": "year",
+                  "required": false,
+                  "validation": "1800..2100"
+                },
+                {
+                  "name": "rating_min",
+                  "required": false,
+                  "validation": "finite 0..10"
+                },
+                {
                   "name": "limit",
                   "required": false,
-                  "validation": "1..100 unless route-specific docs narrow it"
+                  "validation": "defaults to 40; legacy bounds are clamped to 1..100"
                 },
                 {
                   "name": "cursor",
                   "required": false,
-                  "validation": "opaque cursor"
+                  "validation": "opaque, profile/query/filter/sort-bound cursor"
+                },
+                {
+                  "name": "sort",
+                  "required": false,
+                  "validation": "relevance (default), title, year"
+                },
+                {
+                  "name": "order",
+                  "required": false,
+                  "validation": "asc or desc; title defaults asc, others desc"
+                },
+                {
+                  "name": "watch",
+                  "required": false,
+                  "validation": "all (default), watched, unwatched, in_progress"
+                },
+                {
+                  "name": "favorite",
+                  "required": false,
+                  "validation": "boolean"
                 }
               ],
               "request_schema": null
@@ -1278,7 +1499,9 @@
                 "VALID_001",
                 "RATE_LIMITED",
                 "NOT_FOUND",
-                "INTERNAL"
+                "INTERNAL",
+                "PROFILE_004",
+                "PROFILE_014"
               ]
             }
           }
@@ -3586,11 +3809,30 @@
           "path": "/api/v1/trakt/account",
           "auth": "user",
           "response": "TraktAccountResponse",
-          "web_helpers": ["getTraktAccount"],
+          "web_helpers": [
+            "getTraktAccount"
+          ],
           "contract": {
-            "success": { "response_schema": "TraktAccountResponse", "cache_profile": "private_json", "pagination": "none" },
-            "validation": { "path_params": [], "query_params": [], "request_schema": null },
-            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "TRAKT_001", "RATE_LIMITED", "INTERNAL"] }
+            "success": {
+              "response_schema": "TraktAccountResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "TRAKT_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
           }
         },
         {
@@ -3598,11 +3840,29 @@
           "path": "/api/v1/trakt/account",
           "auth": "user",
           "response": "TraktUnlinkResponse",
-          "web_helpers": ["unlinkTraktAccount"],
+          "web_helpers": [
+            "unlinkTraktAccount"
+          ],
           "contract": {
-            "success": { "response_schema": "TraktUnlinkResponse", "cache_profile": "no_store_action", "pagination": "none" },
-            "validation": { "path_params": [], "query_params": [], "request_schema": null },
-            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "RATE_LIMITED", "INTERNAL"] }
+            "success": {
+              "response_schema": "TraktUnlinkResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
           }
         },
         {
@@ -3610,11 +3870,29 @@
           "path": "/api/v1/trakt/account/link",
           "auth": "user",
           "response": "DeviceCodeResponse",
-          "web_helpers": ["startTraktLink"],
+          "web_helpers": [
+            "startTraktLink"
+          ],
           "contract": {
-            "success": { "response_schema": "DeviceCodeResponse", "cache_profile": "no_store_action", "pagination": "none" },
-            "validation": { "path_params": [], "query_params": [], "request_schema": null },
-            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "RATE_LIMITED", "INTERNAL"] }
+            "success": {
+              "response_schema": "DeviceCodeResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
           }
         },
         {
@@ -3623,11 +3901,31 @@
           "auth": "user",
           "request": "PollDeviceCodeRequest",
           "response": "TraktAccountResponse",
-          "web_helpers": ["pollTraktLink"],
+          "web_helpers": [
+            "pollTraktLink"
+          ],
           "contract": {
-            "success": { "response_schema": "TraktAccountResponse", "cache_profile": "no_store_action", "pagination": "none" },
-            "validation": { "path_params": [], "query_params": [], "request_schema": "PollDeviceCodeRequest" },
-            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "VALID_001", "RATE_LIMITED", "TRAKT_003", "INTERNAL"] }
+            "success": {
+              "response_schema": "TraktAccountResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "PollDeviceCodeRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "VALID_001",
+                "RATE_LIMITED",
+                "TRAKT_003",
+                "INTERNAL"
+              ]
+            }
           }
         },
         {
@@ -3635,11 +3933,29 @@
           "path": "/api/v1/trakt/settings",
           "auth": "user",
           "response": "SyncSettingsResponse",
-          "web_helpers": ["getTraktSyncSettings"],
+          "web_helpers": [
+            "getTraktSyncSettings"
+          ],
           "contract": {
-            "success": { "response_schema": "SyncSettingsResponse", "cache_profile": "private_json", "pagination": "none" },
-            "validation": { "path_params": [], "query_params": [], "request_schema": null },
-            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "RATE_LIMITED", "INTERNAL"] }
+            "success": {
+              "response_schema": "SyncSettingsResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
           }
         },
         {
@@ -3648,11 +3964,31 @@
           "auth": "user",
           "request": "UpdateSyncSettingsRequest",
           "response": "SyncSettingsResponse",
-          "web_helpers": ["updateTraktSyncSettings"],
+          "web_helpers": [
+            "updateTraktSyncSettings"
+          ],
           "contract": {
-            "success": { "response_schema": "SyncSettingsResponse", "cache_profile": "no_store_action", "pagination": "none" },
-            "validation": { "path_params": [], "query_params": [], "request_schema": "UpdateSyncSettingsRequest" },
-            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "TRAKT_001", "VALID_001", "RATE_LIMITED", "INTERNAL"] }
+            "success": {
+              "response_schema": "SyncSettingsResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "UpdateSyncSettingsRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "TRAKT_001",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
           }
         },
         {
@@ -3660,11 +3996,36 @@
           "path": "/api/v1/trakt/sync",
           "auth": "user",
           "response": "SyncTriggerResponse",
-          "web_helpers": ["triggerTraktSync"],
+          "web_helpers": [
+            "triggerTraktSync"
+          ],
           "contract": {
-            "success": { "response_schema": "SyncTriggerResponse", "cache_profile": "no_store_action", "pagination": "none" },
-            "validation": { "path_params": [], "query_params": [], "request_schema": null },
-            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "TRAKT_001", "TRAKT_002", "TRAKT_003", "TRAKT_004", "TRAKT_005", "TRAKT_006", "TRAKT_007", "RATE_LIMITED", "INTERNAL"] }
+            "success": {
+              "response_schema": "SyncTriggerResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "TRAKT_001",
+                "TRAKT_002",
+                "TRAKT_003",
+                "TRAKT_004",
+                "TRAKT_005",
+                "TRAKT_006",
+                "TRAKT_007",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
           }
         },
         {
@@ -3672,11 +4033,30 @@
           "path": "/api/v1/trakt/sync/status",
           "auth": "user",
           "response": "SyncStatusResponse",
-          "web_helpers": ["getTraktSyncStatus"],
+          "web_helpers": [
+            "getTraktSyncStatus"
+          ],
           "contract": {
-            "success": { "response_schema": "SyncStatusResponse", "cache_profile": "private_json", "pagination": "none" },
-            "validation": { "path_params": [], "query_params": [], "request_schema": null },
-            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "TRAKT_001", "RATE_LIMITED", "INTERNAL"] }
+            "success": {
+              "response_schema": "SyncStatusResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "TRAKT_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
           }
         },
         {
@@ -3684,11 +4064,38 @@
           "path": "/api/v1/trakt/history",
           "auth": "user",
           "response": "TraktHistoryResponse",
-          "web_helpers": ["listTraktHistory"],
+          "web_helpers": [
+            "listTraktHistory"
+          ],
           "contract": {
-            "success": { "response_schema": "TraktHistoryResponse", "cache_profile": "private_json", "pagination": "offset" },
-            "validation": { "path_params": [], "query_params": [{ "name": "page", "required": false }, { "name": "page_size", "required": false }], "request_schema": null },
-            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "RATE_LIMITED", "INTERNAL"] }
+            "success": {
+              "response_schema": "TraktHistoryResponse",
+              "cache_profile": "private_json",
+              "pagination": "offset"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                {
+                  "name": "page",
+                  "required": false
+                },
+                {
+                  "name": "page_size",
+                  "required": false
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
           }
         },
         {
@@ -3696,11 +4103,38 @@
           "path": "/api/v1/trakt/ratings",
           "auth": "user",
           "response": "TraktHistoryResponse",
-          "web_helpers": ["listTraktRatings"],
+          "web_helpers": [
+            "listTraktRatings"
+          ],
           "contract": {
-            "success": { "response_schema": "TraktHistoryResponse", "cache_profile": "private_json", "pagination": "offset" },
-            "validation": { "path_params": [], "query_params": [{ "name": "page", "required": false }, { "name": "page_size", "required": false }], "request_schema": null },
-            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "RATE_LIMITED", "INTERNAL"] }
+            "success": {
+              "response_schema": "TraktHistoryResponse",
+              "cache_profile": "private_json",
+              "pagination": "offset"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                {
+                  "name": "page",
+                  "required": false
+                },
+                {
+                  "name": "page_size",
+                  "required": false
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
           }
         },
         {
@@ -3708,11 +4142,30 @@
           "path": "/api/v1/settings/trakt",
           "auth": "admin",
           "response": "TraktSettingsResponse",
-          "web_helpers": ["getTraktIntegrationSettings"],
+          "web_helpers": [
+            "getTraktIntegrationSettings"
+          ],
           "contract": {
-            "success": { "response_schema": "TraktSettingsResponse", "cache_profile": "private_json", "pagination": "none" },
-            "validation": { "path_params": [], "query_params": [], "request_schema": null },
-            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "AUTH_007", "RATE_LIMITED", "INTERNAL"] }
+            "success": {
+              "response_schema": "TraktSettingsResponse",
+              "cache_profile": "private_json",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
           }
         },
         {
@@ -3721,11 +4174,31 @@
           "auth": "admin",
           "request": "UpdateTraktSettingsRequest",
           "response": "TraktSettingsResponse",
-          "web_helpers": ["updateTraktIntegrationSettings"],
+          "web_helpers": [
+            "updateTraktIntegrationSettings"
+          ],
           "contract": {
-            "success": { "response_schema": "TraktSettingsResponse", "cache_profile": "no_store_action", "pagination": "none" },
-            "validation": { "path_params": [], "query_params": [], "request_schema": "UpdateTraktSettingsRequest" },
-            "errors": { "problem_details": "RFC9457 Problem Details with Duskcue trace_id", "problem_codes": ["AUTH_001", "AUTH_003", "AUTH_007", "VALID_001", "RATE_LIMITED", "INTERNAL"] }
+            "success": {
+              "response_schema": "TraktSettingsResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "UpdateTraktSettingsRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "AUTH_007",
+                "VALID_001",
+                "RATE_LIMITED",
+                "INTERNAL"
+              ]
+            }
           }
         }
       ],
@@ -3954,6 +4427,75 @@
               ]
             }
           }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/profiles/current/viewing-preferences",
+          "auth": "user",
+          "response": "CurrentViewingPreferencesResponse",
+          "web_helpers": [
+            "getViewingPreferences"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "CurrentViewingPreferencesResponse",
+              "cache_profile": "no_store_read",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PROFILE_001",
+                "PROFILE_002",
+                "PROFILE_014",
+                "PROFILE_015",
+                "VALID_001",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "PATCH",
+          "path": "/api/v1/profiles/current/viewing-preferences",
+          "auth": "user",
+          "request": "UpdateViewingPreferencesRequest",
+          "response": "CurrentViewingPreferencesResponse",
+          "web_helpers": [
+            "saveViewingPreferences"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "CurrentViewingPreferencesResponse",
+              "cache_profile": "no_store_action",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [],
+              "request_schema": "UpdateViewingPreferencesRequest"
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PROFILE_001",
+                "PROFILE_002",
+                "PROFILE_014",
+                "PROFILE_015",
+                "VALID_001",
+                "INTERNAL"
+              ]
+            }
+          }
         }
       ],
       "phase16d_priority": "advisory"
@@ -4032,6 +4574,265 @@
         }
       ],
       "phase16d_priority": "advisory"
+    },
+    {
+      "name": "browsing",
+      "phase16a_priority": "required",
+      "routes": [
+        {
+          "method": "GET",
+          "path": "/api/v1/browse/libraries",
+          "auth": "user",
+          "response": "BrowseLibraryListResponse",
+          "web_helpers": [
+            "listBrowseLibraries"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "BrowseLibraryListResponse",
+              "cache_profile": "no_store_read",
+              "pagination": "cursor"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                {
+                  "name": "limit",
+                  "required": false,
+                  "validation": "1..100"
+                },
+                {
+                  "name": "cursor",
+                  "required": false,
+                  "validation": "Bound to account, profile, endpoint and filters"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PROFILE_003",
+                "VALID_001",
+                "LIB_001",
+                "COLL_001",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/browse/libraries/{id}",
+          "auth": "user",
+          "response": "BrowseLibraryResponse",
+          "web_helpers": [
+            "getBrowseLibrary"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "BrowseLibraryResponse",
+              "cache_profile": "no_store_read",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PROFILE_003",
+                "VALID_001",
+                "LIB_001",
+                "COLL_001",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/browse/collections",
+          "auth": "user",
+          "response": "BrowseCollectionListResponse",
+          "web_helpers": [
+            "listBrowseCollections"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "BrowseCollectionListResponse",
+              "cache_profile": "no_store_read",
+              "pagination": "cursor"
+            },
+            "validation": {
+              "path_params": [],
+              "query_params": [
+                {
+                  "name": "limit",
+                  "required": false,
+                  "validation": "1..100"
+                },
+                {
+                  "name": "cursor",
+                  "required": false,
+                  "validation": "Bound to account, profile, endpoint and filters"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PROFILE_003",
+                "VALID_001",
+                "LIB_001",
+                "COLL_001",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/browse/collections/{id}",
+          "auth": "user",
+          "response": "BrowseCollectionResponse",
+          "web_helpers": [
+            "getBrowseCollection"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "BrowseCollectionResponse",
+              "cache_profile": "no_store_read",
+              "pagination": "none"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PROFILE_003",
+                "VALID_001",
+                "LIB_001",
+                "COLL_001",
+                "INTERNAL"
+              ]
+            }
+          }
+        },
+        {
+          "method": "GET",
+          "path": "/api/v1/browse/collections/{id}/items",
+          "auth": "user",
+          "response": "MediaBrowseListResponse",
+          "web_helpers": [
+            "listBrowseCollectionItems"
+          ],
+          "contract": {
+            "success": {
+              "response_schema": "MediaBrowseListResponse",
+              "cache_profile": "no_store_read",
+              "pagination": "cursor"
+            },
+            "validation": {
+              "path_params": [
+                {
+                  "name": "id",
+                  "required": true
+                }
+              ],
+              "query_params": [
+                {
+                  "name": "limit",
+                  "required": false,
+                  "validation": "1..100"
+                },
+                {
+                  "name": "cursor",
+                  "required": false,
+                  "validation": "Bound to account, profile, endpoint and filters"
+                },
+                {
+                  "name": "type",
+                  "required": false,
+                  "validation": "movie|series|season|episode"
+                },
+                {
+                  "name": "sort",
+                  "required": false,
+                  "validation": "added|title|year; omitted preserves membership position"
+                },
+                {
+                  "name": "order",
+                  "required": false,
+                  "validation": "asc|desc"
+                },
+                {
+                  "name": "watch",
+                  "required": false,
+                  "validation": "all|watched|unwatched|in_progress"
+                },
+                {
+                  "name": "favorite",
+                  "required": false,
+                  "validation": "Boolean"
+                },
+                {
+                  "name": "genre_id",
+                  "required": false,
+                  "validation": "Genre UUID"
+                },
+                {
+                  "name": "year",
+                  "required": false,
+                  "validation": "1..9999"
+                },
+                {
+                  "name": "library_id",
+                  "required": false,
+                  "validation": "Accessible library UUID"
+                }
+              ],
+              "request_schema": null
+            },
+            "errors": {
+              "problem_details": "RFC9457 Problem Details with Duskcue error title/code and trace_id",
+              "problem_codes": [
+                "AUTH_001",
+                "AUTH_003",
+                "PROFILE_003",
+                "VALID_001",
+                "LIB_001",
+                "COLL_001",
+                "INTERNAL"
+              ]
+            }
+          }
+        }
+      ]
     }
   ],
   "phase16d": {

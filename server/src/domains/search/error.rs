@@ -29,6 +29,9 @@ pub enum SearchError {
     #[error("invalid rating threshold: {0}")]
     InvalidRating(f32),
 
+    #[error("invalid search browsing query: {0}")]
+    InvalidBrowseQuery(String),
+
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 }

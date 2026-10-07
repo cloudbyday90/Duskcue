@@ -16,11 +16,11 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-import { writable, derived } from 'svelte/store';
+import { writable, derived, get } from 'svelte/store';
+import { buildApiUrl } from '../api/core.js';
+import { createEventTransport, EVENT_SOURCE_CLOSED } from '../events/transport.js';
 
-const EVENTS_URL = '/api/v1/events';
-
-function createEventsStore() {
+export function createEventsStore({ createSource = createEventTransport, eventsUrl = () => buildApiUrl('/events') } = {}) {
     let eventSource = null;
     const dispatchers = new Map();
     const handlers = new Map();
@@ -31,9 +31,10 @@ function createEventsStore() {
         error: null,
     });
 
-    function makeDispatcher(type) {
+    function makeDispatcher(type, source) {
         return (event) => {
-            if (event.lastEventId) {
+            if (eventSource !== source) return;
+            if (typeof event.lastEventId === 'string') {
                 update((s) => ({ ...s, lastEventId: event.lastEventId }));
             }
             const typeHandlers = handlers.get(type);
@@ -56,21 +57,32 @@ function createEventsStore() {
 
     function attachAllListeners(es) {
         for (const type of handlers.keys()) {
-            let dispatcher = dispatchers.get(type);
-            if (!dispatcher) {
-                dispatcher = makeDispatcher(type);
-                dispatchers.set(type, dispatcher);
-            }
+            const dispatcher = makeDispatcher(type, es);
+            dispatchers.set(type, dispatcher);
             es.addEventListener(type, dispatcher);
         }
     }
 
     function closeSource() {
         if (eventSource !== null) {
+            for (const [type, dispatcher] of dispatchers) eventSource.removeEventListener(type, dispatcher);
             eventSource.close();
             eventSource.onopen = null;
             eventSource.onerror = null;
             eventSource = null;
+            dispatchers.clear();
+        }
+    }
+
+    function removeHandler(type, handler) {
+        const typeHandlers = handlers.get(type);
+        if (!typeHandlers) return;
+        typeHandlers.delete(handler);
+        if (typeHandlers.size === 0) {
+            handlers.delete(type);
+            const dispatcher = dispatchers.get(type);
+            if (dispatcher) eventSource?.removeEventListener(type, dispatcher);
+            dispatchers.delete(type);
         }
     }
 
@@ -78,12 +90,15 @@ function createEventsStore() {
         subscribe,
 
         connect() {
-            if (typeof EventSource === 'undefined') return;
             if (eventSource !== null) return;
 
-            update((s) => ({ ...s, readyState: 'connecting', error: null }));
-
-            const es = new EventSource(EVENTS_URL);
+            update((s) => ({ ...s, readyState: 'connecting', lastEventId: null, error: null }));
+            let es;
+            try { es = createSource({ url: eventsUrl(), isCurrent: () => eventSource === es }); }
+            catch {
+                update((s) => ({ ...s, readyState: 'disconnected', error: 'connection_failed' }));
+                return;
+            }
             eventSource = es;
 
             attachAllListeners(es);
@@ -95,7 +110,7 @@ function createEventsStore() {
 
             es.onerror = () => {
                 if (eventSource !== es) return;
-                if (es.readyState === EventSource.CLOSED) {
+                if (es.readyState === EVENT_SOURCE_CLOSED) {
                     update((s) => ({
                         ...s,
                         readyState: 'disconnected',
@@ -113,6 +128,7 @@ function createEventsStore() {
             update((s) => ({
                 ...s,
                 readyState: 'disconnected',
+                lastEventId: null,
                 error: null,
             }));
         },
@@ -124,37 +140,22 @@ function createEventsStore() {
             handlers.get(type).add(handler);
 
             if (eventSource !== null && !dispatchers.has(type)) {
-                const dispatcher = makeDispatcher(type);
+                const dispatcher = makeDispatcher(type, eventSource);
                 dispatchers.set(type, dispatcher);
                 eventSource.addEventListener(type, dispatcher);
             }
 
             return () => {
-                const typeHandlers = handlers.get(type);
-                if (!typeHandlers) return;
-                typeHandlers.delete(handler);
-                if (typeHandlers.size === 0) {
-                    handlers.delete(type);
-                }
+                removeHandler(type, handler);
             };
         },
 
         off(type, handler) {
-            const typeHandlers = handlers.get(type);
-            if (!typeHandlers) return;
-            typeHandlers.delete(handler);
-            if (typeHandlers.size === 0) {
-                handlers.delete(type);
-            }
+            removeHandler(type, handler);
         },
 
         getState() {
-            let state;
-            const unsub = subscribe((s) => {
-                state = s;
-            });
-            unsub();
-            return state;
+            return get({ subscribe });
         },
     };
 }

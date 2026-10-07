@@ -6,10 +6,9 @@
   See LICENSE file for details.
 -->
 <script>
-    import { goto } from '$app/navigation';
     import { formatYear, formatRating } from '../utils/format.js';
     import { MEDIA_TYPE_LABELS } from '../utils/constants.js';
-    import { posterUrl } from '../utils/artwork.js';
+    import Artwork from './Artwork.svelte';
 
     let {
         item,
@@ -17,11 +16,8 @@
         progress = 0,
         showOverview = true,
         onclick = null,
+        href: destination = null,
     } = $props();
-
-    let imgError = $state(false);
-
-    let posterSrc = $derived(posterUrl(item.id, posterSize));
 
     let year = $derived(formatYear(item?.premiere_date));
     let rating = $derived(formatRating(item?.rating_average));
@@ -36,9 +32,7 @@
         return year ? String(year) : null;
     });
 
-    let initial = $derived((item?.title || '?').charAt(0).toUpperCase());
-
-    let href = $derived(`/media/${item.id}`);
+    let href = $derived(destination || `/media/${item.id}`);
 
     function handleClick(event) {
         if (onclick) {
@@ -55,19 +49,7 @@
     onclick={handleClick}
 >
     <div class="poster-wrapper">
-        {#if !imgError}
-            <img
-                src={posterSrc}
-                alt={item.title}
-                class="poster"
-                loading="lazy"
-                onerror={() => imgError = true}
-            />
-        {:else}
-            <div class="poster-placeholder">
-                <span class="placeholder-initial">{initial}</span>
-            </div>
-        {/if}
+        <Artwork itemId={item.id} size={posterSize} mediaType={item.type} />
 
         {#if rating}
             <div class="badge badge-rating">
@@ -135,27 +117,6 @@
 
     .media-card:hover .poster-wrapper {
         box-shadow: var(--shadow-elevated);
-    }
-
-    .poster {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-    }
-
-    .poster-placeholder {
-        width: 100%;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: linear-gradient(135deg, var(--color-bg-elevated), var(--color-bg-surface));
-    }
-
-    .placeholder-initial {
-        font-size: 3rem;
-        font-weight: 700;
-        color: var(--color-text-muted);
     }
 
     .badge {

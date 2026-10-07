@@ -1236,6 +1236,8 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
 
    3. ~~Implement `server/src/services/sandbox.rs`~~ **DONE**
 
+    **Historical implementation record:** The pre-exec seccomp ordering and non-fatal failure statements below describe the original phase implementation. The October 7 Tonight audit reproduced initial-exec SIGSYS under that policy. Current source instead requires the managed ELF/bootstrap readiness boundary for playback and storyboards, retaining exec/network denial; fresh compilation and actual Linux runtime proof remain pending. See [FFmpeg launcher qualification](docs/ci/FFMPEG_LAUNCHER_QUALIFICATION.md) and [security authority](docs/security/SECURITY.md). Do not use this historical section as current failure-handling guidance.
+
     **What was built for Task 3:**
 
     | File | Purpose |
@@ -2191,6 +2193,8 @@ All CRUD operations were implemented as part of Task 1 (natural to include when 
      | `server/migrations/20260621040000_seed_storyboard_generation_task.sql` | Seeds `storyboard_generation` scheduled task for existing deployments (idempotent — original Phase 2 seed already creates this row for fresh installs) |
 
      **Key decisions for Task 6:**
+
+     **Historical sandbox record:** The pre-exec/non-fatal sandbox and kill-on-drop descriptions in this original Task 6 record are superseded by the October 7 source-prepared managed launcher and owned output actor. The actor awaits termination before owned file cleanup and prevents an abandoned observer from publishing. Current C/Linux build and runtime proof remain pending; the caller-owned advisory transaction has the separate cancellation limit documented in [FFmpeg launcher qualification](docs/ci/FFMPEG_LAUNCHER_QUALIFICATION.md).
 
      - **Synchronous per-library API + scheduled iteration of all libraries** — Mirrors the segment detector pattern (Task 5) and the library scanner pattern (Phase 5 Task 5) exactly. The `POST /api/v1/libraries/{id}/generate-storyboards` endpoint runs `generate_for_library_one()` synchronously and returns a summary. The `storyboard_generation` scheduled task iterates all non-deleted, scan-enabled libraries via `run_storyboard_generation()`. The design doc's "enqueue on the scheduler" language was prescriptive but the established precedent (synchronous API + scheduled iteration) is more pragmatic, avoids background-queue infrastructure that doesn't exist, and keeps the `GenerateStoryboardsResponse.queued` field honest (always `false` in this implementation, matching `AnalyzeSegmentsResponse.queued`). HTTP timeout risk for large libraries is accepted per the library_scan precedent; the worker logs per-file progress so partial completion is observable.
      - **Per-library enablement respected (Jellyfin bug #14558 lesson)** — Three gates must pass before a library is processed: (1) global `TranscodingConfig.storyboards_enabled` must be `true`; (2) the library must be non-deleted with `scan_enabled = true`; (3) per-library `libraries.metadata->>'storyboards_enabled'` must NOT be `"false"` (defaults to enabled when the key is absent). Web research (June 2026) surfaced [Jellyfin bug #14558](https://github.com/jellyfin/jellyfin/issues/14558) (open Aug 2025–Mar 2026) where users reported CPU usage from a scheduled task that should have been disabled per-library — this implementation explicitly avoids that failure mode.
@@ -4473,6 +4477,24 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 **Outcome:** All eight hardening and observability tasks are complete. Verification for Task 8: `cargo fmt --all -- --check`, `cargo test -p duskcue` (766 tests), `node scripts/verify-storyboard-metrics.mjs`, and a strict clippy pass with the 11 known unrelated download, playback, TV, notification, and metadata-refresh diagnostics explicitly suppressed. The Task 8 implementation adds no lint diagnostics.
 
 ---
+
+## Tonight Web/Desktop Redesign (IN PROGRESS)
+
+**Goal:** Implement the October 2026 Tonight UI in the actual shared web/Tauri client, with correct browsing data, profile preferences, and playback lifecycle.
+
+**Execution plan:** [TONIGHT_IMPLEMENTATION_PLAN.md](docs/branding/TONIGHT_IMPLEMENTATION_PLAN.md). [UI_FOUNDATIONS.md](docs/branding/UI_FOUNDATIONS.md) remains the accepted design source. This is a client-redesign workstream; it does not renumber or mark existing platform phases complete.
+
+**Order:** T01 baseline/contracts/test harness → T02 required server data and profile preferences → T03 shared tokens/artwork/shell → T04 Home/catalog/search/Collections → T05 Title/Episode gallery → T06 saved preferences/profile flows → T07 real Minimal player/fullscreen/autoplay → T08 qualification/documentation. Isolated server and shell work can run in parallel after the baseline; dependent UI uses the completed contracts.
+
+**Preserve:** existing authentication, library/media access, profile selection and Kids boundaries, request/cache invalidation, remembered-device semantics, HLS/resume/heartbeat/stop, segments/storyboards/QoE, notifications, localization, and desktop integration.
+
+**Required approach:** apply current official W3C/WAI guidance, record sources and behavioral evidence, and prioritize focused, composable service files over large singleton files. The execution plan's mandatory constraints apply to every milestone. The user's October 7 RAM/freezing report also requires [guarded testing memory](docs/ci/TESTING_MEMORY.md): one heavy workflow, bounded workers/jobs, live headroom gates and sampled peaks. T04 browsing and T05 Title/Episode gallery are complete. Shared check, 372 units and all 115 combined browser cases passed; the later CSS Search correction passes 24 targeted cases, current check and production web build. Pre-correction static/Tauri builds and primary-server/SSE/HLS/fullscreen/Title-return native journeys passed, but overall native qualification failed Search occlusion at genuine 400% zoom. Corrected static/native proof remains open, with static build held before launch at 11.60 GiB commit headroom. Focused font/audio/selected-SRT output and four backend worker checkpoint cases pass; current stop/worker/mandatory-bootstrap source needs current Rust/DB/Linux proof. Preserve the user's instruction to leave rust-analyzer running and continue lighter work; unsafe runs are held before startup.
+
+**Later light source review:** New locale-navigation fixes in the shell/profile disclosure pass bounded standalone compilation only; the checks/build/browser evidence above predates them. Official FFmpeg source also confirms the existing VOD playlist is withheld until encoder completion. The plan now requires a qualified progressive startup boundary, preserved known duration/relative seek/end semantics and actual atomic publication/path-policy proof before T07 completion. Production playlist arguments and syscall policy remain unchanged; fresh Linux compilation requires a normal guarded compiler workflow, not a unit probe. See the plan's current light source work and [launcher qualification](docs/ci/FFMPEG_LAUNCHER_QUALIFICATION.md).
+
+**Durable progress:** The user's October 7 instruction authorizes normal commit/push checkpoints to `origin/main` between coherent tasks. Coordinate a stable source boundary across agents, preserve ignored local/runtime artifacts, and label unverified source precisely. A checkpoint does not complete T01–T08 or authorize merge/deployment/release; continue from the pushed state under the same resource and verification requirements. The implementation plan owns this standing workflow.
+
+**Completion:** actual in-scope application behavior and relevant builds/tests/journey evidence, with external native/assistive-technology qualification accurately recorded. Milestones remain open until their required evidence is complete; do not ship mock data or deploy/publish under this workstream.
 
 ## Dependency Graph
 

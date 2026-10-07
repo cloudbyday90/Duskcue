@@ -29,6 +29,53 @@ const PARENT_PIN_MAX_ATTEMPTS: i16 = 5;
 const PARENT_PIN_LOCKOUT_MINUTES: i64 = 15;
 const PARENT_UNLOCK_MINUTES: i64 = 10;
 
+pub use super::viewing_preferences::{
+    canonical_viewing_language, get_viewing_preferences, update_viewing_preferences,
+};
+
+async fn current_session_profile_id(
+    transaction: &mut Transaction<'_, Postgres>,
+    owner_user_id: Uuid,
+    session_id: Uuid,
+) -> Result<Uuid, ProfilesError> {
+    sqlx::query_scalar("SELECT active_profile_id FROM user_sessions WHERE id = $1 AND user_id = $2")
+        .bind(session_id)
+        .bind(owner_user_id)
+        .fetch_optional(&mut **transaction)
+        .await?
+        .ok_or(ProfilesError::AccessDenied)
+}
+
+pub(super) async fn lock_profile_session(
+    transaction: &mut Transaction<'_, Postgres>,
+    owner_user_id: Uuid,
+    session_id: Uuid,
+    expected_profile_id: Uuid,
+) -> Result<(sqlx::postgres::PgRow, sqlx::postgres::PgRow), ProfilesError> {
+    let profile = sqlx::query(
+        "SELECT profile_type, parent_pin_hash, parent_pin_failed_attempts, parent_pin_locked_until, metadata \
+         FROM user_profiles WHERE id = $1 AND owner_user_id = $2 FOR NO KEY UPDATE",
+    )
+    .bind(expected_profile_id)
+    .bind(owner_user_id)
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or(ProfilesError::AccessDenied)?;
+    let session = sqlx::query(
+        "SELECT active_profile_id, profile_selection_required, parent_unlock_profile_id, parent_unlock_expires_at \
+         FROM user_sessions WHERE id = $1 AND user_id = $2 FOR UPDATE",
+    )
+    .bind(session_id)
+    .bind(owner_user_id)
+    .fetch_optional(&mut **transaction)
+    .await?
+    .ok_or(ProfilesError::AccessDenied)?;
+    if session.get::<Uuid, _>("active_profile_id") != expected_profile_id {
+        return Err(ProfilesError::ActiveProfileChanged);
+    }
+    Ok((profile, session))
+}
+
 pub async fn list_profiles(
     pool: &PgPool,
     owner_user_id: Uuid,
@@ -227,20 +274,20 @@ pub async fn switch_profile(
 ) -> Result<SwitchProfileResponse, ProfilesError> {
     let profile = get_owned_profile(pool, owner_user_id, profile_id).await?;
     let mut transaction = pool.begin().await?;
-    let session = sqlx::query(
-        "SELECT s.active_profile_id, s.parent_unlock_profile_id, s.parent_unlock_expires_at, \
-         p.profile_type AS active_profile_type, p.parent_pin_hash IS NOT NULL AS active_profile_has_parent_pin \
-         FROM user_sessions s JOIN user_profiles p ON p.id = s.active_profile_id \
-         WHERE s.id = $1 AND s.user_id = $2 FOR UPDATE OF s",
+    let observed_profile_id =
+        current_session_profile_id(&mut transaction, owner_user_id, session_id).await?;
+    let (active_profile, session) = lock_profile_session(
+        &mut transaction,
+        owner_user_id,
+        session_id,
+        observed_profile_id,
     )
-    .bind(session_id)
-    .bind(owner_user_id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or(ProfilesError::AccessDenied)?;
+    .await?;
     let active_profile_id: Uuid = session.get("active_profile_id");
-    let active_profile_type: String = session.get("active_profile_type");
-    let active_profile_has_parent_pin: bool = session.get("active_profile_has_parent_pin");
+    let active_profile_type: String = active_profile.get("profile_type");
+    let active_profile_has_parent_pin = active_profile
+        .get::<Option<String>, _>("parent_pin_hash")
+        .is_some();
     let unlocked_profile_id: Option<Uuid> = session.try_get("parent_unlock_profile_id").ok();
     let unlocked_until: Option<DateTime<Utc>> = session.try_get("parent_unlock_expires_at").ok();
     if active_profile_id != profile_id
@@ -313,37 +360,17 @@ pub async fn parent_unlock(
 ) -> Result<ParentUnlockResponse, ProfilesError> {
     validate_parent_pin(&pin)?;
     let mut transaction = pool.begin().await?;
-    let active_session =
-        sqlx::query("SELECT active_profile_id FROM user_sessions WHERE id = $1 AND user_id = $2")
-            .bind(session_id)
-            .bind(owner_user_id)
-            .fetch_optional(&mut *transaction)
-            .await?
-            .ok_or(ProfilesError::AccessDenied)?;
-    let profile_id: Uuid = active_session.get("active_profile_id");
-    let profile = sqlx::query(
-        "SELECT profile_type, parent_pin_hash, parent_pin_failed_attempts, parent_pin_locked_until \
-         FROM user_profiles WHERE id = $1 AND owner_user_id = $2 FOR UPDATE",
-    )
-    .bind(profile_id)
-    .bind(owner_user_id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or(ProfilesError::NotFound)?;
+    let profile_id =
+        current_session_profile_id(&mut transaction, owner_user_id, session_id).await?;
+    let (profile, _) =
+        lock_profile_session(&mut transaction, owner_user_id, session_id, profile_id)
+            .await
+            .map_err(|error| match error {
+                ProfilesError::ActiveProfileChanged => ProfilesError::ParentUnlockUnavailable,
+                other => other,
+            })?;
     let profile_type: String = profile.get("profile_type");
     if profile_type != "kids" {
-        return Err(ProfilesError::ParentUnlockUnavailable);
-    }
-    let locked_session = sqlx::query(
-        "SELECT active_profile_id FROM user_sessions WHERE id = $1 AND user_id = $2 FOR UPDATE",
-    )
-    .bind(session_id)
-    .bind(owner_user_id)
-    .fetch_optional(&mut *transaction)
-    .await?
-    .ok_or(ProfilesError::AccessDenied)?;
-    let locked_active_profile_id: Uuid = locked_session.get("active_profile_id");
-    if locked_active_profile_id != profile_id {
         return Err(ProfilesError::ParentUnlockUnavailable);
     }
     let parent_pin_hash: Option<String> = profile.try_get("parent_pin_hash").ok().flatten();

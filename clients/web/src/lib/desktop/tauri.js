@@ -17,6 +17,7 @@
  */
 
 import { events } from '$lib/stores/events.js';
+import { isAllowedDesktopRoute } from '$lib/navigation/routes.js';
 
 let bridgeStarted = false;
 let eventUnsubscribers = [];
@@ -44,7 +45,7 @@ export async function startDesktopBridge(goto) {
     eventUnsubscribers = await Promise.all([
         api.listen('duskcue://navigate', (event) => {
             const route = event.payload?.route;
-            if (isAllowedRoute(route)) {
+            if (isAllowedDesktopRoute(route)) {
                 goto(route);
             }
         }),
@@ -90,17 +91,4 @@ async function showNativeNotification(payload) {
         });
     } catch {
     }
-}
-
-function isAllowedRoute(route) {
-    if (typeof route !== 'string' || !route.startsWith('/')) return false;
-    if (route.includes('//') || route.includes('\\')) return false;
-    return [
-        /^\/dashboard$/,
-        /^\/libraries(?:\/[A-Za-z0-9_.-]+)?$/,
-        /^\/media\/[A-Za-z0-9_.-]+$/,
-        /^\/play\/[A-Za-z0-9_.-]+$/,
-        /^\/settings(?:\/[A-Za-z0-9_.-]+)?$/,
-        /^\/auth\/link$/,
-    ].some((pattern) => pattern.test(route));
 }

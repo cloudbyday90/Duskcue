@@ -322,6 +322,29 @@ impl IntoResponse for AppError {
             body.instance = instance.clone();
         }
 
+        let validation_field = match &self {
+            AppError::Search(crate::domains::search::SearchError::InvalidBrowseQuery(_)) => {
+                Some("query")
+            }
+            AppError::Profiles(
+                crate::domains::profiles::ProfilesError::InvalidViewingPreferences(_),
+            ) => Some("viewing_preferences"),
+            AppError::Media(crate::domains::media::MediaError::InvalidBrowseQuery(_)) => {
+                Some("query")
+            }
+            AppError::Media(crate::domains::media::MediaError::InvalidBrowseCursor) => {
+                Some("cursor")
+            }
+            _ => None,
+        };
+        if let Some(field) = validation_field {
+            body.errors = Some(vec![FieldError {
+                field: field.into(),
+                code: "invalid".into(),
+                message: body.detail.clone(),
+            }]);
+        }
+
         if is_development_env()
             && let AppError::Internal(ref err) = self
         {
@@ -955,6 +978,16 @@ fn media_error_to_http(
             "MEDIA_001",
             format!("Invalid identification source: {}", s),
         ),
+        MediaError::InvalidBrowseQuery(_) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALID_001",
+            "Media browsing query is invalid".into(),
+        ),
+        MediaError::InvalidBrowseCursor => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALID_001",
+            "Media browsing cursor is invalid for this request".into(),
+        ),
         MediaError::SeriesNotFound => (
             StatusCode::NOT_FOUND,
             "MEDIA_001",
@@ -1587,6 +1620,26 @@ fn profiles_error_to_http(
             "PROFILE_013",
             "Parent unlock is unavailable for this profile".into(),
         ),
+        ProfilesError::SelectionRequired => (
+            StatusCode::CONFLICT,
+            "PROFILE_014",
+            "Select a profile before continuing".into(),
+        ),
+        ProfilesError::ActiveProfileChanged => (
+            StatusCode::CONFLICT,
+            "PROFILE_015",
+            "The active profile changed. Reload viewing preferences".into(),
+        ),
+        ProfilesError::InvalidViewingPreferences(_) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALID_001",
+            "Viewing preferences are invalid".into(),
+        ),
+        ProfilesError::InvalidStoredViewingPreferences => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "INTERNAL",
+            "Internal server error".into(),
+        ),
         ProfilesError::InvalidProfileType(_) | ProfilesError::InvalidContentRating(_) => (
             StatusCode::UNPROCESSABLE_ENTITY,
             "VALID_001",
@@ -1721,6 +1774,11 @@ fn search_error_to_http(
             StatusCode::INTERNAL_SERVER_ERROR,
             "INTERNAL",
             "Internal server error".into(),
+        ),
+        SearchError::InvalidBrowseQuery(_) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "VALID_001",
+            "Invalid search browsing query".into(),
         ),
     }
 }

@@ -23,6 +23,7 @@ const webProfiles = read('clients/web/src/lib/api/profiles.js');
 const webCore = read('clients/web/src/lib/api/core.js');
 const webScope = read('clients/web/src/lib/profiles/scope.js');
 const webLayout = read('clients/web/src/routes/+layout.svelte');
+const webPicker = read('clients/web/src/lib/components/ProfilePicker.svelte');
 const fixture = JSON.parse(read('docs/api/fixtures/auth/v1/auth-flow-matrix.json'));
 
 assert.match(migration, /profile_selection_required BOOLEAN NOT NULL DEFAULT false/);
@@ -37,7 +38,9 @@ assert.match(webCore, /invalidateProfileScopedRequests/);
 assert.match(webCore, /ensureProfileScopeCurrent/);
 assert.match(webScope, /BroadcastChannel/);
 assert.match(webScope, /storage/);
-assert.match(webLayout, /profile-gate/);
+assert.match(webLayout, /<ProfilePicker/);
+assert.match(webPicker, /profile-gate/);
+assert.match(webPicker, /onselect\(profile\)/);
 assert.match(webLayout, /profileScopeReady/);
 assert.match(webLayout, /publishProfileScopeChange/);
 assert.match(webLayout, /resetProfileScope/);

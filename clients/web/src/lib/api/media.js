@@ -18,12 +18,24 @@
 
 import { get, patch, del } from './core.js';
 
-export async function listMediaItems(params = {}) {
-    return get('/media-items', params);
+export async function listMediaItems(params = {}, options = {}) {
+    return get('/media-items', params, options);
 }
 
-export async function getMediaItem(itemId) {
-    return get(`/media-items/${itemId}`);
+export function listContinueWatching(params = {}, options = {}) {
+    return get('/media-items/continue-watching', params, options);
+}
+
+export function listSeriesSeasons(seriesId, params = {}, options = {}) {
+    return get(`/media-items/${seriesId}/seasons`, params, options);
+}
+
+export function listSeasonEpisodes(seasonId, params = {}, options = {}) {
+    return get(`/media-items/${seasonId}/episodes`, params, options);
+}
+
+export async function getMediaItem(itemId, options = {}) {
+    return get(`/media-items/${itemId}`, {}, options);
 }
 
 export async function updateMediaItem(itemId, data) {
@@ -34,11 +46,10 @@ export async function deleteMediaItem(itemId) {
     return del(`/media-items/${itemId}`);
 }
 
-export async function listMediaFiles(itemId) {
-    return get(`/media-items/${itemId}/files`);
+export async function listMediaFiles(itemId, options = {}) {
+    return get(`/media-items/${itemId}/files`, {}, options);
 }
 
 export async function getMediaFile(itemId, fileId) {
     return get(`/media-items/${itemId}/files/${fileId}`);
 }
-

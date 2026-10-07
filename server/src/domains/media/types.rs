@@ -101,6 +101,64 @@ pub struct MediaItemListResponse {
     pub has_more: bool,
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MediaBrowseQuery {
+    pub library_id: Option<Uuid>,
+    pub r#type: Option<String>,
+    pub limit: Option<u32>,
+    pub cursor: Option<String>,
+    pub order: Option<String>,
+    pub sort: Option<String>,
+    pub watch: Option<String>,
+    pub favorite: Option<bool>,
+    pub genre_id: Option<Uuid>,
+    pub year: Option<i32>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct MediaBrowsePageQuery {
+    pub limit: Option<u32>,
+    pub cursor: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MediaWatchStateResponse {
+    pub is_watched: bool,
+    pub is_favorite: bool,
+    pub resume_position_ms: i64,
+    pub play_count: i32,
+    pub last_played_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MediaAvailabilityResponse {
+    pub can_play: bool,
+    pub healthy_file_count: i64,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MediaBrowseItemResponse {
+    #[serde(flatten)]
+    pub media: MediaItemResponse,
+    pub duration_ms: Option<i64>,
+    pub availability: MediaAvailabilityResponse,
+    pub watch_state: MediaWatchStateResponse,
+    pub series_title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub episode_count: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub available_episode_count: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub watched_episode_count: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct MediaBrowseListResponse {
+    pub items: Vec<MediaBrowseItemResponse>,
+    pub cursor: Option<String>,
+    pub has_more: bool,
+}
+
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct UpdateMediaItemRequest {
     #[validate(length(min = 1, max = 500))]

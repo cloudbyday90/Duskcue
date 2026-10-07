@@ -452,7 +452,7 @@ Security and remote access architecture is documented in [SECURITY.md](docs/secu
 - **Timing attack resistance** — all secret comparisons use `ring` constant-time operations; standard `==` used only for non-secret values (UUIDs, names); documented as deliberate choice
 - **Security event monitoring** — built-in admin dashboard shows failed logins, rate limit triggers, invalid signatures, new devices; one-click actions for session revocation, key rotation, account lock; no external SIEM needed
 - **SSE real-time event security** — session-cookie-authenticated `GET /api/v1/events`; per-user connection limit (5); 15s KeepAlive heartbeat; server-side authorization at publish time; no client→server payload surface (eliminates entire WebSocket attack categories). Full design in [REAL_TIME_PUSH.md](docs/design/REAL_TIME_PUSH.md), security specifics in [SECURITY.md](docs/security/SECURITY.md).
-- **FFmpeg per-process sandboxing** — Landlock LSM (filesystem isolation, unprivileged, Linux 5.13+) + seccomp-BPF (syscall allow-list, `seccompiler` crate); applied in child `pre_exec`; gracefully degrades on unsupported platforms
+- **FFmpeg per-process sandboxing** — Linux Landlock filesystem isolation plus deny-by-default seccomp-BPF. Current source prepares Landlock before fork and requires a managed ELF bootstrap to install the final filter after trusted initial loading, before FFmpeg main; exec/network denial is retained. Runtime packaging, enforcement/degradation and actual launcher qualification are tracked in [FFmpeg launcher qualification](docs/ci/FFMPEG_LAUNCHER_QUALIFICATION.md); current source is not yet Linux runtime proof.
 - **tokio-process-tools v0.11.2** for FFmpeg subprocess lifecycle — replaces custom boilerplate with correctness-focused API: graceful shutdown (SIGTERM/SIGKILL), bounded output, zombie prevention, process naming
 - **ring 0.17 for HMAC signing** — same crypto library used by rustls internally; HMAC-SHA256 key generation and validation
 - **No dedicated error codes** — security failures map to existing PLAY_005 and SYS_001 codes
@@ -538,6 +538,9 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 
 | Phase | Status | Commit |
 |---|---|---|
+| Tonight Web/Desktop Redesign | **In progress** — T01–T08 tracked in [Tonight Implementation Plan](docs/branding/TONIGHT_IMPLEMENTATION_PLAN.md). T04 browsing and T05 Title/Episode gallery are complete. Verified checkpoints: 372 units/115 browser cases, then CSS Search correction with 24 targeted cases/check/web build. Later locale-navigation source repairs require fresh shared/runtime checks. Earlier static/Tauri builds and native primary-server/SSE/HLS/fullscreen/Title-return journeys passed; native qualification failed Search occlusion at genuine 400% zoom. Corrected static build held at the normal memory gate. Current stop/worker/managed Linux launcher and progressive-HLS startup still require compilation and actual DB/Linux/media proof. Current W3C/WAI guidance, composable services and [guarded testing memory](docs/ci/TESTING_MEMORY.md) remain mandatory; user leaves rust-analyzer running and requests lighter work. | — |
+
+Tonight work uses user-authorized commit/push checkpoints on `origin/main` between coherent tasks. Preserve the complete implementation goal and accurate verification boundaries; a pushed work-in-progress checkpoint is distinct from merge, deployment or release. The [implementation plan](docs/branding/TONIGHT_IMPLEMENTATION_PLAN.md) records the standing checkpoint workflow.
 | Phase 1: Project Scaffolding | **Complete** | `aaedc05` |
 | Phase 2: Database Schema | **Complete** | `dd3f201` |
 | Phase 3: Core Server Infrastructure | **Complete** | — |

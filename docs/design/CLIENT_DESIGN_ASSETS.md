@@ -168,6 +168,8 @@ Phase 16d Task 8 adds:
 - source SVG assets under [../branding/assets](../branding/assets)
 - cross-references in `BUILD_ORDER.md`, `PROJECT.md`, `CLIENT_CONTRACTS.md`, `CLIENT_PLATFORM_READINESS.md`, `UI_FOUNDATIONS.md`, and `NAME_BRANDING.md`
 
+Tonight's web/desktop implementation maps semantic colors and display typography in `app.css` while retaining the canonical shared fixtures for other platforms. `Artwork.svelte` uses authenticated profile-scoped blobs through `lib/api/artwork.js`, selected-server transport, lazy visibility loading, abort cleanup, and object-URL revocation. Placeholder SVGs under `clients/web/src/lib/assets/` are exact bundled copies of the canonical source assets, so offline desktop fallback does not request private remote artwork. See [UI Foundations](../branding/UI_FOUNDATIONS.md#production-integration-approach) and the [implementation plan](../branding/TONIGHT_IMPLEMENTATION_PLAN.md).
+
 ## Research Sources
 
 - W3C Design Tokens Community Group: https://www.w3.org/community/design-tokens/

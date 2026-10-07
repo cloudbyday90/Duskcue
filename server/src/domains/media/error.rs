@@ -39,6 +39,12 @@ pub enum MediaError {
     #[error("invalid media type: {0}")]
     InvalidMediaType(String),
 
+    #[error("invalid browsing query: {0}")]
+    InvalidBrowseQuery(String),
+
+    #[error("invalid or mismatched browsing cursor")]
+    InvalidBrowseCursor,
+
     #[error("invalid match state: {0}")]
     InvalidMatchState(String),
 

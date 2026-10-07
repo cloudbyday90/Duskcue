@@ -16,7 +16,14 @@
 
 pub mod error;
 pub mod handlers;
+mod heartbeat;
+mod history;
+mod hls;
+mod seek;
 pub mod service;
+mod stop;
+mod track_selection;
+mod transcode_access;
 pub mod types;
 
 pub use error::PlaybackError;

@@ -117,6 +117,62 @@ pub struct ProfileListResponse {
     pub items: Vec<ProfileResponse>,
 }
 
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SubtitleMode {
+    None,
+    Always,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+#[serde(deny_unknown_fields)]
+pub struct ViewingPreferencesRequest {
+    pub autoplay_next_episode: bool,
+    pub audio_language: Option<String>,
+    pub prefer_audio_description: bool,
+    pub subtitle_mode: SubtitleMode,
+    pub subtitle_language: Option<String>,
+    pub prefer_sdh: bool,
+}
+
+#[derive(Debug, Clone, Deserialize, Validate)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateViewingPreferencesRequest {
+    pub expected_profile_id: Uuid,
+    #[validate(nested)]
+    pub viewing_preferences: ViewingPreferencesRequest,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ViewingPreferencesResponse {
+    pub autoplay_next_episode: bool,
+    pub audio_language: Option<String>,
+    pub prefer_audio_description: bool,
+    pub subtitle_mode: SubtitleMode,
+    pub subtitle_language: Option<String>,
+    pub prefer_sdh: bool,
+}
+
+impl Default for ViewingPreferencesResponse {
+    fn default() -> Self {
+        Self {
+            autoplay_next_episode: true,
+            audio_language: None,
+            prefer_audio_description: false,
+            subtitle_mode: SubtitleMode::None,
+            subtitle_language: None,
+            prefer_sdh: false,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct CurrentViewingPreferencesResponse {
+    pub profile_id: Uuid,
+    pub has_saved_preferences: bool,
+    pub viewing_preferences: ViewingPreferencesResponse,
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct SwitchProfileRequest {
     pub remember_on_device: Option<bool>,
@@ -219,4 +275,62 @@ pub struct ProfileScope {
     pub library_ids: Vec<Uuid>,
     pub user_library_ids: Vec<Uuid>,
     pub has_all_library_access: bool,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn preference_payload() -> serde_json::Value {
+        serde_json::json!({
+            "expected_profile_id": Uuid::now_v7(),
+            "viewing_preferences": {
+                "autoplay_next_episode": false,
+                "audio_language": null,
+                "prefer_audio_description": false,
+                "subtitle_mode": "none",
+                "subtitle_language": null,
+                "prefer_sdh": false
+            }
+        })
+    }
+
+    #[test]
+    fn self_service_preferences_reject_parental_fields_at_every_level() {
+        let mut outer = preference_payload();
+        outer["allow_downloads"] = serde_json::json!(true);
+        assert!(serde_json::from_value::<UpdateViewingPreferencesRequest>(outer).is_err());
+        let mut nested = preference_payload();
+        nested["viewing_preferences"]["max_content_rating"] = serde_json::json!("NC-17");
+        assert!(serde_json::from_value::<UpdateViewingPreferencesRequest>(nested).is_err());
+    }
+
+    #[test]
+    fn preference_save_rejects_wrong_types_unknown_modes_and_missing_booleans() {
+        let mut wrong_type = preference_payload();
+        wrong_type["viewing_preferences"]["autoplay_next_episode"] = serde_json::json!("false");
+        assert!(serde_json::from_value::<UpdateViewingPreferencesRequest>(wrong_type).is_err());
+        let mut unsupported_mode = preference_payload();
+        unsupported_mode["viewing_preferences"]["subtitle_mode"] = serde_json::json!("forced_only");
+        assert!(
+            serde_json::from_value::<UpdateViewingPreferencesRequest>(unsupported_mode).is_err()
+        );
+        let mut missing = preference_payload();
+        missing["viewing_preferences"]
+            .as_object_mut()
+            .unwrap()
+            .remove("autoplay_next_episode");
+        assert!(serde_json::from_value::<UpdateViewingPreferencesRequest>(missing).is_err());
+    }
+
+    #[test]
+    fn nullable_language_values_are_distinct_from_stream_indices() {
+        let request =
+            serde_json::from_value::<UpdateViewingPreferencesRequest>(preference_payload())
+                .unwrap();
+        assert_eq!(request.viewing_preferences.audio_language, None);
+        let mut stream_index = preference_payload();
+        stream_index["viewing_preferences"]["audio_language"] = serde_json::json!(1);
+        assert!(serde_json::from_value::<UpdateViewingPreferencesRequest>(stream_index).is_err());
+    }
 }

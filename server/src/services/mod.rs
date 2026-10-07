@@ -17,6 +17,7 @@
 pub mod artwork_delivery;
 pub mod artwork_downloader;
 pub mod backup;
+pub mod browse_cursor;
 pub mod clean_art;
 pub mod collections;
 pub mod conditions;

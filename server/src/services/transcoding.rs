@@ -14,7 +14,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use std::borrow::Cow;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -22,17 +21,23 @@ use std::time::Duration;
 use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
-use tokio::process::Command;
 use tokio::sync::Semaphore;
-use tokio_process_tools::{
-    Consumable, DEFAULT_MAX_BUFFERED_CHUNKS, DEFAULT_READ_CHUNK_SIZE, GracefulShutdown,
-    LineParsingOptions, Next, NumBytesExt, Process,
-};
+use tokio_process_tools::{GracefulShutdown, Next};
 use uuid::Uuid;
 
 use crate::domains::playback::error::PlaybackError;
 use crate::services::hw_accel::{self, HwAccelDetectionResult};
 use crate::state::{CpuConfig, RuntimeConfig};
+
+pub mod arguments;
+mod launcher;
+mod lifecycle;
+use arguments::{
+    build_ffmpeg_input_args, build_hls_output_args, build_stream_mapping_args,
+    build_subtitle_burn_in_filter, compose_video_filters,
+};
+use launcher::{LaunchReadiness, spawn_session_ffmpeg};
+use lifecycle::{TranscodeWorkers, WorkerCancellation, WorkerLaunch};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -241,13 +246,29 @@ impl TranscodeSession {
     }
 
     pub fn segment_url_pattern(&self) -> String {
-        format!("/api/v1/transcode/{}/segments/seg_%04d.m4s", self.id)
+        format!(
+            "/api/v1/transcode/{}/{}/seg_%04d.m4s",
+            self.id, self.rendition_name
+        )
+    }
+}
+
+pub(crate) struct PendingTranscodeSession {
+    cancellation: Option<WorkerCancellation>,
+}
+
+impl PendingTranscodeSession {
+    pub(crate) fn acknowledge(mut self) {
+        if let Some(cancellation) = self.cancellation.as_mut() {
+            cancellation.acknowledge();
+        }
     }
 }
 
 pub struct TranscodeManager {
     sessions: Arc<DashMap<Uuid, TranscodeSession>>,
     semaphore: Arc<Semaphore>,
+    workers: TranscodeWorkers,
     config: Arc<ArcSwap<RuntimeConfig>>,
     hw_detection: Arc<std::sync::RwLock<HwAccelDetectionResult>>,
 }
@@ -262,6 +283,7 @@ impl TranscodeManager {
         Self {
             sessions: Arc::new(DashMap::new()),
             semaphore: Arc::new(Semaphore::new(max_concurrent.max(1))),
+            workers: TranscodeWorkers::default(),
             config,
             hw_detection: Arc::new(std::sync::RwLock::new(detection)),
         }
@@ -342,27 +364,17 @@ impl TranscodeManager {
 
         let mut args = build_ffmpeg_input_args(seek_position_ms, &source_path);
 
-        if subtitle_burn_in {
-            let subtitle_ordinal = subtitle_stream_ordinal.ok_or_else(|| {
+        let subtitle_filter = if subtitle_burn_in {
+            let ordinal = subtitle_stream_ordinal.ok_or_else(|| {
                 PlaybackError::FfmpegFailed(
-                    "subtitle burn-in requires a selected subtitle stream".to_string(),
+                    "subtitle burn-in requires a selected subtitle stream".into(),
                 )
             })?;
-            args.extend([
-                "-filter_complex".to_string(),
-                build_subtitle_burn_in_filter(&source_path, subtitle_ordinal),
-                "-map".to_string(),
-                "[video]".to_string(),
-            ]);
+            Some(build_subtitle_burn_in_filter(&source_path, ordinal))
         } else {
-            args.extend(["-map".to_string(), "0:0".to_string()]);
-        }
-        args.extend([
-            "-map".to_string(),
-            format!("0:{}", source_audio_stream_index.unwrap_or(1)),
-        ]);
-
-        args.extend(build_video_encode_args(
+            None
+        };
+        let video_args = build_video_encode_args(
             &encoder,
             &effective_video_codec,
             rendition.width,
@@ -370,7 +382,14 @@ impl TranscodeManager {
             rendition.video_bitrate,
             gop_size,
             hw_accel,
+        );
+        let (video_args, subtitle_filter) = compose_video_filters(video_args, subtitle_filter)
+            .map_err(|message| PlaybackError::FfmpegFailed(message.into()))?;
+        args.extend(build_stream_mapping_args(
+            source_audio_stream_index,
+            subtitle_filter,
         ));
+        args.extend(video_args);
 
         args.extend(build_audio_encode_args(
             &effective_audio_codec,
@@ -388,8 +407,7 @@ impl TranscodeManager {
             &manifest_path.to_string_lossy(),
         ));
 
-        let process_handle = spawn_ffmpeg(&args, session_id, &source_path, &segment_dir)
-            .map_err(|e| PlaybackError::FfmpegFailed(format!("failed to spawn ffmpeg: {e}")))?;
+        let spawned = spawn_session_ffmpeg(&args, session_id, &source_path, &segment_dir).await?;
 
         let session = TranscodeSession {
             id: session_id,
@@ -419,52 +437,78 @@ impl TranscodeManager {
             is_seeking: false,
         };
 
-        let graceful_timeout = config.resource_limits.ffmpeg_shutdown_grace_secs;
-        let session_clone = session.clone();
         let sessions = Arc::clone(&self.sessions);
-        tokio::spawn(async move {
-            let _permit = permit;
-
-            let stdout = process_handle.stdout();
-            let consumer = match stdout.consume(tokio_process_tools::ParseLines::inspect(
-                LineParsingOptions::default(),
-                move |line: Cow<'_, str>| {
-                    if let Some(update) = parse_progress_line(&line)
-                        && let Some(mut s) = sessions.get_mut(&session_clone.id)
-                    {
-                        if update.is_complete {
-                            s.is_complete = true;
-                        }
-                        s.progress = Some(update);
+        let cleanup_sessions = Arc::clone(&self.sessions);
+        self.workers.start(
+            WorkerLaunch {
+                session_id,
+                handle: spawned.handle,
+                permit,
+                directory: session.segment_dir.clone(),
+                shutdown: build_graceful_shutdown(
+                    config.resource_limits.ffmpeg_shutdown_grace_secs,
+                ),
+            },
+            move |line| {
+                if let Some(update) = parse_progress_line(&line)
+                    && let Some(mut session) = sessions.get_mut(&session_id)
+                {
+                    if update.is_complete {
+                        session.is_complete = true;
                     }
-                    Next::Continue
-                },
-            )) {
-                Ok(c) => c,
-                Err(_) => return,
-            };
-            let _ = consumer.wait().await;
-
-            let graceful_shutdown = build_graceful_shutdown(graceful_timeout);
-            let mut terminated = process_handle.terminate_on_drop(graceful_shutdown);
-            let _ = terminated
-                .wait_for_completion(Duration::from_secs(3600))
-                .await;
-        });
+                    session.progress = Some(update);
+                }
+                Next::Continue
+            },
+            move || {
+                cleanup_sessions.remove(&session_id);
+            },
+        );
 
         self.sessions.insert(session_id, session.clone());
+        self.confirm_bootstrap(session_id, spawned.readiness)
+            .await?;
 
         Ok(session)
     }
 
+    async fn confirm_bootstrap(
+        &self,
+        session_id: Uuid,
+        readiness: LaunchReadiness,
+    ) -> Result<(), PlaybackError> {
+        let pending = self.pending_session(session_id);
+        if let Err(error) = readiness.wait().await {
+            self.stop_session(session_id).await?;
+            return Err(error);
+        }
+        pending.acknowledge();
+        Ok(())
+    }
+
     pub async fn stop_session(&self, session_id: Uuid) -> Result<(), PlaybackError> {
+        if self.workers.stop(session_id).await? {
+            return Ok(());
+        }
         if let Some((_, session)) = self.sessions.remove(&session_id) {
-            let segment_dir = session.segment_dir.clone();
-            tokio::spawn(async move {
-                let _ = tokio::fs::remove_dir_all(&segment_dir).await;
-            });
+            match tokio::fs::remove_dir_all(&session.segment_dir).await {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => {
+                    self.sessions.insert(session_id, session);
+                    return Err(PlaybackError::FfmpegFailed(
+                        "transcode cache cleanup failed".into(),
+                    ));
+                }
+            }
         }
         Ok(())
+    }
+
+    pub(crate) fn pending_session(&self, session_id: Uuid) -> PendingTranscodeSession {
+        PendingTranscodeSession {
+            cancellation: self.workers.pending(session_id),
+        }
     }
 
     pub async fn seek_session(
@@ -473,16 +517,10 @@ impl TranscodeManager {
         position_ms: i64,
         data_dir: &Path,
     ) -> Result<TranscodeSession, PlaybackError> {
-        let old = self
-            .sessions
-            .remove(&session_id)
+        let old_session = self
+            .get_session(&session_id)
             .ok_or(PlaybackError::SessionNotFound)?;
-
-        let old_dir = old.1.segment_dir.clone();
-        let old_session = old.1;
-        tokio::spawn(async move {
-            let _ = tokio::fs::remove_dir_all(&old_dir).await;
-        });
+        self.stop_session(session_id).await?;
 
         self.start_session(
             StartSessionParams {
@@ -540,11 +578,8 @@ impl TranscodeManager {
 
         let mut args = build_ffmpeg_input_args(None, &source_path);
 
+        args.extend(build_stream_mapping_args(source_audio_stream_index, None));
         args.extend([
-            "-map".to_string(),
-            "0:0".to_string(),
-            "-map".to_string(),
-            format!("0:{}", source_audio_stream_index.unwrap_or(1)),
             "-c:v".to_string(),
             "copy".to_string(),
             "-c:a".to_string(),
@@ -559,8 +594,7 @@ impl TranscodeManager {
             &manifest_path.to_string_lossy(),
         ));
 
-        let process_handle = spawn_ffmpeg(&args, session_id, &source_path, &segment_dir)
-            .map_err(|e| PlaybackError::FfmpegFailed(format!("failed to spawn ffmpeg: {e}")))?;
+        let spawned = spawn_session_ffmpeg(&args, session_id, &source_path, &segment_dir).await?;
 
         let hw_accel = self.get_hw_accel();
 
@@ -592,46 +626,48 @@ impl TranscodeManager {
             is_seeking: false,
         };
 
-        let graceful_timeout = config.resource_limits.ffmpeg_shutdown_grace_secs;
-        let session_clone = session.clone();
         let sessions = Arc::clone(&self.sessions);
-        tokio::spawn(async move {
-            let _permit = permit;
-
-            let stdout = process_handle.stdout();
-            let consumer = match stdout.consume(tokio_process_tools::ParseLines::inspect(
-                LineParsingOptions::default(),
-                move |line: Cow<'_, str>| {
-                    if let Some(update) = parse_progress_line(&line)
-                        && let Some(mut s) = sessions.get_mut(&session_clone.id)
-                    {
-                        if update.is_complete {
-                            s.is_complete = true;
-                        }
-                        s.progress = Some(update);
+        let cleanup_sessions = Arc::clone(&self.sessions);
+        self.workers.start(
+            WorkerLaunch {
+                session_id,
+                handle: spawned.handle,
+                permit,
+                directory: session.segment_dir.clone(),
+                shutdown: build_graceful_shutdown(
+                    config.resource_limits.ffmpeg_shutdown_grace_secs,
+                ),
+            },
+            move |line| {
+                if let Some(update) = parse_progress_line(&line)
+                    && let Some(mut session) = sessions.get_mut(&session_id)
+                {
+                    if update.is_complete {
+                        session.is_complete = true;
                     }
-                    Next::Continue
-                },
-            )) {
-                Ok(c) => c,
-                Err(_) => return,
-            };
-            let _ = consumer.wait().await;
-
-            let graceful_shutdown = build_graceful_shutdown(graceful_timeout);
-            let mut terminated = process_handle.terminate_on_drop(graceful_shutdown);
-            let _ = terminated
-                .wait_for_completion(Duration::from_secs(3600))
-                .await;
-        });
+                    session.progress = Some(update);
+                }
+                Next::Continue
+            },
+            move || {
+                cleanup_sessions.remove(&session_id);
+            },
+        );
 
         self.sessions.insert(session_id, session.clone());
+        self.confirm_bootstrap(session_id, spawned.readiness)
+            .await?;
 
         Ok(session)
     }
 
     pub fn get_session(&self, session_id: &Uuid) -> Option<TranscodeSession> {
         self.sessions.get(session_id).map(|r| r.value().clone())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn insert_test_session(&self, session: TranscodeSession) {
+        self.sessions.insert(session.id, session);
     }
 
     pub fn active_session_count(&self) -> usize {
@@ -705,39 +741,6 @@ fn build_graceful_shutdown(grace_secs: u64) -> GracefulShutdown {
         .unix_sigterm(timeout)
         .windows_ctrl_break(timeout)
         .build()
-}
-
-fn build_ffmpeg_input_args(seek_position_ms: Option<i64>, source_path: &Path) -> Vec<String> {
-    let mut args = Vec::new();
-
-    if let Some(ms) = seek_position_ms
-        && ms > 0
-    {
-        let secs = ms as f64 / 1000.0;
-        args.extend(["-ss".to_string(), format!("{secs:.3}")]);
-    }
-
-    args.extend([
-        "-analyzeduration".to_string(),
-        "200M".to_string(),
-        "-probesize".to_string(),
-        "1G".to_string(),
-        "-fflags".to_string(),
-        "+genpts".to_string(),
-        "-i".to_string(),
-        source_path.to_string_lossy().to_string(),
-    ]);
-
-    args
-}
-
-fn build_subtitle_burn_in_filter(source_path: &Path, subtitle_ordinal: usize) -> String {
-    let escaped_path = source_path
-        .to_string_lossy()
-        .replace('\\', "\\\\")
-        .replace(':', "\\:")
-        .replace('\'', "\\'");
-    format!("[0:v]subtitles=filename='{escaped_path}':si={subtitle_ordinal}[video]")
 }
 
 fn build_video_encode_args(
@@ -825,88 +828,11 @@ fn build_threading_args(cpu: &CpuConfig) -> Vec<String> {
     args
 }
 
-fn build_hls_output_args(
-    segment_duration: u32,
-    segment_filename: &str,
-    manifest_path: &str,
-) -> Vec<String> {
-    vec![
-        "-f".to_string(),
-        "hls".to_string(),
-        "-hls_time".to_string(),
-        segment_duration.to_string(),
-        "-hls_segment_type".to_string(),
-        "fmp4".to_string(),
-        "-hls_list_size".to_string(),
-        "0".to_string(),
-        "-hls_playlist_type".to_string(),
-        "vod".to_string(),
-        "-hls_segment_filename".to_string(),
-        segment_filename.to_string(),
-        "-y".to_string(),
-        manifest_path.to_string(),
-    ]
-}
-
 type OutputStream = tokio_process_tools::SingleSubscriberOutputStream<
     tokio_process_tools::LossyWithoutBackpressure,
     tokio_process_tools::ReplayEnabled,
 >;
 type FfmpegHandle = tokio_process_tools::ProcessHandle<OutputStream>;
-
-fn spawn_ffmpeg(
-    args: &[String],
-    session_id: Uuid,
-    source_path: &Path,
-    segment_dir: &Path,
-) -> Result<FfmpegHandle, PlaybackError> {
-    let mut command = Command::new("ffmpeg");
-    command.args(args).stdin(std::process::Stdio::null());
-
-    let media = source_path.to_path_buf();
-    let transcode = segment_dir.to_path_buf();
-    #[cfg(target_os = "linux")]
-    {
-        unsafe {
-            command.pre_exec(move || {
-                use crate::services::sandbox::{SandboxConfig, apply_sandbox};
-                let config = SandboxConfig {
-                    media_path: &media,
-                    transcode_dir: &transcode,
-                };
-                match apply_sandbox(&config) {
-                    Ok(()) => Ok(()),
-                    Err(e) => {
-                        tracing::warn!(
-                            "FFmpeg sandbox setup failed (continuing without sandbox): {e}"
-                        );
-                        Ok(())
-                    }
-                }
-            });
-        }
-    }
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = media;
-        let _ = transcode;
-    }
-
-    let handle = Process::new(command)
-        .name(format!("transcode-{session_id}"))
-        .stdout_and_stderr(|stream| {
-            stream
-                .single_subscriber()
-                .lossy_without_backpressure()
-                .replay_last_bytes(64.kilobytes())
-                .read_chunk_size(DEFAULT_READ_CHUNK_SIZE)
-                .max_buffered_chunks(DEFAULT_MAX_BUFFERED_CHUNKS)
-        })
-        .spawn()
-        .map_err(|e| PlaybackError::FfmpegFailed(format!("ffmpeg spawn failed: {e}")))?;
-
-    Ok(handle)
-}
 
 fn parse_progress_line(line: &str) -> Option<ProgressUpdate> {
     let line = line.trim();

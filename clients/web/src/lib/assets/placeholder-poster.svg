@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 600" role="img" aria-label="Poster placeholder source">
+  <rect width="400" height="600" rx="18" fill="#16181f"/>
+  <rect x="28" y="28" width="344" height="544" rx="12" fill="#1e2129" stroke="#2e323d" stroke-width="8"/>
+  <path d="M72 392c42-52 84-78 126-78 48 0 91 30 130 90v82H72z" fill="#262a35"/>
+  <path d="M96 394c34-34 67-51 101-51 40 0 76 22 109 66" fill="none" stroke="#c8965a" stroke-width="14" stroke-linecap="round"/>
+  <circle cx="284" cy="140" r="28" fill="#d4a468"/>
+  <rect x="82" y="508" width="236" height="14" rx="7" fill="#2e323d"/>
+  <rect x="118" y="536" width="164" height="10" rx="5" fill="#242832"/>
+</svg>

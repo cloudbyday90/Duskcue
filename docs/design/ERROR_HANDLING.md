@@ -734,6 +734,10 @@ Valid values: `development`, `staging`, `production`. Default: `production`.
 - `get_trace_id()` generates UUID v7 per error. Request-span propagation via `tracing` spans can be enhanced when middleware is implemented (Phase 3, Task 4).
 - Domain `From` impls will be added as each domain's `error.rs` is created (Phase 4+).
 
+### Tonight profile and browsing errors
+
+The active-profile preference contract adds `PROFILE_014` (409: profile selection is required) and `PROFILE_015` (409: the expected active profile changed). Clients must revalidate their profile scope before retrying a conflict. Invalid viewing preferences, semantic browse queries, and bound cursors use `VALID_001` (422); invalid stored preference data uses `INTERNAL` (500) without exposing the stored value. See [Profiles and Ambient Channels](PROFILES_AND_AMBIENT_CHANNELS.md) and [Tonight Browsing Contracts](TONIGHT_BROWSING_CONTRACTS.md).
+
 ## Research Sources
 
 - Caroline Morton — Error Handling in Rust: anyhow and thiserror (January 2026)

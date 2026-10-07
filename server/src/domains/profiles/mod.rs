@@ -18,6 +18,7 @@ pub mod error;
 pub mod handlers;
 pub mod service;
 pub mod types;
+mod viewing_preferences;
 
 pub use error::ProfilesError;
 
@@ -31,6 +32,10 @@ pub fn router(state: AppState) -> Router<AppState> {
         .route(
             "/api/v1/profiles",
             get(handlers::list_profiles).post(handlers::create_profile),
+        )
+        .route(
+            "/api/v1/profiles/current/viewing-preferences",
+            get(handlers::get_viewing_preferences).patch(handlers::update_viewing_preferences),
         )
         .route(
             "/api/v1/profiles/{id}",

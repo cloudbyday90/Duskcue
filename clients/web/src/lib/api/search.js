@@ -18,7 +18,6 @@
 
 import { get } from './core.js';
 
-export async function search(query, params = {}) {
-    return get('/search', { q: query, ...params });
+export async function search(query, params = {}, options = {}) {
+    return get('/search', { q: query, ...params }, options);
 }
-

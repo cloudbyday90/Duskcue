@@ -1,5 +1,15 @@
 # Household Profiles, Kids Mode, and Ambient Channels
 
+## Tonight profile-name qualification — October 3, 2026
+
+The production profile-management page uses a focused native-form `ProfileNameEditor` for both account-owned standard and Kids profiles. A name save sends only `{ name }` to the existing `PATCH /profiles/{id}`; Kids rating, library, feature, and PIN policy remain separate controls. Successful responses update the card and refresh the shell's server profile list. Failed saves retain the local draft for an explicit Save-name retry; Discard returns to the last confirmed name. These boundaries preserve the [Tonight implementation scope](../branding/TONIGHT_IMPLEMENTATION_PLAN.md) and do not add an avatar or parental-policy redesign.
+
+Official [WAI form-label guidance](https://www.w3.org/WAI/tutorials/forms/labels/), [grouping guidance](https://www.w3.org/WAI/tutorials/forms/grouping/), and [WCAG focus-order guidance](https://www.w3.org/WAI/WCAG22/Understanding/focus-order.html) were researched on October 3, 2026. Native labels, submission, visible focus, and related profile context support understandable keyboard operation. Restoring focus to the same name field when a Save or Discard removes/disables the focused control is the selected recovery behavior; it should not steal focus from a user who has moved elsewhere. Success/status and error semantics follow the existing [status-message guidance](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html). WCAG's outcomes are normative; these tutorials and the particular recovery target are informative implementation guidance and a product decision.
+
+Focused browser proof lives in `clients/web/tests/e2e/profile-management.spec.ts`: standard name-only keyboard submission, Kids name-only submission preserving policy, active-name Save/reload/navbar refresh, failed PATCH retaining a retryable draft, and keyboard Discard without a mutation. Each case runs the actual production route and has its own additive request interception for the existing profile PATCH; unrelated requests fall through to the shared explicit API fixture. This verifies browser behavior and payload boundaries, not server authorization or full assistive-technology conformance.
+
+After the integrator added conditional same-field focus recovery and a profile-specific named form, `node node_modules/@playwright/test/cli.js test tests/e2e/profile-management.spec.ts` passed **5/5 Chromium cases in 14.5 seconds**. Each case rejects unknown API requests and browser runtime errors; both remained zero. Native submission and failure/Discard recovery retained the same profile input focus. Standard and Kids requests contained only the trimmed name, all Kids policy fields remained unchanged, and the active name refreshed from a new server profile-list read and survived page reload. The first run passed four cases; the Kids case's last assertion used an exact implicit-label locator containing option text. The corrected assertion uses the native combobox's exact accessible name and retains the actual maximum-rating value assertion. No parental-policy production change was made for that harness issue.
+
 ## Outcome
 
 Duskcue has a Netflix-style household model: one authenticated Duskcue user owns one or more selectable profiles. A profile, rather than the authenticated account, owns viewing history, resume points, favorites, ratings, and TV-surface personalization.
@@ -95,6 +105,99 @@ Profile selection is an authorization boundary, not merely a client preference.
 3. Direct media routes and playback starts perform the same policy check; a copied media ID cannot bypass the browse UI.
 4. Standard profiles inherit the authenticated account's library authorization. Kids profiles can only narrow that scope.
 5. The owner configures profiles and channels from a standard profile. Leaving a PIN-protected Kids profile for a standard profile requires a valid, unexpired parent unlock on the current server session; this never replaces normal account authentication for remote/API access.
+
+## Active-Profile Viewing Preferences (Tonight, 2026-10-03)
+
+Playback defaults belong to the selected household profile. Account locale, device quality and volume, parental policy, remembered-profile selection, and title-specific stream overrides remain separate contracts. The self-service preference endpoints allow a selected Kids profile to edit these playback defaults without granting profile-management privileges or a parent unlock.
+
+### Research and decision
+
+| Option | Benefits | Limitations | Decision |
+|---|---|---|---|
+| Reuse browser-wide `duskcue_prefs` | Requires no server changes. | Values have no reliable profile/account/server owner and do not follow a profile between devices. | Rejected for saved playback defaults. |
+| Add a preference table | Strong dedicated schema and independent lifecycle. | Adds a migration and joins for a small bounded object; profile metadata already exists. | Deferred. |
+| Typed DTOs with a namespaced profile metadata key | Additive API, atomic object save, and no mandatory migration. | Application validation must enforce the bounded schema; concurrent complete saves are last-writer-wins. | Selected. |
+
+PostgreSQL `jsonb_set` replaces only the named key, preserving other profile metadata. PostgreSQL row locks persist until transaction end; profile operations acquire the profile row before the session row, and `FOR NO KEY UPDATE` avoids blocking foreign-key key-share checks while protecting metadata and PIN changes. Serde ignores unknown JSON fields by default, so the new mutation wrapper and preference request both use `deny_unknown_fields`; legacy management DTOs retain their existing behavior. Sources: [PostgreSQL 18 JSON functions](https://www.postgresql.org/docs/18/functions-json.html), [PostgreSQL 18 explicit locking](https://www.postgresql.org/docs/18/explicit-locking.html), [Serde container attributes](https://serde.rs/container-attrs.html), and [Serde field attributes](https://serde.rs/field-attrs.html), checked 2026-10-03.
+
+### HTTP contract
+
+`GET /api/v1/profiles/current/viewing-preferences` returns:
+
+```json
+{
+  "profile_id": "01900000-0000-7000-8000-000000000001",
+  "has_saved_preferences": false,
+  "viewing_preferences": {
+    "autoplay_next_episode": true,
+    "audio_language": null,
+    "prefer_audio_description": false,
+    "subtitle_mode": "none",
+    "subtitle_language": null,
+    "prefer_sdh": false
+  }
+}
+```
+
+`PATCH /api/v1/profiles/current/viewing-preferences` accepts `expected_profile_id` and a complete `viewing_preferences` object with the same six fields. It replaces that object atomically in `user_profiles.metadata.viewing_preferences`, preserves sibling metadata, and returns the same response shape with `has_saved_preferences: true`. Boolean fields and `subtitle_mode` are required; nullable language fields may be omitted or explicitly null. This is a complete save of the nested preference object, not a partial merge of individual preference fields. Concurrent saves on the same profile serialize and the last committed complete object wins.
+
+| Field | Values and default |
+|---|---|
+| `autoplay_next_episode` | Boolean; defaults to `true`. |
+| `audio_language` | Nullable language code; `null` means Source default, with no requested audio-language override. |
+| `prefer_audio_description` | Boolean; defaults to `false`; applies only when the selected media has reliable structured description metadata. |
+| `subtitle_mode` | `none` or `always`; defaults to `none`. `always` requires a non-null subtitle language. |
+| `subtitle_language` | Nullable language code; defaults to `null`. A saved language may be retained while subtitles are Off. |
+| `prefer_sdh` | Boolean; defaults to `false`; applies only to supported subtitle track metadata. |
+
+Language inputs are trimmed, lowercase two- or three-letter ASCII codes. Known scanner ISO 639 aliases such as `eng`/`en`, `fre`/`fra`/`fr`, and `ger`/`deu`/`de` normalize to the two-letter form; other syntactically valid codes remain lowercase. Display names, locale strings, stream indices, and `und`, `mul`, or `zxx` are rejected. Clients normalize the same scanner aliases when resolving actual streams. This API persists intent; it does not itself choose a track or guarantee a preferred track exists. Source default does not claim to identify the original soundtrack. Structured audio-description metadata is a prerequisite for applying that preference; unknown description or SDH metadata must not be invented.
+
+### Selection, authorization, and concurrency
+
+Both endpoints require an authenticated session, an owned active profile, and `profile_selection_required: false`. No arbitrary profile target, parental policy, identity, library authorization, capability, or account preference can be supplied. A required selection returns `409 PROFILE_014`. A stale expected profile or a concurrent profile transition returns `409 PROFILE_015`; the client must discard the pending result and revalidate its profile scope.
+
+PATCH rechecks session ownership, selection state, and `expected_profile_id` inside the mutation transaction. Profile switching, parent unlock, and preference writes use profile-before-session row locking and recheck the active profile after waiting. A parent-unlock race retains its existing unavailable response, and all existing PIN, lockout, expiry, remembered-profile, and management guards remain in force. GET reads profile metadata and session selection in one ownership-scoped database snapshot and returns the profile ID for client stale-response rejection. Client request cancellation alone cannot retract a committed server write.
+
+Rows without the preference key return the typed defaults and `has_saved_preferences: false`; a saved default object returns `true`. Invalid stored preference data is an internal error rather than silently appearing unsaved. Unrelated profile metadata must be a JSON object and is never returned by this API.
+
+Legacy browser defaults are not uploaded implicitly. The web migration may honor valid legacy autoplay Off locally until the selected profile explicitly saves defaults; unrelated theme/filter/segment-skip settings remain local. Explicitly saved profile defaults take precedence. The web/client contract owns legacy-storage scoping and migration tests.
+
+The domain keeps its public five-file facade: handlers and DTOs live in their existing files, while `service.rs` re-exports the focused `viewing_preferences.rs` read/write and normalization service. Shared profile/session locking remains in `service.rs`; the preference module does not own authentication, profile management, or parental policy.
+
+### Web/shared-desktop form and service decisions (2026-10-03)
+
+| Option | Benefits | Limitations | Decision |
+|---|---|---|---|
+| Save each control on change | Fewer explicit actions. | Gives no coherent Discard operation and makes keyboard selection commit settings unexpectedly. | Rejected. |
+| Keep transport, browser storage, navigation prompts, and form state in one page/store | Small initial file count. | Mixes independent ownership and makes stale-response/dirty-navigation behavior difficult to test. | Rejected. |
+| Focused preference model, scoped store factory, device storage, and navigation guard | Independently testable ownership and races; the page orchestrates native controls and explicit Save/Discard. | Requires the shell and player to call the small shared facade at profile lifecycle boundaries. | Selected. |
+
+The form uses explicitly labeled native controls and separate profile/device `fieldset`/`legend` groups. It preserves drafts on failure, gives persistent visible error text and polite completion status, and uses an HTML modal dialog for Keep editing/Discard confirmation. The browser supplies focus containment and ordinary Escape cancellation; explicit focus fallback is needed when a disclosure trigger disappears. These choices follow [WAI grouping guidance](https://www.w3.org/WAI/tutorials/forms/grouping/), [WAI form notifications](https://www.w3.org/WAI/tutorials/forms/notifications/), and [W3C HTML dialog technique H102](https://www.w3.org/WAI/WCAG22/Techniques/html/H102), checked 2026-10-03. They are implementation techniques rather than a claim of complete WCAG conformance.
+
+A composable preference store deduplicates active-scope loads, aborts its own pending requests on invalidation, checks both generation and response `profile_id`, and exposes no previous profile data while loading or after a failed load. Playback waits for resolved preferences before counting down. Only a valid browser legacy `autoplay: false` affects an unsaved profile's effective defaults; explicit saved On/Off overrides it, and unscoped audio/subtitle data is never migrated implicitly.
+
+Device streaming quality is separately stored by normalized server origin, account ID, and existing opaque installation device ID. It is not a profile preference or an administrative server-quality policy. A device-storage failure remains visible; a successful profile save is not falsely reported as rolled back when a later local device write fails. Account interface locale remains on the existing account preference route.
+
+SvelteKit `beforeNavigate` covers links, programmatic navigation such as submitted search, and back/forward. In-app exits cancel first, obtain confirmation, discard the draft only on approval, and replay the intended navigation; history traversal retains its delta. Document unload uses the browser's native confirmation where supported. The shell calls the same guard's `requestProfileTransition()` before explicit profile switches and sign-out. Saving blocks those transitions until its outcome is known. Sources: [SvelteKit navigation](https://svelte.dev/docs/kit/%24app-navigation) and the installed SvelteKit 2.69 navigation types, checked 2026-10-03; the project does not adopt unrelated SvelteKit 3 migration changes.
+
+The guard rejects a second transition while a confirmation is pending, so one approval cannot execute both a route change and a profile/sign-out action. A same-scope load deduplicates the existing request; a forced load during an active save waits for that save instead of canceling an operation that might already have committed. Browser history tests await the native dialog's `close` event before the next independent Back action: the [HTML dialog algorithm](https://html.spec.whatwg.org/multipage/interactive-elements.html#the-dialog-element) queues that event separately from hiding the dialog.
+
+### Verification
+
+The focused web preference suite has 26 passing unit cases for transport deduplication, actual installation identity shape, stale reads/writes, account/server isolation, legacy autoplay Off, language validation, device storage, and transition confirmation. Eight Chromium cases exercise the production settings route with explicit API fixtures: Save/reload, explicit default persistence, failed-save draft/Discard, native dialog focus and Escape, search/link exits, canceled and replayed Back/Forward, profile-switch isolation, partial device-write failure, and selection-gated Kids self-service. The history case waits for the browser event rather than adding a sleep. From `clients/web`, run:
+
+```text
+node node_modules/vitest/vitest.mjs run tests/unit/viewing-preferences.test.ts tests/unit/navigation-guard.test.ts
+node node_modules/@playwright/test/cli.js test preferences.spec.ts --project=chromium
+```
+
+The shared client check/build remains the repository-wide verification step. The preference suite exercises browser routing and API response boundaries; real authorization and concurrent database transitions are covered by the Rust tests below.
+
+`cargo test -p duskcue --lib domains::profiles --locked` exercises DTO boundaries, defaults, language aliases, malformed saved data, and existing PIN/rating checks. The ignored HTTP/database test exercises real session extraction, persistence and metadata siblings, account/profile isolation, selection gating, Kids self-service versus management denial, queued stale writes, concurrent unlock/save/switch, and complete concurrent saves. Run it only against migrated disposable PostgreSQL 18 with a database name beginning `duskcue_migration`, `DUSKCUE_DATABASE_URL` pointing to that database, and `DUSKCUE_PROFILE_PREFERENCES_TESTS=disposable`:
+
+```powershell
+cargo test -p duskcue --test profile_viewing_preferences --locked -- --ignored --nocapture
+```
 
 ## Remembered Profile on a Device
 
@@ -195,3 +298,13 @@ Deferred follow-up:
 - time windows, daily limits, and child-safe metadata editorial review.
 
 Related documents: [DATABASE.md](DATABASE.md), [TV_PLATFORM_SURFACES.md](TV_PLATFORM_SURFACES.md), [CLIENT_PLATFORM_READINESS.md](CLIENT_PLATFORM_READINESS.md), and [SECURITY.md](../security/SECURITY.md).
+
+### Tonight tab coordination — October 7, 2026
+
+The shared web/Tauri shell now owns a `createProfileScopeSync` instance instead of a module-wide broadcast channel. Profile-change events carry the normalized selected API `server_origin` as well as account/profile IDs. The receiver reads the currently validated origin/account before acting, rejects unscoped or foreign events, and deduplicates the same revision across BroadcastChannel and the storage fallback. Only the latest 64 revisions are retained. Disposal closes only the instance's channel/listener and invalidates old callbacks; changing the selected server does not make an old server's event valid.
+
+Seven guarded unit cases passed in `tests/unit/profile-scope.test.ts`, covering real EventTarget delivery, channel/storage deduplication, account/server and unknown-context rejection, selected-server replacement, storage fallback, malformed messages, instance disposal/restart and bounded revision retention. The log is `.cache/tonight-implementation/profile-scope-unit.log`; telemetry is `.cache/testing-memory/2026-10-07T15-04-24-492Z-3f8c2297-e9b9-4c43-ba45-55bff8fab76e.jsonl`. These units do not substitute for the combined browser/native profile-switch journeys.
+
+When another tab has already switched the server session's profile, a failed playback Stop cannot retain the old profile's player. The shell clears that UI, loads the actual new profile, and keeps a failed cleanup only while the validated server/account still matches. A persistent, polite notice offers an explicit retry with the captured old session/final position; it never retries under a foreign account/server. Ordinary voluntary profile/server changes still wait for successful release. These recovery paths are implemented and await integrated browser qualification. See [Tonight Player](TONIGHT_PLAYER.md) for the release lifecycle and the [implementation plan](../branding/TONIGHT_IMPLEMENTATION_PLAN.md) for completion gates.
+
+Those recovery paths now pass the current browser qualification, including an explicit failed retry with restored focus and the identical frozen stop body. Sign-out preserves its existing best-effort behavior: after attempting release, it clears authentication even if that release fails; captured account/server are checked before clearing, and retained old release state is invalidated with authentication. Two cases inject 401 and 503 playback failures and require actual logout/Login, no extra stop attempt and no surviving retry notice. Log: `.cache/tonight-implementation/final-popover-scope-browser.log`. Voluntary profile/server selection still waits for successful release; explicit sign-out does not claim the failed resume write succeeded.

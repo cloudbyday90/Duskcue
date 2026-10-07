@@ -7,11 +7,13 @@
 -->
 <script>
     import { m } from '$lib/paraglide/messages.js';
+    import { messageLocale } from '$lib/localization/message-locale.js';
     import { onMount } from 'svelte';
     import { setLocale } from '$lib/paraglide/runtime.js';
     import { getUserPreferences, updateUserPreferences } from '$lib/api/users.js';
     import { auth, currentUser, userHasAnyCapability } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
+    import { isTauriDesktop } from '$lib/desktop/tauri.js';
 
     const ADMIN_CAPABILITIES = ['can_manage_server', 'can_manage_users', 'can_manage_libraries'];
 
@@ -21,8 +23,10 @@
     let savingLocale = $state(false);
     let preferencesError = $state('');
     let canAccessAdmin = $derived(userHasAnyCapability($currentUser, ADMIN_CAPABILITIES));
+    let desktop = $state(false);
 
     onMount(loadPreferences);
+    onMount(() => { desktop = isTauriDesktop(); });
 
     async function loadPreferences() {
         preferencesLoading = true;
@@ -131,6 +135,14 @@
 
     <section class="settings-section" aria-labelledby="connections-heading">
         <h2 id="connections-heading" class="section-title">Connections</h2>
+        {#if desktop}
+            <a href="/settings/server" class="settings-link">
+                <div>
+                    <span lang={messageLocale('tonight_desktop_server_switch_title')} class="link-label">{m.tonight_desktop_server_switch_title()}</span>
+                    <span lang={messageLocale('tonight_desktop_server_settings_copy')} class="link-description">{m.tonight_desktop_server_settings_copy()}</span>
+                </div>
+            </a>
+        {/if}
         <a href="/settings/trakt" class="settings-link">
             <div class="link-icon" aria-hidden="true">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

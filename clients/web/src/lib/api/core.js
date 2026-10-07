@@ -43,6 +43,22 @@ export function getServerOrigin() {
     return serverOrigin;
 }
 
+export function requiresAuthenticatedMediaSource() {
+    return Boolean(bearerToken);
+}
+
+export function streamRequestHeaders(url) {
+    if (!bearerToken) return {};
+    const origin = serverOrigin || globalThis.location?.origin;
+    const request = new URL(url, origin);
+    if (request.origin !== origin || !request.pathname.startsWith(`${API_BASE}/`)) {
+        throw new Error('Media request is outside the selected server');
+    }
+    return { Authorization: `Bearer ${bearerToken}` };
+}
+
+export const mediaRequestHeaders = streamRequestHeaders;
+
 export function invalidateProfileScopedRequests() {
     profileScopeController.abort();
     profileScopeController = new AbortController();

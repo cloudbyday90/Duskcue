@@ -24,6 +24,18 @@ pub enum ProfilesError {
     #[error("profile access denied")]
     AccessDenied,
 
+    #[error("a profile must be selected before editing viewing preferences")]
+    SelectionRequired,
+
+    #[error("the active profile changed; refresh the current profile")]
+    ActiveProfileChanged,
+
+    #[error("viewing preferences are invalid: {0}")]
+    InvalidViewingPreferences(String),
+
+    #[error("stored viewing preferences are invalid")]
+    InvalidStoredViewingPreferences,
+
     #[error("profile type is invalid: {0}")]
     InvalidProfileType(String),
 

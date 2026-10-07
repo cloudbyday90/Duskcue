@@ -12,6 +12,93 @@ This document defines the baseline client experience, look and feel, navigation 
 
 The design goal is to create a product UI that feels intentional and modern while still fitting a self-hosted household media platform: content-first, readable from a distance, consistent across client types, and calm enough that settings and administration do not dominate the experience.
 
+## Web and Desktop Redesign — October 2026
+
+The web and shared desktop experience is being redesigned around the **Tonight** concept selected during the October 3, 2026 UI review. This section records the accepted direction for that redesign; the implementation notes below describe the current shipped client.
+
+Production implementation is in progress under [Tonight Implementation Plan](TONIGHT_IMPLEMENTATION_PLAN.md). Browsing and full Title/Episode galleries are implemented and verified; preference/player integration has current client evidence, while backend runtime and native qualification remain open. The plan separates accepted requirements, explicit working defaults, contract prerequisites, and verification milestones. Prototype review does not imply production implementation is complete.
+
+Accepted decisions:
+
+- Use Tonight's stable top navigation and cinematic artwork treatment as the web/desktop foundation.
+- Use charcoal/plum surfaces with a restrained lavender accent, a readable sans serif for controls, and editorial serif type for featured titles. This updates the earlier brass visual direction for the web/desktop redesign.
+- Home starts with **Continue watching**, followed by a smaller featured title, then recently added content. Resuming an existing viewing session takes priority over the feature.
+- Movies and TV use the **Poster gallery** layout with larger artwork and more breathing room.
+- Catalog posters open a dedicated **Title page** for movies and TV, with playback and episode selection prominent.
+- TV title pages use the **Episode gallery**, with landscape thumbnails and a short synopsis for each episode.
+- Search submits with Enter (or the search action) and opens a dedicated results page using the poster gallery, media-type filters, viewing-state filters, and sorting.
+- Playback uses **Minimal controls**, with dedicated Episodes and Audio & subtitles actions and secondary quality controls in Settings.
+- Player selectors use compact, vertical **popovers anchored above their controls**. Choosing an episode, audio/subtitle track, quality, or playback speed applies the choice and dismisses the popover. Outside click and Escape also dismiss it; keyboard selection returns focus to the originating control.
+- Playback controls **hide automatically during playback** and return on pointer movement, tapping, or keyboard focus. Keep them visible when paused, while a popover is open, while hovering over controls, or while controls have keyboard focus. The prototype uses a three-second idle delay; that timing can be adjusted during review.
+- Include a **fullscreen toggle** in the player controls and an **X in the top-right corner** to close playback and return directly to the same full **Title page**, with its artwork, details, and episode gallery. Retain the selected season, episode, and saved position so the title page can resume that session. Escape exits fullscreen; closing the player also leaves fullscreen. Do not introduce an intermediate playback summary page.
+- **Autoplay the next episode** after a ten-second end-of-episode countdown, with **Play now** and **Cancel**. Cancel stops that countdown and leaves a persistent Play next action. Provide a saved **Autoplay next episode: On / Off** preference in player Settings before the countdown is encountered. With autoplay off, wait for an explicit Play next action.
+
+The browsing review compared a Poster gallery with larger artwork and genre labels against a Compact collection with smaller posters, concise metadata, and title-initial browsing. The gallery was selected for its larger artwork and spacing.
+
+The title-detail review selected a dedicated Title page over a Quick view overlay. The title page gives series episodes, synopsis, and secondary actions room to grow and provides a stable navigation destination.
+
+The episode review selected the Episode gallery over compact Episode list rows. Retain a season picker, watched labels, remaining time, explicit Play/Resume actions, and a prominent series Resume action.
+
+The search review selected a dedicated results page over an instant overlay. Typing preserves the current page until the query is submitted. Return from a result's title page to the originating search with its query, filters, and sorting retained.
+
+Additional interactions to review:
+
+- Continue watching cards resume directly; ordinary catalog cards open title details.
+- Return from details to the originating collection, preserving its filters and sorting, as with the accepted search behavior.
+- Keep episode selection and playback prominent; disclose technical media information on demand.
+- Put profile switching, personal Settings, and capability-filtered Administration in the profile area.
+
+These interaction proposals remain review items, followed by profile entry behavior, player controls, artwork fallbacks, and empty/loading/error states. The prototype uses illustrative media; production data and route integration are separate implementation work.
+
+The next review sequence is playback controls and transitions, profile/account entry and personal settings, then loading/empty/error states and artwork fallbacks. Finish with a walkthrough of the complete web/desktop journey before implementing the redesign.
+
+The playback review selected **Minimal controls** over Quick access's persistent audio, subtitles, and quality selectors. The illustrative controls cover pause/resume, seeking, volume, episode changes, audio description, SDH subtitles, auto-hide, fullscreen, returning to the title page, and next-episode autoplay. Keyboard shortcut mapping, subtitle appearance, and real playback remain further review/integration work. Continue watching's direct-resume behavior is still awaiting a separate choice.
+
+The ten-second autoplay delay is a product choice, not a W3C requirement. [WCAG 2.2 Timing Adjustable](https://www.w3.org/WAI/WCAG22/Understanding/timing-adjustable) requires a way to disable a content-imposed time limit before encountering it, adjust it sufficiently, or extend it under specified conditions. A ten-second Cancel button alone does not establish that requirement; the saved autoplay-off preference supplies the untimed path. End-of-episode controls remain visible, and Cancel never silently restarts the countdown. Keyboard focus inside the next-episode card and an open player popover pause the countdown as additional safeguards; background tabs also pause it.
+
+Announce the upcoming episode, cancellation, and episode change through a polite status region without moving focus or announcing each second, following [WCAG 2.2 Status Messages](https://www.w3.org/WAI/WCAG22/Understanding/status-messages). Use native buttons, visible keyboard focus, and a non-animated countdown; retain the existing reduced-motion support. Carry audio, subtitles, volume, quality, speed, and fullscreen through an episode transition. Stop at the end of the selected season or a movie rather than wrapping to the first episode; cross-season continuation remains a later review item.
+
+The prototype demonstrates the end event by seeking to the end. Production must connect this state to the actual media-ended event, handle unavailable next episodes and playback failures without advancing the countdown, and verify the complete player with assistive technologies. This design review does not establish full WCAG conformance.
+
+Browser review verified the saved autoplay-off preference after closing and reloading, keyboard cancellation, countdown pause with keyboard focus in the next-episode card, automatic advance with fullscreen and playback preferences retained, and completion without wrapping for movies and final season episodes. The end card fits at 320px in both normal and fullscreen layouts. The status region remains inside the fullscreen player and survives episode rendering; the changing seconds use a non-live timer. Actual screen-reader speech still needs assistive-technology testing.
+
+The browser review uses the native [Fullscreen API](https://developer.mozilla.org/en-US/docs/Web/API/Element/requestFullscreen) from a user action and updates its control when fullscreen changes. Fullscreen depends on the embedding host's permission; the standalone review permits it, while an inline preview may not. Desktop window fullscreen integration remains implementation work.
+
+The active standalone review now verifies native fullscreen entry and exit, Escape from a focused player control, and closing with X from fullscreen. X returns to the full title page with the selected season, episode, and playback position retained. The player handles Escape explicitly when no popover is open and clears an earlier fullscreen error after a successful toggle. No browser-wide permission changes were needed.
+
+The player must retain keyboard access, visible focus, readable contrast, and clear control labels, following [W3C's media player guidance](https://www.w3.org/WAI/media/av/player/). The quieter visual treatment is a product preference, not an accessibility requirement.
+
+Current accessibility guidance still requires an identifiable, persistent keyboard focus indicator. The prototypes preserve native controls and add visible product focus treatment, following [W3C's Focus Visible guidance](https://www.w3.org/WAI/WCAG22/Understanding/focus-visible). Layout density remains a product preference, rather than a requirement derived from that guidance.
+
+### Profiles and viewing preferences — in review
+
+The next Tonight review compares **Quick switch menu** with **Full profile picker** for routine profile changes. The recommendation is the compact menu for everyday use: fewer steps and the current page stays visible while choosing. The full picker gives profile identity and device remembering more space, at the cost of leaving browsing and requiring an extra confirmation. Both retain the server-required initial **Who’s watching?** gate; this comparison does not propose bypassing that gate.
+
+The common viewing-preferences proposal uses a quiet page under Tonight's existing navigation, with labeled native controls, explicit **Save changes** and **Discard changes**, and profile scope shown beside playback defaults. Autoplay shares the player's accepted On/Off preference. Audio and subtitle defaults apply when the media provides the selected track; streaming quality is labeled **On this device**. Editing fields does not save or navigate. Leaving an unsaved form offers Keep editing or Discard changes. Profile management is a separate destination from choosing a profile, and Administration is exposed only when the current account/profile capabilities allow it.
+
+The profile popover is a click-opened disclosure with ordinary buttons and a device-remembering checkbox. It exposes expanded state, retains normal Tab order, closes with Escape or outside interaction, and returns focus to its trigger when dismissed with Escape. This follows [WAI's disclosure guidance](https://www.w3.org/WAI/ARIA/apg/patterns/disclosure/examples/disclosure-navigation/); it does not use the ARIA application-menu role for mixed content. Dialogs use native HTML dialog behavior, following [W3C's H102 technique](https://www.w3.org/WAI/WCAG22/Techniques/html/H102). Group related preference controls with fieldsets and legends, following [WAI form grouping](https://www.w3.org/WAI/tutorials/forms/grouping/). Explicit Save is a product choice: [WCAG On Input](https://www.w3.org/WAI/WCAG22/Understanding/on-input) restricts unexpected context changes, rather than requiring every preference to have a Save button. Save and switch results use a persistent polite status region.
+
+Architecture constraints from the three-agent review:
+
+- **Account:** sign-in, role/capabilities, library permissions, and interface locale. The current `/user/preferences` contract accepts only locale. Profile selection does not sign into a different account.
+- **Profile:** watch/resume state, favorites, identity, and Kids restrictions. Synced personal autoplay/audio/subtitle defaults are proposed here; the production profile DTO does not yet expose them. Existing web playback defaults live under an unscoped browser storage key and are not synced per-profile settings.
+- **Session:** the active profile and temporary parent unlock. A profile switch invalidates playback and old content state and returns Home.
+- **Device:** remembering is an explicit account/device-to-profile mapping. Label it **Remember this profile on this device**, not Remember the last profile. Routine quick switching leaves an existing remembered mapping unchanged unless the user explicitly changes it.
+
+Protected Kids-to-standard switching must prompt for the current Kids profile's parent PIN and wait for server authorization. That unlock does not grant Kids administrative capabilities. Standard-to-standard and standard-to-Kids selection can switch directly. The prototype uses isolated sample profile histories, a curated sample Kids catalog, and a sample parent PIN of `2468` held only in memory; it does not perform authentication, change permissions, or reproduce production lockout policy. Profile names can be edited in the management review; create/delete and parental-policy management remain later review work.
+
+The proposed ownership and layouts remain unaccepted design choices. Production integration must implement the preference contract and wire profile changes to existing session invalidation, access checks, device remembering, and parent-unlock endpoints. See [Profiles and Ambient Channels](../design/PROFILES_AND_AMBIENT_CHANNELS.md) and [Auth](../design/AUTH.md). This review changes the illustrative UI and its design notes, not those production contracts.
+
+Browser review verified Save and reload persistence, draft preservation and discard, keyboard search warning before leaving an unsaved form, dialog cancellation focus, isolated profile watch history, unchanged audio defaults after a playback-track override, explicit remembered-profile scope, wrong-PIN errors and successful Kids exit, picker confirmation, initial selection gating, and profile-name edits. Preferences, the profile popover, and the picker fit at 320px. The combined comparison has unique live IDs and independent profile state for each variant. Screen-reader speech and production endpoint integration remain to be tested.
+
+### Production integration approach
+
+The implementation uses the existing web semantic CSS variables for Tonight's charcoal/plum surfaces and lavender actions, with a system serif stack for editorial headings. This keeps controls and administration consistent without changing shared Flutter/TV token fixtures or downloading another font. System serif rendering varies by device; readable fallback typography is preferable to a required remote font.
+
+Artwork requests use the API service's selected server and authentication. A shared component reserves the poster or still aspect ratio, lazily requests a profile-scoped blob, and owns its object URL. Component cleanup aborts pending requests and revokes URLs; profile changes destroy the scoped view. This also works for desktop bearer sessions, where a bare remote image cannot attach an Authorization header. The tradeoff is a small request and object-URL lifecycle per visible image, with no persistent cache of private artwork.
+
+Use Svelte's [effect teardown](https://svelte.dev/docs/svelte/$effect#Understanding-lifecycle) for request cleanup and [lifecycle hooks](https://svelte.dev/docs/svelte/lifecycle-hooks) for document listeners. Keep the installed SvelteKit 2 navigation contract. Its [navigation interceptor](https://svelte.dev/docs/kit/$app-navigation#beforeNavigate) supports guarding unsaved preferences across links, submitted search, and browser history; account/profile switches also need an explicit application-level guard before mutating the session. Native disclosures and modal dialogs preserve normal keyboard behavior. These are implementation defaults under the execution plan, rather than additional prototype decisions.
+
 ## Goals
 
 1. Define one baseline visual direction for the product before implementation starts.

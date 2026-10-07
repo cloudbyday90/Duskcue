@@ -22,6 +22,7 @@ RUN case "$TARGETARCH" in amd64|arm64) ;; *) echo "Unsupported TARGETARCH: $TARG
         build-base \
         clang \
         cmake \
+        linux-headers \
         perl \
         pkgconf \
         protobuf-dev
@@ -30,10 +31,14 @@ COPY vendor ./vendor
 COPY crates ./crates
 COPY server ./server
 COPY clients/desktop/src-tauri ./clients/desktop/src-tauri
+COPY native/ffmpeg-bootstrap/bootstrap.c ./native/ffmpeg-bootstrap/bootstrap.c
+RUN cc -std=c11 -O2 -fPIC -fstack-protector-strong -Wall -Wextra -Werror -shared \
+        -Wl,-z,now,-z,relro,-soname,/usr/local/lib/duskcue-ffmpeg-bootstrap.so \
+        -o /tmp/duskcue-ffmpeg-bootstrap.so /src/native/ffmpeg-bootstrap/bootstrap.c
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/src/target \
-    cargo build --release --locked -p duskcue \
+    cargo build --release --locked -p duskcue -j 2 \
     && cp target/release/duskcue /tmp/duskcue
 
 FROM ${ALPINE_IMAGE} AS runtime
@@ -51,6 +56,12 @@ RUN apk add --no-cache \
         ca-certificates \
         curl \
         ffmpeg \
+        font-noto \
+        font-noto-arabic \
+        font-noto-cjk \
+        font-noto-devanagari \
+        font-noto-hebrew \
+        font-noto-thai \
         libgcc \
         libstdc++ \
         nodejs \
@@ -81,11 +92,21 @@ RUN apk add --no-cache \
         /var/run/postgresql \
     && (find / -xdev -type f -perm /6000 -exec chmod a-s {} + 2>/dev/null || true)
 WORKDIR /opt/duskcue
+COPY docker/fonts/60-duskcue-sans-fallback.conf /etc/fonts/conf.d/60-duskcue-sans-fallback.conf
 COPY --from=rust-builder /tmp/duskcue /usr/local/bin/duskcue
+COPY --from=rust-builder /tmp/duskcue-ffmpeg-bootstrap.so /usr/local/lib/duskcue-ffmpeg-bootstrap.so
 COPY --from=web-builder /src/clients/web/build /opt/duskcue/web
 COPY docker/entrypoint.sh /usr/local/bin/duskcue-entrypoint
 RUN chmod 0755 /usr/local/bin/duskcue /usr/local/bin/duskcue-entrypoint \
     && chown -R duskcue:duskcue /opt/duskcue
+RUN apk add --no-cache --virtual .ffmpeg-bootstrap-tools patchelf \
+    && mkdir -p /usr/local/libexec \
+    && cp /usr/bin/ffmpeg /usr/local/libexec/duskcue-ffmpeg \
+    && patchelf --add-needed /usr/local/lib/duskcue-ffmpeg-bootstrap.so /usr/local/libexec/duskcue-ffmpeg \
+    && chmod 0555 /usr/local/libexec/duskcue-ffmpeg /usr/local/lib/duskcue-ffmpeg-bootstrap.so \
+    && sha256sum /usr/local/libexec/duskcue-ffmpeg /usr/local/lib/duskcue-ffmpeg-bootstrap.so > /usr/local/libexec/duskcue-ffmpeg.sha256 \
+    && chmod 0444 /usr/local/libexec/duskcue-ffmpeg.sha256 \
+    && apk del .ffmpeg-bootstrap-tools
 ENV DUSKCUE_DATA_DIR=/data \
     DUSKCUE_CACHE_DIR=/cache \
     DUSKCUE_ENVIRONMENT=production \

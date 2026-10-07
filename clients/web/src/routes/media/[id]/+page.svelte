@@ -1,652 +1,310 @@
-<!--
-  Duskcue — Self-hosted media streaming server
-  Copyright (C) 2026-2026 Duskcue Contributors
-
-  This program is free software: licensed under AGPL-3.0
-  See LICENSE file for details.
--->
 <script>
     import { m } from '$lib/paraglide/messages.js';
-    import { onMount } from 'svelte';
+    import { messageLocale } from '$lib/localization/message-locale.js';
+    import { onDestroy, tick, untrack } from 'svelte';
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
-    import { getMediaItem, listMediaFiles } from '$lib/api/media.js';
-    import { getWatchData, updateWatchData } from '$lib/api/playback.js';
-    import { notifications } from '$lib/stores/notifications.js';
-    import { formatDuration, formatYear, formatRating } from '$lib/utils/format.js';
-    import { MEDIA_TYPE_LABELS } from '$lib/utils/constants.js';
-    import { posterUrl, backdropUrl } from '$lib/utils/artwork.js';
+    import Artwork from '$lib/components/Artwork.svelte';
+    import EpisodeGallery from '$lib/components/EpisodeGallery.svelte';
+    import TitleWatchActions from '$lib/components/TitleWatchActions.svelte';
+    import TitleFiles from '$lib/components/TitleFiles.svelte';
+    import { loadTitleData, loadTitleEpisodes, loadTitleWatchFiles } from '$lib/media/title-data.js';
+    import { selectTitleSeason, selectTitleEpisode, selectedSeasonRoute, titleOrigin, titleDurationMs } from '$lib/media/title-selection.js';
+    import { prepareTitlePlayback } from '$lib/media/title-playback.js';
+    import { titleRoute } from '$lib/navigation/routes.js';
+    import { formatDuration, formatYear, formatRating, formatTimestamp, formatPercent } from '$lib/utils/format.js';
 
     let itemId = $derived($page.params.id);
+    let data = $state(null);
     let loading = $state(true);
-    let item = $state(null);
-    let files = $state([]);
-    let watchData = $state(null);
-    let isFavorite = $state(false);
-    let userRating = $state(0);
-    let backdropError = $state(false);
-    let posterError = $state(false);
+    let loadError = $state('');
+    let loadErrorLocale = $state('en');
+    let reloadTitle = $state(0);
+    let titleDetailsLoading = $state(false);
+    let titleDetailsController;
+    let episodes = $state([]);
+    let episodesLoading = $state(false);
+    let episodesError = $state('');
+    let episodesErrorLocale = $state('en');
+    let reloadEpisodes = $state(0);
+    let episodeDetails = $state(null);
+    let episodeDetailsLoading = $state(false);
+    let reloadEpisodeDetails = $state(0);
+    let preparing = $state(false);
+    let playbackError = $state('');
+    let playbackErrorLocale = $state('en');
+    let retryFocus = $state(null);
+    let playbackController;
+    let playbackTargetId;
+    let active = true;
 
-    onMount(async () => {
-        await loadData();
-        loading = false;
+    let item = $derived(data?.item);
+    let seasons = $derived(data?.seasons ?? []);
+    let origin = $derived(titleOrigin($page.url.searchParams.get('from'), item?.type));
+    let requestedSeason = $derived($page.url.searchParams.get('season'));
+    let requestedEpisode = $derived($page.url.searchParams.get('episode'));
+    let season = $derived(selectTitleSeason(seasons, requestedSeason));
+    let seasonId = $derived(season?.id);
+    let selectedEpisode = $derived(selectTitleEpisode(episodes, requestedEpisode));
+    let selectedEpisodeId = $derived(selectedEpisode?.id);
+    let selectedError = $derived(!episodesLoading && ((requestedSeason && !season) || (requestedEpisode && !selectedEpisode)));
+    let galleryError = $derived(data?.seasonsError ? m.tonight_title_episodes_failed() : episodesError || (selectedError ? m.tonight_title_invalid_selection() : ''));
+    let movieDuration = $derived(titleDurationMs(item, data?.files));
+    let movieResume = $derived(data?.watch?.is_watched ? 0 : data?.watch?.resume_position_ms ?? 0);
+    let episodeDuration = $derived(titleDurationMs(selectedEpisode, episodeDetails?.files));
+    let episodeResume = $derived(episodeDetails?.watch?.is_watched ? 0 : episodeDetails?.watch?.resume_position_ms ?? 0);
+
+    $effect(() => {
+        const id = itemId;
+        const revision = reloadTitle;
+        const controller = new AbortController();
+        titleDetailsController?.abort();
+        titleDetailsLoading = false;
+        loading = true;
+        data = null;
+        loadError = '';
+        playbackError = '';
+        untrack(() => {
+            loadTitleData(id, { signal: controller.signal }).then(async (result) => {
+                if (controller.signal.aborted) return;
+                if (['episode', 'season'].includes(result.item.type) && result.item.series_id) {
+                    const destination = titleRoute(result.item, titleOrigin($page.url.searchParams.get('from'), 'series'));
+                    await goto(destination, { replaceState: true });
+                    return;
+                }
+                data = result;
+            }).catch((error) => {
+                if (!controller.signal.aborted && error.name !== 'AbortError') {
+                    loadError = error.detail || m.tonight_title_load_failed();
+                    loadErrorLocale = error.detail ? 'en' : messageLocale('tonight_title_load_failed');
+                }
+            }).finally(() => { if (!controller.signal.aborted) loading = false; });
+        });
+        return () => controller.abort();
     });
 
-    async function loadData() {
-        try {
-            const [itemData, filesData] = await Promise.all([
-                getMediaItem(itemId),
-                listMediaFiles(itemId),
-            ]);
-            item = itemData;
-            files = filesData.items || filesData || [];
-            try {
-                watchData = await getWatchData(itemId);
-                isFavorite = watchData.is_favorite || false;
-                userRating = watchData.user_rating || 0;
-            } catch {
+    $effect(() => {
+        const id = seasonId;
+        const revision = reloadEpisodes;
+        const controller = new AbortController();
+        episodes = [];
+        episodesError = '';
+        if (!id) { episodesLoading = false; return () => controller.abort(); }
+        episodesLoading = true;
+        untrack(() => {
+            loadTitleEpisodes(id, { signal: controller.signal }).then((items) => {
+                if (!controller.signal.aborted) episodes = items;
+            }).catch((error) => {
+                if (!controller.signal.aborted && error.name !== 'AbortError') {
+                    episodesError = error.detail || m.tonight_title_episodes_failed();
+                    episodesErrorLocale = error.detail ? 'en' : messageLocale('tonight_title_episodes_failed');
+                }
+            }).finally(() => { if (!controller.signal.aborted) episodesLoading = false; });
+        });
+        return () => controller.abort();
+    });
+
+    $effect(() => {
+        const id = selectedEpisodeId;
+        const revision = reloadEpisodeDetails;
+        const controller = new AbortController();
+        episodeDetails = null;
+        if (!id) { episodeDetailsLoading = false; return () => controller.abort(); }
+        episodeDetailsLoading = true;
+        untrack(() => {
+            loadTitleWatchFiles(id, { signal: controller.signal }).then((details) => {
+                if (!controller.signal.aborted) episodeDetails = details;
+            }).finally(() => { if (!controller.signal.aborted) episodeDetailsLoading = false; }).catch(() => {});
+        });
+        return () => controller.abort();
+    });
+
+    $effect(() => {
+        const selected = selectedEpisode;
+        if (!selected || requestedEpisode || episodesLoading) return;
+        untrack(() => { goto(titleRoute(selected, origin), { replaceState: true, keepFocus: true, noScroll: true }); });
+    });
+
+    $effect(() => {
+        const selectedId = selectedEpisodeId || itemId;
+        untrack(() => {
+            if (preparing && playbackTargetId !== selectedId) {
+                playbackController?.abort();
+                preparing = false;
+                playbackError = '';
             }
-        } catch (err) {
-            notifications.error(err.detail || err.message || m.routes_media_id_page_failed_to_load_media_item());
-        }
+        });
+    });
+
+    $effect(() => {
+        const target = retryFocus;
+        if (!target || loading || titleDetailsLoading || (target === 'episode-gallery-heading' && episodesLoading) || (target === 'selected-episode-heading' && episodeDetailsLoading)) return;
+        retryFocus = null;
+        tick().then(() => {
+            if (!active || document.activeElement !== document.body) return;
+            (document.getElementById(target) || document.getElementById('title-heading'))?.focus({ preventScroll: true });
+        });
+    });
+
+    onDestroy(() => { active = false; playbackController?.abort(); titleDetailsController?.abort(); });
+
+    function selectSeason(id) {
+        const selected = seasons.find((candidate) => candidate.id === id);
+        if (selected) goto(selectedSeasonRoute(item, selected, origin), { keepFocus: true, noScroll: true });
     }
 
-    function handlePlay() {
-        if (!files.length) {
-            notifications.warning(m.routes_media_id_page_no_playable_files_available());
-            return;
-        }
-        const file = files[0];
-        goto(`/play/${itemId}?file=${file.id}`);
+    function selectEpisode(episode) {
+        playbackError = '';
+        goto(titleRoute(episode, origin), { keepFocus: true, noScroll: true });
     }
 
-    async function toggleFavorite() {
-        const newVal = !isFavorite;
-        isFavorite = newVal;
+    function retryGallery() {
+        retryFocus = 'episode-gallery-heading';
+        if (data?.seasonsError) reloadTitle += 1;
+        else reloadEpisodes += 1;
+    }
+
+    function retryTitle() {
+        retryFocus = 'title-heading';
+        reloadTitle += 1;
+    }
+
+    function retryEpisodeDetails() {
+        retryFocus = 'selected-episode-heading';
+        reloadEpisodeDetails += 1;
+    }
+
+    async function retryTitleDetails() {
+        if (!item || titleDetailsLoading) return;
+        retryFocus = 'title-heading';
+        titleDetailsController?.abort();
+        titleDetailsController = new AbortController();
+        const controller = titleDetailsController;
+        const id = item.id;
+        titleDetailsLoading = true;
         try {
-            await updateWatchData(itemId, { is_favorite: newVal });
-        } catch {
-            isFavorite = !newVal;
-            notifications.error(m.routes_media_id_page_failed_to_update_favorite_status());
-        }
+            const details = await loadTitleWatchFiles(id, { signal: controller.signal });
+            if (active && !controller.signal.aborted && data?.item.id === id) data = { ...data, ...details };
+        } catch (error) {
+            if (active && !controller.signal.aborted && data?.item.id === id) data = { ...data, watch: null, watchError: error, files: [], filesError: error };
+        } finally { if (active && !controller.signal.aborted) titleDetailsLoading = false; }
     }
 
-    async function setRating(rating) {
-        const newRating = userRating === rating ? 0 : rating;
-        userRating = newRating;
+    function updateEpisodeWatch(watch) {
+        if (!selectedEpisode) return;
+        const id = selectedEpisode.id;
+        episodeDetails = { ...episodeDetails, watch };
+        episodes = episodes.map((episode) => episode.id === id ? { ...episode, watch_state: watch } : episode);
+    }
+
+    async function play(target, fileId = undefined) {
+        if (preparing || !target) return;
+        playbackController?.abort();
+        playbackController = new AbortController();
+        playbackTargetId = target.id;
+        const controller = playbackController;
+        preparing = true;
+        playbackError = '';
         try {
-            await updateWatchData(itemId, { user_rating: newRating || null });
-        } catch {
-            userRating = userRating === 0 ? rating : 0;
-            notifications.error(m.routes_media_id_page_failed_to_update_rating());
-        }
+            const prepared = await prepareTitlePlayback(target, { fileId, origin, destination: titleRoute(target, origin), signal: controller.signal });
+            if (active && !controller.signal.aborted) await goto(prepared.route);
+        } catch (error) {
+            if (active && !controller.signal.aborted && error.name !== 'AbortError') {
+                playbackError = error.detail || (['FILE_UNAVAILABLE', 'UNPLAYABLE'].includes(error.code) ? m.tonight_title_no_files() : m.tonight_title_playback_failed());
+                playbackErrorLocale = error.detail ? 'en' : messageLocale(['FILE_UNAVAILABLE', 'UNPLAYABLE'].includes(error.code) ? 'tonight_title_no_files' : 'tonight_title_playback_failed');
+            }
+        } finally { if (active && !controller.signal.aborted) preparing = false; }
     }
-
-    let year = $derived(item ? formatYear(item.premiere_date) : null);
-    let rating = $derived(item ? formatRating(item.rating_average) : null);
-    let runtimeLabel = $derived(
-        item?.runtime_seconds ? formatDuration(item.runtime_seconds) : null,
-    );
-    let backdropSrc = $derived(item ? backdropUrl(item.id, 'w1280') : null);
-    let posterSrc = $derived(item ? posterUrl(item.id, 'w500') : null);
-    let resumeMs = $derived(watchData?.resume_position_ms || 0);
-    let progressPct = $derived(
-        item && resumeMs > 0 && item.runtime_seconds
-            ? Math.min(100, (resumeMs / (item.runtime_seconds * 1000)) * 100)
-            : 0,
-    );
 </script>
 
-<div class="media-detail">
+<svelte:head><title>{item?.title || 'Duskcue'} · Duskcue</title></svelte:head>
+
+<div class="title-page">
+    <a lang={messageLocale('tonight_title_back')} class="back-link" href={origin}>{m.tonight_title_back()}</a>
+    <p lang={preparing ? messageLocale('tonight_title_preparing') : undefined} class="play-status" role="status" aria-atomic="true">{preparing ? m.tonight_title_preparing() : ''}</p>
+    {#if playbackError}<p lang={playbackErrorLocale} class="error-message" role="alert">{playbackError}</p>{/if}
     {#if loading}
-        <div class="loading-state">
-            <div class="loading-spinner"></div>
-        </div>
-    {:else if item}
-    <div class="detail-backdrop">
-        {#if backdropSrc && !backdropError}
-            <img
-                src={backdropSrc}
-                alt=""
-                class="backdrop-image"
-                onerror={() => backdropError = true}
-            />
-        {/if}
-        <div class="backdrop-overlay"></div>
-    </div>
-
-    <div class="detail-content">
-        <div class="detail-header">
-            <div class="poster-area">
-                {#if posterSrc && !posterError}
-                    <img
-                        src={posterSrc}
-                        alt={item.title}
-                        class="poster"
-                        onerror={() => posterError = true}
-                    />
-                {:else}
-                    <div class="poster-placeholder">{item.title?.[0]?.toUpperCase()}</div>
+        <p lang={messageLocale('tonight_title_loading')} role="status">{m.tonight_title_loading()}</p>
+    {:else if loadError || !item}
+        <div class="title-error"><h1 lang={messageLocale('tonight_title_load_failed')} id="title-heading" tabindex="-1">{m.tonight_title_load_failed()}</h1><p lang={loadErrorLocale} role="alert">{loadError}</p><button lang={messageLocale('tonight_title_retry')} type="button" onclick={retryTitle}>{m.tonight_title_retry()}</button></div>
+    {:else}
+        <section class="title-hero" aria-labelledby="title-heading">
+            <div class="backdrop" aria-hidden="true"><Artwork itemId={item.id} type="backdrop" size="w1280" eager /></div>
+            <div class="poster"><Artwork itemId={item.id} size="w342" mediaType={item.type} eager /></div>
+            <div class="title-copy">
+                <h1 id="title-heading" tabindex="-1">{item.title}</h1>
+                <p class="title-meta">
+                    {#if formatYear(item.premiere_date)}<span>{formatYear(item.premiere_date)}</span>{/if}
+                    {#if item.content_rating}<span>{item.content_rating}</span>{/if}
+                    {#if movieDuration}<span>{formatDuration(movieDuration / 1000)}</span>{/if}
+                    {#if item.rating_average != null}<span>{formatRating(item.rating_average)}/10</span>{/if}
+                </p>
+                <p lang={item.overview ? undefined : messageLocale('tonight_title_synopsis_unavailable')} class="synopsis">{item.overview || m.tonight_title_synopsis_unavailable()}</p>
+                {#if item.type === 'movie' || item.type === 'episode'}
+                    <button lang={movieResume > 0 ? messageLocale('tonight_title_resume') : messageLocale('tonight_title_play')} class="play-button" type="button" disabled={preparing || titleDetailsLoading || !data.watch || !data.files.some((file) => file.is_healthy === true)} onclick={() => play(item)}>{movieResume > 0 ? m.tonight_title_resume() : m.tonight_title_play()}</button>
+                    {#if data.filesError}<p lang={messageLocale('tonight_title_files_failed')} class="error-message" role="alert">{m.tonight_title_files_failed()}</p><button lang={messageLocale('tonight_title_retry')} type="button" disabled={titleDetailsLoading} onclick={retryTitleDetails}>{m.tonight_title_retry()}</button>{/if}
+                    {#if !data.filesError && !data.files.some((file) => file.is_healthy === true)}<p lang={messageLocale('tonight_title_no_files')}>{m.tonight_title_no_files()}</p>{/if}
+                    {#if movieResume > 0}<p lang={messageLocale('tonight_title_resume_from')} class="resume-label">{m.tonight_title_resume_from({ position: formatTimestamp(movieResume) })}</p>{/if}
+                    {#if movieDuration && movieResume > 0}<progress lang={messageLocale('tonight_title_progress')} max="100" value={formatPercent(movieResume, movieDuration)} aria-label={m.tonight_title_progress({ title: item.title })}></progress>{/if}
                 {/if}
+                <TitleWatchActions itemId={item.id} itemTitle={item.title} watch={data.watch} loading={titleDetailsLoading} onchange={(watch) => data = { ...data, watch }} onretry={retryTitleDetails} />
             </div>
-
-            <div class="info-area">
-                <div class="info-top">
-                    <h1 class="media-title">{item.title}</h1>
-                    {#if item.type && item.type !== 'movie'}
-                        <span class="type-badge">{MEDIA_TYPE_LABELS[item.type] || item.type}</span>
+        </section>
+        {#if item.type === 'series'}
+            {#if selectedEpisode}
+                <section class="selected-episode" aria-labelledby="selected-episode-heading">
+                    <p lang={messageLocale('tonight_title_selected_episode')} class="eyebrow">{m.tonight_title_selected_episode()}</p>
+                    <h2 lang={selectedEpisode.episode_number != null ? messageLocale('tonight_title_episode_number') : undefined} id="selected-episode-heading" tabindex="-1">{selectedEpisode.episode_number != null ? `${m.tonight_title_episode_number({ number: selectedEpisode.episode_number })} · ` : ''}{selectedEpisode.title}</h2>
+                    <p class="title-meta">
+                        {#if episodeDuration}<span>{formatDuration(episodeDuration / 1000)}</span>{/if}
+                        {#if episodeDetails?.watch}<span lang={episodeDetails.watch.is_watched ? messageLocale('tonight_title_watched') : messageLocale('tonight_title_unwatched')}>{episodeDetails.watch.is_watched ? m.tonight_title_watched() : m.tonight_title_unwatched()}</span>{/if}
+                    </p>
+                    <p lang={selectedEpisode.overview ? undefined : messageLocale('tonight_title_synopsis_unavailable')} class="synopsis">{selectedEpisode.overview || m.tonight_title_synopsis_unavailable()}</p>
+                    <button lang={episodeResume > 0 ? messageLocale('tonight_title_resume') : messageLocale('tonight_title_play')} class="play-button" type="button" disabled={preparing || episodeDetailsLoading || !episodeDetails?.watch || !episodeDetails?.files.some((file) => file.is_healthy === true)} onclick={() => play(selectedEpisode)}>{episodeResume > 0 ? m.tonight_title_resume() : m.tonight_title_play()}</button>
+                    {#if episodeDetailsLoading}<p lang={messageLocale('tonight_title_loading')} role="status">{m.tonight_title_loading()}</p>{/if}
+                    {#if episodeDetails?.filesError}<p lang={messageLocale('tonight_title_files_failed')} class="error-message" role="alert">{m.tonight_title_files_failed()}</p><button lang={messageLocale('tonight_title_retry')} type="button" onclick={retryEpisodeDetails}>{m.tonight_title_retry()}</button>{/if}
+                    {#if episodeDetails && !episodeDetails.filesError && !episodeDetails.files.some((file) => file.is_healthy === true)}<p lang={messageLocale('tonight_title_no_files')}>{m.tonight_title_no_files()}</p>{/if}
+                    {#if episodeResume > 0}<p lang={messageLocale('tonight_title_resume_from')} class="resume-label">{m.tonight_title_resume_from({ position: formatTimestamp(episodeResume) })}</p>{/if}
+                    {#if episodeDuration && episodeResume > 0}<progress lang={messageLocale('tonight_title_progress')} max="100" value={formatPercent(episodeResume, episodeDuration)} aria-label={m.tonight_title_progress({ title: selectedEpisode.title })}></progress>{/if}
+                    {#if !episodeDetailsLoading}
+                        {#key selectedEpisode.id}<TitleWatchActions itemId={selectedEpisode.id} itemTitle={selectedEpisode.title} watch={episodeDetails?.watch} onchange={updateEpisodeWatch} onretry={retryEpisodeDetails} />{/key}
+                        <TitleFiles files={episodeDetails?.files ?? []} error={episodeDetails?.filesError} busy={preparing || !episodeDetails?.watch} onplay={(fileId) => play(selectedEpisode, fileId)} onretry={retryEpisodeDetails} />
                     {/if}
-                </div>
-
-                <div class="meta-row">
-                    {#if year}<span class="meta-item">{year}</span>{/if}
-                    {#if rating}
-                        <span class="meta-item rating">
-                            <svg width="14" height="14" viewBox="0 0 24 24" fill="var(--color-accent)" stroke="none">
-                                <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                            </svg>
-                            {rating}
-                        </span>
-                    {/if}
-                    {#if runtimeLabel}<span class="meta-item">{runtimeLabel}</span>{/if}
-                    {#if item.file_count}
-                        <span class="meta-item">{item.file_count} {item.file_count === 1 ? m.routes_media_id_page_file() : m.routes_media_id_page_files_count()}</span>
-                    {/if}
-                </div>
-
-                {#if item.overview}
-                    <p class="overview">{item.overview}</p>
-                {/if}
-
-                <div class="action-row">
-                    <button class="btn-play" onclick={handlePlay} disabled={!files.length}>
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                            <path d="M5 3l14 9-14 9V3z" />
-                        </svg>
-                        {progressPct > 0 ? m.routes_media_id_page_resume() : m.routes_media_id_page_play()}
-                    </button>
-
-                    <button
-                        class="btn-icon"
-                        class:active={isFavorite}
-                        onclick={toggleFavorite}
-                        aria-label={isFavorite ? m.routes_media_id_page_remove_from_favorites() : m.routes_media_id_page_add_to_favorites()}
-                    >
-                        {#if isFavorite}
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="var(--color-error)" stroke="var(--color-error)" stroke-width="2">
-                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                            </svg>
-                        {:else}
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z" />
-                            </svg>
-                        {/if}
-                    </button>
-
-                    <div class="rating-stars">
-                        {#each Array(5) as _, i}
-                            <button
-                                class="star-btn"
-                                class:filled={userRating >= (i + 1) * 2}
-                                onclick={() => setRating((i + 1) * 2)}
-                                aria-label={`${m.routes_media_id_page_rate()} ${(i + 1) * 2}/10`}
-                            >
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill={userRating >= (i + 1) * 2 ? 'var(--color-accent)' : 'none'} stroke="currentColor" stroke-width="2">
-                                    <path d="M12 2l3.09 6.26L22 9.27l-5 4.87 1.18 6.88L12 17.77l-6.18 3.25L7 14.14 2 9.27l6.91-1.01L12 2z" />
-                                </svg>
-                            </button>
-                        {/each}
-                    </div>
-                </div>
-
-                {#if progressPct > 0}
-                    <div class="resume-bar">
-                        <div class="resume-info">
-                            <span class="resume-label">{m.routes_media_id_page_resume_from()}</span>
-                            <span class="resume-position">{Math.floor(resumeMs / 60000)}m</span>
-                        </div>
-                        <div class="progress-track">
-                            <div class="progress-fill" style="width: {progressPct}%"></div>
-                        </div>
-                    </div>
-                {/if}
-            </div>
-        </div>
-
-        {#if files.length > 0}
-            <section class="files-section">
-                <h2 class="section-title">{m.routes_media_id_page_files()}</h2>
-                <div class="files-list">
-                    {#each files as file (file.id)}
-                        <div class="file-row">
-                            <div class="file-info">
-                                <span class="file-name">{file.file_name || file.relative_path || m.routes_media_id_page_unknown()}</span>
-                                <div class="file-meta">
-                                    {#if file.video_codec}<span>{file.video_codec}</span>{/if}
-                                    {#if file.video_resolution}<span>{file.video_resolution}</span>{/if}
-                                    {#if file.container_format}<span>.{file.container_format}</span>{/if}
-                                    {#if file.runtime_seconds}<span>{formatDuration(file.runtime_seconds)}</span>{/if}
-                                </div>
-                            </div>
-                            <div class="file-actions">
-                                {#if file.is_healthy === false}
-                                    <span class="health-badge unhealthy">{m.routes_media_id_page_unhealthy()}</span>
-                                {:else}
-                                    <span class="health-badge healthy">{m.routes_media_id_page_healthy()}</span>
-                                {/if}
-                                <button class="btn-icon-small" onclick={() => goto(`/play/${itemId}?file=${file.id}`)} aria-label={m.routes_media_id_page_play_this_file()}>
-                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="none">
-                                        <path d="M5 3l14 9-14 9V3z" />
-                                    </svg>
-                                </button>
-                            </div>
-                        </div>
-                    {/each}
-                </div>
-            </section>
+                </section>
+            {/if}
+            <EpisodeGallery {seasons} seasonId={seasonId ?? ''} {episodes} selectedId={selectedEpisodeId ?? ''} {origin} loading={episodesLoading} error={galleryError} errorLocale={data?.seasonsError ? messageLocale('tonight_title_episodes_failed') : episodesError ? episodesErrorLocale : messageLocale('tonight_title_invalid_selection')} onseason={selectSeason} onselect={selectEpisode} onretry={retryGallery} />
         {/if}
-    </div>
+        {#if item.type !== 'series' || data.files.length || data.filesError}
+            <TitleFiles files={data.files} error={data.filesError} busy={preparing || titleDetailsLoading || !data.watch} onplay={(fileId) => play(item, fileId)} onretry={retryTitleDetails} />
+        {/if}
     {/if}
 </div>
 
 <style>
-    .media-detail {
-        position: relative;
-    }
-
-    .detail-backdrop {
-        position: absolute;
-        top: -1.5rem;
-        inset-inline: -1.5rem;
-        height: 400px;
-        overflow: hidden;
-        z-index: 0;
-    }
-
-    .backdrop-image {
-        width: 100%;
-        height: 100%;
-        object-fit: cover;
-        filter: blur(4px);
-        opacity: 0.3;
-    }
-
-    .backdrop-overlay {
-        position: absolute;
-        inset: 0;
-        background: linear-gradient(
-            to bottom,
-            rgba(14, 15, 19, 0.4) 0%,
-            rgba(14, 15, 19, 0.8) 60%,
-            var(--color-bg-deep) 100%
-        );
-    }
-
-    .detail-content {
-        position: relative;
-        z-index: 1;
-        max-width: 1000px;
-        margin: 0 auto;
-    }
-
-    .detail-header {
-        display: flex;
-        gap: 2rem;
-        padding-top: 4rem;
-    }
-
-    .poster-area {
-        flex-shrink: 0;
-        width: 200px;
-    }
-
-    .poster {
-        width: 200px;
-        height: 300px;
-        object-fit: cover;
-        border-radius: var(--radius-md);
-        box-shadow: var(--shadow-elevated);
-    }
-
-    .poster-placeholder {
-        width: 200px;
-        height: 300px;
-        background: linear-gradient(135deg, var(--color-bg-surface), var(--color-bg-elevated));
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 4rem;
-        font-weight: 700;
-        color: var(--color-text-muted);
-    }
-
-    .info-area {
-        flex: 1;
-        min-width: 0;
-    }
-
-    .info-top {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        flex-wrap: wrap;
-    }
-
-    .media-title {
-        font-size: 2rem;
-        font-weight: 700;
-        color: var(--color-text-primary);
-    }
-
-    .type-badge {
-        font-size: 0.6875rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        letter-spacing: 0.05em;
-        color: var(--color-accent);
-        background-color: var(--color-accent-muted);
-        padding: 0.25rem 0.625rem;
-        border-radius: var(--radius-sm);
-    }
-
-    .meta-row {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        margin-top: 0.75rem;
-        flex-wrap: wrap;
-    }
-
-    .meta-item {
-        font-size: 0.8125rem;
-        color: var(--color-text-secondary);
-        display: flex;
-        align-items: center;
-        gap: 0.25rem;
-    }
-
-    .meta-item.rating {
-        color: var(--color-accent);
-        font-weight: 600;
-    }
-
-    .overview {
-        margin-top: 1rem;
-        font-size: 0.875rem;
-        line-height: 1.6;
-        color: var(--color-text-secondary);
-    }
-
-    .action-row {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        margin-top: 1.5rem;
-    }
-
-    .btn-play {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.75rem 1.75rem;
-        background-color: var(--color-accent);
-        color: var(--color-bg-deep);
-        font-size: 0.9375rem;
-        font-weight: 600;
-        border-radius: var(--radius-sm);
-        transition: background-color var(--transition-fast);
-    }
-
-    .btn-play:hover:not(:disabled) {
-        background-color: var(--color-accent-hover);
-    }
-
-    .btn-play:disabled {
-        opacity: 0.5;
-        cursor: not-allowed;
-    }
-
-    .btn-icon {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 40px;
-        height: 40px;
-        background-color: var(--color-bg-elevated);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
-        color: var(--color-text-secondary);
-        transition: all var(--transition-fast);
-    }
-
-    .btn-icon:hover {
-        border-color: var(--color-accent);
-        color: var(--color-text-primary);
-    }
-
-    .btn-icon.active {
-        color: var(--color-error);
-    }
-
-    .rating-stars {
-        display: flex;
-        gap: 2px;
-    }
-
-    .star-btn {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 4px;
-        color: var(--color-text-muted);
-        transition: color var(--transition-fast);
-    }
-
-    .star-btn:hover {
-        color: var(--color-accent);
-    }
-
-    .star-btn.filled {
-        color: var(--color-accent);
-    }
-
-    .resume-bar {
-        margin-top: 1.5rem;
-        display: flex;
-        flex-direction: column;
-        gap: 0.375rem;
-        max-width: 300px;
-    }
-
-    .resume-info {
-        display: flex;
-        justify-content: space-between;
-        font-size: 0.75rem;
-        color: var(--color-text-muted);
-    }
-
-    .resume-position {
-        color: var(--color-text-secondary);
-        font-weight: 600;
-    }
-
-    .progress-track {
-        height: 4px;
-        background-color: var(--color-border);
-        border-radius: 2px;
-        overflow: hidden;
-    }
-
-    .progress-fill {
-        height: 100%;
-        background-color: var(--color-accent);
-        border-radius: 2px;
-    }
-
-    .files-section {
-        margin-top: 2.5rem;
-    }
-
-    .section-title {
-        font-size: 1.125rem;
-        font-weight: 600;
-        color: var(--color-text-primary);
-        margin-bottom: 1rem;
-    }
-
-    .files-list {
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-    }
-
-    .file-row {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0.75rem 1rem;
-        background-color: var(--color-bg-surface);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: var(--radius-sm);
-    }
-
-    .file-info {
-        min-width: 0;
-        flex: 1;
-    }
-
-    .file-name {
-        font-size: 0.8125rem;
-        color: var(--color-text-primary);
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        display: block;
-    }
-
-    .file-meta {
-        display: flex;
-        gap: 0.75rem;
-        margin-top: 0.25rem;
-        font-size: 0.6875rem;
-        color: var(--color-text-muted);
-    }
-
-    .file-actions {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        flex-shrink: 0;
-    }
-
-    .health-badge {
-        font-size: 0.625rem;
-        font-weight: 600;
-        text-transform: uppercase;
-        padding: 0.125rem 0.5rem;
-        border-radius: var(--radius-sm);
-    }
-
-    .health-badge.healthy {
-        color: var(--color-success);
-        background-color: var(--color-success-bg);
-    }
-
-    .health-badge.unhealthy {
-        color: var(--color-error);
-        background-color: var(--color-error-bg);
-    }
-
-    .btn-icon-small {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        width: 28px;
-        height: 28px;
-        background-color: var(--color-bg-elevated);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: var(--radius-sm);
-        color: var(--color-text-secondary);
-        transition: all var(--transition-fast);
-    }
-
-    .btn-icon-small:hover {
-        color: var(--color-accent);
-        border-color: var(--color-accent);
-    }
-
-    .loading-state {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        padding: 6rem 0;
-    }
-
-    .loading-spinner {
-        width: 32px;
-        height: 32px;
-        border: 3px solid var(--color-border);
-        border-top-color: var(--color-accent);
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-        to {
-            transform: rotate(360deg);
-        }
-    }
-
-    @media (max-width: 768px) {
-        .detail-header {
-            flex-direction: column;
-            gap: 1.25rem;
-            padding-top: 2rem;
-        }
-
-        .poster-area {
-            width: 140px;
-            align-self: center;
-        }
-
-        .poster {
-            width: 140px;
-            height: 210px;
-        }
-
-        .poster-placeholder {
-            width: 140px;
-            height: 210px;
-            font-size: 3rem;
-        }
-
-        .info-area {
-            text-align: start;
-        }
-
-        .media-title {
-            font-size: 1.5rem;
-        }
-
-        .detail-backdrop {
-            height: 280px;
-        }
-
-        .action-row {
-            flex-wrap: wrap;
-        }
-
-        .file-row {
-            flex-direction: column;
-            align-items: flex-start;
-            gap: 0.5rem;
-        }
-
-        .file-actions {
-            width: 100%;
-            justify-content: flex-end;
-        }
+    .title-page { max-width: 1300px; margin: 0 auto; padding-bottom: 3rem; }
+    .back-link { display: inline-flex; align-items: center; min-height: 44px; color: var(--color-text-secondary); }
+    .play-status { min-height: 1.3rem; color: var(--color-text-secondary); }
+    .title-hero { display: flex; gap: clamp(1.25rem, 3vw, 3rem); position: relative; overflow: hidden; padding: 3rem 2rem; border-radius: var(--radius-lg); background: var(--color-bg-surface); }
+    .backdrop { position: absolute; inset: 0; opacity: .15; pointer-events: none; }
+    .poster { position: relative; width: 190px; aspect-ratio: 2 / 3; flex-shrink: 0; align-self: start; border-radius: var(--radius-md); overflow: hidden; box-shadow: var(--shadow-elevated); }
+    .title-copy { position: relative; min-width: 0; flex: 1; }
+    h1 { font-size: clamp(2rem, 4vw, 3.3rem); line-height: 1.1; overflow-wrap: anywhere; }
+    .title-meta { display: flex; gap: 1rem; flex-wrap: wrap; margin-top: .8rem; color: var(--color-text-secondary); }
+    .synopsis { margin: 1.25rem 0; max-width: 75ch; line-height: 1.65; color: var(--color-text-secondary); }
+    button { min-height: 44px; padding: .65rem 1.2rem; border-radius: var(--radius-sm); border: 1px solid var(--color-border); color: var(--color-text-primary); background: var(--color-bg-elevated); }
+    .play-button { background: var(--color-accent); color: var(--color-on-accent); border-color: var(--color-accent); min-width: 120px; font-weight: 600; }
+    .play-button:disabled { background: var(--color-bg-elevated); color: var(--color-text-muted); border-color: var(--color-border); }
+    progress { display: block; width: min(100%, 300px); height: .4rem; accent-color: var(--color-accent); margin-top: .5rem; }
+    .resume-label { color: var(--color-text-secondary); margin-top: .5rem; }
+    .selected-episode { margin-top: 2.5rem; padding: 1.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-bg-surface); }
+    .selected-episode h2 { margin-top: .5rem; font-size: 1.8rem; }
+    .eyebrow { color: var(--color-accent); font-size: .85rem; }
+    .error-message { color: var(--color-error); margin: .75rem 0; }
+    .title-error { padding: 2rem 0; }
+    .title-error p { margin: 1rem 0; }
+    @media (max-width: 650px) {
+        .title-hero { padding: 1.5rem; flex-direction: column; }
+        .poster { width: 140px; }
+        .selected-episode { padding: 1rem; }
     }
 </style>

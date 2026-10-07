@@ -8,6 +8,7 @@
 <script>
     import { m } from '$lib/paraglide/messages.js';
     import { goto } from '$app/navigation';
+    import { onDestroy } from 'svelte';
     import { SEARCH_DEBOUNCE_MS } from '../utils/constants.js';
 
     let {
@@ -22,6 +23,8 @@
 
     let debounceTimer = null;
     let inputEl = null;
+
+    onDestroy(() => clearTimeout(debounceTimer));
 
     $effect(() => {
         if (autofocus && inputEl) {
@@ -62,7 +65,7 @@
 
 <form class="search-bar" class:compact onsubmit={handleSubmit} role="search">
     <div class="search-input-wrapper">
-        <svg
+        <button type="submit" class="search-submit" aria-label={m.lib_components_searchbar_search()}><svg
             class="search-icon"
             width="18"
             height="18"
@@ -76,13 +79,13 @@
         >
             <circle cx="11" cy="11" r="8" />
             <path d="M21 21l-4.35-4.35" />
-        </svg>
+        </svg></button>
         <input
             bind:this={inputEl}
             type="search"
             class="search-input"
             {placeholder}
-            value
+            value={value}
             oninput={handleInput}
             aria-label={m.lib_components_searchbar_search()}
             autocomplete="off"
@@ -92,36 +95,36 @@
 </form>
 
 <style>
+    .search-submit { flex: 0 0 44px; width: 44px; min-height: 44px; padding: 0; display: grid; place-items: center; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg-surface); }
     .search-bar {
         width: 100%;
         max-width: 480px;
     }
 
     .search-input-wrapper {
-        position: relative;
         display: flex;
         align-items: center;
+        gap: 0.5rem;
     }
 
     .search-icon {
-        position: absolute;
-        inset-inline-start: 0.75rem;
         color: var(--color-text-muted);
         pointer-events: none;
-        z-index: 1;
     }
 
     .search-input {
         width: 100%;
+        flex: 1;
+        min-width: 0;
+        min-height: 44px;
         padding-block: 0.625rem;
-        padding-inline: 2.5rem 1rem;
+        padding-inline: 1rem;
         font-size: 0.9375rem;
         color: var(--color-text-primary);
         background-color: var(--color-bg-surface);
         border: 1px solid var(--color-border);
         border-radius: var(--radius-md);
         transition: border-color var(--transition-fast), background-color var(--transition-fast);
-        outline: none;
     }
 
     .search-input::placeholder {
@@ -147,12 +150,11 @@
 
     .compact .search-input {
         padding-block: 0.5rem;
-        padding-inline: 2.25rem 0.875rem;
+        padding-inline: 0.875rem;
         font-size: 0.875rem;
     }
 
-    .compact .search-icon {
-        inset-inline-start: 0.625rem;
+    .compact .search-submit .search-icon {
         width: 16px;
         height: 16px;
     }

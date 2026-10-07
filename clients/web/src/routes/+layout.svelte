@@ -7,82 +7,162 @@
 -->
 <script>
     import { m } from '$lib/paraglide/messages.js';
+    import { deLocalizeUrl, localizeUrl } from '$lib/paraglide/runtime.js';
+    import { messageLocale } from '$lib/localization/message-locale.js';
     import '../app.css';
-    import { onMount } from 'svelte';
+    import { onMount, untrack, tick, setContext } from 'svelte';
     import { page } from '$app/stores';
     import { goto } from '$app/navigation';
     import { auth, isAuthenticated, currentUser, userHasAnyCapability } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
     import { events } from '$lib/stores/events.js';
     import { player } from '$lib/stores/player.js';
-    import { getSetupStatus } from '$lib/api/auth.js';
+    import { viewingPreferences } from '$lib/stores/viewing-preferences.js';
+    import { navigationGuard } from '$lib/navigation/guard.js';
+    import { isAllowedDesktopRoute } from '$lib/navigation/routes.js';
+    import { authReturnDestination, playbackSignInPath } from '$lib/navigation/auth-return.js';
     import { listProfiles, switchProfile, unlockParentProfile } from '$lib/api/profiles.js';
-    import { invalidateProfileScopedRequests } from '$lib/api/core.js';
-    import { publishProfileScopeChange, startProfileScopeSync } from '$lib/profiles/scope.js';
+    import { invalidateProfileScopedRequests, getServerOrigin } from '$lib/api/core.js';
+    import { createProfileScopeSync } from '$lib/profiles/scope.js';
     import { startDesktopBridge, stopDesktopBridge } from '$lib/desktop/tauri.js';
+    import { createShellStartup } from '$lib/desktop/startup.js';
+    import DesktopServerSelector from '$lib/components/DesktopServerSelector.svelte';
     import NotificationToast from '$lib/components/NotificationToast.svelte';
     import NotificationBell from '$lib/components/NotificationBell.svelte';
     import SearchBar from '$lib/components/SearchBar.svelte';
+    import ProfileDisclosure from '$lib/components/ProfileDisclosure.svelte';
+    import ProfilePicker from '$lib/components/ProfilePicker.svelte';
+    import PlaybackReleaseNotice from '$lib/components/PlaybackReleaseNotice.svelte';
 
     let { children } = $props();
 
     let authChecked = $state(false);
     let setupRequired = $state(false);
+    let desktopSession = $state(null);
+    let desktopStartupError = $state('');
+    let desktopConnecting = $state(false);
+    let mounted = false;
+    const startup = createShellStartup({ auth, onChange: (state) => {
+        authChecked = state.ready;
+        desktopSession = state.desktop;
+        setupRequired = state.setupRequired;
+        desktopStartupError = state.error ? m.tonight_desktop_server_load_failed() : '';
+    } });
     let userMenuOpen = $state(false);
-    let mobileMenuOpen = $state(false);
+    let parentUnlockDialog = $state();
+    let profileDisclosure = $state();
+    let parentUnlockReturnFocus = null;
+    let profileStatus = $state('');
     let profiles = $state([]);
     let switchingProfileId = $state(null);
+    let profileTransitionPending = $state(false);
     let rememberedProfileId = $state(null);
     let deviceCanRememberProfile = $state(false);
     let rememberProfileOnDevice = $state(false);
     let profileLoadUserId = $state(null);
     let profileSelectionRequired = $state(false);
     let profileScopeReady = $state(false);
+    let profileScopeNavigating = $state(false);
+    let scopeNavigationRevision = 0;
     let profilesLoading = $state(false);
+    let profilesRevision = 0;
     let profileScopeRevision = $state(0);
     let parentUnlockRequired = $state(false);
     let parentUnlockTarget = $state(null);
     let parentPin = $state('');
     let parentUnlockError = $state('');
+    let parentUnlockErrorLocale = $state('en');
     let unlockingParent = $state(false);
     let activeProfile = $derived(profiles.find((profile) => profile.id === $currentUser?.active_profile_id));
-    let activeProfileIsKids = $derived(activeProfile?.profile_type === 'kids');
+    const { start: startProfileScopeSync, publish: publishProfileScopeChange } = createProfileScopeSync({ readContext: () => ({
+        serverOrigin: getServerOrigin() || $page.url.origin,
+        userId: authChecked && $isAuthenticated ? $currentUser?.id : null,
+    }) });
+    setContext('active-profile', () => activeProfile);
+    setContext('refresh-profiles', () => loadProfiles());
+    setContext('desktop-server-selection', { beforeSelect: beforeDesktopServerSelect, selected: desktopServerSelected, settled: desktopServerSettled });
     let canAccessAdmin = $derived(
         userHasAnyCapability($currentUser, ['can_manage_server', 'can_manage_users', 'can_manage_libraries']),
     );
 
-    const AUTH_ROUTES = ['/auth/login', '/auth/setup', '/auth/link'];
+    const AUTH_ROUTES = ['/auth/login', '/auth/setup', '/auth/link', '/settings/server'];
     const REDIRECT_WHEN_AUTHENTICATED = ['/auth/login', '/auth/setup'];
+    let routePathname = $derived(deLocalizeUrl($page.url).pathname);
+    let isPlaybackRoute = $derived(routePathname.startsWith('/play/'));
 
-    const navLinks = [
-        { href: '/dashboard', label: m.routes_layout_home() },
-        { href: '/libraries', label: m.routes_layout_libraries() },
-    ];
+    let navLinks = $derived([
+        { href: '/dashboard', label: m.routes_layout_home(), active: routePathname === '/dashboard' },
+        { href: localizedDestination('/media?type=movie'), label: m.tonight_movies(), locale: messageLocale('tonight_movies'), active: routePathname === '/media' && $page.url.searchParams.get('type') === 'movie' },
+        { href: localizedDestination('/media?type=series'), label: m.tonight_tv(), locale: messageLocale('tonight_tv'), active: routePathname === '/media' && $page.url.searchParams.get('type') === 'series' },
+        { href: localizedDestination('/collections'), label: m.tonight_collections(), locale: messageLocale('tonight_collections'), active: routePathname.startsWith('/collections') },
+    ]);
+
+    $effect(() => {
+        const ready = authChecked && $isAuthenticated;
+        const userId = ready ? $currentUser?.id : null;
+        const origin = desktopSession?.server?.origin || getServerOrigin() || $page.url.origin;
+        untrack(() => player.setContext({ serverOrigin: origin, userId }));
+    });
+
+    $effect(() => {
+        const dialog = parentUnlockDialog;
+        if (parentUnlockTarget && dialog) {
+            if (!dialog.open) dialog.showModal();
+            return () => { if (dialog.open) dialog.close(); };
+        }
+    });
 
     onMount(() => {
-        auth.init();
-        startDesktopBridge(goto);
+        mounted = true;
+        initializeShell();
         const stopProfileScopeSync = startProfileScopeSync(handleProfileScopeChange);
-        getSetupStatus()
-            .then((status) => {
-                setupRequired = !!status?.setup_required;
-            })
-            .catch(() => {
-                setupRequired = false;
-            })
-            .finally(() => {
-                authChecked = true;
-            });
 
         return () => {
+            mounted = false;
+            startup.dispose();
             stopProfileScopeSync();
             stopDesktopBridge();
         };
     });
 
+    async function initializeShell() {
+        const state = await startup.start();
+        if (mounted && state?.ready) startDesktopBridge(goto);
+    }
+
+    async function beforeDesktopServerSelect() {
+        if (!await navigationGuard.requestNavigationTransition()) return false;
+        desktopConnecting = true;
+        profilesRevision += 1;
+        await player.stop();
+        invalidateProfileScopedRequests();
+        viewingPreferences.invalidate();
+        events.disconnect();
+        return true;
+    }
+
+    async function desktopServerSelected(session) {
+        desktopSession = session;
+        authChecked = false;
+        auth.resetForServerSelection();
+        resetProfileScope();
+        clearProfileState();
+        await initializeShell();
+        desktopConnecting = false;
+        if (authChecked) await goto($isAuthenticated ? '/dashboard' : setupRequired ? '/auth/setup' : '/auth/login');
+    }
+
+    function desktopServerSettled(result) {
+        if (result) return;
+        desktopConnecting = false;
+        const user = $currentUser;
+        if (user?.id) loadProfiles();
+        if (user?.id && user.active_profile_id) viewingPreferences.load(user.active_profile_id, { serverOrigin: getServerOrigin(), userId: user.id }).catch(() => {});
+    }
+
     $effect(() => {
-        if (!authChecked) return;
-        const path = $page.url.pathname;
+        if (!authChecked || desktopConnecting) return;
+        const path = routePathname;
         const isAuthRoute = AUTH_ROUTES.some((r) => path.startsWith(r));
         const redirectsWhenAuthenticated = REDIRECT_WHEN_AUTHENTICATED.some((r) => path.startsWith(r));
         const isDeviceLinkRoute = path.startsWith('/auth/link');
@@ -95,26 +175,29 @@
             const returnTo = `${$page.url.pathname}${$page.url.search}`;
             goto(`/auth/login?return_to=${encodeURIComponent(returnTo)}`);
         } else if (!$isAuthenticated && !isAuthRoute) {
-            goto('/auth/login');
+            goto(path.startsWith('/play/') ? playbackSignInPath(new URL(globalThis.location?.href || $page.url.href)) : '/auth/login');
         } else if ($isAuthenticated && redirectsWhenAuthenticated) {
-            goto('/dashboard');
+            goto(path.startsWith('/auth/login') ? authReturnDestination($page.url.searchParams.get('return_to')) : '/dashboard');
         }
     });
 
     $effect(() => {
+        if (!authChecked || desktopConnecting) return;
         const userId = $currentUser?.id;
         if ($isAuthenticated && userId && profileLoadUserId !== userId) {
             profileLoadUserId = userId;
             profileScopeReady = false;
             loadProfiles();
         } else if (!$isAuthenticated) {
-            resetProfileScope();
-            clearProfileState();
+            untrack(() => {
+                resetProfileScope();
+                clearProfileState();
+            });
         }
     });
 
     $effect(() => {
-        if (!authChecked) return;
+        if (!authChecked || desktopConnecting) return;
         if ($isAuthenticated && profileScopeReady) {
             events.connect();
             return () => events.disconnect();
@@ -123,14 +206,24 @@
         }
     });
 
-    function toggleUserMenu() {
-        userMenuOpen = !userMenuOpen;
-    }
+    $effect(() => {
+        if (!authChecked || desktopConnecting) return;
+        const profileId = $currentUser?.active_profile_id;
+        const userId = $currentUser?.id;
+        if ($isAuthenticated && profileScopeReady && profileId && userId) {
+            untrack(() => viewingPreferences.load(profileId, { serverOrigin: getServerOrigin(), userId }).catch(() => {}));
+        }
+    });
 
     async function loadProfiles() {
+        const revision = ++profilesRevision;
+        const userId = $currentUser?.id;
+        const origin = getServerOrigin();
+        const current = () => mounted && revision === profilesRevision && userId === $currentUser?.id && origin === getServerOrigin() && !desktopConnecting;
         profilesLoading = true;
         try {
             const response = await listProfiles();
+            if (!current()) return;
             profiles = response?.items || [];
             const activeProfileId = response?.active_profile_id || $currentUser?.active_profile_id;
             profileSelectionRequired = !!response?.profile_selection_required;
@@ -150,6 +243,7 @@
                 });
             }
         } catch {
+            if (!current()) return;
             profiles = [];
             profileSelectionRequired = false;
             profileScopeReady = false;
@@ -158,17 +252,30 @@
             rememberProfileOnDevice = false;
             parentUnlockRequired = false;
         } finally {
-            profilesLoading = false;
+            if (current()) profilesLoading = false;
         }
     }
 
     async function selectProfile(profile) {
-        if ((profile.id === $currentUser?.active_profile_id && !profileSelectionRequired) || switchingProfileId) return;
+        if ((profile.id === $currentUser?.active_profile_id && !profileSelectionRequired) || switchingProfileId || profileTransitionPending) return;
+        profileTransitionPending = true;
+        try {
+            if (!await navigationGuard.requestProfileTransition()) return;
+            return await commitProfileSelection(profile);
+        } finally {
+            profileTransitionPending = false;
+        }
+    }
+
+    async function commitProfileSelection(profile) {
+        const canonical = deLocalizeUrl($page.url);
+        const titleDestination = `${canonical.pathname}${canonical.search}`;
+        const destination = canonical.pathname.startsWith('/media/')
+            && isAllowedDesktopRoute(titleDestination) ? titleDestination : '/dashboard';
+        const profileDestination = localizedDestination(destination);
         if (parentUnlockRequired && profile.profile_type === 'standard') {
-            parentUnlockTarget = profile;
-            parentPin = '';
-            parentUnlockError = '';
-            return;
+            requestParentUnlock(profile);
+            return false;
         }
         switchingProfileId = profile.id;
         try {
@@ -186,14 +293,28 @@
             resetProfileScope();
             profileScopeReady = true;
             closeUserMenu();
+            profileStatus = m.tonight_profile_changed();
             publishProfileScopeChange({ userId: $currentUser?.id, profileId: activeProfile.id });
             events.connect();
-            goto('/dashboard');
+            await goto(profileDestination);
+            return true;
         } catch (err) {
-            notifications.error(err.detail || err.message || 'Could not switch profiles');
+            if (err.title === 'PROFILE_012' && profile.profile_type === 'standard') {
+                parentUnlockRequired = true;
+                requestParentUnlock(profile, m.tonight_parent_unlock_expired(), messageLocale('tonight_parent_unlock_expired'));
+            } else notifications.error(err.detail || err.message || 'Could not switch profiles');
+            return false;
         } finally {
             switchingProfileId = null;
         }
+    }
+
+    function requestParentUnlock(profile, error = '', locale = 'en') {
+        if (!parentUnlockTarget) parentUnlockReturnFocus = document.activeElement;
+        parentUnlockTarget = profile;
+        parentPin = '';
+        parentUnlockError = error;
+        parentUnlockErrorLocale = locale;
     }
 
     async function unlockParentAccess() {
@@ -201,16 +322,22 @@
         unlockingParent = true;
         parentUnlockError = '';
         try {
-            const response = await unlockParentProfile({ pin: parentPin });
+            await unlockParentProfile({ pin: parentPin });
             parentUnlockRequired = false;
             const target = parentUnlockTarget;
-            parentUnlockTarget = null;
             parentPin = '';
-            await selectProfile(target);
+            if (await selectProfile(target)) {
+                parentUnlockTarget = null;
+                await tick();
+                document.getElementById('main-content')?.focus();
+            }
         } catch (err) {
             parentUnlockError = err.detail || err.message || 'Could not unlock parent access';
+            parentUnlockErrorLocale = 'en';
         } finally {
             unlockingParent = false;
+            await tick();
+            if (parentUnlockTarget) parentUnlockDialog?.querySelector('input')?.focus();
         }
     }
 
@@ -219,6 +346,11 @@
         parentUnlockTarget = null;
         parentPin = '';
         parentUnlockError = '';
+        tick().then(() => {
+            if (parentUnlockReturnFocus?.isConnected) parentUnlockReturnFocus.focus();
+            else profileDisclosure?.focusTrigger();
+            parentUnlockReturnFocus = null;
+        });
     }
 
     async function updateRememberedProfile() {
@@ -264,9 +396,10 @@
         });
     }
 
-    function resetProfileScope() {
+    function resetProfileScope({ preserveRelease = false } = {}) {
         invalidateProfileScopedRequests();
-        player.reset();
+        viewingPreferences.invalidate();
+        player.reset({ preserveRelease });
         events.disconnect();
         profileScopeRevision += 1;
     }
@@ -288,803 +421,155 @@
 
     async function handleProfileScopeChange(event) {
         if (!$currentUser || event.user_id !== $currentUser.id) return;
-        resetProfileScope();
-        profileScopeReady = false;
-        await loadProfiles();
-        if (profileScopeReady) {
-            events.connect();
+        const revision = ++scopeNavigationRevision;
+        profileScopeNavigating = true;
+        const titleDestination = `${$page.url.pathname}${$page.url.search}`;
+        const destination = $page.url.pathname.startsWith('/media/') && isAllowedDesktopRoute(titleDestination)
+            ? titleDestination : '/dashboard';
+        try {
+            try { await player.stop(); } catch {}
+            if (!mounted || revision !== scopeNavigationRevision) return;
+            resetProfileScope({ preserveRelease: true });
+            profileScopeReady = false;
+            await loadProfiles();
+            if (!mounted || revision !== scopeNavigationRevision || event.user_id !== $currentUser?.id) return;
+            await goto(destination);
+        } finally {
+            if (mounted && revision === scopeNavigationRevision) profileScopeNavigating = false;
         }
-        goto('/dashboard');
-    }
-
-    function toggleMobileMenu() {
-        mobileMenuOpen = !mobileMenuOpen;
-    }
-
-    function closeMobileMenu() {
-        mobileMenuOpen = false;
     }
 
     async function handleLogout() {
-        closeUserMenu();
-        closeMobileMenu();
-        await auth.logout();
-        goto('/auth/login');
+        if (profileTransitionPending || switchingProfileId) return;
+        const userId = $currentUser?.id;
+        const origin = getServerOrigin();
+        profileTransitionPending = true;
+        try {
+            if (!await navigationGuard.requestProfileTransition()) return;
+            try { await player.stop(); } catch {}
+            if (userId !== $currentUser?.id || origin !== getServerOrigin()) return;
+            closeUserMenu();
+            await auth.logout();
+            if (!$isAuthenticated) goto('/auth/login');
+        } finally {
+            profileTransitionPending = false;
+        }
     }
 
     function handleSearch(query) {
-        closeMobileMenu();
-        goto(`/search?q=${encodeURIComponent(query)}`);
+        goto(localizedDestination(`/search?q=${encodeURIComponent(query)}`));
+    }
+
+    function localizedDestination(destination) {
+        const localized = localizeUrl(new URL(destination, $page.url));
+        return `${localized.pathname}${localized.search}${localized.hash}`;
     }
 </script>
 
-{#if authChecked && ($isAuthenticated || AUTH_ROUTES.some((r) => $page.url.pathname.startsWith(r)))}
+{#if desktopStartupError || desktopSession?.requiresServerSelection}
+    <div class="desktop-server-startup">
+        {#if desktopStartupError}
+            <p lang={messageLocale('tonight_desktop_server_load_failed')} role="alert">{desktopStartupError}</p>
+            <button lang={messageLocale('tonight_desktop_server_retry')} type="button" class="tonight-button" onclick={initializeShell}>{m.tonight_desktop_server_retry()}</button>
+        {/if}
+        <DesktopServerSelector server={desktopSession?.server} onbeforeselect={beforeDesktopServerSelect} onselected={desktopServerSelected} onsettled={desktopServerSettled} />
+    </div>
+{:else if authChecked && ($isAuthenticated || AUTH_ROUTES.some((r) => routePathname.startsWith(r)))}
     <div class="app-shell">
-        <header class="nav-bar">
-            <nav class="nav-content">
+        <a lang={messageLocale('tonight_skip_content')} class="skip-link" href="#main-content" hidden={isPlaybackRoute} inert={isPlaybackRoute}>{m.tonight_skip_content()}</a>
+        <header class="nav-bar" hidden={isPlaybackRoute} inert={isPlaybackRoute}>
+            <nav class="nav-content" aria-label={m.routes_layout_mobile_navigation()}>
                 <a href="/dashboard" class="nav-logo">{m.routes_layout_duskcue()}</a>
-
-                {#if $isAuthenticated}
-                    {#if profileScopeReady}
-                        <ul class="nav-links">
-                            {#each navLinks as link}
-                                <li>
-                                    <a
-                                        href={link.href}
-                                        class="nav-link"
-                                        class:active={$page.url.pathname.startsWith(link.href)}
-                                    >
-                                        {link.label}
-                                    </a>
-                                </li>
-                            {/each}
-                        </ul>
-
-                        <div class="nav-search">
-                            <SearchBar compact onsearch={handleSearch} navigate={false} />
-                        </div>
-
+                {#if $isAuthenticated && profileScopeReady}
+                    <ul class="nav-links">
+                        {#each navLinks as link}
+                            <li><a lang={link.locale} href={link.href} class="nav-link" class:active={link.active} aria-current={link.active ? 'page' : undefined}>{link.label}</a></li>
+                        {/each}
+                    </ul>
+                    <div class="nav-search"><SearchBar compact onsearch={handleSearch} navigate={false} /></div>
+                    <div class="nav-account">
                         <NotificationBell />
-                    {/if}
-
-                    <div class="nav-user">
-                        <button
-                            class="user-button"
-                            onclick={toggleUserMenu}
-                            aria-label={m.routes_layout_user_menu()}
-                            aria-expanded={userMenuOpen}
-                        >
-                            <span class="user-avatar">
-                                {activeProfile?.name?.[0]?.toUpperCase() || $currentUser?.display_name?.[0]?.toUpperCase() || 'U'}
-                            </span>
-                            <span class="user-name">{activeProfile?.name || $currentUser?.display_name || 'User'}</span>
-                        </button>
-
-                        {#if userMenuOpen}
-                            <div
-                                class="menu-backdrop"
-                                role="button"
-                                tabindex="0"
-                                onclick={closeUserMenu}
-                                onkeydown={(e) => e.key === 'Escape' && closeUserMenu()}
-                                aria-label={m.routes_layout_close_menu()}
-                            ></div>
-                            <div class="user-dropdown">
-                                <div class="profile-picker" aria-label="Choose profile">
-                                    <span class="profile-picker-title">Who’s watching?</span>
-                                    <div class="profile-list">
-                                        {#each profiles as profile}
-                                            <button
-                                                class="profile-option"
-                                                class:active-profile={profile.id === $currentUser?.active_profile_id}
-                                                onclick={() => selectProfile(profile)}
-                                                disabled={switchingProfileId === profile.id}
-                                            >
-                                                <span class="profile-option-avatar">{profile.name?.[0]?.toUpperCase() || 'P'}</span>
-                                                <span>{profile.name}</span>
-                                                {#if profile.profile_type === 'kids'}<small>Kids</small>{/if}
-                                            </button>
-                                        {/each}
-                                    </div>
-                                    {#if deviceCanRememberProfile && activeProfile}
-                                        {#if rememberedProfileId === activeProfile.id}
-                                            <button class="forget-profile" onclick={forgetProfileOnDevice} disabled={!!switchingProfileId}>
-                                                Forget this device
-                                            </button>
-                                        {:else}
-                                            <label class="remember-profile">
-                                                <input
-                                                    type="checkbox"
-                                                    bind:checked={rememberProfileOnDevice}
-                                                    onchange={updateRememberedProfile}
-                                                    disabled={!!switchingProfileId}
-                                                />
-                                                <span>Remember this profile on this device</span>
-                                            </label>
-                                        {/if}
-                                    {/if}
-                                    {#if !activeProfileIsKids}
-                                        <a href="/settings/profiles" class="manage-profiles" onclick={closeUserMenu}>Manage profiles</a>
-                                    {/if}
-                                </div>
-                                {#if !activeProfileIsKids}
-                                    <a href="/settings" class="dropdown-item" onclick={closeUserMenu}>
-                                        Settings
-                                    </a>
-                                {/if}
-                                {#if canAccessAdmin && !activeProfileIsKids}
-                                    <a href="/admin" class="dropdown-item" onclick={closeUserMenu}>
-                                        {m.routes_admin_page_admin()}
-                                    </a>
-                                {/if}
-                                <button class="dropdown-item dropdown-danger" onclick={handleLogout}>
-                                    Sign Out
-                                </button>
-                            </div>
-                        {/if}
+                        <ProfileDisclosure bind:this={profileDisclosure} bind:open={userMenuOpen} {profiles} {activeProfile} {switchingProfileId}
+                            {deviceCanRememberProfile} {rememberedProfileId} bind:rememberProfileOnDevice
+                            {canAccessAdmin} onselect={selectProfile} onremember={updateRememberedProfile}
+                            onforget={forgetProfileOnDevice} onlogout={handleLogout} />
                     </div>
-
-                    {#if profileScopeReady}
-                        <button
-                            class="menu-toggle"
-                            onclick={toggleMobileMenu}
-                            aria-label={m.routes_layout_open_menu()}
-                            aria-expanded={mobileMenuOpen}
-                        >
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
-                                {#if mobileMenuOpen}
-                                    <path d="M18 6L6 18M6 6l12 12" />
-                                {:else}
-                                    <path d="M3 12h18M3 6h18M3 18h18" />
-                                {/if}
-                            </svg>
-                        </button>
-                    {/if}
                 {/if}
             </nav>
         </header>
-
-        {#if mobileMenuOpen}
-            <div
-                class="mobile-backdrop"
-                role="button"
-                tabindex="0"
-                onclick={closeMobileMenu}
-                onkeydown={(e) => e.key === 'Escape' && closeMobileMenu()}
-                aria-label={m.routes_layout_close_menu()}
-            ></div>
-            <div class="mobile-drawer" role="navigation" aria-label={m.routes_layout_mobile_navigation()}>
-                <div class="drawer-search">
-                    <SearchBar onsearch={handleSearch} navigate={false} />
-                </div>
-
-                <ul class="drawer-links">
-                    {#each navLinks as link}
-                        <li>
-                            <a
-                                href={link.href}
-                                class="drawer-link"
-                                class:active={$page.url.pathname.startsWith(link.href)}
-                                onclick={closeMobileMenu}
-                            >
-                                {link.label}
-                            </a>
-                        </li>
-                    {/each}
-                </ul>
-
-                <div class="drawer-divider"></div>
-
-                {#if !activeProfileIsKids}
-                    <a href="/settings/notifications" class="drawer-link" onclick={closeMobileMenu}>
-                        Notifications
-                    </a>
-                    <a href="/settings" class="drawer-link" onclick={closeMobileMenu}>
-                        Settings
-                    </a>
-                    <a href="/settings/profiles" class="drawer-link" onclick={closeMobileMenu}>
-                        Profiles
-                    </a>
-                    {#if canAccessAdmin}
-                        <a href="/admin" class="drawer-link" onclick={closeMobileMenu}>
-                            {m.routes_admin_page_admin()}
-                        </a>
-                    {/if}
-                {/if}
-                <button class="drawer-link drawer-danger" onclick={handleLogout}>
-                    Sign Out
-                </button>
-            </div>
-        {/if}
-
-        <main class="main-content">
-            {#if !$isAuthenticated || profileScopeReady}
-                {#key profileScopeRevision}
-                    {@render children()}
-                {/key}
+        <div lang={messageLocale('tonight_profile_changed')} class="visually-hidden" role="status">{profileStatus}</div>
+        {#if !isPlaybackRoute || !$player.sessionId}<PlaybackReleaseNotice />{/if}
+        <main id="main-content" class="main-content" tabindex="-1">
+            {#if profileScopeNavigating}
+                <p lang={messageLocale('tonight_loading')} role="status">{m.tonight_loading()}</p>
+            {:else if !$isAuthenticated || profileScopeReady}
+                {#key profileScopeRevision}{@render children()}{/key}
             {:else}
-                <section class="profile-gate" aria-labelledby="profile-gate-title">
-                    {#if profilesLoading}
-                        <div class="loading-spinner"></div>
-                        <p>Loading profiles…</p>
-                    {:else if profiles.length > 0}
-                        <span class="profile-gate-eyebrow">Duskcue</span>
-                        <h1 id="profile-gate-title">Who’s watching?</h1>
-                        <p>Choose a profile before viewing this device’s personalized rows and playback state.</p>
-                        <div class="profile-gate-list">
-                            {#each profiles as profile}
-                                <button
-                                    class="profile-gate-option"
-                                    onclick={() => selectProfile(profile)}
-                                    disabled={!!switchingProfileId}
-                                >
-                                    <span class="profile-gate-avatar">{profile.name?.[0]?.toUpperCase() || 'P'}</span>
-                                    <span>{profile.name}</span>
-                                    {#if profile.profile_type === 'kids'}<small>Kids</small>{/if}
-                                </button>
-                            {/each}
-                        </div>
-                        {#if deviceCanRememberProfile}
-                            <label class="remember-profile profile-gate-remember">
-                                <input type="checkbox" bind:checked={rememberProfileOnDevice} disabled={!!switchingProfileId} />
-                                <span>Remember my choice on this device</span>
-                            </label>
-                        {/if}
-                        <button class="profile-gate-signout" onclick={handleLogout}>Sign Out</button>
-                    {:else}
-                        <h1 id="profile-gate-title">Profiles are unavailable</h1>
-                        <p>Reconnect to load profiles before continuing.</p>
-                        <button class="profile-gate-retry" onclick={loadProfiles}>Try again</button>
-                        <button class="profile-gate-signout" onclick={handleLogout}>Sign Out</button>
-                    {/if}
-                </section>
+                <ProfilePicker {profiles} loading={profilesLoading} {switchingProfileId} {deviceCanRememberProfile}
+                    bind:rememberProfileOnDevice onselect={selectProfile} onreload={loadProfiles} onlogout={handleLogout} />
             {/if}
         </main>
-
         {#if parentUnlockTarget}
-            <div class="parent-unlock-backdrop" role="presentation" onclick={cancelParentUnlock}></div>
-            <dialog open class="parent-unlock-dialog" aria-labelledby="parent-unlock-title">
-                <span class="parent-unlock-eyebrow">Parent access</span>
-                <h2 id="parent-unlock-title">Enter your parent PIN</h2>
-                <p>Unlocking parent access lasts for ten minutes on this device session.</p>
+            <dialog lang={messageLocale('tonight_enter_parent_pin')} bind:this={parentUnlockDialog} class="parent-unlock-dialog" aria-labelledby="parent-unlock-title"
+                oncancel={(event) => { event.preventDefault(); cancelParentUnlock(); }}>
+                <span lang={messageLocale('tonight_parent_access')} class="parent-unlock-eyebrow">{m.tonight_parent_access()}</span>
+                <h2 lang={messageLocale('tonight_enter_parent_pin')} id="parent-unlock-title">{m.tonight_enter_parent_pin()}</h2>
+                <p lang={messageLocale('tonight_parent_unlock_description')}>{m.tonight_parent_unlock_description()}</p>
                 <form onsubmit={(event) => { event.preventDefault(); unlockParentAccess(); }}>
-                    <label>
-                        <span>Parent PIN</span>
-                        <input type="password" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="12" bind:value={parentPin} autocomplete="off" disabled={unlockingParent} />
-                    </label>
-                    {#if parentUnlockError}<p class="parent-unlock-error">{parentUnlockError}</p>{/if}
+                    <label lang={messageLocale('tonight_parent_pin')} for="parent-pin">{m.tonight_parent_pin()}</label>
+                    <input lang={messageLocale('tonight_parent_pin')} id="parent-pin" type="password" inputmode="numeric" pattern="[0-9]*" minlength="4" maxlength="12"
+                        required bind:value={parentPin} autocomplete="off" disabled={unlockingParent} aria-describedby={parentUnlockError ? 'parent-pin-error' : undefined} />
+                    <p lang={parentUnlockErrorLocale} id="parent-pin-error" class="parent-unlock-error" role="status">{parentUnlockError}</p>
                     <div class="parent-unlock-actions">
-                        <button type="button" class="parent-unlock-cancel" onclick={cancelParentUnlock} disabled={unlockingParent}>Cancel</button>
-                        <button type="submit" class="parent-unlock-submit" disabled={unlockingParent || parentPin.length < 4}>{unlockingParent ? 'Unlocking…' : 'Unlock'}</button>
+                        <button lang={messageLocale('tonight_cancel')} type="button" class="secondary-action" onclick={cancelParentUnlock} disabled={unlockingParent}>{m.tonight_cancel()}</button>
+                        <button lang={unlockingParent ? messageLocale('tonight_unlocking') : messageLocale('tonight_unlock')} type="submit" class="primary-action" disabled={unlockingParent || parentPin.length < 4}>{unlockingParent ? m.tonight_unlocking() : m.tonight_unlock()}</button>
                     </div>
                 </form>
             </dialog>
         {/if}
     </div>
-
     <NotificationToast />
 {:else}
-    <div class="app-loading">
-        <div class="loading-spinner"></div>
-    </div>
+    <div class="app-loading" role="status"><p lang={messageLocale('tonight_loading')}>{m.tonight_loading()}</p></div>
 {/if}
 
 <style>
-    .app-shell {
-        min-height: 100vh;
-        display: flex;
-        flex-direction: column;
-    }
-
-    .parent-unlock-backdrop { position: fixed; inset: 0; z-index: 200; background: rgb(0 0 0 / 65%); }
-    .parent-unlock-dialog { position: fixed; z-index: 201; top: 50%; left: 50%; width: min(92vw, 430px); margin: 0; transform: translate(-50%, -50%); display: grid; gap: 0.85rem; padding: 1.4rem; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-bg-surface); box-shadow: 0 24px 64px rgb(0 0 0 / 35%); }
-    .parent-unlock-dialog h2, .parent-unlock-dialog p { margin: 0; }
+    .desktop-server-startup { max-width: 42rem; margin-inline: auto; padding: 3rem var(--space-page); display: grid; gap: 1.25rem; }
+    .app-shell { min-height: 100vh; display: flex; flex-direction: column; }
+    .skip-link { position: fixed; top: 0.5rem; inset-inline-start: 1rem; transform: translateY(-150%); padding: 0.75rem 1rem; background: var(--color-accent); color: var(--color-on-accent); z-index: 500; }
+    .skip-link:focus { transform: none; }
+    .nav-bar { position: sticky; top: 0; z-index: 100; background: var(--color-bg-deep); border-bottom: 1px solid var(--color-border-subtle); }
+    .nav-content { max-width: 1600px; margin: auto; display: flex; align-items: center; gap: 1.25rem; padding: 0.7rem var(--space-page); min-height: 76px; }
+    .nav-logo { font-family: var(--font-display); font-size: 1.65rem; letter-spacing: -0.04em; }
+    .nav-links { display: flex; list-style: none; gap: 0.25rem; }
+    .nav-link { display: flex; align-items: center; min-height: 44px; padding: 0.5rem 0.75rem; border-radius: var(--radius-sm); color: var(--color-text-secondary); font-size: 0.9rem; }
+    .nav-link:hover { background: var(--color-bg-hover); color: var(--color-text-primary); }
+    .nav-link.active { color: var(--color-accent); background: var(--color-accent-muted); }
+    .nav-search { flex: 1; max-width: 26rem; min-width: 9rem; margin-inline-start: auto; }
+    .nav-account { display: flex; align-items: center; gap: 0.5rem; }
+    .main-content { width: 100%; max-width: 1600px; margin: auto; flex: 1; padding: 2rem var(--space-page) 4rem; }
+    .parent-unlock-dialog { width: min(92vw, 430px); max-height: 90dvh; overflow: auto; margin: auto; padding: 1.5rem; border: 1px solid var(--color-border); border-radius: var(--radius-lg); background: var(--color-bg-surface); color: var(--color-text-primary); }
+    .parent-unlock-dialog[open] { display: grid; gap: 1rem; }
+    .parent-unlock-dialog::backdrop { background: rgb(0 0 0 / 70%); }
+    .parent-unlock-dialog h2 { font-family: var(--font-display); font-weight: 400; font-size: 1.7rem; }
     .parent-unlock-dialog p { color: var(--color-text-secondary); }
-    .parent-unlock-eyebrow { color: var(--color-accent); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; }
-    .parent-unlock-dialog form, .parent-unlock-dialog label { display: grid; gap: 0.45rem; }
-    .parent-unlock-dialog input { border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 0.65rem; color: var(--color-text-primary); background: var(--color-bg-elevated); font: inherit; }
+    .parent-unlock-eyebrow { color: var(--color-accent); font-size: 0.8rem; }
+    .parent-unlock-dialog form { display: grid; gap: 0.65rem; }
+    .parent-unlock-dialog input { min-height: 44px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); padding: 0.65rem; background: var(--color-bg-deep); }
     .parent-unlock-error { color: var(--color-error) !important; }
-    .parent-unlock-actions { display: flex; justify-content: flex-end; gap: 0.75rem; }
-    .parent-unlock-cancel, .parent-unlock-submit { border: 0; border-radius: var(--radius-sm); padding: 0.6rem 0.9rem; font: inherit; cursor: pointer; }
-    .parent-unlock-cancel { background: transparent; color: var(--color-text-secondary); }
-    .parent-unlock-submit { background: var(--color-accent); color: var(--color-on-accent, white); }
-
-    .nav-bar {
-        position: sticky;
-        top: 0;
-        z-index: 100;
-        background-color: var(--color-bg-surface);
-        border-bottom: 1px solid var(--color-border-subtle);
-        backdrop-filter: blur(12px);
-    }
-
-    .nav-content {
-        max-width: 1600px;
-        margin: 0 auto;
-        display: flex;
-        align-items: center;
-        gap: 1.5rem;
-        padding: 0 1.5rem;
-        height: 56px;
-    }
-
-    .nav-logo {
-        font-size: 1.25rem;
-        font-weight: 700;
-        letter-spacing: -0.02em;
-        color: var(--color-accent);
-        flex-shrink: 0;
-    }
-
-    .nav-links {
-        display: flex;
-        list-style: none;
-        gap: 0.25rem;
-    }
-
-    .nav-link {
-        display: block;
-        padding: 0.375rem 0.75rem;
-        font-size: 0.875rem;
-        font-weight: 500;
-        color: var(--color-text-secondary);
-        border-radius: var(--radius-sm);
-        transition: color var(--transition-fast), background-color var(--transition-fast);
-    }
-
-    .nav-link:hover {
-        color: var(--color-text-primary);
-        background-color: var(--color-bg-hover);
-    }
-
-    .nav-link.active {
-        color: var(--color-accent);
-    }
-
-    .nav-search {
-        margin-inline-start: auto;
-    }
-
-    .nav-user {
-        position: relative;
-        flex-shrink: 0;
-    }
-
-    .user-button {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.25rem 0.5rem;
-        border-radius: var(--radius-md);
-        transition: background-color var(--transition-fast);
-    }
-
-    .user-button:hover {
-        background-color: var(--color-bg-hover);
-    }
-
-    .user-avatar {
-        width: 28px;
-        height: 28px;
-        border-radius: 50%;
-        background-color: var(--color-accent);
-        color: var(--color-bg-deep);
-        font-size: 0.75rem;
-        font-weight: 700;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-    }
-
-    .user-name {
-        font-size: 0.8125rem;
-        color: var(--color-text-secondary);
-        max-width: 120px;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-    }
-
-    .menu-backdrop {
-        position: fixed;
-        inset: 0;
-        z-index: 99;
-        cursor: default;
-    }
-
-    .user-dropdown {
-        position: absolute;
-        top: calc(100% + 4px);
-        inset-inline-end: 0;
-        min-width: 180px;
-        background-color: var(--color-bg-elevated);
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-        box-shadow: var(--shadow-elevated);
-        z-index: 100;
-        overflow: hidden;
-    }
-
-    .profile-picker {
-        padding: 0.75rem;
-        border-bottom: 1px solid var(--color-border-subtle);
-    }
-
-    .profile-picker-title {
-        display: block;
-        margin: 0 0 0.5rem;
-        color: var(--color-text-muted);
-        font-size: 0.7rem;
-        font-weight: 700;
-        letter-spacing: 0.06em;
-        text-transform: uppercase;
-    }
-
-    .profile-list {
-        display: grid;
-        gap: 0.25rem;
-    }
-
-    .profile-option {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        width: 100%;
-        border: 1px solid transparent;
-        border-radius: var(--radius-sm);
-        padding: 0.35rem;
-        color: var(--color-text-secondary);
-        text-align: start;
-    }
-
-    .profile-option:hover,
-    .profile-option.active-profile {
-        background-color: var(--color-bg-hover);
-        color: var(--color-text-primary);
-    }
-
-    .profile-option.active-profile {
-        border-color: var(--color-accent-muted);
-    }
-
-    .profile-option-avatar {
-        display: grid;
-        width: 26px;
-        height: 26px;
-        place-items: center;
-        border-radius: 50%;
-        background-color: var(--color-accent-muted);
-        color: var(--color-accent);
-        font-size: 0.75rem;
-        font-weight: 700;
-    }
-
-    .profile-option small {
-        margin-inline-start: auto;
-        color: var(--color-text-muted);
-        font-size: 0.7rem;
-    }
-
-    .manage-profiles {
-        display: block;
-        margin-top: 0.625rem;
-        color: var(--color-accent);
-        font-size: 0.8rem;
-    }
-
-    .remember-profile {
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        margin-top: 0.75rem;
-        color: var(--color-text-secondary);
-        font-size: 0.75rem;
-        cursor: pointer;
-    }
-
-    .remember-profile input {
-        width: 1rem;
-        height: 1rem;
-        accent-color: var(--color-accent);
-    }
-
-    .forget-profile {
-        width: 100%;
-        margin-top: 0.75rem;
-        color: var(--color-text-secondary);
-        font-size: 0.75rem;
-        text-align: start;
-    }
-
-    .forget-profile:hover {
-        color: var(--color-error);
-    }
-
-    .dropdown-item {
-        display: block;
-        width: 100%;
-        text-align: start;
-        padding: 0.625rem 1rem;
-        font-size: 0.875rem;
-        color: var(--color-text-secondary);
-        transition: color var(--transition-fast), background-color var(--transition-fast);
-    }
-
-    .dropdown-item:hover {
-        color: var(--color-text-primary);
-        background-color: var(--color-bg-hover);
-    }
-
-    .dropdown-danger:hover {
-        color: var(--color-error);
-    }
-
-    .main-content {
-        flex: 1;
-        max-width: 1600px;
-        width: 100%;
-        margin: 0 auto;
-        padding: 1.5rem;
-    }
-
-    .profile-gate {
-        width: min(100%, 520px);
-        min-height: calc(100vh - 160px);
-        display: grid;
-        align-content: center;
-        justify-items: stretch;
-        gap: 1rem;
-        margin: 0 auto;
-        padding: 2rem;
-        background: var(--color-bg-surface);
-        border: 1px solid var(--color-border-subtle);
-        border-radius: var(--radius-lg);
-        text-align: center;
-    }
-
-    .profile-gate h1 {
-        margin: 0;
-        color: var(--color-text-primary);
-        font-size: 1.5rem;
-    }
-
-    .profile-gate p {
-        margin: 0;
-        color: var(--color-text-secondary);
-        line-height: 1.5;
-    }
-
-    .profile-gate-eyebrow {
-        color: var(--color-accent);
-        font-size: 0.75rem;
-        font-weight: 700;
-        letter-spacing: 0.08em;
-        text-transform: uppercase;
-    }
-
-    .profile-gate-list {
-        display: grid;
-        gap: 0.625rem;
-    }
-
-    .profile-gate-option {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        width: 100%;
-        padding: 0.75rem;
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-md);
-        background: var(--color-bg-elevated);
-        color: var(--color-text-primary);
-        font-weight: 600;
-        text-align: start;
-    }
-
-    .profile-gate-option:hover:not(:disabled) {
-        border-color: var(--color-accent);
-        background: var(--color-bg-hover);
-    }
-
-    .profile-gate-option small {
-        margin-inline-start: auto;
-        color: var(--color-text-muted);
-        font-size: 0.75rem;
-    }
-
-    .profile-gate-avatar {
-        display: grid;
-        width: 2.25rem;
-        height: 2.25rem;
-        place-items: center;
-        border-radius: 50%;
-        background: var(--color-accent-muted);
-        color: var(--color-accent);
-    }
-
-    .profile-gate-remember {
-        justify-content: center;
-        margin-top: 0;
-    }
-
-    .profile-gate-signout,
-    .profile-gate-retry {
-        justify-self: center;
-        color: var(--color-text-secondary);
-        font-size: 0.8125rem;
-    }
-
-    .profile-gate-signout:hover {
-        color: var(--color-error);
-    }
-
-    .profile-gate-retry {
-        padding: 0.625rem 0.875rem;
-        border: 1px solid var(--color-border);
-        border-radius: var(--radius-sm);
-        background: var(--color-bg-elevated);
-    }
-
-    .menu-toggle {
-        display: none;
-        align-items: center;
-        justify-content: center;
-        width: 40px;
-        height: 40px;
-        color: var(--color-text-secondary);
-        border-radius: var(--radius-md);
-        transition: background-color var(--transition-fast);
-    }
-
-    .menu-toggle:hover {
-        background-color: var(--color-bg-hover);
-        color: var(--color-text-primary);
-    }
-
-    .mobile-backdrop {
-        position: fixed;
-        inset: 0;
-        z-index: 149;
-        background-color: rgba(0, 0, 0, 0.5);
-        backdrop-filter: blur(2px);
-        cursor: default;
-    }
-
-    .mobile-drawer {
-        position: fixed;
-        top: 0;
-        inset-inline-end: 0;
-        bottom: 0;
-        width: 300px;
-        max-width: 85vw;
-        z-index: 150;
-        background-color: var(--color-bg-surface);
-        border-inline-start: 1px solid var(--color-border);
-        box-shadow: var(--shadow-elevated);
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-        padding: 1.25rem;
-        overflow-y: auto;
-        animation: drawer-slide-in 0.2s ease-out;
-    }
-
-    @keyframes drawer-slide-in {
-        from {
-            transform: translateX(var(--drawer-closed-offset, 100%));
-        }
-        to {
-            transform: translateX(0);
-        }
-    }
-
-    :global([dir='rtl']) .mobile-drawer {
-        --drawer-closed-offset: -100%;
-    }
-
-    .drawer-search {
-        margin-bottom: 0.75rem;
-    }
-
-    .drawer-links {
-        list-style: none;
-        display: flex;
-        flex-direction: column;
-        gap: 0.125rem;
-    }
-
-    .drawer-link {
-        display: block;
-        padding: 0.75rem 1rem;
-        font-size: 0.9375rem;
-        font-weight: 500;
-        color: var(--color-text-secondary);
-        border-radius: var(--radius-sm);
-        transition: color var(--transition-fast), background-color var(--transition-fast);
-        text-align: start;
-        width: 100%;
-    }
-
-    .drawer-link:hover {
-        color: var(--color-text-primary);
-        background-color: var(--color-bg-hover);
-    }
-
-    .drawer-link.active {
-        color: var(--color-accent);
-        background-color: var(--color-accent-muted);
-    }
-
-    .drawer-danger {
-        color: var(--color-text-secondary);
-    }
-
-    .drawer-danger:hover {
-        color: var(--color-error);
-    }
-
-    .drawer-divider {
-        height: 1px;
-        background-color: var(--color-border);
-        margin: 0.5rem 0;
-    }
-
-    .app-loading {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        min-height: 100vh;
-    }
-
-    .loading-spinner {
-        width: 32px;
-        height: 32px;
-        border: 3px solid var(--color-border);
-        border-top-color: var(--color-accent);
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-        to {
-            transform: rotate(360deg);
-        }
-    }
-
-    @media (max-width: 768px) {
-        .nav-content {
-            padding: 0 1rem;
-            gap: 0.75rem;
-        }
-
-        .nav-links {
-            display: none;
-        }
-
-        .nav-search {
-            display: none;
-        }
-
-        .user-name {
-            display: none;
-        }
-
-        .user-button {
-            padding: 0.25rem;
-        }
-
-        .menu-toggle {
-            display: flex;
-        }
-
-        .main-content {
-            padding: 1rem;
-        }
-    }
-
-    @media (max-width: 480px) {
-        .main-content {
-            padding: 0.75rem;
-        }
-    }
+    .parent-unlock-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 0.75rem; }
+    .app-loading { display: grid; place-items: center; min-height: 100vh; }
+    @media (max-width: 1100px) {
+        .nav-content { flex-wrap: wrap; gap: 0.5rem 1rem; }
+        .nav-account { margin-inline-start: auto; }
+        .nav-links { order: 3; flex: 1; }
+        .nav-search { order: 4; max-width: none; flex: 1; }
+    }
+    @media (max-width: 600px) {
+        .nav-links { flex-basis: 100%; justify-content: space-between; gap: 0; }
+        .nav-link { padding-inline: 0.55rem; font-size: 0.85rem; }
+        .nav-search { flex-basis: 100%; min-width: 0; }
+        .main-content { padding-top: 1.5rem; }
+    }
+    @media (max-height: 420px) { .nav-bar { position: static; } }
 </style>

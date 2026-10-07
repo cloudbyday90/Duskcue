@@ -54,8 +54,8 @@ export function transcodeSegmentUrl(sessionId, rendition, segment) {
     return buildApiUrl(`/transcode/${sessionId}/${rendition}/${segment}`);
 }
 
-export async function getWatchData(itemId) {
-    return get(`/items/${itemId}/watch-data`);
+export async function getWatchData(itemId, options = {}) {
+    return get(`/items/${itemId}/watch-data`, {}, options);
 }
 
 export async function updateWatchData(itemId, data) {
@@ -129,4 +129,3 @@ export async function deleteStreamingPolicy(policyId) {
 export async function getEffectiveStreamingLimits(userId) {
     return get(`/users/${userId}/streaming-limits`);
 }
-

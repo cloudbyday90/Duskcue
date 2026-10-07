@@ -26,8 +26,14 @@ use crate::services::decision_engine::{
     self, DecisionEngineConfig, DeviceCapabilities, MediaFileInfo, NetworkConditions,
     StreamDecision,
 };
-use crate::services::transcoding::{StartSessionParams, TranscodeManager, TranscodeRendition};
+use crate::services::transcoding::{StartSessionParams, TranscodeManager};
 use crate::state::RuntimeConfig;
+
+pub use super::hls::{
+    generate_master_manifest, get_transcode_manifest, get_transcode_playlist, get_transcode_segment,
+};
+pub(crate) use super::track_selection::default_audio_stream_index;
+pub use super::transcode_access::assert_transcode_profile_access;
 
 pub async fn start_playback(
     pool: &PgPool,
@@ -196,6 +202,8 @@ pub async fn start_playback(
         }
     }
 
+    let pending_transcode =
+        transcode_session_id.map(|session_id| transcode_manager.pending_session(session_id));
     let play_session_id = match create_play_session(
         pool,
         user_id,
@@ -220,6 +228,10 @@ pub async fn start_playback(
             return Err(error);
         }
     };
+
+    if let Some(pending) = pending_transcode {
+        pending.acknowledge();
+    }
 
     Ok(PlaybackStartResponse {
         session_id: play_session_id,
@@ -330,6 +342,8 @@ fn build_media_file_info(
     audio_stream_index: Option<i32>,
     subtitle_stream_index: Option<i32>,
 ) -> Result<(MediaFileInfo, SelectedTracks), PlaybackError> {
+    let audio_stream_index =
+        audio_stream_index.or_else(|| default_audio_stream_index(&details.additional_streams));
     let (res_w, res_h) = details
         .video_resolution
         .as_deref()
@@ -706,117 +720,16 @@ pub async fn heartbeat(
     is_paused: Option<bool>,
     is_buffering: Option<bool>,
 ) -> Result<HeartbeatResponse, PlaybackError> {
-    let row = sqlx::query(
-        "SELECT id, user_id, profile_id, playback_mode, media_item_id, metadata \
-         FROM play_sessions \
-         WHERE id = $1 AND stopped_at IS NULL",
-    )
-    .bind(session_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(PlaybackError::SessionNotFound)?;
-
-    let session_user_id: Uuid = row
-        .try_get("user_id")
-        .map_err(|_| PlaybackError::SessionNotFound)?;
-    if session_user_id != user_id {
-        return Err(PlaybackError::SessionNotFound);
-    }
-
-    let profile_id: Uuid = row
-        .try_get("profile_id")
-        .map_err(|_| PlaybackError::SessionNotFound)?;
-    let playback_mode: String = row
-        .try_get("playback_mode")
-        .unwrap_or_else(|_| "interactive".to_string());
-    let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
-    let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
-
-    let prev_state = metadata
-        .get("current_state")
-        .and_then(|s| s.as_str())
-        .unwrap_or("playing")
-        .to_string();
-
-    let media_file_id = metadata
-        .get("media_file_id")
-        .and_then(|f| f.as_str())
-        .and_then(|s| Uuid::parse_str(s).ok());
-
-    let effective_state = if let Some(s) = state {
-        s.to_string()
-    } else if is_buffering.unwrap_or(false) {
-        "buffering".to_string()
-    } else if is_paused.unwrap_or(false) {
-        "paused".to_string()
-    } else {
-        "playing".to_string()
-    };
-
-    let effective_position = position_ms.unwrap_or_else(|| {
-        metadata
-            .get("current_position_ms")
-            .and_then(|p| p.as_i64())
-            .map(|p| p as i32)
-            .unwrap_or(0)
-    });
-
-    if effective_state != prev_state {
-        let (event_type, details) = match (prev_state.as_str(), effective_state.as_str()) {
-            ("playing", "paused") => ("pause", serde_json::json!({"reason": "user_paused"})),
-            ("paused", "playing") => ("resume", serde_json::json!({})),
-            ("playing", "buffering") => ("buffer_start", serde_json::json!({})),
-            ("buffering", "playing") => ("buffer_end", serde_json::json!({})),
-            ("paused", "buffering") => ("buffer_start", serde_json::json!({"from": "paused"})),
-            ("buffering", "paused") => ("pause", serde_json::json!({"from": "buffering"})),
-            _ => ("heartbeat", serde_json::json!({})),
-        };
-        emit_play_event(
-            pool,
-            session_id,
-            user_id,
-            event_type,
-            Some(effective_position / 1000),
-            details,
-        )
-        .await?;
-    }
-
-    let merge = serde_json::json!({
-        "current_state": effective_state,
-        "current_position_ms": effective_position,
-        "last_heartbeat_at": chrono::Utc::now().to_rfc3339()
-    });
-
-    merge_session_metadata(pool, session_id, merge).await?;
-
-    if position_ms.is_some() && playback_mode == "interactive" {
-        upsert_user_item_data_heartbeat(
-            pool,
-            user_id,
-            profile_id,
-            media_item_id,
-            effective_position,
-            media_file_id,
-        )
-        .await?;
-    }
-
-    emit_play_event(
+    super::heartbeat::heartbeat(
         pool,
-        session_id,
         user_id,
-        "heartbeat",
-        Some(effective_position / 1000),
-        serde_json::json!({"state": effective_state}),
-    )
-    .await?;
-
-    Ok(HeartbeatResponse {
         session_id,
-        position_ms: effective_position,
-        playback_mode,
-    })
+        position_ms,
+        state,
+        is_paused,
+        is_buffering,
+    )
+    .await
 }
 
 pub async fn stop_playback(
@@ -827,170 +740,15 @@ pub async fn stop_playback(
     final_position_ms: Option<i32>,
     cancelled_before_start: bool,
 ) -> Result<StopPlaybackResponse, PlaybackError> {
-    if cancelled_before_start {
-        let row = sqlx::query(
-            "UPDATE play_sessions SET stopped_at = COALESCE(stopped_at, now()), duration_seconds = 0, \
-             percent_complete = NULL, metadata = metadata || '{\"current_state\":\"stopped\",\"cancelled_before_start\":true}'::jsonb, \
-             updated_at = now() WHERE id = $1 AND user_id = $2 AND \
-             ((stopped_at IS NULL AND NOT (metadata ? 'last_heartbeat_at') \
-             AND COALESCE(metadata ->> 'current_position_ms', '0') = '0' \
-             AND NOT EXISTS (SELECT 1 FROM play_events e WHERE e.play_session_id = play_sessions.id \
-             AND e.event_type IN ('heartbeat', 'seek', 'pause', 'resume', 'buffer_start', 'buffer_end'))) \
-             OR metadata -> 'cancelled_before_start' = 'true'::jsonb) \
-             RETURNING media_item_id, playback_mode, metadata",
-        )
-        .bind(session_id)
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await?
-        .ok_or(PlaybackError::SessionNotFound)?;
-        let metadata: serde_json::Value = row.try_get("metadata")?;
-        if let Some(transcode_id) = metadata
-            .get("transcode_session_id")
-            .and_then(serde_json::Value::as_str)
-            .and_then(|value| Uuid::parse_str(value).ok())
-        {
-            let _ = transcode_manager.stop_session(transcode_id).await;
-        }
-        return Ok(StopPlaybackResponse {
-            session_id,
-            media_item_id: row.try_get("media_item_id")?,
-            duration_seconds: 0,
-            percent_complete: None,
-            is_watched: false,
-            play_count: 0,
-            playback_mode: row.try_get("playback_mode")?,
-        });
-    }
-    let row = sqlx::query(
-        "SELECT id, user_id, profile_id, playback_mode, media_item_id, started_at, metadata \
-         FROM play_sessions WHERE id = $1 AND metadata -> 'cancelled_before_start' IS DISTINCT FROM 'true'::jsonb",
-    )
-    .bind(session_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(PlaybackError::SessionNotFound)?;
-
-    let session_user_id: Uuid = row
-        .try_get("user_id")
-        .map_err(|_| PlaybackError::SessionNotFound)?;
-    if session_user_id != user_id {
-        return Err(PlaybackError::SessionNotFound);
-    }
-
-    let profile_id: Uuid = row
-        .try_get("profile_id")
-        .map_err(|_| PlaybackError::SessionNotFound)?;
-    let playback_mode: String = row
-        .try_get("playback_mode")
-        .unwrap_or_else(|_| "interactive".to_string());
-    let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
-    let started_at: chrono::DateTime<chrono::Utc> = row.try_get("started_at").unwrap_or_default();
-    let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
-
-    let transcode_session_id = metadata
-        .get("transcode_session_id")
-        .and_then(|t| t.as_str())
-        .and_then(|s| Uuid::parse_str(s).ok());
-
-    let media_file_id = metadata
-        .get("media_file_id")
-        .and_then(|f| f.as_str())
-        .and_then(|s| Uuid::parse_str(s).ok());
-
-    let stored_position = metadata
-        .get("current_position_ms")
-        .and_then(|p| p.as_i64())
-        .map(|p| p as i32)
-        .unwrap_or(0);
-
-    let final_position = final_position_ms.unwrap_or(stored_position);
-
-    if let Some(ts_id) = transcode_session_id {
-        let _ = transcode_manager.stop_session(ts_id).await;
-    }
-
-    let runtime_seconds: Option<i32> = if let Some(mf_id) = media_file_id {
-        sqlx::query_scalar::<_, Option<i32>>(
-            "SELECT runtime_seconds FROM media_files WHERE id = $1",
-        )
-        .bind(mf_id)
-        .fetch_optional(pool)
-        .await?
-        .flatten()
-    } else {
-        None
-    };
-
-    let percent_complete = runtime_seconds
-        .filter(|&r| r > 0)
-        .map(|r| ((final_position as f64) / (r as f64 * 1000.0) * 100.0).min(100.0) as f32);
-
-    let is_watched = percent_complete.map(|p| p >= 90.0).unwrap_or(false);
-    let resume_position = if is_watched { 0 } else { final_position };
-
-    let now = chrono::Utc::now();
-    let duration_seconds = (now - started_at).num_seconds().max(0) as i32;
-
-    let stop_merge = serde_json::json!({
-        "current_state": "stopped",
-        "current_position_ms": final_position
-    });
-
-    sqlx::query(
-        "UPDATE play_sessions \
-         SET stopped_at = now(), \
-             duration_seconds = $2, \
-             percent_complete = $3, \
-             metadata = metadata || $4, \
-             updated_at = now() \
-         WHERE id = $1",
-    )
-    .bind(session_id)
-    .bind(duration_seconds)
-    .bind(percent_complete)
-    .bind(&stop_merge)
-    .execute(pool)
-    .await?;
-
-    emit_play_event(
+    super::stop::stop_playback(
         pool,
-        session_id,
+        transcode_manager,
         user_id,
-        "stop",
-        Some(final_position / 1000),
-        serde_json::json!({"duration_seconds": duration_seconds, "percent_complete": percent_complete}),
-    )
-    .await?;
-
-    let play_count = if playback_mode == "interactive" {
-        upsert_user_item_data_stop(
-            pool,
-            user_id,
-            profile_id,
-            media_item_id,
-            is_watched,
-            resume_position,
-            media_file_id,
-        )
-        .await?
-    } else {
-        0
-    };
-
-    Ok(StopPlaybackResponse {
         session_id,
-        media_item_id,
-        duration_seconds,
-        percent_complete,
-        is_watched: if playback_mode == "interactive" {
-            is_watched
-        } else {
-            false
-        },
-        play_count,
-        playback_mode,
-    })
+        final_position_ms,
+        cancelled_before_start,
+    )
+    .await
 }
 
 pub async fn seek(
@@ -1001,100 +759,15 @@ pub async fn seek(
     position_ms: i32,
     data_dir: &Path,
 ) -> Result<SeekResponse, PlaybackError> {
-    if position_ms < 0 {
-        return Err(PlaybackError::InvalidSeekPosition(format!(
-            "position must be >= 0, got {position_ms}"
-        )));
-    }
-
-    let row = sqlx::query(
-        "SELECT id, user_id, profile_id, playback_mode, media_item_id, metadata \
-         FROM play_sessions \
-         WHERE id = $1 AND stopped_at IS NULL",
-    )
-    .bind(session_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(PlaybackError::SessionNotFound)?;
-
-    let session_user_id: Uuid = row
-        .try_get("user_id")
-        .map_err(|_| PlaybackError::SessionNotFound)?;
-    if session_user_id != user_id {
-        return Err(PlaybackError::SessionNotFound);
-    }
-
-    let profile_id: Uuid = row
-        .try_get("profile_id")
-        .map_err(|_| PlaybackError::SessionNotFound)?;
-    let playback_mode: String = row
-        .try_get("playback_mode")
-        .unwrap_or_else(|_| "interactive".to_string());
-    let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
-    let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
-
-    let transcode_session_id = metadata
-        .get("transcode_session_id")
-        .and_then(|t| t.as_str())
-        .and_then(|s| Uuid::parse_str(s).ok());
-
-    let (new_stream_url, new_transcode_session_id) = if let Some(ts_id) = transcode_session_id {
-        let new_session = transcode_manager
-            .seek_session(ts_id, position_ms as i64, data_dir)
-            .await?;
-
-        let new_id = new_session.id;
-        let url = format!("/api/v1/transcode/{}/manifest.m3u8", new_id);
-
-        let merge = serde_json::json!({
-            "transcode_session_id": new_id,
-            "current_position_ms": position_ms,
-            "current_state": "playing"
-        });
-        merge_session_metadata(pool, session_id, merge).await?;
-
-        (Some(url), Some(new_id))
-    } else {
-        let merge = serde_json::json!({
-            "current_position_ms": position_ms,
-            "current_state": "playing"
-        });
-        merge_session_metadata(pool, session_id, merge).await?;
-        (None, None)
-    };
-
-    if playback_mode == "interactive" {
-        upsert_user_item_data_heartbeat(
-            pool,
-            user_id,
-            profile_id,
-            media_item_id,
-            position_ms,
-            metadata
-                .get("media_file_id")
-                .and_then(|f| f.as_str())
-                .and_then(|s| Uuid::parse_str(s).ok()),
-        )
-        .await?;
-    }
-
-    emit_play_event(
+    super::seek::seek(
         pool,
-        session_id,
+        transcode_manager,
         user_id,
-        "seek",
-        Some(position_ms / 1000),
-        serde_json::json!({"target_position_ms": position_ms}),
-    )
-    .await?;
-
-    Ok(SeekResponse {
         session_id,
         position_ms,
-        stream_url: new_stream_url,
-        transcode_session_id: new_transcode_session_id,
-        playback_mode,
-    })
+        data_dir,
+    )
+    .await
 }
 
 pub async fn get_playback_info(
@@ -1260,103 +933,6 @@ pub async fn update_user_item_data(
         is_favorite: row.try_get("is_favorite").unwrap_or(false),
         user_rating: row.try_get("user_rating").ok().flatten(),
     })
-}
-
-async fn emit_play_event(
-    pool: &PgPool,
-    session_id: Uuid,
-    user_id: Uuid,
-    event_type: &str,
-    position_seconds: Option<i32>,
-    details: serde_json::Value,
-) -> Result<(), PlaybackError> {
-    sqlx::query(
-        "INSERT INTO play_events (play_session_id, user_id, event_type, position_seconds, details) \
-         VALUES ($1, $2, $3, $4, $5)",
-    )
-    .bind(session_id)
-    .bind(user_id)
-    .bind(event_type)
-    .bind(position_seconds)
-    .bind(&details)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-async fn merge_session_metadata(
-    pool: &PgPool,
-    session_id: Uuid,
-    merge: serde_json::Value,
-) -> Result<(), PlaybackError> {
-    sqlx::query(
-        "UPDATE play_sessions SET metadata = metadata || $2, updated_at = now() WHERE id = $1",
-    )
-    .bind(session_id)
-    .bind(&merge)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-async fn upsert_user_item_data_heartbeat(
-    pool: &PgPool,
-    user_id: Uuid,
-    profile_id: Uuid,
-    media_item_id: Uuid,
-    position_ms: i32,
-    media_file_id: Option<Uuid>,
-) -> Result<(), PlaybackError> {
-    sqlx::query(
-        "INSERT INTO user_item_data (id, user_id, profile_id, media_item_id, resume_position_ms, last_played_media_file_id) \
-         VALUES (uuidv7(), $1, $2, $3, $4, $5) \
-         ON CONFLICT (profile_id, media_item_id) \
-         DO UPDATE SET resume_position_ms = $4, \
-                       last_played_media_file_id = COALESCE($5, user_item_data.last_played_media_file_id), \
-                       updated_at = now()"
-    )
-    .bind(user_id)
-    .bind(profile_id)
-    .bind(media_item_id)
-    .bind(position_ms)
-    .bind(media_file_id)
-    .execute(pool)
-    .await?;
-    Ok(())
-}
-
-async fn upsert_user_item_data_stop(
-    pool: &PgPool,
-    user_id: Uuid,
-    profile_id: Uuid,
-    media_item_id: Uuid,
-    is_watched: bool,
-    resume_position_ms: i32,
-    media_file_id: Option<Uuid>,
-) -> Result<i32, PlaybackError> {
-    let row = sqlx::query(
-        "INSERT INTO user_item_data (id, user_id, profile_id, media_item_id, is_watched, play_count, last_played_at, resume_position_ms, last_played_media_file_id) \
-         VALUES (uuidv7(), $1, $2, $3, $4, 1, now(), $5, $6) \
-         ON CONFLICT (profile_id, media_item_id) \
-         DO UPDATE SET play_count = user_item_data.play_count + 1, \
-                       last_played_at = now(), \
-                       is_watched = user_item_data.is_watched OR $4, \
-                       resume_position_ms = $5, \
-                       last_played_media_file_id = COALESCE($6, user_item_data.last_played_media_file_id), \
-                       updated_at = now() \
-         RETURNING play_count"
-    )
-    .bind(user_id)
-    .bind(profile_id)
-    .bind(media_item_id)
-    .bind(is_watched)
-    .bind(resume_position_ms)
-    .bind(media_file_id)
-    .fetch_one(pool)
-    .await?;
-
-    let play_count: i32 = row.try_get("play_count").unwrap_or(1);
-    Ok(play_count)
 }
 
 pub async fn list_bookmarks(
@@ -1894,165 +1470,6 @@ pub fn guess_content_type(path: &std::path::Path) -> &'static str {
         "3gp" => "video/3gpp",
         _ => "video/octet-stream",
     }
-}
-
-pub async fn get_transcode_manifest(
-    transcode_manager: &TranscodeManager,
-    session_id: Uuid,
-) -> Result<String, PlaybackError> {
-    let session = transcode_manager
-        .get_session(&session_id)
-        .ok_or(PlaybackError::SessionNotFound)?;
-
-    let manifest_path = &session.manifest_path;
-    let content = tokio::fs::read_to_string(manifest_path)
-        .await
-        .map_err(|_| PlaybackError::SessionNotFound)?;
-
-    Ok(content)
-}
-
-pub async fn get_transcode_playlist(
-    transcode_manager: &TranscodeManager,
-    session_id: Uuid,
-    rendition: &str,
-) -> Result<String, PlaybackError> {
-    let session = transcode_manager
-        .get_session(&session_id)
-        .ok_or(PlaybackError::SessionNotFound)?;
-
-    let playlist_path = session.segment_dir.join(format!("{rendition}_index.m3u8"));
-
-    if playlist_path.exists() {
-        let content = tokio::fs::read_to_string(&playlist_path)
-            .await
-            .map_err(|_| PlaybackError::SessionNotFound)?;
-        return Ok(content);
-    }
-
-    let manifest_content = tokio::fs::read_to_string(&session.manifest_path)
-        .await
-        .map_err(|_| PlaybackError::SessionNotFound)?;
-
-    if is_single_rendition_manifest(&manifest_content) {
-        if rendition == session.rendition_name {
-            return Ok(manifest_content);
-        }
-        return Err(PlaybackError::SessionNotFound);
-    }
-
-    for line in manifest_content.lines() {
-        if line.starts_with('#') {
-            continue;
-        }
-        let trimmed = line.trim();
-        if trimmed.is_empty() {
-            continue;
-        }
-        if let Some(dir_rendition) = extract_rendition_from_path(trimmed)
-            && dir_rendition == rendition
-        {
-            let playlist_path = session.segment_dir.join(trimmed);
-            let content = tokio::fs::read_to_string(&playlist_path)
-                .await
-                .map_err(|_| PlaybackError::SessionNotFound)?;
-            return Ok(content);
-        }
-    }
-
-    Err(PlaybackError::SessionNotFound)
-}
-
-pub async fn get_transcode_segment(
-    transcode_manager: &TranscodeManager,
-    session_id: Uuid,
-    rendition: &str,
-    segment: &str,
-) -> Result<Vec<u8>, PlaybackError> {
-    let session = transcode_manager
-        .get_session(&session_id)
-        .ok_or(PlaybackError::SessionNotFound)?;
-
-    validate_segment_filename(segment)?;
-
-    let segment_path = if rendition == session.rendition_name {
-        session.segment_dir.join(segment)
-    } else {
-        let rendition_dir = session.segment_dir.join(rendition);
-        if rendition_dir.exists() {
-            rendition_dir.join(segment)
-        } else {
-            session.segment_dir.join(segment)
-        }
-    };
-
-    let data = tokio::fs::read(&segment_path)
-        .await
-        .map_err(|_| PlaybackError::SessionNotFound)?;
-
-    Ok(data)
-}
-
-fn validate_segment_filename(name: &str) -> Result<(), PlaybackError> {
-    if name.is_empty() || name.len() > 64 {
-        return Err(PlaybackError::SessionNotFound);
-    }
-    if name.contains("..") || name.contains('/') || name.contains('\\') {
-        return Err(PlaybackError::SessionNotFound);
-    }
-    if !name.starts_with("seg_") {
-        return Err(PlaybackError::SessionNotFound);
-    }
-    Ok(())
-}
-
-fn is_single_rendition_manifest(content: &str) -> bool {
-    let mut has_extinf = false;
-    for line in content.lines() {
-        if line.starts_with("#EXTINF") {
-            has_extinf = true;
-        }
-        if line.starts_with("#EXT-X-STREAM-INF") {
-            return false;
-        }
-    }
-    has_extinf
-}
-
-fn extract_rendition_from_path(path: &str) -> Option<String> {
-    let path = path.trim_end_matches('/');
-    let file_name = std::path::Path::new(path)
-        .file_stem()?
-        .to_str()?
-        .to_string();
-    if file_name.ends_with("_index") || file_name == "index" {
-        let parent = std::path::Path::new(path).parent()?.file_name()?.to_str()?;
-        return Some(parent.to_string());
-    }
-    None
-}
-
-pub fn generate_master_manifest(_session_id: Uuid, renditions: &[TranscodeRendition]) -> String {
-    let mut lines = vec![
-        "#EXTM3U".to_string(),
-        "#EXT-X-VERSION:7".to_string(),
-        "#EXT-X-INDEPENDENT-SEGMENTS".to_string(),
-    ];
-
-    for rendition in renditions {
-        let bandwidth = (rendition.video_bitrate + rendition.audio_bitrate) / 1000;
-        lines.push(format!(
-            "#EXT-X-STREAM-INF:BANDWIDTH={bandwidth},RESOLUTION={width}x{height},CODECS=\"avc1.64001f,mp4a.40.2\"",
-            width = rendition.width,
-            height = rendition.height,
-        ));
-        lines.push(format!(
-            "/{rendition}/index.m3u8",
-            rendition = rendition.name
-        ));
-    }
-
-    lines.join("\n")
 }
 
 pub async fn list_streaming_policies(

@@ -291,6 +291,8 @@ fn partial_hash(path: &Path) -> Result<String> {
 
 ## Phase 3: Probe
 
+Structured track dispositions and their compatibility/default-selection rules are defined in [Playback Track Defaults](PLAYBACK_TRACK_DEFAULTS.md). FFprobe parsing lives in the focused `workers/library_scanner/probe.rs` module; scanning orchestration and the public probe result remain in the scanner facade.
+
 ### ffprobe
 
 Each new or modified file is probed with ffprobe:

@@ -22,11 +22,53 @@ use validator::Validate;
 use crate::domains::tv::service as tv_service;
 use crate::domains::tv::types::TvSurfaceSectionType;
 use crate::error::AppError;
+use crate::extractors::AuthenticatedUser;
 use crate::extractors::{CanManageLibraries, Require};
 use crate::state::AppState;
 
 use super::service;
 use super::types::*;
+
+async fn browse_scope(
+    state: &AppState,
+    user: &AuthenticatedUser,
+) -> Result<crate::domains::profiles::types::ProfileScope, AppError> {
+    Ok(crate::domains::media::access::load_browse_scope(&state.pool, user).await?)
+}
+
+pub async fn browse_collections(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Query(query): Query<crate::domains::media::types::MediaBrowsePageQuery>,
+) -> Result<Json<BrowseCollectionListResponse>, AppError> {
+    let scope = browse_scope(&state, &user).await?;
+    Ok(Json(
+        service::browse_collections(&state.pool, &scope, &query).await?,
+    ))
+}
+
+pub async fn browse_collection(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<BrowseCollectionResponse>, AppError> {
+    let scope = browse_scope(&state, &user).await?;
+    Ok(Json(
+        service::browse_collection(&state.pool, &scope, id).await?,
+    ))
+}
+
+pub async fn browse_collection_items(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(id): Path<Uuid>,
+    Query(query): Query<crate::domains::media::types::MediaBrowseQuery>,
+) -> Result<Json<crate::domains::media::types::MediaBrowseListResponse>, AppError> {
+    let scope = browse_scope(&state, &user).await?;
+    Ok(Json(
+        service::browse_collection_items(&state.pool, &scope, id, &query).await?,
+    ))
+}
 
 fn validation_error(e: validator::ValidationErrors, instance: impl Into<String>) -> AppError {
     AppError::Validation {

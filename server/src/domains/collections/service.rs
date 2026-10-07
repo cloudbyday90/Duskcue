@@ -14,6 +14,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub use super::browsing::{
+    get as browse_collection, items as browse_collection_items, list as browse_collections,
+};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 

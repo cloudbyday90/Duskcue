@@ -11,6 +11,7 @@
     import { page } from '$app/stores';
     import { auth, authLoading, authError } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
+    import { authReturnDestination } from '$lib/navigation/auth-return.js';
 
     let mode = $state('invite');
     let inviteCode = $state('');
@@ -18,10 +19,7 @@
     let password = $state('');
     let deviceName = $state('');
 
-    let postLoginDestination = $derived.by(() => {
-        const candidate = $page.url.searchParams.get('return_to');
-        return candidate?.startsWith('/') && !candidate.startsWith('//') ? candidate : '/dashboard';
-    });
+    let postLoginDestination = $derived(authReturnDestination($page.url.searchParams.get('return_to')));
 
     function switchMode(newMode) {
         mode = newMode;

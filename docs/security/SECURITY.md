@@ -750,7 +750,7 @@ fn apply_landlock(session_id: &str, media_path: &Path, transcode_dir: &Path) {
 
 **Approach**: Allow-list — only explicitly permitted syscalls pass; everything else triggers `SIGSYS` (process killed). This is the safest approach: deny-lists must be updated whenever a new dangerous syscall is added to the kernel.
 
-**Installation**: Applied via `seccompiler::apply_filter()` in `Command::pre_exec()` — between fork and exec. Only FFmpeg gets the filter; the parent server is unrestricted.
+**Installation (current source checkpoint)**: The parent compiles the unchanged deny-by-default policy before fork. `Command::pre_exec()` applies the prepared Landlock/no-new-privileges state only; inherited filtering remains present. The dedicated managed FFmpeg executable requires a root-owned bootstrap ELF dependency which validates the sealed private BPF, installs the final filter with TSYNC before media parsing and returns a nonce-owned acknowledgment. There is no generic exec allowance or optional preload fallback. Missing/corrupt/unsupported runtime files, protocol or acknowledgment refuse startup and await owned cleanup. The parent server does not receive the child filter. Fresh Linux artifact and runtime proof are pending; see [launcher qualification](../ci/FFMPEG_LAUNCHER_QUALIFICATION.md).
 
 **Allow-list profile (approximate — determined via `strace -fc ffmpeg [typical transcode command]`):**
 
@@ -825,18 +825,7 @@ fn apply_seccomp() -> Result<(), seccompiler::Error> {
 }
 ```
 
-**Applied in `pre_exec`:**
-
-```rust
-#[cfg(target_os = "linux")]
-{
-    command = command.pre_exec(|| {
-        apply_landlock(&session_id, &media_path, &transcode_dir)?;
-        apply_seccomp()?;
-        Ok(())
-    });
-}
-```
+**Managed loading boundary:** Playback and storyboard generation use `services::sandbox::launch::PreparedLaunch`. The obsolete combined pre-exec facade has no remaining caller and was removed. Root-owned packaged system dependencies and their initialization remain trusted during initial loading; this phase is subject to inherited filtering and Landlock/no-new-privileges, while the unchanged final application filter becomes mandatory before main. TSYNC must synchronize any existing dependency-created threads or fail closed. Constructor ordering and the actual compiled dependency graph require the separate runtime qualification, not an inference from source.
 
 **Key properties:**
 - **Inherited by threads** — seccomp filters apply to the calling thread and all threads it spawns. FFmpeg's worker threads inherit the filter
@@ -854,7 +843,7 @@ FFmpeg processes are protected by multiple independent layers. Compromise of one
 |---|---|---|---|
 | Container isolation | Process/filesystem/network namespace | Docker `read_only`, `cap_drop ALL`, `no-new-privileges` | Docker runtime |
 | Landlock LSM | Filesystem paths | `landlock` crate, `landlock_restrict_self()` | Server (child pre_exec) |
-| Seccomp-BPF | System calls | `seccompiler` crate, `apply_filter()` | Server (child pre_exec) |
+| Seccomp-BPF | System calls | Parent-compiled `seccompiler` BPF, mandatory child bootstrap installation | Bootstrap before FFmpeg main |
 | Process groups | Signal isolation | `tokio-process-tools` (`process_group(0)`) | Library (automatic) |
 | Bounded output | Memory consumption | `tokio-process-tools` (bounded buffers) | Library (configured) |
 | Priority | CPU/I/O scheduling | `nice` / `ionice` | Server (command args) |
@@ -862,11 +851,13 @@ FFmpeg processes are protected by multiple independent layers. Compromise of one
 
 ### Platform Compatibility
 
+These are target capabilities, not proof that every layer is currently enforced. The observed WSL checkpoint provides only partial ABI-1 Landlock support; report actual restriction status and require fresh managed-launch proof. Standalone Linux deployments require the managed executable, mandatory library and protected ordered digest manifest; a bare server binary is insufficient.
+
 | Platform | Landlock | Seccomp | tokio-process-tools | Notes |
 |---|---|---|---|---|
-| Linux x86_64 (Docker) | Yes (kernel 6.x) | Yes | Full (SIGTERM) | All layers active |
-| Linux ARM64 (Docker) | Yes (kernel 6.x) | Yes | Full (SIGTERM) | All layers active |
-| Linux bare metal | If kernel ≥ 5.13 | Yes | Full (SIGTERM) | All layers active |
+| Linux x86_64 (Docker) | BestEffort, kernel dependent | Mandatory managed filter | Full (SIGTERM) | Fresh runtime proof pending; report actual enforcement |
+| Linux ARM64 (Docker) | BestEffort, kernel dependent | Mandatory managed filter | Full (SIGTERM) | Fresh architecture/runtime proof pending |
+| Linux bare metal | BestEffort if supported | Mandatory managed filter | Full (SIGTERM) | Managed bundle required; report actual enforcement |
 | macOS (Apple Silicon) | No | No | Full (SIGTERM) | Sandbox falls back to DAC |
 | Windows | No | No | Full (CTRL_BREAK) | Sandbox falls back to DAC |
 
@@ -921,7 +912,7 @@ FFmpeg processes are protected by multiple independent layers. Compromise of one
 
 ### Implementation Status
 
-**Implemented** in `server/src/services/sandbox.rs` (Phase 7, Task 3). Key implementation decisions:
+**Historical Phase-7 implementation** in `server/src/services/sandbox.rs`. The original combined pre-exec installation and warn-and-continue fallback below are superseded by the mandatory managed-launch source checkpoint; the final exec/network-denial contract remains unchanged. Original implementation decisions:
 
 - `landlock` v0.4 with `ABI::V3` for access flag computation; `AccessFs::from_read()` for RO paths, `AccessFs::from_all()` for RW paths
 - `seccompiler` v0.4 with 62-syscall allow-list; `SeccompAction::KillProcess` on mismatch, `SeccompAction::Allow` on match
@@ -932,6 +923,8 @@ FFmpeg processes are protected by multiple independent layers. Compromise of one
 - `apply_landlock()` silently skips non-existent paths (e.g., `/dev/dri` on headless systems)
 - `target_arch()` returns `seccompiler::TargetArch` based on compile-time `cfg`; `arch_prctl` gated to `x86_64`
 - Phase 15 container-build verification fixed Linux-only compile requirements: Landlock `Access` trait import for `AccessFs::from_all()`, `seccompiler` BPF conversion errors mapped to `std::io::Error`, and `pre_exec` registration wrapped in explicit Linux-only `unsafe` blocks
+
+**October 7, 2026 source update:** Sandbox responsibilities now have focused filesystem/filter/wire/descriptors/ELF/launch/output modules. Runtime packaging leaves original FFmpeg/FFprobe unchanged, adds a mandatory managed FFmpeg copy with protected SHA256 identities and retains BestEffort filesystem status reporting. The effective x86_64 policy has the same 62 syscall identities; unavailable ARM64 legacy names are architecture-gated and the published native fadvise alias is used. New code, C compilation, both Linux architecture builds and actual allowed/denied/output/worker behavior are not yet runtime-qualified. [Launcher qualification](../ci/FFMPEG_LAUNCHER_QUALIFICATION.md) records the sealed protocol, trusted-loader tradeoff and pending proof.
 
 ### Self-Hosted Security Monitoring
 - Reddit r/selfhosted — Minimum Security Steps (February 2026): https://www.reddit.com/r/selfhosted/comments/1r4lpld/

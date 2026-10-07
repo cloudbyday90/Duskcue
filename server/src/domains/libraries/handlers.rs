@@ -23,11 +23,34 @@ use validator::Validate;
 use crate::domains::tv::service as tv_service;
 use crate::domains::tv::types::TvSurfaceSectionType;
 use crate::error::AppError;
+use crate::extractors::AuthenticatedUser;
 use crate::extractors::{CanManageLibraries, Require};
 use crate::state::AppState;
 
 use super::service;
 use super::types::*;
+
+pub async fn browse_libraries(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Query(query): Query<crate::domains::media::types::MediaBrowsePageQuery>,
+) -> Result<Json<BrowseLibraryListResponse>, AppError> {
+    let scope = crate::domains::media::access::load_browse_scope(&state.pool, &user).await?;
+    Ok(Json(
+        service::browse_libraries(&state.pool, &scope, &query).await?,
+    ))
+}
+
+pub async fn browse_library(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    axum::extract::Path(id): axum::extract::Path<Uuid>,
+) -> Result<Json<BrowseLibraryResponse>, AppError> {
+    let scope = crate::domains::media::access::load_browse_scope(&state.pool, &user).await?;
+    Ok(Json(
+        service::browse_library(&state.pool, &scope, id).await?,
+    ))
+}
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ListLibrariesQuery {

@@ -15,9 +15,9 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 use serde::{Deserialize, Serialize};
 
-use crate::domains::media::types::MediaItemResponse;
+use crate::domains::media::types::MediaBrowseItemResponse;
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct SearchQuery {
     pub q: Option<String>,
     #[serde(rename = "type")]
@@ -26,6 +26,11 @@ pub struct SearchQuery {
     pub year: Option<i32>,
     pub rating_min: Option<f32>,
     pub limit: Option<u32>,
+    pub cursor: Option<String>,
+    pub sort: Option<String>,
+    pub order: Option<String>,
+    pub watch: Option<String>,
+    pub favorite: Option<bool>,
 }
 
 #[derive(Debug, Clone)]
@@ -36,6 +41,11 @@ pub struct SearchParams {
     pub year: Option<i32>,
     pub rating_min: Option<f32>,
     pub limit: u32,
+    pub cursor: Option<String>,
+    pub sort: String,
+    pub order: String,
+    pub watch: String,
+    pub favorite: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -55,6 +65,8 @@ pub struct SearchFacets {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SearchResponse {
-    pub items: Vec<MediaItemResponse>,
+    pub items: Vec<MediaBrowseItemResponse>,
     pub facets: SearchFacets,
+    pub cursor: Option<String>,
+    pub has_more: bool,
 }

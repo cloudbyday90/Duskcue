@@ -54,6 +54,39 @@ pub async fn parent_unlock(
     ))
 }
 
+pub async fn get_viewing_preferences(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+) -> Result<Json<CurrentViewingPreferencesResponse>, AppError> {
+    Ok(Json(
+        service::get_viewing_preferences(
+            &state.pool,
+            user.user_id,
+            user.session_id,
+            user.profile_id,
+        )
+        .await?,
+    ))
+}
+
+pub async fn update_viewing_preferences(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<UpdateViewingPreferencesRequest>,
+) -> Result<Json<CurrentViewingPreferencesResponse>, AppError> {
+    validate_request(&req, "/api/v1/profiles/current/viewing-preferences")?;
+    Ok(Json(
+        service::update_viewing_preferences(
+            &state.pool,
+            user.user_id,
+            user.session_id,
+            user.profile_id,
+            req,
+        )
+        .await?,
+    ))
+}
+
 pub async fn create_profile(
     State(state): State<AppState>,
     user: AuthenticatedUser,

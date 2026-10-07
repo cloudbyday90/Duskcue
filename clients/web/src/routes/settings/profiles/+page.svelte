@@ -6,7 +6,8 @@
   See LICENSE file for details.
 -->
 <script>
-    import { onMount } from 'svelte';
+    import { onMount, getContext } from 'svelte';
+    import ProfileNameEditor from '$lib/components/ProfileNameEditor.svelte';
     import { listLibraries } from '$lib/api/libraries.js';
     import { createProfile, deleteProfile, listProfiles, updateProfile } from '$lib/api/profiles.js';
     import { currentUser } from '$lib/stores/auth.js';
@@ -21,6 +22,11 @@
     let error = $state('');
     let createOpen = $state(false);
     let form = $state(newProfileForm());
+    const refreshProfiles = getContext('refresh-profiles');
+    function nameUpdated(profile) {
+        profiles = profiles.map((item) => item.id === profile.id ? profile : item);
+        refreshProfiles?.();
+    }
 
     function newProfileForm() {
         return {
@@ -192,6 +198,7 @@
                 <section class="profile-card" class:active={profile.id === $currentUser?.active_profile_id}>
                     <div class="avatar">{profile.name?.[0]?.toUpperCase() || 'P'}</div>
                     <div class="profile-heading"><h2>{profile.name}</h2>{#if profile.profile_type === 'kids'}<span>Kids</span>{/if}{#if profile.is_default}<span>Default</span>{/if}</div>
+                    <ProfileNameEditor {profile} disabled={saving} onupdated={nameUpdated} />
                     {#if profile.profile_type === 'kids'}
                         <div class="kids-controls">
                             <label>Maximum rating <select bind:value={profile.max_content_rating}>{#each RATINGS as rating}<option value={rating}>{rating}</option>{/each}</select></label>

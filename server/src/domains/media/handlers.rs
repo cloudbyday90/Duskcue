@@ -32,53 +32,52 @@ use crate::state::AppState;
 use super::service;
 use super::types::*;
 
-#[derive(Debug, Clone, Deserialize)]
-pub struct ListMediaItemsQuery {
-    pub library_id: Option<Uuid>,
-    pub r#type: Option<String>,
-    pub limit: Option<u32>,
-    pub cursor: Option<String>,
-    pub order: Option<String>,
-}
-
 pub async fn list_media_items(
     State(state): State<AppState>,
     user: AuthenticatedUser,
-    Query(query): Query<ListMediaItemsQuery>,
-) -> Result<Json<MediaItemListResponse>, AppError> {
-    let limit = query.limit.unwrap_or(20).clamp(1, 100);
-    let order = query.order.as_deref().unwrap_or("desc");
+    Query(query): Query<MediaBrowseQuery>,
+) -> Result<Json<MediaBrowseListResponse>, AppError> {
+    let scope = crate::domains::media::access::load_browse_scope(&state.pool, &user).await?;
+    Ok(Json(
+        service::browse_media_items(&state.pool, &scope, &query).await?,
+    ))
+}
 
-    if let Some(ref t) = query.r#type {
-        service::validate_media_type(t)?;
-    }
+pub async fn list_continue_watching(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Query(query): Query<MediaBrowsePageQuery>,
+) -> Result<Json<MediaBrowseListResponse>, AppError> {
+    let scope = crate::domains::media::access::load_browse_scope(&state.pool, &user).await?;
+    Ok(Json(
+        service::browse_continue_watching(&state.pool, &scope, &query).await?,
+    ))
+}
 
-    let mut response = service::list_media_items(
-        &state.pool,
-        query.library_id,
-        query.r#type.as_deref(),
-        limit,
-        query.cursor.as_deref(),
-        order,
-    )
-    .await?;
+pub async fn list_series_seasons(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(series_id): Path<Uuid>,
+    Query(query): Query<MediaBrowsePageQuery>,
+) -> Result<Json<MediaBrowseListResponse>, AppError> {
+    let scope = crate::domains::media::access::load_browse_scope(&state.pool, &user).await?;
+    crate::domains::profiles::service::assert_media_access(&state.pool, &scope, series_id).await?;
+    Ok(Json(
+        service::browse_series_seasons(&state.pool, &scope, series_id, &query).await?,
+    ))
+}
 
-    let scope = crate::domains::profiles::service::load_profile_scope(
-        &state.pool,
-        user.user_id,
-        user.profile_id,
-        user.has_all_library_access,
-    )
-    .await?;
-    response.items.retain(|item| {
-        crate::domains::profiles::service::is_media_allowed(
-            &scope,
-            item.library_id,
-            item.content_rating.as_deref(),
-        )
-    });
-
-    Ok(Json(response))
+pub async fn list_season_episodes(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Path(season_id): Path<Uuid>,
+    Query(query): Query<MediaBrowsePageQuery>,
+) -> Result<Json<MediaBrowseListResponse>, AppError> {
+    let scope = crate::domains::media::access::load_browse_scope(&state.pool, &user).await?;
+    crate::domains::profiles::service::assert_media_access(&state.pool, &scope, season_id).await?;
+    Ok(Json(
+        service::browse_season_episodes(&state.pool, &scope, season_id, &query).await?,
+    ))
 }
 
 pub async fn get_media_item(

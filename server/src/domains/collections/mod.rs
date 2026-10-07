@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub(crate) mod browsing;
 pub mod error;
 pub mod handlers;
 pub mod service;
@@ -27,7 +28,23 @@ use axum::routing::{get, post, put};
 use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router<AppState> {
+    use crate::cache::{NO_STORE_CACHE_CONTROL, cache_control_layer};
     Router::new()
+        .route(
+            "/api/v1/browse/collections",
+            get(handlers::browse_collections)
+                .route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL)),
+        )
+        .route(
+            "/api/v1/browse/collections/{id}",
+            get(handlers::browse_collection)
+                .route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL)),
+        )
+        .route(
+            "/api/v1/browse/collections/{id}/items",
+            get(handlers::browse_collection_items)
+                .route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL)),
+        )
         .route(
             "/api/v1/collections",
             get(handlers::list_collections).post(handlers::create_collection),

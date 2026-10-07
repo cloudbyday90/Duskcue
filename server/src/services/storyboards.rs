@@ -41,6 +41,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use thiserror::Error;
+#[cfg(not(target_os = "linux"))]
 use tokio::process::Command;
 
 // ---------------------------------------------------------------------------
@@ -513,21 +514,6 @@ pub async fn generate_storyboard(
     })
 }
 
-/// Spawn FFmpeg to produce a single sprite sheet covering the window
-/// `[sheet_start_secs, sheet_start_secs + window_secs)`.
-///
-/// `-ss` is placed *before* `-i` for fast keyframe-accurate seek — without
-/// it FFmpeg decodes from the start of the file for every sheet, which is
-/// catastrophic for long content. With `keyframe_only = true`, FFmpeg's
-/// decoder skips inter-frame decoding entirely (~100x speedup).
-///
-/// On Linux, the FFmpeg subprocess is sandboxed via `pre_exec` (landlock +
-/// seccomp) — see [`crate::services::sandbox`]. The sandbox grants
-/// read-only access to system paths + the source media path, and
-/// read-write access to the per-file storyboard output directory. Sandbox
-/// failures are non-fatal: the closure logs a warning and returns `Ok(())`
-/// so FFmpeg still starts without the sandbox. Non-Linux platforms are
-/// no-ops (no `pre_exec` hook).
 async fn invoke_ffmpeg_for_sheet(
     source: &Path,
     output: &Path,
@@ -544,6 +530,19 @@ async fn invoke_ffmpeg_for_sheet(
         rows = config.sprite_rows
     );
 
+    #[cfg(target_os = "linux")]
+    let mut prepared = crate::services::sandbox::launch::PreparedLaunch::new(
+        &crate::services::sandbox::SandboxConfig {
+            media_path: source,
+            transcode_dir: output.parent().ok_or_else(|| {
+                StoryboardPipelineError::FfmpegSpawn("missing storyboard output parent".into())
+            })?,
+        },
+    )
+    .map_err(|error| StoryboardPipelineError::FfmpegSpawn(error.to_string()))?;
+    #[cfg(target_os = "linux")]
+    let mut cmd = prepared.command();
+    #[cfg(not(target_os = "linux"))]
     let mut cmd = Command::new("ffmpeg");
     cmd.arg("-hide_banner").arg("-nostdin").arg("-nostats");
 
@@ -575,48 +574,21 @@ async fn invoke_ffmpeg_for_sheet(
         .arg("-y")
         .arg(output);
 
-    // Sandbox the FFmpeg child on Linux. The closure captures owned PathBufs
-    // because `pre_exec` runs in the forked child process — borrows would not
-    // survive the fork. Sandbox failures degrade gracefully (warn + continue)
-    // per SECURITY.md so generation never hard-fails on a kernel without
-    // landlock or on a misconfigured mount.
-    #[cfg(target_os = "linux")]
-    {
-        let media = source.to_path_buf();
-        let out_dir = output
-            .parent()
-            .map(|p| p.to_path_buf())
-            .unwrap_or_else(|| std::path::PathBuf::from("."));
-        unsafe {
-            cmd.pre_exec(move || {
-                use crate::services::sandbox::{SandboxConfig, apply_sandbox};
-                let config = SandboxConfig {
-                    media_path: &media,
-                    transcode_dir: &out_dir,
-                };
-                match apply_sandbox(&config) {
-                    Ok(()) => Ok(()),
-                    Err(e) => {
-                        tracing::warn!(
-                            error = %e,
-                            "storyboard ffmpeg sandbox setup failed (continuing without sandbox)"
-                        );
-                        Ok(())
-                    }
-                }
-            });
-        }
-    }
-
     cmd.stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::piped())
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true);
 
+    #[cfg(target_os = "linux")]
+    let output_result =
+        crate::services::sandbox::owned_output::output(cmd, prepared, output.to_path_buf())
+            .await
+            .map_err(|error| StoryboardPipelineError::FfmpegSpawn(error.to_string()))?;
+    #[cfg(not(target_os = "linux"))]
     let output_result = cmd
         .output()
         .await
-        .map_err(|e| StoryboardPipelineError::FfmpegSpawn(e.to_string()))?;
+        .map_err(|error| StoryboardPipelineError::FfmpegSpawn(error.to_string()))?;
 
     if !output_result.status.success() {
         return Err(StoryboardPipelineError::FfmpegFailed {

@@ -61,6 +61,20 @@ pub struct LibraryListResponse {
     pub total_pages: u32,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct BrowseLibraryResponse {
+    pub id: Uuid,
+    pub name: String,
+    pub r#type: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BrowseLibraryListResponse {
+    pub items: Vec<BrowseLibraryResponse>,
+    pub cursor: Option<String>,
+    pub has_more: bool,
+}
+
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct CreateLibraryRequest {
     #[validate(length(min = 1, max = 200))]

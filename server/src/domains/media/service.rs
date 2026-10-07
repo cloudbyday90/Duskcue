@@ -24,14 +24,19 @@ use super::types::{
     VALID_IDENTIFICATION_SOURCES, VALID_MATCH_STATES, VALID_MEDIA_ITEM_TYPES,
 };
 
+pub use super::browsing::{
+    browse_collection_items, browse_continue_watching, browse_media_items, browse_season_episodes,
+    browse_series_seasons,
+};
+
 const GET_MEDIA_ITEM_SQL: &str = r#"SELECT mi.*, s.status as series_status,
-                  sn.series_id, sn.season_number, sn.id as season_id,
+                  COALESCE(ep.series_id, sn.series_id) as series_id, sn.season_number, sn.id as season_id,
                   ep.episode_number, ep.absolute_episode_number,
                   COALESCE(mf.cnt, 0) as file_count
            FROM media_items mi
            LEFT JOIN series s ON s.id = mi.id
-           LEFT JOIN seasons sn ON sn.id = mi.id
            LEFT JOIN episodes ep ON ep.id = mi.id
+           LEFT JOIN seasons sn ON sn.id = CASE WHEN mi.type = 'season' THEN mi.id ELSE ep.season_id END
            LEFT JOIN LATERAL (
                SELECT count(*) as cnt FROM media_files mf WHERE mf.media_item_id = mi.id
            ) mf ON true

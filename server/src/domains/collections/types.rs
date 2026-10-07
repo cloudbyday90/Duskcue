@@ -123,6 +123,22 @@ pub struct ListCollectionItemsQuery {
     pub page_size: Option<u32>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct BrowseCollectionResponse {
+    pub id: Uuid,
+    pub name: String,
+    pub description: Option<String>,
+    pub item_count: i64,
+    pub cover_media_item_id: Option<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BrowseCollectionListResponse {
+    pub items: Vec<BrowseCollectionResponse>,
+    pub cursor: Option<String>,
+    pub has_more: bool,
+}
+
 #[derive(Debug, Clone, Deserialize, Validate)]
 pub struct CreateCollectionRequest {
     #[validate(length(min = 1, max = 200))]

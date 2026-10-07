@@ -14,8 +14,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub(crate) mod access;
+pub mod browsing;
 pub mod error;
 pub mod handlers;
+pub(crate) mod projection;
 pub mod service;
 pub mod types;
 
@@ -24,11 +27,31 @@ pub use error::MediaError;
 use axum::Router;
 use axum::routing::{get, patch};
 
+use crate::cache::{NO_STORE_CACHE_CONTROL, cache_control_layer};
 use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
-        .route("/api/v1/media-items", get(handlers::list_media_items))
+        .route(
+            "/api/v1/media-items",
+            get(handlers::list_media_items)
+                .route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL)),
+        )
+        .route(
+            "/api/v1/media-items/continue-watching",
+            get(handlers::list_continue_watching)
+                .route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL)),
+        )
+        .route(
+            "/api/v1/media-items/{id}/seasons",
+            get(handlers::list_series_seasons)
+                .route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL)),
+        )
+        .route(
+            "/api/v1/media-items/{id}/episodes",
+            get(handlers::list_season_episodes)
+                .route_layer(cache_control_layer(NO_STORE_CACHE_CONTROL)),
+        )
         .route(
             "/api/v1/media-items/{id}",
             patch(handlers::update_media_item).delete(handlers::delete_media_item),

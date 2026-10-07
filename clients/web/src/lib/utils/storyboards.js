@@ -46,7 +46,7 @@ export function parseStoryboardVtt(vttText) {
         if (timeParts.length !== 2) continue;
 
         const startMs = parseTimecodeToMs(timeParts[0].trim());
-        const endMs = parseTimecodeToMs(timeParts[1].split(/\s/)[0].trim());
+        const endMs = parseTimecodeToMs(timeParts[1].trim().split(/\s/)[0]);
         if (startMs == null || endMs == null) continue;
 
         const payloadLines = lines.slice(timeLineIdx + 1);

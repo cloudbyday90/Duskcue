@@ -13,8 +13,12 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
+mod browsing;
+mod cursor;
 pub mod error;
+mod facets;
 pub mod handlers;
+mod query;
 pub mod service;
 pub mod types;
 

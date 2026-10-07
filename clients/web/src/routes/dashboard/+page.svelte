@@ -7,239 +7,129 @@
 -->
 <script>
     import { m } from '$lib/paraglide/messages.js';
+    import { messageLocale } from '$lib/localization/message-locale.js';
     import { onMount } from 'svelte';
-    import { listMediaItems } from '$lib/api/media.js';
-    import { getWatchData } from '$lib/api/playback.js';
-    import { listLibraries } from '$lib/api/libraries.js';
-    import { libraries } from '$lib/stores/libraries.js';
-    import { currentUser } from '$lib/stores/auth.js';
+    import { listMediaItems, listContinueWatching } from '$lib/api/media.js';
+    import { titleRoute } from '$lib/navigation/routes.js';
     import MediaCard from '$lib/components/MediaCard.svelte';
-    import { formatDuration } from '$lib/utils/format.js';
+    import ContinueCard from '$lib/components/ContinueCard.svelte';
+    import Artwork from '$lib/components/Artwork.svelte';
 
-    let loading = $state(true);
     let recentlyAdded = $state([]);
     let continueWatching = $state([]);
+    let recentLoading = $state(true);
+    let continueLoading = $state(true);
+    let recentError = $state(false);
+    let continueError = $state(false);
+    let continueMoreError = $state(false);
+    let continueCursor = $state(null);
+    let continueHasMore = $state(false);
+    let loadingMore = $state(false);
+    let requests;
+    let feature = $derived(recentlyAdded.find((item) => item.type === 'movie' && item.availability?.can_play));
 
-    let libraryCount = $derived($libraries.items.length);
-    let libraryLabel = $derived(libraryCount === 1 ? 'library' : 'libraries');
-
-    onMount(async () => {
-        await Promise.all([loadRecentlyAdded(), loadContinueWatching(), libraries.fetch()]);
-        loading = false;
+    onMount(() => {
+        requests = new AbortController();
+        loadRecentlyAdded();
+        loadContinueWatching();
+        return () => requests.abort();
     });
 
     async function loadRecentlyAdded() {
+        recentLoading = true;
+        recentError = false;
         try {
-            const response = await listMediaItems({ limit: 18, order: 'desc' });
-            recentlyAdded = response.items || response || [];
-        } catch {
-            recentlyAdded = [];
+            const response = await listMediaItems({ limit: 18, order: 'desc' }, { signal: requests.signal });
+            recentlyAdded = response.items || [];
+        } catch (error) {
+            if (error.name !== 'AbortError') recentError = true;
+        } finally {
+            if (!requests.signal.aborted) recentLoading = false;
         }
     }
 
-    async function loadContinueWatching() {
+    async function loadContinueWatching(append = false) {
+        if (append && (loadingMore || !continueHasMore)) return;
+        if (append) loadingMore = true;
+        else continueLoading = true;
+        continueError = false;
+        continueMoreError = false;
         try {
-            const response = await listMediaItems({ limit: 12, order: 'desc', type: 'movie' });
-            const items = response.items || response || [];
-            const watched = [];
-            for (const item of items) {
-                try {
-                    const wd = await getWatchData(item.id);
-                    if (wd.resume_position_ms > 0 && !wd.is_watched) {
-                        const durationMs = (item.runtime_seconds || 0) * 1000;
-                        const pct = durationMs > 0
-                            ? Math.min(100, (wd.resume_position_ms / durationMs) * 100)
-                            : 0;
-                        watched.push({ ...item, _progress: pct, _resume: wd.resume_position_ms });
-                    }
-                } catch {
-                }
+            const response = await listContinueWatching({ limit: 6, ...(append ? { cursor: continueCursor } : {}) }, { signal: requests.signal });
+            continueWatching = append ? [...continueWatching, ...response.items] : response.items;
+            continueCursor = response.cursor;
+            continueHasMore = response.has_more;
+        } catch (error) {
+            if (error.name !== 'AbortError') {
+                if (append) continueMoreError = true;
+                else continueError = true;
             }
-            continueWatching = watched;
-        } catch {
-            continueWatching = [];
+        } finally {
+            if (!requests.signal.aborted) {
+                continueLoading = false;
+                loadingMore = false;
+            }
         }
     }
 </script>
 
+<svelte:head><title>{m.routes_layout_home()} · Duskcue</title></svelte:head>
+
 <div class="dashboard">
-    <section class="hero">
-        <h1 class="hero-title">
-            Welcome back, {$currentUser?.display_name || 'there'}
-        </h1>
-        <p class="hero-subtitle">
-            {#if libraryCount > 0}
-                {libraryCount} {libraryLabel} · {recentlyAdded.length} recent {recentlyAdded.length === 1 ? 'item' : 'items'}
-            {:else}
-                No libraries configured yet. Visit Settings to create one.
-            {/if}
-        </p>
+    <header class="page-intro">
+        <h1 lang={messageLocale('tonight_home_heading')} class="tonight-heading">{m.tonight_home_heading()}</h1>
+        <p lang={messageLocale('tonight_home_description')}>{m.tonight_home_description()}</p>
+    </header>
+    <section class="content-section" aria-labelledby="continue-heading" aria-busy={continueLoading}>
+        <h2 lang={messageLocale('tonight_continue_watching')} id="continue-heading">{m.tonight_continue_watching()}</h2>
+        {#if continueLoading}<p lang={messageLocale('tonight_loading')} class="section-state" role="status">{m.tonight_loading()}</p>
+        {:else if continueError}
+            <div class="section-state"><p lang={messageLocale('tonight_home_continue_error')} role="status">{m.tonight_home_continue_error()}</p><button lang={messageLocale('tonight_try_again')} class="secondary-action" onclick={() => loadContinueWatching()}>{m.tonight_try_again()}</button></div>
+        {:else if continueWatching.length}
+            <div class="continue-gallery">{#each continueWatching as item (item.id)}<ContinueCard {item} />{/each}</div>
+            {#if continueMoreError}<p lang={messageLocale('tonight_home_continue_error')} role="status">{m.tonight_home_continue_error()}</p>{/if}
+            {#if continueHasMore}<button lang={loadingMore ? messageLocale('tonight_loading') : messageLocale('tonight_load_more')} class="secondary-action more" onclick={() => loadContinueWatching(true)} disabled={loadingMore}>{loadingMore ? m.tonight_loading() : m.tonight_load_more()}</button>{/if}
+        {:else}<p lang={messageLocale('tonight_home_no_continue')} class="section-state">{m.tonight_home_no_continue()}</p>{/if}
     </section>
-
-    {#if loading}
-        <div class="loading-state">
-            <div class="loading-spinner"></div>
-            <p>{m.routes_dashboard_page_loading_your_library()}</p>
-        </div>
-    {:else}
-        {#if continueWatching.length > 0}
-            <section class="content-row">
-                <h2 class="row-title">{m.routes_dashboard_page_continue_watching()}</h2>
-                <div class="card-row">
-                    {#each continueWatching as item (item.id)}
-                        <div class="card-wrapper">
-                            <MediaCard {item} progress={item._progress} showOverview={false} />
-                        </div>
-                    {/each}
-                </div>
-            </section>
-        {/if}
-
-        <section class="content-row">
-            <h2 class="row-title">{m.routes_dashboard_page_recently_added()}</h2>
-            {#if recentlyAdded.length > 0}
-                <div class="card-row">
-                    {#each recentlyAdded as item (item.id)}
-                        <div class="card-wrapper">
-                            <MediaCard {item} />
-                        </div>
-                    {/each}
-                </div>
-            {:else}
-                <div class="empty-state">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--color-text-muted)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M2 3h20v18H2z" />
-                        <path d="M2 8h20M8 3v18" />
-                    </svg>
-                    <p class="empty-title">{m.routes_dashboard_page_no_media_found()}</p>
-                    <p class="empty-subtitle">
-                        Create a library and run a scan to populate your catalog.
-                    </p>
-                    <a href="/settings/libraries" class="btn-link">{m.routes_dashboard_page_configure_libraries()}</a>
-                </div>
-            {/if}
+    {#if feature}
+        <section class="feature" aria-labelledby="feature-title">
+            <div class="feature-art"><Artwork itemId={feature.id} type="backdrop" size="w780" eager /></div>
+            <div class="feature-copy">
+                <p lang={messageLocale('tonight_home_feature')} class="eyebrow">{m.tonight_home_feature()}</p>
+                <h2 id="feature-title" class="tonight-heading">{feature.title}</h2>
+                {#if feature.overview}<p class="overview">{feature.overview}</p>{/if}
+                <a lang={messageLocale('tonight_home_explore')} class="primary-action" href={titleRoute(feature, '/dashboard')}>{m.tonight_home_explore()}</a>
+            </div>
         </section>
     {/if}
+    <section class="content-section" aria-labelledby="recent-heading" aria-busy={recentLoading}>
+        <div class="section-heading"><h2 lang={messageLocale('tonight_recently_added')} id="recent-heading">{m.tonight_recently_added()}</h2><a lang={messageLocale('tonight_home_view_all')} href="/media" class="view-all">{m.tonight_home_view_all()}</a></div>
+        {#if recentLoading}<p lang={messageLocale('tonight_loading')} class="section-state" role="status">{m.tonight_loading()}</p>
+        {:else if recentError}
+            <div class="section-state"><p lang={messageLocale('tonight_home_recent_error')} role="status">{m.tonight_home_recent_error()}</p><button lang={messageLocale('tonight_try_again')} class="secondary-action" onclick={loadRecentlyAdded}>{m.tonight_try_again()}</button></div>
+        {:else if recentlyAdded.length}
+            <div class="poster-gallery">{#each recentlyAdded as item (item.id)}<MediaCard {item} href={titleRoute(item, '/dashboard')} />{/each}</div>
+        {:else}<p lang={messageLocale('tonight_home_empty')} class="section-state">{m.tonight_home_empty()}</p>{/if}
+    </section>
 </div>
 
 <style>
-    .dashboard {
-        display: flex;
-        flex-direction: column;
-        gap: 2.5rem;
-    }
-
-    .hero {
-        padding: 1rem 0 0.5rem;
-    }
-
-    .hero-title {
-        font-size: 1.75rem;
-        font-weight: 700;
-        color: var(--color-text-primary);
-    }
-
-    .hero-subtitle {
-        font-size: 0.875rem;
-        color: var(--color-text-secondary);
-        margin-top: 0.375rem;
-    }
-
-    .content-row {
-        display: flex;
-        flex-direction: column;
-        gap: 1rem;
-    }
-
-    .row-title {
-        font-size: 1.125rem;
-        font-weight: 600;
-        color: var(--color-text-primary);
-    }
-
-    .card-row {
-        display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-        gap: 1rem;
-    }
-
-    .card-wrapper {
-        min-width: 0;
-    }
-
-    .loading-state {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 1rem;
-        padding: 4rem 0;
-        color: var(--color-text-muted);
-    }
-
-    .loading-spinner {
-        width: 32px;
-        height: 32px;
-        border: 3px solid var(--color-border);
-        border-top-color: var(--color-accent);
-        border-radius: 50%;
-        animation: spin 0.8s linear infinite;
-    }
-
-    @keyframes spin {
-        to {
-            transform: rotate(360deg);
-        }
-    }
-
-    .empty-state {
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 3rem 1rem;
-        text-align: center;
-    }
-
-    .empty-title {
-        font-size: 1rem;
-        font-weight: 600;
-        color: var(--color-text-secondary);
-        margin-top: 0.5rem;
-    }
-
-    .empty-subtitle {
-        font-size: 0.8125rem;
-        color: var(--color-text-muted);
-    }
-
-    .btn-link {
-        display: inline-block;
-        margin-top: 1rem;
-        padding: 0.5rem 1.25rem;
-        background-color: var(--color-accent);
-        color: var(--color-bg-deep);
-        font-size: 0.8125rem;
-        font-weight: 600;
-        border-radius: var(--radius-sm);
-        transition: background-color var(--transition-fast);
-    }
-
-    .btn-link:hover {
-        background-color: var(--color-accent-hover);
-    }
-
-    @media (max-width: 768px) {
-        .hero-title {
-            font-size: 1.375rem;
-        }
-
-        .card-row {
-            grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-            gap: 0.75rem;
-        }
-
-        .dashboard {
-            gap: 1.75rem;
-        }
-    }
+    .dashboard { display: flex; flex-direction: column; gap: 2.75rem; }
+    .page-intro { display: grid; gap: 0.65rem; }
+    .page-intro h1 { font-size: clamp(2rem, 4vw, 3rem); }
+    .page-intro p { color: var(--color-text-secondary); }
+    .content-section { display: flex; flex-direction: column; gap: 1.25rem; }
+    .content-section h2 { font-size: 1.2rem; font-weight: 500; }
+    .continue-gallery { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 18rem), 1fr)); gap: var(--gallery-gap); }
+    .section-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; }
+    .view-all { color: var(--color-accent); min-height: 44px; display: flex; align-items: center; font-size: 0.85rem; }
+    .section-state { display: flex; align-items: center; flex-wrap: wrap; gap: 1rem; color: var(--color-text-secondary); padding: 1.5rem; background: var(--color-bg-surface); border-radius: var(--radius-lg); }
+    .more { align-self: center; }
+    .feature { display: grid; grid-template-columns: 1fr 1fr; min-height: 250px; max-height: 420px; background: var(--color-bg-surface); border: 1px solid var(--color-border-subtle); border-radius: var(--radius-lg); overflow: hidden; }
+    .feature-art { min-width: 0; }
+    .feature-copy { display: flex; flex-direction: column; align-items: flex-start; justify-content: center; gap: 1rem; padding: clamp(1.5rem, 3vw, 3rem); min-width: 0; }
+    .eyebrow { font-size: 0.75rem; color: var(--color-accent); text-transform: uppercase; letter-spacing: 0.1em; }
+    .feature h2 { font-size: clamp(1.8rem, 3vw, 3rem); overflow-wrap: anywhere; }
+    .overview { color: var(--color-text-secondary); display: -webkit-box; -webkit-line-clamp: 3; line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+    @media (max-width: 700px) { .feature { grid-template-columns: 1fr; max-height: none; } .feature-art { aspect-ratio: 16 / 9; } }
 </style>

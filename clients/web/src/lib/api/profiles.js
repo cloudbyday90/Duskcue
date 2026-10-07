@@ -42,6 +42,17 @@ export async function unlockParentProfile(data) {
     return post('/profiles/parent-unlock', data, { profileScoped: false });
 }
 
+export function getViewingPreferences(options = {}) {
+    return get('/profiles/current/viewing-preferences', {}, options);
+}
+
+export function saveViewingPreferences(profileId, viewingPreferences, options = {}) {
+    return patch('/profiles/current/viewing-preferences', {
+        expected_profile_id: profileId,
+        viewing_preferences: viewingPreferences,
+    }, options);
+}
+
 export async function listAmbientChannels() {
     return get('/ambient-channels');
 }

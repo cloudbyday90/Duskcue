@@ -668,7 +668,14 @@ pub async fn get_transcode_manifest(
     user: AuthenticatedUser,
     Path(session_id): Path<uuid::Uuid>,
 ) -> Result<Response, AppError> {
-    assert_transcode_profile_access(&state, &user, session_id).await?;
+    service::assert_transcode_profile_access(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+        session_id,
+    )
+    .await?;
     let content = service::get_transcode_manifest(&state.transcode_manager, session_id).await?;
 
     Ok(Response::builder()
@@ -684,7 +691,14 @@ pub async fn get_transcode_playlist(
     user: AuthenticatedUser,
     Path((session_id, rendition)): Path<(uuid::Uuid, String)>,
 ) -> Result<Response, AppError> {
-    assert_transcode_profile_access(&state, &user, session_id).await?;
+    service::assert_transcode_profile_access(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+        session_id,
+    )
+    .await?;
     let content =
         service::get_transcode_playlist(&state.transcode_manager, session_id, &rendition).await?;
 
@@ -701,7 +715,14 @@ pub async fn get_transcode_segment(
     user: AuthenticatedUser,
     Path((session_id, rendition, segment)): Path<(uuid::Uuid, String, String)>,
 ) -> Result<Response, AppError> {
-    assert_transcode_profile_access(&state, &user, session_id).await?;
+    service::assert_transcode_profile_access(
+        &state.pool,
+        user.user_id,
+        user.profile_id,
+        user.has_all_library_access,
+        session_id,
+    )
+    .await?;
     let data =
         service::get_transcode_segment(&state.transcode_manager, session_id, &rendition, &segment)
             .await?;
@@ -718,29 +739,9 @@ pub async fn get_transcode_segment(
         .status(StatusCode::OK)
         .header(header::CONTENT_TYPE, content_type)
         .header(header::CONTENT_LENGTH, data.len().to_string())
-        .header(header::CACHE_CONTROL, "max-age=3600")
+        .header(header::CACHE_CONTROL, "private, no-store")
         .body(Body::from(data))
         .unwrap())
-}
-
-async fn assert_transcode_profile_access(
-    state: &AppState,
-    user: &AuthenticatedUser,
-    session_id: uuid::Uuid,
-) -> Result<(), AppError> {
-    let media_item_id =
-        service::get_session_media_item_id(&state.pool, user.user_id, user.profile_id, session_id)
-            .await?;
-    let scope = crate::domains::profiles::service::load_profile_scope(
-        &state.pool,
-        user.user_id,
-        user.profile_id,
-        user.has_all_library_access,
-    )
-    .await?;
-    crate::domains::profiles::service::assert_media_access(&state.pool, &scope, media_item_id)
-        .await?;
-    Ok(())
 }
 
 pub async fn list_streaming_policies(

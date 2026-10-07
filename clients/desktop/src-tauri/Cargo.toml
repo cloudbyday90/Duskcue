@@ -25,4 +25,4 @@ tauri-plugin-notification = "2.3.3"
 tauri-plugin-single-instance = { version = "2.4.2", features = ["deep-link"] }
 
 [build-dependencies]
-tauri-build = "2"
+tauri-build = { version = "2", features = [] }
