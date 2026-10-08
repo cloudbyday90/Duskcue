@@ -20,6 +20,9 @@ mod guarded_docker;
 #[path = "support/playback_stop_profiles.rs"]
 mod playback_stop_profiles;
 use playback_stop_profiles::{DeletedProfileFixture, deleted_profile_cleanup};
+#[cfg(target_os = "linux")]
+#[path = "support/playback_progressive.rs"]
+mod playback_progressive;
 use uuid::Uuid;
 
 async fn post(
@@ -411,6 +414,21 @@ async fn stop_is_idempotent_serializes_heartbeat_seek_and_retains_original_profi
         source: &source,
     })
     .await?;
+    #[cfg(target_os = "linux")]
+    if playback_progressive::enabled() {
+        playback_progressive::real_progressive_playback(playback_progressive::ProgressiveFixture {
+            pool: &pool,
+            state: &state,
+            source: &source,
+            token: &tokens[0],
+            peer_token: &tokens[1],
+            user: owner,
+            original_profile: original,
+            kids_profile: kids,
+            library,
+        })
+        .await?;
+    }
     let deleted_file_session = insert_play(&pool, owner, original, item, library, file).await?;
     sqlx::query("DELETE FROM media_files WHERE id=$1")
         .bind(file)
