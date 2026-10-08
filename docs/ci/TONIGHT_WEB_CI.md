@@ -2,6 +2,16 @@
 
 Prepared October 7, 2026. This Linux CI path qualifies the current shared web sources and encoded browser fixtures. It does not qualify native desktop behavior, assistive-technology speech, production database orchestration or deployment. No local heavy workflow was launched while preparing it.
 
+## Final complete qualification — October 8
+
+Exact `c1859eb8ecea45c34c75f665e15615d2ecb8cf4d`, [run 37748877546/job 113222274462](https://github.com/cloudbyday90/Duskcue/actions/runs/37748877546/job/113222274462), passes all **120 cases and 120 attempts**, with zero unexpected, skipped, retried or flaky cases. Caption3/progressive3/locale8/background1/Remember1 mandatory admission passes first attempt. Shared checking has zero errors/warnings, 37 Node plus 375 Vitest = 412 units and ordinary production web build pass. Matching fresh AMD64 producer/source/image/nine-asset admission succeeds; both Linux lanes and current native job independently pass.
+
+The actual headed Chrome/default-context case records no headless arguments and equal window IDs `144313416`. Trusted Hidden at 7088.8 ms holds seven seconds unchanged for **11,001.647649 ms** with the same decoded source, one start and no focused card/open menu. Trusted Visible at 18118.4 ms restores seven without catch-up, then decrements normally. Cancel stays untimed after another eleven seconds; canonical Title and exactly one matching Stop pass. Original owned Chrome PID6822 exits zero without signal/kill fallback, and fixture physical cleanup passes. Root inspected both JSON attachments directly. This is browser-produced state, not a synthetic event or visibility override.
+
+Browser artifact `11537792213` is 1,643,873 bytes, SHA256 `3bf72d41773147878aaea8d8260e49612a3cb4c20330ada48fbc08e4f23316ad`, retained under ignored `.cache/tonight-ci/37748877546/browser`. Current compact caption/focus, RTL and cancelled Up-next captures were inspected; all eleven actual-caption geometry records have 81 decoded/visible/uncovered pixels and no obstruction. French/Arabic own-element/fallback language and progressive first-frame/source ownership evidence pass. The [completion audit](TONIGHT_COMPLETION_AUDIT.md) preserves available-environment, baseline lint, historical memory and live-server limits. This completes the available full client qualification; earlier sections record the failures and source corrections that led to it.
+
+## Historical qualification and harness corrections
+
 Verified October 8 `685377e` browser report in run `37733976064`: all 119 cases execute; 115 pass and four fail, with zero skips/flaky cases and 123 attempts. The three actual-caption and eight French/Arabic localization cases pass first attempt. Three progressive failures occur at exact canonical Title-query comparison after media assertions, so their source-only correction adds explicit catalog `from` entry URLs without changing the comparator. The headed background case remains visibly foregrounded on both attempts and requires a real harness repair; no synthetic event, visibility override or skip can qualify it. The 34,358,098-byte retained browser archive SHA256 is `c527944acf00adbe09ed3874a27dca8f12c6b2b5d401044658f228b9bc1224cc`. The full result gate correctly stays failed until a repaired complete run passes.
 
 ### Real tab visibility harness correction — October 8

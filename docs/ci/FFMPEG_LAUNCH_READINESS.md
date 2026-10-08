@@ -1,6 +1,12 @@
 # Managed FFmpeg verification readiness
 
-Current hosted qualification, October 8, 2026: immutable checkpoint `b51369f` passes all seven managed cases, the exact audio/caption producer and the mandatory PostgreSQL-backed progressive HTTP contract on AMD64 and ARM64. Counts are 48/48 and 47/47. Introduced lint diagnostics remain removed; strict Clippy retains thirteen classified baseline diagnostics. Source-bound proof is recorded at the end of this note. Browser-to-live-server playback and local Windows-bind execution are separate unqualified boundaries.
+Final hosted qualification, October 8, 2026: immutable checkpoint `c1859eb` passes all seven managed cases, the exact audio/caption producer and mandatory PostgreSQL-backed progressive HTTP on AMD64 and ARM64, 48/48 and 47/47. Its full 120-case browser report also passes first attempt. Introduced lint diagnostics remain removed; strict Clippy retains thirteen classified baseline diagnostics. Source-bound proof is below; browser-to-live-server and local Windows-bind execution retain their precise limits.
+
+## Final backend qualification — `c1859eb`
+
+Run `37748877546` binds full commit `c1859eb8ecea45c34c75f665e15615d2ecb8cf4d`, backend aggregate `d9277be6f6d658643312fee592a6d14ff08a3a34c0e0ff5cca74545e156759c8` and all 406 compiler/runtime/result source entries. Backend source roots exclude the new web-only fixtures; their separate fresh shared/browser jobs pass 412 units and 120 journeys. Four native ELF/hash identities and all nine producer asset sizes/hashes are verified on each architecture. First live EVENT decoding is 1.58397 seconds AMD64 and 1.578518 ARM64, with one initial/four final segments and actual managed ENDLIST/Succeeded. Mandatory SQL/HTTP again proves the 600.554-second source, 285 final segments, four relative samples at 0.083008 and all physical identity/profile/refusal/seek/cache/capacity/child cleanup assertions. Compiler exit zero/no OOM and registered cleanup pass. Actual strict diagnostics remain exactly the thirteen baseline titles/locations, exit 101; no introduced helper diagnostic or allowance.
+
+AMD64 artifact `11537601734` is 32,537,648 bytes, archive SHA256 `479ce9c5fac2ca89a74d5b84a856b35942b0d2e77e019f82b11687f271281ad3`; ARM64 `11537249796` is 30,925,099 bytes, SHA256 `38391374137248d1cdaa56c0abe97c2292f25fd45291b671c6edcc1620deb78d`. Only streamed/header/source/asset inspection occurred locally; no downloaded binary ran. HTTP final encoder exit status and browser-to-live-server coupling remain explicitly unqualified, with independent managed Succeeded/client-fixture proof kept separate. [Final audit](TONIGHT_COMPLETION_AUDIT.md) traces every requirement.
 
 ## Earlier local source preparation — October 7
 
