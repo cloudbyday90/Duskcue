@@ -59,9 +59,10 @@ export function createPlaybackBackground({ document = globalThis.document, loadN
         request.finish = finish;
         Promise.resolve().then(() => Promise.allSettled([native.isMinimized(), native.isVisible()])).then((results) => {
             if (disposed || revision !== version) return;
-            const failed = results.find((result) => result.status === 'rejected');
-            if (failed) throw failed.reason;
-            const [minimized, visible] = results.map((result) => result.value);
+            const [minimized, visible] = results.map((result) => {
+                if (result.status === 'rejected') throw result.reason;
+                return result.value;
+            });
             if (typeof minimized !== 'boolean' || typeof visible !== 'boolean') throw new TypeError('Native background state is invalid');
             valid = true;
             publish({ nativeKnown: true, nativeBackground: minimized || !visible, nativeMinimized: minimized, nativeVisible: visible, error: null });
@@ -120,7 +121,7 @@ export function createPlaybackBackground({ document = globalThis.document, loadN
             unknown();
             void ready.then(() => { if (!disposed && active) void refreshNative(); });
         },
-        async canAdvance({ signal } = {}) {
+        async canAdvance({ signal = undefined } = {}) {
             await ready;
             if (disposed || signal?.aborted) return false;
             if (pending && !await pending.result) return false;

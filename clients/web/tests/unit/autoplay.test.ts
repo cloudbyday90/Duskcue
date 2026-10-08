@@ -290,11 +290,14 @@ describe('per-instance episode-end timing', () => {
 
     it('a delayed automatic background read cannot cross a changed profile or override Cancel', async () => {
         let finish;
-        const beforeAutomaticNext = vi.fn(() => new Promise((resolve) => { finish = resolve; }));
+        const beforeAutomaticNext = vi.fn((_options: { signal: AbortSignal }) => new Promise<boolean>((resolve) => { finish = resolve; }));
         const p = player({ beforeAutomaticNext });
         await p.controller.ended(endedContext);
         await vi.advanceTimersByTimeAsync(10_000);
-        const oldSignal = beforeAutomaticNext.mock.calls[0][0].signal;
+        const oldOptions = beforeAutomaticNext.mock.calls.at(0)?.[0];
+        expect(oldOptions).toBeDefined();
+        if (!oldOptions) throw new Error('The old automatic background check did not run');
+        const oldSignal = oldOptions.signal;
         await p.controller.ended({ ...endedContext, profileId: 'morgan' });
         expect(oldSignal.aborted).toBe(true);
         finish(true);
