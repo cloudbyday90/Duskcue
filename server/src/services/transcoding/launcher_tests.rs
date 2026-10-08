@@ -226,10 +226,15 @@ async fn actual_active_managed_ffmpeg_releases_child_before_cache_and_permit() -
             std::path::Path::new(&format!("/proc/{pid}")).exists(),
             "owned FFmpeg exited before active cancellation proof"
         );
-        anyhow::ensure!(
-            !running.directory.join("manifest.m3u8").exists(),
-            "infinite VOD fixture unexpectedly published a final playlist"
-        );
+        let manifest = running.directory.join("manifest.m3u8");
+        if manifest.exists() {
+            let playlist = tokio::fs::read_to_string(manifest).await?;
+            anyhow::ensure!(
+                playlist.contains("#EXT-X-PLAYLIST-TYPE:EVENT")
+                    && !playlist.contains("#EXT-X-ENDLIST"),
+                "active EVENT fixture published completion or an unexpected playlist type"
+            );
+        }
         Ok::<_, anyhow::Error>(())
     }
     .await;

@@ -13,6 +13,9 @@ mod guarded_docker;
 #[path = "arguments_local_tests.rs"]
 mod local;
 
+#[path = "arguments_source_probe.rs"]
+mod source_probe;
+
 #[test]
 fn hls_output_defaults_to_append_only_event_publication() {
     let arguments = build_hls_output_args(2, "/cache/seg_%04d.m4s", "/cache/manifest.m3u8");
@@ -290,6 +293,12 @@ async fn real_audio_first_default_description_and_selected_srt_decode_through_pr
         "libx264",
         "-preset",
         "ultrafast",
+        "-g",
+        "48",
+        "-keyint_min",
+        "48",
+        "-sc_threshold",
+        "0",
         "-threads",
         "2",
         "-c:a",
@@ -317,6 +326,7 @@ async fn real_audio_first_default_description_and_selected_srt_decode_through_pr
     .map(String::from)
     .collect();
     media_command(&directory, "ffmpeg", generate).await?;
+    source_probe::require_two_second_keyframes(&directory).await?;
     let probe: Value = serde_json::from_slice(
         &media_command(
             &directory,

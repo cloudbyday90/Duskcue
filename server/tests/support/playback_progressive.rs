@@ -5,8 +5,9 @@
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
-use axum::Router;
+use axum::extract::ConnectInfo;
 use axum::http::StatusCode;
+use axum::{Extension, Router};
 use duskcue::domains::{playback, profiles};
 use duskcue::services::encryption::EncryptionKey;
 use duskcue::services::transcoding::TranscodeSession;
@@ -107,7 +108,11 @@ pub(super) async fn real_progressive_playback(
     );
     let app = playback::router(state.clone())
         .merge(profiles::router(state.clone()))
-        .with_state(state.clone());
+        .with_state(state.clone())
+        .layer(Extension(ConnectInfo(std::net::SocketAddr::from((
+            [127, 0, 0, 1],
+            48027,
+        )))));
     let mut evidence = Evidence {
         root,
         item: Uuid::now_v7(),

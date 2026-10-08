@@ -2,6 +2,7 @@
 // Copyright (C) 2026-2026 Duskcue Contributors
 // Licensed under AGPL-3.0. See LICENSE for details.
 
+use anyhow::Context;
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
@@ -54,7 +55,13 @@ async fn request(
         .await?;
     let status = response.status();
     let bytes = to_bytes(response.into_body(), 65536).await?;
-    let problem: Value = serde_json::from_slice(&bytes)?;
+    let problem: Value = serde_json::from_slice(&bytes).with_context(|| {
+        format!(
+            "HTTP fixture {method} {path} returned non-JSON status {} ({} bytes)",
+            status.as_u16(),
+            bytes.len()
+        )
+    })?;
     if status.is_server_error() {
         eprintln!(
             "DUSKCUE_STOP_CONTRACT_PROBLEM={}",
