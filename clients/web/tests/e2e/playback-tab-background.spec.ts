@@ -9,7 +9,7 @@ import { test, expect } from './playback-fixtures';
 import { expectDecodedPlayback, expectTitleContext, openPlayback } from './playback-journey';
 import { mediaIds } from '../fixtures/catalog.js';
 
-const episodeUrl = `/media/${mediaIds.series}?season=${mediaIds.seasonOne}&episode=${mediaIds.episodeOne}`;
+const episodeUrl = `/media/${mediaIds.series}?season=${mediaIds.seasonOne}&episode=${mediaIds.episodeOne}&from=${encodeURIComponent('/media?type=series')}`;
 const pauseMs = 11_000;
 
 type VisibilityObservation = { state: string; hidden: boolean; trusted: boolean; time: number };

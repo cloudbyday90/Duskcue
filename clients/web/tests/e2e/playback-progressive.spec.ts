@@ -8,8 +8,8 @@ import { test, expect } from './playback-fixtures';
 import { expectDecodedPlayback, expectTitleContext, openPlayback } from './playback-journey';
 import { mediaIds } from '../fixtures/catalog.js';
 
-const episodeUrl = `/media/${mediaIds.series}?season=${mediaIds.seasonOne}&episode=${mediaIds.episodeOne}`;
-const movieUrl = `/media/${mediaIds.resumeMovie}`;
+const episodeUrl = `/media/${mediaIds.series}?season=${mediaIds.seasonOne}&episode=${mediaIds.episodeOne}&from=${encodeURIComponent('/media?type=series')}`;
+const movieUrl = `/media/${mediaIds.resumeMovie}?from=${encodeURIComponent('/media?type=movie')}`;
 
 test.use({ playbackOptions: { mode: 'transcode', progressiveHls: true, autoplay: true } });
 
