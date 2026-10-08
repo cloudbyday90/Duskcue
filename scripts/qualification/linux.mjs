@@ -11,6 +11,7 @@ import { runBounded } from './commands.mjs';
 import { docker, metadata, ownedDocker } from './owned.mjs';
 import { REQUIRED_MANAGED_CASES, PRODUCER_CASE, EVENT_CANDIDATE_CASE, selectedUnitCases } from './cases.mjs';
 import { retainKnownDiagnostic } from './diagnostic-runner.mjs';
+import { validateProgressiveHttpEvidence } from './progressive-http.mjs';
 import { STOP_CASE } from './runtime.mjs';
 import { nativeArchitecture, validateImageArchitecture, validateRustHost, verifyElfArchitecture } from './architecture.mjs';
 
@@ -189,7 +190,7 @@ async function main() {
                     else result.producerDiagnostic = await retainKnownDiagnostic(ownership, result.image.id, environment, directory, source.sha256, test);
                 }
                 if (test === EVENT_CANDIDATE_CASE) {
-                    result.eventCandidate = { ...record, productionPlaylistChanged: false };
+                    result.eventCandidate = { ...record, productionPlaylistChanged: true };
                     if (record.passed) {
                         const metrics = marker(execution.stdout, 'DUSKCUE_EVENT_CANDIDATE=');
                         if (metrics.first_frame_decoded_while_running !== true || metrics.ended !== true || !Number.isFinite(metrics.first_seconds) || metrics.first_seconds <= 0 || metrics.first_seconds >= 15 || metrics.final_segments <= metrics.first_segments || metrics.observations < 2) throw new Error('EVENT candidate did not prove the required publication timeline.');
@@ -223,13 +224,20 @@ async function main() {
             await new Promise((resolveReady) => setTimeout(resolveReady, 200));
         }
         if (!ready) throw new Error('Owned disposable PostgreSQL did not become ready.');
-        const sql = await ownership.create(result.image.id, ['sql', STOP_CASE], { network: `container:${pg}`, environment: { ...environment, DUSKCUE_DATABASE_URL: databaseUrl, DUSKCUE_TRANSCODE_ACCESS_TESTS: 'disposable', DUSKCUE_TEST_PLAYBACK_SOURCE: '/src/.cache/tonight-server-ffmpeg/source.mkv' } });
+        const sql = await ownership.create(result.image.id, ['sql', STOP_CASE], { network: `container:${pg}`, environment: { ...environment, DUSKCUE_DATABASE_URL: databaseUrl, DUSKCUE_TRANSCODE_ACCESS_TESTS: 'disposable', DUSKCUE_TEST_PROGRESSIVE_PLAYBACK: 'event', DUSKCUE_TEST_PLAYBACK_SOURCE: '/src/.cache/tonight-server-ffmpeg/source.mkv' } });
         try {
             const sqlSource = result.diagnosticSource?.path ? join(directory, result.diagnosticSource.path) : join(directory, 'producer/source.mkv');
             await ownership.copyIn(sql, sqlSource, '/src/.cache/tonight-server-ffmpeg/source.mkv');
             const execution = await ownership.start(sql, { log: join(directory, 'logs/stop-contract.log'), redact: [databaseUrl, password] });
             const outcome = marker(execution.stdout, 'DUSKCUE_RUNTIME_RESULT=');
             result.sql = { test: STOP_CASE, passed: outcome.passed === true && outcome.exactTests === 1 && execution.code === 0 && !execution.signal, exactTests: outcome.exactTests, exitCode: execution.code, log: 'logs/stop-contract.log', imageId: result.image.id };
+            try {
+                if (outcome.sourceCommit !== options.commit || outcome.sourceSha256 !== source.sha256) throw new Error('SQL runtime provenance differs from the current source.');
+                result.sql.progressiveHttp = validateProgressiveHttpEvidence(outcome.progressiveHttp, resourceId);
+            } catch (error) {
+                result.sql.passed = false;
+                result.sql.error = outcome.qualificationError || error.message;
+            }
             failed ||= !result.sql.passed;
         } finally { await ownership.remove(sql); await ownership.remove(pg); }
         if ((await qualificationSources(workspace)).sha256 !== source.sha256) throw new Error('Checkout sources changed during qualification.');

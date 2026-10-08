@@ -97,6 +97,7 @@ fn native_file_operation_aliases_preserve_architecture_and_denials() {
         libc::SYS_access,
         libc::SYS_stat,
         libc::SYS_unlink,
+        libc::SYS_rename,
     ] {
         assert_eq!(evaluate(&filter, syscall, arch), 0x7fff_0000);
         assert_eq!(evaluate(&filter, syscall, arch ^ 1), 0x8000_0000);
@@ -264,6 +265,9 @@ fn registration_arguments() -> [[u64; 6]; 12] {
 
 #[path = "filter_permission_tests.rs"]
 mod permissions;
+
+#[path = "filter_rename_tests.rs"]
+mod publication;
 
 #[test]
 fn self_resource_getter_requires_the_full_native_selector_and_preserves_denials() {

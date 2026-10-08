@@ -8,27 +8,6 @@ use tokio::io::AsyncReadExt;
 use super::*;
 use crate::services::transcoding::lifecycle::ExecutionState;
 
-pub(super) fn override_publication_type(mut arguments: Vec<String>) -> anyhow::Result<Vec<String>> {
-    let positions: Vec<_> = arguments
-        .iter()
-        .enumerate()
-        .filter_map(|(index, value)| (value == "-hls_playlist_type").then_some(index))
-        .collect();
-    anyhow::ensure!(
-        positions.len() == 1,
-        "candidate needs one production playlist type"
-    );
-    let value = arguments
-        .get_mut(positions[0] + 1)
-        .ok_or_else(|| anyhow::anyhow!("candidate playlist type value is absent"))?;
-    anyhow::ensure!(
-        value.as_str() == "vod",
-        "production playlist type already changed"
-    );
-    *value = "event".into();
-    Ok(arguments)
-}
-
 struct Snapshot {
     segments: Vec<String>,
     ended: bool,
@@ -206,6 +185,6 @@ async fn actual_managed_event_publishes_playable_assets_before_encoder_exit() ->
     let cleanup = running.stop().await;
     let evidence = proof?;
     cleanup?;
-    println!("DUSKCUE_EVENT_CANDIDATE={evidence}");
+    println!("\nDUSKCUE_EVENT_CANDIDATE={evidence}");
     Ok(())
 }

@@ -16,6 +16,8 @@ pub(super) fn prepare(
     let abi = ABI::V3;
     let access_ro = AccessFs::from_read(abi);
     let access_rw = AccessFs::from_all(abi);
+    let mut access_files = access_rw;
+    access_files.remove(AccessFs::RemoveDir);
 
     let ruleset = Ruleset::default()
         .handle_access(access_rw)
@@ -37,7 +39,7 @@ pub(super) fn prepare(
      -> Result<landlock::RulesetCreated, std::io::Error> {
         let fd = PathFd::new(path)
             .map_err(|e| std::io::Error::other(format!("landlock open {}: {e}", path.display())))?;
-        rs.add_rule(PathBeneath::new(fd, access_rw))
+        rs.add_rule(PathBeneath::new(fd, access_files))
             .map_err(|e| std::io::Error::other(format!("landlock rule {}: {e}", path.display())))
     };
 

@@ -130,6 +130,32 @@ int main(int argc, char **argv) {
         syscall(SYS_fchmod, (long)input, 0755UL);
         return 3;
     }
+    if ((strcmp(argv[1], "rename-file") == 0 || strcmp(argv[1], "rename-legacy") == 0 ||
+         strcmp(argv[1], "rename-denied") == 0 || strcmp(argv[1], "rename-legacy-denied") == 0) && argc == 4) {
+        int legacy = strcmp(argv[1], "rename-legacy") == 0 || strcmp(argv[1], "rename-legacy-denied") == 0;
+        int denied = strcmp(argv[1], "rename-denied") == 0 || strcmp(argv[1], "rename-legacy-denied") == 0;
+        errno = 0;
+        int result = legacy ? rename(argv[2], argv[3]) :
+            (int)syscall(SYS_renameat, (long)AT_FDCWD, argv[2], (long)AT_FDCWD, argv[3]);
+        if (denied) {
+            if (result != -1 || errno != EACCES) return 4;
+            return write(STDOUT_FILENO, "RENAME_DENIED\n", 14) == 14 ? 0 : 5;
+        }
+        if (result != 0) return 4;
+        return write(STDOUT_FILENO, "FILE_PUBLISHED\n", 15) == 15 ? 0 : 5;
+    }
+    if (strcmp(argv[1], "rename-source-fd") == 0 && argc == 4) {
+        syscall(SYS_renameat, (long)(AT_FDCWD + 1), argv[2], (long)AT_FDCWD, argv[3]);
+        return 3;
+    }
+    if (strcmp(argv[1], "rename-destination-fd") == 0 && argc == 4) {
+        syscall(SYS_renameat, (long)AT_FDCWD, argv[2], (long)(AT_FDCWD + 1), argv[3]);
+        return 3;
+    }
+    if (strcmp(argv[1], "rename-flags") == 0 && argc == 4) {
+        syscall(SYS_renameat2, (long)AT_FDCWD, argv[2], (long)AT_FDCWD, argv[3], 0UL);
+        return 3;
+    }
     if (strcmp(argv[1], "path") == 0 && argc == 3) {
         int input = open(argv[2], O_RDONLY);
         if (input >= 0) { close(input); return 3; }

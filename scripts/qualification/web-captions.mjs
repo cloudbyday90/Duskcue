@@ -73,7 +73,9 @@ export async function validateCaptionArtifact(directory, checkout = workspace, e
     const bytes = await boundedFile(root, 'result.json', 4 * 1024 * 1024, null, true);
     const result = JSON.parse(bytes.content.toString('utf8'));
     if (result.version !== 1 || result.kind !== 'duskcue-linux-qualification' || result.status !== 'passed' || result.cleanup?.passed !== true) throw new Error('Fresh Linux qualification and owned cleanup must both pass before caption consumption.');
-    const { REQUIRED_MANAGED_CASES, PRODUCER_CASE } = await import('./cases.mjs');
+    const { REQUIRED_MANAGED_CASES, REQUIRED_UNIT_CASES, PRODUCER_CASE } = await import('./cases.mjs');
+    const { STOP_CASE } = await import('./runtime.mjs');
+    const { validateProgressiveHttpEvidence } = await import('./progressive-http.mjs');
     const { qualificationSources } = await import('./source.mjs');
     const commit = (await execute('git', ['rev-parse', 'HEAD'], { cwd: checkout, maxBuffer: 8192, encoding: 'utf8', windowsHide: true })).stdout.trim();
     if (result.source?.commit !== commit || expectedCommit && expectedCommit !== commit) throw new Error('Caption producer belongs to a different source commit.');
@@ -86,13 +88,17 @@ export async function validateCaptionArtifact(directory, checkout = workspace, e
     if (result.image?.architecture !== 'amd64' || !/^sha256:[a-f0-9]{64}$/.test(result.image?.id || '')) throw new Error('Caption qualification requires the recorded immutable amd64 Linux image.');
     const imageId = result.image.id;
     if (!Array.isArray(result.cases) || result.cases.length > 128 || result.cases.some((record) => record.passed !== true || record.exitCode !== 0 || record.imageId !== imageId)) throw new Error('A Linux case failed or belongs to another image.');
-    for (const name of [...REQUIRED_MANAGED_CASES, PRODUCER_CASE]) {
+    for (const name of [...REQUIRED_MANAGED_CASES, ...REQUIRED_UNIT_CASES, PRODUCER_CASE]) {
         const records = result.cases.filter((record) => record.test === name);
         if (records.length !== 1) throw new Error(`Required exact Linux qualification case is missing or duplicated: ${name}`);
         exactPassingCase(records[0], imageId);
         await boundedFile(root, records[0].log, 16 * 1024 * 1024);
     }
-    for (const [kind, path, limit] of [['libTest', 'build/duskcue-lib-tests', 2 * 1024 ** 3], ['bootstrap', 'build/duskcue-ffmpeg-bootstrap.so', 16 * 1024 ** 2], ['probe', 'build/duskcue-ffmpeg-probe', 16 * 1024 ** 2]]) {
+    exactPassingCase(result.sql, imageId);
+    if (result.sql.test !== STOP_CASE) throw new Error('Current exact progressive SQL qualification is required.');
+    validateProgressiveHttpEvidence(result.sql.progressiveHttp, result.resourceId);
+    await boundedFile(root, result.sql.log, 16 * 1024 * 1024);
+    for (const [kind, path, limit] of [['libTest', 'build/duskcue-lib-tests', 2 * 1024 ** 3], ['stopContract', 'build/playback-stop-contract', 2 * 1024 ** 3], ['bootstrap', 'build/duskcue-ffmpeg-bootstrap.so', 16 * 1024 ** 2], ['probe', 'build/duskcue-ffmpeg-probe', 16 * 1024 ** 2]]) {
         const recorded = result.artifacts?.[kind];
         if (recorded?.path !== path) throw new Error(`Missing paired qualification binary: ${kind}`);
         const artifact = await boundedFile(root, path, limit, recorded);

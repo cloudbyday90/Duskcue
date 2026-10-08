@@ -13,7 +13,7 @@ import { basename, dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { promisify } from 'node:util';
 import { validateCaptionArtifact, validateCaptionResults } from './web-captions.mjs';
-import { REQUIRED_MANAGED_CASES, PRODUCER_CASE } from './cases.mjs';
+import { REQUIRED_MANAGED_CASES, REQUIRED_UNIT_CASES, PRODUCER_CASE } from './cases.mjs';
 import { qualificationSources, SOURCE_FILES, SOURCE_ROOTS } from './source.mjs';
 
 const execute = promisify(execFile);
@@ -40,12 +40,12 @@ async function artifactFixture() {
     elf.set([0x7f, 0x45, 0x4c, 0x46, 2, 1]);
     elf.writeUInt16LE(62, 18);
     const artifacts = {};
-    for (const [kind, path] of [['libTest', 'build/duskcue-lib-tests'], ['bootstrap', 'build/duskcue-ffmpeg-bootstrap.so'], ['probe', 'build/duskcue-ffmpeg-probe']]) {
+    for (const [kind, path] of [['libTest', 'build/duskcue-lib-tests'], ['stopContract', 'build/playback-stop-contract'], ['bootstrap', 'build/duskcue-ffmpeg-bootstrap.so'], ['probe', 'build/duskcue-ffmpeg-probe']]) {
         await put(artifact, path, elf);
         artifacts[kind] = { path, sha256: createHash('sha256').update(elf).digest('hex') };
     }
     const cases = [];
-    for (const [index, name] of [...REQUIRED_MANAGED_CASES, PRODUCER_CASE].entries()) {
+    for (const [index, name] of [...REQUIRED_MANAGED_CASES, ...REQUIRED_UNIT_CASES, PRODUCER_CASE].entries()) {
         const log = `logs/${index}.log`;
         await put(artifact, log, `test ${name} ... ok\ntest result: ok. 1 passed; 0 failed; 0 ignored; 0 measured;\n`);
         cases.push({ test: name, passed: true, exactTests: 1, exitCode: 0, log, imageId });
@@ -62,7 +62,11 @@ async function artifactFixture() {
         await put(artifact, path, bytes);
         files.push({ path, bytes: bytes.length, sha256: createHash('sha256').update(bytes).digest('hex') });
     }
-    const result = { version: 1, kind: 'duskcue-linux-qualification', status: 'passed', source, image: { id: imageId, architecture: 'amd64' }, artifacts, cases, producer: { ...cases.at(-1), directory: 'producer', captionDirectory: 'producer/caption', files }, cleanup: { passed: true } };
+    const resourceId = '11111111-2222-4333-8444-555555555555';
+    const progressiveHttp = { version: 1, executed: true, passed: true, resource_id: resourceId, source_seconds: 600.05, source_bytes: 11217150, first_segments: 2, seek_first_segments: 2, completed_segments: 285, original_profile_binding_and_refusal: true, seek_released_old_encoder_cache: true, stop_released_capacity: true, cleanup_passed: true, fixture_children_confirmed_exited: true, encoder_pids: [101, 105, 110, 114], decoded_stream_relative_timestamps: [0.08, 0.125, 0.08, 0.08], encoder_exit_status: 'unqualified_by_http_fixture', browser_to_live_server: 'unqualified' };
+    progressiveHttp.encoder_identities = progressiveHttp.encoder_pids.map((pid, index) => ({ pid, parent_pid: 20, started_ticks: 1000 + index }));
+    await put(artifact, 'logs/stop-contract.log', 'test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured;\n');
+    const result = { version: 1, kind: 'duskcue-linux-qualification', status: 'passed', resourceId, source, image: { id: imageId, architecture: 'amd64' }, artifacts, cases, producer: { ...cases.at(-1), directory: 'producer', captionDirectory: 'producer/caption', files }, sql: { test: 'stop_is_idempotent_serializes_heartbeat_seek_and_retains_original_profile', passed: true, exactTests: 1, exitCode: 0, log: 'logs/stop-contract.log', imageId, progressiveHttp }, cleanup: { passed: true } };
     const save = () => put(artifact, 'result.json', JSON.stringify(result));
     await save();
     return { directory, checkout, artifact, commit, result, save };
@@ -149,6 +153,14 @@ test('a fresh provenance envelope relocates validated caption assets without exe
         await fixture.save();
         await assert.rejects(() => validateCaptionArtifact(fixture.artifact, fixture.checkout, fixture.commit), /case failed/);
         fixture.result.cases[0].passed = true;
+        const progressive = fixture.result.sql.progressiveHttp;
+        delete fixture.result.sql.progressiveHttp;
+        await fixture.save();
+        await assert.rejects(() => validateCaptionArtifact(fixture.artifact, fixture.checkout, fixture.commit), /execution is absent/);
+        fixture.result.sql.progressiveHttp = { ...progressive, fixture_children_confirmed_exited: false };
+        await fixture.save();
+        await assert.rejects(() => validateCaptionArtifact(fixture.artifact, fixture.checkout, fixture.commit), /incomplete/);
+        fixture.result.sql.progressiveHttp = progressive;
         fixture.result.cleanup.passed = false;
         await fixture.save();
         await assert.rejects(() => validateCaptionArtifact(fixture.artifact, fixture.checkout, fixture.commit), /cleanup must both pass/);

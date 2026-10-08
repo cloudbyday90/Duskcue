@@ -71,11 +71,7 @@ impl Running {
             &directory.join("seg_%04d.m4s").to_string_lossy(),
             &directory.join("manifest.m3u8").to_string_lossy(),
         );
-        args.extend(if event {
-            event::override_publication_type(output_args)?
-        } else {
-            output_args
-        });
+        args.extend(output_args);
         let semaphore = Arc::new(Semaphore::new(1));
         let permit = Arc::clone(&semaphore).acquire_owned().await?;
         let spawned = spawn_session_ffmpeg(&args, id, &source, &directory).await?;
@@ -172,7 +168,7 @@ async fn actual_production_managed_ffmpeg_writes_a_finite_completed_hls_playlist
             "no real FFmpeg progress"
         );
         anyhow::ensure!(
-            playlist.contains("#EXT-X-PLAYLIST-TYPE:VOD") && playlist.contains("#EXTINF:"),
+            playlist.contains("#EXT-X-PLAYLIST-TYPE:EVENT") && playlist.contains("#EXTINF:"),
             "incomplete production playlist"
         );
         for file in ["init.mp4", "seg_0000.m4s"] {

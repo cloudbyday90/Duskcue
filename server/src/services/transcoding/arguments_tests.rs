@@ -14,6 +14,20 @@ mod guarded_docker;
 mod local;
 
 #[test]
+fn hls_output_defaults_to_append_only_event_publication() {
+    let arguments = build_hls_output_args(2, "/cache/seg_%04d.m4s", "/cache/manifest.m3u8");
+    for (option, expected) in [
+        ("-hls_playlist_type", "event"),
+        ("-hls_list_size", "0"),
+        ("-hls_segment_type", "fmp4"),
+        ("-hls_fmp4_init_filename", "init.mp4"),
+    ] {
+        let position = arguments.iter().position(|value| value == option).unwrap();
+        assert_eq!(arguments[position + 1], expected);
+    }
+}
+
+#[test]
 fn type_mapping_keeps_audio_zero_and_never_assumes_video_global_zero() {
     assert_eq!(
         build_stream_mapping_args(Some(0), None),
@@ -356,7 +370,7 @@ async fn real_audio_first_default_description_and_selected_srt_decode_through_pr
         "selected SRT did not visibly alter the caption region"
     );
     println!(
-        "DUSKCUE_FFMPEG_FIXTURE={}",
+        "\nDUSKCUE_FFMPEG_FIXTURE={}",
         json!({"directory":directory,"audio_default_index":default,"subtitle_ordinal":1,"default_frequency":default_frequency,"zero_frequency":zero_frequency})
     );
     Ok(())

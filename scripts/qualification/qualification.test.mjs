@@ -10,7 +10,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArguments, within, PRODUCER_FILES } from './linux.mjs';
 import { exactPassed, exactTestListed } from './runtime.mjs';
-import { REQUIRED_UNIT_PREFIXES, selectedUnitCases } from './cases.mjs';
+import { REQUIRED_UNIT_PREFIXES, REQUIRED_UNIT_CASES, selectedUnitCases } from './cases.mjs';
 import { ownedDocker, validateContainer } from './owned.mjs';
 import { runBounded } from './commands.mjs';
 import { SOURCE_ROOTS, SOURCE_FILES, qualificationSources } from './source.mjs';
@@ -142,9 +142,10 @@ test('exact inventory and passing checks refuse zero or skipped tests', () => {
 });
 
 test('required unit groups are complete and command selectors remain bounded', () => {
-    const inventory = REQUIRED_UNIT_PREFIXES.map((prefix) => `${prefix}case`);
-    assert.equal(selectedUnitCases(inventory).length, REQUIRED_UNIT_PREFIXES.length);
+    const inventory = [...REQUIRED_UNIT_PREFIXES.map((prefix) => `${prefix}case`), ...REQUIRED_UNIT_CASES];
+    assert.equal(selectedUnitCases(inventory).length, REQUIRED_UNIT_PREFIXES.length + REQUIRED_UNIT_CASES.length);
     assert.throws(() => selectedUnitCases(inventory.slice(1)));
+    assert.throws(() => selectedUnitCases(inventory.filter((test) => !REQUIRED_UNIT_CASES.includes(test))));
     assert.throws(() => selectedUnitCases([...inventory, `${REQUIRED_UNIT_PREFIXES[0]}bad --flag`]));
     assert.equal(PRODUCER_FILES.length, 9);
 });

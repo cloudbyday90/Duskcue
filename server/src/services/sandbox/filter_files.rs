@@ -12,3 +12,11 @@ pub(super) fn file_unlink_rule() -> Result<SeccompRule, BackendError> {
         0,
     )?])
 }
+
+pub(super) fn file_publication_rule() -> Result<SeccompRule, BackendError> {
+    let directory = libc::AT_FDCWD as i64 as u64;
+    SeccompRule::new(vec![
+        SeccompCondition::new(0, SeccompCmpArgLen::Qword, SeccompCmpOp::Eq, directory)?,
+        SeccompCondition::new(2, SeccompCmpArgLen::Qword, SeccompCmpOp::Eq, directory)?,
+    ])
+}

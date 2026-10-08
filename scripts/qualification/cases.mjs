@@ -15,6 +15,7 @@ export const REQUIRED_MANAGED_CASES = Object.freeze([
 ]);
 
 export const PRODUCER_CASE = 'services::transcoding::arguments::tests::real_audio_first_default_description_and_selected_srt_decode_through_production_arguments';
+export const REQUIRED_UNIT_CASES = Object.freeze(['services::transcoding::arguments::tests::hls_output_defaults_to_append_only_event_publication']);
 export const REQUIRED_UNIT_PREFIXES = Object.freeze([
     'services::transcoding::readiness::tests::',
     'services::transcoding::lifecycle::readiness_tests::',
@@ -26,9 +27,12 @@ export const REQUIRED_UNIT_PREFIXES = Object.freeze([
 ]);
 
 export function selectedUnitCases(inventory) {
-    const selected = inventory.filter((test) => REQUIRED_UNIT_PREFIXES.some((prefix) => test.startsWith(prefix)));
+    const selected = inventory.filter((test) => REQUIRED_UNIT_CASES.includes(test) || REQUIRED_UNIT_PREFIXES.some((prefix) => test.startsWith(prefix)));
     for (const prefix of REQUIRED_UNIT_PREFIXES) {
         if (!selected.some((test) => test.startsWith(prefix))) throw new Error(`The current library artifact has no ${prefix} cases.`);
+    }
+    for (const test of REQUIRED_UNIT_CASES) {
+        if (!selected.includes(test)) throw new Error(`The current library artifact has no ${test} case.`);
     }
     if (selected.some((test) => !/^[A-Za-z0-9_:]+$/.test(test))) throw new Error('The library artifact contains an invalid test selector.');
     return selected.sort();

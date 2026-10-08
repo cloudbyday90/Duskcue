@@ -116,6 +116,14 @@ fn build_allowlist_filter() -> Result<seccompiler::BpfProgram, std::io::Error> {
                 .map_err(|error| std::io::Error::other(format!("file unlink rule: {error}")))?,
         ],
     );
+    rules.insert(
+        libc::SYS_renameat,
+        vec![
+            files::file_publication_rule().map_err(|error| {
+                std::io::Error::other(format!("file publication rule: {error}"))
+            })?,
+        ],
+    );
 
     #[cfg(target_arch = "x86_64")]
     {
@@ -123,6 +131,7 @@ fn build_allowlist_filter() -> Result<seccompiler::BpfProgram, std::io::Error> {
         rules.insert(libc::SYS_open, vec![]);
         rules.insert(libc::SYS_stat, vec![]);
         rules.insert(libc::SYS_unlink, vec![]);
+        rules.insert(libc::SYS_rename, vec![]);
         rules.insert(libc::SYS_arch_prctl, vec![]);
         rules.insert(libc::SYS_poll, vec![]);
         rules.insert(libc::SYS_epoll_wait, vec![]);

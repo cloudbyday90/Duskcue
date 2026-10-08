@@ -107,6 +107,10 @@ pub(super) struct Encoder {
 }
 
 impl Encoder {
+    pub(super) fn recorded_identity(&self) -> serde_json::Value {
+        serde_json::json!({"pid": self.pid, "parent_pid": self.parent, "started_ticks": self.started})
+    }
+
     pub(super) fn observe(
         source: &Path,
         manifest: &Path,

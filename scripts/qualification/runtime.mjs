@@ -4,8 +4,9 @@
 
 import { runBounded } from './commands.mjs';
 import { verifyArtifacts, RUNTIME_ARTIFACTS } from './attest.mjs';
-import { REQUIRED_MANAGED_CASES, REQUIRED_UNIT_PREFIXES, PRODUCER_CASE } from './cases.mjs';
+import { REQUIRED_MANAGED_CASES, REQUIRED_UNIT_PREFIXES, REQUIRED_UNIT_CASES, PRODUCER_CASE } from './cases.mjs';
 import { traceQualifiedCase, traceSpecification } from './diagnostic.mjs';
+import { validateProgressiveHttpResult } from './progressive-http.mjs';
 
 export const STOP_CASE = 'stop_is_idempotent_serializes_heartbeat_seek_and_retains_original_profile';
 
@@ -28,11 +29,11 @@ async function main() {
         const inventory = await runBounded(executable, ['--list'], { bytes: 1048576, captureBytes: 1048576, timeoutMs: 30000 });
         if (inventory.code !== 0 || inventory.signal) throw new Error('Current test inventory could not be read.');
         const selected = inventory.stdout.split(/\r?\n/).filter((line) => line.endsWith(': test')).map((line) => line.slice(0, -6))
-            .filter((test) => REQUIRED_UNIT_PREFIXES.some((prefix) => test.startsWith(prefix)) || REQUIRED_MANAGED_CASES.includes(test) || test === PRODUCER_CASE);
+            .filter((test) => REQUIRED_UNIT_CASES.includes(test) || REQUIRED_UNIT_PREFIXES.some((prefix) => test.startsWith(prefix)) || REQUIRED_MANAGED_CASES.includes(test) || test === PRODUCER_CASE);
         console.log(`DUSKCUE_TEST_INVENTORY=${JSON.stringify(selected)}`);
         return;
     }
-    const allowed = mode === 'sql' ? selector === STOP_CASE : REQUIRED_MANAGED_CASES.includes(selector) || selector === PRODUCER_CASE || REQUIRED_UNIT_PREFIXES.some((prefix) => selector.startsWith(prefix));
+    const allowed = mode === 'sql' ? selector === STOP_CASE : REQUIRED_MANAGED_CASES.includes(selector) || REQUIRED_UNIT_CASES.includes(selector) || selector === PRODUCER_CASE || REQUIRED_UNIT_PREFIXES.some((prefix) => selector.startsWith(prefix));
     if (!allowed) throw new Error('The requested test is outside this qualification.');
     const listed = await runBounded(executable, [selector, '--exact', '--list'], { bytes: 1048576, timeoutMs: 30000 });
     if (listed.code !== 0 || listed.signal || !exactTestListed(listed.stdout, selector)) throw new Error('The exact current test is absent; zero tests cannot pass.');
@@ -45,8 +46,19 @@ async function main() {
     const result = await runBounded(executable, [selector, '--exact', '--include-ignored', '--nocapture'], { bytes: 16777216, timeoutMs: 300000 });
     process.stdout.write(result.stdout);
     process.stderr.write(result.stderr);
-    const passed = result.code === 0 && !result.signal && exactPassed(result.stdout);
-    console.log(`DUSKCUE_RUNTIME_RESULT=${JSON.stringify({ version: 1, test: selector, passed, exactTests: 1, exitCode: result.code, sourceCommit: manifest.source.commit, sourceSha256: manifest.source.sha256, artifacts: manifest.artifacts })}`);
+    let passed = result.code === 0 && !result.signal && exactPassed(result.stdout);
+    let progressiveHttp;
+    let qualificationError;
+    if (mode === 'sql') {
+        try {
+            if (process.env.DUSKCUE_TEST_PROGRESSIVE_PLAYBACK !== 'event') throw new Error('Progressive HTTP qualification must be enabled for current SQL admission.');
+            progressiveHttp = validateProgressiveHttpResult(result.stdout, process.env.DUSKCUE_TEST_RESOURCE_ID);
+        } catch (error) {
+            passed = false;
+            qualificationError = error.message;
+        }
+    }
+    console.log(`DUSKCUE_RUNTIME_RESULT=${JSON.stringify({ version: 1, test: selector, passed, exactTests: 1, exitCode: result.code, sourceCommit: manifest.source.commit, sourceSha256: manifest.source.sha256, artifacts: manifest.artifacts, progressiveHttp, qualificationError })}`);
     if (!passed) process.exitCode = 1;
 }
 

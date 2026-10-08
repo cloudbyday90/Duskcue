@@ -12,6 +12,9 @@ use crate::services::sandbox::SandboxConfig;
 #[path = "bootstrap_permission_tests.rs"]
 mod permissions;
 
+#[path = "bootstrap_rename_tests.rs"]
+mod publication;
+
 struct Fixture {
     root: PathBuf,
     source: PathBuf,
@@ -135,6 +138,7 @@ async fn actual_mandatory_bootstrap_denies_later_exec_network_and_outside_paths(
     assert_eq!(directory.status.signal(), Some(libc::SIGSYS));
     assert!(preserved_directory.is_dir());
     permissions::verify_unchanged_permissions(&fixture).await?;
+    publication::verify_atomic_file_publication(&fixture).await?;
     tokio::fs::remove_dir_all(fixture.root).await?;
     Ok(())
 }

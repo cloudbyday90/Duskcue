@@ -63,6 +63,7 @@ struct Evidence {
     source_seconds: Option<f64>,
     source_bytes: Option<u64>,
     first_segments: Option<usize>,
+    seek_first_segments: Option<usize>,
     completed_segments: Option<usize>,
     profile_refused: bool,
     old_seek_released: bool,
@@ -115,6 +116,7 @@ pub(super) async fn real_progressive_playback(
         source_seconds: None,
         source_bytes: None,
         first_segments: None,
+        seek_first_segments: None,
         completed_segments: None,
         profile_refused: false,
         old_seek_released: false,
@@ -124,15 +126,16 @@ pub(super) async fn real_progressive_playback(
     let proof = exercise(&fixture, &state, &app, &mut evidence).await;
     let cleanup = cleanup(&fixture, &state, &app, &evidence).await;
     println!(
-        "DUSKCUE_PROGRESSIVE_PLAYBACK={}",
+        "\nDUSKCUE_PROGRESSIVE_PLAYBACK={}",
         json!({
             "version": 1, "executed": true, "passed": proof.is_ok() && cleanup.is_ok(), "resource_id": resource,
             "source_seconds": evidence.source_seconds, "source_bytes": evidence.source_bytes,
-            "first_segments": evidence.first_segments, "completed_segments": evidence.completed_segments,
+            "first_segments": evidence.first_segments, "seek_first_segments": evidence.seek_first_segments, "completed_segments": evidence.completed_segments,
             "original_profile_binding_and_refusal": evidence.profile_refused, "seek_released_old_encoder_cache": evidence.old_seek_released,
             "stop_released_capacity": evidence.permit_reused, "cleanup_passed": cleanup.is_ok(),
             "fixture_children_confirmed_exited": evidence.tools.exited(), "encoder_exit_status": "unqualified_by_http_fixture",
             "encoder_pids": evidence.sessions.iter().map(|session| session.encoder.pid).collect::<Vec<_>>(),
+            "encoder_identities": evidence.sessions.iter().map(|session| session.encoder.recorded_identity()).collect::<Vec<_>>(),
             "decoded_stream_relative_timestamps": evidence.sessions.iter().map(|session| session.timestamp).collect::<Vec<_>>(),
             "browser_to_live_server": "unqualified"
         })
@@ -255,6 +258,7 @@ async fn exercise(
         );
         switch(app, fixture.token, fixture.original_profile).await?;
         let second = observe(&stream, play, seek_id, Some(30000)).await?;
+        evidence.seek_first_segments = Some(second.segments.len());
         let second_encoder = second.encoder.clone();
         let second_cache = second.transcode.segment_dir.clone();
         let mut previous = second.segments.clone();

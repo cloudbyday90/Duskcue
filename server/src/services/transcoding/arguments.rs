@@ -54,7 +54,7 @@ pub fn build_hls_output_args(
         "-hls_list_size".to_string(),
         "0".to_string(),
         "-hls_playlist_type".to_string(),
-        "vod".to_string(),
+        "event".to_string(),
         "-hls_segment_filename".to_string(),
         segment_filename.to_string(),
         "-y".to_string(),
