@@ -28,11 +28,21 @@ pub(super) fn build_ffmpeg_filter() -> Result<seccompiler::BpfProgram, std::io::
     let legacy_chmod = Some(libc::SYS_chmod as u32);
     #[cfg(target_arch = "aarch64")]
     let legacy_chmod = None;
-    Ok(permissions::with_cache_permission_change_denied(
+    let program = permissions::with_cache_permission_change_denied(
         program,
         super::wire::audit_arch(),
         libc::SYS_fchmodat as u32,
         legacy_chmod,
+    );
+    #[cfg(target_arch = "x86_64")]
+    let legacy_mkdir = Some(libc::SYS_mkdir as u32);
+    #[cfg(target_arch = "aarch64")]
+    let legacy_mkdir = None;
+    Ok(permissions::with_cache_directory_creation_denied(
+        program,
+        super::wire::audit_arch(),
+        libc::SYS_mkdirat as u32,
+        legacy_mkdir,
     ))
 }
 

@@ -15,6 +15,9 @@ mod permissions;
 #[path = "bootstrap_rename_tests.rs"]
 mod publication;
 
+#[path = "bootstrap_directory_tests.rs"]
+mod directories;
+
 struct Fixture {
     root: PathBuf,
     source: PathBuf,
@@ -138,6 +141,7 @@ async fn actual_mandatory_bootstrap_denies_later_exec_network_and_outside_paths(
     assert_eq!(directory.status.signal(), Some(libc::SIGSYS));
     assert!(preserved_directory.is_dir());
     permissions::verify_unchanged_permissions(&fixture).await?;
+    directories::verify_no_cache_directory_creation(&fixture).await?;
     publication::verify_atomic_file_publication(&fixture).await?;
     tokio::fs::remove_dir_all(fixture.root).await?;
     Ok(())

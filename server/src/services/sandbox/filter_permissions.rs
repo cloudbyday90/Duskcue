@@ -10,19 +10,37 @@ pub(super) fn with_cache_permission_change_denied(
     chmod_at: u32,
     legacy_chmod: Option<u32>,
 ) -> BpfProgram {
+    deny_cache_maintenance(program, architecture, chmod_at, legacy_chmod)
+}
+
+pub(super) fn with_cache_directory_creation_denied(
+    program: BpfProgram,
+    architecture: u32,
+    mkdir_at: u32,
+    legacy_mkdir: Option<u32>,
+) -> BpfProgram {
+    deny_cache_maintenance(program, architecture, mkdir_at, legacy_mkdir)
+}
+
+fn deny_cache_maintenance(
+    program: BpfProgram,
+    architecture: u32,
+    native_at: u32,
+    legacy: Option<u32>,
+) -> BpfProgram {
     let directory = libc::AT_FDCWD as i64 as u64;
     let program = deny_matching(
         program,
         &[
             (4, architecture),
-            (0, chmod_at),
+            (0, native_at),
             (16, directory as u32),
             (20, (directory >> 32) as u32),
             (32, 0o755),
             (36, 0),
         ],
     );
-    match legacy_chmod {
+    match legacy {
         Some(syscall) => deny_matching(
             program,
             &[(4, architecture), (0, syscall), (24, 0o755), (28, 0)],

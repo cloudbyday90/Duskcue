@@ -120,7 +120,7 @@ fn numa_query_fallback_changes_one_denial_and_preserves_all_other_native_actions
     let arch = super::super::wire::audit_arch();
     assert_eq!(
         filter.len(),
-        baseline.len() + 18 + 13 + if cfg!(target_arch = "x86_64") { 9 } else { 0 }
+        baseline.len() + 18 + 26 + if cfg!(target_arch = "x86_64") { 18 } else { 0 }
     );
     for syscall in 0..1024 {
         let expected = if syscall == libc::SYS_get_mempolicy {

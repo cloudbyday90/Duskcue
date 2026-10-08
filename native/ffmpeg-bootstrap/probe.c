@@ -156,6 +156,25 @@ int main(int argc, char **argv) {
         syscall(SYS_renameat2, (long)AT_FDCWD, argv[2], (long)AT_FDCWD, argv[3], 0UL);
         return 3;
     }
+    if ((strcmp(argv[1], "directory-at") == 0 || strcmp(argv[1], "directory-legacy") == 0) && argc == 3) {
+        errno = 0;
+        int result = strcmp(argv[1], "directory-legacy") == 0 ? mkdir(argv[2], 0755) :
+            (int)syscall(SYS_mkdirat, (long)AT_FDCWD, argv[2], 0755UL);
+        if (result != -1 || errno != EPERM) return 4;
+        return write(STDOUT_FILENO, "DIRECTORY_CREATION_DENIED\n", 26) == 26 ? 0 : 5;
+    }
+    if (strcmp(argv[1], "directory-at-mode") == 0 && argc == 3) {
+        syscall(SYS_mkdirat, (long)AT_FDCWD, argv[2], 0644UL);
+        return 3;
+    }
+    if (strcmp(argv[1], "directory-at-fd") == 0 && argc == 3) {
+        syscall(SYS_mkdirat, (long)(AT_FDCWD + 1), argv[2], 0755UL);
+        return 3;
+    }
+    if (strcmp(argv[1], "directory-legacy-mode") == 0 && argc == 3) {
+        mkdir(argv[2], 0644);
+        return 3;
+    }
     if (strcmp(argv[1], "path") == 0 && argc == 3) {
         int input = open(argv[2], O_RDONLY);
         if (input >= 0) { close(input); return 3; }

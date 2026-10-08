@@ -48,19 +48,98 @@ fn optional_permission_maintenance_changes_only_exact_native_denials() {
         super::super::super::wire::audit_arch(),
         libc::SYS_membarrier as u32,
     );
-    let filter = build_ffmpeg_filter().unwrap();
     let architecture = super::super::super::wire::audit_arch();
     #[cfg(target_arch = "x86_64")]
     let legacy_chmod = Some(libc::SYS_chmod as u32);
     #[cfg(target_arch = "aarch64")]
     let legacy_chmod = None;
+    #[cfg(target_arch = "x86_64")]
+    let legacy_mkdir = Some(libc::SYS_mkdir as u32);
+    #[cfg(target_arch = "aarch64")]
+    let legacy_mkdir = None;
+    let baseline = super::super::permissions::with_cache_directory_creation_denied(
+        baseline,
+        architecture,
+        libc::SYS_mkdirat as u32,
+        legacy_mkdir,
+    );
     assert_native_actions(
         &baseline,
-        &filter,
+        &build_ffmpeg_filter().unwrap(),
         architecture,
         libc::SYS_fchmodat as u32,
         legacy_chmod,
     );
+}
+
+#[test]
+fn optional_directory_creation_changes_only_exact_native_denials() {
+    let baseline = barrier::with_private_registration_denied(
+        denial::with_numa_query_denied(
+            build_allowlist_filter().unwrap(),
+            super::super::super::wire::audit_arch(),
+            libc::SYS_get_mempolicy as u32,
+        ),
+        super::super::super::wire::audit_arch(),
+        libc::SYS_membarrier as u32,
+    );
+    let architecture = super::super::super::wire::audit_arch();
+    #[cfg(target_arch = "x86_64")]
+    let legacy_chmod = Some(libc::SYS_chmod as u32);
+    #[cfg(target_arch = "aarch64")]
+    let legacy_chmod = None;
+    let baseline = super::super::permissions::with_cache_permission_change_denied(
+        baseline,
+        architecture,
+        libc::SYS_fchmodat as u32,
+        legacy_chmod,
+    );
+    #[cfg(target_arch = "x86_64")]
+    let legacy_mkdir = Some(libc::SYS_mkdir as u32);
+    #[cfg(target_arch = "aarch64")]
+    let legacy_mkdir = None;
+    assert_native_actions(
+        &baseline,
+        &build_ffmpeg_filter().unwrap(),
+        architecture,
+        libc::SYS_mkdirat as u32,
+        legacy_mkdir,
+    );
+}
+
+#[test]
+fn directory_denial_prefix_uses_both_compiled_native_abis() {
+    for (architecture, target, mkdir_at, legacy_mkdir, read) in [
+        (
+            0xc000_003e,
+            seccompiler::TargetArch::x86_64,
+            258,
+            Some(83),
+            0,
+        ),
+        (0xc000_00b7, seccompiler::TargetArch::aarch64, 34, None, 63),
+    ] {
+        let baseline: seccompiler::BpfProgram = seccompiler::SeccompFilter::new(
+            std::collections::BTreeMap::from([(read, Vec::new())]),
+            seccompiler::SeccompAction::KillProcess,
+            seccompiler::SeccompAction::Allow,
+            target,
+        )
+        .unwrap()
+        .try_into()
+        .unwrap();
+        let filter = super::super::permissions::with_cache_directory_creation_denied(
+            baseline.clone(),
+            architecture,
+            mkdir_at,
+            legacy_mkdir,
+        );
+        assert_eq!(
+            filter.len(),
+            baseline.len() + 13 + if legacy_mkdir.is_some() { 9 } else { 0 }
+        );
+        assert_native_actions(&baseline, &filter, architecture, mkdir_at, legacy_mkdir);
+    }
 }
 
 #[test]
