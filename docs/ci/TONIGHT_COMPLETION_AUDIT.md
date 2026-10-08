@@ -40,7 +40,7 @@ The first four issues are existing server assumptions exposed by the required To
 | T03.2 shell/navigation/settings | Actual top navigation/search/profile/settings/admin routes; web journeys. | Implemented/covered; native reachability remains pending. |
 | T03.3 profile disclosure/picker | Native-button disclosure and required gate; real-route tests. | Implemented/covered; expiry/lockout recovery belongs to T06. |
 | T03.4 authenticated artwork | `Artwork.svelte` fetch/abort/object-URL lifecycle and scoped API helper; failure tests. | Implemented/covered; actual desktop selected-origin rendering still needs native proof. |
-| T03.5 static/internal navigation | Existing static build pipeline, bounded route allowlist and earlier native IPC navigation. Current hosted native job passes guarded static preparation, executable build and refreshed prerequisites, then starts actual journeys. | Current native runtime/internal navigation remains pending. |
+| T03.5 static/internal navigation | At `55a1eed`, hosted static/native builds and actual native event delivery pass; allowed internal navigation works and an external payload is rejected. | Established at this source checkpoint; remaining whole-native qualification stays T08. |
 | T04.1 actual Home content | Scoped Continue query/direct entry, smaller optional feature and recent query. | Implemented and web-covered. |
 | T04.2 complete galleries | Real movie/series/library gallery and cursor restoration. | Implemented and web-covered. |
 | T04.3 submitted search | URL query/facets/sort/origin with abort/stale protection. | Implemented and web-covered. |
@@ -79,7 +79,9 @@ Those runtime jobs are now terminal failed: Linux test-helper compilation used t
 
 ## Current verification currency — October 8, 2026 UTC
 
-The corrected `55a1eed` run's [Shared Web Checks](https://github.com/cloudbyday90/Duskcue/actions/runs/37707820228/job/113086311349) pass: zero Svelte errors/warnings, 383 unit cases across both runners, and the ordinary production build. The same run's Linux and native jobs are live; no new managed-media, SQL, complete browser or native-runtime pass is claimed. The earlier failed-run findings above remain historical evidence, with their source corrections committed and pushed. Heavy qualification runs on hosted runners while the user's editor remains running.
+The corrected `55a1eed` run's [Shared Web Checks](https://github.com/cloudbyday90/Duskcue/actions/runs/37707820228/job/113086311349) pass: zero Svelte errors/warnings, 383 unit cases across both runners, and the ordinary production build. Both runtime jobs are terminal failed; the browser job is skipped with zero executed cases. Linux compiles and passes 25/30 selected cases, but four managed tests require the owned process API's multi-thread Tokio runtime, the caption producer fails after bootstrap acceptance, and the first SQL heartbeat lacks a fixture event partition. Strict Clippy is unavailable in that image. Focused test/runtime-image repairs and bounded producer diagnostics are prepared; production filter and playlist policy remain unchanged.
+
+Native startup and eight baseline journey groups pass, including keyring/selected-origin SSE/actual HLS/fullscreen/Title return/internal navigation. Partial genuine 400% checks and supported contrast samples pass before an outdated discard-modal locator fails; the current visible `Discard and continue` action is now targeted without weakening assertions. Root inspected Home, Title/Episode gallery, HLS and genuine zoom Search/modal captures, and corrected the Title hero's missing shared serif class. Linux and native owned cleanup pass. Remaining managed/SQL/full browser/native journeys need fresh execution; see the plan and [native evidence](TONIGHT_DESKTOP_TESTS.md). Eight bounded contract/fixture verifiers pass at `6342642`. Heavy qualification stays on hosted runners while the user's editor remains running.
 
 ## Proof boundaries to retain
 

@@ -1,3 +1,9 @@
+// Duskcue — Self-hosted media streaming server
+// Copyright (C) 2026 Duskcue Contributors
+//
+// This program is free software: licensed under AGPL-3.0
+// See LICENSE file for details.
+
 import { expect } from '@playwright/test';
 import { keyboardReach } from './qualification-focus.mjs';
 
@@ -42,7 +48,7 @@ export async function exerciseDiscardZoom({ page, evidence, record, capture }) {
     const dialog = page.getByRole('dialog', { name: 'Discard unsaved changes?', exact: true });
     await expect(dialog).toBeVisible();
     await keyboardReach(page, dialog.getByRole('button', { name: 'Keep editing', exact: true }), 'discard-keep-editing', evidence);
-    await keyboardReach(page, dialog.getByRole('button', { name: 'Discard changes', exact: true }), 'discard-confirm-action', evidence);
+    await keyboardReach(page, dialog.getByRole('button', { name: 'Discard and continue', exact: true }), 'discard-confirm-action', evidence);
     await record('discard-dialog');
     await page.keyboard.press('Escape');
     await expect(dialog).not.toBeVisible();

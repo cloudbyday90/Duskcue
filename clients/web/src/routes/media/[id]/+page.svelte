@@ -238,7 +238,7 @@
             <div class="backdrop" aria-hidden="true"><Artwork itemId={item.id} type="backdrop" size="w1280" eager /></div>
             <div class="poster"><Artwork itemId={item.id} size="w342" mediaType={item.type} eager /></div>
             <div class="title-copy">
-                <h1 id="title-heading" tabindex="-1">{item.title}</h1>
+                <h1 class="tonight-heading" id="title-heading" tabindex="-1">{item.title}</h1>
                 <p class="title-meta">
                     {#if formatYear(item.premiere_date)}<span>{formatYear(item.premiere_date)}</span>{/if}
                     {#if item.content_rating}<span>{item.content_rating}</span>{/if}

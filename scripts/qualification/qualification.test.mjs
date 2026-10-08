@@ -14,6 +14,26 @@ import { REQUIRED_UNIT_PREFIXES, selectedUnitCases } from './cases.mjs';
 import { ownedDocker, validateContainer } from './owned.mjs';
 import { runBounded } from './commands.mjs';
 import { SOURCE_ROOTS, SOURCE_FILES, qualificationSources } from './source.mjs';
+import { traceCommand, traceSummary, TRACE_LIMITS } from './diagnostic.mjs';
+import { PRODUCER_CASE } from './cases.mjs';
+import { RUNTIME_ARTIFACTS } from './attest.mjs';
+
+test('producer diagnostic preserves the exact selector and never becomes qualification success', () => {
+    const command = traceCommand(RUNTIME_ARTIFACTS.libTest, PRODUCER_CASE);
+    assert.equal(command.executable, '/usr/bin/strace');
+    assert.deepEqual(command.args.slice(0, 8), ['-f', '-qq', '-s', '0', '-e', 'raw=all', '--', RUNTIME_ARTIFACTS.libTest]);
+    assert.ok(command.args.includes('--include-ignored'));
+    assert.throws(() => traceCommand('/foreign/test', PRODUCER_CASE));
+    assert.throws(() => traceCommand(RUNTIME_ARTIFACTS.libTest, 'another_case'));
+    assert.equal(TRACE_LIMITS.timeoutMs, 90000);
+    assert.equal(TRACE_LIMITS.bytes, 16777216);
+    const denied = traceSummary({ code: 101, signal: null, bytes: 20, stderr: '+++ killed by SIGSYS +++' });
+    assert.equal(denied.observedSigsys, true);
+    assert.equal(denied.countsTowardQualification, false);
+    const refused = traceSummary({ code: 1, signal: null, bytes: 20, stderr: 'strace: ptrace(PTRACE_TRACEME): Operation not permitted' });
+    assert.equal(refused.tracingRefused, true);
+    assert.equal(refused.observedSigsys, false);
+});
 
 test('exact inventory and passing checks refuse zero or skipped tests', () => {
     assert.equal(exactTestListed('example: test\n1 test, 0 benchmarks\n', 'example'), true);

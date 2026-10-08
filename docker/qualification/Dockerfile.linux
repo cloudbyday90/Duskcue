@@ -12,7 +12,8 @@ ARG SOURCE_SHA256
 LABEL duskcue.qualification.kind="compiler-preparation" \
       duskcue.qualification.commit="${SOURCE_COMMIT}" \
       duskcue.qualification.source-sha256="${SOURCE_SHA256}"
-RUN apk add --no-cache build-base clang cmake linux-headers perl pkgconf protobuf-dev nodejs
+RUN apk add --no-cache build-base clang cmake linux-headers perl pkgconf protobuf-dev nodejs \
+    && rustup component add clippy
 WORKDIR /src
 COPY . /src
 ENTRYPOINT ["node", "--max-old-space-size=128", "/src/scripts/qualification/build.mjs"]
@@ -23,7 +24,7 @@ ARG SOURCE_SHA256
 LABEL duskcue.qualification.kind="linux-runtime" \
       duskcue.qualification.commit="${SOURCE_COMMIT}" \
       duskcue.qualification.source-sha256="${SOURCE_SHA256}"
-RUN apk add --no-cache ffmpeg font-noto font-noto-arabic font-noto-cjk font-noto-devanagari font-noto-hebrew font-noto-thai libgcc libstdc++ nodejs \
+RUN apk add --no-cache ffmpeg font-noto font-noto-arabic font-noto-cjk font-noto-devanagari font-noto-hebrew font-noto-thai libgcc libstdc++ nodejs strace \
     && addgroup -S duskcue \
     && adduser -S -D -H -h /qualification/work -s /sbin/nologin -G duskcue duskcue \
     && mkdir -p /qualification/bin /qualification/work /src/.cache/testing-memory /src/.cache/tonight-server-ffmpeg /fixtures /usr/local/libexec \

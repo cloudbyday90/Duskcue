@@ -5,6 +5,7 @@
 import { runBounded } from './commands.mjs';
 import { verifyArtifacts, RUNTIME_ARTIFACTS } from './attest.mjs';
 import { REQUIRED_MANAGED_CASES, REQUIRED_UNIT_PREFIXES, PRODUCER_CASE } from './cases.mjs';
+import { traceProducer } from './diagnostic.mjs';
 
 export const STOP_CASE = 'stop_is_idempotent_serializes_heartbeat_seek_and_retains_original_profile';
 
@@ -18,10 +19,11 @@ export function exactPassed(output) {
 
 async function main() {
     const [mode, selector, ...extra] = process.argv.slice(2);
-    if (extra.length || !['case', 'inventory', 'sql'].includes(mode) || mode !== 'inventory' && !/^[A-Za-z0-9_:]+$/.test(selector || '')) throw new Error('Choose one exact qualification test or inventory.');
+    if (extra.length || !['case', 'inventory', 'sql', 'producer-trace'].includes(mode) || mode !== 'inventory' && !/^[A-Za-z0-9_:]+$/.test(selector || '')) throw new Error('Choose one exact qualification test or inventory.');
     const manifest = await verifyArtifacts();
     if (manifest.source.commit !== process.env.DUSKCUE_SOURCE_COMMIT || !/^[a-f0-9-]{36}$/.test(process.env.DUSKCUE_TEST_RESOURCE_ID || '')) throw new Error('The runtime is not owned by this exact source workflow.');
     const executable = mode === 'sql' ? RUNTIME_ARTIFACTS.stopContract : RUNTIME_ARTIFACTS.libTest;
+    if (mode === 'producer-trace' && selector !== PRODUCER_CASE) throw new Error('Only the failed exact producer can have a syscall diagnostic.');
     if (mode === 'inventory') {
         const inventory = await runBounded(executable, ['--list'], { bytes: 1048576, captureBytes: 1048576, timeoutMs: 30000 });
         if (inventory.code !== 0 || inventory.signal) throw new Error('Current test inventory could not be read.');
@@ -34,6 +36,12 @@ async function main() {
     if (!allowed) throw new Error('The requested test is outside this qualification.');
     const listed = await runBounded(executable, [selector, '--exact', '--list'], { bytes: 1048576, timeoutMs: 30000 });
     if (listed.code !== 0 || listed.signal || !exactTestListed(listed.stdout, selector)) throw new Error('The exact current test is absent; zero tests cannot pass.');
+    if (mode === 'producer-trace') {
+        const diagnostic = await traceProducer(executable, selector);
+        console.log(`DUSKCUE_PRODUCER_DIAGNOSTIC=${JSON.stringify({ ...diagnostic, test: selector, sourceCommit: manifest.source.commit, sourceSha256: manifest.source.sha256, artifacts: manifest.artifacts })}`);
+        if (!diagnostic.completed) process.exitCode = 1;
+        return;
+    }
     const result = await runBounded(executable, [selector, '--exact', '--include-ignored', '--nocapture'], { bytes: 16777216, timeoutMs: 300000 });
     process.stdout.write(result.stdout);
     process.stderr.write(result.stderr);

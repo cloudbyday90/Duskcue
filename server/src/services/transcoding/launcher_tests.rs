@@ -120,7 +120,7 @@ impl Running {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires a fresh guarded Linux artifact and its mandatory packaged bootstrap"]
 async fn actual_production_managed_ffmpeg_writes_a_finite_completed_hls_playlist()
 -> anyhow::Result<()> {
@@ -169,7 +169,7 @@ async fn actual_production_managed_ffmpeg_writes_a_finite_completed_hls_playlist
     cleanup
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires a fresh guarded Linux artifact and its mandatory packaged bootstrap"]
 async fn actual_active_managed_ffmpeg_releases_child_before_cache_and_permit() -> anyhow::Result<()>
 {

@@ -70,6 +70,33 @@ async function runtimeContext(snapshot, build, destination) {
     }
 }
 
+async function producerTrace(ownership, imageId, environment, directory, sourceSha256) {
+    const container = await ownership.create(imageId, ['producer-trace', PRODUCER_CASE], { environment });
+    const log = 'logs/producer-trace-driver.log';
+    let diagnostic;
+    try {
+        const execution = await ownership.start(container, { log: join(directory, log), timeoutMs: 120000, bytes: 1048576 });
+        const outcome = marker(execution.stdout, 'DUSKCUE_PRODUCER_DIAGNOSTIC=');
+        if (outcome.test !== PRODUCER_CASE || outcome.countsTowardQualification !== false || outcome.sourceCommit !== environment.DUSKCUE_SOURCE_COMMIT || outcome.sourceSha256 !== sourceSha256) throw new Error('Producer diagnostic provenance mismatched.');
+        diagnostic = { ...outcome, containerExitCode: execution.code, imageId, log };
+    } catch (error) { diagnostic = { completed: false, countsTowardQualification: false, imageId, log, error: error.message }; }
+    finally {
+        try {
+            const path = 'logs/producer-strace.log';
+            const retained = join(directory, path);
+            await ownership.copyOut(container, '/qualification/work/producer-strace.log', retained, { requireSuccess: false });
+            const meta = await lstat(retained);
+            if (!meta.isFile() || meta.isSymbolicLink() || meta.size > 16777216) throw new Error('Producer trace is not a bounded regular log.');
+            diagnostic.trace = path;
+            diagnostic.traceRetained = true;
+            diagnostic.traceBytes = meta.size;
+            diagnostic.traceSha256 = await hashFile(retained);
+        } catch { diagnostic.traceRetained = false; }
+        await ownership.remove(container);
+    }
+    return diagnostic;
+}
+
 async function host(options) {
     if (process.platform !== 'linux' || process.arch !== 'x64' || process.env.GITHUB_ACTIONS !== 'true'
         || process.env.RUNNER_ENVIRONMENT !== 'github-hosted' || process.env.RUNNER_OS !== 'Linux' || process.env.GITHUB_SHA !== options.commit) throw new Error('This qualification is restricted to the matching GitHub-hosted Linux checkout.');
@@ -175,6 +202,7 @@ async function main() {
                             result.producer.files.push({ path: `producer/${file}`, bytes: meta.size, sha256: await hashFile(destination) });
                         }
                     }
+                    else result.producerDiagnostic = await producerTrace(ownership, result.image.id, environment, directory, source.sha256);
                 }
             } catch (error) {
                 failed = true;

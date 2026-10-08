@@ -59,7 +59,7 @@ impl Fixture {
     }
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires fresh packaged Linux bootstrap and the root-owned native probe fixture"]
 async fn actual_mandatory_bootstrap_denies_later_exec_network_and_outside_paths()
 -> anyhow::Result<()> {
@@ -87,7 +87,7 @@ async fn actual_mandatory_bootstrap_denies_later_exec_network_and_outside_paths(
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires fresh packaged Linux bootstrap and the root-owned native probe fixture"]
 async fn actual_constructor_refuses_missing_corrupt_and_wrong_arch_policy_before_main()
 -> anyhow::Result<()> {
@@ -115,7 +115,7 @@ async fn actual_constructor_refuses_missing_corrupt_and_wrong_arch_policy_before
     Ok(())
 }
 
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires fresh packaged Linux bootstrap and the root-owned native probe fixture"]
 async fn abandoned_managed_observer_terminates_after_stdout_eof_before_output_cleanup()
 -> anyhow::Result<()> {

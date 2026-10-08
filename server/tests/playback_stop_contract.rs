@@ -1,3 +1,7 @@
+// Duskcue — Self-hosted media streaming server
+// Copyright (C) 2026-2026 Duskcue Contributors
+// Licensed under AGPL-3.0. See LICENSE for details.
+
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
@@ -47,7 +51,20 @@ async fn request(
         .await?;
     let status = response.status();
     let bytes = to_bytes(response.into_body(), 65536).await?;
-    Ok((status, serde_json::from_slice(&bytes)?))
+    let problem: Value = serde_json::from_slice(&bytes)?;
+    if status.is_server_error() {
+        eprintln!(
+            "DUSKCUE_STOP_CONTRACT_PROBLEM={}",
+            json!({
+                "method": method,
+                "path": path,
+                "status": status.as_u16(),
+                "title": problem.get("title"),
+                "detail": problem.get("detail"),
+            })
+        );
+    }
+    Ok((status, problem))
 }
 
 fn source_fixture() -> anyhow::Result<PathBuf> {
@@ -128,6 +145,11 @@ async fn stop_is_idempotent_serializes_heartbeat_seek_and_retains_original_profi
     );
     sqlx::migrate!().run(&pool).await?;
     sqlx::query("CREATE TABLE IF NOT EXISTS play_sessions_transcode_test PARTITION OF play_sessions DEFAULT").execute(&pool).await?;
+    sqlx::query(
+        "CREATE TABLE IF NOT EXISTS play_events_transcode_test PARTITION OF play_events DEFAULT",
+    )
+    .execute(&pool)
+    .await?;
     let owner = Uuid::now_v7();
     let peer = Uuid::now_v7();
     let original = Uuid::now_v7();

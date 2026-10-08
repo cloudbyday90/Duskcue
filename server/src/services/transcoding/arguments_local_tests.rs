@@ -80,7 +80,8 @@ pub(super) async fn encode(args: &[String], source: &Path, directory: &Path) -> 
         Ok(WaitForCompletionOrTerminateResult::Completed(output)) => {
             anyhow::ensure!(
                 output.status.success(),
-                "production managed encode failed: {}",
+                "production managed encode failed with {}: {}",
+                output.status,
                 String::from_utf8_lossy(&output.stderr.bytes)
             );
             Ok(())
