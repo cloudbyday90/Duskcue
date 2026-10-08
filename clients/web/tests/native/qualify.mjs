@@ -18,6 +18,7 @@ import { exerciseNativeEvents } from './qualification-events.mjs';
 import { exerciseAutoplayZoom } from './qualification-autoplay-zoom.mjs';
 import { captureNativeArtifact, createNativeCaptureInventory } from './qualification-capture.mjs';
 import { exerciseNativeBrowsing } from './qualification-browsing.mjs';
+import { awaitNativeFirstRun } from './qualification-startup.mjs';
 
 if (process.argv[2] === '--prepare') {
     const manifest = await prepareQualification();
@@ -39,6 +40,7 @@ if (process.argv[2] === '--prepare') {
         runtime.pageErrors = [];
         page.on('pageerror', (error) => runtime.pageErrors.push({ message: error.message, stack: error.stack }));
         page.setDefaultTimeout(15_000);
+        result.startupReadiness = await awaitNativeFirstRun(page);
         result.checks.isolation = await assertNativeIsolation(page, manifest);
         isolated = true;
         api = await installQualificationApi(page, manifest);

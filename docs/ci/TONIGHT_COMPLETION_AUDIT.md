@@ -75,6 +75,8 @@ Latest lighter source work supersedes the source currency of the passing fronten
 
 Current-source evidence now supersedes the source-check/unit/build limits of that paragraph: hosted job [113081617739](https://github.com/cloudbyday90/Duskcue/actions/runs/37706377561/job/113081617739) passes at `04fea55` with zero Svelte diagnostics, ten Node plus 373 Vitest cases and an ordinary production build. Current full browser/caption, actual native and managed Linux/database execution remain live or pending, not achieved. Other historical rows above retain their checkpoint boundaries until those stronger runtime results arrive.
 
+Those runtime jobs are now terminal failed: Linux test-helper compilation used the output/termination builder in the wrong order, and native's initial read-only identity evaluation raced initial document navigation. Linux/native owned cleanup passed; no managed runtime/SQL/producer or native journey check executed, and the dependent full browser job was skipped. Both source corrections are prepared, with four bounded native-startup tests and Rust formatting passing. Current whole-source compilation, actual runtime and full browser evidence still require the fresh corrected run.
+
 ## Proof boundaries to retain
 
 - Heartbeat updates resume; watched completion is a normal-stop result based on the actual selected media-file runtime. An immediate ended heartbeat alone does not mark watched. Do not fake completion from an event or synthetic clock.

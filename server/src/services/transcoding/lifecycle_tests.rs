@@ -44,9 +44,13 @@ pub(super) fn child(code: &str) -> anyhow::Result<FfmpegHandle> {
     process(command)
 }
 
-fn process(mut command: Command) -> anyhow::Result<FfmpegHandle> {
+fn process(command: Command) -> anyhow::Result<FfmpegHandle> {
     #[cfg(target_os = "windows")]
-    command.creation_flags(0x08000000);
+    let command = {
+        let mut command = command;
+        command.creation_flags(0x08000000);
+        command
+    };
     Ok(Process::new(command)
         .name("owned-transcode-lifecycle-fixture")
         .stdout_and_stderr(|stream| {

@@ -67,7 +67,6 @@ pub(super) async fn encode(args: &[String], source: &Path, directory: &Path) -> 
     }
     let outcome = process
         .wait_for_completion(Duration::from_secs(60))
-        .or_terminate(shutdown.clone())
         .with_raw_output(
             DEFAULT_OUTPUT_EOF_TIMEOUT,
             RawOutputOptions::symmetric(RawCollectionOptions::Bounded {
@@ -75,6 +74,7 @@ pub(super) async fn encode(args: &[String], source: &Path, directory: &Path) -> 
                 overflow_behavior: CollectionOverflowBehavior::DropAdditionalData,
             }),
         )
+        .or_terminate(shutdown.clone())
         .await;
     match outcome {
         Ok(WaitForCompletionOrTerminateResult::Completed(output)) => {
