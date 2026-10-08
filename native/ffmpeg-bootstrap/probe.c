@@ -10,6 +10,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <sys/syscall.h>
 #include <time.h>
 #include <unistd.h>
@@ -52,6 +53,17 @@ int main(int argc, char **argv) {
             if (syscall(SYS_membarrier, (long)MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED, 0UL, ignored_cpu_values[index]) != -1 || errno != EPERM) return 4;
         }
         return write(STDOUT_FILENO, "BARRIER_REGISTRATION_DENIED\n", 28) == 28 ? 0 : 5;
+    }
+    if (strcmp(argv[1], "self-resources") == 0) {
+        struct rusage usage = {0};
+        if (syscall(SYS_getrusage, (long)RUSAGE_SELF, &usage) != 0 ||
+            usage.ru_utime.tv_sec < 0 || usage.ru_stime.tv_sec < 0) return 4;
+        return write(STDOUT_FILENO, "SELF_RESOURCE_QUERY_OK\n", 23) == 23 ? 0 : 5;
+    }
+    if (strcmp(argv[1], "children-resources") == 0) {
+        struct rusage usage = {0};
+        syscall(SYS_getrusage, (long)RUSAGE_CHILDREN, &usage);
+        return 3;
     }
     if (strcmp(argv[1], "path") == 0 && argc == 3) {
         int input = open(argv[2], O_RDONLY);

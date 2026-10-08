@@ -21,7 +21,19 @@ Add-Type -TypeDefinition @'
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Text;
+public sealed class TonightWindowCandidate {
+    public IntPtr Handle { get; set; }
+    public IntPtr Owner { get; set; }
+    public bool Visible { get; set; }
+    public bool Iconic { get; set; }
+    public bool ClientRectReadable { get; set; }
+    public int ClientWidth { get; set; }
+    public int ClientHeight { get; set; }
+    public string ClassName { get; set; }
+}
 public static class TonightOwnedWindow {
+    [StructLayout(LayoutKind.Sequential)] private struct Rect { public int Left, Top, Right, Bottom; }
     private delegate bool WindowCallback(IntPtr window, IntPtr parameter);
     [DllImport("user32.dll")] private static extern bool EnumWindows(WindowCallback callback, IntPtr parameter);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr window, out uint process);
@@ -30,15 +42,26 @@ public static class TonightOwnedWindow {
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")] public static extern bool IsIconic(IntPtr window);
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr window, int command);
-    public static IntPtr[] Find(uint expected) {
-        var windows = new List<IntPtr>();
+    [DllImport("user32.dll")] private static extern bool GetClientRect(IntPtr window, out Rect rectangle);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)] private static extern int GetClassNameW(IntPtr window, StringBuilder name, int length);
+    public static TonightWindowCandidate[] Find(uint expected) {
+        var windows = new List<TonightWindowCandidate>();
+        string failure = null;
         WindowCallback callback = (window, parameter) => {
             uint process;
             GetWindowThreadProcessId(window, out process);
-            if (process == expected && GetWindow(window, 4) == IntPtr.Zero && IsWindowVisible(window)) windows.Add(window);
+            if (process == expected) {
+                if (windows.Count >= 64) { failure = "Owned window metadata exceeded its bound."; return false; }
+                Rect rectangle;
+                bool readable = GetClientRect(window, out rectangle);
+                var name = new StringBuilder(256);
+                if (GetClassNameW(window, name, name.Capacity) == 0) { failure = "Owned window class could not be read."; return false; }
+                windows.Add(new TonightWindowCandidate { Handle = window, Owner = GetWindow(window, 4), Visible = IsWindowVisible(window), Iconic = IsIconic(window),
+                    ClientRectReadable = readable, ClientWidth = rectangle.Right - rectangle.Left, ClientHeight = rectangle.Bottom - rectangle.Top, ClassName = name.ToString() });
+            }
             return true;
         };
-        if (!EnumWindows(callback, IntPtr.Zero)) throw new InvalidOperationException("Owned window enumeration failed.");
+        if (!EnumWindows(callback, IntPtr.Zero)) throw new InvalidOperationException(failure ?? "Owned window enumeration failed.");
         return windows.ToArray();
     }
 }
@@ -54,12 +77,29 @@ function Assert-OwnedHost {
 
 $pinnedWindow = [IntPtr]::Zero
 $actions = [Collections.Generic.List[object]]::new()
+$windowSnapshots = [Collections.Generic.List[object]]::new()
+function Select-OwnedContentWindows {
+    param([object[]]$Windows, [IntPtr]$PinnedWindow = [IntPtr]::Zero)
+    @($Windows | Where-Object {
+        $_.Visible -eq $true -and $_.Owner -eq [IntPtr]::Zero -and $_.ClientRectReadable -eq $true -and
+        (($_.ClientWidth -gt 0 -and $_.ClientHeight -gt 0) -or ($PinnedWindow -ne [IntPtr]::Zero -and $_.Handle -eq $PinnedWindow -and $_.Iconic -eq $true))
+    })
+}
 function Assert-OwnedWindow {
     $actual = Assert-OwnedHost
-    $candidates = @([TonightOwnedWindow]::Find([uint32]$identity.host.pid))
-    if ($candidates.Count -ne 1 -or ($pinnedWindow -ne [IntPtr]::Zero -and $candidates[0] -ne $pinnedWindow)) { throw 'The native HWND is missing, ambiguous or changed.' }
-    if ($identity.host.handle -and $candidates[0].ToInt64().ToString() -ne $identity.host.handle) { throw 'The pinned native HWND changed.' }
-    return [pscustomobject]@{ actual = $actual; window = $candidates[0] }
+    $knownWindow = $pinnedWindow
+    if ($knownWindow -eq [IntPtr]::Zero -and $identity.host.handle) {
+        if ($identity.host.handle -notmatch '^[1-9][0-9]*$') { throw 'The persisted native HWND is invalid.' }
+        $knownWindow = [IntPtr][long]$identity.host.handle
+    }
+    $windows = @([TonightOwnedWindow]::Find([uint32]$identity.host.pid))
+    $candidates = @(Select-OwnedContentWindows $windows -PinnedWindow $knownWindow)
+    $metadata = @($windows | ForEach-Object { [ordered]@{ handle = $_.Handle.ToInt64().ToString(); owner = $_.Owner.ToInt64().ToString(); visible = $_.Visible; iconic = $_.Iconic; clientRectReadable = $_.ClientRectReadable; width = $_.ClientWidth; height = $_.ClientHeight; className = $_.ClassName } })
+    if ($windowSnapshots.Count -ge 128) { throw 'Owned window snapshots exceeded their bound.' }
+    $windowSnapshots.Add([ordered]@{ pid = [int]$identity.host.pid; eligibleCount = $candidates.Count; windows = $metadata; observedAt = [DateTime]::UtcNow.ToString('o') })
+    if ($candidates.Count -ne 1 -or ($knownWindow -ne [IntPtr]::Zero -and $candidates[0].Handle -ne $knownWindow)) { throw "The native content HWND is missing, ambiguous or changed ($($candidates.Count) eligible of $($windows.Count) exact-PID windows)." }
+    if ($identity.host.handle -and $candidates[0].Handle.ToInt64().ToString() -ne $identity.host.handle) { throw 'The pinned native HWND changed.' }
+    return [pscustomobject]@{ actual = $actual; window = $candidates[0].Handle }
 }
 
 function Invoke-OwnedWindow {
@@ -107,6 +147,6 @@ try {
     try {
         if ($pinnedWindow -ne [IntPtr]::Zero) { Invoke-OwnedWindow 'restore' | Out-Null; $finallyRestored = $true }
     } catch { $finalError = $_.Exception.Message }
-    [ordered]@{ actions = $actions.ToArray(); finallyRestored = $finallyRestored; restoreError = $finalError } | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $expectedDirectory $(if ($RestoreOnly) { 'native-window-fallback-restore.json' } else { 'native-window-actions.json' })) -Encoding utf8NoBOM
+    [ordered]@{ actions = $actions.ToArray(); windowSnapshots = $windowSnapshots.ToArray(); finallyRestored = $finallyRestored; restoreError = $finalError } | ConvertTo-Json -Depth 7 | Set-Content -LiteralPath (Join-Path $expectedDirectory $(if ($RestoreOnly) { 'native-window-fallback-restore.json' } else { 'native-window-actions.json' })) -Encoding utf8NoBOM
     if ($finalError) { throw $finalError }
 }

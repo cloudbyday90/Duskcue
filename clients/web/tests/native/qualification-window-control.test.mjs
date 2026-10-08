@@ -8,6 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
+import { fileURLToPath } from 'node:url';
 import { assertOwnedNativeWindow, requireHostedWindowContext } from './qualification-window-control-policy.mjs';
 import { assertBackgroundEvidence, countdownSeconds } from './qualification-background-policy.mjs';
 
@@ -28,6 +29,47 @@ test('PowerShell identity JSON keeps the exact seven-fraction creation timestamp
     const exact = { ...host, createdAt: parsed.value };
     assert.equal(assertOwnedNativeWindow(exact, exact, ['101']), '101');
     assert.throws(() => assertOwnedNativeWindow(exact, { ...exact, createdAt: parsed.different }, ['101']));
+});
+
+test('actual PowerShell content-window selection excludes Tao zero-area event targets without selecting an ambiguous main window', { skip: process.platform !== 'win32' }, async () => {
+    const helper = fileURLToPath(new URL('./qualification-window-control.ps1', import.meta.url)).replaceAll("'", "''");
+    const script = `$tokens = $null; $errors = $null; $tree = [Management.Automation.Language.Parser]::ParseFile('${helper}', [ref]$tokens, [ref]$errors); if ($errors.Count) { throw 'Helper syntax invalid' }; $selector = $tree.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Select-OwnedContentWindows' }, $true); if (-not $selector) { throw 'Selection function missing' }; Invoke-Expression $selector.Extent.Text; $main = [pscustomobject]@{Handle=[IntPtr]101;Owner=[IntPtr]::Zero;Visible=$true;ClientRectReadable=$true;ClientWidth=1028;ClientHeight=720}; $event = [pscustomobject]@{Handle=[IntPtr]102;Owner=[IntPtr]::Zero;Visible=$true;ClientRectReadable=$true;ClientWidth=0;ClientHeight=0}; $second = [pscustomobject]@{Handle=[IntPtr]103;Owner=[IntPtr]::Zero;Visible=$true;ClientRectReadable=$true;ClientWidth=640;ClientHeight=480}; $hidden = [pscustomobject]@{Handle=[IntPtr]104;Owner=[IntPtr]::Zero;Visible=$false;ClientRectReadable=$true;ClientWidth=640;ClientHeight=480}; $owned = [pscustomobject]@{Handle=[IntPtr]105;Owner=[IntPtr]101;Visible=$true;ClientRectReadable=$true;ClientWidth=640;ClientHeight=480}; $unreadable = [pscustomobject]@{Handle=[IntPtr]106;Owner=[IntPtr]::Zero;Visible=$true;ClientRectReadable=$false;ClientWidth=640;ClientHeight=480}; [ordered]@{mainAndEvent=@(Select-OwnedContentWindows @($main,$event) | ForEach-Object {$_.Handle.ToInt64().ToString()});eventOnly=@(Select-OwnedContentWindows @($event));ambiguous=@(Select-OwnedContentWindows @($main,$event,$second) | ForEach-Object {$_.Handle.ToInt64().ToString()});hiddenOwnedUnreadable=@(Select-OwnedContentWindows @($hidden,$owned,$unreadable))} | ConvertTo-Json -Compress`;
+    const response = await promisify(execFile)('pwsh.exe', ['-NoProfile', '-Command', script], { windowsHide: true, timeout: 5000, maxBuffer: 4096 });
+    const selection = JSON.parse(response.stdout.trim());
+    assert.deepEqual(selection.mainAndEvent, ['101']);
+    assert.deepEqual(selection.eventOnly, []);
+    assert.deepEqual(selection.hiddenOwnedUnreadable, []);
+    assert.equal(assertOwnedNativeWindow(host, host, selection.mainAndEvent), '101');
+    assert.throws(() => assertOwnedNativeWindow(host, host, selection.eventOnly));
+    assert.deepEqual(selection.ambiguous, ['101', '103']);
+    assert.throws(() => assertOwnedNativeWindow(host, host, selection.ambiguous));
+});
+
+test('a zero-area minimized window stays eligible only after its exact HWND was pinned', { skip: process.platform !== 'win32' }, async () => {
+    const helper = fileURLToPath(new URL('./qualification-window-control.ps1', import.meta.url)).replaceAll("'", "''");
+    const script = `
+        $tokens = $null; $errors = $null
+        $tree = [Management.Automation.Language.Parser]::ParseFile('${helper}', [ref]$tokens, [ref]$errors)
+        if ($errors.Count) { throw 'Helper syntax invalid' }
+        $selector = $tree.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Select-OwnedContentWindows' }, $true)
+        if (-not $selector) { throw 'Selection function missing' }
+        Invoke-Expression $selector.Extent.Text
+        $minimized = [pscustomobject]@{Handle=[IntPtr]101;Owner=[IntPtr]::Zero;Visible=$true;Iconic=$true;ClientRectReadable=$true;ClientWidth=0;ClientHeight=0}
+        $event = [pscustomobject]@{Handle=[IntPtr]102;Owner=[IntPtr]::Zero;Visible=$true;Iconic=$false;ClientRectReadable=$true;ClientWidth=0;ClientHeight=0}
+        $zeroVisible = [pscustomobject]@{Handle=[IntPtr]101;Owner=[IntPtr]::Zero;Visible=$true;Iconic=$false;ClientRectReadable=$true;ClientWidth=0;ClientHeight=0}
+        [ordered]@{
+            initial=@(Select-OwnedContentWindows @($minimized,$event))
+            pinned=@(Select-OwnedContentWindows @($minimized,$event) -PinnedWindow ([IntPtr]101) | ForEach-Object {$_.Handle.ToInt64().ToString()})
+            wrongPin=@(Select-OwnedContentWindows @($minimized,$event) -PinnedWindow ([IntPtr]103))
+            notIconic=@(Select-OwnedContentWindows @($zeroVisible,$event) -PinnedWindow ([IntPtr]101))
+        } | ConvertTo-Json -Compress`;
+    const response = await promisify(execFile)('pwsh.exe', ['-NoProfile', '-Command', script], { windowsHide: true, timeout: 5000, maxBuffer: 4096 });
+    const selection = JSON.parse(response.stdout.trim());
+    assert.deepEqual(selection.initial, []);
+    assert.deepEqual(selection.pinned, ['101']);
+    assert.deepEqual(selection.wrongPin, []);
+    assert.deepEqual(selection.notIconic, []);
+    assert.equal(assertOwnedNativeWindow({ ...host, handle: '101' }, host, selection.pinned), '101');
 });
 
 test('window control cannot target local/self-hosted/windows from another native job', () => {

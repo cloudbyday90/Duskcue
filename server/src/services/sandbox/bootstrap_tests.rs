@@ -73,7 +73,10 @@ async fn actual_mandatory_bootstrap_denies_later_exec_network_and_outside_paths(
     let registration = fixture.invoke("barrier-registration", &[]).await?;
     assert!(registration.status.success());
     assert_eq!(registration.stdout, b"BARRIER_REGISTRATION_DENIED\n");
-    for mode in ["exec", "execat", "network"] {
+    let resources = fixture.invoke("self-resources", &[]).await?;
+    assert!(resources.status.success());
+    assert_eq!(resources.stdout, b"SELF_RESOURCE_QUERY_OK\n");
+    for mode in ["exec", "execat", "network", "children-resources"] {
         let result = fixture.invoke(mode, &[]).await?;
         assert_eq!(result.status.signal(), Some(libc::SIGSYS), "mode {mode}");
     }

@@ -246,3 +246,88 @@ fn registration_arguments() -> [[u64; 6]; 12] {
         [u64::MAX, u64::MAX, u64::MAX, 0, 0, 0],
     ]
 }
+
+#[test]
+fn self_resource_getter_requires_the_full_native_selector_and_preserves_denials() {
+    let filter = build_ffmpeg_filter().unwrap();
+    let architecture = super::super::wire::audit_arch();
+    for who in [0, 1, u64::MAX, 1 << 32, 1 << 63] {
+        let arguments = [who, u64::MAX, 0, 0, 0, 0];
+        assert_eq!(
+            evaluate_arguments(&filter, libc::SYS_getrusage, architecture, arguments),
+            if who == 0 { 0x7fff_0000 } else { 0x8000_0000 },
+        );
+        assert_eq!(
+            evaluate_arguments(&filter, libc::SYS_getrusage, architecture ^ 1, arguments),
+            0x8000_0000
+        );
+        assert_eq!(
+            evaluate_arguments(
+                &filter,
+                libc::SYS_getrusage | 0x4000_0000,
+                architecture,
+                arguments
+            ),
+            0x8000_0000
+        );
+        for denied in [
+            libc::SYS_execve,
+            libc::SYS_execveat,
+            libc::SYS_socket,
+            libc::SYS_ptrace,
+        ] {
+            assert_eq!(
+                evaluate_arguments(&filter, denied, architecture, arguments),
+                0x8000_0000
+            );
+        }
+    }
+}
+
+#[test]
+fn conditioned_self_resource_rule_compiles_for_each_native_architecture() {
+    for (architecture, target, usage_syscall, read) in [
+        (0xc000_003e, seccompiler::TargetArch::x86_64, 98, 0),
+        (0xc000_00b7, seccompiler::TargetArch::aarch64, 165, 63),
+    ] {
+        let baseline: seccompiler::BpfProgram = seccompiler::SeccompFilter::new(
+            std::collections::BTreeMap::from([(read, Vec::new())]),
+            seccompiler::SeccompAction::KillProcess,
+            seccompiler::SeccompAction::Allow,
+            target,
+        )
+        .unwrap()
+        .try_into()
+        .unwrap();
+        let filter: seccompiler::BpfProgram = seccompiler::SeccompFilter::new(
+            std::collections::BTreeMap::from([
+                (read, Vec::new()),
+                (usage_syscall, vec![resources::self_usage_rule().unwrap()]),
+            ]),
+            seccompiler::SeccompAction::KillProcess,
+            seccompiler::SeccompAction::Allow,
+            target,
+        )
+        .unwrap()
+        .try_into()
+        .unwrap();
+        for who in [0, 1, u64::MAX, 1 << 32, 1 << 63] {
+            let arguments = [who, u64::MAX, u64::MAX, 0, 0, 0];
+            for syscall in 0..1024 {
+                let expected = if syscall == usage_syscall && who == 0 {
+                    0x7fff_0000
+                } else {
+                    evaluate_arguments(&baseline, syscall, architecture, arguments)
+                };
+                assert_eq!(
+                    evaluate_arguments(&filter, syscall, architecture, arguments),
+                    expected
+                );
+                assert_eq!(
+                    evaluate_arguments(&filter, syscall, architecture ^ 1, arguments),
+                    0x8000_0000
+                );
+            }
+        }
+    }
+}

@@ -6,6 +6,8 @@
 mod barrier;
 #[path = "filter_denial.rs"]
 mod denial;
+#[path = "filter_resources.rs"]
+mod resources;
 
 pub(super) fn build_ffmpeg_filter() -> Result<seccompiler::BpfProgram, std::io::Error> {
     let program = denial::with_numa_query_denied(
@@ -84,6 +86,14 @@ fn build_allowlist_filter() -> Result<seccompiler::BpfProgram, std::io::Error> {
     ]
     .into_iter()
     .collect();
+
+    rules.insert(
+        libc::SYS_getrusage,
+        vec![
+            resources::self_usage_rule()
+                .map_err(|error| std::io::Error::other(format!("self resource rule: {error}")))?,
+        ],
+    );
 
     #[cfg(target_arch = "x86_64")]
     {
