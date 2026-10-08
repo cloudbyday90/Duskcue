@@ -5,6 +5,7 @@
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
+#include <linux/membarrier.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -43,6 +44,14 @@ int main(int argc, char **argv) {
         errno = 0;
         if (syscall(SYS_get_mempolicy, NULL, NULL, 0UL, 0UL, 0UL) != -1 || errno != EPERM) return 4;
         return write(STDOUT_FILENO, "NUMA_QUERY_DENIED\n", 18) == 18 ? 0 : 5;
+    }
+    if (strcmp(argv[1], "barrier-registration") == 0) {
+        const unsigned long ignored_cpu_values[] = {0UL, 1UL, ~0UL};
+        for (unsigned int index = 0; index < sizeof(ignored_cpu_values) / sizeof(ignored_cpu_values[0]); index++) {
+            errno = 0;
+            if (syscall(SYS_membarrier, (long)MEMBARRIER_CMD_REGISTER_PRIVATE_EXPEDITED, 0UL, ignored_cpu_values[index]) != -1 || errno != EPERM) return 4;
+        }
+        return write(STDOUT_FILENO, "BARRIER_REGISTRATION_DENIED\n", 28) == 28 ? 0 : 5;
     }
     if (strcmp(argv[1], "path") == 0 && argc == 3) {
         int input = open(argv[2], O_RDONLY);

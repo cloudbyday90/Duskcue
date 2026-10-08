@@ -8,7 +8,7 @@ param([Parameter(Mandatory = $true)][string]$IdentityPath, [switch]$RestoreOnly)
 $ErrorActionPreference = 'Stop'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:RUNNER_OS -ne 'Windows') { throw 'Window actions require a GitHub-hosted Windows qualification job.' }
-$identity = Get-Content -LiteralPath $IdentityPath -Raw | ConvertFrom-Json
+$identity = Get-Content -LiteralPath $IdentityPath -Raw | ConvertFrom-Json -DateKind String
 if ($identity.context.sourceCommit -ne $env:GITHUB_SHA -or $identity.context.runId -ne $env:GITHUB_RUN_ID -or $identity.context.attempt -ne $env:GITHUB_RUN_ATTEMPT -or $identity.context.job -ne $env:GITHUB_JOB) { throw 'Window identity belongs to another hosted job.' }
 if ($identity.identifier -notmatch '^com\.duskcue\.tonightqualification\.t[a-f0-9]{32}$') { throw 'A unique native qualification identifier is required.' }
 $qualificationId = $identity.identifier.Substring($identity.identifier.LastIndexOf('.t') + 2)

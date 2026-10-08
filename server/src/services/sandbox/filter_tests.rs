@@ -5,6 +5,15 @@
 use super::*;
 
 fn evaluate(filter: &seccompiler::BpfProgram, syscall: i64, arch: u32) -> u32 {
+    evaluate_arguments(filter, syscall, arch, [0; 6])
+}
+
+fn evaluate_arguments(
+    filter: &seccompiler::BpfProgram,
+    syscall: i64,
+    arch: u32,
+    arguments: [u64; 6],
+) -> u32 {
     let mut index = 0;
     let mut accumulator = 0;
     for _ in 0..filter.len() * 2 {
@@ -14,6 +23,10 @@ fn evaluate(filter: &seccompiler::BpfProgram, syscall: i64, arch: u32) -> u32 {
                 accumulator = match instruction.k {
                     0 => syscall as u32,
                     4 => arch,
+                    offset if (16..=60).contains(&offset) && offset % 4 == 0 => {
+                        let offset = (offset - 16) as usize;
+                        (arguments[offset / 8] >> ((offset % 8) * 8)) as u32
+                    }
                     _ => panic!("unexpected input word"),
                 };
                 0
@@ -92,7 +105,7 @@ fn numa_query_fallback_changes_one_denial_and_preserves_all_other_native_actions
     let baseline = build_allowlist_filter().unwrap();
     let filter = build_ffmpeg_filter().unwrap();
     let arch = super::super::wire::audit_arch();
-    assert_eq!(filter.len(), baseline.len() + 5);
+    assert_eq!(filter.len(), baseline.len() + 18);
     for syscall in 0..1024 {
         let expected = if syscall == libc::SYS_get_mempolicy {
             u32::from(seccompiler::SeccompAction::Errno(libc::EPERM as u32))
@@ -146,4 +159,90 @@ fn numa_denial_prefix_uses_each_compiled_native_architecture_and_syscall_number(
             assert_eq!(evaluate(&filter, syscall, architecture ^ 1), 0x8000_0000);
         }
     }
+}
+
+#[test]
+fn private_registration_fallback_checks_command_and_flags_preserving_other_actions() {
+    let baseline = build_allowlist_filter().unwrap();
+    let filter = build_ffmpeg_filter().unwrap();
+    let arch = super::super::wire::audit_arch();
+    for arguments in registration_arguments() {
+        for syscall in 0..1024 {
+            let expected = if syscall == libc::SYS_get_mempolicy
+                || syscall == libc::SYS_membarrier && arguments[..2] == [16, 0]
+            {
+                u32::from(seccompiler::SeccompAction::Errno(libc::EPERM as u32))
+            } else {
+                evaluate_arguments(&baseline, syscall, arch, arguments)
+            };
+            assert_eq!(
+                evaluate_arguments(&filter, syscall, arch, arguments),
+                expected
+            );
+            assert_eq!(
+                evaluate_arguments(&filter, syscall, arch ^ 1, arguments),
+                0x8000_0000
+            );
+        }
+        assert_eq!(
+            evaluate_arguments(&filter, libc::SYS_membarrier | 0x4000_0000, arch, arguments),
+            0x8000_0000
+        );
+    }
+}
+
+#[test]
+fn private_registration_denial_uses_each_compiled_native_architecture() {
+    for (architecture, target, query, registration, read) in [
+        (0xc000_003e, seccompiler::TargetArch::x86_64, 239, 324, 0),
+        (0xc000_00b7, seccompiler::TargetArch::aarch64, 236, 283, 63),
+    ] {
+        let baseline: seccompiler::BpfProgram = seccompiler::SeccompFilter::new(
+            std::collections::BTreeMap::from([(read, Vec::new())]),
+            seccompiler::SeccompAction::KillProcess,
+            seccompiler::SeccompAction::Allow,
+            target,
+        )
+        .unwrap()
+        .try_into()
+        .unwrap();
+        let numa = denial::with_numa_query_denied(baseline.clone(), architecture, query);
+        let filter = barrier::with_private_registration_denied(numa, architecture, registration);
+        for arguments in registration_arguments() {
+            for syscall in 0..1024 {
+                let expected = if syscall == i64::from(query)
+                    || syscall == i64::from(registration) && arguments[..2] == [16, 0]
+                {
+                    u32::from(seccompiler::SeccompAction::Errno(libc::EPERM as u32))
+                } else {
+                    evaluate_arguments(&baseline, syscall, architecture, arguments)
+                };
+                assert_eq!(
+                    evaluate_arguments(&filter, syscall, architecture, arguments),
+                    expected
+                );
+                assert_eq!(
+                    evaluate_arguments(&filter, syscall, architecture ^ 1, arguments),
+                    0x8000_0000
+                );
+            }
+        }
+    }
+}
+
+fn registration_arguments() -> [[u64; 6]; 12] {
+    [
+        [16, 0, 0, 0, 0, 0],
+        [16, 0, 0, u64::MAX, u64::MAX, u64::MAX],
+        [0, 0, 0, 0, 0, 0],
+        [8, 0, 0, 0, 0, 0],
+        [64, 0, 0, 0, 0, 0],
+        [16 | 1 << 32, 0, 0, 0, 0, 0],
+        [16, 1, 0, 0, 0, 0],
+        [16, 1 << 32, 0, 0, 0, 0],
+        [16, 0, 1, 0, 0, 0],
+        [16, 0, 1 << 32, 0, 0, 0],
+        [16, 0, u64::MAX, 0, 0, 0],
+        [u64::MAX, u64::MAX, u64::MAX, 0, 0, 0],
+    ]
 }
