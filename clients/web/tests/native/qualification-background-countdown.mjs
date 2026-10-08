@@ -10,14 +10,19 @@ import { assertBackgroundEvidence, countdownSeconds } from './qualification-back
 import { keyboardReach } from './qualification-focus.mjs';
 
 async function readCountdown(page) {
-    return page.evaluate(() => ({ visibility: document.visibilityState, hidden: document.hidden, path: location.pathname,
+    const [nativeMinimized, nativeVisible] = await Promise.all([
+        invokeNative(page, 'plugin:window|is_minimized', { label: 'main' }),
+        invokeNative(page, 'plugin:window|is_visible', { label: 'main' }),
+    ]);
+    const state = await page.evaluate(() => ({ visibility: document.visibilityState, hidden: document.hidden, path: location.pathname,
         text: document.querySelector('.autoplay-card .countdown')?.textContent?.trim() || '',
         cardFocused: !!document.querySelector('.autoplay-card')?.contains(document.activeElement),
         menuOpen: !!document.querySelector('.player-popover:not([hidden])'), events: window.__nativeBackgroundVisibility || [] }));
+    return { ...state, nativeMinimized, nativeVisible };
 }
 
 export async function exerciseRealBackgroundCountdown({ page, api, control, screenshot }) {
-    const proof = { status: 'in_progress', transitions: [], focus: {}, restored: false, method: 'exact-owned hosted Win32 window minimize/restore and actual document visibility' };
+    const proof = { status: 'in_progress', transitions: [], focus: {}, restored: false, method: 'exact-owned hosted Win32 window minimize/restore, real native window reads and separately observed document visibility' };
     const playback = api.getPlayback();
     const starts = playback.starts.length;
     try {
@@ -29,6 +34,8 @@ export async function exerciseRealBackgroundCountdown({ page, api, control, scre
         await page.getByRole('region', { name: 'Media player', exact: true }).focus();
         proof.before = await readCountdown(page);
         expect(proof.before.visibility).toBe('visible');
+        expect(proof.before.nativeMinimized).toBe(false);
+        expect(proof.before.nativeVisible).toBe(true);
         expect(proof.before.cardFocused).toBe(false);
         expect(proof.before.menuOpen).toBe(false);
         const initial = countdownSeconds(proof.before);
@@ -41,28 +48,34 @@ export async function exerciseRealBackgroundCountdown({ page, api, control, scre
         proof.transitions.push(await control.action('minimize'));
         expect(await invokeNative(page, 'plugin:window|is_minimized', { label: 'main' })).toBe(true);
         await expect.poll(async () => {
-            proof.hidden = await readCountdown(page);
-            return proof.hidden.visibility === 'hidden' && proof.hidden.hidden === true && proof.hidden.text.includes('paused');
+            proof.background = await readCountdown(page);
+            return proof.background.nativeMinimized === true && !proof.background.cardFocused && !proof.background.menuOpen && proof.background.text.includes('paused');
         }, { timeout: 5000 }).toBe(true);
+        expect(countdownSeconds(proof.background)).toBeGreaterThan(4);
         proof.holdStartedAt = Date.now();
         await new Promise((resolve) => setTimeout(resolve, 11000));
         proof.holdElapsedMs = Date.now() - proof.holdStartedAt;
-        proof.afterHiddenHold = await readCountdown(page);
-        assertBackgroundEvidence(proof.hidden, proof.afterHiddenHold, starts, playback.starts.length);
+        proof.afterBackgroundHold = await readCountdown(page);
+        assertBackgroundEvidence(proof.background, proof.afterBackgroundHold, starts, playback.starts.length, proof.transitions[0]);
+        await page.evaluate(() => document.querySelector('.autoplay-card')?.scrollIntoView({ block: 'nearest', behavior: 'instant' }));
+        await screenshot('native-400-background-paused');
         expect(proof.holdElapsedMs).toBeGreaterThan(10000);
         proof.transitions.push(await control.action('restore'));
         expect(await invokeNative(page, 'plugin:window|is_minimized', { label: 'main' })).toBe(false);
-        await expect.poll(async () => (await readCountdown(page)).visibility, { timeout: 5000 }).toBe('visible');
+        await expect.poll(async () => {
+            const state = await readCountdown(page);
+            return state.visibility === 'visible' && state.nativeMinimized === false && state.nativeVisible === true;
+        }, { timeout: 5000 }).toBe(true);
         await page.getByRole('region', { name: 'Media player', exact: true }).focus();
         proof.visibleAgain = await readCountdown(page);
-        const remaining = countdownSeconds(proof.hidden);
+        const remaining = countdownSeconds(proof.background);
         expect(playback.starts.length).toBe(starts);
         expect(countdownSeconds(proof.visibleAgain)).toBeGreaterThanOrEqual(remaining - 1);
         await expect.poll(async () => {
             proof.resumed = await readCountdown(page);
-            return !proof.resumed.cardFocused && !proof.resumed.menuOpen && !proof.resumed.text.includes('paused') && countdownSeconds(proof.resumed) < remaining;
+            return proof.resumed.nativeMinimized === false && proof.resumed.nativeVisible === true && !proof.resumed.cardFocused && !proof.resumed.menuOpen && !proof.resumed.text.includes('paused') && countdownSeconds(proof.resumed) < remaining;
         }, { timeout: 3000 }).toBe(true);
-        expect(proof.resumed.events.some((event) => event.visibility === 'visible' && event.trusted === true)).toBe(true);
+        if (proof.background.hidden) expect(proof.resumed.events.some((event) => event.visibility === 'visible' && event.trusted === true)).toBe(true);
         expect(playback.starts.length).toBe(starts);
         await keyboardReach(page, page.getByRole('button', { name: 'Play now', exact: true }), 'background-restored-card-focus', proof);
         await screenshot('native-400-background-restored');

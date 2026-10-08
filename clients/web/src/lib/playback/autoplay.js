@@ -18,7 +18,7 @@ function initialState(paused = false) {
     return { phase: 'idle', nextEpisode: null, reason: null, remainingMs: 0, seconds: 0, paused, cancelled: false, error: null, announcement: null };
 }
 
-export function createAutoplayController({ resolveNext = resolveNextEpisode, onChange = (_state) => {}, onPlayNext, clock = defaultClock }) {
+export function createAutoplayController({ resolveNext = resolveNextEpisode, onChange = (_state) => {}, onPlayNext, beforeAutomaticNext = null, clock = defaultClock }) {
     if (typeof onPlayNext !== 'function') throw new TypeError('Autoplay requires a playback callback');
     let state = initialState();
     let context = null;
@@ -28,7 +28,8 @@ export function createAutoplayController({ resolveNext = resolveNextEpisode, onC
     let deadline = null;
     let transitioned = false;
     let disposed = false;
-    const pauses = { focusWithin: false, disclosureOpen: false, documentHidden: false };
+    let automaticCheck = null;
+    const pauses = { focusWithin: false, disclosureOpen: false, documentHidden: false, nativeBackground: false };
 
     function getState() {
         return { ...state, nextEpisode: state.nextEpisode ? { ...state.nextEpisode } : null };
@@ -61,6 +62,16 @@ export function createAutoplayController({ resolveNext = resolveNextEpisode, onC
         const signal = controller.signal;
         const nextEpisode = state.nextEpisode;
         const { profileId, item } = context;
+        if (mode === 'automatic' && beforeAutomaticNext) {
+            if (automaticCheck) return false;
+            const check = {};
+            automaticCheck = check;
+            let allowed = false;
+            try { allowed = await beforeAutomaticNext({ signal, profileId, currentItemId: item.id }) === true; }
+            catch {}
+            finally { if (automaticCheck === check) automaticCheck = null; }
+            if (!allowed || disposed || signal.aborted || generation !== currentGeneration || transitioned || state.phase !== 'countdown' || !canTime() || isPaused()) return false;
+        }
         transitioned = true;
         stopTimer();
         state.phase = 'transitioning';
@@ -168,6 +179,7 @@ export function createAutoplayController({ resolveNext = resolveNextEpisode, onC
         controller = null;
         stopTimer();
         transitioned = false;
+        automaticCheck = null;
         context = null;
         state = initialState(isPaused());
         emit();

@@ -36,7 +36,7 @@ async function main() {
     const result = { version: 1, kind: 'duskcue-linux-test-artifacts', status: 'in_progress', architecture, source: { commit: process.env.DUSKCUE_SOURCE_COMMIT, ...inputs }, debugInfo: 0, cargoJobs: 2, artifacts: {} };
     await writeFile(join(output, 'artifact-manifest.json'), `${JSON.stringify(result, null, 2)}\n`);
     await checked('cc', ['-std=c11', '-O2', '-fPIC', '-fstack-protector-strong', '-Wall', '-Wextra', '-Werror', '-shared', '-Wl,-z,now,-z,relro,-soname,/usr/local/lib/duskcue-ffmpeg-bootstrap.so', '-o', '/out/duskcue-ffmpeg-bootstrap.so', '/src/native/ffmpeg-bootstrap/bootstrap.c'], { cwd: source, log: join(output, 'bootstrap-compile.log'), timeoutMs: 60000 });
-    await checked('cc', ['-std=c11', '-O2', '-Wall', '-Wextra', '-Werror', '-Wl,-z,now,--no-as-needed', '-o', '/out/duskcue-ffmpeg-probe', '/src/native/ffmpeg-bootstrap/probe.c', '/out/duskcue-ffmpeg-bootstrap.so'], { cwd: source, log: join(output, 'probe-compile.log'), timeoutMs: 60000 });
+    await checked('cc', ['-std=c11', '-O2', '-pthread', '-Wall', '-Wextra', '-Werror', '-Wl,-z,now,--no-as-needed', '-o', '/out/duskcue-ffmpeg-probe', '/src/native/ffmpeg-bootstrap/probe.c', '/out/duskcue-ffmpeg-bootstrap.so'], { cwd: source, log: join(output, 'probe-compile.log'), timeoutMs: 60000 });
     const environment = { ...process.env, CARGO_BUILD_JOBS: '2', CARGO_PROFILE_DEV_DEBUG: '0', CARGO_PROFILE_TEST_DEBUG: '0' };
     for (const [key, target, args] of [['libTest', 'duskcue', ['--lib']], ['stopContract', 'playback_stop_contract', ['--test', 'playback_stop_contract']]]) {
         let executable;

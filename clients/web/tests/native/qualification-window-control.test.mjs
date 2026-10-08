@@ -16,7 +16,8 @@ const root = 'C:/hosted/Duskcue';
 const environment = { GITHUB_ACTIONS: 'true', RUNNER_ENVIRONMENT: 'github-hosted', RUNNER_OS: 'Windows', GITHUB_WORKSPACE: root, GITHUB_SHA: 'a'.repeat(40), GITHUB_REPOSITORY: 'cloudbyday90/Duskcue', GITHUB_RUN_ID: '123', GITHUB_RUN_ATTEMPT: '1', GITHUB_JOB: 'native-windows' };
 const manifest = { hostedCI: { context: { sourceCommit: environment.GITHUB_SHA, runId: '123', attempt: '1', job: 'native-windows' } } };
 const host = { pid: 10, parentPid: 20, name: 'duskcue-tonight-qualification.exe', path: 'C:/hosted/Duskcue/target/debug/duskcue-tonight-qualification.exe', createdAt: '2026-10-08T00:00:00.0000000Z', sha256: 'a'.repeat(64) };
-const hidden = { visibility: 'hidden', hidden: true, cardFocused: false, menuOpen: false, text: 'Countdown paused at 8s', path: '/play/episode', events: [{ visibility: 'hidden', trusted: true }] };
+const hidden = { visibility: 'hidden', hidden: true, nativeMinimized: true, nativeVisible: true, cardFocused: false, menuOpen: false, text: 'Countdown paused at 8s', path: '/play/episode', events: [{ visibility: 'hidden', trusted: true }] };
+const minimized = { action: 'minimize', iconic: true, handle: '101' };
 
 test('PowerShell identity JSON keeps the exact seven-fraction creation timestamp and distinguishes one tick', { skip: process.platform !== 'win32' }, async () => {
     const script = `$json = '{"createdAt":"2026-10-08T01:37:15.9117940Z","different":"2026-10-08T01:37:15.9117941Z"}'; $parsed = $json | ConvertFrom-Json -DateKind String; [pscustomobject]@{type=$parsed.createdAt.GetType().FullName; value=$parsed.createdAt; different=$parsed.different; distinct=($parsed.createdAt -cne $parsed.different)} | ConvertTo-Json -Compress`;
@@ -91,20 +92,24 @@ test('HWND must be unique and match its original pin on minimize, restore and fi
     for (const handles of [[], ['101', '102'], ['102'], ['0'], [101]]) assert.throws(() => assertOwnedNativeWindow(pinned, host, handles));
 });
 
-test('real background evidence rejects minimized-only or synthetic visibility claims', () => {
-    assert.doesNotThrow(() => assertBackgroundEvidence(hidden, { ...hidden }, 1, 1));
-    for (const change of [{ visibility: 'visible' }, { hidden: false }, { events: [] }, { events: [{ visibility: 'hidden', trusted: false }] }]) assert.throws(() => assertBackgroundEvidence({ ...hidden, ...change }, hidden, 1, 1));
+test('real native background proof records a visible document truthfully and rejects invented document-hidden claims', () => {
+    const visible = { ...hidden, visibility: 'visible', hidden: false, events: [] };
+    assert.doesNotThrow(() => assertBackgroundEvidence(hidden, { ...hidden }, 1, 1, minimized));
+    assert.doesNotThrow(() => assertBackgroundEvidence(visible, { ...visible }, 1, 1, minimized));
+    for (const change of [{ visibility: 'visible' }, { hidden: false }, { events: [] }, { events: [{ visibility: 'hidden', trusted: false }] }]) assert.throws(() => assertBackgroundEvidence({ ...hidden, ...change }, hidden, 1, 1, minimized));
+    for (const action of [undefined, { ...minimized, iconic: false }, { ...minimized, action: 'restore' }, { ...minimized, handle: '0' }]) assert.throws(() => assertBackgroundEvidence(visible, visible, 1, 1, action));
+    for (const change of [{ nativeMinimized: false }, { nativeVisible: undefined }, { text: 'Playing next in 8s' }]) assert.throws(() => assertBackgroundEvidence({ ...visible, ...change }, visible, 1, 1, minimized));
 });
 
-test('card focus or disclosure cannot mask failure of the actual document-hidden pause', () => {
-    assert.throws(() => assertBackgroundEvidence({ ...hidden, cardFocused: true }, hidden, 1, 1));
-    assert.throws(() => assertBackgroundEvidence(hidden, { ...hidden, menuOpen: true }, 1, 1));
+test('card focus or disclosure cannot mask failure of the actual native-background pause', () => {
+    assert.throws(() => assertBackgroundEvidence({ ...hidden, cardFocused: true }, hidden, 1, 1, minimized));
+    assert.throws(() => assertBackgroundEvidence(hidden, { ...hidden, menuOpen: true }, 1, 1, minimized));
 });
 
 test('background countdown text, playback starts and current episode must stay fixed', () => {
-    assert.throws(() => assertBackgroundEvidence(hidden, { ...hidden, text: 'Countdown paused at 7s' }, 1, 1));
-    assert.throws(() => assertBackgroundEvidence(hidden, hidden, 1, 2));
-    assert.throws(() => assertBackgroundEvidence(hidden, { ...hidden, path: '/play/next' }, 1, 1));
+    assert.throws(() => assertBackgroundEvidence(hidden, { ...hidden, text: 'Countdown paused at 7s' }, 1, 1, minimized));
+    assert.throws(() => assertBackgroundEvidence(hidden, hidden, 1, 2, minimized));
+    assert.throws(() => assertBackgroundEvidence(hidden, { ...hidden, path: '/play/next' }, 1, 1, minimized));
     assert.equal(countdownSeconds(hidden), 8);
     assert.throws(() => countdownSeconds({ text: 'Starting the next episode' }));
 });

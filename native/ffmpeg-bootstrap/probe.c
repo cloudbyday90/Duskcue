@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <linux/membarrier.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/socket.h>
@@ -16,6 +17,10 @@
 #include <unistd.h>
 
 extern char **environ;
+
+static void *finish_owned_thread(void *value) {
+    return value;
+}
 
 int main(int argc, char **argv) {
     if (argc < 2) return 2;
@@ -64,6 +69,14 @@ int main(int argc, char **argv) {
         struct rusage usage = {0};
         syscall(SYS_getrusage, (long)RUSAGE_CHILDREN, &usage);
         return 3;
+    }
+    if (strcmp(argv[1], "thread-exit") == 0) {
+        pthread_t worker;
+        int marker = 1;
+        void *result = NULL;
+        if (pthread_create(&worker, NULL, finish_owned_thread, &marker) != 0 ||
+            pthread_join(worker, &result) != 0 || result != &marker) return 4;
+        return write(STDOUT_FILENO, "OWNED_THREAD_EXIT_OK\n", 21) == 21 ? 0 : 5;
     }
     if (strcmp(argv[1], "path") == 0 && argc == 3) {
         int input = open(argv[2], O_RDONLY);

@@ -8,7 +8,7 @@
         "build": "vite build",
         "preview": "vite preview",
         "check": "svelte-kit sync && paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide --strategy url cookie preferredLanguage baseLocale && svelte-check --tsconfig ./jsconfig.json",
-        "test:unit": "node --max-old-space-size=64 --test --test-concurrency=1 tests/unit/playback-timing.test.mjs tests/fixtures/progressive-hls.test.mjs && vitest",
+        "test:unit": "node --max-old-space-size=64 --test --test-concurrency=1 tests/unit/playback-timing.test.mjs tests/unit/playback-background.test.mjs tests/fixtures/progressive-hls.test.mjs && vitest",
         "test:e2e": "playwright test"
     },
     "devDependencies": {

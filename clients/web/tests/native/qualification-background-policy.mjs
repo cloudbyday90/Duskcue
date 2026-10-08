@@ -10,10 +10,12 @@ export function countdownSeconds(snapshot) {
     return Number(seconds);
 }
 
-export function assertBackgroundEvidence(hidden, later, startsBefore, startsAfter) {
-    for (const snapshot of [hidden, later]) {
-        if (snapshot.visibility !== 'hidden' || snapshot.hidden !== true || snapshot.cardFocused || snapshot.menuOpen) throw new Error('Real document hiding must be the sole observed countdown pause condition.');
-        if (!snapshot.events.some((event) => event.visibility === 'hidden' && event.trusted === true)) throw new Error('A trusted actual hidden visibility transition was not observed.');
+export function assertBackgroundEvidence(background, later, startsBefore, startsAfter, minimized) {
+    if (minimized?.action !== 'minimize' || minimized.iconic !== true || !/^[1-9][0-9]*$/.test(minimized.handle || '')) throw new Error('The exact owned Win32 window must actually be minimized.');
+    for (const snapshot of [background, later]) {
+        if (snapshot.nativeMinimized !== true || typeof snapshot.nativeVisible !== 'boolean' || snapshot.cardFocused || snapshot.menuOpen) throw new Error('Actual native minimization must be the observed countdown pause condition.');
+        if (!['visible', 'hidden'].includes(snapshot.visibility) || snapshot.hidden !== (snapshot.visibility === 'hidden')) throw new Error('Document visibility must remain the actual observed browser state.');
+        if (snapshot.hidden && !snapshot.events.some((event) => event.visibility === 'hidden' && event.trusted === true)) throw new Error('A claimed browser-hidden transition must have actual trusted visibility evidence.');
     }
-    if (!hidden.text.includes('paused') || later.text !== hidden.text || startsAfter !== startsBefore || later.path !== hidden.path) throw new Error('The actual hidden countdown advanced or initiated another playback.');
+    if (!background.text.includes('paused') || later.text !== background.text || startsAfter !== startsBefore || later.path !== background.path) throw new Error('The actual background countdown advanced or initiated another playback.');
 }

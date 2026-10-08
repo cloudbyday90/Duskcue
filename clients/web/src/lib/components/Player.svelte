@@ -12,6 +12,7 @@
     import { getLocale } from '$lib/paraglide/runtime.js';
     import { createPlaybackRuntime } from '../playback/runtime.js';
     import { createAutoplayController } from '../playback/autoplay.js';
+    import { createPlaybackBackground } from '../playback/background.js';
     import { createPlaybackAuthorizationRecovery } from '../playback/authorization.js';
     import { createCaptionLayout } from '../playback/caption-layout.js';
     import { playbackTrackChoices, playbackQualityChoices } from '../playback/choices.js';
@@ -62,6 +63,7 @@
     let mediaSource;
     let sourceTimeline = $state(null);
     let captionLayout;
+    let playbackBackground;
 
     let isMounted = $state(false);
     let controlsVisible = $state(true);
@@ -91,7 +93,7 @@
     let trackStatus = $derived(playbackState?.fallback?.audio || playbackState?.fallback?.subtitle ? m.tonight_player_track_fallback() : '');
     const runtime = createPlaybackRuntime({ player, onChange: (state) => { playbackState = state; } });
     const authorization = createPlaybackAuthorizationRecovery();
-    const autoplay = createAutoplayController({ onChange: (state) => { autoplayState = state; }, onPlayNext: async (episode, options) => {
+    const autoplay = createAutoplayController({ onChange: (state) => { autoplayState = state; playbackBackground?.setActive(state.phase === 'countdown'); }, beforeAutomaticNext: (options) => playbackBackground?.canAdvance(options) ?? false, onPlayNext: async (episode, options) => {
         if ($player.release?.phase === 'failed') {
             if (options.mode !== 'manual') throw $player.release.error;
             await player.retryRelease();
@@ -150,8 +152,7 @@
             fullscreenError = !!state.error;
         } });
         window.addEventListener('duskcue:desktop-playback-toggle', handleDesktopPlaybackToggle);
-        document.addEventListener('visibilitychange', handleDocumentVisibility);
-        handleDocumentVisibility();
+        playbackBackground = createPlaybackBackground({ onChange: ({ documentHidden, nativeBackground }) => autoplay.setPaused({ documentHidden, nativeBackground }) });
 
         try {
             if (sessionId) await player.resume(sessionId);
@@ -167,9 +168,9 @@
         runtime.dispose();
         authorization.dispose();
         captionLayout?.dispose();
+        playbackBackground?.dispose();
         autoplay.dispose();
         episodesController?.abort();
-        document.removeEventListener('visibilitychange', handleDocumentVisibility);
         window.removeEventListener('duskcue:desktop-playback-toggle', handleDesktopPlaybackToggle);
         mediaSource?.dispose();
         annotations.dispose();
@@ -222,7 +223,6 @@
         } catch {}
     }
 
-    function handleDocumentVisibility() { autoplay.setPaused({ documentHidden: document.hidden }); }
     function handleEnded(event) {
         const state = runtime.getState();
         if (!isMounted || closing || exitRequested || state.loading || state.error || $playerLoading

@@ -68,6 +68,7 @@ fn build_allowlist_filter() -> Result<seccompiler::BpfProgram, std::io::Error> {
         (libc::SYS_rt_sigaction, vec![]),
         (libc::SYS_rt_sigprocmask, vec![]),
         (libc::SYS_rt_sigreturn, vec![]),
+        (libc::SYS_exit, vec![]),
         (libc::SYS_exit_group, vec![]),
         (libc::SYS_clone, vec![]),
         (libc::SYS_set_tid_address, vec![]),

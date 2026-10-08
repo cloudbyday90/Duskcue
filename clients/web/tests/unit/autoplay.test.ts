@@ -65,7 +65,7 @@ describe('per-instance episode-end timing', () => {
         expect(p.onPlayNext).toHaveBeenCalledTimes(1);
     });
 
-    it.each(['focusWithin', 'disclosureOpen', 'documentHidden'])('pauses %s with exact subsecond remaining time', async (reason) => {
+    it.each(['focusWithin', 'disclosureOpen', 'documentHidden', 'nativeBackground'])('pauses %s with exact subsecond remaining time', async (reason) => {
         const p = player();
         await p.controller.ended(endedContext);
         await vi.advanceTimersByTimeAsync(2750);
@@ -286,6 +286,26 @@ describe('per-instance episode-end timing', () => {
         expect(p.controller.getState()).toMatchObject({ phase: 'countdown', seconds: 10, remainingMs: 10_000 });
         expect(callbacks).toHaveLength(2);
         expect(p.onPlayNext).not.toHaveBeenCalled();
+    });
+
+    it('a delayed automatic background read cannot cross a changed profile or override Cancel', async () => {
+        let finish;
+        const beforeAutomaticNext = vi.fn(() => new Promise((resolve) => { finish = resolve; }));
+        const p = player({ beforeAutomaticNext });
+        await p.controller.ended(endedContext);
+        await vi.advanceTimersByTimeAsync(10_000);
+        const oldSignal = beforeAutomaticNext.mock.calls[0][0].signal;
+        await p.controller.ended({ ...endedContext, profileId: 'morgan' });
+        expect(oldSignal.aborted).toBe(true);
+        finish(true);
+        await Promise.resolve();
+        expect(p.onPlayNext).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(10_000);
+        p.controller.cancel();
+        finish(true);
+        await Promise.resolve();
+        expect(p.onPlayNext).not.toHaveBeenCalled();
+        expect(p.controller.getState()).toMatchObject({ phase: 'ready', cancelled: true });
     });
 
     it('requires current profile scope before resolving or timing', async () => {

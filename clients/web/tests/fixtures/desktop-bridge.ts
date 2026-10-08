@@ -11,6 +11,8 @@ export async function installDesktopBridge(page: Page, user: object, options: De
         tokens: new Map<string, string>(),
         unhandled: [] as string[],
         fullscreen: false,
+        minimized: false,
+        visible: true,
     };
     if (state.server && options.token) state.tokens.set(state.server.origin, options.token);
     let eventId = 0;
@@ -42,6 +44,8 @@ export async function installDesktopBridge(page: Page, user: object, options: De
         if (command === 'write_session_token') { state.tokens.set(args.req.server_origin, args.req.token); return null; }
         if (command === 'clear_session_token') { state.tokens.delete(args.req.server_origin); return null; }
         if (command === 'plugin:window|is_fullscreen') return state.fullscreen;
+        if (command === 'plugin:window|is_minimized') return state.minimized;
+        if (command === 'plugin:window|is_visible') return state.visible;
         if (command === 'plugin:window|set_fullscreen') { state.fullscreen = args.value === true; return null; }
         if (command === 'plugin:event|listen') return ++eventId;
         if (command === 'plugin:event|unlisten' || command === 'show_native_notification') return null;

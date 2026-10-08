@@ -331,3 +331,39 @@ fn conditioned_self_resource_rule_compiles_for_each_native_architecture() {
         }
     }
 }
+
+#[test]
+fn owned_thread_exit_preserves_native_architecture_and_other_denials() {
+    let filter = build_ffmpeg_filter().unwrap();
+    let architecture = super::super::wire::audit_arch();
+    for status in [0, 1, 255, u64::MAX, 1 << 32] {
+        let arguments = [status, 0, 0, 0, 0, 0];
+        for syscall in [libc::SYS_exit, libc::SYS_exit_group] {
+            assert_eq!(
+                evaluate_arguments(&filter, syscall, architecture, arguments),
+                0x7fff_0000
+            );
+            assert_eq!(
+                evaluate_arguments(&filter, syscall, architecture ^ 1, arguments),
+                0x8000_0000
+            );
+            assert_eq!(
+                evaluate_arguments(&filter, syscall | 0x4000_0000, architecture, arguments),
+                0x8000_0000
+            );
+        }
+        for syscall in [
+            libc::SYS_execve,
+            libc::SYS_execveat,
+            libc::SYS_socket,
+            libc::SYS_ptrace,
+            libc::SYS_kill,
+            libc::SYS_tkill,
+        ] {
+            assert_eq!(
+                evaluate_arguments(&filter, syscall, architecture, arguments),
+                0x8000_0000
+            );
+        }
+    }
+}
