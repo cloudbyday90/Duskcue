@@ -95,6 +95,34 @@ async fn actual_mandatory_bootstrap_denies_later_exec_network_and_outside_paths(
     assert!(allowed.status.success());
     assert_eq!(allowed.stdout, b"ALLOWED_SOURCE_CACHE\n");
     assert_eq!(tokio::fs::read(written).await?, b"S");
+    for mode in ["unlink-file", "unlink-legacy"] {
+        let removable = fixture.cache.join(mode);
+        tokio::fs::write(&removable, b"R").await?;
+        let removed = fixture
+            .invoke(mode, std::slice::from_ref(&removable))
+            .await?;
+        assert!(removed.status.success());
+        assert_eq!(removed.stdout, b"CACHE_FILE_REMOVED\n");
+        assert!(!removable.exists());
+    }
+    for mode in ["unlink-outside", "unlink-legacy-outside"] {
+        let refused = fixture
+            .invoke(mode, std::slice::from_ref(&fixture.outside))
+            .await?;
+        assert!(refused.status.success());
+        assert_eq!(refused.stdout, b"OUTSIDE_REMOVE_DENIED\n");
+        assert_eq!(tokio::fs::read(&fixture.outside).await?, b"O");
+    }
+    let preserved_directory = fixture.cache.join("preserved-directory");
+    tokio::fs::create_dir(&preserved_directory).await?;
+    let directory = fixture
+        .invoke(
+            "unlink-directory",
+            std::slice::from_ref(&preserved_directory),
+        )
+        .await?;
+    assert_eq!(directory.status.signal(), Some(libc::SIGSYS));
+    assert!(preserved_directory.is_dir());
     tokio::fs::remove_dir_all(fixture.root).await?;
     Ok(())
 }

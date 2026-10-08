@@ -78,6 +78,23 @@ int main(int argc, char **argv) {
             pthread_join(worker, &result) != 0 || result != &marker) return 4;
         return write(STDOUT_FILENO, "OWNED_THREAD_EXIT_OK\n", 21) == 21 ? 0 : 5;
     }
+    if ((strcmp(argv[1], "unlink-file") == 0 || strcmp(argv[1], "unlink-legacy") == 0) && argc == 3) {
+        int result = strcmp(argv[1], "unlink-legacy") == 0 ? unlink(argv[2]) :
+            (int)syscall(SYS_unlinkat, AT_FDCWD, argv[2], 0UL);
+        if (result != 0) return 4;
+        return write(STDOUT_FILENO, "CACHE_FILE_REMOVED\n", 19) == 19 ? 0 : 5;
+    }
+    if ((strcmp(argv[1], "unlink-outside") == 0 || strcmp(argv[1], "unlink-legacy-outside") == 0) && argc == 3) {
+        errno = 0;
+        int result = strcmp(argv[1], "unlink-legacy-outside") == 0 ? unlink(argv[2]) :
+            (int)syscall(SYS_unlinkat, AT_FDCWD, argv[2], 0UL);
+        if (result != -1 || errno != EACCES) return 4;
+        return write(STDOUT_FILENO, "OUTSIDE_REMOVE_DENIED\n", 22) == 22 ? 0 : 5;
+    }
+    if (strcmp(argv[1], "unlink-directory") == 0 && argc == 3) {
+        syscall(SYS_unlinkat, AT_FDCWD, argv[2], (unsigned long)AT_REMOVEDIR);
+        return 3;
+    }
     if (strcmp(argv[1], "path") == 0 && argc == 3) {
         int input = open(argv[2], O_RDONLY);
         if (input >= 0) { close(input); return 3; }

@@ -88,10 +88,15 @@ fn final_filter_denies_exec_network_and_wrong_architecture() {
 
 #[cfg(target_arch = "x86_64")]
 #[test]
-fn native_file_open_alias_uses_the_existing_path_boundary() {
+fn native_file_operation_aliases_preserve_architecture_and_denials() {
     let filter = build_ffmpeg_filter().unwrap();
     let arch = super::super::wire::audit_arch();
-    for syscall in [libc::SYS_open, libc::SYS_openat] {
+    for syscall in [
+        libc::SYS_open,
+        libc::SYS_openat,
+        libc::SYS_access,
+        libc::SYS_unlink,
+    ] {
         assert_eq!(evaluate(&filter, syscall, arch), 0x7fff_0000);
         assert_eq!(evaluate(&filter, syscall, arch ^ 1), 0x8000_0000);
     }
@@ -362,6 +367,44 @@ fn owned_thread_exit_preserves_native_architecture_and_other_denials() {
         ] {
             assert_eq!(
                 evaluate_arguments(&filter, syscall, architecture, arguments),
+                0x8000_0000
+            );
+        }
+    }
+}
+
+#[test]
+fn file_unlink_requires_zero_full_flags_and_preserves_directory_and_other_denials() {
+    let filter = build_ffmpeg_filter().unwrap();
+    let architecture = super::super::wire::audit_arch();
+    for flags in [0, 1, libc::AT_REMOVEDIR as u64, 1 << 32, u64::MAX] {
+        let arguments = [libc::AT_FDCWD as u64, u64::MAX, flags, 0, 0, 0];
+        assert_eq!(
+            evaluate_arguments(&filter, libc::SYS_unlinkat, architecture, arguments),
+            if flags == 0 { 0x7fff_0000 } else { 0x8000_0000 }
+        );
+        assert_eq!(
+            evaluate_arguments(&filter, libc::SYS_unlinkat, architecture ^ 1, arguments),
+            0x8000_0000
+        );
+        assert_eq!(
+            evaluate_arguments(
+                &filter,
+                libc::SYS_unlinkat | 0x4000_0000,
+                architecture,
+                arguments
+            ),
+            0x8000_0000
+        );
+        for denied in [
+            libc::SYS_execve,
+            libc::SYS_execveat,
+            libc::SYS_socket,
+            libc::SYS_rmdir,
+            libc::SYS_renameat,
+        ] {
+            assert_eq!(
+                evaluate_arguments(&filter, denied, architecture, arguments),
                 0x8000_0000
             );
         }

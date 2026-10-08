@@ -6,6 +6,8 @@
 mod barrier;
 #[path = "filter_denial.rs"]
 mod denial;
+#[path = "filter_files.rs"]
+mod files;
 #[path = "filter_resources.rs"]
 mod resources;
 
@@ -95,10 +97,19 @@ fn build_allowlist_filter() -> Result<seccompiler::BpfProgram, std::io::Error> {
                 .map_err(|error| std::io::Error::other(format!("self resource rule: {error}")))?,
         ],
     );
+    rules.insert(
+        libc::SYS_unlinkat,
+        vec![
+            files::file_unlink_rule()
+                .map_err(|error| std::io::Error::other(format!("file unlink rule: {error}")))?,
+        ],
+    );
 
     #[cfg(target_arch = "x86_64")]
     {
+        rules.insert(libc::SYS_access, vec![]);
         rules.insert(libc::SYS_open, vec![]);
+        rules.insert(libc::SYS_unlink, vec![]);
         rules.insert(libc::SYS_arch_prctl, vec![]);
         rules.insert(libc::SYS_poll, vec![]);
         rules.insert(libc::SYS_epoll_wait, vec![]);
