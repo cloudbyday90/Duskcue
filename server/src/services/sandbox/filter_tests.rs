@@ -95,12 +95,19 @@ fn native_file_operation_aliases_preserve_architecture_and_denials() {
         libc::SYS_open,
         libc::SYS_openat,
         libc::SYS_access,
+        libc::SYS_stat,
         libc::SYS_unlink,
     ] {
         assert_eq!(evaluate(&filter, syscall, arch), 0x7fff_0000);
         assert_eq!(evaluate(&filter, syscall, arch ^ 1), 0x8000_0000);
+        assert_eq!(evaluate(&filter, syscall | 0x4000_0000, arch), 0x8000_0000);
     }
-    for syscall in [libc::SYS_execve, libc::SYS_execveat, libc::SYS_socket] {
+    for syscall in [
+        libc::SYS_execve,
+        libc::SYS_execveat,
+        libc::SYS_socket,
+        libc::SYS_lstat,
+    ] {
         assert_eq!(evaluate(&filter, syscall, arch), 0x8000_0000);
     }
 }

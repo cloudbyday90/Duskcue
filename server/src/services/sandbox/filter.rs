@@ -109,6 +109,7 @@ fn build_allowlist_filter() -> Result<seccompiler::BpfProgram, std::io::Error> {
     {
         rules.insert(libc::SYS_access, vec![]);
         rules.insert(libc::SYS_open, vec![]);
+        rules.insert(libc::SYS_stat, vec![]);
         rules.insert(libc::SYS_unlink, vec![]);
         rules.insert(libc::SYS_arch_prctl, vec![]);
         rules.insert(libc::SYS_poll, vec![]);
