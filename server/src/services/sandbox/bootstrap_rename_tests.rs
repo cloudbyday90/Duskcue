@@ -18,11 +18,11 @@ async fn unchanged_file(path: &std::path::Path, contents: &[u8], mode: u32) -> a
 async fn refused(
     fixture: &Fixture,
     mode: &str,
-    source: &PathBuf,
-    destination: &PathBuf,
+    source: &std::path::Path,
+    destination: &std::path::Path,
 ) -> anyhow::Result<()> {
     let result = fixture
-        .invoke(mode, &[source.clone(), destination.clone()])
+        .invoke(mode, &[source.to_path_buf(), destination.to_path_buf()])
         .await?;
     anyhow::ensure!(result.status.success(), "rename denial probe {mode}");
     assert_eq!(result.stdout, b"RENAME_DENIED\n");
