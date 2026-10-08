@@ -73,10 +73,12 @@ pub(crate) async fn output(
     };
     let (completion, result) = oneshot::channel();
     tokio::spawn(async move {
+        let grace = Duration::from_secs(
+            crate::state::ResourceLimitsConfig::default().ffmpeg_shutdown_grace_secs,
+        );
         let shutdown = GracefulShutdown::builder()
-            .unix_sigterm(Duration::from_secs(
-                crate::state::ResourceLimitsConfig::default().ffmpeg_shutdown_grace_secs,
-            ))
+            .unix_sigterm(grace)
+            .windows_ctrl_break(grace)
             .build();
         let mut process = handle.terminate_on_drop(shutdown.clone());
         let ready = tokio::select! {

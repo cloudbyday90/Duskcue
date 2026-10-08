@@ -1,3 +1,9 @@
+// Duskcue — Self-hosted media streaming server
+// Copyright (C) 2026 Duskcue Contributors
+//
+// This program is free software: licensed under AGPL-3.0
+// See LICENSE file for details.
+
 import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { expect } from '@playwright/test';
@@ -18,7 +24,7 @@ if (process.argv[2] === '--prepare') {
     process.stdout.write(`${JSON.stringify({ manifest: manifest.manifestPath, config: manifest.configPath, executable: manifest.executable, identifier: manifest.identifier }, null, 2)}\n`);
 } else if (process.argv[2] === '--run' && process.argv[3]) {
     const manifest = await readQualification(process.argv[3]);
-    const result = { startedAt: new Date().toISOString(), identifier: manifest.identifier, executableSha256: manifest.executableSha256, status: 'in_progress', checks: {}, limitations: ['Backend responses are isolated API fixtures; this is not live database authentication or transcoding qualification.', 'Native menu/tray clicks, notification delivery, assistive-technology speech and OS display scaling require separate direct observation. Engine zoom behavior and screenshots do not establish full WCAG conformance.'] };
+    const result = { startedAt: new Date().toISOString(), identifier: manifest.identifier, executableSha256: manifest.executableSha256, hostedCI: manifest.hostedCI, status: 'in_progress', checks: {}, limitations: ['Backend responses are isolated API fixtures; this is not live database authentication or transcoding qualification.', 'Native menu/tray clicks, notification delivery, assistive-technology speech and OS display scaling require separate direct observation. Engine zoom behavior and screenshots do not establish full WCAG conformance.'] };
     let health;
     let runtime;
     let api;
@@ -29,6 +35,7 @@ if (process.argv[2] === '--prepare') {
         health = await startHealthFixtures(manifest.origins);
         runtime = await launchQualification(manifest);
         const { page } = runtime;
+        result.runtimeBrowserVersion = runtime.browser.version();
         runtime.pageErrors = [];
         page.on('pageerror', (error) => runtime.pageErrors.push({ message: error.message, stack: error.stack }));
         page.setDefaultTimeout(15_000);

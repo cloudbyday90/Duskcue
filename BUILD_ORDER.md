@@ -4496,6 +4496,8 @@ Docker release automation now exists in `.github/workflows/docker-validation.yml
 
 **Source follow-up:** The icon asset repair is pushed as `c6dd202`. Progressive client timing, bounded startup readiness and the normal-gated Linux compiler helper are source coherent. Twenty-six thin Node cases pass and current Rust formatting passes; ten readiness Rust tests and actual complete shared/backend/native/progressive runtime proof remain pending. Current copyright checking passes with frozen migration bytes protected. Remote checkpoint CI exposed the Linux shutdown builder error; its source repair uses the locked API and requires a fresh compile. Production playlist/filter policy remains unchanged until the required publication/syscall/runtime proof.
 
+**Hosted qualification:** All three Tauri packaging jobs pass at `fbb3da1`; the server compiler identified the missing second typestate stage, now repaired in source. The current-source Tonight workflow connects owned compiler/runtime/PG/producer artifacts to complete browser results and fresh native Windows journeys. Fifteen thin helper cases pass on this Windows host; two Linux group/drain cases are wired into the remote job. No local heavy workflow was launched. Actual hosted runs, strict-lint classification and progressive publication remain open; checkpoint source and runtime evidence retain separate scopes.
+
 **Completion:** actual in-scope application behavior and relevant builds/tests/journey evidence, with external native/assistive-technology qualification accurately recorded. Milestones remain open until their required evidence is complete; do not ship mock data or deploy/publish under this workstream.
 
 ## Dependency Graph

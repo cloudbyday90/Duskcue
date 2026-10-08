@@ -75,6 +75,7 @@ impl Running {
                 directory: directory.clone(),
                 shutdown: GracefulShutdown::builder()
                     .unix_sigterm(Duration::from_millis(100))
+                    .windows_ctrl_break(Duration::from_millis(100))
                     .build(),
             },
             move |line| {

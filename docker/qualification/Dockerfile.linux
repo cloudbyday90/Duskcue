@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1.7
+# Duskcue — Self-hosted media streaming server
+# Copyright (C) 2026-2026 Duskcue Contributors
+# Licensed under AGPL-3.0. See LICENSE for details.
+
+ARG RUST_IMAGE=rust:alpine3.24@sha256:f87aa870663e2b57ec8c69de82c7eedf7383bee987eef7612c0359635eaadb41
+ARG ALPINE_IMAGE=alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
+
+FROM ${RUST_IMAGE} AS compiler
+ARG SOURCE_COMMIT
+ARG SOURCE_SHA256
+LABEL duskcue.qualification.kind="compiler-preparation" \
+      duskcue.qualification.commit="${SOURCE_COMMIT}" \
+      duskcue.qualification.source-sha256="${SOURCE_SHA256}"
+RUN apk add --no-cache build-base clang cmake linux-headers perl pkgconf protobuf-dev nodejs
+WORKDIR /src
+COPY . /src
+ENTRYPOINT ["node", "--max-old-space-size=128", "/src/scripts/qualification/build.mjs"]
+
+FROM ${ALPINE_IMAGE} AS runtime
+ARG SOURCE_COMMIT
+ARG SOURCE_SHA256
+LABEL duskcue.qualification.kind="linux-runtime" \
+      duskcue.qualification.commit="${SOURCE_COMMIT}" \
+      duskcue.qualification.source-sha256="${SOURCE_SHA256}"
+RUN apk add --no-cache ffmpeg font-noto font-noto-arabic font-noto-cjk font-noto-devanagari font-noto-hebrew font-noto-thai libgcc libstdc++ nodejs \
+    && addgroup -S duskcue \
+    && adduser -S -D -H -h /qualification/work -s /sbin/nologin -G duskcue duskcue \
+    && mkdir -p /qualification/bin /qualification/work /src/.cache/testing-memory /src/.cache/tonight-server-ffmpeg /fixtures /usr/local/libexec \
+    && chown -R duskcue:duskcue /qualification/work /src/.cache /fixtures \
+    && sha256sum /usr/bin/ffmpeg /usr/bin/ffprobe > /qualification/original-binaries.sha256 \
+    && apk info -v > /qualification/packages.txt
+COPY docker/fonts/60-duskcue-sans-fallback.conf /etc/fonts/conf.d/60-duskcue-sans-fallback.conf
+COPY build/artifact-manifest.json /qualification/artifact-manifest.json
+COPY build/duskcue-lib-tests /qualification/bin/duskcue-lib-tests
+COPY build/playback-stop-contract /qualification/bin/playback-stop-contract
+COPY build/duskcue-ffmpeg-bootstrap.so /usr/local/lib/duskcue-ffmpeg-bootstrap.so
+COPY build/duskcue-ffmpeg-probe /usr/local/libexec/duskcue-ffmpeg-probe
+COPY scripts/qualification /qualification/scripts/qualification
+RUN apk add --no-cache --virtual .qualification-packaging patchelf \
+    && cp /usr/bin/ffmpeg /usr/local/libexec/duskcue-ffmpeg \
+    && patchelf --add-needed /usr/local/lib/duskcue-ffmpeg-bootstrap.so /usr/local/libexec/duskcue-ffmpeg \
+    && chmod 0555 /qualification/bin/* /usr/local/libexec/duskcue-ffmpeg /usr/local/libexec/duskcue-ffmpeg-probe /usr/local/lib/duskcue-ffmpeg-bootstrap.so \
+    && sha256sum /usr/local/libexec/duskcue-ffmpeg /usr/local/lib/duskcue-ffmpeg-bootstrap.so > /usr/local/libexec/duskcue-ffmpeg.sha256 \
+    && sha256sum /usr/local/libexec/duskcue-ffmpeg-probe /usr/local/lib/duskcue-ffmpeg-bootstrap.so > /usr/local/libexec/duskcue-ffmpeg-probe.sha256 \
+    && chmod 0444 /usr/local/libexec/*.sha256 /qualification/artifact-manifest.json \
+    && sha256sum -c /qualification/original-binaries.sha256 \
+    && apk del .qualification-packaging \
+    && node /qualification/scripts/qualification/attest.mjs
+WORKDIR /qualification/work
+USER duskcue
+ENTRYPOINT ["node", "--max-old-space-size=64", "/qualification/scripts/qualification/runtime.mjs"]

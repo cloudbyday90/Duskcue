@@ -1,0 +1,213 @@
+name: Tonight Qualification
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - .github/workflows/tonight-qualification.yml
+      - clients/web/**
+      - clients/desktop/**
+      - server/**
+      - crates/**
+      - native/**
+      - docker/qualification/**
+      - docker/fonts/**
+      - scripts/qualification/**
+      - scripts/testing-memory/**
+      - Cargo.toml
+      - Cargo.lock
+      - Dockerfile
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/tonight-qualification.yml
+      - clients/web/**
+      - clients/desktop/**
+      - server/**
+      - crates/**
+      - native/**
+      - docker/qualification/**
+      - docker/fonts/**
+      - scripts/qualification/**
+      - scripts/testing-memory/**
+      - Cargo.toml
+      - Cargo.lock
+      - Dockerfile
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tonight-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  web-checks:
+    name: Shared Web Checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      UV_THREADPOOL_SIZE: '2'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install dependencies
+        run: npm ci --prefix clients/web
+      - name: Check shared sources
+        env:
+          NODE_OPTIONS: --max-old-space-size=3072
+        run: npm --prefix clients/web run check
+      - name: Run unit cases
+        env:
+          NODE_OPTIONS: --max-old-space-size=1536
+        run: npm --prefix clients/web run test:unit -- --run --maxWorkers=1
+      - name: Build ordinary web application
+        env:
+          NODE_OPTIONS: --max-old-space-size=3072
+        run: npm --prefix clients/web run build
+
+  linux-ffmpeg:
+    name: Managed Linux Playback
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: '2'
+      RUST_TEST_THREADS: '1'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Verify Linux ownership and process-group helpers
+        run: node --max-old-space-size=64 --test --test-concurrency=1 scripts/qualification/qualification.test.mjs
+      - name: Compile and qualify owned Linux artifacts
+        id: qualify
+        run: node --max-old-space-size=128 scripts/qualification/linux.mjs --commit "$GITHUB_SHA" --output "$RUNNER_TEMP/tonight-linux"
+      - name: Retain Linux qualification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tonight-linux-${{ github.sha }}
+          path: ${{ steps.qualify.outputs.artifact_dir || format('{0}/tonight-linux', runner.temp) }}
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+  web-browser:
+    name: Actual Media Browser Journeys
+    needs: [web-checks, linux-ffmpeg]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      NODE_OPTIONS: --max-old-space-size=3072
+      UV_THREADPOOL_SIZE: '2'
+      DUSKCUE_TEST_FFMPEG: /usr/bin/ffmpeg
+      PLAYWRIGHT_JSON_OUTPUT_FILE: ${{ github.workspace }}/.cache/tonight-web/playwright/results.json
+      PLAYWRIGHT_HTML_OUTPUT_DIR: ${{ github.workspace }}/.cache/tonight-web/playwright/report
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Install dependencies and encoded-media tools
+        run: |
+          npm ci --prefix clients/web
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          cd clients/web
+          npx playwright install --with-deps chromium
+      - name: Retrieve fresh managed-caption evidence
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: tonight-linux-${{ github.sha }}
+          path: ${{ runner.temp }}/tonight-linux
+      - name: Validate producer and enable all caption cases
+        run: node --max-old-space-size=128 scripts/qualification/web-captions.mjs artifact "$RUNNER_TEMP/tonight-linux"
+      - name: Run all current browser journeys
+        run: npm --prefix clients/web run test:e2e -- --workers=1 --reporter=list,html,json
+      - name: Verify actual caption execution and retry classification
+        if: always()
+        run: node --max-old-space-size=64 scripts/qualification/web-captions.mjs results "$PLAYWRIGHT_JSON_OUTPUT_FILE"
+      - name: Retain browser rendering and diagnostics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tonight-browser-${{ github.sha }}
+          path: .cache/tonight-web/playwright
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
+  native-windows:
+    name: Actual Windows WebView2 Journeys
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: '2'
+      RUST_TEST_THREADS: '1'
+      UV_THREADPOOL_SIZE: '2'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Prepare verified hosted media and WebView2
+        shell: pwsh
+        run: ./clients/web/tests/native/qualification-hosted-install.ps1 -AllowWebViewInstall
+      - name: Verify actual hosted prerequisites
+        shell: pwsh
+        run: node --max-old-space-size=64 clients/web/tests/native/qualification-hosted.mjs --probe
+      - name: Install web and desktop dependencies
+        shell: pwsh
+        run: |
+          npm ci --prefix clients/web
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          npm ci --prefix clients/desktop
+          exit $LASTEXITCODE
+      - name: Build current static application with normal memory gates
+        shell: pwsh
+        run: node scripts/testing-memory/run.mjs desktop-build
+      - name: Prepare fresh isolated native identity
+        id: prepare
+        shell: pwsh
+        run: |
+          $prepared = node clients/web/tests/native/qualify.mjs --prepare
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $qa = $prepared | ConvertFrom-Json
+          "config=$($qa.config)" >> $env:GITHUB_OUTPUT
+          "manifest=$($qa.manifest)" >> $env:GITHUB_OUTPUT
+      - name: Build isolated current native executable with normal gates
+        shell: pwsh
+        env:
+          DUSKCUE_QA_CONFIG: ${{ steps.prepare.outputs.config }}
+        run: node scripts/testing-memory/run.mjs tauri-build --debug --no-bundle --config $env:DUSKCUE_QA_CONFIG
+      - name: Refresh actual hosted prerequisites after compilation
+        shell: pwsh
+        run: node --max-old-space-size=64 clients/web/tests/native/qualification-hosted.mjs --probe
+      - name: Exercise real native IPC media and 400-percent zoom
+        shell: pwsh
+        env:
+          DUSKCUE_QA_MANIFEST: ${{ steps.prepare.outputs.manifest }}
+        run: node scripts/testing-memory/run.mjs native-qa --run $env:DUSKCUE_QA_MANIFEST
+      - name: Retain narrowly scoped native evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tonight-native-${{ github.sha }}
+          path: |
+            .cache/testing-memory/*.jsonl
+            .cache/tonight-desktop/*/manifest.json
+            .cache/tonight-desktop/*/tauri.qualification.json
+            .cache/tonight-desktop/*/result.json
+            .cache/tonight-desktop/*/native-*.json
+            .cache/tonight-desktop/*/native-*.png
+            .cache/tonight-desktop/*/native-process.log
+            .cache/tonight-desktop/hosted-ci-prerequisites.json
+            .cache/tonight-desktop/hosted-ci-installation.json
+            .cache/tonight-web/media/ready.json
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14

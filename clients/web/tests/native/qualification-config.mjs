@@ -1,8 +1,15 @@
+// Duskcue — Self-hosted media streaming server
+// Copyright (C) 2026 Duskcue Contributors
+//
+// This program is free software: licensed under AGPL-3.0
+// See LICENSE file for details.
+
 import { randomBytes, randomUUID } from 'node:crypto';
 import { mkdir, readFile, stat, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { inspectQualificationBinary } from './qualification-binary.mjs';
+import { hostedPreparationProvenance, validateHostedManifest } from './qualification-hosted.mjs';
 
 export const repository = fileURLToPath(new URL('../../../../', import.meta.url));
 
@@ -28,6 +35,7 @@ export async function prepareQualification() {
         webviewData: join(directory, 'webview-data'),
         expectedAppData: join(process.env.APPDATA, identifier),
         origins: hosts.map((host) => `http://${host}:48027`),
+        hostedCI: await hostedPreparationProvenance(),
     };
     await mkdir(directory, { recursive: true });
     await writeFile(configPath, `${JSON.stringify({
@@ -51,5 +59,6 @@ export async function readQualification(path) {
     if (binary.mtimeMs < Date.parse(manifest.preparedAt)) throw new Error('Build the current qualification executable using the generated --config before running.');
     const artifact = await inspectQualificationBinary(manifest.executable, manifest.identifier);
     if (!artifact.containsIdentifier) throw new Error('The executable does not contain this isolated application identifier. Rebuild with the generated --config.');
+    await validateHostedManifest(manifest);
     return { ...manifest, executableSha256: artifact.sha256 };
 }

@@ -9,6 +9,10 @@ use uuid::Uuid;
 #[path = "../../../tests/support/guarded_docker.rs"]
 mod guarded_docker;
 
+#[cfg(target_os = "linux")]
+#[path = "arguments_local_tests.rs"]
+mod local;
+
 #[test]
 fn type_mapping_keeps_audio_zero_and_never_assumes_video_global_zero() {
     assert_eq!(
@@ -59,6 +63,14 @@ async fn media_command(
     program: &str,
     args: Vec<String>,
 ) -> anyhow::Result<Vec<u8>> {
+    #[cfg(target_os = "linux")]
+    if local::enabled() {
+        anyhow::ensure!(
+            directory == Path::new("/fixtures"),
+            "local fixture directory must be the owned overlay"
+        );
+        return local::media(program, args).await;
+    }
     let container = guarded_docker::GuardedContainer::registered()?;
     let image =
         std::env::var("DUSKCUE_TEST_FFMPEG_IMAGE").unwrap_or_else(|_| "duskcue:local".into());
@@ -119,6 +131,16 @@ async fn encode(
         &format!("/fixtures/{name}/seg_%04d.m4s"),
         &format!("/fixtures/{name}/manifest.m3u8"),
     ));
+    #[cfg(target_os = "linux")]
+    if local::enabled() {
+        local::encode(
+            &args,
+            Path::new("/fixtures/source.mkv"),
+            &directory.join(name),
+        )
+        .await?;
+        return Ok(());
+    }
     media_command(directory, "ffmpeg", args).await?;
     Ok(())
 }
@@ -201,6 +223,12 @@ async fn real_audio_first_default_description_and_selected_srt_decode_through_pr
         .join(".cache/tonight-server-ffmpeg");
     tokio::fs::create_dir_all(&cache).await?;
     let directory = cache.join(Uuid::now_v7().to_string());
+    #[cfg(target_os = "linux")]
+    let directory = if local::enabled() {
+        Path::new("/fixtures").to_owned()
+    } else {
+        directory
+    };
     tokio::fs::create_dir_all(&directory).await?;
     tokio::fs::write(
         directory.join("first.srt"),
@@ -309,8 +337,10 @@ async fn real_audio_first_default_description_and_selected_srt_decode_through_pr
     encode(&directory, "default", default, None).await?;
     encode(&directory, "zero", 0, None).await?;
     encode(&directory, "caption", default, Some(1)).await?;
-    assert!((frequency(&directory, "default").await? - 880.0).abs() < 20.0);
-    assert!((frequency(&directory, "zero").await? - 220.0).abs() < 20.0);
+    let default_frequency = frequency(&directory, "default").await?;
+    let zero_frequency = frequency(&directory, "zero").await?;
+    assert!((default_frequency - 880.0).abs() < 20.0);
+    assert!((zero_frequency - 220.0).abs() < 20.0);
     let plain = frame(&directory, "default").await?;
     let caption = frame(&directory, "caption").await?;
     assert_eq!(plain.len(), 320 * 180 * 3);
@@ -324,6 +354,10 @@ async fn real_audio_first_default_description_and_selected_srt_decode_through_pr
             .count()
             > 100,
         "selected SRT did not visibly alter the caption region"
+    );
+    println!(
+        "DUSKCUE_FFMPEG_FIXTURE={}",
+        json!({"directory":directory,"audio_default_index":default,"subtitle_ordinal":1,"default_frequency":default_frequency,"zero_frequency":zero_frequency})
     );
     Ok(())
 }

@@ -105,6 +105,54 @@ Next isolated preparation, October 7 at 22:07 UTC: `.cache/tonight-desktop/faa19
 
 Failure cleanup passed: there were no unreleased playback sessions; the generated first-origin credential was deleted only after exact-token verification; zoom restored to 1; native PID 77572 and its verified WebView2/conhost tree were stopped while the host was alive, with zero remaining verified or unverified descendants. Native process evidence is `native-process-cleanup.json`. Fixture listeners closed. Production data, credentials and user apps were preserved.
 
+## Hosted Windows preparation
+
+Prepared October 7, 2026, source-only. **The new hosted native journey has not run.** The current `fbb3da1` [Windows Tauri packaging job](https://github.com/cloudbyday90/Duskcue/actions/runs/37701446159/job/113065591478) and [macOS packaging job](https://github.com/cloudbyday90/Duskcue/actions/runs/37701446159/job/113065591510) succeeded with the checked-in icon assets. Packaging success does not qualify native playback, focus, keyring or engine zoom.
+
+Use a fresh `windows-2022` GitHub-hosted VM with Node 24, the installed Rust/MSVC toolchain and both clients' locked npm dependencies. This repository is public; [GitHub's current runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners) lists four CPUs and 16 GB RAM for standard public Windows jobs. Reuse the existing resource wrapper and its unchanged 12 GiB build/native commit reserve. Commands stay sequential, and a held gate supplies no pass. No local guard is bypassed, no reserve is lowered and no user application or global setting is changed. The [Windows 2022 image inventory](https://github.com/actions/runner-images/blob/main/images/windows/Windows2022-Readme.md) lists Edge, but does not establish that WebView2 Runtime or FFmpeg is ready; the hosted workflow therefore verifies both explicitly. [Microsoft's Windows testing guidance](https://learn.microsoft.com/en-us/windows/apps/develop/ai-assisted/testing) describes graphical tests in Windows hosted Actions; the probe still requires an actual interactive session, and native rendered checks remain authoritative.
+
+The installer helper is restricted to `GITHUB_ACTIONS=true`, `RUNNER_ENVIRONMENT=github-hosted`, Windows x64 and the declared hosted workspace/output paths. It downloads the previously verified Gyan FFmpeg **8.1.2** essentials archive into a fresh, owned `RUNNER_TEMP` directory. [FFmpeg's download page](https://ffmpeg.org/download.html) links that Windows publisher. The pinned URL is `https://www.gyan.dev/ffmpeg/builds/packages/ffmpeg-8.1.2-essentials_build.zip`; its SHA-256 is `db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec`. Size, hash and owned ZIP paths are checked before extraction. The executable is scoped to this job, exported as `DUSKCUE_TEST_FFMPEG`, and verified for `libx264`, AAC and WebP. There is no global FFmpeg installation or Docker fallback.
+
+If Evergreen WebView2 is missing, the workflow may explicitly pass `-AllowWebViewInstall` in the disposable VM. Its bootstrapper URL is obtained from [Microsoft's own deployment sample](https://github.com/MicrosoftEdge/WebView2Samples/blob/main/SampleApps/WV2DeploymentWiXBurnBundleSample/Bundle.wxs): `https://go.microsoft.com/fwlink/p/?LinkId=2124703`. The helper requires a valid Microsoft Authenticode signer before starting the hidden silent installer, records its actual SHA-256/signer, bounds its deadline and checks runtime registration afterward. Without explicit permission or a valid signature, it fails. [Microsoft's distribution guidance](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution) documents the HKLM/HKCU `pv` Runtime checks and silent installation. This source preparation has not downloaded or installed anything locally or remotely.
+
+Hosted commands, from the repository root, after checkout/Node setup:
+
+```powershell
+./clients/web/tests/native/qualification-hosted-install.ps1 -AllowWebViewInstall
+node --max-old-space-size=64 clients/web/tests/native/qualification-hosted.mjs --probe
+npm ci --prefix clients/web
+npm ci --prefix clients/desktop
+node scripts/testing-memory/run.mjs desktop-build
+$qa = node clients/web/tests/native/qualify.mjs --prepare | ConvertFrom-Json
+"config=$($qa.config)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+"manifest=$($qa.manifest)" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+```
+
+Expose the two printed paths as step outputs for subsequent steps, then run:
+
+```powershell
+node scripts/testing-memory/run.mjs tauri-build --debug --no-bundle --config '<prepared config output>'
+node scripts/testing-memory/run.mjs native-qa --run '<prepared manifest output>'
+```
+
+No Playwright Chromium download, local web server, backend database or Docker encoder is needed. The test connects to the actual WebView2 engine and serves the existing isolated API/media fixtures. The read-only probe validates Git HEAD against `GITHUB_SHA`, matching hosted checkout/job/attempt context, actual Runtime registration, interactive session and the explicit encoder. It writes sanitized installation/prerequisite JSON. Fresh preparation binds that evidence, source commit, image version and current static `index.html` hash into the unique manifest; execution rejects changed source/job/static/encoder provenance. Results also record the attached browser's actual version. The native identifier, application data, browser folder, credentials and all strict 400% exposure/contrast/fullscreen/Title/SSE/cleanup checks retain their existing isolation and assertions.
+
+Upload only this allowlist with `if: always()` and `include-hidden-files: true`; `.cache` is hidden, so the latter is needed for these explicit paths:
+
+```text
+.cache/tonight-desktop/hosted-ci-*.json
+.cache/tonight-desktop/*/manifest.json
+.cache/tonight-desktop/*/tauri.qualification.json
+.cache/tonight-desktop/*/result.json
+.cache/tonight-desktop/*/native-*.json
+.cache/tonight-desktop/*/native-*.png
+.cache/tonight-desktop/*/native-process.log
+.cache/testing-memory/*.jsonl
+.cache/tonight-web/media/ready.json
+```
+
+Exclude the WebView2 user-data folder, AppData/keyring files, raw environment dumps, broad cache globs and the large debug executable. Four deterministic hosted-context/prerequisite/proof checks pass in a standalone 64 MiB Node process; both PowerShell sources parse. Installation, signature validation, hosted memory gates, native journeys and artifact upload remain source-prepared and require actual job evidence before being marked passed. No workflow was manually dispatched, retried or cancelled by this preparation.
+
 Current build attempt, October 7 at 19:43 UTC: the current ordinary web build passed first. The guarded `desktop-build` then exited 75 before starting because commit headroom was 10.81 GiB, below the required 12 GiB; available RAM was 4.59 GiB and commit was 53.54/64.35 GiB. Evidence is `.cache/tonight-implementation/tonight-current-desktop-build.log` and `.cache/testing-memory/2026-10-07T19-43-38-668Z-85f7ecf9-55c1-4f87-8201-7441d8a787b8.jsonl`. No new native manifest was prepared, native build/window was not launched, and user apps and services were left running. This is a hold, not a desktop build or runtime pass. The static frontend, fresh identifier/config and isolated native build still require their sequential normal gates.
 
 Short-height source correction, October 7, 2026: the earlier fixed autoplay positioning left a non-positive card allowance at 180 CSS pixels high. The current `max-height: 420px` player rules use a vertical scrolling flow, sticky player heading and normal-flow next card/controls. The shell header becomes static at short heights, and the preference discard dialog is bounded to 90dvh with scrolling. Ordinary browser viewport cases and these source corrections do not establish actual native engine-zoom proof, which remains pending. The runner retains strict exposure checks; no taller viewport, CSS transform or relaxed assertion substitutes for the real 400% journey.
