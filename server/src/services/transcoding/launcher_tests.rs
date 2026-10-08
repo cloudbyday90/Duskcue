@@ -23,10 +23,19 @@ struct Running {
     semaphore: Arc<Semaphore>,
     seen: Arc<AtomicBool>,
     pending: WorkerCancellation,
+    startup_deadline: tokio::time::Instant,
 }
 
 impl Running {
     async fn launch(active: bool) -> anyhow::Result<Self> {
+        Self::launch_variant(active, false).await
+    }
+
+    async fn launch_event_candidate() -> anyhow::Result<Self> {
+        Self::launch_variant(false, true).await
+    }
+
+    async fn launch_variant(active: bool, event: bool) -> anyhow::Result<Self> {
         Uuid::parse_str(&std::env::var("DUSKCUE_TEST_RESOURCE_ID")?)?;
         let source = std::fs::canonicalize(std::env::var("DUSKCUE_TEST_PLAYBACK_SOURCE")?)?;
         anyhow::ensure!(
@@ -40,6 +49,8 @@ impl Running {
         tokio::fs::create_dir_all(&directory).await?;
         let mut args = if active {
             vec!["-re".into(), "-stream_loop".into(), "-1".into()]
+        } else if event {
+            vec!["-re".into()]
         } else {
             Vec::new()
         };
@@ -55,11 +66,16 @@ impl Running {
             "-progress".into(),
             "pipe:1".into(),
         ]);
-        args.extend(build_hls_output_args(
+        let output_args = build_hls_output_args(
             2,
             &directory.join("seg_%04d.m4s").to_string_lossy(),
             &directory.join("manifest.m3u8").to_string_lossy(),
-        ));
+        );
+        args.extend(if event {
+            event::override_publication_type(output_args)?
+        } else {
+            output_args
+        });
         let semaphore = Arc::new(Semaphore::new(1));
         let permit = Arc::clone(&semaphore).acquire_owned().await?;
         let spawned = spawn_session_ffmpeg(&args, id, &source, &directory).await?;
@@ -67,6 +83,8 @@ impl Running {
         let workers = TranscodeWorkers::default();
         let seen = Arc::new(AtomicBool::new(false));
         let inspect = Arc::clone(&seen);
+        let startup_deadline =
+            tokio::time::Instant::now() + crate::services::transcoding::readiness::STARTUP_TIMEOUT;
         workers.start(
             WorkerLaunch {
                 session_id: id,
@@ -87,9 +105,16 @@ impl Running {
             || {},
         );
         let pending = workers.pending(id).unwrap();
-        if let Err(error) = spawned.readiness.wait().await {
-            workers.stop(id).await?;
-            return Err(error.into());
+        match tokio::time::timeout_at(startup_deadline, spawned.readiness.wait()).await {
+            Ok(Ok(())) => {}
+            Ok(Err(error)) => {
+                workers.stop(id).await?;
+                return Err(error.into());
+            }
+            Err(error) => {
+                workers.stop(id).await?;
+                return Err(error.into());
+            }
         }
         Ok(Self {
             id,
@@ -99,6 +124,7 @@ impl Running {
             semaphore,
             seen,
             pending,
+            startup_deadline,
         })
     }
 
@@ -119,6 +145,9 @@ impl Running {
         Ok(())
     }
 }
+
+#[path = "launcher_event_tests.rs"]
+mod event;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires a fresh guarded Linux artifact and its mandatory packaged bootstrap"]

@@ -2,9 +2,12 @@
 // Copyright (C) 2026-2026 Duskcue Contributors
 // Licensed under AGPL-3.0. See LICENSE for details.
 
+export const EVENT_CANDIDATE_CASE = 'services::transcoding::launcher::tests::event::actual_managed_event_publishes_playable_assets_before_encoder_exit';
+
 export const REQUIRED_MANAGED_CASES = Object.freeze([
     'services::transcoding::launcher::tests::actual_production_managed_ffmpeg_writes_a_finite_completed_hls_playlist',
     'services::transcoding::launcher::tests::actual_active_managed_ffmpeg_releases_child_before_cache_and_permit',
+    EVENT_CANDIDATE_CASE,
     'services::sandbox::owned_output::tests::actual_mandatory_bootstrap_denies_later_exec_network_and_outside_paths',
     'services::sandbox::owned_output::tests::actual_constructor_refuses_missing_corrupt_and_wrong_arch_policy_before_main',
     'services::sandbox::owned_output::tests::abandoned_managed_observer_terminates_after_stdout_eof_before_output_cleanup',

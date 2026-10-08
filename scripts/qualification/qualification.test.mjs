@@ -5,7 +5,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, rmdir, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArguments, within, PRODUCER_FILES } from './linux.mjs';
@@ -14,10 +14,11 @@ import { REQUIRED_UNIT_PREFIXES, selectedUnitCases } from './cases.mjs';
 import { ownedDocker, validateContainer } from './owned.mjs';
 import { runBounded } from './commands.mjs';
 import { SOURCE_ROOTS, SOURCE_FILES, qualificationSources } from './source.mjs';
-import { traceCommand, traceSummary, TRACE_LIMITS } from './diagnostic.mjs';
-import { PRODUCER_CASE } from './cases.mjs';
+import { traceCommand, traceSummary, traceSpecification, TRACE_LIMITS } from './diagnostic.mjs';
+import { PRODUCER_CASE, EVENT_CANDIDATE_CASE, REQUIRED_MANAGED_CASES } from './cases.mjs';
 import { RUNTIME_ARTIFACTS } from './attest.mjs';
 import { architectureSpec, nativeArchitecture, assertNativeArchitecture, validateImageArchitecture, validateRustHost, validateElfHeader } from './architecture.mjs';
+import { retainKnownDiagnostic } from './diagnostic-runner.mjs';
 
 function elfHeader(machine) {
     const header = Buffer.alloc(64);
@@ -88,6 +89,48 @@ test('producer diagnostic preserves the exact selector and never becomes qualifi
     const refused = traceSummary({ code: 1, signal: null, bytes: 20, stderr: 'strace: ptrace(PTRACE_TRACEME): Operation not permitted' });
     assert.equal(refused.tracingRefused, true);
     assert.equal(refused.observedSigsys, false);
+});
+
+test('EVENT candidate is required and only its exact failed selector gains a separate bounded diagnostic', () => {
+    assert.ok(REQUIRED_MANAGED_CASES.includes(EVENT_CANDIDATE_CASE));
+    const command = traceCommand(RUNTIME_ARTIFACTS.libTest, EVENT_CANDIDATE_CASE);
+    assert.ok(command.args.includes(EVENT_CANDIDATE_CASE));
+    assert.deepEqual(traceSpecification(EVENT_CANDIDATE_CASE), { name: 'event', trace: '/qualification/work/event-strace.log', sourceRequired: true });
+    assert.equal(traceSpecification(PRODUCER_CASE).sourceRequired, false);
+    assert.throws(() => traceSpecification(`${EVENT_CANDIDATE_CASE}suffix`));
+    assert.throws(() => traceSpecification(REQUIRED_MANAGED_CASES[0]));
+    assert.throws(() => traceCommand(RUNTIME_ARTIFACTS.stopContract, EVENT_CANDIDATE_CASE));
+    const summary = traceSummary({ code: 101, signal: null, bytes: 32, stderr: '+++ killed by SIGSYS +++' }, EVENT_CANDIDATE_CASE);
+    assert.equal(summary.trace, '/qualification/work/event-strace.log');
+    assert.equal(summary.countsTowardQualification, false);
+});
+
+test('failed EVENT diagnostic keeps source provenance and cleans only its registered container', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'duskcue-event-diagnostic-'));
+    const commit = 'a'.repeat(40);
+    const hash = 'b'.repeat(64);
+    const calls = [];
+    const ownership = {
+        async create(image, args) { calls.push(['create', image, args]); return 'owned-event'; },
+        async copyIn(id, source, destination) { calls.push(['copyIn', id, source, destination]); },
+        async start(id) { return { code: 0, stdout: `DUSKCUE_CASE_DIAGNOSTIC=${JSON.stringify({ test: EVENT_CANDIDATE_CASE, sourceCommit: commit, sourceSha256: hash, countsTowardQualification: false, exitCode: 101, completed: true })}\n` }; },
+        async copyOut(id, source, destination, options) { calls.push(['copyOut', id, source, options]); await mkdir(join(destination, '..'), { recursive: true }); await writeFile(destination, 'trace'); },
+        async remove(id) { calls.push(['remove', id]); },
+    };
+    try {
+        const result = await retainKnownDiagnostic(ownership, `sha256:${'c'.repeat(64)}`, { DUSKCUE_SOURCE_COMMIT: commit }, directory, hash, EVENT_CANDIDATE_CASE, '/owned/source.mkv');
+        assert.equal(result.countsTowardQualification, false);
+        assert.equal(result.exitCode, 101);
+        assert.equal(result.traceRetained, true);
+        assert.equal(result.trace, 'logs/event-strace.log');
+        assert.equal(result.traceBytes, 5);
+        assert.deepEqual(calls[1], ['copyIn', 'owned-event', '/owned/source.mkv', '/fixtures/source.mkv']);
+        assert.deepEqual(calls.at(-1), ['remove', 'owned-event']);
+    } finally {
+        await rm(join(directory, 'logs/event-strace.log'), { force: true });
+        await rmdir(join(directory, 'logs')).catch((error) => { if (error.code !== 'ENOENT') throw error; });
+        await rmdir(directory);
+    }
 });
 
 test('exact inventory and passing checks refuse zero or skipped tests', () => {

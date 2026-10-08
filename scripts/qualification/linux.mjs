@@ -9,7 +9,8 @@ import { fileURLToPath } from 'node:url';
 import { qualificationSources, hashFile } from './source.mjs';
 import { runBounded } from './commands.mjs';
 import { docker, metadata, ownedDocker } from './owned.mjs';
-import { REQUIRED_MANAGED_CASES, PRODUCER_CASE, selectedUnitCases } from './cases.mjs';
+import { REQUIRED_MANAGED_CASES, PRODUCER_CASE, EVENT_CANDIDATE_CASE, selectedUnitCases } from './cases.mjs';
+import { retainKnownDiagnostic } from './diagnostic-runner.mjs';
 import { STOP_CASE } from './runtime.mjs';
 import { nativeArchitecture, validateImageArchitecture, validateRustHost, verifyElfArchitecture } from './architecture.mjs';
 
@@ -70,33 +71,6 @@ async function runtimeContext(snapshot, build, destination) {
             await copyFile(join(snapshot, file.path), target);
         }
     }
-}
-
-async function producerTrace(ownership, imageId, environment, directory, sourceSha256) {
-    const container = await ownership.create(imageId, ['producer-trace', PRODUCER_CASE], { environment });
-    const log = 'logs/producer-trace-driver.log';
-    let diagnostic;
-    try {
-        const execution = await ownership.start(container, { log: join(directory, log), timeoutMs: 120000, bytes: 1048576 });
-        const outcome = marker(execution.stdout, 'DUSKCUE_PRODUCER_DIAGNOSTIC=');
-        if (outcome.test !== PRODUCER_CASE || outcome.countsTowardQualification !== false || outcome.sourceCommit !== environment.DUSKCUE_SOURCE_COMMIT || outcome.sourceSha256 !== sourceSha256) throw new Error('Producer diagnostic provenance mismatched.');
-        diagnostic = { ...outcome, containerExitCode: execution.code, imageId, log };
-    } catch (error) { diagnostic = { completed: false, countsTowardQualification: false, imageId, log, error: error.message }; }
-    finally {
-        try {
-            const path = 'logs/producer-strace.log';
-            const retained = join(directory, path);
-            await ownership.copyOut(container, '/qualification/work/producer-strace.log', retained, { requireSuccess: false });
-            const meta = await lstat(retained);
-            if (!meta.isFile() || meta.isSymbolicLink() || meta.size > 16777216) throw new Error('Producer trace is not a bounded regular log.');
-            diagnostic.trace = path;
-            diagnostic.traceRetained = true;
-            diagnostic.traceBytes = meta.size;
-            diagnostic.traceSha256 = await hashFile(retained);
-        } catch { diagnostic.traceRetained = false; }
-        await ownership.remove(container);
-    }
-    return diagnostic;
 }
 
 async function host(options) {
@@ -179,7 +153,7 @@ async function main() {
             const log = `logs/case-${String(sequence++).padStart(3, '0')}.log`;
             const container = await ownership.create(result.image.id, ['case', test], { environment });
             const sourceClip = result.diagnosticSource?.path ? join(directory, result.diagnosticSource.path) : join(directory, 'producer/source.mkv');
-            if (test !== PRODUCER_CASE && REQUIRED_MANAGED_CASES.slice(0, 2).includes(test)) {
+            if (REQUIRED_MANAGED_CASES.slice(0, 2).includes(test) || test === EVENT_CANDIDATE_CASE) {
                 try { await ownership.copyIn(container, sourceClip, '/fixtures/source.mkv'); }
                 catch { result.cases.push({ test, passed: false, exactTests: 0, imageId: result.image.id, log, error: 'Fresh producer source is unavailable.' }); failed = true; await ownership.remove(container); continue; }
             }
@@ -212,7 +186,15 @@ async function main() {
                             result.producer.files.push({ path: `producer/${file}`, bytes: meta.size, sha256: await hashFile(destination) });
                         }
                     }
-                    else result.producerDiagnostic = await producerTrace(ownership, result.image.id, environment, directory, source.sha256);
+                    else result.producerDiagnostic = await retainKnownDiagnostic(ownership, result.image.id, environment, directory, source.sha256, test);
+                }
+                if (test === EVENT_CANDIDATE_CASE) {
+                    result.eventCandidate = { ...record, productionPlaylistChanged: false };
+                    if (record.passed) {
+                        const metrics = marker(execution.stdout, 'DUSKCUE_EVENT_CANDIDATE=');
+                        if (metrics.first_frame_decoded_while_running !== true || metrics.ended !== true || !Number.isFinite(metrics.first_seconds) || metrics.first_seconds <= 0 || metrics.first_seconds >= 15 || metrics.final_segments <= metrics.first_segments || metrics.observations < 2) throw new Error('EVENT candidate did not prove the required publication timeline.');
+                        result.eventCandidate.metrics = metrics;
+                    } else result.eventDiagnostic = await retainKnownDiagnostic(ownership, result.image.id, environment, directory, source.sha256, test, sourceClip);
                 }
             } catch (error) {
                 failed = true;
@@ -220,6 +202,7 @@ async function main() {
                 if (current) { current.passed = false; current.error = error.message; }
                 else result.cases.push({ test, passed: false, exactTests: 0, log, imageId: result.image.id, error: error.message });
                 if (test === PRODUCER_CASE && result.producer) { result.producer.passed = false; result.producer.error = error.message; }
+                if (test === EVENT_CANDIDATE_CASE && result.eventCandidate) { result.eventCandidate.passed = false; result.eventCandidate.error = error.message; }
             }
             finally { await ownership.remove(container); await save(); }
         }

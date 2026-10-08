@@ -69,7 +69,7 @@ async fn output_inner(
         .name("storyboard-ffmpeg")
         .stdout_and_stderr(|stream| {
             stream
-                .single_subscriber()
+                .broadcast()
                 .reliable_with_backpressure()
                 .replay_last_bytes(64.kilobytes())
                 .read_chunk_size(DEFAULT_READ_CHUNK_SIZE)
