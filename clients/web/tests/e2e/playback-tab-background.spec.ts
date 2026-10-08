@@ -4,7 +4,7 @@
  * Licensed under AGPL-3.0. See LICENSE for details.
  */
 
-import type { Page } from '@playwright/test';
+import type { CDPSession, Page } from '@playwright/test';
 import { test, expect } from './playback-fixtures';
 import { expectDecodedPlayback, expectTitleContext, openPlayback } from './playback-journey';
 import { mediaIds } from '../fixtures/catalog.js';
@@ -38,9 +38,18 @@ test('real tab backgrounding pauses remaining countdown and Cancel stays untimed
     test.setTimeout(60_000);
     expect(headless).toBe(false);
     const observations: Array<Record<string, unknown>> = [];
+    const sessions: CDPSession[] = [];
+    const primaryFailures: unknown[] = [];
     const other = await page.context().newPage();
     try {
         await other.goto('about:blank');
+        sessions.push(await page.context().newCDPSession(page));
+        sessions.push(await page.context().newCDPSession(other));
+        await Promise.all(sessions.map((session) => session.send('Emulation.setFocusEmulationEnabled', { enabled: false })));
+        const windows = await Promise.all(sessions.map((session) => session.send('Browser.getWindowForTarget')));
+        observations.push({ phase: 'browser-topology', focusEmulationDisabled: true, playerWindowId: windows[0].windowId, otherWindowId: windows[1].windowId });
+        expect(windows[0].windowId).toBeGreaterThan(0);
+        expect(windows[1].windowId).toBe(windows[0].windowId);
         await page.bringToFront();
         await page.addInitScript(() => {
             document.addEventListener('visibilitychange', (event) => {
@@ -113,11 +122,18 @@ test('real tab backgrounding pauses remaining countdown and Cancel stays untimed
         await region.getByRole('button', { name: 'Close player', exact: true }).click();
         await expectTitleContext(page, episodeUrl);
         expect(playback.stops.map((stop) => stop.session_id)).toEqual([playback.starts[0].session_id]);
+    } catch (error) {
+        primaryFailures.push(error);
+        throw error;
     } finally {
         try {
             if (!page.isClosed()) observations.push({ phase: 'final', ...await observe(page), starts: playback.starts.length, stops: playback.stops.length });
         } catch (error) { observations.push({ phase: 'final-observation-unavailable', error: String(error) }); }
+        const detached = await Promise.allSettled(sessions.map((session) => session.detach()));
+        const cleanupFailures = detached.flatMap((result) => result.status === 'rejected' ? [result.reason] : []);
+        try { if (!other.isClosed()) await other.close(); } catch (error) { cleanupFailures.push(error); }
+        if (cleanupFailures.length) observations.push({ phase: 'cleanup-failed', errors: cleanupFailures.map(String) });
         await test.info().attach('actual-tab-visibility', { body: JSON.stringify({ headless, browserVersion: page.context().browser()?.version(), observations }), contentType: 'application/json' });
-        if (!other.isClosed()) await other.close();
+        if (cleanupFailures.length) throw new AggregateError([...primaryFailures, ...cleanupFailures], 'Real-tab test cleanup failed');
     }
 });
