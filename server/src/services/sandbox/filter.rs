@@ -8,6 +8,8 @@ mod barrier;
 mod denial;
 #[path = "filter_files.rs"]
 mod files;
+#[path = "filter_permissions.rs"]
+mod permissions;
 #[path = "filter_resources.rs"]
 mod resources;
 
@@ -17,10 +19,20 @@ pub(super) fn build_ffmpeg_filter() -> Result<seccompiler::BpfProgram, std::io::
         super::wire::audit_arch(),
         libc::SYS_get_mempolicy as u32,
     );
-    Ok(barrier::with_private_registration_denied(
+    let program = barrier::with_private_registration_denied(
         program,
         super::wire::audit_arch(),
         libc::SYS_membarrier as u32,
+    );
+    #[cfg(target_arch = "x86_64")]
+    let legacy_chmod = Some(libc::SYS_chmod as u32);
+    #[cfg(target_arch = "aarch64")]
+    let legacy_chmod = None;
+    Ok(permissions::with_cache_permission_change_denied(
+        program,
+        super::wire::audit_arch(),
+        libc::SYS_fchmodat as u32,
+        legacy_chmod,
     ))
 }
 

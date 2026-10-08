@@ -13,6 +13,7 @@
 #include <sys/prctl.h>
 #include <sys/resource.h>
 #include <sys/syscall.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -102,6 +103,31 @@ int main(int argc, char **argv) {
     }
     if (strcmp(argv[1], "unlink-directory") == 0 && argc == 3) {
         syscall(SYS_unlinkat, AT_FDCWD, argv[2], (unsigned long)AT_REMOVEDIR);
+        return 3;
+    }
+    if ((strcmp(argv[1], "permission-at") == 0 || strcmp(argv[1], "permission-legacy") == 0) && argc == 3) {
+        errno = 0;
+        int result = strcmp(argv[1], "permission-legacy") == 0 ? chmod(argv[2], 0755) :
+            (int)syscall(SYS_fchmodat, (long)AT_FDCWD, argv[2], 0755UL);
+        if (result != -1 || errno != EPERM) return 4;
+        return write(STDOUT_FILENO, "PERMISSION_CHANGE_DENIED\n", 25) == 25 ? 0 : 5;
+    }
+    if (strcmp(argv[1], "permission-at-mode") == 0 && argc == 3) {
+        syscall(SYS_fchmodat, (long)AT_FDCWD, argv[2], 0644UL);
+        return 3;
+    }
+    if (strcmp(argv[1], "permission-at-fd") == 0 && argc == 3) {
+        syscall(SYS_fchmodat, (long)(AT_FDCWD + 1), argv[2], 0755UL);
+        return 3;
+    }
+    if (strcmp(argv[1], "permission-legacy-mode") == 0 && argc == 3) {
+        chmod(argv[2], 0644);
+        return 3;
+    }
+    if (strcmp(argv[1], "permission-fd") == 0 && argc == 3) {
+        int input = open(argv[2], O_RDONLY);
+        if (input < 0) return 4;
+        syscall(SYS_fchmod, (long)input, 0755UL);
         return 3;
     }
     if (strcmp(argv[1], "path") == 0 && argc == 3) {

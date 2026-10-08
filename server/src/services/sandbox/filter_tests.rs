@@ -117,7 +117,10 @@ fn numa_query_fallback_changes_one_denial_and_preserves_all_other_native_actions
     let baseline = build_allowlist_filter().unwrap();
     let filter = build_ffmpeg_filter().unwrap();
     let arch = super::super::wire::audit_arch();
-    assert_eq!(filter.len(), baseline.len() + 18);
+    assert_eq!(
+        filter.len(),
+        baseline.len() + 18 + 13 + if cfg!(target_arch = "x86_64") { 9 } else { 0 }
+    );
     for syscall in 0..1024 {
         let expected = if syscall == libc::SYS_get_mempolicy {
             u32::from(seccompiler::SeccompAction::Errno(libc::EPERM as u32))
@@ -258,6 +261,9 @@ fn registration_arguments() -> [[u64; 6]; 12] {
         [u64::MAX, u64::MAX, u64::MAX, 0, 0, 0],
     ]
 }
+
+#[path = "filter_permission_tests.rs"]
+mod permissions;
 
 #[test]
 fn self_resource_getter_requires_the_full_native_selector_and_preserves_denials() {
