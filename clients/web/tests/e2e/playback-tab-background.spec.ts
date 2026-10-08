@@ -5,9 +5,22 @@
  */
 
 import type { CDPSession, Page } from '@playwright/test';
-import { test, expect } from './playback-fixtures';
+import { test as playbackTest, expect } from './playback-fixtures';
 import { expectDecodedPlayback, expectTitleContext, openPlayback } from './playback-journey';
 import { mediaIds } from '../fixtures/catalog.js';
+import { launchRealTabBrowser } from '../fixtures/real-tab-browser.mjs';
+
+const test = playbackTest.extend<{ realTabBrowser: Awaited<ReturnType<typeof launchRealTabBrowser>> }>({
+    realTabBrowser: [async ({ playwright }, use, testInfo) => {
+        const owned = await launchRealTabBrowser(playwright.chromium);
+        try { await use(owned); } finally {
+            const cleanup = await Promise.allSettled([owned.dispose()]);
+            await testInfo.attach('owned-real-tab-browser', { body: JSON.stringify(owned.proof), contentType: 'application/json' });
+            if (cleanup[0].status === 'rejected') throw cleanup[0].reason;
+        }
+    }, { timeout: 75_000 }],
+    context: async ({ realTabBrowser }, use) => { await use(realTabBrowser.context); },
+});
 
 const episodeUrl = `/media/${mediaIds.series}?season=${mediaIds.seasonOne}&episode=${mediaIds.episodeOne}&from=${encodeURIComponent('/media?type=series')}`;
 const pauseMs = 11_000;
@@ -34,20 +47,22 @@ async function observe(page: Page) {
 
 test.use({ headless: false, playbackOptions: { mode: 'transcode', clip: 'ending', autoplay: true } });
 
-test('real tab backgrounding pauses remaining countdown and Cancel stays untimed after restoration', async ({ page, api, playback, headless }) => {
+test('real tab backgrounding pauses remaining countdown and Cancel stays untimed after restoration', async ({ page, api, playback, headless, baseURL, realTabBrowser }) => {
     test.setTimeout(60_000);
     expect(headless).toBe(false);
     const observations: Array<Record<string, unknown>> = [];
     const sessions: CDPSession[] = [];
     const primaryFailures: unknown[] = [];
+    expect(realTabBrowser.proof.noDefaults).toBe(true);
+    expect(realTabBrowser.proof.headlessArguments).toEqual([]);
+    await page.setViewportSize({ width: 1280, height: 720 });
     const other = await page.context().newPage();
     try {
         await other.goto('about:blank');
         sessions.push(await page.context().newCDPSession(page));
         sessions.push(await page.context().newCDPSession(other));
-        await Promise.all(sessions.map((session) => session.send('Emulation.setFocusEmulationEnabled', { enabled: false })));
         const windows = await Promise.all(sessions.map((session) => session.send('Browser.getWindowForTarget')));
-        observations.push({ phase: 'browser-topology', focusEmulationDisabled: true, playerWindowId: windows[0].windowId, otherWindowId: windows[1].windowId });
+        observations.push({ phase: 'browser-topology', defaultContextNoDefaults: true, headlessArguments: realTabBrowser.proof.headlessArguments, playerWindowId: windows[0].windowId, otherWindowId: windows[1].windowId });
         expect(windows[0].windowId).toBeGreaterThan(0);
         expect(windows[1].windowId).toBe(windows[0].windowId);
         await page.bringToFront();
@@ -58,14 +73,11 @@ test('real tab backgrounding pauses remaining countdown and Cancel stays untimed
                 document.documentElement.dataset.tabVisibilityEvents = JSON.stringify(events.slice(-8));
             });
         });
-        const region = await openPlayback(page, episodeUrl, mediaIds.episodeOne);
+        const region = await openPlayback(page, new URL(episodeUrl, baseURL).href, mediaIds.episodeOne);
         const video = await expectDecodedPlayback(page);
         await expect(video).toHaveAttribute('data-native-ended', 'true', { timeout: 10_000 });
         await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.ended)).toBe(true);
         expect(api.requests.some((request) => request.path.endsWith('/manifest.m3u8'))).toBe(true);
-        await Promise.all(sessions.map((session) => session.send('Emulation.setFocusEmulationEnabled', { enabled: false })));
-        await page.bringToFront();
-        observations.push({ phase: 'focus-emulation-cleared-after-playback-navigation', url: page.url(), ...await observe(page) });
         await region.focus();
         await expect.poll(() => observe(page).then((state) => state.countdown)).toMatch(/^Playing next in [3-8]s$/);
         const foreground = await observe(page);
