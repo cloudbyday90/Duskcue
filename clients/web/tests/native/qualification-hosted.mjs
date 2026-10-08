@@ -4,15 +4,16 @@
 // This program is free software: licensed under AGPL-3.0
 // See LICENSE file for details.
 
-import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { createReadStream } from 'node:fs';
 import { mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createHostedMetadataReader, retainHostedProbe } from './qualification-metadata.mjs';
 
 const workspace = fileURLToPath(new URL('../../../../', import.meta.url));
 const evidencePath = join(workspace, '.cache', 'tonight-desktop', 'hosted-ci-prerequisites.json');
+const metadata = createHostedMetadataReader({ cwd: workspace });
 
 export function hostedContext(environment, root, platform = process.platform) {
     if (platform !== 'win32' || environment.GITHUB_ACTIONS !== 'true' || environment.RUNNER_ENVIRONMENT !== 'github-hosted' || environment.RUNNER_OS !== 'Windows'
@@ -20,15 +21,6 @@ export function hostedContext(environment, root, platform = process.platform) {
         || !/^[a-f0-9]{40}$/.test(environment.GITHUB_SHA || '') || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(environment.GITHUB_REPOSITORY || '')
         || !/^\d+$/.test(environment.GITHUB_RUN_ID || '') || !/^\d+$/.test(environment.GITHUB_RUN_ATTEMPT || '') || !/^[A-Za-z0-9_-]+$/.test(environment.GITHUB_JOB || '')) throw new Error('Native hosted preparation requires the matching GitHub-hosted Windows checkout and run identity.');
     return { repository: environment.GITHUB_REPOSITORY, sourceCommit: environment.GITHUB_SHA, runId: environment.GITHUB_RUN_ID, attempt: environment.GITHUB_RUN_ATTEMPT, job: environment.GITHUB_JOB, runnerOS: environment.RUNNER_OS, runnerEnvironment: environment.RUNNER_ENVIRONMENT, imageOS: environment.ImageOS || null, imageVersion: environment.ImageVersion || null };
-}
-
-function metadata(executable, args) {
-    return new Promise((resolveOutput, reject) => {
-        execFile(executable, args, { cwd: workspace, windowsHide: true, timeout: 10000, maxBuffer: 131072 }, (error, output) => {
-            if (error) reject(new Error(`Hosted prerequisite metadata was unavailable from ${executable}.`));
-            else resolveOutput(output.trim());
-        });
-    });
 }
 
 export function validateHostedPrerequisites(system, encoderOutput) {
@@ -47,7 +39,7 @@ export function validateHostedProof(proof, context, nowMs = Date.now()) {
 }
 
 async function currentCommit() {
-    const commit = await metadata('git', ['rev-parse', 'HEAD']);
+    const commit = await metadata('git', ['rev-parse', 'HEAD'], 'checkout_commit');
     if (!/^[a-f0-9]{40}$/.test(commit)) throw new Error('The actual native checkout commit is unavailable.');
     return commit;
 }
@@ -76,20 +68,18 @@ export async function validateHostedManifest(manifest) {
 
 async function probe() {
     const context = hostedContext(process.env, workspace);
-    const result = { version: 1, kind: 'native-hosted-prerequisites', checkedAt: new Date().toISOString(), context, status: 'in_progress' };
-    let failure;
-    try {
+    const { result, failure } = await retainHostedProbe(context, async () => {
         if (await currentCommit() !== context.sourceCommit) throw new Error('The actual checkout differs from GITHUB_SHA.');
         if (!isAbsolute(process.env.DUSKCUE_TEST_FFMPEG || '')) throw new Error('Set DUSKCUE_TEST_FFMPEG to the installed host encoder path before probing.');
         const path = await realpath(process.env.DUSKCUE_TEST_FFMPEG);
-        const system = JSON.parse(await metadata('pwsh.exe', ['-NoProfile', '-File', fileURLToPath(new URL('./qualification-hosted.ps1', import.meta.url))]));
-        const version = (await metadata(path, ['-version'])).split(/\r?\n/)[0];
-        result.prerequisites = validateHostedPrerequisites(system, await metadata(path, ['-hide_banner', '-encoders']));
-        result.ffmpeg = { path, version };
-        result.status = 'passed';
-    } catch (error) { result.status = 'failed'; result.error = error.message; failure = error; }
-    await mkdir(join(workspace, '.cache', 'tonight-desktop'), { recursive: true });
-    await writeFile(evidencePath, `${JSON.stringify(result, null, 2)}\n`, 'utf8');
+        const system = JSON.parse(await metadata('pwsh.exe', ['-NoProfile', '-File', fileURLToPath(new URL('./qualification-hosted.ps1', import.meta.url))], 'system_graphics'));
+        const version = (await metadata(path, ['-version'], 'ffmpeg_version')).split(/\r?\n/)[0];
+        const prerequisites = validateHostedPrerequisites(system, await metadata(path, ['-hide_banner', '-encoders'], 'ffmpeg_encoders'));
+        return { prerequisites, ffmpeg: { path, version } };
+    }, async (proof) => {
+        await mkdir(join(workspace, '.cache', 'tonight-desktop'), { recursive: true });
+        await writeFile(evidencePath, `${JSON.stringify(proof, null, 2)}\n`, 'utf8');
+    });
     console.log(JSON.stringify({ status: result.status, result: evidencePath }));
     if (failure) throw failure;
 }

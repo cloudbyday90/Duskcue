@@ -143,7 +143,7 @@ jobs:
         run: |
           npm ci --prefix clients/web
           sudo apt-get update
-          sudo apt-get install -y ffmpeg
+          sudo apt-get install -y ffmpeg xvfb
           cd clients/web
           npx playwright install --with-deps chromium
       - name: Retrieve fresh managed-caption evidence
@@ -154,7 +154,7 @@ jobs:
       - name: Validate producer and enable all caption cases
         run: node --max-old-space-size=128 scripts/qualification/web-captions.mjs artifact "$RUNNER_TEMP/tonight-linux"
       - name: Run all current browser journeys
-        run: npm --prefix clients/web run test:e2e -- --workers=1 --reporter=list,html,json
+        run: xvfb-run -a npm --prefix clients/web run test:e2e -- --workers=1 --reporter=list,html,json
       - name: Verify actual caption execution and retry classification
         if: always()
         run: node --max-old-space-size=64 scripts/qualification/web-captions.mjs results "$PLAYWRIGHT_JSON_OUTPUT_FILE"

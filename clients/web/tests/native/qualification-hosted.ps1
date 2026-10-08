@@ -12,6 +12,7 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hoste
     throw 'Hosted prerequisite metadata is restricted to a GitHub-hosted Windows job.'
 }
 
+[Console]::Error.WriteLine('tonight-hosted:runtime_registry')
 $runtimeClient = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
 $runtimeKeys = @("HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$runtimeClient", "HKCU:\SOFTWARE\Microsoft\EdgeUpdate\Clients\$runtimeClient")
 $runtimeVersions = @(foreach ($runtimeKey in $runtimeKeys) {
@@ -21,6 +22,7 @@ $runtimeVersions = @(foreach ($runtimeKey in $runtimeKeys) {
     }
 })
 $desktopBounds = $null
+[Console]::Error.WriteLine('tonight-hosted:display')
 try {
     Add-Type -AssemblyName System.Windows.Forms
     $bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
@@ -29,9 +31,12 @@ try {
     $desktopBounds = [ordered]@{ unavailable = $true }
 }
 
+[Console]::Error.WriteLine('tonight-hosted:session')
+$sessionId = (Get-Process -Id $PID).SessionId
+[Console]::Error.WriteLine('tonight-hosted:complete')
 [ordered]@{
     webviewVersions = @($runtimeVersions | Select-Object -Unique)
     userInteractive = [System.Environment]::UserInteractive
-    sessionId = (Get-Process -Id $PID).SessionId
+    sessionId = $sessionId
     display = $desktopBounds
 } | ConvertTo-Json -Compress -Depth 4

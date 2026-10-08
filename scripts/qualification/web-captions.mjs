@@ -144,7 +144,7 @@ export function validateCaptionResults(report) {
     visit(report.suites);
     const captions = cases.filter((record) => record.file === 'playback-captions.spec.ts');
     if (captions.length !== 3 || new Set(captions.map((record) => record.title)).size !== 3 || captionTitles.some((title) => !captions.some((record) => record.title === title))) throw new Error('Exactly the three required actual-caption cases must be present in the complete browser report.');
-    const scopes = { 'playback-captions.spec.ts': 3, 'playback-progressive.spec.ts': 3, 'localization.spec.ts': 6, 'playback-localization.spec.ts': 2 };
+    const scopes = { 'playback-captions.spec.ts': 3, 'playback-progressive.spec.ts': 3, 'playback-tab-background.spec.ts': 1, 'localization.spec.ts': 6, 'playback-localization.spec.ts': 2 };
     for (const [file, count] of Object.entries(scopes)) {
         if (cases.filter((record) => record.file === file).length !== count) throw new Error(`The complete current ${file} scope must execute (${count} cases).`);
     }
@@ -156,7 +156,7 @@ export function validateCaptionResults(report) {
         captionPassed: captions.length, captionSkipped: 0,
         captionRetries: captions.reduce((count, record) => count + record.results.length - 1, 0),
         captionFlaky: captions.filter((record) => record.results.slice(0, -1).some((result) => result.status !== 'passed')).length,
-        progressivePassed: scopes['playback-progressive.spec.ts'], localePassed: scopes['localization.spec.ts'] + scopes['playback-localization.spec.ts'],
+        progressivePassed: scopes['playback-progressive.spec.ts'], backgroundPassed: scopes['playback-tab-background.spec.ts'], localePassed: scopes['localization.spec.ts'] + scopes['playback-localization.spec.ts'],
         requiredRetries: required.reduce((count, record) => count + record.results.length - 1, 0),
         requiredFlaky: required.filter((record) => record.results.slice(0, -1).some((result) => result.status !== 'passed')).length,
     };
