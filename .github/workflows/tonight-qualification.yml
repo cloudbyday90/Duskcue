@@ -181,6 +181,9 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '24'
+      - name: Verify hosted native ownership and startup helpers
+        shell: pwsh
+        run: node --max-old-space-size=64 --test --test-concurrency=1 clients/web/tests/native/qualification-hosted.test.mjs clients/web/tests/native/qualification-startup.test.mjs clients/web/tests/native/qualification-window-control.test.mjs
       - name: Prepare verified hosted media and WebView2
         shell: pwsh
         run: ./clients/web/tests/native/qualification-hosted-install.ps1 -AllowWebViewInstall

@@ -67,6 +67,9 @@ async fn actual_mandatory_bootstrap_denies_later_exec_network_and_outside_paths(
     let status = fixture.invoke("status", &[]).await?;
     assert!(status.status.success());
     assert_eq!(status.stdout, b"no_new_privs=1\nseccomp=2\n");
+    let numa = fixture.invoke("numa-query", &[]).await?;
+    assert!(numa.status.success());
+    assert_eq!(numa.stdout, b"NUMA_QUERY_DENIED\n");
     for mode in ["exec", "execat", "network"] {
         let result = fixture.invoke(mode, &[]).await?;
         assert_eq!(result.status.signal(), Some(libc::SIGSYS), "mode {mode}");

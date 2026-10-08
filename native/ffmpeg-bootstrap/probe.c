@@ -1,3 +1,7 @@
+// Duskcue — Self-hosted media streaming server
+// Copyright (C) 2026-2026 Duskcue Contributors
+// Licensed under AGPL-3.0. See LICENSE for details.
+
 #define _GNU_SOURCE
 #include <errno.h>
 #include <fcntl.h>
@@ -34,6 +38,11 @@ int main(int argc, char **argv) {
     if (strcmp(argv[1], "network") == 0) {
         syscall(SYS_socket, AF_INET, SOCK_STREAM, 0);
         return 3;
+    }
+    if (strcmp(argv[1], "numa-query") == 0) {
+        errno = 0;
+        if (syscall(SYS_get_mempolicy, NULL, NULL, 0UL, 0UL, 0UL) != -1 || errno != EPERM) return 4;
+        return write(STDOUT_FILENO, "NUMA_QUERY_DENIED\n", 18) == 18 ? 0 : 5;
     }
     if (strcmp(argv[1], "path") == 0 && argc == 3) {
         int input = open(argv[2], O_RDONLY);

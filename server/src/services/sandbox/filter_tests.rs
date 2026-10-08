@@ -86,3 +86,64 @@ fn native_file_open_alias_uses_the_existing_path_boundary() {
         assert_eq!(evaluate(&filter, syscall, arch), 0x8000_0000);
     }
 }
+
+#[test]
+fn numa_query_fallback_changes_one_denial_and_preserves_all_other_native_actions() {
+    let baseline = build_allowlist_filter().unwrap();
+    let filter = build_ffmpeg_filter().unwrap();
+    let arch = super::super::wire::audit_arch();
+    assert_eq!(filter.len(), baseline.len() + 5);
+    for syscall in 0..1024 {
+        let expected = if syscall == libc::SYS_get_mempolicy {
+            u32::from(seccompiler::SeccompAction::Errno(libc::EPERM as u32))
+        } else {
+            evaluate(&baseline, syscall, arch)
+        };
+        assert_eq!(
+            evaluate(&filter, syscall, arch),
+            expected,
+            "syscall {syscall}"
+        );
+        assert_eq!(evaluate(&filter, syscall, arch ^ 1), 0x8000_0000);
+    }
+    for syscall in [
+        libc::SYS_set_mempolicy,
+        libc::SYS_mbind,
+        libc::SYS_execve,
+        libc::SYS_execveat,
+        libc::SYS_socket,
+        libc::SYS_ptrace,
+        libc::SYS_get_mempolicy | 0x4000_0000,
+        -1,
+    ] {
+        assert_eq!(evaluate(&filter, syscall, arch), 0x8000_0000);
+    }
+}
+
+#[test]
+fn numa_denial_prefix_uses_each_compiled_native_architecture_and_syscall_number() {
+    for (architecture, target, query, read) in [
+        (0xc000_003e, seccompiler::TargetArch::x86_64, 239, 0),
+        (0xc000_00b7, seccompiler::TargetArch::aarch64, 236, 63),
+    ] {
+        let baseline: seccompiler::BpfProgram = seccompiler::SeccompFilter::new(
+            std::collections::BTreeMap::from([(read, Vec::new())]),
+            seccompiler::SeccompAction::KillProcess,
+            seccompiler::SeccompAction::Allow,
+            target,
+        )
+        .unwrap()
+        .try_into()
+        .unwrap();
+        let filter = denial::with_numa_query_denied(baseline.clone(), architecture, query);
+        for syscall in 0..1024 {
+            let expected = if syscall == i64::from(query) {
+                u32::from(seccompiler::SeccompAction::Errno(libc::EPERM as u32))
+            } else {
+                evaluate(&baseline, syscall, architecture)
+            };
+            assert_eq!(evaluate(&filter, syscall, architecture), expected);
+            assert_eq!(evaluate(&filter, syscall, architecture ^ 1), 0x8000_0000);
+        }
+    }
+}

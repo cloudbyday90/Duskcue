@@ -41,18 +41,27 @@ function Cleanup {
 function Test-HttpOk {
     param([string]$Uri)
 
-    curl.exe --fail --silent --show-error --max-time 5 $Uri *> $null
-    return $LASTEXITCODE -eq 0
+    $status = Get-HttpStatus $Uri
+    return $status -ge 200 -and $status -lt 400
 }
 
 function Get-HttpStatus {
     param([string]$Uri)
 
-    $status = & curl.exe --silent --output NUL --write-out "%{http_code}" --max-time 5 $Uri
-    if ($LASTEXITCODE -ne 0) {
+    $handler = [System.Net.Http.HttpClientHandler]::new()
+    $handler.AllowAutoRedirect = $false
+    $client = [System.Net.Http.HttpClient]::new($handler)
+    $client.Timeout = [TimeSpan]::FromSeconds(5)
+    $response = $null
+    try {
+        $response = $client.GetAsync($Uri, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+        return [int]$response.StatusCode
+    } catch {
         return 0
+    } finally {
+        if ($null -ne $response) { $response.Dispose() }
+        $client.Dispose()
     }
-    return [int]$status
 }
 
 try {

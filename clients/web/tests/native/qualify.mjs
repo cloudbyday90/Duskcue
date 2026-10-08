@@ -54,7 +54,7 @@ if (process.argv[2] === '--prepare') {
         result.checks.hls = await exerciseNativeHls(page, api, screenshot);
         result.checks.navigation = await exerciseNativeNavigation(page, screenshot);
         result.checks.zoom = await exerciseNativeZoom(page, manifest, api, uiEvidence);
-        result.checks.autoplayZoom = await exerciseAutoplayZoom(page, manifest, api, uiEvidence);
+        result.checks.autoplayZoom = await exerciseAutoplayZoom(page, manifest, api, uiEvidence, runtime);
         result.checks.serverSwitch = await exerciseServerSwitch(page, manifest, api, health);
         result.checks.eventsSwitched = await exerciseNativeEvents(page, api, manifest.origins[1], screenshot, 'switched');
         expect(api.scenario.unhandledRequests).toEqual([]);

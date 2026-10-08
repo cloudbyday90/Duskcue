@@ -147,6 +147,8 @@ Purpose: produce the operator-facing image.
 - Runs `scripts/verify-docker.ps1 -SkipBuild -Image duskcue:ci`, which exercises embedded PostgreSQL, public health/readiness, proxied API reachability, read-only-root hardening, PUID/PGID writability, and restart behavior.
 - Keeps permissions at `contents: read` only.
 
+October 8, 2026 verification follow-up: the `24bcb70` [runtime image job](https://github.com/cloudbyday90/Duskcue/actions/runs/37709092002/job/113090472743) built the current AMD64 image successfully, then the smoke script failed because `curl.exe` was unavailable on Linux. Its HTTP probe now uses a disposable .NET client with a five-second timeout, response headers only and redirects disabled. This keeps readiness/status checks portable and avoids buffering a streaming endpoint. Local lightweight checks passed for 200/401/503 responses, non-followed redirects, open SSE headers and the five-second failure deadline; PowerShell syntax passes. The complete hardened-container/startup/restart smoke still requires the next hosted run. See [HttpClient completion semantics](https://learn.microsoft.com/dotnet/api/system.net.http.httpclient.getasync) and [redirect behavior](https://learn.microsoft.com/dotnet/api/system.net.http.httpclienthandler.allowautoredirect).
+
 ### Docker release
 
 `.github/workflows/docker-release.yml` publishes GHCR images from SemVer tags (`v*.*.*`, including prereleases) and manual dispatch.

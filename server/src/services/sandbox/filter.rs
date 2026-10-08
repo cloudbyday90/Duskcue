@@ -2,7 +2,18 @@
 // Copyright (C) 2026-2026 Duskcue Contributors
 // Licensed under AGPL-3.0. See LICENSE for details.
 
+#[path = "filter_denial.rs"]
+mod denial;
+
 pub(super) fn build_ffmpeg_filter() -> Result<seccompiler::BpfProgram, std::io::Error> {
+    Ok(denial::with_numa_query_denied(
+        build_allowlist_filter()?,
+        super::wire::audit_arch(),
+        libc::SYS_get_mempolicy as u32,
+    ))
+}
+
+fn build_allowlist_filter() -> Result<seccompiler::BpfProgram, std::io::Error> {
     use seccompiler::{SeccompAction, SeccompFilter, SeccompRule};
     use std::collections::BTreeMap;
 

@@ -91,6 +91,8 @@ Current Linux compilation succeeds, but the managed program is killed after boot
 
 ## Proof boundaries to retain
 
+Latest `a15c930` runtime evidence advances both native Linux architectures: exact C/Rust/SQL compilation, native manifests and four ELF headers pass; mandatory constructor/exec/network/path and observer cleanup pass. AMD64 28/31 and ARM64 27/30 remain failed overall on the same optional NUMA query, with remux-dependent SQL and zero executed browser cases. A narrow `EPERM` denial and real background native extension are prepared for fresh execution; fourteen thin ownership/evidence cases pass. The existing twelve-group native pass and all three Tauri packaging passes remain scoped to their unchanged client paths. The production image builds, while its portable smoke repair still awaits complete hosted execution. The plan and domain documents carry exact source/trace/artifact boundaries; none of these preparations completes T07/T08.
+
 - Heartbeat updates resume; watched completion is a normal-stop result based on the actual selected media-file runtime. An immediate ended heartbeat alone does not mark watched. Do not fake completion from an event or synthetic clock.
 - Current stop/heartbeat cleanup is account-authenticated and uses the play session's original profile. Active cookie-profile changes do not themselves reject cleanup. This source finding must not weaken current-profile restrictions on streaming or viewing-preference writes.
 - Probe/selector fixtures do not establish that unchanged legacy files have been reprobed. The scanner's mtime shortcut intentionally leaves unknown description/SDH metadata unknown.
