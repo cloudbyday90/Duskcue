@@ -8,6 +8,8 @@ Largest private allocations included Docker's WSL VM (~12.56 GiB), rust-analyzer
 
 Readable System logs had no matching resource-exhaustion, unexpected-reboot or bugcheck events in seven days. Application reports included a VS Code hang and graphics live-kernel events. Those reports do not attribute the freezes to RAM or testing. The sanitized inspection is in ignored `.cache/tonight-implementation/windows-memory-oct7.json`.
 
+Read-only sample October 8, 06:46:52 UTC during lighter work: available physical RAM **4.779 GiB**, system commit **50.002/64.351 GiB**, commit headroom **14.349 GiB**. The three rust-analyzer processes together hold **4.252 GiB private allocation**; this is not resident RAM or an exclusive physical-memory total. Raw counters are retained in ignored `.cache/tonight-implementation/memory-light-work-20261008-064654.json`. This single sample is not a workload peak, a freeze diagnosis or proof of improvement caused by the WSL cap. The user's instruction to leave the editor running and continue lighter work still applies; no local heavy test, service restart or hardware/settings change accompanied the observation. Current complete qualification remains on bounded hosted runners.
+
 ## Research and decisions
 
 Reviewed official sources October 7, 2026:
