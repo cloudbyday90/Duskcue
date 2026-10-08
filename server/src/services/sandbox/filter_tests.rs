@@ -400,7 +400,6 @@ fn file_unlink_requires_zero_full_flags_and_preserves_directory_and_other_denial
             libc::SYS_execve,
             libc::SYS_execveat,
             libc::SYS_socket,
-            libc::SYS_rmdir,
             libc::SYS_renameat,
         ] {
             assert_eq!(
@@ -408,5 +407,10 @@ fn file_unlink_requires_zero_full_flags_and_preserves_directory_and_other_denial
                 0x8000_0000
             );
         }
+        #[cfg(target_arch = "x86_64")]
+        assert_eq!(
+            evaluate_arguments(&filter, libc::SYS_rmdir, architecture, arguments),
+            0x8000_0000
+        );
     }
 }

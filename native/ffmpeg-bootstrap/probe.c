@@ -32,6 +32,15 @@ int main(int argc, char **argv) {
         if (count <= 0 || (size_t)count >= sizeof(status)) return 4;
         return write(STDOUT_FILENO, status, (size_t)count) == count ? 0 : 5;
     }
+    if (strcmp(argv[1], "short-output") == 0) {
+        char output[4096];
+        char errors[4096];
+        memset(output, 'O', sizeof(output));
+        memset(errors, 'E', sizeof(errors));
+        if (write(STDOUT_FILENO, output, sizeof(output)) != (ssize_t)sizeof(output) ||
+            write(STDERR_FILENO, errors, sizeof(errors)) != (ssize_t)sizeof(errors)) return 4;
+        return 0;
+    }
     if (strcmp(argv[1], "exec") == 0) {
         char *arguments[] = {"ffmpeg", "-version", NULL};
         syscall(SYS_execve, "/usr/bin/ffmpeg", arguments, environ);

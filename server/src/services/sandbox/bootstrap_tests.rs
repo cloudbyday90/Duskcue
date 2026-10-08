@@ -4,6 +4,8 @@
 
 use std::os::unix::process::ExitStatusExt;
 
+use anyhow::Context;
+
 use super::*;
 use crate::services::sandbox::SandboxConfig;
 
@@ -51,11 +53,17 @@ impl Fixture {
         })
     }
 
-    async fn invoke(&self, mode: &str, arguments: &[PathBuf]) -> io::Result<std::process::Output> {
+    async fn invoke(
+        &self,
+        mode: &str,
+        arguments: &[PathBuf],
+    ) -> anyhow::Result<std::process::Output> {
         let mut prepared = self.prepared()?;
         let mut command = prepared.command();
         command.arg(mode).args(arguments);
-        output(command, prepared, self.cache.join("observer-output")).await
+        output(command, prepared, self.cache.join("observer-output"))
+            .await
+            .with_context(|| format!("managed probe mode {mode}"))
     }
 }
 
@@ -187,6 +195,31 @@ async fn abandoned_managed_observer_terminates_after_stdout_eof_before_output_cl
     })
     .await?;
     assert!(!PathBuf::from(format!("/proc/{pid}")).exists());
+    tokio::fs::remove_dir_all(fixture.root).await?;
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires fresh packaged Linux bootstrap and the root-owned native probe fixture"]
+async fn actual_short_managed_output_survives_delayed_bootstrap_observation() -> anyhow::Result<()>
+{
+    let fixture = Fixture::new().await?;
+    for iteration in 0..16 {
+        let mut prepared = fixture.prepared()?;
+        let mut command = prepared.command();
+        command.arg("short-output");
+        let captured = output_inner(
+            command,
+            prepared,
+            fixture.cache.join("short-output"),
+            Duration::from_millis(50),
+        )
+        .await
+        .with_context(|| format!("delayed short-output probe iteration {iteration}"))?;
+        assert!(captured.status.success());
+        assert_eq!(captured.stdout, vec![b'O'; 4096]);
+        assert_eq!(captured.stderr, vec![b'E'; 4096]);
+    }
     tokio::fs::remove_dir_all(fixture.root).await?;
     Ok(())
 }

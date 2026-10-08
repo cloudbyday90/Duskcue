@@ -8,6 +8,7 @@ export const REQUIRED_MANAGED_CASES = Object.freeze([
     'services::sandbox::owned_output::tests::actual_mandatory_bootstrap_denies_later_exec_network_and_outside_paths',
     'services::sandbox::owned_output::tests::actual_constructor_refuses_missing_corrupt_and_wrong_arch_policy_before_main',
     'services::sandbox::owned_output::tests::abandoned_managed_observer_terminates_after_stdout_eof_before_output_cleanup',
+    'services::sandbox::owned_output::tests::actual_short_managed_output_survives_delayed_bootstrap_observation',
 ]);
 
 export const PRODUCER_CASE = 'services::transcoding::arguments::tests::real_audio_first_default_description_and_selected_srt_decode_through_production_arguments';
