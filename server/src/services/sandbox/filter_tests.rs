@@ -72,3 +72,17 @@ fn final_filter_denies_exec_network_and_wrong_architecture() {
     }
     assert_eq!(evaluate(&filter, libc::SYS_read, arch ^ 1), 0x8000_0000);
 }
+
+#[cfg(target_arch = "x86_64")]
+#[test]
+fn native_file_open_alias_uses_the_existing_path_boundary() {
+    let filter = build_ffmpeg_filter().unwrap();
+    let arch = super::super::wire::audit_arch();
+    for syscall in [libc::SYS_open, libc::SYS_openat] {
+        assert_eq!(evaluate(&filter, syscall, arch), 0x7fff_0000);
+        assert_eq!(evaluate(&filter, syscall, arch ^ 1), 0x8000_0000);
+    }
+    for syscall in [libc::SYS_execve, libc::SYS_execveat, libc::SYS_socket] {
+        assert_eq!(evaluate(&filter, syscall, arch), 0x8000_0000);
+    }
+}

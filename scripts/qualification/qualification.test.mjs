@@ -17,6 +17,61 @@ import { SOURCE_ROOTS, SOURCE_FILES, qualificationSources } from './source.mjs';
 import { traceCommand, traceSummary, TRACE_LIMITS } from './diagnostic.mjs';
 import { PRODUCER_CASE } from './cases.mjs';
 import { RUNTIME_ARTIFACTS } from './attest.mjs';
+import { architectureSpec, nativeArchitecture, assertNativeArchitecture, validateImageArchitecture, validateRustHost, validateElfHeader } from './architecture.mjs';
+
+function elfHeader(machine) {
+    const header = Buffer.alloc(64);
+    Buffer.from('7f454c46020101', 'hex').copy(header);
+    header.writeUInt16LE(3, 16);
+    header.writeUInt16LE(machine, 18);
+    header.writeUInt32LE(1, 20);
+    header.writeUInt16LE(64, 52);
+    return header;
+}
+
+test('native qualification binds Node and runner architecture without cross-execution', () => {
+    assert.equal(nativeArchitecture('x64', 'X64').platform, 'linux/amd64');
+    assert.equal(nativeArchitecture('arm64', 'ARM64').platform, 'linux/arm64');
+    for (const [node, runner] of [['x64', 'ARM64'], ['arm64', 'X64'], ['arm', 'ARM'], ['x64', undefined], ['arm64', 'arm64']]) assert.throws(() => nativeArchitecture(node, runner));
+    assert.throws(() => architectureSpec('ppc64le'));
+    assert.throws(() => assertNativeArchitecture('amd64', 'arm64'));
+    assert.throws(() => assertNativeArchitecture('arm64', 'x64'));
+    assert.equal(assertNativeArchitecture('arm64', 'arm64').machine, 183);
+});
+
+test('native image architecture rejects foreign platforms for both qualification lanes', () => {
+    for (const architecture of ['amd64', 'arm64']) {
+        validateImageArchitecture({ Os: 'linux', Architecture: architecture }, architecture);
+        assert.throws(() => validateImageArchitecture({ Os: 'linux', Architecture: architecture === 'amd64' ? 'arm64' : 'amd64' }, architecture));
+        assert.throws(() => validateImageArchitecture({ Os: 'windows', Architecture: architecture }, architecture));
+    }
+});
+
+test('ELF admission refuses crossed machine identity and malformed bounded headers', () => {
+    for (const [architecture, machine, other] of [['amd64', 62, 'arm64'], ['arm64', 183, 'amd64']]) {
+        const valid = elfHeader(machine);
+        validateElfHeader(valid, architecture);
+        assert.throws(() => validateElfHeader(valid, other));
+        assert.throws(() => validateElfHeader(valid.subarray(0, 63), architecture));
+        assert.throws(() => validateElfHeader(Buffer.concat([valid, Buffer.alloc(1)]), architecture));
+        for (const offset of [0, 4, 5, 6, 16, 18, 20, 52]) {
+            const invalid = Buffer.from(valid);
+            invalid[offset] = 255;
+            assert.throws(() => validateElfHeader(invalid, architecture));
+        }
+    }
+});
+
+test('compiled toolchain host must match the same native musl architecture', () => {
+    const amd64 = 'rustc 1.96.0\nhost: x86_64-unknown-linux-musl\n';
+    const arm64 = 'rustc 1.96.0\nhost: aarch64-unknown-linux-musl\n';
+    validateRustHost(amd64, 'amd64');
+    validateRustHost(arm64, 'arm64');
+    assert.throws(() => validateRustHost(amd64, 'arm64'));
+    assert.throws(() => validateRustHost(arm64, 'amd64'));
+    assert.throws(() => validateRustHost('host: aarch64-unknown-linux-gnu\n', 'arm64'));
+    assert.throws(() => validateRustHost('', 'amd64'));
+});
 
 test('producer diagnostic preserves the exact selector and never becomes qualification success', () => {
     const command = traceCommand(RUNTIME_ARTIFACTS.libTest, PRODUCER_CASE);

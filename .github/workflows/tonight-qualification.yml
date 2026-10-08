@@ -96,6 +96,33 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  linux-ffmpeg-arm64:
+    name: Managed Linux Playback ARM64
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
+    env:
+      CARGO_BUILD_JOBS: '2'
+      RUST_TEST_THREADS: '1'
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '24'
+      - name: Verify native ARM64 ownership and process-group helpers
+        run: node --max-old-space-size=64 --test --test-concurrency=1 scripts/qualification/qualification.test.mjs
+      - name: Compile and qualify owned native ARM64 artifacts
+        id: qualify
+        run: node --max-old-space-size=128 scripts/qualification/linux.mjs --commit "$GITHUB_SHA" --output "$RUNNER_TEMP/tonight-linux-arm64"
+      - name: Retain ARM64 qualification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: tonight-linux-arm64-${{ github.sha }}
+          path: ${{ steps.qualify.outputs.artifact_dir || format('{0}/tonight-linux-arm64', runner.temp) }}
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+
   web-browser:
     name: Actual Media Browser Journeys
     needs: [web-checks, linux-ffmpeg]

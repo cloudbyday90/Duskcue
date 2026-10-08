@@ -69,6 +69,7 @@ pub(super) fn build_ffmpeg_filter() -> Result<seccompiler::BpfProgram, std::io::
 
     #[cfg(target_arch = "x86_64")]
     {
+        rules.insert(libc::SYS_open, vec![]);
         rules.insert(libc::SYS_arch_prctl, vec![]);
         rules.insert(libc::SYS_poll, vec![]);
         rules.insert(libc::SYS_epoll_wait, vec![]);
