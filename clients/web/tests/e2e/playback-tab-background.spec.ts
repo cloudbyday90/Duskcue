@@ -63,6 +63,9 @@ test('real tab backgrounding pauses remaining countdown and Cancel stays untimed
         await expect(video).toHaveAttribute('data-native-ended', 'true', { timeout: 10_000 });
         await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.ended)).toBe(true);
         expect(api.requests.some((request) => request.path.endsWith('/manifest.m3u8'))).toBe(true);
+        await Promise.all(sessions.map((session) => session.send('Emulation.setFocusEmulationEnabled', { enabled: false })));
+        await page.bringToFront();
+        observations.push({ phase: 'focus-emulation-cleared-after-playback-navigation', url: page.url(), ...await observe(page) });
         await region.focus();
         await expect.poll(() => observe(page).then((state) => state.countdown)).toMatch(/^Playing next in [3-8]s$/);
         const foreground = await observe(page);
