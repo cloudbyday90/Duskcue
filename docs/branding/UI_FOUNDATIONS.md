@@ -16,7 +16,7 @@ The design goal is to create a product UI that feels intentional and modern whil
 
 The web and shared desktop experience is being redesigned around the **Tonight** concept selected during the October 3, 2026 UI review. This section records the accepted direction for that redesign; the implementation notes below describe the current shipped client.
 
-Production implementation is in progress under [Tonight Implementation Plan](TONIGHT_IMPLEMENTATION_PLAN.md). Browsing, full Title/Episode galleries, typed profile viewing preferences and the minimal player are implemented. Shared checking/401 units/web builds and actual native client journeys pass at their recorded checkpoints, including genuine 400% controls and minimized countdown pause/restoration. Current production progressive HLS/HTTP and the complete 119-case browser qualification remain pending. The plan separates accepted requirements, explicit working defaults and exact verification boundaries; the prototype history below is not current runtime proof.
+Production implementation is in progress under [Tonight Implementation Plan](TONIGHT_IMPLEMENTATION_PLAN.md), with T01–T06 complete. Browsing, full Title/Episode galleries, typed profile preferences and the minimal player are implemented. Shared checking/401 units/web build, all twelve actual native groups and both current Linux progressive-output/HTTP lanes pass. The retained `b51369f` client report is 119/120, including captions, progressive playback, locales and Remember/Forget; only actual trusted tab backgrounding remains failed. The narrow `36a99b7` post-navigation test-harness correction awaits its complete browser report. The plan separates accepted requirements, working defaults and exact evidence boundaries; prototype history is not current runtime proof.
 
 Accepted decisions:
 
@@ -50,7 +50,7 @@ Implementation defaults established in the execution plan:
 
 These defaults guide the current implementation without claiming a separate design vote for every choice. Profile entry, controls, authenticated artwork and independent loading/empty/error states are integrated with production services. The prototype uses illustrative media and remains separate from application data.
 
-The remaining execution work is current backend playback qualification, complete browser journeys and the final requirement/evidence audit. Preserve the accepted direction and scope rather than restarting the prototype review.
+Remaining execution work is the complete corrected browser journey report and final T07/T08 requirement/documentation audit. Backend playback and actual native journeys have source-bound runtime proof; unavailable spoken AT, physical OS and browser-to-live-server qualification remain precisely recorded limits. Preserve the accepted direction and scope rather than restarting the prototype review.
 
 The playback review selected **Minimal controls** over Quick access's persistent audio, subtitles, and quality selectors. The implementation retains pause/resume, seeking, volume, episode changes, actual audio/subtitle choices, auto-hide, fullscreen, full Title return and next-episode autoplay. Preserve existing shortcut behavior; a subtitle appearance editor remains outside this goal. Continue watching resumes directly under the plan's explicit implementation default, while ordinary catalog cards open Title details.
 
@@ -158,7 +158,9 @@ That means:
 3. Administrative power exists, but it should not visually define the product.
 4. The interface should feel like a trusted home-cinema tool, not a streaming-service clone and not an enterprise dashboard.
 
-### Visual language
+### Earlier cross-client visual baseline
+
+The following baseline describes the earlier shared client direction. Tonight's web/desktop palette above supersedes its brass accent in the actual shared web CSS; existing mobile/TV asset and token contracts retain their own platform scope.
 
 Use a **low-light editorial palette** as the baseline product direction:
 
@@ -326,30 +328,36 @@ If a proposed component or pattern does not clearly support one of these screens
 
 ## Implementation Status
 
-The low-light editorial palette and design tokens from this document are implemented as CSS custom properties in `clients/web/src/app.css` (Phase 8 Task 4). The token names map directly to the visual language section above:
+The current Tonight web and shared Tauri palette is implemented as semantic CSS custom properties in `clients/web/src/app.css`. The token names remain stable while their values update the earlier Phase 8 brass direction:
 
 | Token | Value | Maps to |
 |---|---|---|
-| `--color-bg-deep` | `#0e0f13` | Foundational deep charcoal surface |
-| `--color-bg-surface` | `#16181f` | Graphite surface |
-| `--color-bg-elevated` | `#1e2129` | Elevated card/panel surface |
-| `--color-text-primary` | `#e8e4dc` | Warm off-white primary text |
-| `--color-text-secondary` | `#9b9ba4` | Secondary text |
-| `--color-accent` | `#c8965a` | Brass/amber primary accent |
+| `--color-bg-deep` | `#111016` | Deep charcoal surface |
+| `--color-bg-surface` | `#1b1821` | Plum surface |
+| `--color-bg-elevated` | `#26212e` | Elevated plum card/panel |
+| `--color-text-primary` | `#f3eef8` | Light primary text |
+| `--color-text-secondary` | `#c1b8cd` | Secondary text |
+| `--color-accent` | `#c7b8ee` | Restrained lavender actions |
 | `--color-success` | `#6abf69` | Cool green (healthy states) |
-| `--color-error` | `#c95c5c` | Muted red (destructive/warnings) |
+| `--color-error` | `#f29191` | Readable red error states |
 
-The 4 core components (`MediaCard`, `Player`, `SearchBar`, `NotificationToast`) consume these tokens via CSS custom properties. The player-control model (item 1 in "Three More High-Value Design Areas") is partially addressed in `Player.svelte` — keyboard shortcuts (Space/K/arrows/F/M/Esc), auto-hide transport controls, and focus-visible rings are implemented. Touch/TV remote input models remain deferred to future client phases.
+The shared shell, poster/episode galleries, preferences and player components consume these tokens. Minimal controls, vertical disclosures, keyboard/touch reveal, native fullscreen/Escape/X Title return and actual next-episode behavior delegate to focused services with explicit scope and cleanup. Current browser and native evidence is recorded in the plan; real tab backgrounding remains the final open timing qualification. TV/controller input models remain with their respective client phases.
 
 Phase 16d Task 7 adds the cross-client accessibility and input baseline in [CLIENT_ACCESSIBILITY_INPUT.md](../design/CLIENT_ACCESSIBILITY_INPUT.md) plus machine-readable fixtures under [../api/fixtures/accessibility/v1](../api/fixtures/accessibility/v1/manifest.json). Future client phases should use those artifacts to verify focus order, remote/controller navigation, screen reader behavior, captions/subtitles, reduced motion, contrast, touch targets, and localization/RTL behavior instead of interpreting this visual foundation document alone.
 
 Phase 16d Task 8 promotes the visual foundation into a reusable design asset/token contract in [CLIENT_DESIGN_ASSETS.md](../design/CLIENT_DESIGN_ASSETS.md) plus machine-readable fixtures under [../api/fixtures/design/v1](../api/fixtures/design/v1/manifest.json). The pack defines DTCG-compatible token groups, app-icon and placeholder SVG sources under [assets](assets), poster/backdrop/thumbnail/logo sizing rules, focus token expectations, artwork loading/fallback/offline/unavailable behavior, string ownership, media-state badge keys, and platform mapping guidance. Future clients should consume those shared assets and rules while mapping them into native UI systems.
 
-A fifth component, `SkipButton.svelte`, was added in Phase 10 Task 7 (per [SEGMENT_DETECTION.md](../design/SEGMENT_DETECTION.md)). It instantiates the "Player HUD and transport controls" primitive (item 5 of the UI primitives list) — a bottom-right overlay rendered during detected intro/credits/recap/preview/outro windows. It consumes the same design tokens (`--color-accent` brass/amber for the high-prominence button surface, `--color-bg-elevated` graphite with `backdrop-filter: blur(8px)` for the medium-prominence surface), implements two-tier prominence (10s timeout for high-confidence segments; 5s for medium-confidence), and respects the focus-visible ring + fly-transition motion rules defined above.
+A fifth component, `SkipButton.svelte`, was added in Phase 10 Task 7 (per [SEGMENT_DETECTION.md](../design/SEGMENT_DETECTION.md)). It instantiates the "Player HUD and transport controls" primitive (item 5 of the UI primitives list) — a bottom-right overlay rendered during detected intro/credits/recap/preview/outro windows. It consumes the same semantic tokens, now lavender/plum in web/desktop, implements two-tier prominence (10s timeout for high-confidence segments; 5s for medium-confidence), and respects the focus-visible ring + fly-transition motion rules defined above.
 
 A sixth component, `SeekPreview.svelte`, was added in Phase 10 Task 8 (per [STORYBOARDS.md](../design/STORYBOARDS.md)). It instantiates a seek-preview thumbnail tooltip above the player seek bar — appearing when the user hovers or scrubs the timeline. It consumes the same design tokens (`--color-bg-deep` charcoal for the thumbnail background, `--color-text-primary` for the time label, `--shadow-elevated` for the tooltip shadow, `--radius-sm` for rounded corners), uses the `fade` transition for appearance, and includes a responsive mobile breakpoint at 480px.
 
-### Responsive Layout (Phase 8 Task 6)
+### Current Tonight responsive layout
+
+The actual shell in `routes/+layout.svelte` wraps navigation/search at 1100px, gives navigation and search full rows at 600px, and makes the header non-sticky below 420px height so keyboard scrolling can reach short-height controls. Poster and episode galleries reflow with their own semantic controls; the current browser/native suites cover 320 CSS pixels, RTL, reduced motion and genuine native 400% zoom. These checks keep the documented fixture/AT scope.
+
+### Earlier Responsive Layout (Phase 8 Task 6)
+
+The following records the original Phase 8 implementation; its hamburger/drawer behavior and no-observer statement do not describe the current Tonight shell/player.
 
 The web client implements a responsive layout with a two-breakpoint system covering desktop, tablet, and mobile per the navigation model section above ("On mobile, keep the same product nouns even if the navigation compresses into tabs and nested views"):
 
