@@ -93,12 +93,13 @@ function report() {
         suite('playback-tab-background.spec.ts', ['actual tab background pauses and resumes timing']),
         suite('localization.spec.ts', ['fr home', 'fr search', 'fr preferences', 'ar home', 'ar search', 'ar preferences']),
         suite('playback-localization.spec.ts', ['fr player', 'ar player']),
+        suite('profile-remembering.spec.ts', ['explicit Remember, ordinary switch preservation and Forget']),
     ] };
 }
 
 test('current complete scopes count executed captions and explicitly report retry qualification', () => {
     const complete = report();
-    assert.deepEqual(validateCaptionResults(complete), { captionPassed: 3, captionSkipped: 0, captionRetries: 0, captionFlaky: 0, progressivePassed: 3, backgroundPassed: 1, localePassed: 8, requiredRetries: 0, requiredFlaky: 0 });
+    assert.deepEqual(validateCaptionResults(complete), { captionPassed: 3, captionSkipped: 0, captionRetries: 0, captionFlaky: 0, progressivePassed: 3, backgroundPassed: 1, rememberingPassed: 1, localePassed: 8, requiredRetries: 0, requiredFlaky: 0 });
     complete.suites[0].specs[0].tests[0].results.unshift({ status: 'failed' });
     assert.equal(validateCaptionResults(complete).captionRetries, 1);
     assert.equal(validateCaptionResults(complete).captionFlaky, 1);
@@ -130,15 +131,17 @@ test('nested report suites and Windows report filenames retain the same scope id
     assert.throws(() => validateCaptionResults(value));
 });
 
-test('actual background execution cannot be omitted, skipped or replaced by a failed attempt', () => {
-    for (const status of ['skipped', 'failed', 'timedOut', 'interrupted']) {
-        const value = report();
-        value.suites.find((suite) => suite.file.endsWith('playback-tab-background.spec.ts')).specs[0].tests[0].results[0].status = status;
-        assert.throws(() => validateCaptionResults(value));
+test('actual background and remembering execution cannot be omitted, skipped or replaced by a failed attempt', () => {
+    for (const file of ['playback-tab-background.spec.ts', 'profile-remembering.spec.ts']) {
+        for (const status of ['skipped', 'failed', 'timedOut', 'interrupted']) {
+            const value = report();
+            value.suites.find((suite) => suite.file.endsWith(file)).specs[0].tests[0].results[0].status = status;
+            assert.throws(() => validateCaptionResults(value));
+        }
+        const absent = report();
+        absent.suites = absent.suites.filter((suite) => !suite.file.endsWith(file));
+        assert.throws(() => validateCaptionResults(absent));
     }
-    const absent = report();
-    absent.suites = absent.suites.filter((suite) => !suite.file.endsWith('playback-tab-background.spec.ts'));
-    assert.throws(() => validateCaptionResults(absent));
 });
 
 test('a fresh provenance envelope relocates validated caption assets without executing its fixture binaries', async () => {

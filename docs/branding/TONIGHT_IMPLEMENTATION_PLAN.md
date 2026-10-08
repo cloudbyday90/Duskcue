@@ -180,21 +180,21 @@ Completion evidence: movie and multi-season series journeys with resume, complet
 - [x] Add the personal viewing-preferences page with native labeled controls, profile/device fieldsets, Save/Discard, and visible/polite result status.
 - [x] Preserve drafts on save failure. Warn before all unsaved exits, including links, browser/back navigation where supported, profile switches, and search submitted by keyboard.
 - [x] Load and reset preferences on profile/server/account transitions; ignore stale reads and reject writes against a switched profile.
-- [ ] Implement the legacy-storage rules and connect profile defaults to actual media track selection and device quality limits.
+- [x] Implement the legacy-storage rules and connect profile defaults to actual media track selection and device quality limits.
 - [ ] Retain existing profile creation/deletion/parental-policy workflows, wire name editing, and use actual remembered-profile/PIN endpoints with accessible error/focus behavior.
 
 Completion evidence: Save/reload, Discard/Keep editing, failure recovery, separate profile defaults, legacy Off, one-off playback overrides, remembering, PIN errors/expiry, and required initial selection.
 
 ### T07 — Minimal player, fullscreen, and real autoplay
 
-- [ ] Integrate minimal controls and vertical popovers with actual episodes, audio/subtitle tracks, quality, speed, transport, and volume; hide unavailable choices.
-- [ ] Implement focus-aware idle visibility and touch/keyboard reveal while preserving seek previews, segment skipping, recovery, and telemetry.
+- [x] Integrate minimal controls and vertical popovers with actual episodes, audio/subtitle tracks, quality, speed, transport, and volume; hide unavailable choices.
+- [x] Implement focus-aware idle visibility and touch/keyboard reveal while preserving seek previews, segment skipping, recovery, and telemetry.
 - [x] Implement native browser fullscreen and the supported Tauri equivalent/fallback with correct labels and recoverable failures. X closes playback to the Title page, never the desktop application window.
-- [ ] Replace Escape-to-close behavior with popover dismissal/fullscreen exit priority. Stop/release the playback session once and retain resume data on every exit.
+- [x] Replace Escape-to-close behavior with popover dismissal/fullscreen exit priority. Stop/release the playback session once and retain resume data on every exit.
 - [ ] Connect the ten-second next-episode state to the actual media-ended event. Read saved autoplay before starting it; pause while backgrounded, while a popover is open, or while keyboard focus is in the next-episode card.
 - [x] Cancel permanently ends that countdown until a new explicit playback/end cycle; leave Play next available. Use a polite status for transitions, not per-second announcements.
-- [ ] Resolve and revalidate the next episode, stop the completed session, and start the new session once. Retain tracks when available, volume, quality, speed, and fullscreen. A failed/unavailable next start stays recoverable and must not skip forward or resume the timer.
-- [ ] Stop at the selected season's final episode and after a movie. Clear timers/listeners on unmount, scope changes, seek away from end, or manual navigation; deduplicate repeated ended events.
+- [x] Resolve and revalidate the next episode, stop the completed session, and start the new session once. Retain tracks when available, volume, quality, speed, and fullscreen. A failed/unavailable next start stays recoverable and must not skip forward or resume the timer.
+- [x] Stop at the selected season's final episode and after a movie. Clear timers/listeners on unmount, scope changes, seek away from end, or manual navigation; deduplicate repeated ended events.
 
 Completion evidence: direct and HLS playback, real tracks, seek/transcode replacement, background/focus countdown pause, saved Off, Cancel/Play now, no wrapping, failed next start, fullscreen/Escape/X, and correct heartbeat/stop/resume behavior.
 
@@ -296,6 +296,10 @@ Immutable strict Clippy has fifteen diagnostics: thirteen independently classifi
 The exact Title-query fixture correction is pushed as `2a5c6f5`. The background failure is traced to locked Playwright's default focus emulation, which Chrome documents as pinning visibility and suppressing its events. The single headed case now disables that existing simulation on both actual pages and records/asserts same-window topology before normal tab activation. All trusted visibility, eleven-second freeze, restore/Cancel and exact exit assertions stay intact. [Web CI](../ci/TONIGHT_WEB_CI.md#real-tab-visibility-harness-correction--october-8) records the checked official sources and source-only boundary; corrected runtime remains required.
 
 That focused harness correction is pushed as `f9393c9`. Its fresh complete hosted run is queued; no corrected browser pass is inferred. Independently verified `685377e` native artifact `11531306862` records all twelve groups, 37 strict focus checks, 42 captures and actual 11,005-ms minimized freeze at nine seconds; restoration first records nine, then later seven, without catch-up. Current sampled private/working peaks are static 1.449/1.189 GiB, Tauri 3.258/2.899 and native QA 0.606/1.013, with minimum available RAM 12.515/10.521/12.893 GiB respectively. All owned workload exits and cleanup pass. [Native qualification](../ci/TONIGHT_DESKTOP_TESTS.md) records exact source/executable/archive provenance and preserved OS/AT limits; these are hosted observations, not local freeze mitigation.
+
+Final task audit adds one required Remember/Forget browser journey using unchanged fixtures and production code: required-picker explicit true, ordinary switch omission/pin preservation, explicit current-profile replacement and false removal. The result gate requires its single case alongside captions, progressive playback, background and locales; missing/skipped/failed execution cannot pass. Current inventory is 120 cases in 24 files after this addition; source listing and six focused admission tests pass, while actual new runtime remains pending. This closes a coverage gap without changing account, profile or parent-unlock semantics.
+
+At the current continuation, all eight named contract/profile/auth/playback/accessibility/design verifiers pass serially at Node 64 MiB, including 119 routes, 20 contract fixtures and the documented conformance fixtures; whole Rust formatting and patch whitespace pass. These source/fixture checks supplement the behavioral evidence. Root also reviewed current `685377e` native Home, catalog, Search, preferences and profile-disclosure captures, alongside the previously inspected Title/Episode gallery and player/background captures; no new layout defect was found. The original full browser failure and pending corrected run remain distinct.
 
 At `6f85af6`, [shared job 113128421560](https://github.com/cloudbyday90/Duskcue/actions/runs/37720196985/job/113128421560) passes Svelte checking with zero errors/warnings, all 401 unit cases (26 thin Node and 375 Vitest cases), and the production web build. All jobs are terminal. Native prerequisite metadata fails before application builds/runtime; its failure cause was not retained by the old wrapper. ARM64 passes 35 of 37 runtime cases and full SQL: caption output still reaches denied file removal, and a successful fast mandatory-status probe unexpectedly captures empty stdout. The latter requires output-ownership investigation without weakening expected bytes or retrying away the failure. Browser execution is skipped with zero cases.
 
