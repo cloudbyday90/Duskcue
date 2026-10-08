@@ -16,7 +16,7 @@ The design goal is to create a product UI that feels intentional and modern whil
 
 The web and shared desktop experience is being redesigned around the **Tonight** concept selected during the October 3, 2026 UI review. This section records the accepted direction for that redesign; the implementation notes below describe the current shipped client.
 
-Production implementation is in progress under [Tonight Implementation Plan](TONIGHT_IMPLEMENTATION_PLAN.md). Browsing and full Title/Episode galleries are implemented and verified; preference/player integration has current client evidence, while backend runtime and native qualification remain open. The plan separates accepted requirements, explicit working defaults, contract prerequisites, and verification milestones. Prototype review does not imply production implementation is complete.
+Production implementation is in progress under [Tonight Implementation Plan](TONIGHT_IMPLEMENTATION_PLAN.md). Browsing, full Title/Episode galleries, typed profile viewing preferences and the minimal player are implemented. Shared checking/401 units/web builds and actual native client journeys pass at their recorded checkpoints, including genuine 400% controls and minimized countdown pause/restoration. Current production progressive HLS/HTTP and the complete 119-case browser qualification remain pending. The plan separates accepted requirements, explicit working defaults and exact verification boundaries; the prototype history below is not current runtime proof.
 
 Accepted decisions:
 
@@ -41,18 +41,18 @@ The episode review selected the Episode gallery over compact Episode list rows. 
 
 The search review selected a dedicated results page over an instant overlay. Typing preserves the current page until the query is submitted. Return from a result's title page to the originating search with its query, filters, and sorting retained.
 
-Additional interactions to review:
+Implementation defaults established in the execution plan:
 
 - Continue watching cards resume directly; ordinary catalog cards open title details.
 - Return from details to the originating collection, preserving its filters and sorting, as with the accepted search behavior.
 - Keep episode selection and playback prominent; disclose technical media information on demand.
 - Put profile switching, personal Settings, and capability-filtered Administration in the profile area.
 
-These interaction proposals remain review items, followed by profile entry behavior, player controls, artwork fallbacks, and empty/loading/error states. The prototype uses illustrative media; production data and route integration are separate implementation work.
+These defaults guide the current implementation without claiming a separate design vote for every choice. Profile entry, controls, authenticated artwork and independent loading/empty/error states are integrated with production services. The prototype uses illustrative media and remains separate from application data.
 
-The next review sequence is playback controls and transitions, profile/account entry and personal settings, then loading/empty/error states and artwork fallbacks. Finish with a walkthrough of the complete web/desktop journey before implementing the redesign.
+The remaining execution work is current backend playback qualification, complete browser journeys and the final requirement/evidence audit. Preserve the accepted direction and scope rather than restarting the prototype review.
 
-The playback review selected **Minimal controls** over Quick access's persistent audio, subtitles, and quality selectors. The illustrative controls cover pause/resume, seeking, volume, episode changes, audio description, SDH subtitles, auto-hide, fullscreen, returning to the title page, and next-episode autoplay. Keyboard shortcut mapping, subtitle appearance, and real playback remain further review/integration work. Continue watching's direct-resume behavior is still awaiting a separate choice.
+The playback review selected **Minimal controls** over Quick access's persistent audio, subtitles, and quality selectors. The implementation retains pause/resume, seeking, volume, episode changes, actual audio/subtitle choices, auto-hide, fullscreen, full Title return and next-episode autoplay. Preserve existing shortcut behavior; a subtitle appearance editor remains outside this goal. Continue watching resumes directly under the plan's explicit implementation default, while ordinary catalog cards open Title details.
 
 The ten-second autoplay delay is a product choice, not a W3C requirement. [WCAG 2.2 Timing Adjustable](https://www.w3.org/WAI/WCAG22/Understanding/timing-adjustable) requires a way to disable a content-imposed time limit before encountering it, adjust it sufficiently, or extend it under specified conditions. A ten-second Cancel button alone does not establish that requirement; the saved autoplay-off preference supplies the untimed path. End-of-episode controls remain visible, and Cancel never silently restarts the countdown. Keyboard focus inside the next-episode card and an open player popover pause the countdown as additional safeguards; background tabs also pause it.
 
@@ -62,7 +62,7 @@ The prototype demonstrates the end event by seeking to the end. Production must 
 
 Browser review verified the saved autoplay-off preference after closing and reloading, keyboard cancellation, countdown pause with keyboard focus in the next-episode card, automatic advance with fullscreen and playback preferences retained, and completion without wrapping for movies and final season episodes. The end card fits at 320px in both normal and fullscreen layouts. The status region remains inside the fullscreen player and survives episode rendering; the changing seconds use a non-live timer. Actual screen-reader speech still needs assistive-technology testing.
 
-The browser review uses the native [Fullscreen API](https://developer.mozilla.org/en-US/docs/Web/API/Element/requestFullscreen) from a user action and updates its control when fullscreen changes. Fullscreen depends on the embedding host's permission; the standalone review permits it, while an inline preview may not. Desktop window fullscreen integration remains implementation work.
+The browser review uses the native [Fullscreen API](https://developer.mozilla.org/en-US/docs/Web/API/Element/requestFullscreen) from a user action and updates its control when fullscreen changes. Fullscreen depends on the embedding host's permission; the standalone review permits it, while an inline preview may not. Production browser fullscreen and supported Tauri fallback are implemented and have actual native journey evidence; [desktop qualification](../ci/TONIGHT_DESKTOP_TESTS.md) records their precise source and fixture scope.
 
 The active standalone review now verifies native fullscreen entry and exit, Escape from a focused player control, and closing with X from fullscreen. X returns to the full title page with the selected season, episode, and playback position retained. The player handles Escape explicitly when no popover is open and clears an earlier fullscreen error after a successful toggle. No browser-wide permission changes were needed.
 
@@ -81,13 +81,13 @@ The profile popover is a click-opened disclosure with ordinary buttons and a dev
 Architecture constraints from the three-agent review:
 
 - **Account:** sign-in, role/capabilities, library permissions, and interface locale. The current `/user/preferences` contract accepts only locale. Profile selection does not sign into a different account.
-- **Profile:** watch/resume state, favorites, identity, and Kids restrictions. Synced personal autoplay/audio/subtitle defaults are proposed here; the production profile DTO does not yet expose them. Existing web playback defaults live under an unscoped browser storage key and are not synced per-profile settings.
-- **Session:** the active profile and temporary parent unlock. A profile switch invalidates playback and old content state and returns Home.
+- **Profile:** watch/resume state, favorites, identity and Kids restrictions. Typed production viewing-preference requests/responses now expose profile-owned autoplay, audio-language/description and subtitle defaults, with scope checks and mutation-race protection. Legacy storage is used only under the plan's explicit migration rules; a track selected during playback does not rewrite saved defaults.
+- **Session:** the active profile and temporary parent unlock. A profile switch invalidates playback and old content state. Routine switching preserves a validated complete Title context when appropriate; other contexts return Home under the guarded navigation contract.
 - **Device:** remembering is an explicit account/device-to-profile mapping. Label it **Remember this profile on this device**, not Remember the last profile. Routine quick switching leaves an existing remembered mapping unchanged unless the user explicitly changes it.
 
 Protected Kids-to-standard switching must prompt for the current Kids profile's parent PIN and wait for server authorization. That unlock does not grant Kids administrative capabilities. Standard-to-standard and standard-to-Kids selection can switch directly. The prototype uses isolated sample profile histories, a curated sample Kids catalog, and a sample parent PIN of `2468` held only in memory; it does not perform authentication, change permissions, or reproduce production lockout policy. Profile names can be edited in the management review; create/delete and parental-policy management remain later review work.
 
-The proposed ownership and layouts remain unaccepted design choices. Production integration must implement the preference contract and wire profile changes to existing session invalidation, access checks, device remembering, and parent-unlock endpoints. See [Profiles and Ambient Channels](../design/PROFILES_AND_AMBIENT_CHANNELS.md) and [Auth](../design/AUTH.md). This review changes the illustrative UI and its design notes, not those production contracts.
+The ownership and layouts above are the execution plan's explicit implementation defaults, distinct from separately accepted visual decisions. Production preference contracts and profile changes use the existing session invalidation, access checks, device remembering and parent-unlock endpoints. Device quality is scoped by server/account/device; volume retains its existing browser-origin/desktop-installation ownership. See [Profiles and Ambient Channels](../design/PROFILES_AND_AMBIENT_CHANNELS.md), [Auth](../design/AUTH.md) and the plan for current source/evidence boundaries. Earlier prototype observations do not establish production endpoint or assistive-technology behavior.
 
 Browser review verified Save and reload persistence, draft preservation and discard, keyboard search warning before leaving an unsaved form, dialog cancellation focus, isolated profile watch history, unchanged audio defaults after a playback-track override, explicit remembered-profile scope, wrong-PIN errors and successful Kids exit, picker confirmation, initial selection gating, and profile-name edits. Preferences, the profile popover, and the picker fit at 320px. The combined comparison has unique live IDs and independent profile state for each variant. Screen-reader speech and production endpoint integration remain to be tested.
 
