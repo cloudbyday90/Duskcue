@@ -73,6 +73,8 @@ The first four issues are existing server assumptions exposed by the required To
 
 Latest lighter source work supersedes the source currency of the passing frontend checkpoints above: new Tonight links, header Search, Viewing preferences and same-Title profile switching preserve preview locales through existing localization primitives. Two component source compiles have zero warnings; syntax/catalog/diff checks pass. Expanded French/Arabic assertions, complete shared check/build and actual native journeys remain unrun. Existing canonical Title storage/player exit and legacy-link limits are preserved. Native preparation is fresh and unlaunched; no heavy workflow was started in this interval.
 
+Current-source evidence now supersedes the source-check/unit/build limits of that paragraph: hosted job [113081617739](https://github.com/cloudbyday90/Duskcue/actions/runs/37706377561/job/113081617739) passes at `04fea55` with zero Svelte diagnostics, ten Node plus 373 Vitest cases and an ordinary production build. Current full browser/caption, actual native and managed Linux/database execution remain live or pending, not achieved. Other historical rows above retain their checkpoint boundaries until those stronger runtime results arrive.
+
 ## Proof boundaries to retain
 
 - Heartbeat updates resume; watched completion is a normal-stop result based on the actual selected media-file runtime. An immediate ended heartbeat alone does not mark watched. Do not fake completion from an event or synthetic clock.
