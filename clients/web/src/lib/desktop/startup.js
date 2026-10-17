@@ -23,7 +23,7 @@ export function createShellStartup({ auth, onChange, initializeSession = initial
             publish({ desktop });
             if (desktop.requiresServerSelection) return state;
             auth.init();
-            if (desktop.isDesktop) await auth.checkSession();
+            await auth.checkSession();
             if (!current()) return null;
             let setupRequired = false;
             try { setupRequired = !!(await readSetup())?.setup_required; } catch {}

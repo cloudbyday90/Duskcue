@@ -70,6 +70,28 @@ test.describe('profile loading failure', () => {
 
         await expect(page.getByRole('heading', { name: 'Who’s watching?', exact: true })).toBeVisible();
     });
+
+    test('returns to sign in when the session expires before retrying profiles', async ({ page, api }) => {
+        api.failures.set('GET /profiles', { status: 503, detail: 'Fixture profiles unavailable' });
+        await page.goto('/dashboard');
+        await expect(page.getByRole('heading', { name: 'Profiles are unavailable', exact: true })).toBeVisible();
+        api.failures.set('GET /profiles', { status: 401, detail: 'Fixture session expired' });
+        api.failures.set('GET /user/sessions', { status: 401, detail: 'Fixture session expired' });
+        await page.getByRole('button', { name: 'Try again', exact: true }).click();
+        await expect(page).toHaveURL(/\/auth\/login$/);
+        await expect(page.getByRole('heading', { name: 'Sign In', exact: true })).toBeVisible();
+        expect(await page.evaluate(() => localStorage.getItem('duskcue_user'))).toBeNull();
+        expect(api.requests.some((request) => request.path === '/media-items')).toBe(false);
+    });
+});
+
+test('rejects stale cached account details before requesting profiles', async ({ page, api }) => {
+    api.failures.set('GET /user/sessions', { status: 401, detail: 'Fixture session expired' });
+    await page.goto('/dashboard');
+    await expect(page).toHaveURL(/\/auth\/login$/);
+    await expect(page.getByRole('heading', { name: 'Sign In', exact: true })).toBeVisible();
+    expect(await page.evaluate(() => localStorage.getItem('duskcue_user'))).toBeNull();
+    expect(api.requests.some((request) => ['/profiles', '/media-items'].includes(request.path))).toBe(false);
 });
 
 test.describe('protected Kids exit', () => {

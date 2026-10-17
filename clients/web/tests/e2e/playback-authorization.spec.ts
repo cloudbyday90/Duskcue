@@ -46,6 +46,7 @@ test('definitive current-session expiry releases the physical player and preserv
     const authorization = await installAuthorizationApi(page, api);
     const region = await openPlayback(page, titleUrl, mediaIds.episodeOne);
     await expectDecodedPlayback(page);
+    expect(api.requests.filter((request) => request.path === '/user/sessions')).toHaveLength(1);
     authorization.sessionStatus = 401;
     authorization.loginUser = { ...api.user, active_profile_id: null, profile_selection_required: true };
     api.failures.set('POST /playback/stop', { status: 401, detail: 'Fixture expired playback credential' });
@@ -57,7 +58,7 @@ test('definitive current-session expiry releases the physical player and preserv
     await expect(page.locator('video')).toHaveCount(0);
     await expect(page.getByRole('button', { name: /^Retry closing/ })).toHaveCount(0);
     expect(await page.evaluate(() => localStorage.getItem('duskcue_user'))).toBeNull();
-    expect(api.requests.filter((request) => request.path === '/user/sessions')).toHaveLength(1);
+    expect(api.requests.filter((request) => request.path === '/user/sessions')).toHaveLength(2);
     expect(api.requests.filter((request) => request.path === '/auth/logout')).toHaveLength(0);
     expect(playback.stopAttempts).toHaveLength(1);
     expect(playback.stops).toHaveLength(0);
@@ -81,6 +82,7 @@ for (const sessionStatus of [200, 503, 'network'] as const) {
         const authorization = await installAuthorizationApi(page, api);
         const region = await openPlayback(page, titleUrl, mediaIds.episodeOne);
         const video = await expectDecodedPlayback(page);
+        expect(api.requests.filter((request) => request.path === '/user/sessions')).toHaveLength(1);
         authorization.sessionStatus = sessionStatus;
         api.failures.set('POST /playback/stop', { status: 401, detail: 'Fixture endpoint-specific release denial' });
         await region.getByRole('button', { name: 'Close player', exact: true }).focus();
@@ -91,7 +93,7 @@ for (const sessionStatus of [200, 503, 'network'] as const) {
         expect(new URL(page.url()).pathname).toBe(`/play/${mediaIds.episodeOne}`);
         expect(await video.evaluate((element: HTMLVideoElement) => ({ paused: element.paused, source: element.getAttribute('src') }))).toEqual({ paused: true, source: null });
         expect(await page.evaluate(() => JSON.parse(localStorage.getItem('duskcue_user')!).id)).toBe(api.user.id);
-        expect(api.requests.filter((request) => request.path === '/user/sessions')).toHaveLength(1);
+        expect(api.requests.filter((request) => request.path === '/user/sessions')).toHaveLength(2);
         expect(api.requests.filter((request) => request.path === '/auth/logout')).toHaveLength(0);
         await page.clock.install();
         await page.clock.fastForward(16_000);
@@ -110,6 +112,7 @@ test('a superseded session probe is actually canceled during cross-tab profile t
     const authorization = await installAuthorizationApi(page, api);
     const region = await openPlayback(page, titleUrl, mediaIds.episodeOne);
     await expectDecodedPlayback(page);
+    expect(api.requests.filter((request) => request.path === '/user/sessions')).toHaveLength(1);
     let finishProbe!: () => void;
     const pendingProbe = new Promise<void>((resolve) => { finishProbe = resolve; });
     let deliveredProbe = false;
@@ -122,7 +125,7 @@ test('a superseded session probe is actually canceled during cross-tab profile t
     const other = await page.context().newPage();
     try {
         await region.getByRole('button', { name: 'Close player', exact: true }).click();
-        await expect.poll(() => api.requests.filter((request) => request.path === '/user/sessions').length).toBe(1);
+        await expect.poll(() => api.requests.filter((request) => request.path === '/user/sessions').length).toBe(2);
         const failedProbe = page.waitForEvent('requestfailed', { predicate: (request) => new URL(request.url()).pathname === '/api/v1/user/sessions' });
         await installApiFixture(other, api);
         await other.goto('/dashboard');

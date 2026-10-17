@@ -104,7 +104,7 @@ function createAuthStore() {
         init() {
             const cached = restoreUser();
             if (cached) {
-                update((s) => ({ ...s, user: cached, isAuthenticated: !getDesktopSessionScope().isDesktop }));
+                update((s) => ({ ...s, user: cached, isAuthenticated: false }));
             }
         },
 
@@ -177,7 +177,7 @@ function createAuthStore() {
                     set({ user: null, isAuthenticated: false, loading: false, error: clearingError || err });
                     return outcome('expired', clearingError || err);
                 }
-                if (!desktop.isDesktop || err.status === 401) {
+                if (err.status === 401) {
                     persistUser(null);
                     try { await clearDesktopSession(desktopOrigin); } catch (storageError) {
                         if (!current()) return false;

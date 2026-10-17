@@ -45,6 +45,39 @@ beforeEach(() => {
 });
 
 describe('shared auth desktop persistence', () => {
+    it('does not authenticate a cached browser account before the server validates its cookie', async () => {
+        mocks.scope = { isDesktop: false, server: null, hasToken: false };
+        values.set('duskcue_user', JSON.stringify(user));
+        const { auth } = await import('../../src/lib/stores/auth.js');
+        auth.init();
+        expect(get(auth)).toMatchObject({ user, isAuthenticated: false });
+        expect(await auth.checkSession()).toBe(true);
+        expect(get(auth)).toMatchObject({ user, isAuthenticated: true });
+    });
+
+    it('clears a cached browser account when its startup cookie is expired', async () => {
+        mocks.scope = { isDesktop: false, server: null, hasToken: false };
+        values.set('duskcue_user', JSON.stringify(user));
+        mocks.sessions.mockRejectedValueOnce(Object.assign(new Error('Expired'), { status: 401 }));
+        const { auth } = await import('../../src/lib/stores/auth.js');
+        auth.init();
+        expect(await auth.checkSession()).toBe(false);
+        expect(get(auth)).toMatchObject({ user: null, isAuthenticated: false, loading: false });
+        expect(values.has('duskcue_user')).toBe(false);
+    });
+
+    it.each([0, 503])('retains cached browser details when startup validation is unavailable (%s)', async (status) => {
+        mocks.scope = { isDesktop: false, server: null, hasToken: false };
+        values.set('duskcue_user', JSON.stringify(user));
+        mocks.sessions.mockRejectedValueOnce(Object.assign(new Error('Unavailable'), { status }));
+        const { auth } = await import('../../src/lib/stores/auth.js');
+        auth.init();
+        expect(await auth.checkSession()).toBe(false);
+        expect(get(auth)).toMatchObject({ user: null, isAuthenticated: false, loading: false });
+        expect(JSON.parse(values.get('duskcue_user')!)).toEqual(user);
+        expect(mocks.clear).not.toHaveBeenCalled();
+    });
+
     it('explicit revalidation recognizes its own definitive current-scope 401 clear', async () => {
         const { auth } = await import('../../src/lib/stores/auth.js');
         auth.setUser(user);

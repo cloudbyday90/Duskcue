@@ -809,3 +809,13 @@ Task 11 replaces all remaining inline `check_capability()` calls with a trait-ba
 **Handler refactoring:** 6 auth handlers (`list_invitations`, `create_invitation`, `revoke_invitation`, `resend_invitation`, `get_user_capabilities`, `update_user_capabilities`) and 4 users handlers (`list_users`, `get_user`, `update_user`, `delete_user`) refactored from inline `check_capability()` to `Require<CanManageUsers>` extractor. The `auth` import was removed from `users/handlers.rs` entirely.
 
 **Why extractors over middleware:** The `from_fn` middleware approach was considered but rejected due to the double-extraction problem (middleware extracts `AuthenticatedUser`, handler also needs it). Extractors avoid this by combining authentication + capability check in a single step that produces the `AuthenticatedUser` for the handler to use.
+
+### Web session restoration — October 17, 2026
+
+Local Docker evaluation exposed a stale cached account with an expired or missing session cookie. The web shell trusted `duskcue_user`, requested profiles, and presented every `401` as a retryable profile-loading failure. Server readiness and successful asset requests did not qualify this authenticated journey.
+
+Both web and desktop startup now await the existing `GET /api/v1/user/sessions` validation before publishing a ready shell. Cached account details are display metadata and never establish authentication alone. A definitive `401` removes the current cached account and returns protected routes to Sign In. Network or server failures retain cached details without authenticating the account. A later profile-loading `401` uses the existing revision- and origin-scoped session revalidation; a confirmed expiration returns to Sign In, while temporary profile failures remain retryable. Late failures cannot clear a newer account or selected server.
+
+This adds one startup request and prevents stale account metadata from trapping users behind the profile gate. Reusing the existing auth and startup services preserves their credential, scope, and cleanup responsibilities. This follows [RFC 9110's `401` semantics](https://www.rfc-editor.org/rfc/rfc9110.html#name-401-unauthorized) and [OWASP's server-side session expiration guidance](https://cheatsheetseries.owasp.org/cheatsheets/Session_Management_Cheat_Sheet.html#automatic-session-expiration), reviewed October 17, 2026. Client recovery does not replace server authorization.
+
+Regression coverage includes browser startup validation ordering, valid and expired cached-cookie sessions, transient validation failures, stale account rejection before profile/catalog requests, and expiration during the profile retry action. The existing current-scope and late-result auth cases remain required.

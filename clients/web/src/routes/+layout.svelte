@@ -242,7 +242,11 @@
                     profile_selection_required: profileSelectionRequired,
                 });
             }
-        } catch {
+        } catch (error) {
+            if (!current()) return;
+            if (error?.status === 401) {
+                await auth.checkSession({ revalidate: true, expectedContext: { serverOrigin: origin || $page.url.origin, userId } });
+            }
             if (!current()) return;
             profiles = [];
             profileSelectionRequired = false;

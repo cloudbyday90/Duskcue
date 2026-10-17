@@ -55,6 +55,11 @@ export async function installApiFixture(page, scenario) {
         if (failure) return json(problem(failure.status, failure.detail), failure.status);
 
         if (path === '/setup/status' && method === 'GET') return json({ setup_required: false });
+        if (path === '/user/sessions' && method === 'GET') {
+            return scenario.authenticated
+                ? json({ items: [] })
+                : json(problem(401, 'Fixture session expired'), 401);
+        }
         if (path === '/events' && method === 'GET') {
             return route.fulfill({ contentType: 'text/event-stream', body: ': fixture connection\n\n' });
         }

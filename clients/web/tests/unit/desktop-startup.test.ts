@@ -42,6 +42,20 @@ describe('selected-server shell startup', () => {
         h.startup.dispose();
     });
 
+    it('awaits browser cookie validation before publishing a ready shell', async () => {
+        const session = pending<boolean>();
+        const h = harness(async () => ({ isDesktop: false, requiresServerSelection: false }));
+        h.auth.checkSession.mockReturnValueOnce(session.promise);
+        const boot = h.startup.start();
+        await vi.waitFor(() => expect(h.auth.checkSession).toHaveBeenCalledOnce());
+        expect(h.readSetup).not.toHaveBeenCalled();
+        expect(h.onChange.mock.calls.some(([state]) => state.ready)).toBe(false);
+        session.resolve(false);
+        expect(await boot).toMatchObject({ ready: true, error: null });
+        expect(h.readSetup).toHaveBeenCalledOnce();
+        h.startup.dispose();
+    });
+
     it('ignores a late older boot instead of adopting the preceding server', async () => {
         const old = pending<any>();
         const initialize = vi.fn(async () => desktop).mockReturnValueOnce(old.promise);
