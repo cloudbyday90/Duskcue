@@ -14,6 +14,7 @@ export const PRESETS = {
     'desktop-build': { policy: 'build', heapMiB: 3072, args: ['--prefix', 'clients/desktop', 'run', 'build'] },
     'tauri-build': { policy: 'native', heapMiB: 3072, args: ['--prefix', 'clients/desktop', 'run', 'tauri:build', '--'] },
     'cargo-check': { policy: 'cargo', command: 'cargo.exe', args: ['check', '-p', 'duskcue', '--locked', '-j', '2'] },
+    'desktop-cargo-check': { policy: 'cargo', command: 'cargo.exe', args: ['check', '-p', 'duskcue-desktop', '--locked', '-j', '2'] },
     'linux-cargo-check': { policy: 'cargo', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/run-linux-cargo-check.mjs'] },
     'cargo-clippy': { policy: 'cargo', command: 'cargo.exe', args: ['clippy', '-p', 'duskcue', '--all-targets', '--locked', '-j', '2', '--', '-D', 'warnings'] },
     'cargo-test': { policy: 'cargo', command: 'cargo.exe', args: ['test', '-p', 'duskcue', '--locked', '-j', '2'] },

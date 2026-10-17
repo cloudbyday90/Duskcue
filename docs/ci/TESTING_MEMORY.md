@@ -34,6 +34,7 @@ node scripts/testing-memory/run.mjs web-check
 node scripts/testing-memory/run.mjs web-build
 node scripts/testing-memory/run.mjs desktop-build
 node scripts/testing-memory/run.mjs cargo-check
+node scripts/testing-memory/run.mjs desktop-cargo-check
 node scripts/testing-memory/run.mjs cargo-clippy
 node scripts/testing-memory/run.mjs compose-build
 node scripts/testing-memory/run.mjs tauri-build --debug --no-bundle --config '<isolated qualification config>'

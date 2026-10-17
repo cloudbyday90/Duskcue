@@ -16,12 +16,12 @@
 
 #![allow(unused_variables)]
 
-use std::io::{Cursor, Read};
 use std::path::{Path, PathBuf};
 
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
+use super::archive::extract_subtitle_from_zip;
 use crate::domains::subtitles::error::SubtitleError;
 use crate::domains::subtitles::types::*;
 use crate::services::opensubtitles_client::OpensubtitlesClient;
@@ -485,41 +485,6 @@ fn score_result(r: &SubtitleSearchResult, prefer_hi: bool) -> u32 {
         score += 5;
     }
     score
-}
-
-fn extract_subtitle_from_zip(data: &[u8]) -> Result<Vec<u8>, SubtitleError> {
-    let reader = Cursor::new(data);
-    let mut archive = zip::ZipArchive::new(reader).map_err(|e| SubtitleError::FetchFailed {
-        reason: format!("ZIP parse error: {e}"),
-    })?;
-
-    for i in 0..archive.len() {
-        let mut entry = archive
-            .by_index(i)
-            .map_err(|e| SubtitleError::FetchFailed {
-                reason: format!("ZIP entry read error: {e}"),
-            })?;
-
-        let name = entry.name().to_lowercase();
-        if name.ends_with(".srt")
-            || name.ends_with(".vtt")
-            || name.ends_with(".ass")
-            || name.ends_with(".ssa")
-            || name.ends_with(".ttml")
-        {
-            let mut buf = Vec::new();
-            entry
-                .read_to_end(&mut buf)
-                .map_err(|e| SubtitleError::FetchFailed {
-                    reason: format!("ZIP content read error: {e}"),
-                })?;
-            return Ok(buf);
-        }
-    }
-
-    Err(SubtitleError::FetchFailed {
-        reason: "ZIP archive contains no subtitle files".to_string(),
-    })
 }
 
 fn is_zip(data: &[u8]) -> bool {

@@ -16,7 +16,7 @@ The selected patch addresses [PostCSS source-map handling](https://github.com/po
 | Update affected packages within existing manifest and peer ranges | Clears reported advisories without a major migration | Requires fresh installs, source checks and runtime bundling |
 | Verify archive SHA-512 independently and initially disable install scripts | Checks that reviewed archives match registry integrity values | Integrity does not establish that package behavior is safe |
 
-The recommended stack is the selected PR, compatible advisory fixes, fresh installation and client checks, then production-image qualification. No package manifest or unrelated dependency resolution is changed.
+The recommended stack is the selected PR, compatible advisory fixes, fresh installation and client checks, then production-image qualification. These npm updates stay within the existing package manifests. The subsequent Rust dependency migration and its audit limits are recorded in [Playback dependency security follow-up](../security/PLAYBACK_DEPENDENCY_FOLLOWUP.md).
 
 | Package | Final version | Official npm publication date (UTC) | Clients |
 |---|---|---|---|

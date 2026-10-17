@@ -26,7 +26,7 @@ tower-http = { version = "0.6", features = ["cors", "trace", "compression-gzip",
 governor = "0.6"
 nonzero_ext = "0.3"
 rusqlite = { version = "0.32", features = ["bundled"] }
-rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
+rustls = { version = "0.23.46", default-features = false, features = ["ring", "std", "tls12"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 ring = "0.17"
 argon2 = "0.5"
@@ -77,7 +77,7 @@ quick-xml = "0.41"
 async-trait = "0.1"
 urlencoding = "2"
 flate2 = "1"
-zip = "2"
+zip = "9.0.5"
 tar = "0.4"
 libc = "0.2"
 chromaprint-next = "0.1"
