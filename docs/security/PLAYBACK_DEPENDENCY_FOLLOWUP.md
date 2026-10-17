@@ -30,6 +30,8 @@ Seven regression cases cover real deflated contents and supported extensions, ma
 
 ## Audit outcome and remaining debt
 
+GitHub's authenticated dependency page was rechecked after the security push at **18:18 EDT on October 17, 2026** and reports [zero open Dependabot alerts](https://github.com/cloudbyday90/Duskcue/security/dependabot). Alert scanning is active; the page separately reports that automatic update PRs are paused. PR #5 remains open and unmerged.
+
 The patched graph reports **zero vulnerability entries under the existing repository audit policy**, and no yanked-version warnings. The existing [RSA exception](../../.cargo/audit.toml) remains in effect for RUSTSEC-2023-0071. That policy records the unpatched WebAuthn dependency and its public-key verification usage; this result is not an exception-free bill of health.
 
 The exception was rechecked against [RustSec database commit 999ec89d](https://github.com/rustsec/advisory-db/blob/999ec89d5d3f10f20be14750ec8c2d8b44e0ac9b/crates/rsa/RUSTSEC-2023-0071.md): `patched = []` remains current. The [maintainer tracking issue](https://github.com/RustCrypto/RSA/issues/626) is open, and the nonoptional WebAuthn/core/crypto-glue chain has no compatible stable patched replacement or RSA-removal feature. The public-key rationale remains the existing policy justification; this dependency review does not newly prove the absence of a reachable private-key timing oracle.
