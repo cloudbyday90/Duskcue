@@ -18,6 +18,14 @@ use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
 
+mod compatibility;
+
+#[cfg(test)]
+mod tests;
+
+pub use compatibility::codec_supported;
+use compatibility::{container_supported, hdr_supported};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StreamDecision {
@@ -137,31 +145,6 @@ pub enum QualityMode {
     Manual,
 }
 
-static CODEC_ALIASES: &[(&str, &[&str])] = &[
-    ("h264", &["h264", "avc", "avc1"]),
-    ("hevc", &["hevc", "h265", "hvc1"]),
-    ("av1", &["av1"]),
-    ("vp9", &["vp9", "vp09"]),
-    ("mpeg2video", &["mpeg2video", "mpeg2"]),
-    ("vc1", &["vc1", "vc-1"]),
-    ("vp8", &["vp8"]),
-    ("aac", &["aac"]),
-    ("ac3", &["ac3", "ac-3"]),
-    ("eac3", &["eac3", "e-ac-3", "dd+", "dolby_digital_plus"]),
-    ("truehd", &["truehd", "thd", "thd+atmos"]),
-    ("dts", &["dts"]),
-    ("dts_hd_ma", &["dts-hd_ma", "dts_hd_ma", "dtshd", "dts-hd"]),
-    ("flac", &["flac"]),
-    ("opus", &["opus"]),
-    ("vorbis", &["vorbis"]),
-    (
-        "pcm",
-        &["pcm", "lpcm", "pcm_s16le", "pcm_s24le", "pcm_s32le"],
-    ),
-    ("alac", &["alac"]),
-    ("mp3", &["mp3"]),
-];
-
 #[allow(dead_code)]
 static FMP4_COMPATIBLE_AUDIO: &[&str] = &["aac", "ac3", "eac3", "flac", "opus", "pcm"];
 
@@ -191,14 +174,17 @@ pub fn decide(
     };
 
     let target_audio_codec = match audio_decision {
-        AudioDecision::Passthrough | AudioDecision::Downmix => None,
-        AudioDecision::Transcode => Some(select_target_audio_codec(media, device, config)),
+        AudioDecision::Passthrough => None,
+        AudioDecision::Downmix | AudioDecision::Transcode => {
+            Some(select_target_audio_codec(media, device, config))
+        }
     };
 
     let target_resolution =
         compute_target_resolution(media, device, network, config, video_decision);
 
-    let target_bitrate_bps = compute_target_bitrate(media, network, config, target_resolution);
+    let target_bitrate_bps =
+        compute_target_bitrate(media, device, network, config, target_resolution);
 
     let target_audio_channels = match audio_decision {
         AudioDecision::Passthrough => None,
@@ -238,16 +224,7 @@ fn evaluate_video(
     config: &DecisionEngineConfig,
     reasons: &mut Vec<DecisionReason>,
 ) -> VideoDecision {
-    if config.quality_mode == QualityMode::Maximum
-        && codec_supported(&media.video_codec, &device.video_codecs)
-    {
-        reasons.push(DecisionReason {
-            factor: "quality_mode",
-            result: "direct_play",
-            detail: "maximum quality mode, codec supported".to_string(),
-        });
-        return VideoDecision::DirectPlay;
-    }
+    let mut decision = VideoDecision::DirectPlay;
 
     if !codec_supported(&media.video_codec, &device.video_codecs) {
         reasons.push(DecisionReason {
@@ -255,10 +232,17 @@ fn evaluate_video(
             result: "transcode",
             detail: format!("codec '{}' not in device supported list", media.video_codec),
         });
-        return VideoDecision::Transcode;
+        decision = VideoDecision::Transcode;
     }
 
-    if media.video_bit_depth > device.max_video_bit_depth && device.max_video_bit_depth > 0 {
+    if media.video_bit_depth == 0 {
+        reasons.push(DecisionReason {
+            factor: "bit_depth",
+            result: "transcode",
+            detail: "source video bit depth is unknown".to_string(),
+        });
+        decision = VideoDecision::Transcode;
+    } else if media.video_bit_depth > device.max_video_bit_depth && device.max_video_bit_depth > 0 {
         reasons.push(DecisionReason {
             factor: "bit_depth",
             result: "transcode",
@@ -267,7 +251,7 @@ fn evaluate_video(
                 media.video_bit_depth, device.max_video_bit_depth
             ),
         });
-        return VideoDecision::Transcode;
+        decision = VideoDecision::Transcode;
     }
 
     let (src_w, src_h) = media.video_resolution;
@@ -281,81 +265,35 @@ fn evaluate_video(
                 src_w, src_h, dev_w, dev_h
             ),
         });
-        return VideoDecision::Transcode;
+        decision = VideoDecision::Transcode;
     }
 
-    let is_hdr = is_hdr_content(&media.video_dynamic_range);
-    let device_supports_hdr = device.hdr_formats.iter().any(|f| f != "sdr");
+    let dynamic_range_decision = evaluate_dynamic_range(media, device, config, reasons);
+    if dynamic_range_decision == VideoDecision::ToneMap {
+        decision = VideoDecision::ToneMap;
+    } else if dynamic_range_decision == VideoDecision::Transcode
+        || (decision == VideoDecision::DirectPlay && dynamic_range_decision == VideoDecision::Remux)
+    {
+        decision = dynamic_range_decision;
+    }
 
-    if is_hdr && !device_supports_hdr {
+    let effective_bitrate = media
+        .video_bitrate_bps
+        .saturating_add(media.audio_bitrate_bps);
+    if device.max_bitrate_bps > 0 && effective_bitrate > device.max_bitrate_bps {
         reasons.push(DecisionReason {
-            factor: "hdr",
-            result: "tone_map",
+            factor: "device_bitrate",
+            result: "transcode",
             detail: format!(
-                "source '{}' but device has no HDR support",
-                media.video_dynamic_range
+                "source {} bps exceeds device limit {} bps",
+                effective_bitrate, device.max_bitrate_bps
             ),
         });
-        return VideoDecision::ToneMap;
-    }
-
-    if let Some(dv_profile) = extract_dv_profile(media)
-        && !device.supports_dolby_vision
-    {
-        if dv_profile == 7 || dv_profile == 8 {
-            if device_supports_hdr && device.allow_client_side_dv_fallback {
-                reasons.push(DecisionReason {
-                    factor: "dolby_vision",
-                    result: "direct_play",
-                    detail: format!(
-                        "DV Profile {} with HDR10 base, client-side fallback allowed",
-                        dv_profile
-                    ),
-                });
-                return VideoDecision::DirectPlay;
-            } else if device_supports_hdr {
-                reasons.push(DecisionReason {
-                    factor: "dolby_vision",
-                    result: "remux",
-                    detail: format!("DV Profile {} stripping to HDR10 base layer", dv_profile),
-                });
-                return VideoDecision::Remux;
-            } else {
-                reasons.push(DecisionReason {
-                    factor: "dolby_vision",
-                    result: "tone_map",
-                    detail: format!(
-                        "DV Profile {} on SDR device, tone mapping required",
-                        dv_profile
-                    ),
-                });
-                return VideoDecision::ToneMap;
-            }
-        } else if dv_profile == 5 {
-            reasons.push(DecisionReason {
-                factor: "dolby_vision",
-                result: "transcode",
-                detail: "DV Profile 5 has no HDR fallback, must transcode".to_string(),
-            });
-            return VideoDecision::Transcode;
+        if decision != VideoDecision::ToneMap {
+            decision = VideoDecision::Transcode;
         }
     }
 
-    if !codec_supported_container(&media.video_codec, &media.container_format, device)
-        && codec_supported(&media.video_codec, &device.video_codecs)
-    {
-        reasons.push(DecisionReason {
-            factor: "container",
-            result: "remux",
-            detail: format!(
-                "container '{}' not supported, remuxing video stream copy",
-                media.container_format
-            ),
-        });
-        return VideoDecision::Remux;
-    }
-
-    let effective_bitrate = media.video_bitrate_bps + media.audio_bitrate_bps;
     if let Some(limit) = bitrate_limit(network, config)
         && effective_bitrate > limit
     {
@@ -367,10 +305,14 @@ fn evaluate_video(
                 effective_bitrate, limit
             ),
         });
-        return VideoDecision::Transcode;
+        if decision != VideoDecision::ToneMap {
+            decision = VideoDecision::Transcode;
+        }
     }
 
-    if let Some(manual_res) = config.manual_max_resolution {
+    if config.quality_mode == QualityMode::Manual
+        && let Some(manual_res) = config.manual_max_resolution
+    {
         let (max_w, max_h) = manual_res;
         if src_w > max_w || src_h > max_h {
             reasons.push(DecisionReason {
@@ -381,8 +323,30 @@ fn evaluate_video(
                     max_w, max_h, src_w, src_h
                 ),
             });
-            return VideoDecision::Transcode;
+            if decision != VideoDecision::ToneMap {
+                decision = VideoDecision::Transcode;
+            }
         }
+    }
+
+    if matches!(decision, VideoDecision::Transcode | VideoDecision::ToneMap) {
+        return decision;
+    }
+
+    if !container_supported(&media.container_format, &device.containers) {
+        reasons.push(DecisionReason {
+            factor: "container",
+            result: "remux",
+            detail: format!(
+                "container '{}' not supported, remuxing video stream copy",
+                media.container_format
+            ),
+        });
+        return VideoDecision::Remux;
+    }
+
+    if decision == VideoDecision::Remux {
+        return decision;
     }
 
     reasons.push(DecisionReason {
@@ -393,21 +357,81 @@ fn evaluate_video(
     VideoDecision::DirectPlay
 }
 
+fn evaluate_dynamic_range(
+    media: &MediaFileInfo,
+    device: &DeviceCapabilities,
+    config: &DecisionEngineConfig,
+    reasons: &mut Vec<DecisionReason>,
+) -> VideoDecision {
+    let dynamic_range = media.video_dynamic_range.trim().to_ascii_lowercase();
+    let dv_profile = extract_dv_profile(media);
+    if dv_profile.is_some() || dynamic_range.starts_with("dolby_vision") {
+        if device.supports_dolby_vision {
+            return VideoDecision::DirectPlay;
+        }
+
+        if let Some(profile @ (7 | 8)) = dv_profile
+            && let Some(base_range) = dv_base_dynamic_range(media)
+            && hdr_supported(base_range, &device.hdr_formats)
+        {
+            if config.allow_client_side_dv_fallback && device.allow_client_side_dv_fallback {
+                reasons.push(DecisionReason {
+                    factor: "dolby_vision",
+                    result: "direct_play",
+                    detail: format!(
+                        "DV Profile {} with supported {} base, client-side fallback allowed",
+                        profile, base_range
+                    ),
+                });
+                return VideoDecision::DirectPlay;
+            }
+            reasons.push(DecisionReason {
+                factor: "dolby_vision",
+                result: "remux",
+                detail: format!(
+                    "DV Profile {} stripping to supported {} base layer",
+                    profile, base_range
+                ),
+            });
+            return VideoDecision::Remux;
+        }
+
+        reasons.push(DecisionReason {
+            factor: "dolby_vision",
+            result: "tone_map",
+            detail: "Dolby Vision is unsupported and no supported fallback base is known"
+                .to_string(),
+        });
+        return VideoDecision::ToneMap;
+    }
+
+    if dynamic_range != "sdr" && !is_hdr_content(&dynamic_range) {
+        reasons.push(DecisionReason {
+            factor: "dynamic_range",
+            result: "transcode",
+            detail: "source video dynamic range is unknown".to_string(),
+        });
+        return VideoDecision::Transcode;
+    }
+
+    if is_hdr_content(&dynamic_range) && !hdr_supported(&dynamic_range, &device.hdr_formats) {
+        reasons.push(DecisionReason {
+            factor: "hdr",
+            result: "tone_map",
+            detail: format!("source HDR format '{}' is not supported", dynamic_range),
+        });
+        return VideoDecision::ToneMap;
+    }
+
+    VideoDecision::DirectPlay
+}
+
 fn evaluate_audio(
     media: &MediaFileInfo,
     device: &DeviceCapabilities,
     config: &DecisionEngineConfig,
     reasons: &mut Vec<DecisionReason>,
 ) -> AudioDecision {
-    if config.quality_mode == QualityMode::Maximum && config.audio_passthrough_enabled {
-        reasons.push(DecisionReason {
-            factor: "audio",
-            result: "passthrough",
-            detail: "maximum quality mode with passthrough".to_string(),
-        });
-        return AudioDecision::Passthrough;
-    }
-
     if !config.audio_passthrough_enabled {
         reasons.push(DecisionReason {
             factor: "audio_passthrough",
@@ -584,14 +608,12 @@ fn compute_target_resolution(
                 target_h = target_h.min(max_res_for_bitrate.1);
             }
 
-            if let Some(manual_res) = config.manual_max_resolution {
+            if config.quality_mode == QualityMode::Manual
+                && let Some(manual_res) = config.manual_max_resolution
+            {
                 target_w = target_w.min(manual_res.0);
                 target_h = target_h.min(manual_res.1);
             }
-
-            let (fb_w, fb_h) = config.fallback_max_resolution;
-            target_w = target_w.min(fb_w);
-            target_h = target_h.min(fb_h);
 
             Some(normalize_resolution(target_w, target_h))
         }
@@ -600,21 +622,23 @@ fn compute_target_resolution(
 
 fn compute_target_bitrate(
     media: &MediaFileInfo,
+    device: &DeviceCapabilities,
     network: &NetworkConditions,
     config: &DecisionEngineConfig,
     target_resolution: Option<(u32, u32)>,
 ) -> Option<u64> {
-    let limit = bitrate_limit(network, config)?;
+    let limit = match (bitrate_limit(network, config), device.max_bitrate_bps) {
+        (Some(network_limit), device_limit) if device_limit > 0 => network_limit.min(device_limit),
+        (Some(network_limit), _) => network_limit,
+        (None, device_limit) if device_limit > 0 => device_limit,
+        _ => return None,
+    };
 
     let res = target_resolution.unwrap_or(media.video_resolution);
-    let ladder = super::transcoding::TranscodeRendition::smart_ladder(
-        res.0,
-        res.1,
-        Some((limit as f64 * config.throughput_safety_factor) as u64),
-        None,
-    );
+    let ladder =
+        super::transcoding::TranscodeRendition::smart_ladder(res.0, res.1, Some(limit), None);
 
-    ladder.last().map(|r| r.video_bitrate as u64)
+    ladder.last().map(|r| (r.video_bitrate as u64).min(limit))
 }
 
 fn compute_overall_decision(
@@ -623,16 +647,12 @@ fn compute_overall_decision(
     subtitle_burn_in: bool,
 ) -> StreamDecision {
     if video == VideoDecision::DirectPlay
-        && matches!(audio, AudioDecision::Passthrough | AudioDecision::Downmix)
+        && audio == AudioDecision::Passthrough
         && !subtitle_burn_in
     {
-        let is_remux = video == VideoDecision::Remux;
-        if is_remux {
-            return StreamDecision::DirectStream;
-        }
         StreamDecision::DirectPlay
     } else if video == VideoDecision::Remux
-        && matches!(audio, AudioDecision::Passthrough | AudioDecision::Downmix)
+        && audio == AudioDecision::Passthrough
         && !subtitle_burn_in
     {
         StreamDecision::DirectStream
@@ -641,30 +661,30 @@ fn compute_overall_decision(
     }
 }
 
-pub fn codec_supported(codec: &str, supported: &HashSet<String>) -> bool {
-    let codec_lower = codec.to_lowercase();
-    if supported.contains(&codec_lower) {
-        return true;
+fn dv_base_dynamic_range(media: &MediaFileInfo) -> Option<&'static str> {
+    match media
+        .additional_streams
+        .as_ref()
+        .and_then(|streams| streams.get("dolby_vision"))
+        .and_then(|dv| dv.get("compatibility_mode"))
+        .and_then(serde_json::Value::as_str)
+    {
+        Some("hdr10") => return Some("hdr10"),
+        Some("hlg") => return Some("hlg"),
+        Some("sdr") => return Some("sdr"),
+        _ => {}
     }
-
-    for &(canonical, aliases) in CODEC_ALIASES {
-        if codec_lower == canonical || aliases.contains(&codec_lower.as_str()) {
-            if supported.contains(canonical) {
-                return true;
-            }
-            for alias in aliases {
-                if supported.contains(*alias) {
-                    return true;
-                }
-            }
-        }
+    match media
+        .video_dynamic_range
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "dolby_vision_p8.1" => Some("hdr10"),
+        "dolby_vision_p8.4" => Some("hlg"),
+        _ if extract_dv_profile(media) == Some(7) => Some("hdr10"),
+        _ => None,
     }
-
-    false
-}
-
-fn codec_supported_container(_codec: &str, container: &str, device: &DeviceCapabilities) -> bool {
-    device.containers.contains(&container.to_lowercase()) || device.containers.contains("mkv")
 }
 
 fn needs_dv_strip(media: &MediaFileInfo, device: &DeviceCapabilities) -> bool {
@@ -678,8 +698,9 @@ fn needs_dv_strip(media: &MediaFileInfo, device: &DeviceCapabilities) -> bool {
 }
 
 fn is_hdr_content(dynamic_range: &str) -> bool {
-    let dr = dynamic_range.to_lowercase();
-    dr != "sdr" && !dr.is_empty()
+    let dr = dynamic_range.trim().to_ascii_lowercase();
+    matches!(dr.as_str(), "hdr10" | "hdr10_plus" | "hdr10+" | "hlg")
+        || dr.starts_with("dolby_vision")
 }
 
 fn extract_dv_profile(media: &MediaFileInfo) -> Option<u32> {
@@ -709,16 +730,11 @@ fn max_resolution_for_bitrate(bitrate_bps: u64) -> (u32, u32) {
     }
 }
 
-fn normalize_resolution(_w: u32, h: u32) -> (u32, u32) {
-    if h >= 2160 {
-        (3840, 2160)
-    } else if h >= 1080 {
-        (1920, 1080)
-    } else if h >= 720 {
-        (1280, 720)
-    } else {
-        (854, 480)
-    }
+fn normalize_resolution(w: u32, h: u32) -> (u32, u32) {
+    [(3840, 2160), (1920, 1080), (1280, 720), (854, 480)]
+        .into_iter()
+        .find(|&(width, height)| width <= w && height <= h)
+        .unwrap_or((w / 2 * 2, h / 2 * 2))
 }
 
 pub fn parse_resolution_string(res: &str) -> (u32, u32) {
@@ -759,314 +775,4 @@ pub fn parse_resolution_value(value: &Option<String>) -> (u32, u32) {
         .as_deref()
         .map(parse_resolution_string)
         .unwrap_or((1920, 1080))
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sdr_media() -> MediaFileInfo {
-        MediaFileInfo {
-            container_format: "matroska".to_string(),
-            video_codec: "h264".to_string(),
-            video_profile: Some("High".to_string()),
-            video_level: Some(4.1),
-            video_bit_depth: 8,
-            video_resolution: (1920, 1080),
-            video_bitrate_bps: 8_000_000,
-            video_dynamic_range: "sdr".to_string(),
-            video_frame_rate: 23.976,
-            audio_codec: "aac".to_string(),
-            audio_channels: 2,
-            audio_bitrate_bps: 192_000,
-            audio_language: Some("eng".to_string()),
-            has_embedded_subtitles: false,
-            subtitle_format: None,
-            additional_streams: None,
-        }
-    }
-
-    fn basic_device() -> DeviceCapabilities {
-        DeviceCapabilities {
-            video_codecs: HashSet::from(["h264".to_string()]),
-            audio_codecs: HashSet::from(["aac".to_string()]),
-            containers: HashSet::from(["mp4".to_string(), "mkv".to_string()]),
-            subtitle_formats: HashSet::from(["srt".to_string(), "webvtt".to_string()]),
-            max_resolution: (1920, 1080),
-            max_audio_channels: 2,
-            hdr_formats: HashSet::new(),
-            max_bitrate_bps: 20_000_000,
-            supports_dolby_vision: false,
-            allow_client_side_dv_fallback: true,
-            max_video_bit_depth: 8,
-        }
-    }
-
-    fn default_config() -> DecisionEngineConfig {
-        DecisionEngineConfig {
-            default_video_codec: "h264".to_string(),
-            default_audio_codec: "aac".to_string(),
-            fallback_max_resolution: (3840, 2160),
-            fallback_max_bitrate_bps: 6_000_000,
-            throughput_safety_factor: 0.8,
-            allow_client_side_dv_fallback: true,
-            audio_passthrough_enabled: true,
-            subtitle_burn_in_policy: "last_resort".to_string(),
-            quality_mode: QualityMode::Auto,
-            manual_max_resolution: None,
-        }
-    }
-
-    fn good_network() -> NetworkConditions {
-        NetworkConditions {
-            estimated_throughput_bps: Some(50_000_000),
-            network_tier: Some("excellent".to_string()),
-        }
-    }
-
-    #[test]
-    fn test_direct_play_h264_aac_mkv() {
-        let decision = decide(
-            &sdr_media(),
-            &basic_device(),
-            &good_network(),
-            &default_config(),
-        );
-        assert_eq!(decision.overall, StreamDecision::DirectPlay);
-        assert_eq!(decision.video, VideoDecision::DirectPlay);
-        assert_eq!(decision.audio, AudioDecision::Passthrough);
-    }
-
-    #[test]
-    fn test_transcode_unsupported_video_codec() {
-        let mut media = sdr_media();
-        media.video_codec = "hevc".to_string();
-        let device = basic_device();
-        let decision = decide(&media, &device, &good_network(), &default_config());
-        assert_eq!(decision.overall, StreamDecision::Transcode);
-        assert_eq!(decision.video, VideoDecision::Transcode);
-        assert_eq!(decision.target_video_codec, Some("h264".to_string()));
-    }
-
-    #[test]
-    fn test_transcode_resolution_exceeds_device() {
-        let mut media = sdr_media();
-        media.video_resolution = (3840, 2160);
-        let device = basic_device();
-        let decision = decide(&media, &device, &good_network(), &default_config());
-        assert_eq!(decision.video, VideoDecision::Transcode);
-        assert_eq!(decision.target_resolution, Some((1920, 1080)));
-    }
-
-    #[test]
-    fn test_tone_map_hdr_to_sdr() {
-        let mut media = sdr_media();
-        media.video_dynamic_range = "hdr10".to_string();
-        media.video_bit_depth = 10;
-        media.video_codec = "hevc".to_string();
-        let mut device = basic_device();
-        device.video_codecs.insert("hevc".to_string());
-        device.max_video_bit_depth = 10;
-        let decision = decide(&media, &device, &good_network(), &default_config());
-        assert_eq!(decision.video, VideoDecision::ToneMap);
-        assert!(decision.requires_tone_mapping);
-        assert_eq!(decision.target_video_codec, Some("h264".to_string()));
-    }
-
-    #[test]
-    fn test_audio_transcode_unsupported_codec() {
-        let mut media = sdr_media();
-        media.audio_codec = "truehd".to_string();
-        media.audio_channels = 8;
-        let device = basic_device();
-        let decision = decide(&media, &device, &good_network(), &default_config());
-        assert_eq!(decision.audio, AudioDecision::Transcode);
-        assert_eq!(decision.target_audio_codec, Some("aac".to_string()));
-        assert_eq!(decision.target_audio_channels, Some(2));
-    }
-
-    #[test]
-    fn test_audio_downmix() {
-        let mut media = sdr_media();
-        media.audio_channels = 6;
-        let mut device = basic_device();
-        device.audio_codecs.insert("aac".to_string());
-        let decision = decide(&media, &device, &good_network(), &default_config());
-        assert_eq!(decision.audio, AudioDecision::Downmix);
-    }
-
-    #[test]
-    fn test_subtitle_passthrough_srt() {
-        let mut media = sdr_media();
-        media.subtitle_format = Some("srt".to_string());
-        let device = basic_device();
-        let decision = decide(&media, &device, &good_network(), &default_config());
-        assert_eq!(decision.subtitle, SubtitleDecision::Passthrough);
-    }
-
-    #[test]
-    fn test_subtitle_burn_in_pgs() {
-        let mut media = sdr_media();
-        media.subtitle_format = Some("pgs".to_string());
-        media.video_codec = "h264".to_string();
-        let device = basic_device();
-        let decision = decide(&media, &device, &good_network(), &default_config());
-        assert_eq!(decision.subtitle, SubtitleDecision::BurnIn);
-        assert!(decision.subtitle_burn_in_required);
-    }
-
-    #[test]
-    fn test_subtitle_convert_ass_to_srt() {
-        let mut media = sdr_media();
-        media.subtitle_format = Some("ass".to_string());
-        let device = basic_device();
-        let decision = decide(&media, &device, &good_network(), &default_config());
-        assert_eq!(decision.subtitle, SubtitleDecision::Convert);
-    }
-
-    #[test]
-    fn test_dv_profile7_client_fallback() {
-        let mut media = sdr_media();
-        media.video_codec = "hevc".to_string();
-        media.video_dynamic_range = "dolby_vision_p7".to_string();
-        media.video_bit_depth = 10;
-        media.additional_streams = Some(serde_json::json!({
-            "dolby_vision": { "profile": 7, "level": 6, "compatibility_mode": "hdr10" }
-        }));
-        let mut device = basic_device();
-        device.video_codecs.insert("hevc".to_string());
-        device.max_video_bit_depth = 10;
-        device.hdr_formats.insert("hdr10".to_string());
-        device.allow_client_side_dv_fallback = true;
-        let decision = decide(&media, &device, &good_network(), &default_config());
-        assert_eq!(decision.video, VideoDecision::DirectPlay);
-    }
-
-    #[test]
-    fn test_dv_profile7_no_fallback_strip() {
-        let mut media = sdr_media();
-        media.video_codec = "hevc".to_string();
-        media.video_dynamic_range = "dolby_vision_p7".to_string();
-        media.video_bit_depth = 10;
-        media.additional_streams = Some(serde_json::json!({
-            "dolby_vision": { "profile": 7, "level": 6 }
-        }));
-        let mut device = basic_device();
-        device.video_codecs.insert("hevc".to_string());
-        device.max_video_bit_depth = 10;
-        device.hdr_formats.insert("hdr10".to_string());
-        device.allow_client_side_dv_fallback = false;
-        let decision = decide(&media, &device, &good_network(), &default_config());
-        assert_eq!(decision.video, VideoDecision::Remux);
-        assert!(decision.requires_dv_strip);
-    }
-
-    #[test]
-    fn test_dv_profile5_must_transcode() {
-        let mut media = sdr_media();
-        media.video_codec = "hevc".to_string();
-        media.video_dynamic_range = "dolby_vision_p5".to_string();
-        media.video_bit_depth = 10;
-        media.additional_streams = Some(serde_json::json!({
-            "dolby_vision": { "profile": 5, "level": 6 }
-        }));
-        let mut device = basic_device();
-        device.video_codecs.insert("hevc".to_string());
-        device.max_video_bit_depth = 10;
-        device.hdr_formats.insert("hdr10".to_string());
-        let decision = decide(&media, &device, &good_network(), &default_config());
-        assert_eq!(decision.video, VideoDecision::Transcode);
-    }
-
-    #[test]
-    fn test_maximum_quality_mode() {
-        let mut media = sdr_media();
-        media.video_codec = "hevc".to_string();
-        let mut device = basic_device();
-        device.video_codecs.insert("hevc".to_string());
-        let mut config = default_config();
-        config.quality_mode = QualityMode::Maximum;
-        let decision = decide(&media, &device, &good_network(), &config);
-        assert_eq!(decision.overall, StreamDecision::DirectPlay);
-        assert_eq!(decision.video, VideoDecision::DirectPlay);
-    }
-
-    #[test]
-    fn test_bitrate_exceeds_network() {
-        let mut media = sdr_media();
-        media.video_bitrate_bps = 50_000_000;
-        media.audio_bitrate_bps = 5_000_000;
-        let device = basic_device();
-        let network = NetworkConditions {
-            estimated_throughput_bps: Some(20_000_000),
-            network_tier: Some("good".to_string()),
-        };
-        let decision = decide(&media, &device, &network, &default_config());
-        assert_eq!(decision.video, VideoDecision::Transcode);
-    }
-
-    #[test]
-    fn test_codec_alias_matching() {
-        let supported: HashSet<String> = HashSet::from(["h264".to_string()]);
-        assert!(codec_supported("h264", &supported));
-        assert!(codec_supported("avc", &supported));
-        assert!(codec_supported("avc1", &supported));
-        assert!(!codec_supported("hevc", &supported));
-    }
-
-    #[test]
-    fn test_remux_container_mismatch() {
-        let mut media = sdr_media();
-        media.container_format = "matroska".to_string();
-        let mut device = basic_device();
-        device.containers = HashSet::from(["mp4".to_string()]);
-        let decision = decide(&media, &device, &good_network(), &default_config());
-        assert_eq!(decision.video, VideoDecision::Remux);
-        assert_eq!(decision.overall, StreamDecision::DirectStream);
-    }
-
-    #[test]
-    fn test_10bit_exceeds_device() {
-        let mut media = sdr_media();
-        media.video_bit_depth = 10;
-        let device = basic_device();
-        let decision = decide(&media, &device, &good_network(), &default_config());
-        assert_eq!(decision.video, VideoDecision::Transcode);
-    }
-
-    #[test]
-    fn test_parse_resolution_string() {
-        assert_eq!(parse_resolution_string("4k"), (3840, 2160));
-        assert_eq!(parse_resolution_string("1080p"), (1920, 1080));
-        assert_eq!(parse_resolution_string("720p"), (1280, 720));
-        assert_eq!(parse_resolution_string("480p"), (854, 480));
-        assert_eq!(parse_resolution_string("unknown"), (1920, 1080));
-    }
-
-    #[test]
-    fn test_normalize_resolution() {
-        assert_eq!(normalize_resolution(3840, 2160), (3840, 2160));
-        assert_eq!(normalize_resolution(2560, 1440), (1920, 1080));
-        assert_eq!(normalize_resolution(1920, 1080), (1920, 1080));
-        assert_eq!(normalize_resolution(1280, 720), (1280, 720));
-        assert_eq!(normalize_resolution(640, 480), (854, 480));
-    }
-
-    #[test]
-    fn test_audio_passthrough_disabled() {
-        let mut config = default_config();
-        config.audio_passthrough_enabled = false;
-        let decision = decide(&sdr_media(), &basic_device(), &good_network(), &config);
-        assert_eq!(decision.audio, AudioDecision::Transcode);
-    }
-
-    #[test]
-    fn test_subtitle_pgs_when_supported() {
-        let mut media = sdr_media();
-        media.subtitle_format = Some("pgs".to_string());
-        let mut device = basic_device();
-        device.subtitle_formats.insert("pgs".to_string());
-        let decision = decide(&media, &device, &good_network(), &default_config());
-        assert_eq!(decision.subtitle, SubtitleDecision::Passthrough);
-    }
 }

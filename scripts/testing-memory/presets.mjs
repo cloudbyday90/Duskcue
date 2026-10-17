@@ -6,6 +6,8 @@
 
 export const PRESETS = {
     'web-unit': { policy: 'unit', heapMiB: 1536, args: ['--prefix', 'clients/web', 'run', 'test:unit', '--', '--run', '--maxWorkers=1'] },
+    'web-install': { policy: 'build', heapMiB: 1536, args: ['--prefix', 'clients/web', 'ci', '--ignore-scripts'] },
+    'desktop-install': { policy: 'build', heapMiB: 1536, args: ['--prefix', 'clients/desktop', 'ci', '--ignore-scripts'] },
     'web-e2e': { policy: 'browser', heapMiB: 3072, args: ['--prefix', 'clients/web', 'run', 'test:e2e', '--', '--workers=1'] },
     'web-check': { policy: 'check', heapMiB: 3072, args: ['--prefix', 'clients/web', 'run', 'check'] },
     'web-build': { policy: 'build', heapMiB: 3072, args: ['--prefix', 'clients/web', 'run', 'build'] },
@@ -15,6 +17,7 @@ export const PRESETS = {
     'linux-cargo-check': { policy: 'cargo', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/run-linux-cargo-check.mjs'] },
     'cargo-clippy': { policy: 'cargo', command: 'cargo.exe', args: ['clippy', '-p', 'duskcue', '--all-targets', '--locked', '-j', '2', '--', '-D', 'warnings'] },
     'cargo-test': { policy: 'cargo', command: 'cargo.exe', args: ['test', '-p', 'duskcue', '--locked', '-j', '2'] },
+    'compose-build': { policy: 'build', heapMiB: 128, command: 'docker.exe', args: ['compose', '-f', 'docker-compose.yml', '-f', 'docker/compose.local.yml', '--progress', 'plain', 'build', '--no-cache'] },
     'rust-cached-unit': { policy: 'unit', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/run-cached-rust-tests.mjs'] },
     'caption-font-probe': { policy: 'unit', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/probe-caption-fonts.mjs'] },
     'caption-runtime-qualify': { policy: 'unit', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/qualify-caption-runtime.mjs'] },

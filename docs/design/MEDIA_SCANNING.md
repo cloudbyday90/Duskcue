@@ -2,6 +2,8 @@
 
 ## Overview
 
+The October 17, 2026 [playback compatibility foundation](PLAYBACK_COMPATIBILITY.md) adds bounded two-tier local-file probing and normalized moving-video identity/profile/color metadata. Successful probing establishes usable metadata; it does not verify that every frame decodes. Rescan existing files to acquire the new `additional_streams.video` inventory.
+
 A hybrid scanning pipeline that combines real-time filesystem watching with periodic scheduled scans to detect, identify, probe, and catalog media files. Uses mtime-based diffing to skip unchanged files, making even full scans fast on large libraries.
 
 Library folder structure, file naming conventions, and sub-folder design are documented in [LIBRARY_ORGANIZATION.md](LIBRARY_ORGANIZATION.md). This document covers the scanning pipeline mechanics; LIBRARY_ORGANIZATION.md covers what the scanner expects to find on disk.

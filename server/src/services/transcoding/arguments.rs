@@ -16,9 +16,11 @@ pub fn build_ffmpeg_input_args(seek_position_ms: Option<i64>, source_path: &Path
 
     args.extend([
         "-analyzeduration".to_string(),
-        "200M".to_string(),
+        "5M".to_string(),
         "-probesize".to_string(),
-        "1G".to_string(),
+        "5M".to_string(),
+        "-protocol_whitelist".to_string(),
+        "file,pipe".to_string(),
         "-fflags".to_string(),
         "+genpts".to_string(),
         "-i".to_string(),
@@ -29,12 +31,21 @@ pub fn build_ffmpeg_input_args(seek_position_ms: Option<i64>, source_path: &Path
 }
 
 pub fn build_subtitle_burn_in_filter(source_path: &Path, subtitle_ordinal: usize) -> String {
+    build_subtitle_burn_in_filter_for_video(source_path, subtitle_ordinal, None)
+}
+
+pub fn build_subtitle_burn_in_filter_for_video(
+    source_path: &Path,
+    subtitle_ordinal: usize,
+    video_stream_index: Option<i32>,
+) -> String {
     let escaped_path = source_path
         .to_string_lossy()
         .replace('\\', "\\\\")
         .replace(':', "\\:")
         .replace('\'', "\\'");
-    format!("[0:v:0]subtitles=filename='{escaped_path}':si={subtitle_ordinal}[video]")
+    let video = video_stream_index.map_or_else(|| "0:V:0".into(), |index| format!("0:{index}"));
+    format!("[{video}]subtitles=filename='{escaped_path}':si={subtitle_ordinal}[video]")
 }
 
 pub fn build_hls_output_args(
@@ -66,6 +77,14 @@ pub fn build_stream_mapping_args(
     audio_stream_index: Option<i32>,
     subtitle_filter: Option<String>,
 ) -> Vec<String> {
+    build_stream_mapping_args_for_video(None, audio_stream_index, subtitle_filter)
+}
+
+pub fn build_stream_mapping_args_for_video(
+    video_stream_index: Option<i32>,
+    audio_stream_index: Option<i32>,
+    subtitle_filter: Option<String>,
+) -> Vec<String> {
     let mut args = match subtitle_filter {
         Some(filter) => vec![
             "-filter_complex".into(),
@@ -73,7 +92,10 @@ pub fn build_stream_mapping_args(
             "-map".into(),
             "[video]".into(),
         ],
-        None => vec!["-map".into(), "0:v:0".into()],
+        None => vec![
+            "-map".into(),
+            video_stream_index.map_or_else(|| "0:V:0".into(), |index| format!("0:{index}")),
+        ],
     };
     args.extend([
         "-map".into(),

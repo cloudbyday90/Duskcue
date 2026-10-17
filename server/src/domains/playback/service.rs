@@ -26,6 +26,7 @@ use crate::services::decision_engine::{
     self, DecisionEngineConfig, DeviceCapabilities, MediaFileInfo, NetworkConditions,
     StreamDecision,
 };
+use crate::services::transcoding::plan::{StreamAction, StreamPlan, apply_delivery_requirements};
 use crate::services::transcoding::{StartSessionParams, TranscodeManager};
 use crate::state::RuntimeConfig;
 
@@ -34,6 +35,10 @@ pub use super::hls::{
 };
 pub(crate) use super::track_selection::default_audio_stream_index;
 pub use super::transcode_access::assert_transcode_profile_access;
+
+#[cfg(test)]
+#[path = "media_source_tests.rs"]
+mod media_source_tests;
 
 pub async fn start_playback(
     pool: &PgPool,
@@ -104,7 +109,7 @@ pub async fn start_playback(
     let library_id: Uuid = item_row.try_get("library_id").unwrap_or_default();
 
     let media_file_details = if let Some(file_id) = req.media_file_id {
-        fetch_media_file_details(pool, file_id).await?
+        fetch_media_file_details(pool, file_id, media_item_id).await?
     } else {
         select_best_media_file(pool, media_item_id).await?
     };
@@ -127,17 +132,37 @@ pub async fn start_playback(
 
     let mut decision = decision_engine::decide(&media_info, &device_caps, &network, &engine_config);
 
-    if selected_tracks.subtitle_stream_index.is_some()
-        && decision.overall != StreamDecision::DirectPlay
-        && !decision.subtitle_burn_in_required
-    {
-        decision.overall = StreamDecision::Transcode;
-        decision.subtitle_burn_in_required = true;
-    }
+    apply_delivery_requirements(
+        &mut decision,
+        req.force_transcode.unwrap_or(false),
+        req.force_hls.unwrap_or(false),
+        selected_tracks.subtitle_stream_index.is_some(),
+    );
 
-    if req.force_transcode.unwrap_or(false) {
-        decision.overall = StreamDecision::Transcode;
-    }
+    let stream_plan = if decision.overall == StreamDecision::DirectPlay {
+        None
+    } else {
+        let plan =
+            StreamPlan::compile(&decision, &media_info, req.force_transcode.unwrap_or(false))
+                .map_err(|message| PlaybackError::FfmpegFailed(message.into()))?;
+        let (video_codec, audio_codec) = plan
+            .output_codecs(
+                &decision,
+                &media_info,
+                &device_caps,
+                &config.transcoding.default_video_codec,
+                &config.transcoding.default_audio_codec,
+            )
+            .map_err(|message| PlaybackError::FfmpegFailed(message.into()))?;
+        decision.target_video_codec = video_codec;
+        decision.target_audio_codec = audio_codec;
+        decision.overall = if plan.video == StreamAction::Copy && plan.audio == StreamAction::Copy {
+            StreamDecision::DirectStream
+        } else {
+            StreamDecision::Transcode
+        };
+        Some(plan)
+    };
 
     let stream_decision_str = match decision.overall {
         StreamDecision::DirectPlay => "direct_play",
@@ -153,23 +178,7 @@ pub async fn start_playback(
             stream_url = format!("/api/v1/stream/{}", media_file_details.id);
             transcode_session_id = None;
         }
-        StreamDecision::DirectStream => {
-            let session = transcode_manager
-                .start_remux_session(
-                    media_file_details.id,
-                    user_id,
-                    PathBuf::from(&media_file_details.file_path),
-                    media_info.video_codec.clone(),
-                    media_info.video_resolution,
-                    media_info.audio_codec.clone(),
-                    selected_tracks.audio_stream_index,
-                    data_dir,
-                )
-                .await?;
-            stream_url = format!("/api/v1/transcode/{}/manifest.m3u8", session.id);
-            transcode_session_id = Some(session.id);
-        }
-        StreamDecision::Transcode => {
+        StreamDecision::DirectStream | StreamDecision::Transcode => {
             let target_v = decision.target_video_codec.clone();
             let target_a = decision.target_audio_codec.clone();
             let target_res = decision.target_resolution;
@@ -184,7 +193,13 @@ pub async fn start_playback(
                         source_video_codec: media_info.video_codec.clone(),
                         source_video_resolution: media_info.video_resolution,
                         source_audio_codec: media_info.audio_codec.clone(),
+                        source_video_stream_index: selected_tracks.video_stream_index,
                         source_audio_stream_index: selected_tracks.audio_stream_index,
+                        stream_plan: stream_plan.ok_or_else(|| {
+                            PlaybackError::FfmpegFailed("stream plan is missing".into())
+                        })?,
+                        target_audio_channels: decision.target_audio_channels,
+                        target_audio_bitrate: None,
                         subtitle_stream_index: selected_tracks.subtitle_stream_index,
                         subtitle_stream_ordinal: selected_tracks.subtitle_stream_ordinal,
                         subtitle_burn_in: decision.subtitle_burn_in_required,
@@ -274,15 +289,17 @@ struct MediaFileDetails {
 async fn fetch_media_file_details(
     pool: &PgPool,
     file_id: Uuid,
+    media_item_id: Uuid,
 ) -> Result<MediaFileDetails, PlaybackError> {
     let row = sqlx::query(
         "SELECT id, file_path, container_format, video_codec, \
          video_resolution, video_bitrate, video_dynamic_range, \
          audio_codec, audio_channels, audio_language, audio_bitrate, \
          runtime_seconds, additional_streams \
-         FROM media_files WHERE id = $1 AND is_healthy = true",
+         FROM media_files WHERE id = $1 AND media_item_id = $2 AND is_healthy = true",
     )
     .bind(file_id)
+    .bind(media_item_id)
     .fetch_optional(pool)
     .await?
     .ok_or(PlaybackError::FileNotFound)?;
@@ -332,6 +349,7 @@ fn row_to_media_file_details(row: &sqlx::postgres::PgRow) -> MediaFileDetails {
 }
 
 struct SelectedTracks {
+    video_stream_index: Option<i32>,
     audio_stream_index: Option<i32>,
     subtitle_stream_index: Option<i32>,
     subtitle_stream_ordinal: Option<usize>,
@@ -363,14 +381,21 @@ fn build_media_file_info(
         .map(|(_, stream)| (stream_codec(stream), true))
         .unwrap_or((None, false));
 
-    let frame_rate = details.video_frame_rate.unwrap_or(24.0);
+    let frame_rate = details
+        .additional_streams
+        .get("video")
+        .and_then(|video| video.get("frame_rate"))
+        .and_then(serde_json::Value::as_f64)
+        .filter(|rate| rate.is_finite() && *rate > 0.0)
+        .or(details.video_frame_rate)
+        .unwrap_or(0.0);
 
     let media_info = MediaFileInfo {
         container_format: details.container_format.clone(),
         video_codec: details
             .video_codec
             .clone()
-            .unwrap_or_else(|| "h264".to_string()),
+            .unwrap_or_else(|| "unknown".to_string()),
         video_profile: extract_video_profile(&details.additional_streams),
         video_level: extract_video_level(&details.additional_streams),
         video_bit_depth: bit_depth,
@@ -379,12 +404,12 @@ fn build_media_file_info(
         video_dynamic_range: details
             .video_dynamic_range
             .clone()
-            .unwrap_or_else(|| "sdr".to_string()),
+            .unwrap_or_else(|| "unknown".to_string()),
         video_frame_rate: frame_rate,
         audio_codec: audio
             .and_then(stream_codec)
             .or_else(|| details.audio_codec.clone())
-            .unwrap_or_else(|| "aac".to_string()),
+            .unwrap_or_else(|| "unknown".to_string()),
         audio_channels: audio
             .and_then(|stream| stream.get("channels"))
             .and_then(serde_json::Value::as_u64)
@@ -407,6 +432,13 @@ fn build_media_file_info(
     Ok((
         media_info,
         SelectedTracks {
+            video_stream_index: details
+                .additional_streams
+                .get("video")
+                .and_then(|video| video.get("index"))
+                .and_then(serde_json::Value::as_i64)
+                .and_then(|index| i32::try_from(index).ok())
+                .filter(|index| *index >= 0),
             audio_stream_index,
             subtitle_stream_index,
             subtitle_stream_ordinal: selected_subtitle.map(|(ordinal, _)| ordinal),
@@ -449,7 +481,7 @@ fn extract_video_bit_depth(streams: &serde_json::Value) -> u32 {
         .and_then(|v| v.get("bit_depth"))
         .and_then(|b| b.as_u64())
         .map(|b| b as u32)
-        .unwrap_or(8)
+        .unwrap_or(0)
 }
 
 fn extract_video_profile(streams: &serde_json::Value) -> Option<String> {

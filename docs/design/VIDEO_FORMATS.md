@@ -2,6 +2,8 @@
 
 ## Overview
 
+Implementation qualification is tracked in [Playback compatibility and recovery](PLAYBACK_COMPATIBILITY.md). The codec and HDR catalog below describes the target design; support for a particular runtime, client and transformation requires the recorded corpus or device evidence. Required HDR transformations that are not implemented must fail explicitly rather than produce incorrectly colored video.
+
 This document is the authoritative design for the video formats domain — the comprehensive catalog of video codecs, container formats, HDR standards, bit depths, and chroma subsampling schemes that the server supports as input sources and transcode targets. It defines what the server can ingest, what it can deliver, and how it transforms between them.
 
 The video formats domain covers five concerns:

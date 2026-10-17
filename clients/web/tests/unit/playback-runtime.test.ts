@@ -129,7 +129,7 @@ describe('per-player playback runtime', () => {
         expect(h.runtime.getState()).toMatchObject({ item, file, preferencesReady: true, autoplayEnabled: true, loading: false });
         expect(h.runtime.getState().tracks.audio.map((track) => track.index)).toEqual([2, 5]);
         expect(h.runtime.getState().tracks.subtitles.find((track) => track.index === 13)?.selectable).toBe(false);
-        expect(h.player.play.mock.calls[0][2]).toMatchObject({ startPositionMs: 120000, audioStreamIndex: null, subtitleStreamIndex: null, forceTranscode: false });
+        expect(h.player.play.mock.calls[0][2]).toMatchObject({ startPositionMs: 120000, audioStreamIndex: null, subtitleStreamIndex: null, forceTranscode: false, forceHls: false });
         h.runtime.dispose();
     });
 
@@ -216,12 +216,24 @@ describe('per-player playback runtime', () => {
         h.runtime.dispose();
     });
 
-    it('forces the existing transcode path for authenticated media sources', async () => {
-        const h = await started({ authenticated: true });
-        expect(h.player.play.mock.calls[0][2]).toMatchObject({ forceTranscode: true, audioStreamIndex: null });
+    it('requires HLS delivery for authenticated sources without forcing video encoding', async () => {
+        const h = await started({ authenticated: true, decision: 'direct_stream' });
+        expect(h.player.play.mock.calls[0][2]).toMatchObject({ forceHls: true, forceTranscode: false, audioStreamIndex: null });
         await h.runtime.restart();
         await h.runtime.transition(nextItem);
-        expect(h.player.play.mock.calls.every((call) => call[2].forceTranscode)).toBe(true);
+        expect(h.player.play.mock.calls.every((call) => call[2].forceHls === true && call[2].forceTranscode === false)).toBe(true);
+        h.runtime.dispose();
+    });
+
+    it('keeps explicit subtitle encoding separate from authenticated HLS delivery', async () => {
+        const h = await started({ authenticated: true, decision: 'transcode', value: { subtitle_mode: 'always', subtitle_language: 'en' } });
+        expect(h.player.play.mock.calls[0][2]).toMatchObject({ subtitleStreamIndex: 8, forceTranscode: true, forceHls: true });
+        h.runtime.dispose();
+    });
+
+    it('requests HLS track mapping for preferred audio without forcing video encoding', async () => {
+        const h = await started({ decision: 'direct_stream', value: { audio_language: 'fr', prefer_audio_description: true, subtitle_mode: 'none' } });
+        expect(h.player.play.mock.calls[0][2]).toMatchObject({ audioStreamIndex: 5, subtitleStreamIndex: null, forceHls: true, forceTranscode: false });
         h.runtime.dispose();
     });
 

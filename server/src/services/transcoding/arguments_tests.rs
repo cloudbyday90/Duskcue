@@ -16,6 +16,53 @@ mod local;
 #[path = "arguments_source_probe.rs"]
 mod source_probe;
 
+#[path = "compatibility_tests.rs"]
+mod compatibility;
+
+#[test]
+fn normalized_video_identity_is_shared_by_mapping_and_subtitle_filters() {
+    assert_eq!(
+        build_stream_mapping_args_for_video(Some(4), Some(0), None),
+        ["-map", "0:4", "-map", "0:0"]
+    );
+    let filter = build_subtitle_burn_in_filter_for_video(Path::new("movie.mkv"), 1, Some(4));
+    assert!(filter.starts_with("[0:4]subtitles="));
+    assert_eq!(
+        &build_stream_mapping_args_for_video(Some(4), Some(0), Some(filter))[2..],
+        ["-map", "[video]", "-map", "0:0"]
+    );
+}
+
+#[test]
+fn small_source_and_low_bitrate_do_not_gain_a_larger_fallback_rendition() {
+    let ladder =
+        super::super::TranscodeRendition::smart_ladder(320, 180, Some(200_000), Some((320, 180)));
+    assert_eq!(ladder.len(), 1);
+    assert_eq!((ladder[0].width, ladder[0].height), (320, 180));
+    assert!(ladder[0].video_bitrate <= 200_000);
+}
+
+#[test]
+fn software_hevc_and_ac3_use_their_actual_codec_arguments() {
+    let args = super::super::build_video_encode_args(
+        "libx265",
+        "hevc",
+        320,
+        180,
+        200_000,
+        48,
+        super::super::HwAccelMethod::Software,
+    );
+    let profile = args.iter().position(|arg| arg == "-profile:v").unwrap();
+    assert_eq!(args[profile + 1], "main");
+    let tag = args.iter().position(|arg| arg == "-tag:v").unwrap();
+    assert_eq!(args[tag + 1], "hvc1");
+    assert_eq!(
+        super::super::build_audio_encode_args("ac3", 2, 192_000)[1],
+        "ac3"
+    );
+}
+
 #[test]
 fn hls_output_defaults_to_append_only_event_publication() {
     let arguments = build_hls_output_args(2, "/cache/seg_%04d.m4s", "/cache/manifest.m3u8");
@@ -34,18 +81,18 @@ fn hls_output_defaults_to_append_only_event_publication() {
 fn type_mapping_keeps_audio_zero_and_never_assumes_video_global_zero() {
     assert_eq!(
         build_stream_mapping_args(Some(0), None),
-        ["-map", "0:v:0", "-map", "0:0"]
+        ["-map", "0:V:0", "-map", "0:0"]
     );
     assert_eq!(
         build_stream_mapping_args(None, None),
-        ["-map", "0:v:0", "-map", "0:a:0?"]
+        ["-map", "0:V:0", "-map", "0:a:0?"]
     );
 }
 
 #[test]
 fn selected_subtitle_ordinal_and_path_escaping_survive_type_based_video_selection() {
     let filter = build_subtitle_burn_in_filter(Path::new("D:\\Media\\movie's.mkv"), 1);
-    assert!(filter.starts_with("[0:v:0]subtitles="));
+    assert!(filter.starts_with("[0:V:0]subtitles="));
     assert!(filter.contains(":si=1[video]"));
     assert!(filter.contains("D\\:"));
     assert!(filter.contains("movie\\'s.mkv"));
@@ -71,7 +118,7 @@ fn subtitle_scaling_uses_one_complex_graph_without_conflicting_output_filter() {
     let (encoded, filter) = compose_video_filters(encoder, Some(caption)).unwrap();
     assert!(!encoded.iter().any(|argument| argument == "-vf"));
     let graph = filter.unwrap();
-    assert!(graph.starts_with("[0:v:0]subtitles=filename='source.mkv':si=1,scale="));
+    assert!(graph.starts_with("[0:V:0]subtitles=filename='source.mkv':si=1,scale="));
     assert!(graph.ends_with("[video]"));
 }
 

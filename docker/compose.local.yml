@@ -1,0 +1,7 @@
+services:
+  duskcue:
+    image: duskcue:local
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime

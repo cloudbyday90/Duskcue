@@ -1,0 +1,114 @@
+{
+  "fixture_pack": "duskcue-generated-media-compatibility",
+  "version": 1,
+  "updated": "2026-10-17",
+  "purpose": "Finite generated-media checks for the initial compatibility and recoverable-damage scope. This pack does not certify every codec, browser, device, HDR profile, or corrupted file.",
+  "test_source": "server/src/services/transcoding/compatibility_tests.rs",
+  "support_sources": [
+    "server/src/services/transcoding/compatibility_fixture.rs",
+    "server/src/services/transcoding/compatibility_decode.rs"
+  ],
+  "test_name": "real_generated_compatibility_corpus_uses_production_plans_and_recovers_surviving_media",
+  "execution": {
+    "ignored_by_default": true,
+    "requires": [
+      "Admission through the repository testing-memory workflow",
+      "An existing local FFmpeg runtime supporting lavfi, libx264, libopus, AAC, MPEG-TS, and fMP4 HLS",
+      "The registered guarded Docker helper or the existing admitted Linux local media helper"
+    ],
+    "resource_limits": {
+      "docker_memory_bytes": 536870912,
+      "docker_memory_swap_bytes": 536870912,
+      "docker_cpus": 2,
+      "docker_pids": 128,
+      "ffmpeg_threads": 2,
+      "command_deadline_seconds": 60,
+      "generated_input_maximum_bytes": 2000000
+    },
+    "asset_origin": "Synthetic lavfi testsrc2 and sine signals; no network fixture downloads or user media",
+    "asset_size": "Eight seconds, 160 by 90 pixels, 24 frames per second, mono audio",
+    "identity_evidence": "DUSKCUE_COMPATIBILITY_RUNTIME logs the actual ffmpeg -version output, including build configuration and library versions",
+    "result_evidence": "DUSKCUE_COMPATIBILITY_CORPUS logs source BLAKE3 hashes, frame-hash count, exact damage byte/packet positions, surviving ranges, output progress, and expected unrecoverable failure",
+    "cleanup": "Only the UUID-owned compatibility subdirectory is removed on success or returned error; the shared fixture mount and other test assets remain intact"
+  },
+  "production_paths_exercised": [
+    "build_ffmpeg_input_args using normal bounded probe defaults",
+    "build_stream_mapping_args_for_video with selected global video and audio indexes",
+    "StreamPlan.codec_args with independently copied or encoded video and audio",
+    "build_video_encode_args for the software recovery path",
+    "build_audio_encode_args for AAC conversion",
+    "build_hls_output_args for finite EVENT fMP4 output"
+  ],
+  "assertions": [
+    "Clean copy routes retain all 192 decoded video frame hashes and publish H264 video plus AAC audio",
+    "Selected audio is audible and has the expected generated sine frequency",
+    "Recoverable damage permits useful video and audio after the known damaged GOP",
+    "Finite successful jobs publish media segments and ENDLIST",
+    "Missing essential MP4 metadata fails without publishing a playable media playlist",
+    "All generated source file hashes remain unchanged by packaging and decoding"
+  ],
+  "fixtures": [
+    {
+      "id": "clean-h264-aac-mp4",
+      "source": "clean.mp4",
+      "generation": "Finite H264 yuv420p testsrc2, no B frames, fixed two-second GOPs, 440 Hz AAC mono audio, final MP4 moov",
+      "plan": { "video": "copy", "audio": "copy" },
+      "expected": "Completed decodable fMP4 HLS; original decoded video hashes and 440 Hz audio preserved",
+      "limit": "Exercises server packaging and decoding; it does not test HTTP direct-file serving or browser rendering"
+    },
+    {
+      "id": "h264-opus-mkv-audio-conversion",
+      "source": "opus.mkv",
+      "generation": "Copy the clean H264 elementary stream into Matroska and encode its 440 Hz audio as Opus",
+      "plan": { "video": "copy", "audio": "encode_aac" },
+      "expected": "Completed H264/AAC fMP4 HLS with unchanged decoded video hashes and audible 440 Hz audio"
+    },
+    {
+      "id": "audio-first-global-stream-selection",
+      "source": "audio-first.mkv",
+      "generation": "Matroska global stream zero is 880 Hz Opus audio; stream one is copied H264 video; stream two is 440 Hz Opus audio",
+      "selected_global_video_index": 1,
+      "selected_global_audio_index": 0,
+      "plan": { "video": "copy", "audio": "encode_aac" },
+      "expected": "Copied video frame hashes match the clean reference; converted selected audio measures approximately 880 Hz rather than 440 Hz"
+    },
+    {
+      "id": "locally-damaged-and-truncated-mpeg-ts",
+      "source": "damaged-truncated.ts",
+      "control_source": "clean.ts",
+      "generation": "Remux the clean H264/AAC source into constant-muxrate MPEG-TS; derive byte landmarks from ffprobe video packet timestamps normalized to the first video timestamp",
+      "mutation": {
+        "packet_bytes": 188,
+        "damage_landmark_seconds": 2.25,
+        "damage": "XOR the latter video PES payload bytes of one complete selected transport packet with 0xa5, preserving sync, transport/adaptation headers, and the PES prefix",
+        "truncation_landmark_seconds": 6.5,
+        "truncation": "Retain bytes preceding the first video PES transport packet at or after the landmark; keep transport-packet alignment",
+        "runtime_evidence": "Exact byte ranges, video PID, normalized timestamps, and verified next clean keyframe are emitted for the actual FFmpeg build"
+      },
+      "expected_surviving_source_ranges_seconds": [[0, 2], [4, 6]],
+      "plan": { "video": "encode_h264", "audio": "encode_aac" },
+      "expected": "Packaging completes the retained prefix; progress exceeds 5.5 seconds; a video frame decodes at 5.5 seconds and 440 Hz audio decodes at 5 seconds",
+      "allowed_degradation": "Visible artifacts or dropped frames around the damaged GOP and loss of the deliberately removed tail",
+      "limit": "One deterministic local corruption and tail truncation; not arbitrary missing headers, random corruption, growing downloads, or guaranteed reconstruction of missing frames"
+    },
+    {
+      "id": "unfinalized-mp4-missing-essential-metadata",
+      "source": "missing-moov.mp4",
+      "generation": "Parse the clean MP4 top-level atoms, require mdat before final moov, and retain only bytes preceding moov to model an unfinalized ordinary MP4",
+      "plan": { "video": "encode_h264", "audio": "encode_aac" },
+      "expected": "Command fails within the existing command deadline and produces no media-bearing HLS playlist",
+      "limit": "Missing essential metadata is an expected failure; this pack does not attempt forensic sample-table reconstruction or claim that fragmented MP4 behaves identically"
+    }
+  ],
+  "deferred_matrix": [
+    "HEVC Main10, AV1, VP9, and H264 Hi10P profile fixtures",
+    "HDR10, HLG, HDR10+, Dolby Vision profile handling, and color correctness",
+    "AC3, EAC3, DTS, TrueHD, multichannel downmix and object-audio passthrough",
+    "ASS/SSA styling, PGS/VobSub burn-in, forced subtitles and embedded fonts",
+    "MOV, WebM, AVI, MPEG-PS, M2TS, ASF/WMV, MPEG4 Part2, VC1 and interlaced MPEG2 variants",
+    "Bad timestamps, missing indexes, damaged Matroska cues and unsupported attached-picture layouts",
+    "Hardware decoder fallback, sustained bitrate limits, multiple simultaneous sessions and 4K performance",
+    "Actual browser/native client startup, seeking, track switching, playback recovery endpoint behavior and VLC/Kodi comparative qualification",
+    "Fuzzing, adversarial parser inputs, DRM, encrypted streams and disc menus"
+  ]
+}

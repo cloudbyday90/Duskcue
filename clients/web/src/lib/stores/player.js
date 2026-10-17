@@ -136,6 +136,7 @@ export function createPlayerStore() {
                     device_profile: options.deviceProfile || null,
                     max_streaming_bitrate: options.maxBitrate || null,
                     force_transcode: options.forceTranscode || false,
+                    ...(options.forceHls ? { force_hls: true } : {}),
                     quality_mode: options.qualityMode || 'auto',
                     audio_stream_index: options.audioStreamIndex ?? null,
                     subtitle_stream_index: options.subtitleStreamIndex ?? null,

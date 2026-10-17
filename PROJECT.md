@@ -156,6 +156,8 @@ Baseline client look and feel, navigation language, and reusable UI surfaces are
 
 ## Streaming & Transcoding
 
+The October 2026 [playback compatibility and recovery initiative](docs/design/PLAYBACK_COMPATIBILITY.md) starts with bounded source probing, accurate moving-video identity and metadata, conservative device decisions, independent audio/video processing and a reproducible media corpus. Automatic mid-playback recovery and full format/HDR qualification follow these foundations. The format catalogs below are design targets with runtime-specific verification requirements.
+
 Streaming and transcoding design is documented in [STREAMING.md](docs/design/STREAMING.md).
 
 **Key decisions:**

@@ -154,10 +154,21 @@ describe('integrated player session lifecycle', () => {
     });
 
     it('forwards real track indices and device quality when starting playback', async () => {
-        await player.play(item, 'file-1', { audioStreamIndex: 0, subtitleStreamIndex: 3, qualityMode: 'manual', maxBitrate: 4000000, forceTranscode: true });
+        await player.play(item, 'file-1', { audioStreamIndex: 0, subtitleStreamIndex: 3, qualityMode: 'manual', maxBitrate: 4000000, forceTranscode: true, forceHls: true });
         expect(api.startPlayback).toHaveBeenCalledWith(expect.objectContaining({
-            audio_stream_index: 0, subtitle_stream_index: 3, quality_mode: 'manual', max_streaming_bitrate: 4000000, force_transcode: true,
+            audio_stream_index: 0, subtitle_stream_index: 3, quality_mode: 'manual', max_streaming_bitrate: 4000000, force_transcode: true, force_hls: true,
         }));
+    });
+
+    it('requests authenticated HLS without requesting video encoding', async () => {
+        await player.play(item, 'file-1', { forceHls: true, forceTranscode: false });
+        expect(api.startPlayback).toHaveBeenCalledWith(expect.objectContaining({ force_hls: true, force_transcode: false }));
+    });
+
+    it.each([undefined, false])('omits the optional HLS constraint when not requested (%s)', async (forceHls) => {
+        await player.play(item, 'file-1', { forceHls });
+        expect(api.startPlayback.mock.calls[0][0]).not.toHaveProperty('force_hls');
+        expect(api.startPlayback.mock.calls[0][0]).toHaveProperty('force_transcode', false);
     });
 
     it('keeps a newer session intact when the preceding stop resolves late', async () => {

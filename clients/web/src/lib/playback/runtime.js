@@ -203,7 +203,8 @@ export function createPlaybackRuntime({
             const startPositionMs = position(entry.startPositionMs);
             const result = await player.play(entry.item, entry.file.id, {
                 startPositionMs, signal: current.controller.signal,
-                forceTranscode: selection.needsTranscode || requiresAuthenticatedSource(),
+                forceTranscode: selection.subtitle !== null,
+                forceHls: requiresAuthenticatedSource() || selection.needsTranscode,
                 qualityMode: quality.quality_mode, maxBitrate: quality.max_streaming_bitrate,
                 audioStreamIndex: ['preferred', 'override'].includes(selection.audioSelectionMode) ? selection.audio_stream_index : null,
                 subtitleStreamIndex: selection.subtitle_stream_index,

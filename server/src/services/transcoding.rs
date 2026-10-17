@@ -32,13 +32,16 @@ use crate::state::{CpuConfig, RuntimeConfig};
 pub mod arguments;
 mod launcher;
 mod lifecycle;
+pub mod plan;
 mod readiness;
+mod session;
 use arguments::{
-    build_ffmpeg_input_args, build_hls_output_args, build_stream_mapping_args,
-    build_subtitle_burn_in_filter, compose_video_filters,
+    build_ffmpeg_input_args, build_hls_output_args, build_stream_mapping_args_for_video,
+    build_subtitle_burn_in_filter_for_video, compose_video_filters,
 };
 use launcher::{LaunchReadiness, spawn_session_ffmpeg};
 use lifecycle::{TranscodeWorkers, WorkerCancellation, WorkerLaunch};
+use plan::{StreamAction, StreamPlan};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -165,11 +168,12 @@ impl TranscodeRendition {
             .collect();
 
         if rungs.is_empty() {
+            let (max_width, max_height) = max_resolution.unwrap_or((source_width, source_height));
             rungs.push(Self {
-                name: "480p".to_string(),
-                width: 854,
-                height: 480,
-                video_bitrate: 1_500_000,
+                name: "source".to_string(),
+                width: source_width.min(max_width).max(2) / 2 * 2,
+                height: source_height.min(max_height).max(2) / 2 * 2,
+                video_bitrate: max_bitrate.unwrap_or(1_500_000).min(1_500_000) as u32,
                 audio_bitrate: 128_000,
                 audio_channels: 2,
             });
@@ -186,7 +190,11 @@ pub struct StartSessionParams {
     pub source_video_codec: String,
     pub source_video_resolution: (u32, u32),
     pub source_audio_codec: String,
+    pub source_video_stream_index: Option<i32>,
     pub source_audio_stream_index: Option<i32>,
+    pub stream_plan: StreamPlan,
+    pub target_audio_channels: Option<u32>,
+    pub target_audio_bitrate: Option<u32>,
     pub subtitle_stream_index: Option<i32>,
     pub subtitle_stream_ordinal: Option<usize>,
     pub subtitle_burn_in: bool,
@@ -208,7 +216,11 @@ pub struct TranscodeSession {
     pub source_video_codec: String,
     pub source_video_resolution: (u32, u32),
     pub source_audio_codec: String,
+    pub source_video_stream_index: Option<i32>,
     pub source_audio_stream_index: Option<i32>,
+    pub stream_plan: StreamPlan,
+    pub target_audio_channels: Option<u32>,
+    pub target_audio_bitrate: Option<u32>,
     pub subtitle_stream_index: Option<i32>,
     pub subtitle_stream_ordinal: Option<usize>,
     pub subtitle_burn_in: bool,
@@ -302,7 +314,11 @@ impl TranscodeManager {
             source_video_codec,
             source_video_resolution,
             source_audio_codec,
+            source_video_stream_index,
             source_audio_stream_index,
+            stream_plan,
+            target_audio_channels,
+            target_audio_bitrate,
             subtitle_stream_index,
             subtitle_stream_ordinal,
             subtitle_burn_in,
@@ -321,17 +337,27 @@ impl TranscodeManager {
         let transcoding = &config.transcoding;
         let cpu = &config.cpu;
 
-        let hw_accel = self.get_hw_accel();
-        let effective_video_codec =
-            target_video_codec.unwrap_or_else(|| transcoding.default_video_codec.clone());
-        let effective_audio_codec =
-            target_audio_codec.unwrap_or_else(|| transcoding.default_audio_codec.clone());
+        let hw_accel = if stream_plan.video == StreamAction::Encode {
+            self.get_hw_accel()
+        } else {
+            HwAccelMethod::Software
+        };
+        let effective_video_codec = if stream_plan.video == StreamAction::Copy {
+            source_video_codec.clone()
+        } else {
+            target_video_codec.unwrap_or_else(|| transcoding.default_video_codec.clone())
+        };
+        let effective_audio_codec = if stream_plan.audio == StreamAction::Copy {
+            source_audio_codec.clone()
+        } else {
+            target_audio_codec.unwrap_or_else(|| transcoding.default_audio_codec.clone())
+        };
 
         let encoder = hw_accel.ffmpeg_encoder(&effective_video_codec);
 
         let (target_w, target_h) = target_resolution.unwrap_or(source_video_resolution);
 
-        let rendition = TranscodeRendition::smart_ladder(
+        let mut rendition = TranscodeRendition::smart_ladder(
             source_video_resolution.0,
             source_video_resolution.1,
             target_bitrate.map(|b| b as u64),
@@ -347,6 +373,19 @@ impl TranscodeManager {
             audio_bitrate: 192_000,
             audio_channels: 2,
         });
+
+        if stream_plan.video == StreamAction::Copy {
+            rendition.name = "source".into();
+            rendition.width = source_video_resolution.0;
+            rendition.height = source_video_resolution.1;
+            rendition.video_bitrate = 0;
+        }
+        if let Some(channels) = target_audio_channels {
+            rendition.audio_channels = channels;
+        }
+        if let Some(bitrate) = target_audio_bitrate {
+            rendition.audio_bitrate = bitrate;
+        }
 
         let session_id = Uuid::now_v7();
         let segment_dir = data_dir
@@ -371,31 +410,41 @@ impl TranscodeManager {
                     "subtitle burn-in requires a selected subtitle stream".into(),
                 )
             })?;
-            Some(build_subtitle_burn_in_filter(&source_path, ordinal))
+            Some(build_subtitle_burn_in_filter_for_video(
+                &source_path,
+                ordinal,
+                source_video_stream_index,
+            ))
         } else {
             None
         };
-        let video_args = build_video_encode_args(
-            &encoder,
-            &effective_video_codec,
-            rendition.width,
-            rendition.height,
-            rendition.video_bitrate,
-            gop_size,
-            hw_accel,
-        );
+        let video_args = if stream_plan.video == StreamAction::Encode {
+            build_video_encode_args(
+                &encoder,
+                &effective_video_codec,
+                rendition.width,
+                rendition.height,
+                rendition.video_bitrate,
+                gop_size,
+                hw_accel,
+            )
+        } else {
+            Vec::new()
+        };
         let (video_args, subtitle_filter) = compose_video_filters(video_args, subtitle_filter)
             .map_err(|message| PlaybackError::FfmpegFailed(message.into()))?;
-        args.extend(build_stream_mapping_args(
+        args.extend(build_stream_mapping_args_for_video(
+            source_video_stream_index,
             source_audio_stream_index,
             subtitle_filter,
         ));
-        args.extend(video_args);
-
-        args.extend(build_audio_encode_args(
-            &effective_audio_codec,
-            rendition.audio_channels,
-            rendition.audio_bitrate,
+        args.extend(stream_plan.codec_args(
+            video_args,
+            build_audio_encode_args(
+                &effective_audio_codec,
+                rendition.audio_channels,
+                rendition.audio_bitrate,
+            ),
         ));
 
         args.extend(build_threading_args(cpu));
@@ -419,7 +468,13 @@ impl TranscodeManager {
             source_video_codec,
             source_video_resolution,
             source_audio_codec,
+            source_video_stream_index,
             source_audio_stream_index,
+            stream_plan,
+            target_audio_channels: (stream_plan.audio == StreamAction::Encode)
+                .then_some(rendition.audio_channels),
+            target_audio_bitrate: (stream_plan.audio == StreamAction::Encode)
+                .then_some(rendition.audio_bitrate),
             subtitle_stream_index,
             subtitle_stream_ordinal,
             subtitle_burn_in,
@@ -525,27 +580,8 @@ impl TranscodeManager {
             .ok_or(PlaybackError::SessionNotFound)?;
         self.stop_session(session_id).await?;
 
-        self.start_session(
-            StartSessionParams {
-                media_file_id: old_session.media_file_id,
-                user_id: old_session.user_id,
-                source_path: old_session.source_path,
-                source_video_codec: old_session.source_video_codec,
-                source_video_resolution: old_session.source_video_resolution,
-                source_audio_codec: old_session.source_audio_codec,
-                source_audio_stream_index: old_session.source_audio_stream_index,
-                subtitle_stream_index: old_session.subtitle_stream_index,
-                subtitle_stream_ordinal: old_session.subtitle_stream_ordinal,
-                subtitle_burn_in: old_session.subtitle_burn_in,
-                target_video_codec: Some(old_session.target_video_codec),
-                target_audio_codec: Some(old_session.target_audio_codec),
-                target_resolution: Some(old_session.target_video_resolution),
-                target_bitrate: Some(old_session.target_bitrate),
-                seek_position_ms: Some(position_ms),
-            },
-            data_dir,
-        )
-        .await
+        self.start_session(old_session.restart_params(position_ms), data_dir)
+            .await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -560,107 +596,34 @@ impl TranscodeManager {
         source_audio_stream_index: Option<i32>,
         data_dir: &Path,
     ) -> Result<TranscodeSession, PlaybackError> {
-        let permit = Arc::clone(&self.semaphore)
-            .try_acquire_owned()
-            .map_err(|_| PlaybackError::TranscodeCapacityReached)?;
-
-        let config = self.config.load_full();
-        let transcoding = &config.transcoding;
-
-        let session_id = Uuid::now_v7();
-        let segment_dir = data_dir
-            .join(transcoding.transcode_path.trim_start_matches('/'))
-            .join(session_id.to_string());
-        let manifest_path = segment_dir.join("manifest.m3u8");
-
-        tokio::fs::create_dir_all(&segment_dir).await.map_err(|e| {
-            PlaybackError::FfmpegFailed(format!("failed to create segment dir: {e}"))
-        })?;
-
-        let segment_filename = segment_dir.join("seg_%04d.m4s");
-
-        let mut args = build_ffmpeg_input_args(None, &source_path);
-
-        args.extend(build_stream_mapping_args(source_audio_stream_index, None));
-        args.extend([
-            "-c:v".to_string(),
-            "copy".to_string(),
-            "-c:a".to_string(),
-            "copy".to_string(),
-        ]);
-
-        args.extend(["-progress".to_string(), "pipe:1".to_string()]);
-
-        args.extend(build_hls_output_args(
-            transcoding.segment_duration_seconds,
-            &segment_filename.to_string_lossy(),
-            &manifest_path.to_string_lossy(),
-        ));
-
-        let spawned = spawn_session_ffmpeg(&args, session_id, &source_path, &segment_dir).await?;
-
-        let hw_accel = self.get_hw_accel();
-
-        let session = TranscodeSession {
-            id: session_id,
-            media_file_id,
-            user_id,
-            started_at: Utc::now(),
-            source_path,
-            source_video_codec,
-            source_video_resolution,
-            source_audio_codec,
-            source_audio_stream_index,
-            subtitle_stream_index: None,
-            subtitle_stream_ordinal: None,
-            subtitle_burn_in: false,
-            target_video_codec: "copy".to_string(),
-            target_video_resolution: source_video_resolution,
-            target_audio_codec: "copy".to_string(),
-            target_bitrate: 0,
-            hw_accel,
-            rendition_name: "remux".to_string(),
-            segment_dir,
-            manifest_path,
-            segments_written: 0,
-            client_position_segment: 0,
-            progress: None,
-            is_complete: false,
-            is_seeking: false,
-        };
-
-        let sessions = Arc::clone(&self.sessions);
-        let cleanup_sessions = Arc::clone(&self.sessions);
-        self.workers.start(
-            WorkerLaunch {
-                session_id,
-                handle: spawned.handle,
-                permit,
-                directory: session.segment_dir.clone(),
-                shutdown: build_graceful_shutdown(
-                    config.resource_limits.ffmpeg_shutdown_grace_secs,
-                ),
+        self.start_session(
+            StartSessionParams {
+                media_file_id,
+                user_id,
+                source_path,
+                source_video_codec,
+                source_video_resolution,
+                source_audio_codec,
+                source_video_stream_index: None,
+                source_audio_stream_index,
+                stream_plan: StreamPlan {
+                    video: StreamAction::Copy,
+                    audio: StreamAction::Copy,
+                },
+                target_audio_channels: None,
+                target_audio_bitrate: None,
+                subtitle_stream_index: None,
+                subtitle_stream_ordinal: None,
+                subtitle_burn_in: false,
+                target_video_codec: None,
+                target_audio_codec: None,
+                target_resolution: None,
+                target_bitrate: None,
+                seek_position_ms: None,
             },
-            move |line| {
-                if let Some(update) = parse_progress_line(&line)
-                    && let Some(mut session) = sessions.get_mut(&session_id)
-                {
-                    if update.is_complete {
-                        session.is_complete = true;
-                    }
-                    session.progress = Some(update);
-                }
-                Next::Continue
-            },
-            move || {
-                cleanup_sessions.remove(&session_id);
-            },
-        );
-
-        self.sessions.insert(session_id, session.clone());
-        self.confirm_startup(&session, spawned.readiness).await?;
-
-        Ok(session)
+            data_dir,
+        )
+        .await
     }
 
     pub fn get_session(&self, session_id: &Uuid) -> Option<TranscodeSession> {
@@ -747,7 +710,7 @@ fn build_graceful_shutdown(grace_secs: u64) -> GracefulShutdown {
 
 fn build_video_encode_args(
     encoder: &str,
-    _codec: &str,
+    codec: &str,
     width: u32,
     height: u32,
     maxrate: u32,
@@ -771,7 +734,7 @@ fn build_video_encode_args(
         "-maxrate".to_string(),
         maxrate.to_string(),
         "-bufsize".to_string(),
-        (maxrate * 2).to_string(),
+        maxrate.saturating_mul(2).to_string(),
         "-vf".to_string(),
         format!(
             "scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
@@ -790,12 +753,19 @@ fn build_video_encode_args(
     if !is_hw {
         args.extend([
             "-profile:v".to_string(),
-            "high".to_string(),
-            "-level".to_string(),
-            "4.1".to_string(),
+            if matches!(codec, "hevc" | "h265") {
+                "main"
+            } else {
+                "high"
+            }
+            .to_string(),
             "-pix_fmt".to_string(),
             "yuv420p".to_string(),
         ]);
+    }
+
+    if matches!(codec, "hevc" | "h265") {
+        args.extend(["-tag:v".to_string(), "hvc1".to_string()]);
     }
 
     args
@@ -803,6 +773,7 @@ fn build_video_encode_args(
 
 fn build_audio_encode_args(audio_codec: &str, channels: u32, bitrate: u32) -> Vec<String> {
     let encoder = match audio_codec {
+        "ac3" | "ac-3" => "ac3",
         "eac3" | "e-ac-3" => "eac3",
         "opus" => "libopus",
         _ => "aac",

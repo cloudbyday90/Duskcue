@@ -2,6 +2,8 @@
 
 ## Overview
 
+The [playback compatibility and recovery initiative](PLAYBACK_COMPATIBILITY.md) owns the October 2026 probe, executable stream-plan and corpus work. Audio-only adaptation preserves compatible video, selected moving-video identity survives seeking, and required but unimplemented HDR transformations fail explicitly. Mid-playback recovery orchestration remains a separate next increment.
+
 This document covers the complete streaming and transcoding architecture: how media is delivered from server to client, how playback decisions are made, how transcoding works, and how adaptive bitrate streaming is handled.
 
 The full video format catalog — supported codecs, container formats, HDR standards, bit depths, and the transcode codec matrix — is documented in [VIDEO_FORMATS.md](VIDEO_FORMATS.md). The transcoding decision engine is documented in [QUALITY_MANAGEMENT.md](QUALITY_MANAGEMENT.md).

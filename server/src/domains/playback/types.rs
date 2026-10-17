@@ -106,6 +106,7 @@ pub struct StartPlaybackRequest {
     pub subtitle_stream_index: Option<i32>,
     pub max_streaming_bitrate: Option<u64>,
     pub force_transcode: Option<bool>,
+    pub force_hls: Option<bool>,
     pub device_profile: Option<serde_json::Value>,
     pub quality_mode: Option<String>,
     pub playback_mode: Option<String>,

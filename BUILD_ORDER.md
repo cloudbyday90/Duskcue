@@ -12,6 +12,8 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## Always-Applicable Documents
 
+The next playback increment is [Playback compatibility and recovery](docs/design/PLAYBACK_COMPATIBILITY.md): normalized bounded probing, conservative compatibility decisions, executable per-stream plans and generated-media qualification precede automatic mid-playback recovery. Web and the existing desktop client are the first targets. Track actual results and deferred cases in that authority rather than treating the broader format catalog as completed qualification.
+
 These documents apply to every phase. Consult them when making implementation decisions:
 
 | Document | Purpose |
