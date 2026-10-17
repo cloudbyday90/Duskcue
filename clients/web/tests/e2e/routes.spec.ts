@@ -80,6 +80,7 @@ test.describe('profile loading failure', () => {
         await page.getByRole('button', { name: 'Try again', exact: true }).click();
         await expect(page).toHaveURL(/\/auth\/login$/);
         await expect(page.getByRole('heading', { name: 'Sign In', exact: true })).toBeVisible();
+        await expect(page.getByText('Fixture session expired', { exact: true })).toHaveCount(0);
         expect(await page.evaluate(() => localStorage.getItem('duskcue_user'))).toBeNull();
         expect(api.requests.some((request) => request.path === '/media-items')).toBe(false);
     });
@@ -90,6 +91,7 @@ test('rejects stale cached account details before requesting profiles', async ({
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/auth\/login$/);
     await expect(page.getByRole('heading', { name: 'Sign In', exact: true })).toBeVisible();
+    await expect(page.getByText('Fixture session expired', { exact: true })).toHaveCount(0);
     expect(await page.evaluate(() => localStorage.getItem('duskcue_user'))).toBeNull();
     expect(api.requests.some((request) => ['/profiles', '/media-items'].includes(request.path))).toBe(false);
 });

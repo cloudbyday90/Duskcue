@@ -62,7 +62,7 @@ describe('shared auth desktop persistence', () => {
         const { auth } = await import('../../src/lib/stores/auth.js');
         auth.init();
         expect(await auth.checkSession()).toBe(false);
-        expect(get(auth)).toMatchObject({ user: null, isAuthenticated: false, loading: false });
+        expect(get(auth)).toMatchObject({ user: null, isAuthenticated: false, loading: false, error: null });
         expect(values.has('duskcue_user')).toBe(false);
     });
 
@@ -86,7 +86,7 @@ describe('shared auth desktop persistence', () => {
         expect(outcome).toMatchObject({ status: 'expired' });
         if (typeof outcome !== 'object') throw new Error('Expected structured revalidation');
         expect(outcome.isCurrent()).toBe(true);
-        expect(get(auth)).toMatchObject({ user: null, isAuthenticated: false, loading: false });
+        expect(get(auth)).toMatchObject({ user: null, isAuthenticated: false, loading: false, error: null });
         expect(values.has(cacheKey)).toBe(false);
         expect(mocks.clear).toHaveBeenCalledExactlyOnceWith(mocks.scope.server.origin);
         auth.setUser({ ...user, id: 'new-account' });

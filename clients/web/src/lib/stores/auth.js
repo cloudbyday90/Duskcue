@@ -174,7 +174,7 @@ function createAuthStore() {
                     try { await clearDesktopSession(desktopOrigin); } catch (error) { clearingError = error; }
                     if (!current()) return outcome('superseded');
                     try { persistUser(null); } catch (error) { clearingError ||= error; }
-                    set({ user: null, isAuthenticated: false, loading: false, error: clearingError || err });
+                    set({ user: null, isAuthenticated: false, loading: false, error: clearingError });
                     return outcome('expired', clearingError || err);
                 }
                 if (err.status === 401) {
@@ -186,7 +186,7 @@ function createAuthStore() {
                     }
                 }
                 if (!current()) return false;
-                set({ user: null, isAuthenticated: false, loading: false, error: err });
+                set({ user: null, isAuthenticated: false, loading: false, error: err.status === 401 ? null : err });
                 return false;
             }
         },
