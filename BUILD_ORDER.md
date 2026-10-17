@@ -6,6 +6,10 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 **This is the single context document for building.** Open the referenced MDs as needed for each phase.
 
+## Planning each phase
+
+Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
+
 ## Always-Applicable Documents
 
 These documents apply to every phase. Consult them when making implementation decisions:

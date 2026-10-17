@@ -15,6 +15,10 @@ Be respectful. Be constructive. We are all here to build something good together
 
 ## Pull Request Process
 
+### Design decisions
+
+For feature or domain changes with open design decisions, follow [Design review with grill-me](CONTEXT.md#design-review-with-grill-me) before implementation. The repository includes [grill-me](.agents/skills/grill-me/SKILL.md) and its [grilling dependency](.agents/skills/grilling/SKILL.md). Confirm the resulting plan and document decisions in the relevant domain MD. Routine implementation of an agreed design and mechanical or copy changes can proceed without another interview.
+
 ### Scope
 
 Pull requests must be narrowly scoped. Each PR should address one concern:

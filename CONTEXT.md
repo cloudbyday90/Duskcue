@@ -12,6 +12,8 @@ Every feature or domain follows the same three-phase process:
 
 **Phase 1 — Research.** Research official online sources for current best practices as of June 2026. Do NOT assume URLs. Use web search tools to identify correct URLs and gather relevant information. Present findings with pros, cons, and a final recommendation.
 
+Before finalizing the design, use [Design review with grill-me](#design-review-with-grill-me) to resolve open product and architecture decisions.
+
 **Phase 2 — Document.** Update relevant MDs with the design decisions and outcomes, or create new MDs if the domain does not yet have one. Each MD is a separate authoritative document that details the design and outcome for its domain. MDs under `docs/` are organized by category:
 - `docs/design/` — domain design documents
 - `docs/security/` — security design documents
@@ -27,6 +29,18 @@ Every feature or domain follows the same three-phase process:
 4. Cross-reference — ensure decisions documented in one MD are referenced from related MDs (e.g., TLS backend decision in MEMORY.md should be noted in PROJECT.md Open Questions)
 
 **Phase 3 — Implement.** Proceed with high-quality code changes reflecting the explored recommendations. Wire up all module declarations, follow the domain five-file pattern, and ensure the project compiles.
+
+## Design review with grill-me
+
+Use the repository-local [grill-me skill](.agents/skills/grill-me/SKILL.md) when planning a feature or domain, or revising its behavior, API contracts, state ownership, or architecture. It loads [grilling](.agents/skills/grilling/SKILL.md), which owns the interview procedure. Invoke it explicitly with `$grill-me` and the plan or decision to examine; agents following this methodology can load the local entry point directly.
+
+Run the interview during research, before documenting the final design or implementing the proposed plan. Inspect existing code and authoritative documents first; research factual questions rather than asking the user to supply discoverable information. Ask independent decision questions in rounds, each with a recommended answer, and wait for the user's answers before asking dependent questions.
+
+When the decisions are settled, summarize the agreed scope, tradeoffs, acceptance criteria, deferred items, and remaining verification. The skill requires confirmation of shared understanding before acting on the interviewed plan. Record confirmed decisions in the relevant authoritative domain document during Phase 2, and update build-phase context when it changes. Continue Phase 3 under the user's existing authorization after that confirmation.
+
+Keep the review focused on open design decisions. Routine implementation of an agreed plan, mechanical changes, and copy edits do not require another interview. Reopen a settled decision when new evidence or a scope change affects it.
+
+Both skills come from [mattpocock/skills](https://github.com/mattpocock/skills) at revision `49dd158d1076134a641b33efb035946536778336`, with their MIT license retained in each skill directory. The local `grill-me` entry point uses a relative file link in place of the upstream Skill-tool call; its explicit invocation policy is preserved in `agents/openai.yaml`.
 
 ## Research Tools
 
