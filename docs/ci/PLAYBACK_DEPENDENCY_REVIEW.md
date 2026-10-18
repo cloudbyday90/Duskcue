@@ -4,7 +4,7 @@
 
 GitHub MCP returned the complete current open pool `[5]`. A fresh `crypto.randomInt` draw at `2026-10-18T18:39:52.538Z` selected index zero and [PR #5](https://github.com/cloudbyday90/Duskcue/pull/5), open and unmerged at head `c018d77b7f09543e5960a571dc43e2f061cedf0a`. Both lockfile patches were inspected. Their PostCSS 8.5.23/nanoid 3.3.16 delta is already implemented and superseded locally by 8.5.30/3.3.20. Retain those newer fixes and regression-test the current graphs; there is no new PR code delta or downgrade. Selection evidence is `.cache/local-evaluation/format-pr-selection.json`. No merge, comment, closure or release is performed.
 
-Current audit and qualification results will be recorded in [Format qualification](../design/PLAYBACK_FORMAT_QUALIFICATION.md).
+Both current npm graphs returned zero advisories. The current client passed 441 Vitest plus 37 Node cases, zero Svelte diagnostics and 127 browser cases with three caption-fixture skips. Initial and final-image format gates each passed fourteen Chrome and fourteen actual Tauri cases, alongside the retained worker-recovery proof, no-cache Compose rebuild and restored runtime evaluation. [Format qualification](../design/PLAYBACK_FORMAT_QUALIFICATION.md) owns exact execution identities, failures and coverage limits. GitHub MCP confirmed #5 remains open and unmerged at the same head on October 18 at 22:06 UTC. This is regression evidence for the already superseded local patch, without a new dependency delta or remote PR mutation.
 
 ## Native worker-failure qualification recheck — October 18, 2026
 
