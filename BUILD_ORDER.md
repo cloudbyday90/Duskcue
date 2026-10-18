@@ -10,6 +10,18 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 authenticated direct fallback increment (COMPLETE)
+
+**Committed:** `36d9b444c69736eb66e3ebb6eaa618017988004d` on `main`; no release.
+
+**Built:** focused direct admission, source identity, transactional recovery and output-profile modules; shared exact-output capability probing; canonical source revisions and direct seeking; pause preservation and bounded HLS adoption. Software H.264 High level 4.0 at up to 1080p/30 fps and AAC-LC at 48 kHz provide the admitted SDR replacement. Async menu selection now restores focus only while it still owns that focus.
+
+**Decisions:** start-time `direct_recovery_protocol: 1` is required for promotion and revision fencing. Existing Flutter, TV, native ambient and older web/desktop callers retain ordinary progress bookkeeping without promotion. Native web decode error 3 can request a replacement after a fresh supported-output check; authorization, source identity and selected tracks are revalidated under the session row lock. Preserve the logical session, original files, source position and pause intent; share the existing two committed recovery attempts and disclose conversion. Desktop bearer delivery retains HLS. Research, alternatives, stack, exact identities and outcomes belong to [Direct-play fallback](docs/design/PLAYBACK_DIRECT_FALLBACK.md).
+
+**Verification:** 910 Rust library tests and 476 client units passed, alongside zero Svelte diagnostics, 62 playback browser cases and 12 actual native check groups. Three caption cases remain explicitly fixture-gated. On the final no-cache image, installed Chrome presented 43 direct frames, raised a trusted code-3 error, then decoded 11 authenticated HLS frames and fresh selected 880 Hz audio in the same session with one spent attempt. Real PostgreSQL/FFmpeg checks cover legacy progress, denied/stale/duplicate hints, exact output, rollback and owned cleanup. Compose was recreated, evaluated and restored healthy with existing volumes preserved. Both npm audits returned zero advisories; strict Clippy retains 13 existing lint sites and the documented Rust audit exception remains. The only open PR, #5, was randomly selected, already superseded locally, regression-tested and left unmerged.
+
+**Next prerequisites:** couple the complete product UI and production middleware to the owned live backend in Chrome and the actual Tauri bearer transport. Add a live post-promotion seek/reprobe before expanding the same harness with HEVC/AV1 eight- and ten-bit SDR plus reference-checked HDR10/PQ and HLG masters. Full format/device fidelity, physical GPU failure, HDR transformations and VLC/Kodi parity remain unqualified. Preserve protocol negotiation and existing resource/authentication boundaries.
+
 ## October 2026 playback recovery increment (COMPLETE)
 
 **Committed:** `daa9f1ba1ca6253188971c9051801c0b0c40cab0` on `main`; no release.
