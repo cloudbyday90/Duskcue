@@ -1,5 +1,11 @@
 # Playback dependency review
 
+## Native worker-failure qualification recheck — October 18, 2026
+
+The complete current open PR pool remained `[5]`. A fresh cryptographic draw at `2026-10-18T13:51:41.610Z` selected index `0`, [PR #5](https://github.com/cloudbyday90/Duskcue/pull/5), still open and unmerged at head `c018d77b7f09543e5960a571dc43e2f061cedf0a`. The complete two-lockfile patch was reviewed again. Its PostCSS 8.5.23/nanoid 3.3.16 changes remain superseded by the local PostCSS 8.5.30/nanoid 3.3.20 versions; this iteration introduces no dependency delta, downgrade or remote PR mutation. Selection evidence is retained in ignored `.cache/local-evaluation/native-failure-pr-selection.json`.
+
+Fresh web and desktop npm audits both returned zero advisories, recorded in ignored `.cache/local-evaluation/native-failure-web-audit.json` and `.cache/local-evaluation/native-failure-desktop-audit.json`. The web client passed 476 unit tests and its source/type check. These checks cover the current dependency graphs and client regressions; the native worker-failure runtime qualification is still pending. Its eventual outcome belongs to [Native worker-failure qualification](../design/PLAYBACK_NATIVE_FAILURE_QUALIFICATION.md).
+
 ## Live-client qualification recheck — October 18, 2026
 
 GitHub MCP returned the current complete open pool containing only [PR #5](https://github.com/cloudbyday90/Duskcue/pull/5). A fresh cryptographic draw at `2026-10-18T11:59:12.093Z` selected index `0`; metadata still reports open/unmerged head `c018d77b7f09543e5960a571dc43e2f061cedf0a`. The complete two-lockfile patch was inspected again. Its PostCSS 8.5.23/nanoid 3.3.16 delta is already locally implemented and superseded by PostCSS 8.5.30/nanoid 3.3.20. This iteration retains those stronger versions and re-tests their functional coverage; it creates no new dependency delta or remote PR mutation. Current audit and runtime results are recorded in [Live playback client qualification](../design/PLAYBACK_LIVE_CLIENT_QUALIFICATION.md).

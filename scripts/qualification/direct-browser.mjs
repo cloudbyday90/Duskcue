@@ -14,7 +14,7 @@ export async function prepareDirectBrowser(workspace, directory) {
     return prepareDirectPlayerBrowser(workspace, directory);
 }
 
-export async function runDirectBrowser({ workspace, directory, context, runtime, resourceId, execution, ownership, assets, abortSignal, nativeManifest }) {
+export async function runDirectBrowser({ workspace, directory, context, runtime, resourceId, execution, ownership, assets, abortSignal, nativeManifest, nativeRecovery = false }) {
     let bridge;
     let gateway;
     let nativeGateway;
@@ -39,6 +39,7 @@ export async function runDirectBrowser({ workspace, directory, context, runtime,
             if (!ready) await new Promise((resolve) => setTimeout(resolve, 500));
         }
         assert.equal(ready.resourceId, resourceId);
+        assert.equal(ready.nativeRecovery === true, nativeRecovery);
         assert.match(ready.token, /^[A-Za-z0-9_-]{32,256}$/);
         assert.ok(Array.isArray(ready.candidates) && ready.candidates.length > 0 && ready.candidates.length <= 4);
         const denied = await bridge.request({ operation: 'fetch', path: `/api/v1/stream/${ready.candidates[0].file}`, method: 'GET', headers: {}, body: '' });
@@ -142,6 +143,11 @@ export async function runDirectBrowser({ workspace, directory, context, runtime,
             nativeGateway = await startDirectGateway({ bridge, host: url.hostname, port: Number(url.port) });
             const { runNativeLive } = await import(pathToFileURL(join(workspace, 'clients/web/tests/native/qualification-live.mjs')));
             report.native = await runNativeLive({ manifest: nativeManifest, ready, gatewayOrigin: nativeGateway.origin, directory, abortSignal,
+                async armRecovery(evidence) {
+                    assert.equal(nativeRecovery, true);
+                    const armed = await bridge.request({ operation: 'arm-native-stall', report: { ...evidence, resourceId } });
+                    return armed.armed;
+                },
                 async verifyPlayback(evidence) {
                     const verified = await bridge.request({ operation: 'verify', report: { ...evidence, resourceId } });
                     assert.equal(verified.verified.passed, true);

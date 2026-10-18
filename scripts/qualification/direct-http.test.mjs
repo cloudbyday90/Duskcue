@@ -66,3 +66,60 @@ test('simulated error events, absent frames and the wrong audio cannot qualify r
     assert.doesNotThrow(() => validatePlaybackDirectResult(marker(value), resource, false));
     assert.throws(() => validatePlaybackDirectResult(marker(value), resource, true));
 });
+
+function pacedEvidence() {
+    const value = evidence();
+    const session = '11111111-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const stalled = '22222222-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const recovered = '33333333-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const final = '44444444-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    const decoded = { frames: 8, currentTime: 0.8, width: 320, height: 180 };
+    const audio = { frequency: 880, level: -35, elapsedMs: 750, running: true };
+    const identity = { pid: 123, parent_pid: 12, started_ticks: 456 };
+    const checkpoint = { ...backend(true), attempts: 1, native_recovery: { reason: 'stalled', attempts: 1, skipped_ms: 0, quality_reduced: false, paused: true,
+        frozen_encoder_gone: true, stalled_cache_retired: true, encoder_identity: identity, stalled_generation: stalled, recovered_generation: recovered } };
+    value.browser.backend['native-recovery'] = checkpoint;
+    value.browser.backend.native = { ...backend(true), attempts: 1, source_offset_ms: 6000 };
+    value.browser.native.requests = [
+        { method: 'POST', path: '/api/v1/playback/start', status: 200, bearer: true, cookie: false, request: { force_hls: true }, reply: { session_id: session, transcode_session_id: stalled, stream_decision: 'direct_stream' } },
+        ...[recovered, final].flatMap((generation) => ['manifest.m3u8', 'seg_0000.m4s'].map((path) => ({ method: 'GET', path: `/api/v1/transcode/${generation}/${path}`, status: 200, bearer: true, cookie: false }))),
+        ...[[4000, stalled], [6000, final]].map(([position, generation]) => ({ method: 'POST', path: '/api/v1/playback/seek', status: 200, bearer: true, cookie: false,
+            request: { session_id: session, position_ms: position }, reply: { session_id: session, position_ms: position, transcode_session_id: generation } })),
+    ];
+    value.browser.native.checks.recovery = {
+        armed: { resourceId: resource, sessionId: session, transcodeId: stalled, positionMs: 4000, paused: true, armed: true, encoderIdentity: identity },
+        heartbeat: { method: 'POST', path: '/api/v1/playback/heartbeat', status: 200, bearer: true, cookie: false,
+            request: { session_id: session, transcode_session_id: stalled, position_ms: 4000, state: 'paused', is_buffering: false },
+            reply: { session_id: session, transcode_session_id: recovered, position_ms: 4000, stream_offset_ms: 4000, stream_decision: 'direct_stream',
+                recovery: { status: 'recovered', reason: 'stalled', attempts: 1, skipped_ms: 0, quality_reduced: false } } },
+        sessionId: session, previousTranscodeId: stalled, transcodeId: recovered, positionMs: 4000, attempts: 1, preservedPause: true,
+        unexpectedPlayEvents: 0, notice: 'A more compatible playback stream is ready.', freshBlobSource: true, backend: { passed: true }, decoded, audio,
+    };
+    value.browser.native.checks.seek = { positionMs: 6000, preservedPause: true, freshBlobSource: true, transcodeId: final, decoded, audio };
+    value.browser.native.requests.push(value.browser.native.checks.recovery.heartbeat);
+    return value;
+}
+
+test('paced native proof requires natural stalled recovery, physical retirement and fresh post-recovery presentation', () => {
+    assert.doesNotThrow(() => validatePlaybackDirectResult(marker(pacedEvidence()), resource, true, true, true));
+    assert.throws(() => validatePlaybackDirectResult(marker(pacedEvidence()), resource, true, true, false));
+    assert.throws(() => validatePlaybackDirectResult(marker(evidence()), resource, true, true, true));
+    for (const change of [
+        (v) => { delete v.browser.backend['native-recovery']; },
+        (v) => { v.browser.native.checks.recovery.armed.encoderIdentity.started_ticks = 0; },
+        (v) => { v.browser.native.checks.recovery.heartbeat.request.recovery_requested = true; },
+        (v) => { v.browser.native.checks.recovery.heartbeat.request.state = 'playing'; },
+        (v) => { v.browser.native.checks.recovery.unexpectedPlayEvents = 1; },
+        (v) => { v.browser.native.checks.recovery.notice = ''; },
+        (v) => { v.browser.native.checks.recovery.audio.frequency = 220; },
+        (v) => { v.browser.native.checks.recovery.decoded.currentTime = 0; },
+        (v) => { v.browser.native.checks.seek.positionMs = 4000; },
+        (v) => { v.browser.backend['native-recovery'].native_recovery.frozen_encoder_gone = false; },
+        (v) => { v.browser.backend['native-recovery'].native_recovery.stalled_cache_retired = false; },
+        (v) => { v.browser.backend['native-recovery'].native_recovery.quality_reduced = true; },
+        (v) => { v.browser.native.requests.push(v.browser.native.requests[0]); },
+        (v) => { v.browser.native.requests = v.browser.native.requests.filter((record) => record.path !== '/api/v1/playback/heartbeat'); },
+        (v) => { v.browser.native.requests = v.browser.native.requests.filter((record) => record.path !== '/api/v1/playback/seek'); },
+        (v) => { v.browser.native.requests.find((record) => record.path === '/api/v1/playback/seek').reply.transcode_session_id = 'foreign'; },
+    ]) { const value = structuredClone(pacedEvidence()); change(value); assert.throws(() => validatePlaybackDirectResult(marker(value), resource, true, true, true)); }
+});

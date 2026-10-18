@@ -17,6 +17,9 @@ export function nativeLiveScenario(manifest, ready, gatewayOrigin) {
         || origin.protocol !== 'http:' || !/^127\.\d+\.\d+\.\d+$/.test(origin.hostname) || origin.port !== '48027'
         || origin.username || origin.password) throw new Error('Native live gateway must match the isolated public-port origin.');
     const candidate = ready.nativeCandidate || ready.cleanCandidate || ready.candidate || ready.candidates?.[0];
+    if (ready.nativeRecovery === true && (!ready.nativeCandidate || candidate.runtimeSeconds !== 60 || candidate.audioHz !== 880)) {
+        throw new Error('Native worker recovery requires its distinct sixty-second selected-audio candidate.');
+    }
     const user = ready.user;
     if (!uuid.test(ready.resourceId || '') || !/^[A-Za-z0-9_-]{32,256}$/.test(ready.token || '')
         || !uuid.test(user?.id || '') || !uuid.test(user?.active_profile_id || '')

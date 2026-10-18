@@ -5,7 +5,7 @@
 import { lstat, mkdir, readFile, realpath } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 
-const directories = Object.freeze({ 'compose-build': 'compose-build', 'playback-recovery-qualify': 'playback-recovery', 'playback-direct-qualify': 'playback-recovery', 'playback-live-qualify': 'playback-recovery' });
+const directories = Object.freeze({ 'compose-build': 'compose-build', 'playback-recovery-qualify': 'playback-recovery', 'playback-direct-qualify': 'playback-recovery', 'playback-live-qualify': 'playback-recovery', 'playback-native-recovery-qualify': 'playback-recovery' });
 
 export async function ownedWorkflowEvidence(workspace, environment, workload) {
     if (!Object.hasOwn(directories, workload)) throw new Error('An admitted owning workflow is required.');

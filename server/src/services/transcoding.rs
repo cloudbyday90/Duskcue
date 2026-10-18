@@ -37,6 +37,8 @@ mod lifecycle;
 pub mod output_profile;
 pub mod plan;
 pub mod progress;
+#[cfg(all(target_os = "linux", any(test, feature = "playback-qualification")))]
+pub mod qualification;
 mod readiness;
 pub mod recovery;
 mod session;
@@ -297,6 +299,8 @@ pub struct TranscodeManager {
     workers: TranscodeWorkers,
     config: Arc<ArcSwap<RuntimeConfig>>,
     hw_detection: Arc<std::sync::RwLock<HwAccelDetectionResult>>,
+    #[cfg(all(target_os = "linux", any(test, feature = "playback-qualification")))]
+    qualification_input: Option<qualification::OwnedPacedInput>,
 }
 
 impl TranscodeManager {
@@ -312,6 +316,8 @@ impl TranscodeManager {
             workers: TranscodeWorkers::default(),
             config,
             hw_detection: Arc::new(std::sync::RwLock::new(detection)),
+            #[cfg(all(target_os = "linux", any(test, feature = "playback-qualification")))]
+            qualification_input: None,
         }
     }
 

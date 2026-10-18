@@ -115,7 +115,27 @@ pub(super) async fn seed(
     evidence: &Evidence,
     source: &Path,
 ) -> anyhow::Result<()> {
-    let inspected = probe(&evidence.tools, source).await?;
+    seed_source(
+        fixture,
+        &evidence.tools,
+        source,
+        evidence.item,
+        evidence.file,
+        8,
+    )
+    .await
+}
+
+pub(super) async fn seed_source(
+    fixture: &ProgressiveFixture<'_>,
+    tools: &process::FixtureProcesses,
+    source: &Path,
+    item: Uuid,
+    file: Uuid,
+    runtime: i32,
+) -> anyhow::Result<()> {
+    anyhow::ensure!(matches!(runtime, 8 | 60));
+    let inspected = probe(tools, source).await?;
     let streams = inspected["streams"]
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("clean fixture streams unavailable"))?;
@@ -138,7 +158,7 @@ pub(super) async fn seed(
             && streams[1]["color_transfer"] == "bt709"
             && streams[1]["r_frame_rate"] == "24/1"
             && seconds.is_finite()
-            && (seconds - 8.0).abs() < 0.25,
+            && (seconds - f64::from(runtime)).abs() < 0.25,
         "clean direct fixture differs from its required source envelope: {inspected}"
     );
     let video_bitrate = streams[1]["bit_rate"]
@@ -165,11 +185,11 @@ pub(super) async fn seed(
     let additional = json!({"video":video,"audio":audio});
     let bytes = tokio::fs::metadata(source).await?.len();
     anyhow::ensure!(bytes > 0 && bytes <= 16 * 1024 * 1024);
-    sqlx::query("INSERT INTO media_items(id,library_id,type,title,sort_title,content_rating,runtime_seconds) VALUES ($1,$2,'movie','Direct fallback fixture','Direct fallback fixture','R',8)")
-        .bind(evidence.item).bind(fixture.library).execute(fixture.pool).await?;
-    sqlx::query("INSERT INTO media_files(id,media_item_id,file_path,file_size,container_format,runtime_seconds,video_codec,video_resolution,video_bitrate,video_dynamic_range,audio_codec,audio_channels,audio_bitrate,additional_streams) VALUES($1,$2,$3,$4,'mp4',8,'h264','320x180',$5,'sdr','aac',1,$6,$7)")
-        .bind(evidence.file).bind(evidence.item).bind(source.to_string_lossy().as_ref()).bind(i64::try_from(bytes)?)
-        .bind(video_bitrate).bind(audio_bitrate).bind(additional).execute(fixture.pool).await?;
+    sqlx::query("INSERT INTO media_items(id,library_id,type,title,sort_title,content_rating,runtime_seconds) VALUES ($1,$2,'movie','Direct fallback fixture','Direct fallback fixture','R',$3)")
+        .bind(item).bind(fixture.library).bind(runtime).execute(fixture.pool).await?;
+    sqlx::query("INSERT INTO media_files(id,media_item_id,file_path,file_size,container_format,runtime_seconds,video_codec,video_resolution,video_bitrate,video_dynamic_range,audio_codec,audio_channels,audio_bitrate,additional_streams) VALUES($1,$2,$3,$4,'mp4',$5,'h264','320x180',$6,'sdr','aac',1,$7,$8)")
+        .bind(file).bind(item).bind(source.to_string_lossy().as_ref()).bind(i64::try_from(bytes)?)
+        .bind(runtime).bind(video_bitrate).bind(audio_bitrate).bind(additional).execute(fixture.pool).await?;
     Ok(())
 }
 

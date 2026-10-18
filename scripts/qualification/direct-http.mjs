@@ -2,7 +2,10 @@
 // Copyright (C) 2026-2026 Duskcue Contributors
 // Licensed under AGPL-3.0. See LICENSE for details.
 
-export function validatePlaybackDirectResult(stdout, resourceId, requireBrowser = false, requireNative = false) {
+import { validateNativeRecoveryProof } from './native-recovery-proof.mjs';
+
+export function validatePlaybackDirectResult(stdout, resourceId, requireBrowser = false, requireNative = false, requireNativeRecovery = false) {
+    if (requireNativeRecovery && !requireNative) throw new Error('Native recovery qualification requires the actual native client.');
     const records = stdout.split(/\r?\n/).filter((line) => line.startsWith('DUSKCUE_PLAYBACK_DIRECT='));
     if (records.length !== 1) throw new Error('One executed direct-fallback contract marker is required.');
     const result = JSON.parse(records[0].slice('DUSKCUE_PLAYBACK_DIRECT='.length));
@@ -45,7 +48,12 @@ export function validatePlaybackDirectResult(stdout, resourceId, requireBrowser 
             || native.checks?.authenticatedHls !== true || native.checks.closedCanonicalTitleAndStoppedOnce !== true
             || native.credentialCleanup?.exactOwnedCredentialCleared !== true || native.processCleanup?.status !== 'passed'
             || native.checks.seek?.preservedPause !== true || native.checks.backend?.passed !== true) throw new Error('Actual bearer desktop playback or owned cleanup proof is incomplete.');
-        validateLiveBackend(result.browser.backend?.native, 'ordinary_copy', 0, 4000, '24/1');
+        validateLiveBackend(result.browser.backend?.native, 'ordinary_copy', requireNativeRecovery ? 1 : 0, requireNativeRecovery ? 6000 : 4000, '24/1');
+        if (requireNativeRecovery) {
+            const checkpoint = result.browser.backend?.['native-recovery'];
+            validateLiveBackend(checkpoint, 'ordinary_copy', 1, 4000, '24/1');
+            validateNativeRecoveryProof(native, checkpoint, resourceId);
+        }
     }
     return result;
 }

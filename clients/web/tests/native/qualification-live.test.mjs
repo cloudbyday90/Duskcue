@@ -38,6 +38,17 @@ test('native proof requires real bearer HLS and rejects cookie or direct-play su
     assert.throws(() => assertNativeLiveMedia(records.slice(0, 2)));
 });
 
+test('native worker recovery explicitly requires its sixty-second candidate without changing baseline admission', () => {
+    const ready = { ...fixture(), nativeRecovery: true, nativeCandidate: { item, file, runtimeSeconds: 60, audioHz: 880 } };
+    assert.deepEqual(nativeLiveScenario(manifest, ready, origin).candidate, ready.nativeCandidate);
+    for (const mutate of [
+        (value) => { value.nativeCandidate.runtimeSeconds = 8; },
+        (value) => { value.nativeCandidate.audioHz = 220; },
+        (value) => { delete value.nativeCandidate; },
+    ]) { const value = structuredClone(ready); mutate(value); assert.throws(() => nativeLiveScenario(manifest, value, origin)); }
+    assert.doesNotThrow(() => nativeLiveScenario(manifest, fixture(), origin));
+});
+
 test('native error evidence is bounded and excludes known credentials and isolation lookup values', () => {
     const token = fixture().token;
     const message = nativeLiveFailure(new Error(`failed ${token} Bearer other-secret ${'x'.repeat(2000)}`), token, 'connect');

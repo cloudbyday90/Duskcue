@@ -18,12 +18,13 @@ pub(super) async fn run(
     root: &Path,
     tools: &process::FixtureProcesses,
     observed: &Value,
+    stall: Option<&mut super::native_stall::ArmedStall>,
 ) -> anyhow::Result<Value> {
     let resource = std::env::var("DUSKCUE_TEST_RESOURCE_ID")?;
     anyhow::ensure!(observed["resourceId"] == resource);
     let phase = observed["phase"]
         .as_str()
-        .filter(|phase| matches!(*phase, "browser" | "native"))
+        .filter(|phase| matches!(*phase, "browser" | "native-recovery" | "native"))
         .ok_or_else(|| anyhow::anyhow!("invalid live verification phase"))?;
     let play = uuid(observed, "sessionId")?;
     let generation = uuid(observed, "transcodeId")?;
@@ -92,6 +93,7 @@ pub(super) async fn run(
         .as_u64()
         .unwrap_or(0);
     let frame_rate;
+    let mut recovery_proof = None;
     if phase == "browser" {
         let descriptor = &metadata["direct_source_context"]["candidate"]["descriptor"];
         anyhow::ensure!(
@@ -116,14 +118,29 @@ pub(super) async fn run(
         );
         frame_rate = 30;
     } else {
+        let expected_attempts = if super::super::native::enabled() {
+            1
+        } else {
+            0
+        };
         anyhow::ensure!(
-            attempts == 0
-                && session.recovery_attempts == 0
+            attempts == expected_attempts
+                && u64::from(session.recovery_attempts) == expected_attempts
                 && session.output_profile.is_none()
                 && session.stream_plan.video == StreamAction::Copy
                 && session.stream_plan.audio == StreamAction::Copy,
             "ordinary native HLS seek changed its admitted plan/profile or spent recovery budget"
         );
+        if expected_attempts == 1 {
+            recovery_proof = Some(
+                stall
+                    .ok_or_else(|| anyhow::anyhow!("native stalled-worker proof unavailable"))?
+                    .verify(fixture, state, observed, metadata)
+                    .await?,
+            );
+        } else {
+            anyhow::ensure!(phase == "native" && position == 4000);
+        }
         frame_rate = 24;
     }
     let target: String = sqlx::query_scalar(
@@ -179,7 +196,7 @@ pub(super) async fn run(
         "selected_video_index":1,"selected_audio_index":2,"attempts":attempts,
         "output_profile":if phase == "browser" { "compatible_sdr" } else { "ordinary_copy" },
         "transport":if phase == "browser" { "cookie" } else { "bearer" },
-        "actual_media":media,"authorization":denied
+        "actual_media":media,"authorization":denied,"native_recovery":recovery_proof
     }))
 }
 

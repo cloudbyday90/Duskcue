@@ -15,29 +15,42 @@ COPY crates ./crates
 COPY server ./server
 COPY clients/desktop/src-tauri ./clients/desktop/src-tauri
 COPY native/ffmpeg-bootstrap ./native/ffmpeg-bootstrap
+ARG NATIVE_RECOVERY_MODE=none
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/src/target \
-    (cargo test --release --locked -p duskcue -j 2 --test playback_stop_contract --no-run --message-format=json > /tmp/playback-cargo-artifacts.jsonl \
+    case "$NATIVE_RECOVERY_MODE" in none) set -- ;; paced) set -- --features duskcue/playback-qualification ;; *) exit 1 ;; esac \
+    && (cargo test --release --locked -p duskcue -j 2 --test playback_stop_contract --no-run --message-format=json "$@" > /tmp/playback-cargo-artifacts.jsonl \
     || { jq -r 'select(.reason == "compiler-message") | .message.rendered // empty' /tmp/playback-cargo-artifacts.jsonl >&2; exit 1; }) \
     && executable="$(jq -ers '[.[] | select(.reason == "compiler-artifact" and .target.name == "playback_stop_contract" and .profile.test == true) | .executable | select(. != null)] | unique | select(length == 1) | .[0]' /tmp/playback-cargo-artifacts.jsonl)" \
     && case "$executable" in /src/target/release/deps/playback_stop_contract-*) test -x "$executable" ;; *) exit 1 ;; esac \
-    && cp "$executable" /tmp/playback-stop-contract
+    && jq -es --arg mode "$NATIVE_RECOVERY_MODE" 'any(.[]; .reason == "compiler-artifact" and .target.name == "playback_stop_contract" and .profile.test == true and (((.features // []) | index("playback-qualification") != null) == ($mode == "paced")))' /tmp/playback-cargo-artifacts.jsonl >/dev/null \
+    && cp "$executable" /tmp/playback-stop-contract \
+    && mkdir -p /tmp/qualification-evidence \
+    && if [ "$NATIVE_RECOVERY_MODE" = paced ]; then \
+        cargo test --release --locked -p duskcue -j 2 --lib "$@" services::transcoding::qualification::tests:: -- --test-threads=1 > /tmp/qualification-evidence/pacing-unit-tests.log \
+        || { cat /tmp/qualification-evidence/pacing-unit-tests.log >&2; exit 1; }; \
+        test "$(wc -c < /tmp/qualification-evidence/pacing-unit-tests.log)" -le 65536 || exit 1; \
+    fi
 
 FROM ${RUNTIME_IMAGE} AS runtime
 ARG SOURCE_SHA256
 ARG RUNTIME_BASE_ID
+ARG NATIVE_RECOVERY_MODE=none
 LABEL duskcue.qualification.kind="local-playback-recovery-v1" \
       duskcue.qualification.source-sha256="${SOURCE_SHA256}" \
-      duskcue.qualification.runtime-base-id="${RUNTIME_BASE_ID}"
+      duskcue.qualification.runtime-base-id="${RUNTIME_BASE_ID}" \
+      duskcue.qualification.native-recovery="${NATIVE_RECOVERY_MODE}"
 USER root
 RUN mkdir -p /qualification/bin /src/.cache/tonight-server-ffmpeg /src/.cache/tonight-server-stop \
     && chown 65532:65532 /src/.cache/tonight-server-stop
 COPY --from=compiler /tmp/playback-stop-contract /qualification/bin/playback-stop-contract
 COPY --from=compiler /tmp/playback-cargo-artifacts.jsonl /qualification/cargo-artifacts.jsonl
+COPY --from=compiler /tmp/qualification-evidence /qualification/evidence
 COPY docker/qualification/recovery-fixture.mjs /qualification/recovery-fixture.mjs
 COPY docker/qualification/direct-http-bridge.mjs /qualification/direct-http-bridge.mjs
 COPY docker/qualification/direct-http-policy.mjs /qualification/direct-http-policy.mjs
+COPY docker/qualification/direct-native-control.mjs /qualification/direct-native-control.mjs
 RUN sha256sum -c /usr/local/libexec/duskcue-ffmpeg.sha256 \
     && node --max-old-space-size=64 /qualification/recovery-fixture.mjs \
     && chmod 0555 /qualification/bin/playback-stop-contract \

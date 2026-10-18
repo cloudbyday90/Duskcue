@@ -162,7 +162,9 @@ impl TranscodeManager {
         let fps = output_profile.map_or(24, |_| output_profile::FRAME_RATE);
         let gop_size = fps * transcoding.segment_duration_seconds;
 
-        let mut args = build_ffmpeg_input_args(seek_position_ms, &source_path);
+        let mut args = self
+            .build_session_input_args(seek_position_ms, &source_path)
+            .await?;
         args.extend(build_ffmpeg_output_seek_args(seek_position_ms, stream_plan));
 
         let subtitle_filter = if subtitle_burn_in {
@@ -298,6 +300,30 @@ impl TranscodeManager {
         self.confirm_startup(&session, spawned.readiness).await?;
 
         Ok(session)
+    }
+
+    pub(super) async fn build_session_input_args(
+        &self,
+        seek_position_ms: Option<i64>,
+        source_path: &Path,
+    ) -> Result<Vec<String>, PlaybackError> {
+        let ordinary = build_ffmpeg_input_args(seek_position_ms, source_path);
+        #[cfg(all(target_os = "linux", any(test, feature = "playback-qualification")))]
+        if let Some(input) = &self.qualification_input
+            && input.applies(source_path).await.map_err(|error| {
+                PlaybackError::FfmpegFailed(format!(
+                    "qualification input validation failed: {error}"
+                ))
+            })?
+        {
+            let mut args = qualification::INPUT_ARGS
+                .into_iter()
+                .map(String::from)
+                .collect::<Vec<_>>();
+            args.extend(ordinary);
+            return Ok(args);
+        }
+        Ok(ordinary)
     }
 
     async fn confirm_startup(

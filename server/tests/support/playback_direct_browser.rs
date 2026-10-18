@@ -10,6 +10,8 @@ use uuid::Uuid;
 
 use super::{AppState, Path, ProgressiveFixture, Value, process};
 
+#[path = "playback_direct_native_stall.rs"]
+mod native_stall;
 #[path = "playback_direct_policy.rs"]
 mod policy;
 #[path = "playback_direct_verify.rs"]
@@ -21,6 +23,7 @@ pub(super) async fn run(
     root: &Path,
     source: &Path,
     tools: &process::FixtureProcesses,
+    native_candidate: Option<&super::native::Candidate>,
 ) -> anyhow::Result<Value> {
     let resource = Uuid::parse_str(&std::env::var("DUSKCUE_TEST_RESOURCE_ID")?)?;
     anyhow::ensure!(std::env::var("DUSKCUE_TEST_DIRECT_BROWSER").as_deref() == Ok("live"));
@@ -166,7 +169,8 @@ pub(super) async fn run(
         let user = policy::canonical_user(fixture).await?;
         let authorization = policy::assert_policy(fixture,state,&candidates[0]).await?;
         let ready = json!({"resourceId":resource,"token":fixture.token,"userId":fixture.user,"profileId":fixture.original_profile,
-            "user":user,"candidates":candidates,"cleanCandidate":{"item":clean.0,"file":clean.1,"title":"Direct fallback fixture","audioHz":880}});
+            "user":user,"candidates":candidates,"cleanCandidate":{"item":clean.0,"file":clean.1,"title":"Direct fallback fixture","audioHz":880},
+            "nativeRecovery":native_candidate.is_some(),"nativeCandidate":native_candidate.map(super::native::Candidate::ready)});
         let path = Path::new("/tmp/direct-ready.pending");
         let mut options = tokio::fs::OpenOptions::new();
         options.write(true).create_new(true).mode(0o600);
@@ -176,7 +180,7 @@ pub(super) async fn run(
         file.flush().await?;
         drop(file);
         tokio::fs::rename(path, "/tmp/direct-ready.json").await?;
-        let (mut complete, backend) = tokio::time::timeout(Duration::from_secs(240), await_completion(fixture,state,root,tools,resource)).await??;
+        let (mut complete, backend) = tokio::time::timeout(Duration::from_secs(240), await_completion(fixture,state,root,tools,resource,native_candidate)).await??;
         anyhow::ensure!(complete["resourceId"] == resource.to_string());
         anyhow::ensure!(complete["passed"] == true, "real browser qualification failed: {}", complete.get("error").unwrap_or(&Value::Null));
         anyhow::ensure!(complete["nativeError"]["code"] == 3 && complete["nativeError"]["trusted"] == true);
@@ -188,6 +192,7 @@ pub(super) async fn run(
         complete["production_policy"] = authorization;
         anyhow::ensure!(blake3::hash(&tokio::fs::read(source).await?) == original_hash);
         for (path, expected) in &files { anyhow::ensure!(blake3::hash(&tokio::fs::read(path).await?) == *expected); }
+        if let Some(candidate) = native_candidate { anyhow::ensure!(super::direct_media::file_hash(&candidate.path).await? == candidate.sha256); }
         Ok::<_, anyhow::Error>(complete)
     }.await;
     if let Some(signal) = shutdown {
@@ -255,15 +260,33 @@ async fn await_completion(
     root: &Path,
     tools: &process::FixtureProcesses,
     resource: Uuid,
+    native_candidate: Option<&super::native::Candidate>,
 ) -> anyhow::Result<(Value, Value)> {
     let native = std::env::var("DUSKCUE_TEST_NATIVE_CLIENT").as_deref() == Ok("live");
-    let phases = if native {
+    let phases = if native_candidate.is_some() {
+        vec!["browser", "native-recovery", "native"]
+    } else if native {
         vec!["browser", "native"]
     } else {
         vec!["browser"]
     };
     let mut completed = serde_json::Map::new();
+    let mut armed = None;
     loop {
+        if armed.is_none() {
+            if let Some(request) = read_record("/tmp/direct-native-stall.json").await? {
+                let candidate = native_candidate
+                    .ok_or_else(|| anyhow::anyhow!("native stall is not enabled"))?;
+                anyhow::ensure!(completed.contains_key("browser"));
+                let (guard, response) = tokio::time::timeout(
+                    Duration::from_secs(4),
+                    native_stall::ArmedStall::arm(fixture, state, root, candidate, &request),
+                )
+                .await??;
+                armed = Some(guard);
+                write_record("/tmp/direct-native-stall-armed", &response).await?;
+            }
+        }
         for phase in &phases {
             if completed.contains_key(*phase) {
                 continue;
@@ -275,7 +298,13 @@ async fn await_completion(
             anyhow::ensure!(
                 observed["resourceId"] == resource.to_string() && observed["phase"] == *phase
             );
-            let checked = verify::run(fixture, state, root, tools, &observed).await;
+            if *phase == "native-recovery" {
+                anyhow::ensure!(completed.contains_key("browser") && armed.is_some());
+            }
+            if *phase == "native" && native_candidate.is_some() {
+                anyhow::ensure!(completed.contains_key("native-recovery"));
+            }
+            let checked = verify::run(fixture, state, root, tools, &observed, armed.as_mut()).await;
             let response = match &checked {
                 Ok(backend) => {
                     json!({"resourceId":resource,"phase":phase,"passed":true,"backend":backend})
@@ -311,10 +340,14 @@ async fn read_record(path: &str) -> anyhow::Result<Option<Value>> {
 }
 
 async fn write_verified(phase: &str, response: &Value) -> anyhow::Result<()> {
-    anyhow::ensure!(matches!(phase, "browser" | "native"));
+    anyhow::ensure!(matches!(phase, "browser" | "native-recovery" | "native"));
+    write_record(&format!("/tmp/direct-verified-{phase}"), response).await
+}
+
+async fn write_record(path: &str, response: &Value) -> anyhow::Result<()> {
     let bytes = serde_json::to_vec(response)?;
     anyhow::ensure!(bytes.len() <= 65536);
-    let pending = format!("/tmp/direct-verified-{phase}.pending");
+    let pending = format!("{path}.pending");
     let mut options = tokio::fs::OpenOptions::new();
     options.write(true).create_new(true).mode(0o600);
     use tokio::io::AsyncWriteExt;
@@ -322,6 +355,6 @@ async fn write_verified(phase: &str, response: &Value) -> anyhow::Result<()> {
     file.write_all(&bytes).await?;
     file.flush().await?;
     drop(file);
-    tokio::fs::rename(pending, format!("/tmp/direct-verified-{phase}.json")).await?;
+    tokio::fs::rename(pending, format!("{path}.json")).await?;
     Ok(())
 }

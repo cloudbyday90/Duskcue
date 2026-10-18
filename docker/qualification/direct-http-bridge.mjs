@@ -5,6 +5,7 @@
 import { createInterface } from 'node:readline';
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import { fixtureResponseHeaders, validateFixtureRequest } from './direct-http-policy.mjs';
+import { createNativeStallControl } from './direct-native-control.mjs';
 
 const resourceId = process.env.DUSKCUE_TEST_RESOURCE_ID;
 if (!/^[a-f0-9-]{36}$/.test(resourceId || '') || process.env.DUSKCUE_TEST_DIRECT_BROWSER !== 'live') throw new Error('An owned direct-play fixture is required.');
@@ -13,6 +14,8 @@ let controls = 0;
 let completed = false;
 const streams = new Map();
 const verified = new Set();
+const nativeRecovery = process.env.DUSKCUE_TEST_NATIVE_RECOVERY === 'live';
+const armNativeStall = createNativeStallControl(resourceId, { enabled: nativeRecovery });
 const emit = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
 async function handle(message) {
     if (!Number.isSafeInteger(message.id) || message.id < 1) throw new Error('Invalid bridge request identity.');
@@ -29,7 +32,7 @@ async function handle(message) {
     }
     if (message.operation === 'verify') {
         const phase = message.report?.phase;
-        if (!['browser', 'native'].includes(phase) || verified.has(phase) || message.report.resourceId !== resourceId || Buffer.byteLength(JSON.stringify(message.report)) > 65536) throw new Error('Invalid live verification.');
+        if (!(nativeRecovery ? ['browser', 'native-recovery', 'native'] : ['browser', 'native']).includes(phase) || verified.has(phase) || message.report.resourceId !== resourceId || Buffer.byteLength(JSON.stringify(message.report)) > 65536) throw new Error('Invalid live verification.');
         verified.add(phase);
         await writeFile(`/tmp/direct-observed-${phase}.pending`, JSON.stringify(message.report), { flag: 'wx', mode: 0o600 });
         await rename(`/tmp/direct-observed-${phase}.pending`, `/tmp/direct-observed-${phase}.json`);
@@ -44,6 +47,7 @@ async function handle(message) {
         }
         throw new Error('Live verification exceeded its deadline.');
     }
+    if (message.operation === 'arm-native-stall') return { armed: await armNativeStall(message.report) };
     if (message.operation === 'cancel') {
         if (!Number.isSafeInteger(message.target) || message.target < 1) throw new Error('Invalid event stream.');
         streams.get(message.target)?.abort();

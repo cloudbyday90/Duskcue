@@ -26,6 +26,8 @@ mod browser;
 
 #[path = "playback_direct_media.rs"]
 mod direct_media;
+#[path = "playback_direct_native.rs"]
+mod native;
 #[path = "playback_direct_protocol.rs"]
 mod protocol;
 use direct_media::{clean_source, file_hash, output_media, seed};
@@ -34,6 +36,7 @@ struct DirectEvidence {
     proof: Value,
     browser: Value,
     trigger: bool,
+    native: Option<native::Candidate>,
 }
 
 pub(super) async fn run(fixture: ProgressiveFixture<'_>) -> anyhow::Result<()> {
@@ -58,20 +61,14 @@ pub(super) async fn run(fixture: ProgressiveFixture<'_>) -> anyhow::Result<()> {
     config.transcoding.segment_duration_seconds = 2;
     let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
     let (key, _) = EncryptionKey::generate();
-    let state = AppState::new_with_config(
+    let mut state = AppState::new_with_config(
         fixture.pool.clone(),
         bootstrap,
         config,
         recorder.handle(),
         key,
     );
-    let app = playback::router(state.clone())
-        .merge(profiles::router(state.clone()))
-        .with_state(state.clone())
-        .layer(Extension(ConnectInfo(std::net::SocketAddr::from((
-            [127, 0, 0, 1],
-            48027,
-        )))));
+    let mut app = fixture_router(&state);
     let mut evidence = DirectEvidence {
         owned: Evidence {
             root,
@@ -91,21 +88,27 @@ pub(super) async fn run(fixture: ProgressiveFixture<'_>) -> anyhow::Result<()> {
         proof: json!({}),
         browser: json!({"executed":false}),
         trigger: false,
+        native: None,
     };
     let exercised = tokio::time::timeout(
         Duration::from_secs(300),
-        exercise(&fixture, &state, &app, &mut evidence),
+        exercise(&fixture, &mut state, &mut app, &mut evidence),
     )
     .await
     .map_err(anyhow::Error::from)
     .and_then(|result| result);
     let trigger_cleanup = drop_failure_trigger(fixture.pool, evidence.trigger).await;
+    let native_cleanup = if let Some(candidate) = &evidence.native {
+        native::cleanup(&fixture, &state, candidate).await
+    } else {
+        Ok(())
+    };
     let cleaned = cleanup(&fixture, &state, &app, &evidence.owned).await;
     println!(
         "\nDUSKCUE_PLAYBACK_DIRECT={}",
         json!({
-            "version":1,"executed":true,"passed":exercised.is_ok() && trigger_cleanup.is_ok() && cleaned.is_ok(),
-            "resource_id":resource,"cleanup_passed":trigger_cleanup.is_ok() && cleaned.is_ok(),
+            "version":1,"executed":true,"passed":exercised.is_ok() && trigger_cleanup.is_ok() && native_cleanup.is_ok() && cleaned.is_ok(),
+            "resource_id":resource,"cleanup_passed":trigger_cleanup.is_ok() && native_cleanup.is_ok() && cleaned.is_ok(),
             "fixture_children_confirmed_exited":evidence.owned.tools.exited(),
             "contracts":evidence.proof,"browser":evidence.browser,
             "source_seconds":evidence.owned.source_seconds,"source_bytes":evidence.owned.source_bytes
@@ -113,13 +116,24 @@ pub(super) async fn run(fixture: ProgressiveFixture<'_>) -> anyhow::Result<()> {
     );
     exercised?;
     trigger_cleanup?;
+    native_cleanup?;
     cleaned
+}
+
+fn fixture_router(state: &AppState) -> Router {
+    playback::router(state.clone())
+        .merge(profiles::router(state.clone()))
+        .with_state(state.clone())
+        .layer(Extension(ConnectInfo(std::net::SocketAddr::from((
+            [127, 0, 0, 1],
+            48027,
+        )))))
 }
 
 async fn exercise(
     fixture: &ProgressiveFixture<'_>,
-    state: &AppState,
-    app: &Router,
+    state: &mut AppState,
+    app: &mut Router,
     evidence: &mut DirectEvidence,
 ) -> anyhow::Result<()> {
     let original_hash = file_hash(fixture.source).await?;
@@ -130,6 +144,22 @@ async fn exercise(
     evidence.owned.source_seconds = Some(8.0);
     evidence.owned.source_bytes = Some(tokio::fs::metadata(&source).await?.len());
     seed(fixture, &evidence.owned, &source).await?;
+    if native::enabled() {
+        evidence.native =
+            Some(native::prepare(&evidence.owned.tools, &source, &evidence.owned.root).await?);
+        let candidate = evidence.native.as_ref().unwrap();
+        direct_media::seed_source(
+            fixture,
+            &evidence.owned.tools,
+            &candidate.path,
+            candidate.item,
+            candidate.file,
+            60,
+        )
+        .await?;
+        native::configure(state, &evidence.owned.root, candidate).await?;
+        *app = fixture_router(state);
+    }
     protocol::legacy_bookkeeping(fixture, state, app, evidence).await?;
     let start = start_direct(fixture, app, evidence.owned.item, evidence.owned.file).await?;
     let play = parse_uuid(&start, "session_id")?;
@@ -337,6 +367,7 @@ async fn exercise(
             &evidence.owned.root,
             &source,
             &evidence.owned.tools,
+            evidence.native.as_ref(),
         )
         .await?;
     }
