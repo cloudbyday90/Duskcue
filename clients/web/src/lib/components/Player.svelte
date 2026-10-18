@@ -36,6 +36,7 @@
     import { preferences } from '../stores/user.js';
     import { createMediaSource } from '../playback/source.js';
     import { playbackRecoveryMessage } from '../playback/recovery.js';
+    import { playbackFailureMessage } from '../playback/failure-message.js';
     import { canCompleteSource, sourcePlaybackDuration } from '../playback/timing.js';
     import { createPlaybackTelemetry } from '../playback/telemetry.js';
     import { createPlaybackAnnotations } from '../playback/annotations.js';
@@ -96,6 +97,15 @@
     let controlPlaying = $derived(recoveryPending ? player.getPlayIntent() : $isPlaying);
     let recoveryExhausted = $derived($player.recovery?.status === 'exhausted');
     let recoveryMessage = $derived(playbackRecoveryMessage($player.recovery));
+    let failureMessage = $derived(playbackFailureMessage({ recoveryExhausted, sourceError, preferencesReady: playbackState?.preferencesReady, error: $playerError || playbackState?.error }));
+    let failureText = $derived.by(() => {
+        getLocale();
+        if (failureMessage === 'tonight_player_recovery_exhausted') return m.tonight_player_recovery_exhausted();
+        if (failureMessage === 'tonight_player_transport_failed') return m.tonight_player_transport_failed();
+        if (failureMessage === 'tonight_player_preferences_failed') return m.tonight_player_preferences_failed();
+        if (failureMessage === 'tonight_player_hdr_unsupported') return m.tonight_player_hdr_unsupported();
+        return m.lib_components_player_playback_error_the_stream_may_be_unavailable();
+    });
     let recoveryNotice = $derived.by(() => {
         getLocale();
         if (recoveryMessage === 'tonight_player_recovery_pending') return m.tonight_player_recovery_pending();
@@ -680,7 +690,7 @@
         <div class="player-overlay-center">
             <div class="error-display">
                 <p class="error-title">{m.lib_components_player_playback_error()}</p>
-                <p lang={recoveryExhausted ? messageLocale('tonight_player_recovery_exhausted') : sourceError ? messageLocale('tonight_player_transport_failed') : !playbackState?.preferencesReady ? messageLocale('tonight_player_preferences_failed') : messageLocale('lib_components_player_playback_error_the_stream_may_be_unavailable')} class="error-message" role="alert">{recoveryExhausted ? m.tonight_player_recovery_exhausted() : sourceError ? m.tonight_player_transport_failed() : !playbackState?.preferencesReady ? m.tonight_player_preferences_failed() : m.lib_components_player_playback_error_the_stream_may_be_unavailable()}</p>
+                <p lang={messageLocale(failureMessage)} class="error-message" role="alert">{failureText}</p>
                 <button bind:this={retryButton} class="error-retry" onclick={handleRetry}>{m.lib_components_player_retry()}</button>
             </div>
         </div>

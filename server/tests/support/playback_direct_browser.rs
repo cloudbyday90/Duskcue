@@ -10,6 +10,8 @@ use uuid::Uuid;
 
 use super::{AppState, Path, ProgressiveFixture, Value, process};
 
+#[path = "playback_format.rs"]
+mod formats;
 #[path = "playback_direct_native_stall.rs"]
 mod native_stall;
 #[path = "playback_direct_policy.rs"]
@@ -86,7 +88,9 @@ pub(super) async fn run(
     let mut files = Vec::new();
     let mut server = None;
     let mut shutdown = None;
+    let mut formats = formats::enabled().then(|| formats::Inventory::new(root));
     let proof = async {
+    if let Some(formats) = &mut formats { formats.prepare(fixture).await?; }
     for (variant, kind) in [
         ("video-length", 0),
         ("video-slice", 1),
@@ -170,7 +174,7 @@ pub(super) async fn run(
         let authorization = policy::assert_policy(fixture,state,&candidates[0]).await?;
         let ready = json!({"resourceId":resource,"token":fixture.token,"userId":fixture.user,"profileId":fixture.original_profile,
             "user":user,"candidates":candidates,"cleanCandidate":{"item":clean.0,"file":clean.1,"title":"Direct fallback fixture","audioHz":880},
-            "nativeRecovery":native_candidate.is_some(),"nativeCandidate":native_candidate.map(super::native::Candidate::ready)});
+            "nativeRecovery":native_candidate.is_some(),"nativeCandidate":native_candidate.map(super::native::Candidate::ready),"formats":formats.as_ref().map(formats::Inventory::ready)});
         let path = Path::new("/tmp/direct-ready.pending");
         let mut options = tokio::fs::OpenOptions::new();
         options.write(true).create_new(true).mode(0o600);
@@ -180,7 +184,8 @@ pub(super) async fn run(
         file.flush().await?;
         drop(file);
         tokio::fs::rename(path, "/tmp/direct-ready.json").await?;
-        let (mut complete, backend) = tokio::time::timeout(Duration::from_secs(240), await_completion(fixture,state,root,tools,resource,native_candidate)).await??;
+        let completion_seconds = if formats.is_some() { 900 } else { 240 };
+        let (mut complete, backend) = tokio::time::timeout(Duration::from_secs(completion_seconds), await_completion(fixture,state,root,tools,resource,native_candidate,formats.as_mut())).await??;
         anyhow::ensure!(complete["resourceId"] == resource.to_string());
         anyhow::ensure!(complete["passed"] == true, "real browser qualification failed: {}", complete.get("error").unwrap_or(&Value::Null));
         anyhow::ensure!(complete["nativeError"]["code"] == 3 && complete["nativeError"]["trusted"] == true);
@@ -246,6 +251,11 @@ pub(super) async fn run(
     {
         cleanup_errors.push(error.to_string());
     }
+    if let Some(formats) = &formats {
+        if let Err(error) = formats.cleanup(fixture, state).await {
+            cleanup_errors.push(error.to_string());
+        }
+    }
     anyhow::ensure!(
         cleanup_errors.is_empty(),
         "browser cleanup failed: {}",
@@ -261,6 +271,7 @@ async fn await_completion(
     tools: &process::FixtureProcesses,
     resource: Uuid,
     native_candidate: Option<&super::native::Candidate>,
+    mut formats: Option<&mut formats::Inventory>,
 ) -> anyhow::Result<(Value, Value)> {
     let native = std::env::var("DUSKCUE_TEST_NATIVE_CLIENT").as_deref() == Ok("live");
     let phases = if native_candidate.is_some() {
@@ -273,6 +284,9 @@ async fn await_completion(
     let mut completed = serde_json::Map::new();
     let mut armed = None;
     loop {
+        if let Some(formats) = &mut formats {
+            formats.poll(fixture, state, root, tools, resource).await?;
+        }
         if armed.is_none() {
             if let Some(request) = read_record("/tmp/direct-native-stall.json").await? {
                 let candidate = native_candidate
@@ -321,6 +335,9 @@ async fn await_completion(
                 phases.iter().all(|phase| completed.contains_key(*phase)),
                 "live client closed before required backend verification"
             );
+            if let Some(formats) = &formats {
+                completed.insert("formats".into(), formats.finish(fixture, state).await?);
+            }
             return Ok((complete, Value::Object(completed)));
         }
         tokio::time::sleep(Duration::from_millis(50)).await;

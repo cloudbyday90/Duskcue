@@ -25,7 +25,9 @@ use crate::domains::playback::types::*;
 use crate::services::decision_engine::{
     self, DecisionEngineConfig, DeviceCapabilities, NetworkConditions, StreamDecision,
 };
-use crate::services::transcoding::plan::{StreamAction, StreamPlan, apply_delivery_requirements};
+use crate::services::transcoding::plan::{
+    PlanError, StreamAction, StreamPlan, apply_delivery_requirements,
+};
 use crate::services::transcoding::{StartSessionParams, TranscodeManager};
 use crate::state::RuntimeConfig;
 
@@ -145,7 +147,9 @@ pub async fn start_playback(
     } else {
         let plan =
             StreamPlan::compile(&decision, &media_info, req.force_transcode.unwrap_or(false))
-                .map_err(|message| PlaybackError::FfmpegFailed(message.into()))?;
+                .map_err(|error| match error {
+                    PlanError::UnsupportedHdrConversion => PlaybackError::HdrConversionUnavailable,
+                })?;
         let (video_codec, audio_codec) = plan
             .output_codecs(
                 &decision,

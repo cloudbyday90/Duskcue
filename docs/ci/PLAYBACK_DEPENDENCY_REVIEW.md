@@ -1,5 +1,11 @@
 # Playback dependency review
 
+## Format qualification recheck — October 18, 2026
+
+GitHub MCP returned the complete current open pool `[5]`. A fresh `crypto.randomInt` draw at `2026-10-18T18:39:52.538Z` selected index zero and [PR #5](https://github.com/cloudbyday90/Duskcue/pull/5), open and unmerged at head `c018d77b7f09543e5960a571dc43e2f061cedf0a`. Both lockfile patches were inspected. Their PostCSS 8.5.23/nanoid 3.3.16 delta is already implemented and superseded locally by 8.5.30/3.3.20. Retain those newer fixes and regression-test the current graphs; there is no new PR code delta or downgrade. Selection evidence is `.cache/local-evaluation/format-pr-selection.json`. No merge, comment, closure or release is performed.
+
+Current audit and qualification results will be recorded in [Format qualification](../design/PLAYBACK_FORMAT_QUALIFICATION.md).
+
 ## Native worker-failure qualification recheck — October 18, 2026
 
 The complete current open PR pool remained `[5]`. A fresh cryptographic draw at `2026-10-18T13:51:41.610Z` selected index `0`, [PR #5](https://github.com/cloudbyday90/Duskcue/pull/5), still open and unmerged at head `c018d77b7f09543e5960a571dc43e2f061cedf0a`. The complete two-lockfile patch was reviewed again. Its PostCSS 8.5.23/nanoid 3.3.16 changes remain superseded by the local PostCSS 8.5.30/nanoid 3.3.20 versions; this iteration introduces no dependency delta, downgrade or remote PR mutation. Selection evidence is retained in ignored `.cache/local-evaluation/native-failure-pr-selection.json`.

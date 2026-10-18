@@ -1,5 +1,11 @@
 # Testing memory on Windows
 
+## Format qualification — October 18, 2026
+
+`node scripts/testing-memory/run.mjs playback-format-qualify --native-manifest <fresh manifest.json> --image <immutable local image SHA256>` extends the paced native gate with fourteen actual scanned HEVC/AV1 sources in each real client. It retains the native policy, 1,536-MiB driver heap, two Cargo jobs, compiler admission, continuous Linux reserve and existing container ceilings. Only this new mode uses a 900-second live handshake, 1,000-second direct contract and 1,050-second combined runtime deadline to accommodate twenty-eight serial format cases and the existing watchdog case. Older modes retain their deadlines.
+
+The corpus is generated sequentially inside the source-bound qualification image using its pinned managed FFmpeg. Files stay below eight MiB, temporary raw frames are removed, and private per-case verification phases are finite, owned and single-use. No new host mounts, ports, production routes or production capability admission are introduced. [Format qualification](../design/PLAYBACK_FORMAT_QUALIFICATION.md) owns design, limits and execution outcomes.
+
 ## Native worker-failure qualification — October 18, 2026
 
 `node scripts/testing-memory/run.mjs playback-native-recovery-qualify --native-manifest <fresh manifest.json> --image <immutable local image SHA256>` adds the paced native worker-failure gate. It uses the existing native Windows policy and 1,536-MiB driver heap; prepare the isolated static/native executable first. The ordinary short-source `playback-live-qualify` mode remains separate. The paced mode alone enables the default-off `playback-qualification` Cargo feature, verifies that feature on the selected integration-test artifact and binds the runtime image's mode label to the source identity.

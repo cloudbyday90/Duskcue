@@ -14,17 +14,18 @@ export function parseRecoveryArguments(args) {
 }
 
 export function parseRecoveryInvocation(args) {
-    const nativeRecovery = args[0] === '--native-recovery';
+    const formatCorpus = args[0] === '--format-corpus';
+    const nativeRecovery = formatCorpus || args[0] === '--native-recovery';
     const liveClients = nativeRecovery || args[0] === '--live-clients';
     const directBrowser = liveClients || args[0] === '--direct-browser';
     if (liveClients && (args[1] !== '--native-manifest' || !args[2])) throw new Error('Live clients require --native-manifest <freshly built qualification manifest>.');
-    return { ...parseRecoveryArguments(args.slice(liveClients ? 3 : directBrowser ? 1 : 0)), nativeRecovery, liveClients, directBrowser,
+    return { ...parseRecoveryArguments(args.slice(liveClients ? 3 : directBrowser ? 1 : 0)), formatCorpus, nativeRecovery, liveClients, directBrowser,
         nativeManifestPath: liveClients ? args[2] : null,
-        workload: nativeRecovery ? 'playback-native-recovery-qualify' : liveClients ? 'playback-live-qualify' : directBrowser ? 'playback-direct-qualify' : 'playback-recovery-qualify' };
+        workload: formatCorpus ? 'playback-format-qualify' : nativeRecovery ? 'playback-native-recovery-qualify' : liveClients ? 'playback-live-qualify' : directBrowser ? 'playback-direct-qualify' : 'playback-recovery-qualify' };
 }
 
 export async function owningRecoveryDirectory(workspace, environment, workload = 'playback-recovery-qualify') {
-    if (!['playback-recovery-qualify', 'playback-direct-qualify', 'playback-live-qualify', 'playback-native-recovery-qualify'].includes(workload)) throw new Error('An owning recovery workflow is required.');
+    if (!['playback-recovery-qualify', 'playback-direct-qualify', 'playback-live-qualify', 'playback-native-recovery-qualify', 'playback-format-qualify'].includes(workload)) throw new Error('An owning recovery workflow is required.');
     return ownedWorkflowEvidence(workspace, environment, workload);
 }
 
@@ -58,12 +59,13 @@ export async function copyRecoverySnapshot(workspace, directory, expected, sourc
     if ((await sources(directory)).sha256 !== expected.sha256) throw new Error('Recovery sources changed while copying the current working tree.');
 }
 
-export function validateRecoveryImage(info, { source, base, architecture, nativeRecovery = false }) {
+export function validateRecoveryImage(info, { source, base, architecture, nativeRecovery = false, formatCorpus = false }) {
     if (!/^sha256:[a-f0-9]{64}$/.test(info?.Id || '') || info.Os !== 'linux' || info.Architecture !== architecture
         || info.Config?.Labels?.['duskcue.qualification.kind'] !== 'local-playback-recovery-v1'
         || info.Config.Labels['duskcue.qualification.source-sha256'] !== source
         || info.Config.Labels['duskcue.qualification.runtime-base-id'] !== base
         || info.Config.Labels['duskcue.qualification.native-recovery'] !== (nativeRecovery ? 'paced' : 'none')
+        || info.Config.Labels['duskcue.qualification.format-corpus'] !== (formatCorpus ? 'reference' : 'none')
         || info.Config.User !== '65532:65532' || JSON.stringify(info.Config.Entrypoint) !== JSON.stringify(['/qualification/bin/playback-stop-contract'])) throw new Error('Recovery image source, base, platform or direct test entrypoint changed.');
-    return { id: info.Id, architecture: info.Architecture, sourceSha256: source, runtimeBaseId: base, nativeRecoveryMode: nativeRecovery ? 'paced' : 'none' };
+    return { id: info.Id, architecture: info.Architecture, sourceSha256: source, runtimeBaseId: base, nativeRecoveryMode: nativeRecovery ? 'paced' : 'none', formatCorpusMode: formatCorpus ? 'reference' : 'none' };
 }

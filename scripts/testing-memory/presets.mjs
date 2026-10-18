@@ -26,6 +26,7 @@ export const PRESETS = {
     'playback-direct-qualify': { policy: 'build', heapMiB: 512, command: 'node', args: ['scripts/testing-memory/qualify-playback-recovery.mjs', '--direct-browser'] },
     'playback-live-qualify': { policy: 'native', heapMiB: 1536, command: 'node', args: ['scripts/testing-memory/qualify-playback-recovery.mjs', '--live-clients'] },
     'playback-native-recovery-qualify': { policy: 'native', heapMiB: 1536, command: 'node', args: ['scripts/testing-memory/qualify-playback-recovery.mjs', '--native-recovery'] },
+    'playback-format-qualify': { policy: 'native', heapMiB: 1536, command: 'node', args: ['scripts/testing-memory/qualify-playback-recovery.mjs', '--format-corpus'] },
     'launcher-policy-probe': { policy: 'unit', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/probe-launcher-policy.mjs'] },
     'native-qa': { policy: 'native', heapMiB: 1536, command: 'node', args: ['clients/web/tests/native/qualify.mjs'] },
 };

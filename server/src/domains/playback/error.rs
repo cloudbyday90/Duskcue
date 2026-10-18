@@ -30,6 +30,9 @@ pub enum PlaybackError {
     #[error("FFmpeg process failed: {0}")]
     FfmpegFailed(String),
 
+    #[error("HDR conversion is not supported on this device yet.")]
+    HdrConversionUnavailable,
+
     #[error("session already active for this item")]
     SessionAlreadyActive,
 
@@ -114,3 +117,7 @@ pub enum PlaybackError {
     #[error(transparent)]
     Database(#[from] sqlx::Error),
 }
+
+#[cfg(test)]
+#[path = "error_tests.rs"]
+mod tests;

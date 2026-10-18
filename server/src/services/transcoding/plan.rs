@@ -20,6 +20,12 @@ pub enum StreamAction {
     Encode,
 }
 
+#[derive(Debug, thiserror::Error, PartialEq, Eq)]
+pub enum PlanError {
+    #[error("HDR conversion is not supported by this playback pipeline")]
+    UnsupportedHdrConversion,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct StreamPlan {
     pub video: StreamAction,
@@ -49,9 +55,9 @@ impl StreamPlan {
         decision: &PlaybackDecision,
         media: &MediaFileInfo,
         force_video: bool,
-    ) -> Result<Self, &'static str> {
+    ) -> Result<Self, PlanError> {
         if decision.requires_tone_mapping || decision.requires_dv_strip {
-            return Err("required HDR transformation is not available in this playback pipeline");
+            return Err(PlanError::UnsupportedHdrConversion);
         }
         let copy_video = !force_video
             && !decision.subtitle_burn_in_required
@@ -63,7 +69,7 @@ impl StreamPlan {
         let copy_audio = decision.audio == AudioDecision::Passthrough
             && supported_by(&media.audio_codec, COPY_AUDIO);
         if !copy_video && known_hdr(media) {
-            return Err("HDR video encoding is not available in this playback pipeline");
+            return Err(PlanError::UnsupportedHdrConversion);
         }
         Ok(Self {
             video: if copy_video {

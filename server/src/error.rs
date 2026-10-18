@@ -1415,6 +1415,11 @@ fn playback_error_to_http(
             "PLAY_004",
             format!("FFmpeg process failed: {}", r),
         ),
+        PlaybackError::HdrConversionUnavailable => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "PLAY_020",
+            "HDR conversion is not supported on this device yet.".into(),
+        ),
         PlaybackError::SessionAlreadyActive => (
             StatusCode::CONFLICT,
             "PLAY_005",

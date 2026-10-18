@@ -39,6 +39,7 @@
     "tonight_player_quality_bitrate": "Up to {bitrate} Mbps",
     "tonight_player_preferences_failed": "Viewing preferences could not be loaded. Retry before starting playback.",
     "tonight_player_transport_failed": "This device could not play the stream. Retry or return to the title.",
+    "tonight_player_hdr_unsupported": "HDR conversion is not supported on this device yet.",
     "tonight_player_recovery_pending": "Trying to recover playback…",
     "tonight_player_recovery_compatible": "A more compatible playback stream is ready.",
     "tonight_player_recovery_skipped": "A recovery stream is ready. A damaged section was skipped.",

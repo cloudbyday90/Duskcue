@@ -91,7 +91,13 @@ pub(super) async fn run(fixture: ProgressiveFixture<'_>) -> anyhow::Result<()> {
         native: None,
     };
     let exercised = tokio::time::timeout(
-        Duration::from_secs(300),
+        Duration::from_secs(
+            if std::env::var("DUSKCUE_TEST_FORMAT_CORPUS").as_deref() == Ok("live") {
+                1000
+            } else {
+                300
+            },
+        ),
         exercise(&fixture, &mut state, &mut app, &mut evidence),
     )
     .await

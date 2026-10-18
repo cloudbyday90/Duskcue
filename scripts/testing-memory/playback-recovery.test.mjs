@@ -36,7 +36,7 @@ test('recovery admission rejects zero execution, incomplete cleanup and fabricat
 
 test('recovery image must preserve actual source, base and direct test executable identity', () => {
     const expected = { source: 'b'.repeat(64), base: image, architecture: 'amd64' };
-    const info = { Id: image, Os: 'linux', Architecture: 'amd64', Config: { User: '65532:65532', Entrypoint: ['/qualification/bin/playback-stop-contract'], Labels: { 'duskcue.qualification.kind': 'local-playback-recovery-v1', 'duskcue.qualification.source-sha256': expected.source, 'duskcue.qualification.runtime-base-id': image, 'duskcue.qualification.native-recovery': 'none' } } };
+    const info = { Id: image, Os: 'linux', Architecture: 'amd64', Config: { User: '65532:65532', Entrypoint: ['/qualification/bin/playback-stop-contract'], Labels: { 'duskcue.qualification.kind': 'local-playback-recovery-v1', 'duskcue.qualification.source-sha256': expected.source, 'duskcue.qualification.runtime-base-id': image, 'duskcue.qualification.native-recovery': 'none', 'duskcue.qualification.format-corpus': 'none' } } };
     assert.equal(validateRecoveryImage(info, expected).id, image);
     for (const mutate of [(entry) => { entry.Config.User = 'root'; }, (entry) => { entry.Config.Entrypoint = ['/usr/local/bin/duskcue-entrypoint']; }, (entry) => { entry.Architecture = 'arm64'; }, (entry) => { entry.Config.Labels['duskcue.qualification.source-sha256'] = 'c'.repeat(64); }]) {
         const changed = structuredClone(info); mutate(changed); assert.throws(() => validateRecoveryImage(changed, expected));
@@ -61,6 +61,27 @@ test('paced native qualification requires its explicit mode, owning native polic
     assert.equal(parseRecoveryInvocation(['--image', image]).workload, 'playback-recovery-qualify');
     assert.equal(parseRecoveryInvocation(['--direct-browser', '--image', image]).directBrowser, true);
     for (const args of [['--native-recovery', '--image', image], [...input, '--features', 'foreign'], ['--native-recovery', '--native-manifest', 'owned/manifest.json']]) assert.throws(() => parseRecoveryInvocation(args));
+});
+
+test('format matrix admission preserves paced native ownership and immutable corpus identity', () => {
+    const args = ['--format-corpus', '--native-manifest', 'owned/manifest.json', '--image', image];
+    const mode = parseRecoveryInvocation(args);
+    assert.equal(mode.formatCorpus, true);
+    assert.equal(mode.nativeRecovery, true);
+    assert.equal(mode.liveClients, true);
+    assert.equal(mode.workload, 'playback-format-qualify');
+    assert.equal(PRESETS[mode.workload].policy, 'native');
+    assert.equal(parseRecoveryInvocation(['--image', image]).formatCorpus, false);
+    assert.throws(() => parseRecoveryInvocation(['--format-corpus', '--image', image]));
+    const expected = { source: 'b'.repeat(64), base: image, architecture: 'amd64', nativeRecovery: true, formatCorpus: true };
+    const info = { Id: image, Os: 'linux', Architecture: 'amd64', Config: { User: '65532:65532', Entrypoint: ['/qualification/bin/playback-stop-contract'], Labels: {
+        'duskcue.qualification.kind': 'local-playback-recovery-v1', 'duskcue.qualification.source-sha256': expected.source,
+        'duskcue.qualification.runtime-base-id': image, 'duskcue.qualification.native-recovery': 'paced', 'duskcue.qualification.format-corpus': 'reference',
+    } } };
+    assert.equal(validateRecoveryImage(info, expected).id, image);
+    assert.throws(() => validateRecoveryImage(info, { ...expected, formatCorpus: false }));
+    delete info.Config.Labels['duskcue.qualification.format-corpus'];
+    assert.throws(() => validateRecoveryImage(info, expected));
 });
 
 test('read-only owned runtime rejects root, writable roots, foreign namespaces and persistent mounts', () => {

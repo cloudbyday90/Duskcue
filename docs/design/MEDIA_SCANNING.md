@@ -782,6 +782,12 @@ The `media_files` table (including `file_hash`, `file_modified_at`) is part of t
 - Regex patterns compiled via `std::sync::LazyLock` statics (`CURLY_TAG_RE`, `BRACKET_TAG_RE`) — avoids recompilation per call
 - No new workspace dependencies — uses existing `regex` crate and `std::sync::LazyLock` (Rust edition 2024 stable)
 
+**October 2026 format qualification follow-up:**
+
+The [HEVC/AV1 format gate](PLAYBACK_FORMAT_QUALIFICATION.md) uses real scanner ingestion rather than pre-populated media rows. Review of its first failed inventory check identified frame-rate strings bound directly to a `NUMERIC(6,3)` column. Insert and update now explicitly cast the existing three-decimal bound value to numeric, retaining parameterized SQL and requiring no schema or dependency change. PostgreSQL documents [parameter typing](https://www.postgresql.org/docs/current/sql-prepare.html) and [explicit casts](https://www.postgresql.org/docs/current/sql-expressions.html); a text parameter should not rely on an unavailable implicit numeric assignment.
+
+Actual Linux/PostgreSQL execution in `f50c7b40-565a-44af-ab88-f6694242b9ff` imported all fourteen sources without errors, then successfully updated all fourteen on a second full scan. Exactly fourteen item/file identities, health, hashes and actual normalized probe metadata remained unchanged. The scanner API's `items_created` counter counts successful updates too; the fixture independently counts rows to exclude duplicate insertion. This qualifies those insert/update paths; the overall playback matrix remains separately in progress in the format authority.
+
 **Not yet implemented:**
 
 - Phase 5 (Enrich) is a stub — metadata provider integration deferred to Phase 6

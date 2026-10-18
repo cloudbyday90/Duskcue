@@ -407,6 +407,9 @@ export const incompleteMessages = {
     "tonight_player_fullscreen_failed": [
         "en"
     ],
+    "tonight_player_hdr_unsupported": [
+        "en"
+    ],
     "tonight_player_menu_audio": [
         "en"
     ],

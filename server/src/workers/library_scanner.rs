@@ -1087,7 +1087,7 @@ async fn insert_media_file(
                       video_bitrate, video_dynamic_range, video_frame_rate,
                       audio_codec, audio_channels, audio_language, audio_bitrate,
                       runtime_seconds, additional_streams)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)"#,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11::numeric, $12, $13, $14, $15, $16, $17)"#,
     )
     .bind(media_item_id)
     .bind(file.path.to_string_lossy().to_string())
@@ -1125,7 +1125,7 @@ async fn update_media_file(
             file_size = $2, file_hash = COALESCE($3, file_hash),
             file_modified_at = COALESCE($4, file_modified_at),
             container_format = $5, video_codec = $6, video_resolution = $7,
-            video_bitrate = $8, video_dynamic_range = $9, video_frame_rate = $10,
+            video_bitrate = $8, video_dynamic_range = $9, video_frame_rate = $10::numeric,
             audio_codec = $11, audio_channels = $12, audio_language = $13,
             audio_bitrate = $14, runtime_seconds = $15,
             additional_streams = $16, is_healthy = true,

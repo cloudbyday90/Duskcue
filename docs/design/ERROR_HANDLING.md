@@ -489,6 +489,7 @@ All API errors return [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457) Problem
 | `PLAY_017` | 400 | Invalid transcode resolution value |
 | `PLAY_018` | 400 | Invalid IP range format |
 | `PLAY_019` | 409 | Ambient channel selection is stale; resolve the channel again before starting playback |
+| `PLAY_020` | 422 | HDR conversion is unavailable; refuse before session or worker allocation |
 
 ### DOWNLOAD — Offline Downloads
 

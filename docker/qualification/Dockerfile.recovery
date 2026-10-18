@@ -16,6 +16,7 @@ COPY server ./server
 COPY clients/desktop/src-tauri ./clients/desktop/src-tauri
 COPY native/ffmpeg-bootstrap ./native/ffmpeg-bootstrap
 ARG NATIVE_RECOVERY_MODE=none
+ARG FORMAT_CORPUS_MODE=none
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/src/target \
@@ -31,16 +32,26 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
         cargo test --release --locked -p duskcue -j 2 --lib "$@" services::transcoding::qualification::tests:: -- --test-threads=1 > /tmp/qualification-evidence/pacing-unit-tests.log \
         || { cat /tmp/qualification-evidence/pacing-unit-tests.log >&2; exit 1; }; \
         test "$(wc -c < /tmp/qualification-evidence/pacing-unit-tests.log)" -le 65536 || exit 1; \
-    fi
+    fi \
+    && case "$FORMAT_CORPUS_MODE" in \
+        none) ;; \
+        reference) test "$NATIVE_RECOVERY_MODE" = paced \
+            && cargo test --release --locked -p duskcue -j 2 --test playback_stop_contract "$@" '::formats::' -- --test-threads=1 > /tmp/qualification-evidence/format-unit-tests.log \
+            || { cat /tmp/qualification-evidence/format-unit-tests.log >&2; exit 1; }; \
+            test "$(wc -c < /tmp/qualification-evidence/format-unit-tests.log)" -le 65536 || exit 1 ;; \
+        *) exit 1 ;; \
+    esac
 
 FROM ${RUNTIME_IMAGE} AS runtime
 ARG SOURCE_SHA256
 ARG RUNTIME_BASE_ID
 ARG NATIVE_RECOVERY_MODE=none
+ARG FORMAT_CORPUS_MODE=none
 LABEL duskcue.qualification.kind="local-playback-recovery-v1" \
       duskcue.qualification.source-sha256="${SOURCE_SHA256}" \
       duskcue.qualification.runtime-base-id="${RUNTIME_BASE_ID}" \
-      duskcue.qualification.native-recovery="${NATIVE_RECOVERY_MODE}"
+      duskcue.qualification.native-recovery="${NATIVE_RECOVERY_MODE}" \
+      duskcue.qualification.format-corpus="${FORMAT_CORPUS_MODE}"
 USER root
 RUN mkdir -p /qualification/bin /src/.cache/tonight-server-ffmpeg /src/.cache/tonight-server-stop \
     && chown 65532:65532 /src/.cache/tonight-server-stop
@@ -51,10 +62,24 @@ COPY docker/qualification/recovery-fixture.mjs /qualification/recovery-fixture.m
 COPY docker/qualification/direct-http-bridge.mjs /qualification/direct-http-bridge.mjs
 COPY docker/qualification/direct-http-policy.mjs /qualification/direct-http-policy.mjs
 COPY docker/qualification/direct-native-control.mjs /qualification/direct-native-control.mjs
+COPY docker/qualification/direct-format-control.mjs /qualification/direct-format-control.mjs
+COPY docker/qualification/format-*.mjs /qualification/docker/qualification/
+COPY scripts/qualification/format-codecs.mjs /qualification/scripts/qualification/format-codecs.mjs
 RUN sha256sum -c /usr/local/libexec/duskcue-ffmpeg.sha256 \
     && node --max-old-space-size=64 /qualification/recovery-fixture.mjs \
     && chmod 0555 /qualification/bin/playback-stop-contract \
     && chmod 0444 /src/.cache/tonight-server-ffmpeg/* /qualification/cargo-artifacts.jsonl
+RUN case "$FORMAT_CORPUS_MODE" in \
+        none) ;; \
+        reference) test "$NATIVE_RECOVERY_MODE" = paced \
+            && (node --max-old-space-size=64 --test --test-concurrency=1 --test-reporter=tap /qualification/docker/qualification/format-process.test.mjs > /qualification/evidence/format-process-tests.log \
+                || { cat /qualification/evidence/format-process-tests.log >&2; exit 1; }) \
+            && node --max-old-space-size=64 /qualification/docker/qualification/format-corpus.mjs --directory /qualification/format-sources \
+            && chmod 0555 /qualification/format-sources \
+            && chmod 0444 /qualification/format-sources/* \
+            && chmod 0444 /qualification/format-corpus.json ;; \
+        *) exit 1 ;; \
+    esac
 ENV HOME=/tmp \
     DUSKCUE_TEST_FFMPEG_MODE=linux-local-managed \
     DUSKCUE_TEST_PLAYBACK_SOURCE=/src/.cache/tonight-server-ffmpeg/source.mkv \

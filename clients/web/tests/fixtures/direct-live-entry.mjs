@@ -39,28 +39,34 @@ async function stop() {
 }
 
 document.querySelector('button').addEventListener('click', (event) => { void observer.enableAudio(); event.currentTarget.hidden = true; });
+
+async function mountPlayer(fixture, candidate, observe = true, wait = false) {
+    await stop();
+    observer.reset();
+    activeSelection = null;
+    closed = false;
+    const entry = await loadPlaybackEntry(candidate.item, { fileId: candidate.file });
+    const started = wait ? awaitSession() : null;
+    try {
+        component = mount(Player, { target, props: {
+            entry, profileId: fixture.profileId,
+            preferenceContext: { serverOrigin: location.origin, userId: fixture.userId },
+            onactivechange: (state) => { activeSelection = state.selection; },
+            onstop: () => { closed = true; },
+        } });
+        await tick();
+        const video = target.querySelector('video');
+        if (!video) throw new Error('The actual Player did not mount its video element.');
+        if (observe) observer.attach(video);
+        if (started) return await started.promise;
+    } finally { started?.cancel(); }
+}
+
 window.directFixture = {
     async start(fixture, candidate) {
-        await stop();
-        observer.reset();
-        activeSelection = null;
-        closed = false;
-        const entry = await loadPlaybackEntry(candidate.item, { fileId: candidate.file });
-        const started = awaitSession();
-        try {
-            component = mount(Player, { target, props: {
-                entry, profileId: fixture.profileId,
-                preferenceContext: { serverOrigin: location.origin, userId: fixture.userId },
-                onactivechange: (state) => { activeSelection = state.selection; },
-                onstop: () => { closed = true; },
-            } });
-            await tick();
-            const video = target.querySelector('video');
-            if (!video) throw new Error('The actual Player did not mount its video element.');
-            observer.attach(video);
-            return await started.promise;
-        } finally { started.cancel(); }
+        return mountPlayer(fixture, candidate, true, true);
     },
+    async mountFormat(fixture, candidate) { await mountPlayer(fixture, candidate, false); },
     snapshot() {
         const state = get(player);
         return { ...observer.snapshot(), sessionId: state.sessionId, decision: state.streamDecision,

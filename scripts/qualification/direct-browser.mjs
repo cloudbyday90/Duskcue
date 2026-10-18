@@ -9,12 +9,13 @@ import { pathToFileURL } from 'node:url';
 import { openDirectBridge } from './direct-bridge.mjs';
 import { prepareDirectPlayerBrowser } from './direct-browser-build.mjs';
 import { startDirectGateway } from './direct-gateway.mjs';
+import { runFormatBrowser } from './format-browser.mjs';
 
 export async function prepareDirectBrowser(workspace, directory) {
     return prepareDirectPlayerBrowser(workspace, directory);
 }
 
-export async function runDirectBrowser({ workspace, directory, context, runtime, resourceId, execution, ownership, assets, abortSignal, nativeManifest, nativeRecovery = false }) {
+export async function runDirectBrowser({ workspace, directory, context, runtime, resourceId, execution, ownership, assets, abortSignal, nativeManifest, nativeRecovery = false, formatCorpus = false }) {
     let bridge;
     let gateway;
     let nativeGateway;
@@ -40,6 +41,7 @@ export async function runDirectBrowser({ workspace, directory, context, runtime,
         }
         assert.equal(ready.resourceId, resourceId);
         assert.equal(ready.nativeRecovery === true, nativeRecovery);
+        assert.equal(Array.isArray(ready.formats), formatCorpus);
         assert.match(ready.token, /^[A-Za-z0-9_-]{32,256}$/);
         assert.ok(Array.isArray(ready.candidates) && ready.candidates.length > 0 && ready.candidates.length <= 4);
         const denied = await bridge.request({ operation: 'fetch', path: `/api/v1/stream/${ready.candidates[0].file}`, method: 'GET', headers: {}, body: '' });
@@ -136,13 +138,25 @@ export async function runDirectBrowser({ workspace, directory, context, runtime,
         assert.deepEqual(pageErrors, []);
         assert.deepEqual(gateway.errors, []);
         assert.equal(report.passed, true, 'No real native decode failure recovered to decoded authenticated HLS.');
+        const verifyFormat = async (evidence) => {
+            const verified = await bridge.request({ operation: 'verify-format', report: { ...evidence, resourceId } });
+            assert.equal(verified.verified.passed, true);
+            assert.equal(verified.verified.resourceId, resourceId);
+            assert.equal(verified.verified.phase, evidence.phase);
+            return { ...verified.verified.backend, passed: true };
+        };
+        if (ready.formats) {
+            report.formats = await runFormatBrowser({ page, ready, origin, directory, verifyFormat, abortSignal });
+            assert.deepEqual(pageErrors, []);
+            assert.deepEqual(gateway.errors, []);
+        }
         await browserContext.close(); browserContext = null;
         await browser.close(); browser = null;
         if (nativeManifest) {
             const url = new URL(nativeManifest.origins[0]);
             nativeGateway = await startDirectGateway({ bridge, host: url.hostname, port: Number(url.port) });
             const { runNativeLive } = await import(pathToFileURL(join(workspace, 'clients/web/tests/native/qualification-live.mjs')));
-            report.native = await runNativeLive({ manifest: nativeManifest, ready, gatewayOrigin: nativeGateway.origin, directory, abortSignal,
+            report.native = await runNativeLive({ manifest: nativeManifest, ready, gatewayOrigin: nativeGateway.origin, directory, abortSignal, verifyFormat,
                 async armRecovery(evidence) {
                     assert.equal(nativeRecovery, true);
                     const armed = await bridge.request({ operation: 'arm-native-stall', report: { ...evidence, resourceId } });
