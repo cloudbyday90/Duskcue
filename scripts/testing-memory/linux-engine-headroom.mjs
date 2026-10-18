@@ -65,6 +65,12 @@ async function engineInfo(context, readMetadata = boundedMetadata) {
     return JSON.parse(await readMetadata('docker.exe', ['--context', context, 'info', '--format', '{"id":{{json .ID}},"osType":{{json .OSType}},"operatingSystem":{{json .OperatingSystem}},"name":{{json .Name}},"kernel":{{json .KernelVersion}},"architecture":{{json .Architecture}}}']));
 }
 
+export async function readMatchingEngine(engine, readMetadata = boundedMetadata) {
+    const matched = validateLocalEngine(engine.context, 'npipe:////./pipe/dockerDesktopLinuxEngine', await engineInfo(engine.context, readMetadata));
+    if (matched.engineId !== engine.engineId || matched.kernel !== engine.kernel) throw new Error('The local Docker engine changed during qualification.');
+    return matched;
+}
+
 export async function readLocalEngine() {
     const context = await boundedMetadata('docker.exe', ['context', 'show']);
     const endpoint = JSON.parse(await boundedMetadata('docker.exe', ['context', 'inspect', context, '--format', '{{json .Endpoints.docker.Host}}']));
@@ -74,18 +80,12 @@ export async function readLocalEngine() {
 export async function readLinuxSample(engine, readMetadata = boundedMetadata) {
     const [running, current] = await Promise.allSettled([
         readMetadata('wsl.exe', ['--list', '--running', '--quiet']),
-        engineInfo(engine.context, readMetadata),
+        readMatchingEngine(engine, readMetadata),
     ]);
     const errors = [];
     if (running.status === 'rejected') errors.push(running.reason);
     else if (!running.value.split(/\r?\n/).map((line) => line.trim()).includes('docker-desktop')) errors.push(new Error('The docker-desktop WSL distribution is not already running; it will not be started by qualification.'));
     if (current.status === 'rejected') errors.push(current.reason);
-    else {
-        try {
-            const matched = validateLocalEngine(engine.context, 'npipe:////./pipe/dockerDesktopLinuxEngine', current.value);
-            if (matched.engineId !== engine.engineId || matched.kernel !== engine.kernel) throw new Error('The local Docker engine changed during qualification.');
-        } catch (error) { errors.push(error); }
-    }
     if (errors.length) throw errors.find((error) => !(error instanceof MetadataReadError)) || errors[0];
     const observedAt = Date.now();
     const text = await readMetadata('wsl.exe', ['--distribution', 'docker-desktop', '--exec', 'cat', '/proc/meminfo', '/proc/sys/kernel/random/boot_id', '/proc/version']);

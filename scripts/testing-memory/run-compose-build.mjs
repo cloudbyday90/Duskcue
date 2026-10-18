@@ -8,9 +8,11 @@ import { fileURLToPath } from 'node:url';
 import { ownedWorkflowEvidence } from './workflow-evidence.mjs';
 import { evaluateLinuxHeadroom, readLinuxSample, readLocalEngine } from './linux-engine-headroom.mjs';
 import { runCompilerCommand } from './linux-compile-command.mjs';
+import { createLinuxDockerProbe } from './linux-docker-probe.mjs';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 let owner;
+let probe;
 const result = { version: 1, kind: 'local-compose-no-cache-build', status: 'in_progress', startedAt: new Date().toISOString() };
 try {
     owner = await ownedWorkflowEvidence(workspace, process.env, 'compose-build');
@@ -23,11 +25,21 @@ try {
     if (!decision.allowed) throw new Error(decision.reason);
     const record = (sample) => appendFile(join(owner.directory, 'linux-memory.jsonl'), `${JSON.stringify(sample)}\n`);
     await record(initial);
-    result.compilation = await runCompilerCommand(workspace, ['--context', engine.context, 'compose', '-f', 'docker-compose.yml', '-f', 'docker/compose.local.yml', '--progress', 'plain', 'build', '--no-cache', ...process.argv.slice(2)], owner, engine, initial, record);
+    probe = await createLinuxDockerProbe(owner, engine, initial);
+    const monitoredInitial = probe?.initial || await readLinuxSample(engine);
+    result.memoryProbe = probe ? { id: probe.id, image: probe.image, initial: probe.initial } : { transport: 'wsl', reason: 'No existing local runtime image; retain the original sampler for initial bootstrap.' };
+    const admission = evaluateLinuxHeadroom(monitoredInitial, initial);
+    if (!admission.allowed) throw new Error(admission.reason);
+    await record(monitoredInitial);
+    result.compilation = await runCompilerCommand(workspace, ['--context', engine.context, 'compose', '-f', 'docker-compose.yml', '-f', 'docker/compose.local.yml', '--progress', 'plain', 'build', '--no-cache', ...process.argv.slice(2)], owner, engine, monitoredInitial, record, probe?.read);
     result.status = 'passed';
 } catch (error) {
     result.status = 'failed'; result.error = error.message; process.exitCode = 1;
 } finally {
+    if (probe) {
+        try { result.removedOwnedContainers = await probe.cleanup(); result.cleanup = { passed: true }; }
+        catch (error) { result.status = 'failed'; result.error = error.message; result.cleanup = { passed: false }; process.exitCode = 1; }
+    }
     result.finishedAt = new Date().toISOString();
     if (owner) await writeFile(join(owner.directory, 'result.json'), `${JSON.stringify(result, null, 2)}\n`);
 }

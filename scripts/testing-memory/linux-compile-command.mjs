@@ -23,7 +23,7 @@ export function createOutputBudget(limit = COMPILER_OUTPUT_LIMIT) {
     return { get bytes() { return bytes; }, consume(size) { if (!Number.isSafeInteger(size) || size < 0 || bytes + size > limit) throw new Error('The compiler exceeded its bounded log size.'); bytes += size; } };
 }
 
-export async function runCompilerCommand(workspace, args, owner, engine, initialSample, recordSample) {
+export async function runCompilerCommand(workspace, args, owner, engine, initialSample, recordSample, readSample = readLinuxSample) {
     const log = createWriteStream(`${owner.directory}/compiler.log`, { flags: 'wx', highWaterMark: 65536 });
     const budget = createOutputBudget();
     const child = spawn('docker.exe', args, { cwd: workspace, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
@@ -68,7 +68,7 @@ export async function runCompilerCommand(workspace, args, owner, engine, initial
         const decision = telemetry.check();
         if (!decision.allowed) { stop(decision.reason); return; }
         if (polling) return;
-        polling = readLinuxSample(engine).then(async (sample) => {
+        polling = readSample(engine).then(async (sample) => {
             const current = telemetry.observe(sample);
             await recordSample(sample);
             if (!current.allowed) stop(current.reason);
