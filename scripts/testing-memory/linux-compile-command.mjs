@@ -11,7 +11,8 @@ import { Transform } from 'node:stream';
 import { finished } from 'node:stream/promises';
 import { stopOwnedProcess } from './owned-process.mjs';
 import { cleanupOwnedContainers } from './owned-containers.mjs';
-import { evaluateLinuxHeadroom, readLinuxSample } from './linux-engine-headroom.mjs';
+import { readLinuxSample } from './linux-engine-headroom.mjs';
+import { createLinuxTelemetry } from './linux-telemetry.mjs';
 
 export const COMPILER_OUTPUT_LIMIT = 32 * 1024 ** 2;
 export const COMPILER_DEADLINE_MS = 30 * 60 * 1000;
@@ -30,7 +31,7 @@ export async function runCompilerCommand(workspace, args, owner, engine, initial
     let closed = false;
     let failure;
     let stopping;
-    let latest = initialSample;
+    const telemetry = createLinuxTelemetry(initialSample);
     let polling;
     let streams = [];
     const outcome = new Promise((resolve, reject) => {
@@ -44,7 +45,7 @@ export async function runCompilerCommand(workspace, args, owner, engine, initial
         for (const { source, bounded } of streams) { source.unpipe(bounded); bounded.unpipe(log); bounded.destroy(); source.resume(); }
         stopping = Promise.allSettled([cleanupOwnedContainers(owner.marker, owner.resourceId), stopOwnedProcess(child)]).then((results) => {
             const rejected = results.find((result) => result.status === 'rejected');
-            return writeFile(`${owner.directory}/stop-evidence.json`, `${JSON.stringify({ reason: message, childPid: child.pid, startedAt: child.startedAt, latestLinuxSample: latest, removedOwnedContainers: results[0].status === 'fulfilled' ? results[0].value : [], cleanupErrors: results.filter((result) => result.status === 'rejected').map((result) => result.reason.message) }, null, 2)}\n`, 'utf8').then(() => { if (rejected) throw rejected.reason; });
+            return writeFile(`${owner.directory}/stop-evidence.json`, `${JSON.stringify({ reason: message, childPid: child.pid, startedAt: child.startedAt, latestLinuxSample: telemetry.latest, telemetryError: telemetry.telemetryError, removedOwnedContainers: results[0].status === 'fulfilled' ? results[0].value : [], cleanupErrors: results.filter((result) => result.status === 'rejected').map((result) => result.reason.message) }, null, 2)}\n`, 'utf8').then(() => { if (rejected) throw rejected.reason; });
         });
         stopping.catch(() => {});
     };
@@ -64,15 +65,17 @@ export async function runCompilerCommand(workspace, args, owner, engine, initial
     const deadline = setTimeout(() => stop('The owned compiler exceeded its 30-minute deadline.'), COMPILER_DEADLINE_MS);
     const watchdog = setInterval(() => {
         if (closed || stopping) return;
-        const decision = evaluateLinuxHeadroom(latest, initialSample, { preflight: false });
+        const decision = telemetry.check();
         if (!decision.allowed) { stop(decision.reason); return; }
         if (polling) return;
         polling = readLinuxSample(engine).then(async (sample) => {
-            latest = sample;
+            const current = telemetry.observe(sample);
             await recordSample(sample);
-            const current = evaluateLinuxHeadroom(sample, initialSample, { preflight: false });
             if (!current.allowed) stop(current.reason);
-        }).catch((error) => stop(error.message)).finally(() => { polling = null; });
+        }).catch((error) => {
+            const current = telemetry.readFailed(error);
+            if (!current.allowed) stop(current.reason);
+        }).finally(() => { polling = null; });
     }, 2000);
     try {
         const result = await outcome;

@@ -19,6 +19,8 @@ use uuid::Uuid;
 mod media;
 #[path = "playback_progressive_process.rs"]
 mod process;
+#[path = "playback_recovery.rs"]
+mod recovery;
 
 use super::post;
 use media::{fetch, playlist, segments};
@@ -37,6 +39,10 @@ pub(super) struct ProgressiveFixture<'a> {
 
 pub(super) fn enabled() -> bool {
     std::env::var("DUSKCUE_TEST_PROGRESSIVE_PLAYBACK").as_deref() == Ok("event")
+}
+
+pub(super) async fn real_recovery_playback(fixture: ProgressiveFixture<'_>) -> anyhow::Result<()> {
+    recovery::run(fixture).await
 }
 
 struct Session {
@@ -446,7 +452,12 @@ async fn observe(
     let timestamp = media::decode_start(
         stream.tools,
         stream.root,
-        &format!("http-{id}"),
+        &media::FragmentContext {
+            name: format!("http-{id}"),
+            source_seek_ms: seek_ms,
+            source_start_ms: transcode.source_start_ms,
+            stream_plan: transcode.stream_plan,
+        },
         &initialization,
         &fragment,
     )

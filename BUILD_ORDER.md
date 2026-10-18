@@ -12,7 +12,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## Always-Applicable Documents
 
-The next playback increment is [Playback compatibility and recovery](docs/design/PLAYBACK_COMPATIBILITY.md): normalized bounded probing, conservative compatibility decisions, executable per-stream plans and generated-media qualification precede automatic mid-playback recovery. Web and the existing desktop client are the first targets. Track actual results and deferred cases in that authority rather than treating the broader format catalog as completed qualification.
+Playback development follows [compatibility qualification](docs/design/PLAYBACK_COMPATIBILITY.md) and [bounded recovery](docs/design/PLAYBACK_RECOVERY.md). The October 2026 recovery increment adds classified process supervision, durable attempt budgets, generation-aware heartbeat delivery and shared web/desktop recovery notices. Its command results and remaining qualification gates are recorded in that authority. The next increment designs and qualifies authenticated direct-file decoder failure to admitted HLS fallback in a real browser and desktop player, then expands HEVC/AV1, damaged-source and HDR fidelity evidence in the same harness. Direct-file failures currently require manual Retry. The broader format catalog remains a target until runtime and device evidence exists.
 
 These documents apply to every phase. Consult them when making implementation decisions:
 

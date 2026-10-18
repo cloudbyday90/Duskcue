@@ -26,6 +26,8 @@ impl TranscodeSession {
             target_resolution: Some(self.target_video_resolution),
             target_bitrate: (self.target_bitrate > 0).then_some(self.target_bitrate),
             seek_position_ms: Some(position_ms),
+            hw_accel_override: Some(self.hw_accel),
+            recovery_attempts: self.recovery_attempts,
         }
     }
 }
@@ -67,6 +69,8 @@ mod tests {
             target_audio_codec: "aac".into(),
             target_bitrate: 0,
             hw_accel: HwAccelMethod::Software,
+            source_start_ms: 0,
+            recovery_attempts: 1,
             rendition_name: "source".into(),
             segment_dir: "cache".into(),
             manifest_path: "cache/manifest.m3u8".into(),
@@ -84,6 +88,8 @@ mod tests {
         assert_eq!(restart.stream_plan.video, StreamAction::Copy);
         assert_eq!(restart.stream_plan.audio, StreamAction::Encode);
         assert_eq!(restart.seek_position_ms, Some(125_000));
+        assert_eq!(restart.hw_accel_override, Some(HwAccelMethod::Software));
+        assert_eq!(restart.recovery_attempts, 1);
         assert!(restart.target_bitrate.is_none());
     }
 }

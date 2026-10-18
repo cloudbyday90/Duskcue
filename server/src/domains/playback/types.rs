@@ -118,10 +118,30 @@ pub struct StartPlaybackRequest {
 pub struct HeartbeatRequest {
     #[validate(required)]
     pub session_id: Option<Uuid>,
+    #[validate(range(min = 0))]
     pub position_ms: Option<i32>,
     pub state: Option<String>,
     pub is_paused: Option<bool>,
     pub is_buffering: Option<bool>,
+    pub transcode_session_id: Option<Uuid>,
+    #[serde(default)]
+    pub recovery_requested: bool,
+}
+
+#[derive(Clone, Copy)]
+pub struct PlaybackActor {
+    pub user_id: Uuid,
+    pub profile_id: Uuid,
+    pub has_all_library_access: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct RecoveryResponse {
+    pub status: &'static str,
+    pub attempts: u8,
+    pub reason: &'static str,
+    pub skipped_ms: i64,
+    pub quality_reduced: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]
@@ -200,6 +220,7 @@ pub struct PlaybackStartResponse {
     pub playback_mode: String,
     pub ambient_channel_id: Option<Uuid>,
     pub ambient_channel_updated_at: Option<DateTime<Utc>>,
+    pub recovery: Option<RecoveryResponse>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -212,6 +233,10 @@ pub struct PlaybackInfoResponse {
     pub transcode_progress: Option<f32>,
     pub is_paused: bool,
     pub started_at: DateTime<Utc>,
+    pub transcode_session_id: Option<Uuid>,
+    pub stream_url: Option<String>,
+    pub stream_offset_ms: Option<i64>,
+    pub recovery: Option<RecoveryResponse>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -219,6 +244,10 @@ pub struct HeartbeatResponse {
     pub session_id: Uuid,
     pub position_ms: i32,
     pub playback_mode: String,
+    pub transcode_session_id: Option<Uuid>,
+    pub stream_url: Option<String>,
+    pub stream_offset_ms: Option<i64>,
+    pub recovery: Option<RecoveryResponse>,
 }
 
 #[derive(Debug, Clone, Deserialize, Validate)]

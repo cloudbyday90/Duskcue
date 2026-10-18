@@ -4,6 +4,8 @@
 
 Implementation qualification is tracked in [Playback compatibility and recovery](PLAYBACK_COMPATIBILITY.md). The codec and HDR catalog below describes the target design; support for a particular runtime, client and transformation requires the recorded corpus or device evidence. Required HDR transformations that are not implemented must fail explicitly rather than produce incorrectly colored video.
 
+[Bounded playback recovery](PLAYBACK_RECOVERY.md) retains the qualified stream plan on every attempt. A damaged-source retry never promotes copied video to an unqualified HDR encode; automatic decoder skipping requires an existing video encode and a nearby failed-media checkpoint. Recovery orchestration does not itself establish support for a new codec, HDR transformation or damaged container.
+
 This document is the authoritative design for the video formats domain — the comprehensive catalog of video codecs, container formats, HDR standards, bit depths, and chroma subsampling schemes that the server supports as input sources and transcode targets. It defines what the server can ingest, what it can deliver, and how it transforms between them.
 
 The video formats domain covers five concerns:

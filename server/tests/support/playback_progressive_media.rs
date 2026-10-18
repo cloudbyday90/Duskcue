@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 use axum::Router;
 use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
+use duskcue::services::transcoding::plan::StreamPlan;
 use serde_json::Value;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -22,6 +23,13 @@ pub(super) struct Source {
     pub(super) runtime_seconds: i32,
     pub(super) probed_seconds: f64,
     pub(super) audio: Value,
+}
+
+pub(super) struct FragmentContext {
+    pub(super) name: String,
+    pub(super) source_seek_ms: Option<i64>,
+    pub(super) source_start_ms: i64,
+    pub(super) stream_plan: StreamPlan,
 }
 
 pub(super) async fn source(
@@ -153,13 +161,13 @@ pub(super) fn complete_mp4(bytes: &[u8], initialization: bool) -> anyhow::Result
 pub(super) async fn decode_start(
     owned: &process::FixtureProcesses,
     directory: &Path,
-    name: &str,
+    context: &FragmentContext,
     initialization: &[u8],
     segment: &[u8],
 ) -> anyhow::Result<f64> {
     complete_mp4(initialization, true)?;
     complete_mp4(segment, false)?;
-    let path = directory.join(format!("{name}.mp4"));
+    let path = directory.join(format!("{}.mp4", context.name));
     let mut bytes = Vec::with_capacity(initialization.len() + segment.len());
     bytes.extend_from_slice(initialization);
     bytes.extend_from_slice(segment);
@@ -185,17 +193,60 @@ pub(super) async fn decode_start(
         )
         .await?,
     )?;
-    let timestamp = frames["frames"]
+    let timestamp_text = frames["frames"]
         .as_array()
         .and_then(|frames| frames.first())
-        .and_then(|frame| frame["best_effort_timestamp_time"].as_str())
-        .ok_or_else(|| anyhow::anyhow!("actual HTTP fragment did not decode a video frame"))?
-        .parse::<f64>()?;
-    anyhow::ensure!(
-        timestamp.is_finite() && (0.0..=0.25).contains(&timestamp),
-        "HTTP start/seek fragment is not stream-relative near zero"
-    );
-    Ok(timestamp)
+        .and_then(|frame| frame["best_effort_timestamp_time"].as_str());
+    match timestamp_text.and_then(|timestamp| timestamp.parse::<f64>().ok()) {
+        Some(timestamp) if timestamp.is_finite() && (0.0..=0.25).contains(&timestamp) => {
+            Ok(timestamp)
+        }
+        _ => {
+            let video = packet_timestamps(owned, &path, "v:0").await;
+            let audio = packet_timestamps(owned, &path, "a:0").await;
+            eprintln!(
+                "DUSKCUE_PROGRESSIVE_FRAGMENT_PROBLEM={}",
+                serde_json::json!({
+                    "name": context.name, "first_video_timestamp": timestamp_text,
+                    "source_seek_ms": context.source_seek_ms, "source_start_ms": context.source_start_ms,
+                    "stream_plan": { "video": format!("{:?}", context.stream_plan.video), "audio": format!("{:?}", context.stream_plan.audio) },
+                    "video": video, "audio": audio,
+                })
+            );
+            anyhow::bail!(
+                "HTTP start/seek fragment is not stream-relative near zero: name={}, first_video_timestamp={timestamp_text:?}, source_seek_ms={:?}, source_start_ms={}, stream_plan={:?}",
+                context.name,
+                context.source_seek_ms,
+                context.source_start_ms,
+                context.stream_plan
+            )
+        }
+    }
+}
+
+async fn packet_timestamps(owned: &process::FixtureProcesses, path: &Path, stream: &str) -> Value {
+    let observed = async {
+        let output = process::original(
+            owned,
+            "ffprobe",
+            &[
+                "-v".into(), "error".into(), "-select_streams".into(), stream.into(),
+                "-read_intervals".into(), "%+#8".into(), "-show_packets".into(), "-show_streams".into(),
+                "-show_entries".into(), "packet=stream_index,pts_time,dts_time,duration_time,flags:stream=index,codec_type,start_time,time_base".into(),
+                "-of".into(), "json".into(), path.to_string_lossy().into_owned(),
+            ],
+        ).await?;
+        let mut probe: Value = serde_json::from_slice(&output)?;
+        if let Some(packets) = probe["packets"].as_array_mut() { packets.truncate(8); }
+        if let Some(streams) = probe["streams"].as_array_mut() { streams.truncate(1); }
+        Ok::<_, anyhow::Error>(probe)
+    }.await;
+    match observed {
+        Ok(probe) => probe,
+        Err(error) => {
+            serde_json::json!({ "probe_error": error.to_string().chars().take(4096).collect::<String>() })
+        }
+    }
 }
 
 pub(super) fn cache_bytes(directory: &Path) -> anyhow::Result<u64> {

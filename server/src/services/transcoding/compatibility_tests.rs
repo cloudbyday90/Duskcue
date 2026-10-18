@@ -7,8 +7,9 @@ use std::path::Path;
 use anyhow::{Context, ensure};
 use serde_json::json;
 
+use super::super::super::HwAccelMethod;
+use super::super::super::encoding::{build_audio_encode_args, build_video_encode_args};
 use super::super::super::plan::{StreamAction, StreamPlan};
-use super::super::super::{HwAccelMethod, build_audio_encode_args, build_video_encode_args};
 use super::super::{
     build_ffmpeg_input_args, build_hls_output_args, build_stream_mapping_args_for_video,
 };
@@ -17,6 +18,8 @@ use super::super::{
 mod decode;
 #[path = "compatibility_fixture.rs"]
 mod fixture;
+#[path = "compatibility_seek_tests.rs"]
+mod seek;
 
 use decode::{audio_frequency, decoded_rgb_frame, decoded_video_hashes, probe, require_output};
 use fixture::{

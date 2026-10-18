@@ -1,5 +1,9 @@
 # Household Profiles, Kids Mode, and Ambient Channels
 
+## Playback recovery authorization — October 17, 2026
+
+[Bounded playback recovery](PLAYBACK_RECOVERY.md) binds HLS status and replacement allocation to the original active profile and revalidates media access. The profile service now exposes connection-taking access helpers in `profiles/access.rs`; existing pool-taking APIs retain their signatures and delegate after acquiring one connection. Recovery reuses its already locked transaction connection, avoiding nested pool acquisition under contention. Owner, user-library, Kids-library and content-rating rules continue to use the shared policy. The disposable recovery fixture checks those rules while holding the only connection in a one-connection pool and rolls back temporary grants.
+
 ## Tonight profile-name qualification — October 3, 2026
 
 The production profile-management page uses a focused native-form `ProfileNameEditor` for both account-owned standard and Kids profiles. A name save sends only `{ name }` to the existing `PATCH /profiles/{id}`; Kids rating, library, feature, and PIN policy remain separate controls. Successful responses update the card and refresh the shell's server profile list. Failed saves retain the local draft for an explicit Save-name retry; Discard returns to the last confirmed name. These boundaries preserve the [Tonight implementation scope](../branding/TONIGHT_IMPLEMENTATION_PLAN.md) and do not add an avatar or parental-policy redesign.

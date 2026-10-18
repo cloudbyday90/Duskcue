@@ -146,7 +146,7 @@ pub async fn heartbeat(
         }
     })?;
 
-    let session_id = req.session_id.ok_or_else(|| {
+    req.session_id.ok_or_else(|| {
         let errors = vec![crate::error::FieldError {
             field: "session_id".to_string(),
             code: "required".to_string(),
@@ -160,12 +160,14 @@ pub async fn heartbeat(
 
     let result = service::heartbeat(
         &state.pool,
-        user.user_id,
-        session_id,
-        req.position_ms,
-        req.state.as_deref(),
-        req.is_paused,
-        req.is_buffering,
+        &state.transcode_manager,
+        PlaybackActor {
+            user_id: user.user_id,
+            profile_id: user.profile_id,
+            has_all_library_access: user.has_all_library_access,
+        },
+        &req,
+        &state.bootstrap.data_dir,
     )
     .await?;
 

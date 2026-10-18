@@ -25,8 +25,7 @@ test('a native direct video source failure offers Retry without losing the Title
     const path = `/stream/${api.files[mediaIds.resumeMovie][0].id}`;
     api.failures.set(`GET ${path}`, { status: 503, detail: 'Fixture media unavailable' });
     const region = await openPlayback(page, titleUrl, mediaIds.resumeMovie);
-    await expect.poll(() => page.locator('video').evaluate((element: HTMLVideoElement) => element.error?.code || null)).not.toBeNull();
-    expect(playback.failureResponses).toContainEqual({ method: 'GET', path, status: 503 });
+    await expect.poll(() => playback.failureResponses).toContainEqual({ method: 'GET', path, status: 503 });
     await expect(region.getByText(failureText, { exact: true })).toBeVisible();
     api.failures.delete(`GET ${path}`);
     await region.getByRole('button', { name: 'Retry', exact: true }).focus();
@@ -59,5 +58,42 @@ test.describe('real HLS source failure', () => {
         expect(playback.stops.filter((stop) => stop.session_id === failedSession)).toHaveLength(1);
         await region.getByRole('button', { name: 'Close player', exact: true }).click();
         await expectTitleContext(page, titleUrl);
+    });
+});
+
+test.describe('replacement HLS play intent', () => {
+    test.use({ playbackOptions: { mode: 'transcode', seekReplacement: true } });
+
+    test('Pause while a replacement manifest is pending stays paused after decoding', async ({ page, playback }) => {
+        const region = await openPlayback(page, titleUrl, mediaIds.resumeMovie);
+        const video = await expectDecodedPlayback(page);
+        const originalSource = await video.getAttribute('src');
+        const manifest = /\/api\/v1\/transcode\/[^/]+\/manifest\.m3u8$/;
+        let release!: () => void;
+        const held = new Promise<void>((resolve) => { release = resolve; });
+        let requested = false;
+        await page.route(manifest, async (route) => {
+            requested = true;
+            await held;
+            await route.fallback();
+        });
+        try {
+            await region.focus();
+            await page.keyboard.press('ArrowRight');
+            await expect.poll(() => requested).toBe(true);
+            await expect.poll(() => video.getAttribute('src')).not.toBe(originalSource);
+            await region.getByRole('button', { name: 'Pause', exact: true }).focus();
+            await page.keyboard.press('Enter');
+            await expect(region.getByRole('button', { name: 'Play', exact: true })).toBeVisible();
+            release();
+            await expect.poll(() => video.evaluate((element: HTMLVideoElement) => ({ width: element.videoWidth, ready: element.readyState >= 2, paused: element.paused })), { timeout: 10_000 }).toEqual({ width: 320, ready: true, paused: true });
+            expect(playback.starts).toHaveLength(1);
+            expect(playback.seeks).toHaveLength(1);
+            await region.getByRole('button', { name: 'Close player', exact: true }).click();
+            await expectTitleContext(page, titleUrl);
+        } finally {
+            release();
+            await page.unroute(manifest);
+        }
     });
 });

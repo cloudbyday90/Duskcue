@@ -22,6 +22,7 @@ export const PRESETS = {
     'rust-cached-unit': { policy: 'unit', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/run-cached-rust-tests.mjs'] },
     'caption-font-probe': { policy: 'unit', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/probe-caption-fonts.mjs'] },
     'caption-runtime-qualify': { policy: 'unit', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/qualify-caption-runtime.mjs'] },
+    'playback-recovery-qualify': { policy: 'build', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/qualify-playback-recovery.mjs'] },
     'launcher-policy-probe': { policy: 'unit', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/probe-launcher-policy.mjs'] },
     'native-qa': { policy: 'native', heapMiB: 1536, command: 'node', args: ['clients/web/tests/native/qualify.mjs'] },
 };

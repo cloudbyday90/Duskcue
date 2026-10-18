@@ -24,12 +24,17 @@ export function validateContainer(info, expected) {
         || Number(host.PidsLimit) !== expected.pids || !host.SecurityOpt?.includes('no-new-privileges')
         || info.Mounts?.some((mount) => mount.Destination.includes('docker.sock'))
         || host.SecurityOpt.some((option) => /unconfined/.test(option))) throw new Error('Container ownership or resource/security bounds changed.');
+    if (expected.readOnly && (host.ReadonlyRootfs !== true || !host.CapDrop?.includes('ALL') || info.Config?.User !== expected.user
+        || info.Image !== expected.image || host.NetworkMode !== expected.network || Object.keys(host.PortBindings || {}).length
+        || Object.keys(host.Tmpfs || {}).length !== Object.keys(expected.tmpfs).length
+        || Object.entries(expected.tmpfs).some(([path, options]) => host.Tmpfs?.[path] !== options)
+        || info.Mounts?.some((mount) => mount.Type !== 'tmpfs'))) throw new Error('Read-only qualification isolation changed.');
     return { id: info.Id, name: expected.name, state: { status: info.State?.Status, running: info.State?.Running === true, exitCode: info.State?.ExitCode, oomKilled: info.State?.OOMKilled === true }, limits: { memory: host.Memory, memorySwap: host.MemorySwap, cpus: 2, pids: Number(host.PidsLimit) } };
 }
 
-export function ownedDocker(directory, resourceId, transport = { command: docker, metadata }) {
+export function ownedDocker(directory, resourceId, transport = { command: docker, metadata }, registration = {}) {
     const containers = new Map();
-    const marker = join(directory, 'owned-containers.jsonl');
+    const marker = registration.marker || join(directory, 'owned-containers.jsonl');
     const expectedFor = (identity) => containers.get(identity) || [...containers.values()].find((expected) => expected.id === identity);
     async function recover(expected) {
         if (!expected.id) {
@@ -45,16 +50,20 @@ export function ownedDocker(directory, resourceId, transport = { command: docker
         return validateContainer(await transport.metadata(['inspect', expected.id, '--format', '{{json .}}']), expected);
     }
     return {
-        async create(imageId, args, { memory = 536870912, pids = 128, environment = {}, network = 'none', user } = {}) {
+        async create(imageId, args, { memory = 536870912, pids = 128, environment = {}, network = 'none', user, readOnly = false, tmpfs = {} } = {}) {
             if (!/^sha256:[a-f0-9]{64}$/.test(imageId) || !/^[a-f0-9-]{36}$/.test(resourceId)) throw new Error('Immutable image and workflow identity required.');
+            if (readOnly && (!user || !Object.keys(tmpfs).length || Object.entries(tmpfs).some(([path, options]) => !/^\/[A-Za-z0-9_./-]+$/.test(path)
+                || !/^rw,nosuid,nodev,(?:noexec,)?size=[0-9]+(?:,uid=[0-9]+,gid=[0-9]+)?(?:,mode=[0-7]{3,4})?$/.test(options)))) throw new Error('Read-only qualification requires an explicit user and bounded safe tmpfs mounts.');
             const name = `duskcue-playback-${randomUUID()}`;
-            const expected = { id: null, name, resourceId, memory, pids };
+            const expected = { id: null, name, resourceId, memory, pids, readOnly, user, network, image: imageId, tmpfs };
             containers.set(name, expected);
-            const command = ['create', '--name', name, '--label', `duskcue.test.resource-id=${resourceId}`, '--memory', String(memory), '--memory-swap', String(memory), '--cpus=2', '--pids-limit', String(pids), '--cap-drop=ALL', '--security-opt=no-new-privileges', '--network', network];
+            const command = ['create', '--pull=never', '--name', name, '--label', `duskcue.test.resource-id=${resourceId}`, '--memory', String(memory), '--memory-swap', String(memory), '--cpus=2', '--pids-limit', String(pids), '--cap-drop=ALL', '--security-opt=no-new-privileges', '--network', network];
             if (user) command.push('--user', user);
+            if (readOnly) command.push('--read-only');
+            for (const [path, options] of Object.entries(tmpfs)) command.push('--tmpfs', `${path}:${options}`);
             for (const [key, value] of Object.entries(environment)) command.push('--env', `${key}=${value}`);
             command.push(imageId, ...args);
-            await appendFile(marker, `${JSON.stringify({ resourceId, name })}\n`);
+            await appendFile(marker, `${JSON.stringify({ resourceId, name, ...(registration.context ? { context: registration.context } : {}) })}\n`);
             const result = await transport.command(command);
             const id = result.stdout.trim();
             if (result.code !== 0 || !/^[a-f0-9]{64}$/.test(id)) throw new Error('Owned container could not be created.');

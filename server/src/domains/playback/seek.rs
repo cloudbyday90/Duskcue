@@ -74,6 +74,7 @@ pub(super) async fn seek(
         let merge = serde_json::json!({
             "transcode_session_id": new_id,
             "current_position_ms": position_ms,
+            "stream_offset_ms": position_ms,
             "current_state": "playing"
         });
         merge_session_metadata(&mut *transaction, session_id, merge).await?;

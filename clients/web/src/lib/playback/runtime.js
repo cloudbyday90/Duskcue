@@ -261,6 +261,7 @@ export function createPlaybackRuntime({
 
     function retry() {
         if (!lastRequest) return Promise.reject(new PlaybackRuntimeError('ENTRY_UNAVAILABLE'));
+        if (lastRequest.kind === 'start' && state.item?.id === lastRequest.entry?.item?.id && state.file) return execute({ kind: 'restart', changes: {} });
         return execute({ ...lastRequest, revalidate: lastRequest.kind === 'start' });
     }
 

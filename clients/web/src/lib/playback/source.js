@@ -19,7 +19,7 @@
 import { mediaRequestHeaders, requiresAuthenticatedMediaSource } from '../api/core.js';
 import { onDemandHlsTiming, sourceTimeline } from './timing.js';
 
-export function createMediaSource({ video, loadHls = null, onError = (_error) => {}, onPlaybackBlocked = (_error) => {}, onTimelineChange = (_timeline) => {}, requestHeaders = mediaRequestHeaders, requiresHeaders = requiresAuthenticatedMediaSource }) {
+export function createMediaSource({ video, loadHls = null, shouldPlay = () => true, onError = (_error, _details) => {}, onPlaybackBlocked = (_error) => {}, onTimelineChange = (_timeline) => {}, requestHeaders = mediaRequestHeaders, requiresHeaders = requiresAuthenticatedMediaSource }) {
     const resolveHls = loadHls || (() => import('hls.js').then((module) => module.default));
     let generation = 0;
     let hls = null;
@@ -33,12 +33,18 @@ export function createMediaSource({ video, loadHls = null, onError = (_error) =>
     }
 
     const mediaError = () => {
-        if (!disposed && attachedUrl && video.error && video.error.code !== 1) onError(video.error);
+        if (!disposed && attachedUrl && !hls && video.error && video.error.code !== 1) fail(video.error, video.error.code === 3, true);
     };
     video.addEventListener?.('error', mediaError);
 
-    function play(current) {
-        video.play().catch((error) => { if (current()) { if (video.error && video.error.code !== 1) onError(video.error); else onPlaybackBlocked(error); } });
+    function fail(error, recoveryRequested = false, detach = false) {
+        const details = { url: attachedUrl, positionSeconds: Number.isFinite(video.currentTime) ? Math.max(0, video.currentTime) : null, recoveryRequested };
+        try { onError(error, details); } finally { if (detach) release(); }
+    }
+
+    function play(current, autoplay = true) {
+        if (!autoplay || !shouldPlay()) return;
+        video.play().catch((error) => { if (current()) { if (video.error && video.error.code !== 1) { if (!hls) fail(video.error, video.error.code === 3, true); } else onPlaybackBlocked(error); } });
     }
 
     function release() {
@@ -53,7 +59,7 @@ export function createMediaSource({ video, loadHls = null, onError = (_error) =>
         video.load();
     }
 
-    async function attach(url) {
+    async function attach(url, { autoplay = true } = {}) {
         if (disposed) return;
         release();
         const token = generation;
@@ -74,7 +80,7 @@ export function createMediaSource({ video, loadHls = null, onError = (_error) =>
                     publishTimeline('hls-mse');
                     let networkRecoveries = 0;
                     let mediaRecoveries = 0;
-                    engine.on(Hls.Events.MANIFEST_PARSED, () => { if (ownsEngine()) play(ownsEngine); });
+                    engine.on(Hls.Events.MANIFEST_PARSED, () => { if (ownsEngine()) play(ownsEngine, autoplay); });
                     engine.on(Hls.Events.LEVEL_UPDATED, (_event, data) => {
                         if (ownsEngine()) publishTimeline('hls-mse', data.details);
                     });
@@ -83,8 +89,8 @@ export function createMediaSource({ video, loadHls = null, onError = (_error) =>
                         const status = Number(data.response?.code || 0);
                         const denied = status >= 400 && status < 500 && ![408, 429].includes(status);
                         if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !denied && networkRecoveries++ < 1) engine.startLoad();
-                        else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && mediaRecoveries++ < 1) engine.recoverMediaError();
-                        else { release(); onError(data); }
+                        else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !denied && mediaRecoveries++ < 1) engine.recoverMediaError();
+                        else fail(data, data.type === Hls.ErrorTypes.MEDIA_ERROR && !denied, true);
                     });
                     engine.loadSource(url);
                     engine.attachMedia(video);
@@ -96,8 +102,8 @@ export function createMediaSource({ video, loadHls = null, onError = (_error) =>
             if (!current()) return;
             publishTimeline(url.includes('.m3u8') ? 'native-hls' : 'direct');
             video.src = url;
-            play(current);
-        } catch (error) { if (current()) onError(error); }
+            play(current, autoplay);
+        } catch (error) { if (current()) fail(error); }
     }
 
     return { attach, release, getTimeline() { return timeline; }, dispose() { disposed = true; video.removeEventListener?.('error', mediaError); release(); } };

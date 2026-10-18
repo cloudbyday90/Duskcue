@@ -1,5 +1,21 @@
 # Testing memory on Windows
 
+## Playback recovery qualification — October 17, 2026
+
+The build-policy preset `playback-recovery-qualify --image <immutable local image SHA256>` compiles and executes the current Linux playback stop/progressive/recovery contract. Invoke it through `node scripts/testing-memory/run.mjs`; it requires that wrapper's registered child, resource UUID and owned-container marker. Source hashing includes the server, native bootstrap, qualification tools and the memory/ownership helper dependency closure. It refuses mutable runtime image tags, source changes during compilation, foreign platforms, absent execution markers and incomplete cleanup.
+
+The test runtime and disposable PostgreSQL18 container use four-GiB memory/no-extra-swap ceilings, two CPUs, 256 PIDs, read-only roots, unprivileged users, dropped capabilities, no-new-privileges, bounded tmpfs and Docker's default seccomp. They share an isolated loopback namespace without published ports, host services, persistent volumes or a Docker socket. Windows monitoring remains active; fresh Linux reserve admissions and monitoring continue after compilation through container execution and cleanup. PostgreSQL readiness has a 30-second overall deadline. Fixtures preserve exact child identities and source paths and signal only their observed owned encoder.
+
+The compiler uses two Cargo jobs and the production Docker cache-mount paths. Its BuildKit RUN limits belong to the builder/daemon; this workflow does not claim a separate four-GiB per-step cgroup ceiling. It retains existing local engine admission and reserve monitoring and does not alter WSL, pagefiles or other applications.
+
+Read-only metadata transport timeouts can retry on the next existing polling tick while the last accepted sample remains within its original ten-second freshness window. A typed transport failure does not refresh that timestamp. Parsing, engine/boot identity, reserve and stale-evidence failures stop immediately. Both compilation and runtime monitors use this shared policy; deterministic injected-clock checks cover transient recovery, persistent loss and invalid evidence. The first recovery qualification compilation was safely canceled after a metadata timeout, motivating this bounded transport retry rather than a lower admission threshold.
+
+WSL inventory and Docker engine identity are independent reads and execute concurrently; both are inspected before reading memory, and a fatal identity/JSON error takes precedence over a concurrent transport failure. Metadata failures retain bounded code, signal, termination and monotonic timing context without raw command arguments, stderr or environment values. All 13 focused metadata, telemetry, recovery and preset checks pass. Registry DNS failures, stale telemetry and reserve holds remain failures with cleanup evidence, never qualification passes.
+
+This qualifies in-process authenticated Axum requests with real FFmpeg and PostgreSQL, including decoded replacement fragments. Browser-to-live-server sockets and desktop webview behavior remain separate gates. Actual execution outcomes and the final Compose image are recorded in [Bounded playback recovery](../design/PLAYBACK_RECOVERY.md).
+
+The final artifact-bound run passed in 178.27 seconds with exit zero, no OOM and owned cleanup confirmed. It used production base `sha256:f45eda1c8bbe3a9685196aae1200543601ec5efc2fb0f858ca863dd9d42ae8dc` and source SHA-256 `a2b0ea66fc57fb496a21c650b87f4c9b20b2816681a6129290f8981c9d23ed63`; evidence is in `.cache/testing-memory/playback-recovery-5e203f37-72b2-402c-b493-03a2e5070159/result.json`. Only the task-owned Duskcue service was temporarily paused for admission, with existing volumes preserved and automatic healthy restoration. Admission thresholds, memory settings and other applications remained unchanged.
+
 ## Findings — October 7, 2026
 
 The user reported system-wide sluggishness and freezes during development/testing. Read-only samples found 31.92 GiB installed RAM, available physical memory falling from 6.35 to 2.96 GiB, and system commit rising from 56.8 to 59.16 GiB against a 64.53 GiB limit (88–91%). Substantial paging was observed. These samples establish memory pressure; they do not establish the cause of every freeze.

@@ -148,6 +148,16 @@ describe('per-player playback runtime', () => {
         h.runtime.dispose();
     });
 
+    it('retries an established source at its current position rather than its original entry resume point', async () => {
+        const h = await started({ decision: 'transcode' });
+        h.player.update({ positionMs: 456789 });
+        await h.runtime.retry();
+        expect(h.player.play.mock.calls[1][2].startPositionMs).toBe(456789);
+        expect(h.player.seek.mock.calls[1][0]).toBe(456789);
+        expect(h.loader).toHaveBeenCalledWith(item.id, expect.objectContaining({ fileId: file.id }));
+        h.runtime.dispose();
+    });
+
     it.each([{ saved: true, value: { autoplay_next_episode: false } }, { saved: false, storage: memoryStorage({ duskcue_prefs: JSON.stringify({ autoplay: false }) }) }])('honors saved or valid legacy autoplay Off before playback (%j)', async (options) => {
         const h = await started(options);
         expect(h.runtime.getState()).toMatchObject({ preferencesReady: true, autoplayEnabled: false });

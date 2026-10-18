@@ -156,7 +156,7 @@ Baseline client look and feel, navigation language, and reusable UI surfaces are
 
 ## Streaming & Transcoding
 
-The October 2026 [playback compatibility and recovery initiative](docs/design/PLAYBACK_COMPATIBILITY.md) starts with bounded source probing, accurate moving-video identity and metadata, conservative device decisions, independent audio/video processing and a reproducible media corpus. Automatic mid-playback recovery and full format/HDR qualification follow these foundations. The format catalogs below are design targets with runtime-specific verification requirements.
+The October 2026 [playback compatibility initiative](docs/design/PLAYBACK_COMPATIBILITY.md) provides bounded source probing, moving-video identity, conservative device decisions, independent stream processing and a reproducible media corpus. [Bounded playback recovery](docs/design/PLAYBACK_RECOVERY.md) adds process supervision, scoped software fallback, durable retry budgets and generation-aware web/desktop handoff without changing the logical play session. Authenticated direct-file decoder fallback is the next design and real-player qualification gate; direct-file failures currently require manual Retry. Broad format/HDR fidelity remains unqualified, and the catalogs below are design targets with runtime-specific verification requirements.
 
 Streaming and transcoding design is documented in [STREAMING.md](docs/design/STREAMING.md).
 
@@ -540,6 +540,7 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 
 | Phase | Status | Commit |
 |---|---|---|
+| Bounded playback recovery | Implementation and qualification tracked in [PLAYBACK_RECOVERY.md](docs/design/PLAYBACK_RECOVERY.md): 30-second advancing-media watchdog, classified two-replacement budget, profile-safe heartbeat handoff and shared web/desktop notices | This change on `main`; no release |
 | Tonight Web/Desktop Redesign | **Complete — T01–T08** in [Tonight Implementation Plan](docs/branding/TONIGHT_IMPLEMENTATION_PLAN.md). At `c1859eb`, zero-diagnostic checking, 412 units, production web build, all twelve actual native groups and both Linux lanes (48/48, 47/47) pass. Complete browser **120/120 first attempt**, zero skips/retries/flakes, includes real trusted tab timing/Cancel, captions/progressive/locales and explicit remembering. Original owned Chrome, native credentials/sessions/processes and real encoder/cache/permit cleanup pass. W3C/WAI, focused modular services and [guarded testing memory](docs/ci/TESTING_MEMORY.md) are implemented. Thirteen baseline strict-lint diagnostics and external AT/OS/live-server limits remain explicit in the [final audit](docs/ci/TONIGHT_COMPLETION_AUDIT.md); no deployment/publication or freeze-fix claim. | `c1859eb` |
 
 | Phase 1: Project Scaffolding | **Complete** | `aaedc05` |

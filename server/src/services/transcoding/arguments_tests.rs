@@ -20,6 +20,70 @@ mod source_probe;
 mod compatibility;
 
 #[test]
+fn output_seek_clips_only_positive_video_encode_audio_copy_seeks() {
+    for seek in [
+        None,
+        Some(0),
+        Some(-1),
+        Some(i64::MIN),
+        Some(1),
+        Some(30_000),
+        Some(i64::MAX),
+    ] {
+        for video in [StreamAction::Copy, StreamAction::Encode] {
+            for audio in [StreamAction::Copy, StreamAction::Encode] {
+                let plan = StreamPlan { video, audio };
+                let arguments = build_ffmpeg_output_seek_args(seek, plan);
+                if seek.is_some_and(|position| position > 0)
+                    && video == StreamAction::Encode
+                    && audio == StreamAction::Copy
+                {
+                    assert_eq!(arguments, ["-ss", "0"], "seek={seek:?}, plan={plan:?}");
+                } else {
+                    assert!(arguments.is_empty(), "seek={seek:?}, plan={plan:?}");
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn output_seek_follows_input_and_precedes_unchanged_mapping_and_codecs() {
+    let plan = StreamPlan {
+        video: StreamAction::Encode,
+        audio: StreamAction::Copy,
+    };
+    let mut arguments = build_ffmpeg_input_args(Some(30_000), Path::new("/fixtures/source.mkv"));
+    arguments.extend(build_ffmpeg_output_seek_args(Some(30_000), plan));
+    arguments.extend(build_stream_mapping_args_for_video(Some(1), Some(2), None));
+    arguments.extend(plan.codec_args(vec!["-c:v".into(), "libx264".into()], Vec::new()));
+    arguments.extend(build_hls_output_args(
+        2,
+        "/cache/seg_%04d.m4s",
+        "/cache/manifest.m3u8",
+    ));
+    let input = arguments
+        .iter()
+        .position(|argument| argument == "-i")
+        .unwrap();
+    let seeks = arguments
+        .iter()
+        .enumerate()
+        .filter_map(|(index, argument)| (argument == "-ss").then_some(index))
+        .collect::<Vec<_>>();
+    assert_eq!(seeks, [0, input + 2]);
+    assert_eq!(arguments[seeks[0] + 1], "30.000");
+    assert_eq!(arguments[seeks[1] + 1], "0");
+    assert_eq!(
+        &arguments[input + 4..input + 12],
+        [
+            "-map", "0:1", "-map", "0:2", "-c:v", "libx264", "-c:a", "copy"
+        ]
+    );
+    assert_eq!(arguments[input + 12], "-f");
+}
+
+#[test]
 fn normalized_video_identity_is_shared_by_mapping_and_subtitle_filters() {
     assert_eq!(
         build_stream_mapping_args_for_video(Some(4), Some(0), None),
@@ -44,7 +108,7 @@ fn small_source_and_low_bitrate_do_not_gain_a_larger_fallback_rendition() {
 
 #[test]
 fn software_hevc_and_ac3_use_their_actual_codec_arguments() {
-    let args = super::super::build_video_encode_args(
+    let args = super::super::encoding::build_video_encode_args(
         "libx265",
         "hevc",
         320,
@@ -58,7 +122,7 @@ fn software_hevc_and_ac3_use_their_actual_codec_arguments() {
     let tag = args.iter().position(|arg| arg == "-tag:v").unwrap();
     assert_eq!(args[tag + 1], "hvc1");
     assert_eq!(
-        super::super::build_audio_encode_args("ac3", 2, 192_000)[1],
+        super::super::encoding::build_audio_encode_args("ac3", 2, 192_000)[1],
         "ac3"
     );
 }
@@ -102,7 +166,7 @@ fn selected_subtitle_ordinal_and_path_escaping_survive_type_based_video_selectio
 
 #[test]
 fn subtitle_scaling_uses_one_complex_graph_without_conflicting_output_filter() {
-    let encoder = super::super::build_video_encode_args(
+    let encoder = super::super::encoding::build_video_encode_args(
         "libx264",
         "h264",
         320,
@@ -170,7 +234,7 @@ async fn encode(
     ));
     let subtitle_filter = subtitle
         .map(|ordinal| build_subtitle_burn_in_filter(Path::new("/fixtures/source.mkv"), ordinal));
-    let video_args = super::super::build_video_encode_args(
+    let video_args = super::super::encoding::build_video_encode_args(
         "libx264",
         "h264",
         320,
@@ -183,7 +247,9 @@ async fn encode(
         compose_video_filters(video_args, subtitle_filter).map_err(anyhow::Error::msg)?;
     args.extend(build_stream_mapping_args(Some(audio), subtitle_filter));
     args.extend(video_args);
-    args.extend(super::super::build_audio_encode_args("aac", 1, 64000));
+    args.extend(super::super::encoding::build_audio_encode_args(
+        "aac", 1, 64000,
+    ));
     args.extend([
         "-threads".into(),
         "2".into(),

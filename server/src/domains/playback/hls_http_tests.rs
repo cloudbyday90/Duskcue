@@ -72,6 +72,8 @@ fn session(id: Uuid, owner: Uuid, directory: PathBuf, rendition: &str) -> Transc
         target_audio_codec: "aac".into(),
         target_bitrate: 400_000,
         hw_accel: HwAccelMethod::Software,
+        source_start_ms: 0,
+        recovery_attempts: 0,
         rendition_name: rendition.into(),
         manifest_path: directory.join("manifest.m3u8"),
         segment_dir: directory,

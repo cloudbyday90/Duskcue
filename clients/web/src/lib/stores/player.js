@@ -19,6 +19,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { createPlaybackSessionGuard } from '../playback/session.js';
 import { createPlaybackHeartbeat } from '../playback/heartbeat.js';
+import { playbackRecovery } from '../playback/recovery.js';
 import { createPlaybackRelease, playbackContextKey, PlaybackReleaseError } from '../playback/release.js';
 import {
     startPlayback as apiStartPlayback,
@@ -52,6 +53,8 @@ export function createPlayerStore() {
     let contextKey = null;
     let sessionContextKey = null;
     let releaseState = { phase: 'idle', error: null };
+    let streamRevision = 0;
+    let recoveryResumePlaying = null;
     const sessionGuard = createPlaybackSessionGuard(apiStopPlayback);
 
     function initialState() {
@@ -63,6 +66,9 @@ export function createPlayerStore() {
         streamDecision: null,
         streamOffsetMs: 0,
         transcodeSessionId: null,
+        recovery: null,
+        recoveryRequested: false,
+        seeking: false,
         isPlaying: false,
         isBuffering: false,
         positionMs: 0,
@@ -79,10 +85,51 @@ export function createPlayerStore() {
     }
 
     const { subscribe, set, update } = writable(initialState());
+    function ownsHeartbeat(snapshot) {
+        const state = get({ subscribe });
+        return !pendingStop && !state.loading && !state.seeking && !state.sessionReleased && state.release.phase === 'idle'
+            && snapshot.contextKey === contextKey && sessionContextKey === contextKey
+            && snapshot.streamRevision === streamRevision && snapshot.sessionId === state.sessionId
+            && (snapshot.transcodeSessionId ?? null) === (state.transcodeSessionId ?? null);
+    }
+
+    function recoveryUnavailable(snapshot) {
+        if (!snapshot.recoveryRequested || !ownsHeartbeat(snapshot)) return;
+        update((state) => ({ ...state, recoveryRequested: false, isBuffering: false, isPlaying: false,
+            recovery: { status: 'exhausted', attempts: state.recovery?.attempts || 0, reason: 'unavailable', skipped_ms: 0, quality_reduced: false } }));
+    }
+
+    function receiveHeartbeat(response, snapshot) {
+        if (!ownsHeartbeat(snapshot) || !response || response.session_id !== snapshot.sessionId) {
+            recoveryUnavailable(snapshot);
+            return;
+        }
+        const state = get({ subscribe });
+        const recovery = playbackRecovery(response.recovery);
+        if (response.recovery && !recovery) { recoveryUnavailable(snapshot); return; }
+        const replacement = typeof response.transcode_session_id === 'string' && response.transcode_session_id !== state.transcodeSessionId;
+        if (replacement) {
+            if (!Number.isSafeInteger(response.stream_offset_ms) || response.stream_offset_ms < 0
+                || !Number.isSafeInteger(response.position_ms) || response.position_ms < 0) { recoveryUnavailable(snapshot); return; }
+            streamRevision += 1;
+            const resumePlaying = recoveryResumePlaying ?? state.isPlaying;
+            recoveryResumePlaying = null;
+            update((current) => ({ ...current, transcodeSessionId: response.transcode_session_id,
+                streamUrl: transcodeManifestUrl(response.transcode_session_id), streamOffsetMs: response.stream_offset_ms,
+                positionMs: response.position_ms, recovery: recovery || (current.recovery?.status === 'recovered' ? current.recovery : null), recoveryRequested: false,
+                isPlaying: recovery?.status === 'exhausted' ? false : resumePlaying, isBuffering: false, error: null }));
+        } else if (recovery?.status === 'exhausted') {
+            update((current) => ({ ...current, recovery, recoveryRequested: false, isPlaying: false, isBuffering: false }));
+        } else if (snapshot.recoveryRequested) {
+            recoveryUnavailable(snapshot);
+        }
+    }
+
     const heartbeat = createPlaybackHeartbeat({ readState: () => {
         const state = get({ subscribe });
-        return state.loading || state.sessionReleased || state.release.phase !== 'idle' ? { ...state, sessionId: null } : state;
-    }, send: apiHeartbeat, intervalMs: HEARTBEAT_INTERVAL_MS });
+        return { ...state, contextKey, streamRevision,
+            ...(pendingStop || state.loading || state.seeking || state.sessionReleased || state.release.phase !== 'idle' ? { sessionId: null } : {}) };
+    }, send: apiHeartbeat, onResponse: receiveHeartbeat, onError: (_error, snapshot) => recoveryUnavailable(snapshot), intervalMs: HEARTBEAT_INTERVAL_MS });
     const release = createPlaybackRelease({
         readContext: () => contextKey,
         drain: heartbeat.drain,
@@ -114,6 +161,8 @@ export function createPlayerStore() {
             if (!contextKey) throw new PlaybackReleaseError('CONTEXT_REQUIRED');
             const ownedContext = contextKey;
             const token = sessionGuard.begin();
+            streamRevision += 1;
+            recoveryResumePlaying = null;
             const abort = () => {
                 if (sessionGuard.isCurrent(token)) {
                     sessionGuard.invalidate();
@@ -123,7 +172,7 @@ export function createPlayerStore() {
             options.signal?.addEventListener('abort', abort, { once: true });
             const previous = { ...get({ subscribe }), contextKey: sessionContextKey };
             heartbeat.stopTimer();
-            update((s) => ({ ...s, loading: true, error: null }));
+            update((s) => ({ ...s, loading: true, seeking: false, error: null, recovery: null, recoveryRequested: false }));
             try {
                 await precedingStop;
                 await Promise.resolve(precedingPlay).catch(() => {});
@@ -170,6 +219,7 @@ export function createPlayerStore() {
                     mediaFileId,
                     streamUrl,
                     streamDecision: decision,
+                    transcodeSessionId: result.transcode_session_id || null,
                     streamOffsetMs: 0,
                     positionMs: options.startPositionMs || 0,
                     durationMs: (mediaItem.runtime_seconds || 0) * 1000,
@@ -177,6 +227,7 @@ export function createPlayerStore() {
                     isBuffering: false,
                     loading: false,
                     error: null,
+                    recovery: playbackRecovery(result.recovery),
                     sessionReleased: false,
                 }));
 
@@ -200,6 +251,8 @@ export function createPlayerStore() {
             if (!contextKey) throw new PlaybackReleaseError('CONTEXT_REQUIRED');
             const ownedContext = contextKey;
             const token = sessionGuard.begin();
+            streamRevision += 1;
+            recoveryResumePlaying = null;
             try {
                 if (release.hasPending()) await release.request();
                 const info = await apiGetPlaybackInfo(sessionId);
@@ -210,8 +263,13 @@ export function createPlayerStore() {
                     sessionId,
                     streamDecision: info.stream_decision || null,
                     transcodeSessionId: info.transcode_session_id || null,
+                    streamUrl: info.transcode_session_id ? transcodeManifestUrl(info.transcode_session_id) : info.media_file_id ? streamFileUrl(info.media_file_id) : s.streamUrl,
+                    streamOffsetMs: Number.isSafeInteger(info.stream_offset_ms) ? info.stream_offset_ms : 0,
                     positionMs: info.position_ms || 0,
-                    isPlaying: true,
+                    isPlaying: !info.is_paused,
+                    recovery: playbackRecovery(info.recovery),
+                    recoveryRequested: false,
+                    seeking: false,
                     error: null,
                     sessionReleased: false,
                 }));
@@ -224,7 +282,21 @@ export function createPlayerStore() {
         },
 
         setPlaying(playing) {
+            if (recoveryResumePlaying !== null) recoveryResumePlaying = playing;
             update((s) => ({ ...s, isPlaying: playing && !s.sessionReleased && s.release.phase === 'idle', isBuffering: false }));
+        },
+
+        async reportSourceFailure({ positionMs = Number.NaN, recoveryRequested = false } = {}) {
+            const state = get({ subscribe });
+            if (pendingStop || !state.sessionId || state.loading || state.seeking || state.sessionReleased || state.release.phase !== 'idle') return false;
+            recoveryResumePlaying ??= state.isPlaying;
+            const request = recoveryRequested && !!state.transcodeSessionId;
+            update((current) => ({ ...current,
+                positionMs: Number.isFinite(positionMs) && positionMs >= 0 ? Math.floor(positionMs) : current.positionMs,
+                isPlaying: false, isBuffering: request,
+                ...(request ? { recoveryRequested: true, recovery: { status: 'pending' } } : {}) }));
+            if (request) await heartbeat.sendNow();
+            return request;
         },
 
         setBuffering(buffering) {
@@ -266,17 +338,23 @@ export function createPlayerStore() {
             const state = get({ subscribe });
             if (!state.sessionId || state.sessionReleased || state.release.phase !== 'idle') return null;
             const token = sessionGuard.begin();
+            streamRevision += 1;
+            const resumePlaying = recoveryResumePlaying ?? state.isPlaying;
+            recoveryResumePlaying = null;
             const abort = () => {
                 if (sessionGuard.isCurrent(token)) {
                     sessionGuard.invalidate();
-                    update((s) => ({ ...s, isBuffering: false }));
+                    update((s) => ({ ...s, isBuffering: false, seeking: false }));
                 }
             };
             options.signal?.addEventListener('abort', abort, { once: true });
 
-            update((s) => ({ ...s, positionMs, isBuffering: true }));
+            update((s) => ({ ...s, positionMs, isPlaying: resumePlaying, isBuffering: true, seeking: true, recoveryRequested: false,
+                recovery: s.recovery?.status === 'recovered' ? s.recovery : null }));
 
             try {
+                await heartbeat.drain(state.sessionId);
+                if (!sessionGuard.isCurrent(token) || options.signal?.aborted) return null;
                 const result = await apiSeek({
                     session_id: state.sessionId,
                     position_ms: Math.floor(positionMs),
@@ -288,7 +366,8 @@ export function createPlayerStore() {
                         ...s,
                         transcodeSessionId: result.transcode_session_id || s.transcodeSessionId,
                         streamUrl: result.transcode_session_id ? transcodeManifestUrl(result.transcode_session_id) : result.stream_url || s.streamUrl,
-                        streamOffsetMs: positionMs,
+                        streamOffsetMs: Number.isSafeInteger(result.stream_offset_ms) ? result.stream_offset_ms : positionMs,
+                        positionMs: Number.isSafeInteger(result.position_ms) ? result.position_ms : positionMs,
                         isBuffering: false,
                     }));
                 } else {
@@ -301,6 +380,7 @@ export function createPlayerStore() {
                 if (sessionGuard.isCurrent(token)) update((s) => ({ ...s, isBuffering: false }));
                 throw error;
             } finally {
+                if (sessionGuard.isCurrent(token)) update((s) => ({ ...s, seeking: false }));
                 options.signal?.removeEventListener('abort', abort);
             }
         },
@@ -309,6 +389,7 @@ export function createPlayerStore() {
             if (pendingStop) return pendingStop;
             const state = { ...get({ subscribe }), contextKey: sessionContextKey };
             const token = sessionGuard.invalidate();
+            streamRevision += 1;
             const ownedContext = contextKey;
             const starting = pendingPlay;
             heartbeat.stopTimer();
@@ -339,6 +420,8 @@ export function createPlayerStore() {
             contextKey = next;
             sessionContextKey = null;
             sessionGuard.invalidate();
+            streamRevision += 1;
+            recoveryResumePlaying = null;
             heartbeat.stopTimer();
             release.invalidate();
             pendingStop = null;
@@ -348,6 +431,8 @@ export function createPlayerStore() {
 
         reset({ preserveRelease = false } = {}) {
             sessionGuard.invalidate();
+            streamRevision += 1;
+            recoveryResumePlaying = null;
             heartbeat.stopTimer();
             if (!preserveRelease) release.invalidate();
             sessionContextKey = null;
@@ -372,6 +457,7 @@ export function createPlayerStore() {
         },
 
         destroy() {
+            streamRevision += 1;
             heartbeat.stopTimer();
         },
     };

@@ -428,6 +428,24 @@ export const incompleteMessages = {
     "tonight_player_quality_bitrate": [
         "en"
     ],
+    "tonight_player_recovery_compatible": [
+        "en"
+    ],
+    "tonight_player_recovery_exhausted": [
+        "en"
+    ],
+    "tonight_player_recovery_pending": [
+        "en"
+    ],
+    "tonight_player_recovery_quality": [
+        "en"
+    ],
+    "tonight_player_recovery_skipped": [
+        "en"
+    ],
+    "tonight_player_recovery_skipped_quality": [
+        "en"
+    ],
     "tonight_player_retry_close": [
         "en"
     ],

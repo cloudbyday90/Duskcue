@@ -141,7 +141,7 @@ async fn probe(cache: &OwnedCache, state: ExecutionState) -> Result<bool, Playba
 fn require_healthy(state: ExecutionState) -> Result<(), PlaybackError> {
     match state {
         ExecutionState::Running | ExecutionState::Succeeded => Ok(()),
-        ExecutionState::Failed => Err(PlaybackError::FfmpegCrashed),
+        ExecutionState::Failed | ExecutionState::Stalled => Err(PlaybackError::FfmpegCrashed),
         ExecutionState::Cancelled => Err(failure("HLS startup observer cancelled")),
     }
 }

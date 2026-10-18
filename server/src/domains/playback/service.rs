@@ -208,6 +208,8 @@ pub async fn start_playback(
                         target_resolution: target_res,
                         target_bitrate,
                         seek_position_ms: None,
+                        hw_accel_override: None,
+                        recovery_attempts: 0,
                     },
                     data_dir,
                 )
@@ -258,6 +260,9 @@ pub async fn start_playback(
         source_audio_codec: Some(media_info.audio_codec),
         target_video_codec: decision.target_video_codec,
         target_audio_codec: decision.target_audio_codec,
+        recovery: transcode_session_id
+            .and_then(|id| transcode_manager.get_session(&id))
+            .and_then(|session| super::recovery::startup_recovery(&session)),
         transcode_session_id,
         selected_audio_stream_index: selected_tracks.audio_stream_index,
         selected_subtitle_stream_index: selected_tracks.subtitle_stream_index,
@@ -745,23 +750,12 @@ async fn create_play_session(
 
 pub async fn heartbeat(
     pool: &PgPool,
-    user_id: Uuid,
-    session_id: Uuid,
-    position_ms: Option<i32>,
-    state: Option<&str>,
-    is_paused: Option<bool>,
-    is_buffering: Option<bool>,
+    manager: &TranscodeManager,
+    actor: PlaybackActor,
+    request: &HeartbeatRequest,
+    data_dir: &Path,
 ) -> Result<HeartbeatResponse, PlaybackError> {
-    super::heartbeat::heartbeat(
-        pool,
-        user_id,
-        session_id,
-        position_ms,
-        state,
-        is_paused,
-        is_buffering,
-    )
-    .await
+    super::heartbeat::heartbeat(pool, manager, actor, request, data_dir).await
 }
 
 pub async fn stop_playback(
@@ -851,12 +845,6 @@ pub async fn get_playback_info(
         .and_then(|f| f.as_str())
         .and_then(|s| Uuid::parse_str(s).ok());
 
-    let transcode_progress = transcode_session_id.and_then(|ts_id| {
-        transcode_manager
-            .get_session(&ts_id)
-            .and_then(|s| s.progress_percent())
-    });
-
     let duration_ms: Option<i32> = if let Some(mf_id) = media_file_id {
         sqlx::query_scalar::<_, Option<i32>>(
             "SELECT runtime_seconds FROM media_files WHERE id = $1",
@@ -865,10 +853,17 @@ pub async fn get_playback_info(
         .fetch_optional(pool)
         .await?
         .flatten()
-        .map(|s| s * 1000)
+        .filter(|seconds| *seconds > 0)
+        .and_then(|seconds| seconds.checked_mul(1000))
     } else {
         None
     };
+
+    let transcode_progress = transcode_session_id.and_then(|id| {
+        transcode_manager
+            .get_session(&id)
+            .and_then(|session| session.progress_percent(duration_ms.map(i64::from)))
+    });
 
     Ok(PlaybackInfoResponse {
         session_id,
@@ -877,6 +872,20 @@ pub async fn get_playback_info(
         position_ms,
         duration_ms,
         transcode_progress,
+        transcode_session_id,
+        stream_url: transcode_session_id.map(|id| format!("/api/v1/transcode/{id}/manifest.m3u8")),
+        stream_offset_ms: transcode_session_id.map(|id| {
+            transcode_manager
+                .get_session(&id)
+                .map(|session| session.source_start_ms)
+                .unwrap_or_else(|| {
+                    metadata
+                        .get("stream_offset_ms")
+                        .and_then(serde_json::Value::as_i64)
+                        .unwrap_or(0)
+                })
+        }),
+        recovery: super::recovery::stored_recovery(&metadata),
         is_paused,
         started_at,
     })

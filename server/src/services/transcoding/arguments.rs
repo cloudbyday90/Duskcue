@@ -4,6 +4,8 @@
 
 use std::path::Path;
 
+use super::plan::{StreamAction, StreamPlan};
+
 pub fn build_ffmpeg_input_args(seek_position_ms: Option<i64>, source_path: &Path) -> Vec<String> {
     let mut args = Vec::new();
 
@@ -28,6 +30,20 @@ pub fn build_ffmpeg_input_args(seek_position_ms: Option<i64>, source_path: &Path
     ]);
 
     args
+}
+
+pub fn build_ffmpeg_output_seek_args(
+    seek_position_ms: Option<i64>,
+    plan: StreamPlan,
+) -> Vec<String> {
+    if seek_position_ms.is_some_and(|position| position > 0)
+        && plan.video == StreamAction::Encode
+        && plan.audio == StreamAction::Copy
+    {
+        vec!["-ss".into(), "0".into()]
+    } else {
+        Vec::new()
+    }
 }
 
 pub fn build_subtitle_burn_in_filter(source_path: &Path, subtitle_ordinal: usize) -> String {

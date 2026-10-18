@@ -9,17 +9,26 @@ use super::PlaybackError;
 use super::history::{
     emit_play_event, merge_session_metadata, played_file, upsert_user_item_data_heartbeat,
 };
-use super::types::HeartbeatResponse;
+use super::recovery::{self, RecoveryContext};
+use super::types::{HeartbeatRequest, HeartbeatResponse, PlaybackActor, VALID_PLAYBACK_STATES};
+use crate::services::transcoding::TranscodeManager;
 
 pub(super) async fn heartbeat(
     pool: &PgPool,
-    user_id: Uuid,
-    session_id: Uuid,
-    position_ms: Option<i32>,
-    state: Option<&str>,
-    is_paused: Option<bool>,
-    is_buffering: Option<bool>,
+    manager: &TranscodeManager,
+    actor: PlaybackActor,
+    request: &HeartbeatRequest,
+    data_dir: &std::path::Path,
 ) -> Result<HeartbeatResponse, PlaybackError> {
+    let user_id = actor.user_id;
+    let session_id = request.session_id.ok_or(PlaybackError::SessionNotFound)?;
+    let position_ms = request.position_ms;
+    let state = request
+        .state
+        .as_deref()
+        .filter(|state| VALID_PLAYBACK_STATES.contains(state));
+    let is_paused = request.is_paused;
+    let is_buffering = request.is_buffering;
     let mut transaction = pool.begin().await?;
     let row = sqlx::query(
         "SELECT id, user_id, profile_id, playback_mode, media_item_id, metadata \
@@ -46,7 +55,19 @@ pub(super) async fn heartbeat(
         .try_get("playback_mode")
         .unwrap_or_else(|_| "interactive".to_string());
     let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
-    let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
+    let mut metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
+
+    let active_transcode = recovery::transcode_id(&metadata);
+    if active_transcode.is_some() && profile_id != actor.profile_id {
+        return Err(PlaybackError::SessionNotFound);
+    }
+    if (active_transcode.is_some() || request.transcode_session_id.is_some())
+        && request.transcode_session_id != active_transcode
+    {
+        let response = recovery::response(manager, session_id, playback_mode, &metadata, None);
+        transaction.commit().await?;
+        return Ok(response);
+    }
 
     let prev_state = metadata
         .get("current_state")
@@ -62,23 +83,43 @@ pub(super) async fn heartbeat(
         .await?
         .map(|(id, _)| id);
 
-    let effective_state = if let Some(s) = state {
-        s.to_string()
-    } else if is_buffering.unwrap_or(false) {
+    let effective_state = if is_buffering.unwrap_or(false) {
         "buffering".to_string()
+    } else if let Some(s) = state {
+        s.to_string()
     } else if is_paused.unwrap_or(false) {
         "paused".to_string()
     } else {
         "playing".to_string()
     };
 
-    let effective_position = position_ms.unwrap_or_else(|| {
+    let mut effective_position = position_ms.unwrap_or_else(|| {
         metadata
             .get("current_position_ms")
             .and_then(|p| p.as_i64())
             .map(|p| p as i32)
             .unwrap_or(0)
     });
+
+    metadata["current_position_ms"] = serde_json::json!(effective_position);
+    let (pending, recovery_status) = recovery::recover(
+        &mut transaction,
+        RecoveryContext {
+            manager,
+            actor,
+            session_id,
+            media_item_id,
+            request,
+            data_dir,
+        },
+        &mut metadata,
+    )
+    .await?;
+    effective_position = metadata
+        .get("current_position_ms")
+        .and_then(serde_json::Value::as_i64)
+        .unwrap_or(i64::from(effective_position))
+        .clamp(0, i64::from(i32::MAX)) as i32;
 
     if effective_state != prev_state {
         let (event_type, details) = match (prev_state.as_str(), effective_state.as_str()) {
@@ -101,13 +142,10 @@ pub(super) async fn heartbeat(
         .await?;
     }
 
-    let merge = serde_json::json!({
-        "current_state": effective_state,
-        "current_position_ms": effective_position,
-        "last_heartbeat_at": chrono::Utc::now().to_rfc3339()
-    });
-
-    merge_session_metadata(&mut *transaction, session_id, merge).await?;
+    metadata["current_state"] = serde_json::json!(effective_state);
+    metadata["current_position_ms"] = serde_json::json!(effective_position);
+    metadata["last_heartbeat_at"] = serde_json::json!(chrono::Utc::now().to_rfc3339());
+    merge_session_metadata(&mut *transaction, session_id, metadata.clone()).await?;
 
     if position_ms.is_some() && playback_mode == "interactive" {
         upsert_user_item_data_heartbeat(
@@ -132,9 +170,14 @@ pub(super) async fn heartbeat(
     .await?;
 
     transaction.commit().await?;
-    Ok(HeartbeatResponse {
+    if let Some(pending) = pending {
+        pending.acknowledge();
+    }
+    Ok(recovery::response(
+        manager,
         session_id,
-        position_ms: effective_position,
         playback_mode,
-    })
+        &metadata,
+        recovery_status,
+    ))
 }

@@ -35,6 +35,7 @@
     } from '../stores/player.js';
     import { preferences } from '../stores/user.js';
     import { createMediaSource } from '../playback/source.js';
+    import { playbackRecoveryMessage } from '../playback/recovery.js';
     import { canCompleteSource, sourcePlaybackDuration } from '../playback/timing.js';
     import { createPlaybackTelemetry } from '../playback/telemetry.js';
     import { createPlaybackAnnotations } from '../playback/annotations.js';
@@ -91,6 +92,18 @@
     let menus;
     let retryButton = $state();
     let trackStatus = $derived(playbackState?.fallback?.audio || playbackState?.fallback?.subtitle ? m.tonight_player_track_fallback() : '');
+    let recoveryPending = $derived($player.recovery?.status === 'pending');
+    let recoveryExhausted = $derived($player.recovery?.status === 'exhausted');
+    let recoveryMessage = $derived(playbackRecoveryMessage($player.recovery));
+    let recoveryNotice = $derived.by(() => {
+        getLocale();
+        if (recoveryMessage === 'tonight_player_recovery_pending') return m.tonight_player_recovery_pending();
+        if (recoveryMessage === 'tonight_player_recovery_compatible') return m.tonight_player_recovery_compatible();
+        if (recoveryMessage === 'tonight_player_recovery_skipped') return m.tonight_player_recovery_skipped();
+        if (recoveryMessage === 'tonight_player_recovery_quality') return m.tonight_player_recovery_quality();
+        if (recoveryMessage === 'tonight_player_recovery_skipped_quality') return m.tonight_player_recovery_skipped_quality();
+        return '';
+    });
     const runtime = createPlaybackRuntime({ player, onChange: (state) => { playbackState = state; } });
     const authorization = createPlaybackAuthorizationRecovery();
     const autoplay = createAutoplayController({ onChange: (state) => { autoplayState = state; playbackBackground?.setActive(state.phase === 'countdown'); }, beforeAutomaticNext: (options) => playbackBackground?.canAdvance(options) ?? false, onPlayNext: async (episode, options) => {
@@ -141,8 +154,12 @@
         isMounted = true;
         if (preferenceContext) player.setContext(preferenceContext);
         containerEl?.focus();
-        captionLayout = createCaptionLayout({ container: containerEl, stage: videoStage, video: videoEl, readObstructions: () => [...containerEl.querySelectorAll('.player-heading, .player-controls, .track-fallback:not(:empty), .player-popover:not([hidden]), .autoplay-card, .fullscreen-error, .skip-button, .seek-preview')] });
-        mediaSource = createMediaSource({ video: videoEl, onError: () => { sourceError = true; player.setPlaying(false); }, onPlaybackBlocked: () => player.setPlaying(false), onTimelineChange: (timeline) => {
+        captionLayout = createCaptionLayout({ container: containerEl, stage: videoStage, video: videoEl, readObstructions: () => [...containerEl.querySelectorAll('.player-heading, .player-controls, .track-fallback:not(:empty), .recovery-status:not(:empty), .player-popover:not([hidden]), .autoplay-card, .fullscreen-error, .skip-button, .seek-preview')] });
+        mediaSource = createMediaSource({ video: videoEl, shouldPlay: () => $player.isPlaying, onError: (_error, details) => {
+            sourceError = true;
+            const positionMs = Number.isFinite(details?.positionSeconds) ? details.positionSeconds * 1000 + ($player.streamOffsetMs || 0) : $player.positionMs;
+            void player.reportSourceFailure({ positionMs, recoveryRequested: details?.recoveryRequested === true });
+        }, onPlaybackBlocked: () => player.setPlaying(false), onTimelineChange: (timeline) => {
             if (!isMounted) return;
             sourceTimeline = timeline;
             if (timeline.mode === 'hls-mse' && timeline.complete !== null) handleDurationChange();
@@ -185,7 +202,7 @@
     $effect(() => {
         const subtitle = playbackState?.selection?.subtitle;
         const enabled = Number.isInteger(subtitle?.index) && subtitle.index >= 0;
-        controlsVisible; menuOpen; autoplayState?.phase; fullscreenError; seekPreviewVisible; seekHoverRatio;
+        controlsVisible; menuOpen; autoplayState?.phase; fullscreenError; seekPreviewVisible; seekHoverRatio; recoveryNotice;
         tick().then(() => { if (isMounted) captionLayout?.update(enabled); });
     });
     $effect(() => {
@@ -274,11 +291,11 @@
     });
 
     function handlePlay() {
-        player.setPlaying(true);
+        if (!videoEl?.paused && sourceTimeline?.mode !== 'detached' && sourceTimeline?.url === $streamUrl) player.setPlaying(true);
     }
 
     function handlePause() {
-        player.setPlaying(false);
+        if (videoEl?.readyState > 0 && sourceTimeline?.mode !== 'detached' && sourceTimeline?.url === $streamUrl && !recoveryPending) player.setPlaying(false);
     }
 
     function handleWaiting() {
@@ -292,7 +309,8 @@
     }
 
     function handleTimeUpdate() {
-        if (isMounted && !exitRequested && videoEl && !isSeeking && !$player.isBuffering) {
+        if (isMounted && !exitRequested && videoEl && !isSeeking && !$player.isBuffering
+            && sourceTimeline?.mode !== 'detached' && sourceTimeline?.url === $streamUrl) {
             player.setPosition(videoEl.currentTime * 1000 + ($player.streamOffsetMs || 0));
             updateBuffered();
         }
@@ -326,11 +344,10 @@
 
     function togglePlayPause() {
         if (!videoEl || controlsDisabled) return;
-        if (videoEl.paused) {
-            videoEl.play().catch(() => {});
-        } else {
-            videoEl.pause();
-        }
+        const playing = !$player.isPlaying;
+        player.setPlaying(playing);
+        if (!playing) videoEl.pause();
+        else if (videoEl.currentSrc || videoEl.src) videoEl.play().catch(() => {});
     }
 
     function handleDesktopPlaybackToggle() {
@@ -543,6 +560,7 @@
 
     async function handleRetry(event) {
         const heldFocus = document.activeElement === event.currentTarget;
+        if (videoEl?.readyState > 0 && Number.isFinite(videoEl.currentTime) && sourceTimeline?.mode !== 'detached') player.setPosition(videoEl.currentTime * 1000 + ($player.streamOffsetMs || 0));
         player.clearError();
         sourceError = false;
         mediaSource?.release();
@@ -600,6 +618,7 @@
         <p lang={messageLocale('tonight_player_fullscreen_failed')} class="fullscreen-error" role="status">{m.tonight_player_fullscreen_failed()}</p>
     {/if}
     <p lang={messageLocale('tonight_player_track_fallback')} class="track-fallback" class:visible={controlsVisible} role="status" aria-live="polite">{trackStatus}</p>
+    {#if recoveryNotice}<p lang={messageLocale(recoveryMessage)} class="recovery-status" role="status" aria-live="polite">{recoveryNotice}</p>{/if}
 
     <div class="player-stage" bind:this={videoStage}>
     <video
@@ -641,11 +660,11 @@
         </div>
     {/if}
 
-    {#if !exitRequested && !closeRecovery && $player.release?.phase !== 'failed' && ($playerError || playbackState?.error || sourceError)}
+    {#if !exitRequested && !closeRecovery && !recoveryPending && $player.release?.phase !== 'failed' && ($playerError || playbackState?.error || sourceError || recoveryExhausted)}
         <div class="player-overlay-center">
             <div class="error-display">
                 <p class="error-title">{m.lib_components_player_playback_error()}</p>
-                <p lang={sourceError ? messageLocale('tonight_player_transport_failed') : !playbackState?.preferencesReady ? messageLocale('tonight_player_preferences_failed') : messageLocale('lib_components_player_playback_error_the_stream_may_be_unavailable')} class="error-message" role="alert">{sourceError ? m.tonight_player_transport_failed() : !playbackState?.preferencesReady ? m.tonight_player_preferences_failed() : m.lib_components_player_playback_error_the_stream_may_be_unavailable()}</p>
+                <p lang={recoveryExhausted ? messageLocale('tonight_player_recovery_exhausted') : sourceError ? messageLocale('tonight_player_transport_failed') : !playbackState?.preferencesReady ? messageLocale('tonight_player_preferences_failed') : messageLocale('lib_components_player_playback_error_the_stream_may_be_unavailable')} class="error-message" role="alert">{recoveryExhausted ? m.tonight_player_recovery_exhausted() : sourceError ? m.tonight_player_transport_failed() : !playbackState?.preferencesReady ? m.tonight_player_preferences_failed() : m.lib_components_player_playback_error_the_stream_may_be_unavailable()}</p>
                 <button bind:this={retryButton} class="error-retry" onclick={handleRetry}>{m.lib_components_player_retry()}</button>
             </div>
         </div>
@@ -796,6 +815,7 @@
     .fullscreen-error { position: absolute; top: 5rem; inset-inline: 1rem; z-index: 3; padding: .75rem; background: var(--color-bg-surface); color: var(--color-text-primary); }
     .track-fallback { position: absolute; top: 3.75rem; inset-inline: 1rem; z-index: 3; max-width: 35rem; color: var(--color-text-primary); text-shadow: 0 1px 5px #000; font-size: .8rem; opacity: 0; pointer-events: none; }
     .track-fallback.visible { opacity: 1; }
+    .recovery-status { position: absolute; bottom: 8.5rem; inset-inline: 1rem; z-index: 3; max-width: 35rem; padding: .5rem .75rem; background: rgba(0,0,0,.8); color: var(--color-text-primary); font-size: .8rem; }
     .control-btn:focus-visible, .volume-slider:focus-visible { outline: 2px solid var(--color-accent); outline-offset: 3px; }
     .seek-bar-wrapper:focus-within { outline: 2px solid var(--color-accent); outline-offset: 3px; }
     @media (prefers-reduced-motion: reduce) { .loading-spinner { animation: none; } .player-controls, .seek-progress, .seek-buffered { transition: none; } }
@@ -1054,7 +1074,7 @@
         .player-controls.visible { transform: none; }
         .autoplay-position { position: relative; inset: auto; max-height: none; width: auto; margin: .75rem; overflow: visible; flex-shrink: 0; order: 2; }
         .player-overlay-center { position: relative; inset: auto; min-height: 80px; flex-shrink: 0; order: 2; }
-        .fullscreen-error, .track-fallback { position: relative; inset: auto; margin: .5rem .75rem; flex-shrink: 0; order: 1; }
+        .fullscreen-error, .track-fallback, .recovery-status { position: relative; inset: auto; margin: .5rem .75rem; flex-shrink: 0; order: 1; }
         .track-fallback:empty { display: none; }
         .player-heading button, .player-controls input, .player-controls :global(button), .autoplay-position :global(button) { scroll-margin-block: 0; }
     }

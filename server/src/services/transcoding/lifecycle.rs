@@ -16,25 +16,28 @@
 
 use std::borrow::Cow;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use dashmap::DashMap;
 use tokio::sync::{OwnedSemaphorePermit, watch};
-use tokio_process_tools::{Consumable, GracefulShutdown, LineParsingOptions, Next};
+use tokio_process_tools::{GracefulShutdown, Next};
 use uuid::Uuid;
 
 use super::FfmpegHandle;
+use super::failure::FailureClass;
+use super::watchdog::NO_PROGRESS_TIMEOUT;
 use crate::domains::playback::PlaybackError;
 
 #[path = "lifecycle_execution.rs"]
 mod execution;
-pub(super) use execution::{ExecutionMonitor, ExecutionState};
+pub(super) use execution::{ExecutionMonitor, ExecutionState, WorkerObservation};
 
 struct WorkerControl {
     cancellation: watch::Sender<u64>,
     result: watch::Receiver<Option<Completion>>,
     execution: watch::Receiver<ExecutionState>,
+    failure: Arc<Mutex<Option<FailureClass>>>,
 }
 
 #[derive(Clone)]
@@ -94,6 +97,16 @@ impl TranscodeWorkers {
         inspect: impl FnMut(Cow<'_, str>) -> Next + Send + 'static,
         cleanup: impl FnOnce() + Send + 'static,
     ) {
+        self.start_with_watchdog(launch, inspect, cleanup, NO_PROGRESS_TIMEOUT);
+    }
+
+    fn start_with_watchdog(
+        &self,
+        launch: WorkerLaunch,
+        inspect: impl FnMut(Cow<'_, str>) -> Next + Send + 'static,
+        cleanup: impl FnOnce() + Send + 'static,
+        timeout: Duration,
+    ) {
         let WorkerLaunch {
             session_id,
             handle,
@@ -104,61 +117,43 @@ impl TranscodeWorkers {
         let (cancellation, mut requests) = watch::channel(0);
         let (completion, result) = watch::channel(None);
         let (execution, execution_state) = watch::channel(ExecutionState::Running);
+        let failure = Arc::new(Mutex::new(None));
         self.workers.insert(
             session_id,
             Arc::new(WorkerControl {
                 cancellation,
                 result,
                 execution: execution_state,
+                failure: Arc::clone(&failure),
             }),
         );
         let registry = Arc::clone(&self.workers);
         tokio::spawn(async move {
             let mut process = handle.terminate_on_drop(shutdown.clone());
-            let consumer = process
-                .stdout()
-                .consume(tokio_process_tools::ParseLines::inspect(
-                    LineParsingOptions::default(),
-                    inspect,
-                ));
-            let outcome = match consumer {
-                Ok(consumer) => {
-                    let terminate = tokio::select! {
-                        _ = consumer.wait() => false,
-                        _ = wait_for_cancellation(&mut requests) => true,
-                    };
-                    if terminate {
-                        execution.send_replace(ExecutionState::Cancelled);
-                        process
-                            .terminate(shutdown.clone())
-                            .await
-                            .map(|_| ExecutionState::Cancelled)
-                            .map_err(|_| ())
-                    } else {
-                        tokio::select! {
-                            result = process.wait_for_completion(Duration::from_secs(3600)).or_terminate(shutdown.clone()) => result.map(execution_result).map_err(|_| ()),
-                            _ = wait_for_cancellation(&mut requests) => {
-                                execution.send_replace(ExecutionState::Cancelled);
-                                process.terminate(shutdown.clone()).await.map(|_| ExecutionState::Cancelled).map_err(|_| ())
-                            },
-                        }
-                    }
-                }
-                Err(_) => {
-                    execution.send_replace(ExecutionState::Failed);
-                    process
-                        .terminate(shutdown.clone())
-                        .await
-                        .map(|_| ExecutionState::Failed)
-                        .map_err(|_| ())
-                }
-            };
+            let execution::SupervisedExecution {
+                outcome,
+                failure: classified,
+            } = execution::supervise(
+                &mut process,
+                &mut requests,
+                shutdown.clone(),
+                inspect,
+                timeout,
+            )
+            .await;
             let terminal_state = outcome.as_ref().copied().unwrap_or(ExecutionState::Failed);
-            execution.send_replace(if *requests.borrow() > 0 {
+            let terminal_state = if *requests.borrow() > 0 {
                 ExecutionState::Cancelled
             } else {
                 terminal_state
-            });
+            };
+            *failure
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = match terminal_state {
+                ExecutionState::Failed | ExecutionState::Stalled => classified,
+                _ => None,
+            };
+            execution.send_replace(terminal_state);
             if outcome.is_err() {
                 report(
                     &completion,
@@ -266,18 +261,19 @@ impl TranscodeWorkers {
             ExecutionMonitor::new(entry.execution.clone(), entry.cancellation.subscribe())
         })
     }
-}
 
-fn execution_result(
-    result: tokio_process_tools::WaitForCompletionOrTerminateResult,
-) -> ExecutionState {
-    match result {
-        tokio_process_tools::WaitForCompletionOrTerminateResult::Completed(status)
-            if status.success() =>
-        {
-            ExecutionState::Succeeded
-        }
-        _ => ExecutionState::Failed,
+    pub(super) fn observation(&self, session_id: Uuid) -> Option<WorkerObservation> {
+        self.workers.get(&session_id).map(|entry| {
+            WorkerObservation::new(
+                entry.execution.clone(),
+                entry.cancellation.subscribe(),
+                Arc::clone(&entry.failure),
+            )
+        })
+    }
+
+    pub(super) fn failure(&self, session_id: Uuid) -> Option<FailureClass> {
+        self.observation(session_id)?.snapshot().failure
     }
 }
 
@@ -316,3 +312,7 @@ mod tests;
 #[cfg(test)]
 #[path = "lifecycle_readiness_tests.rs"]
 mod readiness_tests;
+
+#[cfg(test)]
+#[path = "lifecycle_watchdog_tests.rs"]
+mod watchdog_tests;

@@ -4,7 +4,7 @@
  * Licensed under AGPL-3.0. See LICENSE for details.
  */
 
-export function createPlaybackHeartbeat({ readState, send, intervalMs = 15000 }) {
+export function createPlaybackHeartbeat({ readState, send, onResponse = (_response, _snapshot) => {}, onError = (_error, _snapshot) => {}, intervalMs = 15000 }) {
     if (typeof readState !== 'function' || typeof send !== 'function') throw new TypeError('Heartbeat requires state and transport functions.');
     if (!Number.isSafeInteger(intervalMs) || intervalMs <= 0 || intervalMs > 2147483647) throw new RangeError('Heartbeat interval must be a positive supported duration.');
     const inFlight = new Map();
@@ -12,20 +12,30 @@ export function createPlaybackHeartbeat({ readState, send, intervalMs = 15000 })
     let timerRevision = 0;
 
     function sendNow() {
-        const snapshot = readState();
+        const snapshot = Object.freeze({ ...readState() });
         const sessionId = snapshot?.sessionId;
         if (!sessionId) return Promise.resolve();
-        if (inFlight.has(sessionId)) return inFlight.get(sessionId);
+        const existing = inFlight.get(sessionId);
+        if (existing) {
+            if (snapshot.recoveryRequested && !existing.snapshot.recoveryRequested && !existing.followUp) {
+                existing.followUp = existing.promise.then(() => sendNow());
+            }
+            return existing.followUp || existing.promise;
+        }
         const body = Object.freeze({
             session_id: sessionId,
             position_ms: Math.floor(snapshot.positionMs),
             state: snapshot.isPlaying ? 'playing' : 'paused',
             is_buffering: snapshot.isBuffering,
+            ...(snapshot.transcodeSessionId ? { transcode_session_id: snapshot.transcodeSessionId } : {}),
+            ...(snapshot.recoveryRequested ? { recovery_requested: true } : {}),
         });
-        const pending = Promise.resolve().then(() => send(body)).then(() => {}, () => {}).finally(() => {
-            if (inFlight.get(sessionId) === pending) inFlight.delete(sessionId);
+        const record = { snapshot, promise: null, followUp: null };
+        const pending = Promise.resolve().then(() => send(body)).then((response) => onResponse(response, snapshot), (error) => onError(error, snapshot)).then(() => {}, () => {}).finally(() => {
+            if (inFlight.get(sessionId) === record) inFlight.delete(sessionId);
         });
-        inFlight.set(sessionId, pending);
+        record.promise = pending;
+        inFlight.set(sessionId, record);
         return pending;
     }
 
@@ -42,7 +52,8 @@ export function createPlaybackHeartbeat({ readState, send, intervalMs = 15000 })
     }
 
     function drain(sessionId) {
-        return inFlight.get(sessionId) || Promise.resolve();
+        const record = inFlight.get(sessionId);
+        return record?.followUp || record?.promise || Promise.resolve();
     }
 
     return { start, stopTimer, sendNow, drain };

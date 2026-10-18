@@ -1,0 +1,52 @@
+# syntax=docker/dockerfile:1.7
+# Duskcue — Self-hosted media streaming server
+# Copyright (C) 2026-2026 Duskcue Contributors
+# Licensed under AGPL-3.0. See LICENSE for details.
+
+ARG RUST_IMAGE=rust:alpine3.24@sha256:f87aa870663e2b57ec8c69de82c7eedf7383bee987eef7612c0359635eaadb41
+ARG RUNTIME_IMAGE=duskcue:local
+
+FROM ${RUST_IMAGE} AS compiler
+WORKDIR /src
+RUN apk add --no-cache build-base clang cmake linux-headers perl pkgconf protobuf-dev jq
+COPY Cargo.toml Cargo.lock ./
+COPY vendor ./vendor
+COPY crates ./crates
+COPY server ./server
+COPY clients/desktop/src-tauri ./clients/desktop/src-tauri
+COPY native/ffmpeg-bootstrap ./native/ffmpeg-bootstrap
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/src/target \
+    cargo test --release --locked -p duskcue -j 2 --test playback_stop_contract --no-run --message-format=json > /tmp/playback-cargo-artifacts.jsonl \
+    && executable="$(jq -ers '[.[] | select(.reason == "compiler-artifact" and .target.name == "playback_stop_contract" and .profile.test == true) | .executable | select(. != null)] | unique | select(length == 1) | .[0]' /tmp/playback-cargo-artifacts.jsonl)" \
+    && case "$executable" in /src/target/release/deps/playback_stop_contract-*) test -x "$executable" ;; *) exit 1 ;; esac \
+    && cp "$executable" /tmp/playback-stop-contract
+
+FROM ${RUNTIME_IMAGE} AS runtime
+ARG SOURCE_SHA256
+ARG RUNTIME_BASE_ID
+LABEL duskcue.qualification.kind="local-playback-recovery-v1" \
+      duskcue.qualification.source-sha256="${SOURCE_SHA256}" \
+      duskcue.qualification.runtime-base-id="${RUNTIME_BASE_ID}"
+USER root
+RUN mkdir -p /qualification/bin /src/.cache/tonight-server-ffmpeg /src/.cache/tonight-server-stop \
+    && chown 65532:65532 /src/.cache/tonight-server-stop
+COPY --from=compiler /tmp/playback-stop-contract /qualification/bin/playback-stop-contract
+COPY --from=compiler /tmp/playback-cargo-artifacts.jsonl /qualification/cargo-artifacts.jsonl
+COPY docker/qualification/recovery-fixture.mjs /qualification/recovery-fixture.mjs
+RUN sha256sum -c /usr/local/libexec/duskcue-ffmpeg.sha256 \
+    && node --max-old-space-size=64 /qualification/recovery-fixture.mjs \
+    && chmod 0555 /qualification/bin/playback-stop-contract \
+    && chmod 0444 /src/.cache/tonight-server-ffmpeg/* /qualification/cargo-artifacts.jsonl
+ENV HOME=/tmp \
+    DUSKCUE_TEST_FFMPEG_MODE=linux-local-managed \
+    DUSKCUE_TEST_PLAYBACK_SOURCE=/src/.cache/tonight-server-ffmpeg/source.mkv \
+    DUSKCUE_TEST_PROGRESSIVE_PLAYBACK=event \
+    DUSKCUE_TRANSCODE_ACCESS_TESTS=disposable \
+    RUST_TEST_THREADS=1
+USER 65532:65532
+WORKDIR /qualification
+HEALTHCHECK NONE
+ENTRYPOINT ["/qualification/bin/playback-stop-contract"]
+CMD ["stop_is_idempotent_serializes_heartbeat_seek_and_retains_original_profile", "--exact", "--include-ignored", "--nocapture"]

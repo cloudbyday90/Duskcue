@@ -29,6 +29,7 @@ const PARENT_PIN_MAX_ATTEMPTS: i16 = 5;
 const PARENT_PIN_LOCKOUT_MINUTES: i64 = 15;
 const PARENT_UNLOCK_MINUTES: i64 = 10;
 
+pub use super::access::{assert_media_access_on_connection, load_profile_scope_on_connection};
 pub use super::viewing_preferences::{
     canonical_viewing_language, get_viewing_preferences, update_viewing_preferences,
 };
@@ -450,33 +451,14 @@ pub async fn load_profile_scope(
     profile_id: Uuid,
     has_all_library_access: bool,
 ) -> Result<ProfileScope, ProfilesError> {
-    let profile = get_owned_profile(pool, owner_user_id, profile_id).await?;
-    let library_ids = list_profile_library_ids(pool, profile_id).await?;
-    let user_library_ids = if has_all_library_access {
-        Vec::new()
-    } else {
-        sqlx::query("SELECT library_id FROM user_library_access WHERE user_id = $1")
-            .bind(owner_user_id)
-            .fetch_all(pool)
-            .await?
-            .iter()
-            .map(|row| row.try_get("library_id"))
-            .collect::<Result<Vec<Uuid>, sqlx::Error>>()?
-    };
-
-    Ok(ProfileScope {
-        profile_id,
+    let mut connection = pool.acquire().await?;
+    load_profile_scope_on_connection(
+        &mut connection,
         owner_user_id,
-        profile_type: profile.profile_type,
-        max_content_rating: profile.max_content_rating,
-        allow_search: profile.allow_search,
-        allow_downloads: profile.allow_downloads,
-        allow_external_links: profile.allow_external_links,
-        allow_ambient_channels: profile.allow_ambient_channels,
-        library_ids,
-        user_library_ids,
+        profile_id,
         has_all_library_access,
-    })
+    )
+    .await
 }
 
 pub fn is_kids(scope: &ProfileScope) -> bool {
@@ -513,22 +495,8 @@ pub async fn assert_media_access(
     scope: &ProfileScope,
     media_item_id: Uuid,
 ) -> Result<(), ProfilesError> {
-    let row = sqlx::query(
-        "SELECT mi.library_id, mi.content_rating FROM media_items mi \
-         JOIN libraries l ON l.id = mi.library_id \
-         WHERE mi.id = $1 AND l.deleted_at IS NULL",
-    )
-    .bind(media_item_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(ProfilesError::ContentNotAllowed)?;
-    let library_id: Uuid = row.try_get("library_id")?;
-    let content_rating: Option<String> = row.try_get("content_rating").ok().flatten();
-    if is_media_allowed(scope, library_id, content_rating.as_deref()) {
-        Ok(())
-    } else {
-        Err(ProfilesError::ContentNotAllowed)
-    }
+    let mut connection = pool.acquire().await?;
+    assert_media_access_on_connection(&mut connection, scope, media_item_id).await
 }
 
 pub async fn list_ambient_channels(

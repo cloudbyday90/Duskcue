@@ -6,6 +6,8 @@ This dependency review accompanies the [playback compatibility foundation](../de
 
 GitHub MCP pagination returned the complete open pool `[5]` and an empty second page. A cryptographically generated uniform index selected PR [#5](https://github.com/cloudbyday90/Duskcue/pull/5), head `c018d77b7f09543e5960a571dc43e2f061cedf0a`. Its two-lockfile patch upgrades PostCSS 8.5.16 to 8.5.23 and nanoid 3.3.15 to 3.3.16. The exact patch was applied, installed and tested locally. The remote PR remains open and unmerged; no review comment, closure or release was created.
 
+The bounded playback-recovery iteration repeated the complete open-PR discovery through GitHub MCP: page one contained only PR #5, and page two was empty. A new uniform cryptographic draw over that one-entry pool selected index `0`, again PR #5 at the same head. Its functional dependency delta is already included and superseded by the patched versions below, so this iteration requires no additional PR patch and does not downgrade either lockfile. The canonical PR remains open and unmerged; this recheck made no remote mutation.
+
 The selected patch addresses [PostCSS source-map handling](https://github.com/postcss/postcss/security/advisories/GHSA-fxqj-rqcc-2cmp) and the nanoid negative-size loop described in its [official changelog](https://github.com/ai/nanoid/blob/main/CHANGELOG.md). The exact PR versions did not clear every current advisory, so the final lockfiles include a separate compatible security follow-up.
 
 ## Final recommendation and tradeoffs
@@ -33,3 +35,5 @@ These versions address [SvelteKit Accept-header processing](https://github.com/s
 Both guarded fresh installations with `npm ci --ignore-scripts` passed, and both npm projects report **zero advisories**. Independent lock-only audits agree. This describes the checked npm dependency graphs; it does not characterize Rust dependencies or prove application-level exploitability.
 
 Final client checks and production-image evaluation are recorded in the [foundation outcome](../design/PLAYBACK_COMPATIBILITY.md#verification-and-outcome). Audits and installation logs are under ignored `.cache/local-evaluation/playback-*`; resource evidence is under `.cache/testing-memory/`.
+
+The later bounded-recovery iteration retains these lockfiles and rechecks the shared client with 410 Vitest cases, 37 Node cases, zero source/type diagnostics and four browser recovery cases. Its final image and backend results belong to [Playback recovery](../design/PLAYBACK_RECOVERY.md#acceptance-and-outcome). This is regression evidence for the already superseded PR delta, not a new application or remote merge of PR #5.

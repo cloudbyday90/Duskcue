@@ -2,7 +2,7 @@
 
 ## Overview
 
-The [playback compatibility and recovery initiative](PLAYBACK_COMPATIBILITY.md) owns the October 2026 probe, executable stream-plan and corpus work. Audio-only adaptation preserves compatible video, selected moving-video identity survives seeking, and required but unimplemented HDR transformations fail explicitly. Mid-playback recovery orchestration remains a separate next increment.
+The [playback compatibility initiative](PLAYBACK_COMPATIBILITY.md) owns the October 2026 probe, executable stream-plan and corpus work. Audio-only adaptation preserves compatible video, selected moving-video identity survives seeking, and required but unimplemented HDR transformations fail explicitly. [Bounded playback recovery](PLAYBACK_RECOVERY.md) owns process supervision, per-session attempt budgets, fresh HLS generations and the shared web/desktop heartbeat handoff. It preserves selected streams and the last confirmed client position; legacy HLS heartbeats without a generation cannot overwrite a replacement checkpoint.
 
 This document covers the complete streaming and transcoding architecture: how media is delivered from server to client, how playback decisions are made, how transcoding works, and how adaptive bitrate streaming is handled.
 
@@ -638,10 +638,10 @@ TV and console clients use a 15-second heartbeat cadence, with immediate heartbe
 ### Seeking
 
 1. Client sends seek request (or requests a segment far from current position)
-2. Server kills current FFmpeg process
-3. Server starts new FFmpeg process from seek target position (`-ss` before `-i` for fast seek)
-4. Old segments before the seek point are deleted
-5. Client resumes from new manifest
+2. Server serializes through the play-session lock and awaits owned FFmpeg exit and cache cleanup
+3. Server starts a new generation with input `-ss` before `-i`; positive video-encode/audio-copy seeks also use the [scoped output trim](PLAYBACK_SEEK_TIMING.md)
+4. Server commits the new transcode UUID and requested absolute source offset
+5. Client attaches the fresh manifest and applies that source offset to its local media timeline
 
 > **Implemented** in Phase 7 Task 12 — `seek()` in `playback/service.rs` delegates to `TranscodeManager::seek_session()` for transcoded sessions (returns new transcode session ID written to metadata and returned in `SeekResponse`); for Direct Play, updates metadata position only (client-side seek passthrough). See [BUILD_ORDER.md](../../BUILD_ORDER.md) Task 12 for details.
 

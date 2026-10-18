@@ -22,25 +22,27 @@ use arc_swap::ArcSwap;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use tokio::sync::Semaphore;
-use tokio_process_tools::{GracefulShutdown, Next};
+use tokio_process_tools::GracefulShutdown;
 use uuid::Uuid;
 
 use crate::domains::playback::error::PlaybackError;
 use crate::services::hw_accel::{self, HwAccelDetectionResult};
-use crate::state::{CpuConfig, RuntimeConfig};
+use crate::state::RuntimeConfig;
 
 pub mod arguments;
+mod encoding;
+pub mod failure;
 mod launcher;
 mod lifecycle;
 pub mod plan;
+pub mod progress;
 mod readiness;
+pub mod recovery;
 mod session;
-use arguments::{
-    build_ffmpeg_input_args, build_hls_output_args, build_stream_mapping_args_for_video,
-    build_subtitle_burn_in_filter_for_video, compose_video_filters,
-};
-use launcher::{LaunchReadiness, spawn_session_ffmpeg};
-use lifecycle::{TranscodeWorkers, WorkerCancellation, WorkerLaunch};
+mod start;
+mod watchdog;
+pub use failure::FailureClass;
+use lifecycle::{TranscodeWorkers, WorkerCancellation};
 use plan::{StreamAction, StreamPlan};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -183,6 +185,7 @@ impl TranscodeRendition {
     }
 }
 
+#[derive(Clone)]
 pub struct StartSessionParams {
     pub media_file_id: Uuid,
     pub user_id: Uuid,
@@ -203,6 +206,8 @@ pub struct StartSessionParams {
     pub target_resolution: Option<(u32, u32)>,
     pub target_bitrate: Option<u32>,
     pub seek_position_ms: Option<i64>,
+    pub hw_accel_override: Option<HwAccelMethod>,
+    pub recovery_attempts: u8,
 }
 
 #[derive(Debug, Clone)]
@@ -231,6 +236,8 @@ pub struct TranscodeSession {
     pub target_bitrate: u32,
 
     pub hw_accel: HwAccelMethod,
+    pub source_start_ms: i64,
+    pub recovery_attempts: u8,
     pub rendition_name: String,
 
     pub segment_dir: PathBuf,
@@ -244,13 +251,15 @@ pub struct TranscodeSession {
 }
 
 impl TranscodeSession {
-    pub fn progress_percent(&self) -> Option<f32> {
-        self.progress.as_ref().map(|p| {
-            if p.is_complete {
-                100.0
-            } else {
-                (p.out_time_ms as f64 / 3600000.0 * 100.0).min(100.0) as f32
-            }
+    pub fn progress_percent(&self, duration_ms: Option<i64>) -> Option<f32> {
+        if self.is_complete {
+            return Some(100.0);
+        }
+        let remaining = duration_ms?
+            .checked_sub(self.source_start_ms)
+            .filter(|duration| *duration > 0)?;
+        self.progress.as_ref().map(|progress| {
+            (progress.out_time_ms as f64 / remaining as f64 * 100.0).min(100.0) as f32
         })
     }
 
@@ -300,248 +309,6 @@ impl TranscodeManager {
             config,
             hw_detection: Arc::new(std::sync::RwLock::new(detection)),
         }
-    }
-
-    pub async fn start_session(
-        &self,
-        params: StartSessionParams,
-        data_dir: &Path,
-    ) -> Result<TranscodeSession, PlaybackError> {
-        let StartSessionParams {
-            media_file_id,
-            user_id,
-            source_path,
-            source_video_codec,
-            source_video_resolution,
-            source_audio_codec,
-            source_video_stream_index,
-            source_audio_stream_index,
-            stream_plan,
-            target_audio_channels,
-            target_audio_bitrate,
-            subtitle_stream_index,
-            subtitle_stream_ordinal,
-            subtitle_burn_in,
-            target_video_codec,
-            target_audio_codec,
-            target_resolution,
-            target_bitrate,
-            seek_position_ms,
-        } = params;
-
-        let permit = Arc::clone(&self.semaphore)
-            .try_acquire_owned()
-            .map_err(|_| PlaybackError::TranscodeCapacityReached)?;
-
-        let config = self.config.load_full();
-        let transcoding = &config.transcoding;
-        let cpu = &config.cpu;
-
-        let hw_accel = if stream_plan.video == StreamAction::Encode {
-            self.get_hw_accel()
-        } else {
-            HwAccelMethod::Software
-        };
-        let effective_video_codec = if stream_plan.video == StreamAction::Copy {
-            source_video_codec.clone()
-        } else {
-            target_video_codec.unwrap_or_else(|| transcoding.default_video_codec.clone())
-        };
-        let effective_audio_codec = if stream_plan.audio == StreamAction::Copy {
-            source_audio_codec.clone()
-        } else {
-            target_audio_codec.unwrap_or_else(|| transcoding.default_audio_codec.clone())
-        };
-
-        let encoder = hw_accel.ffmpeg_encoder(&effective_video_codec);
-
-        let (target_w, target_h) = target_resolution.unwrap_or(source_video_resolution);
-
-        let mut rendition = TranscodeRendition::smart_ladder(
-            source_video_resolution.0,
-            source_video_resolution.1,
-            target_bitrate.map(|b| b as u64),
-            Some((target_w, target_h)),
-        )
-        .into_iter()
-        .last()
-        .unwrap_or(TranscodeRendition {
-            name: "auto".to_string(),
-            width: target_w,
-            height: target_h,
-            video_bitrate: target_bitrate.unwrap_or(6_000_000),
-            audio_bitrate: 192_000,
-            audio_channels: 2,
-        });
-
-        if stream_plan.video == StreamAction::Copy {
-            rendition.name = "source".into();
-            rendition.width = source_video_resolution.0;
-            rendition.height = source_video_resolution.1;
-            rendition.video_bitrate = 0;
-        }
-        if let Some(channels) = target_audio_channels {
-            rendition.audio_channels = channels;
-        }
-        if let Some(bitrate) = target_audio_bitrate {
-            rendition.audio_bitrate = bitrate;
-        }
-
-        let session_id = Uuid::now_v7();
-        let segment_dir = data_dir
-            .join(transcoding.transcode_path.trim_start_matches('/'))
-            .join(session_id.to_string());
-        let manifest_path = segment_dir.join("manifest.m3u8");
-
-        tokio::fs::create_dir_all(&segment_dir).await.map_err(|e| {
-            PlaybackError::FfmpegFailed(format!("failed to create segment dir: {e}"))
-        })?;
-
-        let segment_filename = segment_dir.join("seg_%04d.m4s");
-
-        let fps = 24u32;
-        let gop_size = fps * transcoding.segment_duration_seconds;
-
-        let mut args = build_ffmpeg_input_args(seek_position_ms, &source_path);
-
-        let subtitle_filter = if subtitle_burn_in {
-            let ordinal = subtitle_stream_ordinal.ok_or_else(|| {
-                PlaybackError::FfmpegFailed(
-                    "subtitle burn-in requires a selected subtitle stream".into(),
-                )
-            })?;
-            Some(build_subtitle_burn_in_filter_for_video(
-                &source_path,
-                ordinal,
-                source_video_stream_index,
-            ))
-        } else {
-            None
-        };
-        let video_args = if stream_plan.video == StreamAction::Encode {
-            build_video_encode_args(
-                &encoder,
-                &effective_video_codec,
-                rendition.width,
-                rendition.height,
-                rendition.video_bitrate,
-                gop_size,
-                hw_accel,
-            )
-        } else {
-            Vec::new()
-        };
-        let (video_args, subtitle_filter) = compose_video_filters(video_args, subtitle_filter)
-            .map_err(|message| PlaybackError::FfmpegFailed(message.into()))?;
-        args.extend(build_stream_mapping_args_for_video(
-            source_video_stream_index,
-            source_audio_stream_index,
-            subtitle_filter,
-        ));
-        args.extend(stream_plan.codec_args(
-            video_args,
-            build_audio_encode_args(
-                &effective_audio_codec,
-                rendition.audio_channels,
-                rendition.audio_bitrate,
-            ),
-        ));
-
-        args.extend(build_threading_args(cpu));
-
-        args.extend(["-progress".to_string(), "pipe:1".to_string()]);
-
-        args.extend(build_hls_output_args(
-            transcoding.segment_duration_seconds,
-            &segment_filename.to_string_lossy(),
-            &manifest_path.to_string_lossy(),
-        ));
-
-        let spawned = spawn_session_ffmpeg(&args, session_id, &source_path, &segment_dir).await?;
-
-        let session = TranscodeSession {
-            id: session_id,
-            media_file_id,
-            user_id,
-            started_at: Utc::now(),
-            source_path,
-            source_video_codec,
-            source_video_resolution,
-            source_audio_codec,
-            source_video_stream_index,
-            source_audio_stream_index,
-            stream_plan,
-            target_audio_channels: (stream_plan.audio == StreamAction::Encode)
-                .then_some(rendition.audio_channels),
-            target_audio_bitrate: (stream_plan.audio == StreamAction::Encode)
-                .then_some(rendition.audio_bitrate),
-            subtitle_stream_index,
-            subtitle_stream_ordinal,
-            subtitle_burn_in,
-            target_video_codec: effective_video_codec,
-            target_video_resolution: (rendition.width, rendition.height),
-            target_audio_codec: effective_audio_codec,
-            target_bitrate: rendition.video_bitrate,
-            hw_accel,
-            rendition_name: rendition.name,
-            segment_dir,
-            manifest_path,
-            segments_written: 0,
-            client_position_segment: 0,
-            progress: None,
-            is_complete: false,
-            is_seeking: false,
-        };
-
-        let sessions = Arc::clone(&self.sessions);
-        let cleanup_sessions = Arc::clone(&self.sessions);
-        self.workers.start(
-            WorkerLaunch {
-                session_id,
-                handle: spawned.handle,
-                permit,
-                directory: session.segment_dir.clone(),
-                shutdown: build_graceful_shutdown(
-                    config.resource_limits.ffmpeg_shutdown_grace_secs,
-                ),
-            },
-            move |line| {
-                if let Some(update) = parse_progress_line(&line)
-                    && let Some(mut session) = sessions.get_mut(&session_id)
-                {
-                    if update.is_complete {
-                        session.is_complete = true;
-                    }
-                    session.progress = Some(update);
-                }
-                Next::Continue
-            },
-            move || {
-                cleanup_sessions.remove(&session_id);
-            },
-        );
-
-        self.sessions.insert(session_id, session.clone());
-        self.confirm_startup(&session, spawned.readiness).await?;
-
-        Ok(session)
-    }
-
-    async fn confirm_startup(
-        &self,
-        session: &TranscodeSession,
-        launch: LaunchReadiness,
-    ) -> Result<(), PlaybackError> {
-        let deadline = tokio::time::Instant::now() + readiness::STARTUP_TIMEOUT;
-        readiness::confirm(
-            &self.workers,
-            session.id,
-            &session.segment_dir,
-            &session.manifest_path,
-            launch.wait(),
-            deadline,
-        )
-        .await
     }
 
     pub async fn stop_session(&self, session_id: Uuid) -> Result<(), PlaybackError> {
@@ -620,6 +387,8 @@ impl TranscodeManager {
                 target_resolution: None,
                 target_bitrate: None,
                 seek_position_ms: None,
+                hw_accel_override: None,
+                recovery_attempts: 0,
             },
             data_dir,
         )
@@ -627,7 +396,16 @@ impl TranscodeManager {
     }
 
     pub fn get_session(&self, session_id: &Uuid) -> Option<TranscodeSession> {
-        self.sessions.get(session_id).map(|r| r.value().clone())
+        self.sessions.get(session_id).map(|r| {
+            let mut session = r.value().clone();
+            session.is_complete =
+                self.workers
+                    .observation(*session_id)
+                    .is_some_and(|observation| {
+                        observation.snapshot().state == lifecycle::ExecutionState::Succeeded
+                    });
+            session
+        })
     }
 
     #[cfg(test)]
@@ -708,191 +486,8 @@ fn build_graceful_shutdown(grace_secs: u64) -> GracefulShutdown {
         .build()
 }
 
-fn build_video_encode_args(
-    encoder: &str,
-    codec: &str,
-    width: u32,
-    height: u32,
-    maxrate: u32,
-    gop_size: u32,
-    _hw_accel: HwAccelMethod,
-) -> Vec<String> {
-    let is_hw = !encoder.contains("libx2");
-
-    let mut args = vec!["-c:v:0".to_string(), encoder.to_string()];
-
-    if !is_hw {
-        args.extend([
-            "-preset".to_string(),
-            "veryfast".to_string(),
-            "-crf".to_string(),
-            "23".to_string(),
-        ]);
-    }
-
-    args.extend([
-        "-maxrate".to_string(),
-        maxrate.to_string(),
-        "-bufsize".to_string(),
-        maxrate.saturating_mul(2).to_string(),
-        "-vf".to_string(),
-        format!(
-            "scale={width}:{height}:force_original_aspect_ratio=decrease,pad={width}:{height}:(ow-iw)/2:(oh-ih)/2"
-        ),
-    ]);
-
-    args.extend([
-        "-g".to_string(),
-        gop_size.to_string(),
-        "-keyint_min".to_string(),
-        gop_size.to_string(),
-        "-sc_threshold".to_string(),
-        "0".to_string(),
-    ]);
-
-    if !is_hw {
-        args.extend([
-            "-profile:v".to_string(),
-            if matches!(codec, "hevc" | "h265") {
-                "main"
-            } else {
-                "high"
-            }
-            .to_string(),
-            "-pix_fmt".to_string(),
-            "yuv420p".to_string(),
-        ]);
-    }
-
-    if matches!(codec, "hevc" | "h265") {
-        args.extend(["-tag:v".to_string(), "hvc1".to_string()]);
-    }
-
-    args
-}
-
-fn build_audio_encode_args(audio_codec: &str, channels: u32, bitrate: u32) -> Vec<String> {
-    let encoder = match audio_codec {
-        "ac3" | "ac-3" => "ac3",
-        "eac3" | "e-ac-3" => "eac3",
-        "opus" => "libopus",
-        _ => "aac",
-    };
-
-    vec![
-        "-c:a:0".to_string(),
-        encoder.to_string(),
-        "-ac".to_string(),
-        channels.to_string(),
-        "-b:a".to_string(),
-        bitrate.to_string(),
-    ]
-}
-
-fn build_threading_args(cpu: &CpuConfig) -> Vec<String> {
-    let mut args = Vec::new();
-
-    if let Some(threads) = cpu.ffmpeg_threads {
-        args.extend(["-threads".to_string(), threads.to_string()]);
-    }
-
-    args.extend(["-thread_type".to_string(), cpu.ffmpeg_thread_type.clone()]);
-
-    args
-}
-
 type OutputStream = tokio_process_tools::SingleSubscriberOutputStream<
     tokio_process_tools::LossyWithoutBackpressure,
     tokio_process_tools::ReplayEnabled,
 >;
 type FfmpegHandle = tokio_process_tools::ProcessHandle<OutputStream>;
-
-fn parse_progress_line(line: &str) -> Option<ProgressUpdate> {
-    let line = line.trim();
-    if line.is_empty() {
-        return None;
-    }
-
-    let (key, value) = line.split_once('=')?;
-
-    match key {
-        "frame" => Some(ProgressUpdate {
-            frame: value.parse().ok()?,
-            fps: 0.0,
-            bitrate_kbps: 0.0,
-            total_size: 0,
-            out_time_ms: 0,
-            speed: 0.0,
-            is_complete: false,
-        }),
-        "fps" => value.parse::<f64>().ok().map(|f| ProgressUpdate {
-            frame: 0,
-            fps: f,
-            bitrate_kbps: 0.0,
-            total_size: 0,
-            out_time_ms: 0,
-            speed: 0.0,
-            is_complete: false,
-        }),
-        "bitrate" => {
-            let kbps = value
-                .trim_end_matches("kbits/s")
-                .trim()
-                .parse::<f64>()
-                .unwrap_or(0.0);
-            Some(ProgressUpdate {
-                frame: 0,
-                fps: 0.0,
-                bitrate_kbps: kbps,
-                total_size: 0,
-                out_time_ms: 0,
-                speed: 0.0,
-                is_complete: false,
-            })
-        }
-        "total_size" => Some(ProgressUpdate {
-            frame: 0,
-            fps: 0.0,
-            bitrate_kbps: 0.0,
-            total_size: value.parse().ok()?,
-            out_time_ms: 0,
-            speed: 0.0,
-            is_complete: false,
-        }),
-        "out_time_ms" => Some(ProgressUpdate {
-            frame: 0,
-            fps: 0.0,
-            bitrate_kbps: 0.0,
-            total_size: 0,
-            out_time_ms: value.parse().ok()?,
-            speed: 0.0,
-            is_complete: false,
-        }),
-        "speed" => {
-            let spd = value
-                .trim_end_matches('x')
-                .trim()
-                .parse::<f64>()
-                .unwrap_or(0.0);
-            Some(ProgressUpdate {
-                frame: 0,
-                fps: 0.0,
-                bitrate_kbps: 0.0,
-                total_size: 0,
-                out_time_ms: 0,
-                speed: spd,
-                is_complete: false,
-            })
-        }
-        "progress" if value.trim() == "end" => Some(ProgressUpdate {
-            frame: 0,
-            fps: 0.0,
-            bitrate_kbps: 0.0,
-            total_size: 0,
-            out_time_ms: 0,
-            speed: 0.0,
-            is_complete: true,
-        }),
-        _ => None,
-    }
-}

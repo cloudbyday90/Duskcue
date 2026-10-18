@@ -8,7 +8,8 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { createInterface } from 'node:readline';
 
-export async function runBounded(executable, args, { cwd, env = process.env, log, bytes = 16777216, timeoutMs = 300000, onLine, redact = [], forward = false, captureBytes = 65536 } = {}) {
+export async function runBounded(executable, args, { cwd, env = process.env, log, bytes = 16777216, timeoutMs = 300000, onLine, redact = [], forward = false, captureBytes = 65536, abortSignal } = {}) {
+    if (abortSignal?.aborted) throw new Error('Owned qualification command was cancelled before startup.');
     if (log) await mkdir(dirname(log), { recursive: true });
     const buffered = [];
     const writer = log && !redact.length ? createWriteStream(log, { flags: 'wx' }) : null;
@@ -42,8 +43,11 @@ export async function runBounded(executable, args, { cwd, env = process.env, log
     outcome.catch(() => {});
     const timer = setTimeout(() => stop('Owned qualification command exceeded its deadline.'), timeoutMs);
     const interrupt = () => stop('Owned qualification command was interrupted.');
+    const cancelled = () => stop('Owned qualification command was cancelled by resource admission.');
     process.on('SIGINT', interrupt);
     process.on('SIGTERM', interrupt);
+    abortSignal?.addEventListener('abort', cancelled, { once: true });
+    if (abortSignal?.aborted) cancelled();
     const lines = onLine ? createInterface({ input: child.stdout }) : null;
     lines?.on('line', (line) => { try { onLine(line); } catch (error) { stop(error.message); } });
     writer?.on('error', () => stop('Qualification evidence could not be written.'));
@@ -89,6 +93,7 @@ export async function runBounded(executable, args, { cwd, env = process.env, log
         lines?.close();
         process.off('SIGINT', interrupt);
         process.off('SIGTERM', interrupt);
+        abortSignal?.removeEventListener('abort', cancelled);
         if (forward) { process.stdout.off('error', sinkError); process.stderr.off('error', sinkError); }
         if (failure || child.pid && child.exitCode === null && child.signalCode === null) { signal('SIGKILL'); await outcome; }
         writer?.destroy();

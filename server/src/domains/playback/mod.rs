@@ -19,6 +19,7 @@ pub mod handlers;
 mod heartbeat;
 mod history;
 mod hls;
+mod recovery;
 mod seek;
 pub mod service;
 mod stop;
