@@ -65,7 +65,7 @@ test('definitive current-session expiry releases the physical player and preserv
     authorization.sessionStatus = 200;
     await signIn(page);
     await expect(page.getByRole('heading', { name: 'Who’s watching?', exact: true })).toBeVisible();
-    expect(new URL(page.url()).pathname).toBe(`/media/${mediaIds.series}`);
+    await expect.poll(() => new URL(page.url()).pathname).toBe(`/media/${mediaIds.series}`);
     expect(api.requests.filter((request) => request.path === `/profiles/${profileIds.alex}/switch`)).toHaveLength(0);
     await page.getByRole('button', { name: 'Alex', exact: true }).focus();
     await page.keyboard.press('Enter');

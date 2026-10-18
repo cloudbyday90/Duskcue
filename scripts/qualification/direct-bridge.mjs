@@ -24,6 +24,7 @@ export function openDirectBridge(context, runtime, abortSignal) {
             const response = JSON.parse(line);
             const entry = pending.get(response.id);
             if (!entry) throw new Error('Unknown bridge response.');
+            if (entry.onData && !response.error && response.type !== 'end') { entry.onData(response); return; }
             pending.delete(response.id); clearTimeout(entry.timer);
             if (response.error) entry.reject(new Error(response.error)); else entry.resolve(response);
         } catch { child.kill(); fail(); }
@@ -31,15 +32,23 @@ export function openDirectBridge(context, runtime, abortSignal) {
     const abort = () => child.kill();
     abortSignal?.addEventListener('abort', abort, { once: true });
     if (abortSignal?.aborted) abort();
+    function send(message, onData) {
+        if (closed || abortSignal?.aborted || pending.size >= 8) throw new Error('Owned HTTP bridge is unavailable.');
+        const id = ++sequence;
+        const done = new Promise((resolve, reject) => {
+            const timer = setTimeout(() => { pending.delete(id); reject(new Error('Owned HTTP bridge exceeded its deadline.')); child.kill(); }, onData ? 125000 : 35000);
+            pending.set(id, { resolve, reject, timer, onData });
+            child.stdin.write(`${JSON.stringify({ ...message, id })}\n`);
+        });
+        return { id, done };
+    }
     return {
         request(message) {
-            if (closed || abortSignal?.aborted || pending.size >= 8) return Promise.reject(new Error('Owned HTTP bridge is unavailable.'));
-            const id = ++sequence;
-            return new Promise((resolve, reject) => {
-                const timer = setTimeout(() => { pending.delete(id); reject(new Error('Owned HTTP bridge exceeded its deadline.')); child.kill(); }, 35000);
-                pending.set(id, { resolve, reject, timer });
-                child.stdin.write(`${JSON.stringify({ ...message, id })}\n`);
-            });
+            try { return send(message).done; } catch (error) { return Promise.reject(error); }
+        },
+        stream(message, onData) {
+            const { id, done } = send({ ...message, operation: 'stream' }, onData);
+            return { done, cancel() { if (!pending.has(id)) return Promise.resolve(); return send({ operation: 'cancel', target: id }).done; } };
         },
         async close() {
             abortSignal?.removeEventListener('abort', abort);

@@ -3,9 +3,10 @@
 // Licensed under AGPL-3.0. See LICENSE for details.
 
 import { createHash } from 'node:crypto';
-import { copyFile, lstat, mkdir, readdir, readFile, realpath, writeFile } from 'node:fs/promises';
-import { dirname, join, resolve } from 'node:path';
+import { copyFile, lstat, mkdir, readdir, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import { hashFile, qualificationSources } from '../qualification/source.mjs';
+import { ownedWorkflowEvidence } from './workflow-evidence.mjs';
 
 export function parseRecoveryArguments(args) {
     if (args.length !== 2 || args[0] !== '--image' || !/^sha256:[a-f0-9]{64}$/.test(args[1])) throw new Error('Provide --image <immutable final local Duskcue image SHA256>.');
@@ -13,24 +14,8 @@ export function parseRecoveryArguments(args) {
 }
 
 export async function owningRecoveryDirectory(workspace, environment, workload = 'playback-recovery-qualify') {
-    const root = await realpath(join(workspace, '.cache/testing-memory'));
-    const resourceId = environment.DUSKCUE_TEST_RESOURCE_ID;
-    const marker = environment.DUSKCUE_TEST_RESOURCE_CONTAINERS_FILE;
-    if (!/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(resourceId || '') || !marker || resolve(marker) !== join(root, `${resourceId}.containers.jsonl`)) throw new Error('Recovery qualification requires its owning build memory workflow.');
-    const deadline = Date.now() + 1000;
-    let active;
-    do {
-        active = JSON.parse(await readFile(join(root, 'active.json'), 'utf8'));
-        if (!['playback-recovery-qualify', 'playback-direct-qualify'].includes(workload) || active.pid !== process.ppid || active.workload !== workload) throw new Error('Recovery qualification must be the child of its owning build workflow.');
-        if (active.childPid === process.pid) break;
-        if (active.childPid !== null) throw new Error('The build workflow owns a different child.');
-        await new Promise((resume) => setTimeout(resume, 20));
-    } while (Date.now() < deadline);
-    if (active.childPid !== process.pid) throw new Error('The recovery child was not registered in its owning build workflow.');
-    const directory = join(root, `playback-recovery-${resourceId}`);
-    await mkdir(directory);
-    if (dirname(await realpath(directory)) !== root || (await lstat(directory)).isSymbolicLink()) throw new Error('Recovery evidence escaped its owning workspace.');
-    return { resourceId, marker, directory };
+    if (!['playback-recovery-qualify', 'playback-direct-qualify', 'playback-live-qualify'].includes(workload)) throw new Error('An owning recovery workflow is required.');
+    return ownedWorkflowEvidence(workspace, environment, workload);
 }
 
 export async function recoverySources(workspace) {

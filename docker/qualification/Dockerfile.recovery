@@ -37,6 +37,7 @@ COPY --from=compiler /tmp/playback-stop-contract /qualification/bin/playback-sto
 COPY --from=compiler /tmp/playback-cargo-artifacts.jsonl /qualification/cargo-artifacts.jsonl
 COPY docker/qualification/recovery-fixture.mjs /qualification/recovery-fixture.mjs
 COPY docker/qualification/direct-http-bridge.mjs /qualification/direct-http-bridge.mjs
+COPY docker/qualification/direct-http-policy.mjs /qualification/direct-http-policy.mjs
 RUN sha256sum -c /usr/local/libexec/duskcue-ffmpeg.sha256 \
     && node --max-old-space-size=64 /qualification/recovery-fixture.mjs \
     && chmod 0555 /qualification/bin/playback-stop-contract \

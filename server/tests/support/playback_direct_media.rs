@@ -35,6 +35,10 @@ pub(super) async fn clean_source(
             "0:2".into(),
             "-c:a".into(),
             "copy".into(),
+            "-disposition:a:0".into(),
+            "0".into(),
+            "-disposition:a:1".into(),
+            "default+visual_impaired".into(),
             "-c:v".into(),
             "libx264".into(),
             "-preset".into(),
@@ -124,6 +128,8 @@ pub(super) async fn seed(
             && streams[0]["codec_type"] == "audio"
             && streams[1]["codec_name"] == "h264"
             && streams[2]["codec_type"] == "audio"
+            && streams[0]["disposition"]["default"] == 0
+            && streams[2]["disposition"]["default"] == 1
             && streams[1]["width"] == 320
             && streams[1]["height"] == 180
             && streams[1]["profile"] == "High"
@@ -159,7 +165,7 @@ pub(super) async fn seed(
     let additional = json!({"video":video,"audio":audio});
     let bytes = tokio::fs::metadata(source).await?.len();
     anyhow::ensure!(bytes > 0 && bytes <= 16 * 1024 * 1024);
-    sqlx::query("INSERT INTO media_items(id,library_id,type,title,sort_title,content_rating) VALUES ($1,$2,'movie','Direct fallback fixture','Direct fallback fixture','R')")
+    sqlx::query("INSERT INTO media_items(id,library_id,type,title,sort_title,content_rating,runtime_seconds) VALUES ($1,$2,'movie','Direct fallback fixture','Direct fallback fixture','R',8)")
         .bind(evidence.item).bind(fixture.library).execute(fixture.pool).await?;
     sqlx::query("INSERT INTO media_files(id,media_item_id,file_path,file_size,container_format,runtime_seconds,video_codec,video_resolution,video_bitrate,video_dynamic_range,audio_codec,audio_channels,audio_bitrate,additional_streams) VALUES($1,$2,$3,$4,'mp4',8,'h264','320x180',$5,'sdr','aac',1,$6,$7)")
         .bind(evidence.file).bind(evidence.item).bind(source.to_string_lossy().as_ref()).bind(i64::try_from(bytes)?)
@@ -187,7 +193,7 @@ pub(super) async fn output_media(
     anyhow::ensure!(status == StatusCode::OK);
     let (status, fragment) = media::fetch(app, token, &segments[0]).await?;
     anyhow::ensure!(status == StatusCode::OK);
-    let timestamp = media::decode_start(
+    decode_fragment(
         &evidence.tools,
         &evidence.root,
         &media::FragmentContext {
@@ -201,10 +207,22 @@ pub(super) async fn output_media(
         },
         &initialization,
         &fragment,
+        30,
     )
-    .await?;
-    let path = evidence.root.join("direct-output.mp4");
-    let inspected = probe(&evidence.tools, &path).await?;
+    .await
+}
+
+pub(super) async fn decode_fragment(
+    tools: &process::FixtureProcesses,
+    root: &Path,
+    context: &media::FragmentContext,
+    initialization: &[u8],
+    fragment: &[u8],
+    expected_frame_rate: u32,
+) -> anyhow::Result<Value> {
+    let timestamp = media::decode_start(tools, root, context, initialization, fragment).await?;
+    let path = root.join(format!("{}.mp4", context.name));
+    let inspected = probe(tools, &path).await?;
     let streams = inspected["streams"]
         .as_array()
         .ok_or_else(|| anyhow::anyhow!("encoded streams unavailable"))?;
@@ -222,7 +240,7 @@ pub(super) async fn output_media(
             && video["profile"] == "High"
             && video["level"] == 40
             && video["pix_fmt"] == "yuv420p"
-            && video["r_frame_rate"] == "30/1"
+            && video["r_frame_rate"] == format!("{expected_frame_rate}/1")
             && video["width"] == 320
             && video["height"] == 180
             && audio["codec_name"] == "aac"
@@ -231,8 +249,30 @@ pub(super) async fn output_media(
             && audio["channels"] == 1,
         "actual encoded fragment differs from the capability descriptor: {inspected}"
     );
+    let start_time = |stream: &Value, name: &str| -> anyhow::Result<f64> {
+        let value = stream["start_time"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("{name} stream start timestamp unavailable"))?
+            .parse::<f64>()?;
+        anyhow::ensure!(
+            value.is_finite() && (0.0..=0.25).contains(&value),
+            "{name} stream start timestamp {value:?} is outside [0,0.25] seconds for {} at source offset {}ms",
+            context.name,
+            context.source_start_ms
+        );
+        Ok(value)
+    };
+    let video_start_seconds = start_time(video, "video")?;
+    let audio_start_seconds = start_time(audio, "audio")?;
+    let av_start_delta_seconds = video_start_seconds - audio_start_seconds;
+    anyhow::ensure!(
+        av_start_delta_seconds.abs() <= 0.1,
+        "muxed stream start timestamp alignment exceeds 0.1 seconds: video={video_start_seconds:.6}, audio={audio_start_seconds:.6}, delta={av_start_delta_seconds:.6} for {} at source offset {}ms",
+        context.name,
+        context.source_start_ms
+    );
     let pcm = process::original(
-        &evidence.tools,
+        tools,
         "ffmpeg",
         &[
             "-hide_banner".into(),
@@ -278,7 +318,7 @@ pub(super) async fn output_media(
         "promoted output selected {frequency:.3}Hz audio instead of 880Hz"
     );
     Ok(
-        json!({"decoded_timestamp":timestamp,"selected_audio_hz":frequency,"video_profile":video["profile"],"video_level":video["level"],"video_frame_rate":video["r_frame_rate"],"audio_sample_rate":audio["sample_rate"],"audio_channels":audio["channels"]}),
+        json!({"decoded_timestamp":timestamp,"selected_audio_hz":frequency,"video_profile":video["profile"],"video_level":video["level"],"video_frame_rate":video["r_frame_rate"],"audio_sample_rate":audio["sample_rate"],"audio_channels":audio["channels"],"video_start_seconds":video_start_seconds,"audio_start_seconds":audio_start_seconds,"av_start_delta_seconds":av_start_delta_seconds,"timestamp_alignment":true}),
     )
 }
 

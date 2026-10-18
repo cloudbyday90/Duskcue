@@ -11,13 +11,19 @@ import { recoverySources } from './playback-recovery-inputs.mjs';
 export async function directSources(workspace) {
     const { files } = await recoverySources(workspace);
     async function visit(path) {
-        const info = await lstat(join(workspace, path));
+        let info;
+        try { info = await lstat(join(workspace, path)); }
+        catch (error) { if (error.code === 'ENOENT' && path === 'clients/web/static') return; throw error; }
         if (info.isSymbolicLink()) throw new Error('Direct client sources must be regular.');
         if (info.isDirectory()) for (const entry of await readdir(join(workspace, path))) await visit(`${path}/${entry}`);
         else if (info.isFile() && info.size <= 1048576) files.push({ path, sha256: await hashFile(join(workspace, path)) });
-        else throw new Error('Direct client source exceeded its bound.');
+        else throw new Error(`Direct client source exceeded its bound: ${path}. Regenerate production localization with the guarded desktop-build before qualification.`);
     }
-    for (const path of ['clients/web/src/lib/playback', 'clients/web/src/lib/stores', 'clients/web/src/lib/api', 'clients/web/src/lib/preferences', 'clients/web/package.json', 'clients/web/package-lock.json', 'clients/web/tests/fixtures/direct-live-entry.mjs']) await visit(path);
+    for (const path of ['clients/web/src', 'clients/web/static', 'clients/web/messages', 'clients/web/project.inlang/settings.json',
+        'clients/web/package.json', 'clients/web/package-lock.json', 'clients/web/svelte.config.js', 'clients/web/vite.config.js', 'clients/web/jsconfig.json',
+        'clients/web/tests/fixtures/direct-live-entry.mjs', 'clients/web/tests/fixtures/direct-live-observer.mjs', 'clients/web/tests/native',
+        'clients/desktop/src', 'clients/desktop/scripts', 'clients/desktop/package.json', 'clients/desktop/package-lock.json', 'clients/desktop/vite.config.js',
+        'clients/desktop/src-tauri/tauri.conf.json', 'clients/desktop/src-tauri/capabilities', 'clients/desktop/src-tauri/icons']) await visit(path);
     files.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
     return { files, sha256: createHash('sha256').update(JSON.stringify(files)).digest('hex') };
 }

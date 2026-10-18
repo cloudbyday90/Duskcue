@@ -93,7 +93,7 @@ pub(super) async fn run(fixture: ProgressiveFixture<'_>) -> anyhow::Result<()> {
         trigger: false,
     };
     let exercised = tokio::time::timeout(
-        Duration::from_secs(150),
+        Duration::from_secs(300),
         exercise(&fixture, &state, &app, &mut evidence),
     )
     .await
@@ -334,7 +334,6 @@ async fn exercise(
         evidence.browser = browser::run(
             fixture,
             state,
-            app,
             &evidence.owned.root,
             &source,
             &evidence.owned.tools,

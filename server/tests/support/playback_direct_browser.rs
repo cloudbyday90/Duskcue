@@ -8,12 +8,16 @@ use std::time::Duration;
 use serde_json::json;
 use uuid::Uuid;
 
-use super::{AppState, Path, ProgressiveFixture, Router, Value, process};
+use super::{AppState, Path, ProgressiveFixture, Value, process};
+
+#[path = "playback_direct_policy.rs"]
+mod policy;
+#[path = "playback_direct_verify.rs"]
+mod verify;
 
 pub(super) async fn run(
     fixture: &ProgressiveFixture<'_>,
     state: &AppState,
-    app: &Router,
     root: &Path,
     source: &Path,
     tools: &process::FixtureProcesses,
@@ -57,7 +61,12 @@ pub(super) async fn run(
         .filter(|stream| stream["codec_type"] == "audio")
         .cloned()
         .collect::<Vec<_>>();
-    anyhow::ensure!(audio.len() == 2 && audio[1]["index"] == 2);
+    anyhow::ensure!(
+        audio.len() == 2
+            && audio[1]["index"] == 2
+            && audio[0]["disposition"]["default"] == 0
+            && audio[1]["disposition"]["default"] == 1
+    );
     for stream in &mut audio {
         stream["bitrate"] = json!(stream["bit_rate"].as_str().unwrap_or("").parse::<u32>()?);
     }
@@ -70,6 +79,7 @@ pub(super) async fn run(
         .ok_or_else(|| anyhow::anyhow!("direct packets missing"))?;
     let mut candidates = Vec::new();
     let mut items = Vec::new();
+    let mut session_items = Vec::new();
     let mut files = Vec::new();
     let mut server = None;
     let mut shutdown = None;
@@ -119,6 +129,7 @@ pub(super) async fn run(
         let item = Uuid::now_v7();
         let file = Uuid::now_v7();
         items.push(item);
+        session_items.push(item);
         sqlx::query("INSERT INTO media_items(id,library_id,type,title,sort_title,content_rating,runtime_seconds) VALUES ($1,$2,'movie','Direct browser fixture','Direct browser fixture','R',8)")
             .bind(item).bind(fixture.library).execute(fixture.pool).await?;
             sqlx::query("INSERT INTO media_files(id,media_item_id,file_path,file_size,container_format,video_codec,video_resolution,video_bitrate,video_dynamic_range,audio_codec,audio_channels,audio_bitrate,runtime_seconds,additional_streams) VALUES ($1,$2,$3,$4,'mp4','h264','320x180',$5,'sdr','aac',1,$6,8,$7)")
@@ -130,13 +141,13 @@ pub(super) async fn run(
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>();
-        candidates.push(json!({"item":item,"file":file,"variant":variant,"sha256":sha256}));
+        candidates.push(json!({"item":item,"file":file,"title":"Direct browser fixture","variant":variant,"sha256":sha256,"audioHz":880}));
         files.push((path, blake3::hash(&bytes)));
     }
     let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 38081))).await?;
     let (signal, receiver) = tokio::sync::oneshot::channel::<()>();
     shutdown = Some(signal);
-    let router = app.clone();
+    let router = duskcue::router::build_router(state.clone()).with_state(state.clone());
     server = Some(tokio::spawn(async move {
         axum::serve(
             listener,
@@ -147,7 +158,15 @@ pub(super) async fn run(
         })
         .await
     }));
-        let ready = json!({"resourceId":resource,"token":fixture.token,"userId":fixture.user,"profileId":fixture.original_profile,"candidates":candidates});
+        let clean: (Uuid,Uuid) = sqlx::query_as("SELECT f.media_item_id,f.id FROM media_files f JOIN media_items i ON i.id=f.media_item_id WHERE f.file_path=$1 AND i.library_id=$2 AND f.is_healthy=true")
+            .bind(source.to_string_lossy().as_ref()).bind(fixture.library).fetch_one(fixture.pool).await?;
+        session_items.push(clean.0);
+        sqlx::query("UPDATE user_item_data SET resume_position_ms=0,is_watched=false WHERE user_id=$1 AND profile_id=$2 AND media_item_id=$3")
+            .bind(fixture.user).bind(fixture.original_profile).bind(clean.0).execute(fixture.pool).await?;
+        let user = policy::canonical_user(fixture).await?;
+        let authorization = policy::assert_policy(fixture,state,&candidates[0]).await?;
+        let ready = json!({"resourceId":resource,"token":fixture.token,"userId":fixture.user,"profileId":fixture.original_profile,
+            "user":user,"candidates":candidates,"cleanCandidate":{"item":clean.0,"file":clean.1,"title":"Direct fallback fixture","audioHz":880}});
         let path = Path::new("/tmp/direct-ready.pending");
         let mut options = tokio::fs::OpenOptions::new();
         options.write(true).create_new(true).mode(0o600);
@@ -157,18 +176,7 @@ pub(super) async fn run(
         file.flush().await?;
         drop(file);
         tokio::fs::rename(path, "/tmp/direct-ready.json").await?;
-        let complete = tokio::time::timeout(Duration::from_secs(100), async {
-            loop {
-                match tokio::fs::read("/tmp/direct-complete.json").await {
-                    Ok(bytes) => {
-                        anyhow::ensure!(bytes.len() <= 65536);
-                        break Ok::<Value, anyhow::Error>(serde_json::from_slice(&bytes)?);
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => tokio::time::sleep(Duration::from_millis(100)).await,
-                    Err(error) => break Err(error.into()),
-                }
-            }
-        }).await??;
+        let (mut complete, backend) = tokio::time::timeout(Duration::from_secs(240), await_completion(fixture,state,root,tools,resource)).await??;
         anyhow::ensure!(complete["resourceId"] == resource.to_string());
         anyhow::ensure!(complete["passed"] == true, "real browser qualification failed: {}", complete.get("error").unwrap_or(&Value::Null));
         anyhow::ensure!(complete["nativeError"]["code"] == 3 && complete["nativeError"]["trusted"] == true);
@@ -176,6 +184,8 @@ pub(super) async fn run(
         anyhow::ensure!(complete["selectedAudioHz"].as_f64().is_some_and(|frequency| (frequency - 880.0).abs() < 20.0));
         anyhow::ensure!(complete["selectedAudioDb"].as_f64().is_some_and(|level| level > -60.0) && complete["hlsElapsedMs"].as_f64().is_some_and(|elapsed| elapsed >= 500.0));
         anyhow::ensure!(complete["recovery"]["attempts"] == 1 && complete["recovery"]["quality_reduced"] == true);
+        complete["backend"] = backend;
+        complete["production_policy"] = authorization;
         anyhow::ensure!(blake3::hash(&tokio::fs::read(source).await?) == original_hash);
         for (path, expected) in &files { anyhow::ensure!(blake3::hash(&tokio::fs::read(path).await?) == *expected); }
         Ok::<_, anyhow::Error>(complete)
@@ -197,7 +207,7 @@ pub(super) async fn run(
     let sessions: Vec<(Uuid, Value)> = sqlx::query_as(
         "SELECT id,metadata FROM play_sessions WHERE media_item_id=ANY($1) AND stopped_at IS NULL",
     )
-    .bind(&items)
+    .bind(&session_items)
     .fetch_all(fixture.pool)
     .await?;
     for (id, metadata) in sessions {
@@ -237,4 +247,81 @@ pub(super) async fn run(
         cleanup_errors.join("; ")
     );
     proof
+}
+
+async fn await_completion(
+    fixture: &ProgressiveFixture<'_>,
+    state: &AppState,
+    root: &Path,
+    tools: &process::FixtureProcesses,
+    resource: Uuid,
+) -> anyhow::Result<(Value, Value)> {
+    let native = std::env::var("DUSKCUE_TEST_NATIVE_CLIENT").as_deref() == Ok("live");
+    let phases = if native {
+        vec!["browser", "native"]
+    } else {
+        vec!["browser"]
+    };
+    let mut completed = serde_json::Map::new();
+    loop {
+        for phase in &phases {
+            if completed.contains_key(*phase) {
+                continue;
+            }
+            let Some(observed) = read_record(&format!("/tmp/direct-observed-{phase}.json")).await?
+            else {
+                continue;
+            };
+            anyhow::ensure!(
+                observed["resourceId"] == resource.to_string() && observed["phase"] == *phase
+            );
+            let checked = verify::run(fixture, state, root, tools, &observed).await;
+            let response = match &checked {
+                Ok(backend) => {
+                    json!({"resourceId":resource,"phase":phase,"passed":true,"backend":backend})
+                }
+                Err(_) => {
+                    json!({"resourceId":resource,"phase":phase,"passed":false,"error":"Owned live playback verification failed."})
+                }
+            };
+            write_verified(phase, &response).await?;
+            completed.insert((*phase).into(), checked?);
+        }
+        if let Some(complete) = read_record("/tmp/direct-complete.json").await? {
+            anyhow::ensure!(
+                phases.iter().all(|phase| completed.contains_key(*phase)),
+                "live client closed before required backend verification"
+            );
+            return Ok((complete, Value::Object(completed)));
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
+async fn read_record(path: &str) -> anyhow::Result<Option<Value>> {
+    let metadata = match tokio::fs::symlink_metadata(path).await {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(error.into()),
+    };
+    anyhow::ensure!(
+        metadata.is_file() && !metadata.file_type().is_symlink() && metadata.len() <= 65536
+    );
+    Ok(Some(serde_json::from_slice(&tokio::fs::read(path).await?)?))
+}
+
+async fn write_verified(phase: &str, response: &Value) -> anyhow::Result<()> {
+    anyhow::ensure!(matches!(phase, "browser" | "native"));
+    let bytes = serde_json::to_vec(response)?;
+    anyhow::ensure!(bytes.len() <= 65536);
+    let pending = format!("/tmp/direct-verified-{phase}.pending");
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create_new(true).mode(0o600);
+    use tokio::io::AsyncWriteExt;
+    let mut file = options.open(&pending).await?;
+    file.write_all(&bytes).await?;
+    file.flush().await?;
+    drop(file);
+    tokio::fs::rename(pending, format!("/tmp/direct-verified-{phase}.json")).await?;
+    Ok(())
 }

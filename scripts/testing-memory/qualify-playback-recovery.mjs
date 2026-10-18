@@ -18,17 +18,21 @@ import { watchLinuxReserve } from './linux-reserve-watchdog.mjs';
 import { copyRecoverySnapshot, owningRecoveryDirectory, parseRecoveryArguments, recoverySources, validateRecoveryImage } from './playback-recovery-inputs.mjs';
 import { directSources } from './direct-inputs.mjs';
 import { prepareDirectBrowser, runDirectBrowser } from '../qualification/direct-browser.mjs';
+import { readQualification } from '../../clients/web/tests/native/qualification-config.mjs';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 const memory = 4294967296;
 const pids = 256;
 
 async function main() {
-    const directBrowser = process.argv[2] === '--direct-browser';
-    const options = parseRecoveryArguments(process.argv.slice(directBrowser ? 3 : 2));
+    const liveClients = process.argv[2] === '--live-clients';
+    const directBrowser = liveClients || process.argv[2] === '--direct-browser';
+    if (liveClients && (process.argv[3] !== '--native-manifest' || !process.argv[4])) throw new Error('Live clients require --native-manifest <freshly built qualification manifest>.');
+    const options = parseRecoveryArguments(process.argv.slice(liveClients ? 5 : directBrowser ? 3 : 2));
+    const nativeManifest = liveClients ? await readQualification(process.argv[4]) : null;
     const sources = directBrowser ? directSources : recoverySources;
     if (process.platform !== 'win32') throw new Error('Use the owning Windows build memory workflow for this local Docker Desktop qualification.');
-    const owner = await owningRecoveryDirectory(workspace, process.env, directBrowser ? 'playback-direct-qualify' : 'playback-recovery-qualify');
+    const owner = await owningRecoveryDirectory(workspace, process.env, liveClients ? 'playback-live-qualify' : directBrowser ? 'playback-direct-qualify' : 'playback-recovery-qualify');
     const result = { version: 1, kind: 'local-playback-recovery', status: 'in_progress', resourceId: owner.resourceId, startedAt: new Date().toISOString(), limits: { runtime: { memoryBytes: memory, memorySwapBytes: memory, cpus: 2, pids, readOnlyRoot: true, user: '65532:65532', capabilities: 'none', seccomp: 'Docker default' }, postgres: { memoryBytes: memory, memorySwapBytes: memory, cpus: 2, pids }, build: { cargoJobs: 2, deadlineMinutes: 30, logMiB: 32, resourceBounds: 'BuildKit builder/daemon; Windows build policy and live Linux memory reserve admission apply. Dockerfile RUN has no separately claimed hard cgroup ceiling.' } }, cleanup: { passed: false }, limitations: ['This is local Linux HTTP/process qualification of the current working tree. Browser-to-live-server playback and corruption-corpus coverage remain unqualified.'] };
     let ownership;
     let failure;
@@ -100,20 +104,21 @@ async function main() {
         result.testLinuxPreflight = await reserve.admit();
         const runtime = await ownership.create(result.image.id, [STOP_CASE, '--exact', '--include-ignored', '--nocapture'], { memory, pids, network: `container:${pg}`, user: '65532:65532', readOnly: true,
             tmpfs: { '/tmp': 'rw,nosuid,nodev,noexec,size=67108864,uid=65532,gid=65532,mode=1770', '/src/.cache/tonight-server-stop': 'rw,nosuid,nodev,size=536870912,uid=65532,gid=65532,mode=1770', '/data': 'rw,nosuid,nodev,noexec,size=16777216,uid=65532,gid=65532,mode=1770', '/cache': 'rw,nosuid,nodev,noexec,size=16777216,uid=65532,gid=65532,mode=1770' },
-            environment: { DUSKCUE_TEST_RESOURCE_ID: owner.resourceId, DUSKCUE_DATABASE_URL: databaseUrl, ...(directBrowser ? { DUSKCUE_TEST_DIRECT_BROWSER: 'live' } : {}) } });
-        const running = ownership.start(runtime, { log: join(owner.directory, 'playback-stop-contract.log'), bytes: 16777216, captureBytes: 16777216, timeoutMs: directBrowser ? 420000 : 300000, redact: [databaseUrl, password] });
+            environment: { DUSKCUE_TEST_RESOURCE_ID: owner.resourceId, DUSKCUE_DATABASE_URL: databaseUrl, ...(directBrowser ? { DUSKCUE_TEST_DIRECT_BROWSER: 'live' } : {}), ...(liveClients ? { DUSKCUE_TEST_NATIVE_CLIENT: 'live' } : {}) } });
+        const running = ownership.start(runtime, { log: join(owner.directory, 'playback-stop-contract.log'), bytes: 16777216, captureBytes: 16777216, timeoutMs: liveClients ? 600000 : directBrowser ? 420000 : 300000, redact: [databaseUrl, password] });
         let execution;
         if (directBrowser) {
-            const direct = await runDirectBrowser({ workspace, directory: owner.directory, context: engine.context, runtime, resourceId: owner.resourceId, execution: running, ownership, assets, abortSignal: reserve.signal });
+            const direct = await runDirectBrowser({ workspace, directory: owner.directory, context: engine.context, runtime, resourceId: owner.resourceId, execution: running, ownership, assets, abortSignal: reserve.signal, nativeManifest });
             execution = direct.execution;
             result.directBrowser = direct.browser;
-            result.limitations = ['Browser uses actual shared store/source modules through an isolated loopback gateway to real Axum/PG/FFmpeg, not the complete product UI.', 'Actual desktop bearer/HLS presentation and broader format/HDR fidelity require separate qualification.'];
+            result.limitations = ['Chrome mounts the actual Player component, not the application shell or adapter-node proxy.', 'Short-source native HLS process-failure recovery, physical A/V synchronization and broader format/HDR fidelity remain separate gates.', ...(liveClients ? [] : ['Actual desktop bearer/HLS presentation requires the live-client mode.'])];
+            if (nativeManifest) result.nativeArtifact = { identifier: nativeManifest.identifier, executableSha256: nativeManifest.executableSha256 };
         } else execution = await running;
         result.runtime = await ownership.inspect(runtime);
         if (execution.code !== 0 || execution.signal || result.runtime.state.exitCode !== 0 || result.runtime.state.oomKilled || !exactPassed(execution.stdout)) throw new Error('The exact current Linux playback stop/recovery contract did not pass.');
         result.progressiveHttp = validateProgressiveHttpResult(execution.stdout, owner.resourceId);
         result.recovery = validatePlaybackRecoveryResult(execution.stdout, owner.resourceId);
-        result.direct = validatePlaybackDirectResult(execution.stdout, owner.resourceId, directBrowser);
+        result.direct = validatePlaybackDirectResult(execution.stdout, owner.resourceId, directBrowser, liveClients);
         await ownership.copyOut(runtime, '/qualification/fixture.json', join(owner.directory, 'fixture.json'));
         result.fixture = JSON.parse(await readFile(join(owner.directory, 'fixture.json'), 'utf8'));
         await ownership.remove(runtime);

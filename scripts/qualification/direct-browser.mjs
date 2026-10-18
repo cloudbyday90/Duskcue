@@ -3,32 +3,28 @@
 // Licensed under AGPL-3.0. See LICENSE for details.
 
 import assert from 'node:assert/strict';
-import { createServer } from 'node:http';
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { openDirectBridge } from './direct-bridge.mjs';
+import { prepareDirectPlayerBrowser } from './direct-browser-build.mjs';
+import { startDirectGateway } from './direct-gateway.mjs';
 
 export async function prepareDirectBrowser(workspace, directory) {
-    const { build } = await import(pathToFileURL(join(workspace, 'clients/web/node_modules/vite/dist/node/index.js')));
-    const output = join(directory, 'browser');
-    await mkdir(output);
-    await build({ configFile: false, root: join(workspace, 'clients/web'), logLevel: 'warn',
-        build: { outDir: output, emptyOutDir: false, minify: false, target: 'es2022', assetsDir: '.',
-            rollupOptions: { input: join(workspace, 'clients/web/tests/fixtures/direct-live-entry.mjs'), output: { entryFileNames: 'direct.js', chunkFileNames: '[name]-[hash].js' } } } });
-    return output;
+    return prepareDirectPlayerBrowser(workspace, directory);
 }
 
-export async function runDirectBrowser({ workspace, directory, context, runtime, resourceId, execution, ownership, assets, abortSignal }) {
+export async function runDirectBrowser({ workspace, directory, context, runtime, resourceId, execution, ownership, assets, abortSignal, nativeManifest }) {
     let bridge;
-    let server;
+    let gateway;
+    let nativeGateway;
     let browser;
     let browserContext;
     let runtimeDone = false;
     const observed = execution.finally(() => { runtimeDone = true; });
     observed.catch(() => {});
     const requests = [];
-    const report = { resourceId, passed: false, trials: [], transport: 'Isolated loopback HTTP through owned Docker-exec gateway; real Axum authentication and FFmpeg, no mocked API responses.' };
+    const report = { resourceId, passed: false, trials: [], fullPlayer: true, productionRouter: true, transport: 'Actual Player and production Axum router through owned loopback/Docker-exec transport; no mocked API responses.' };
     try {
         const deadline = Date.now() + 250000;
         while (!(await ownership.inspect(runtime)).state.running) {
@@ -48,29 +44,8 @@ export async function runDirectBrowser({ workspace, directory, context, runtime,
         const denied = await bridge.request({ operation: 'fetch', path: `/api/v1/stream/${ready.candidates[0].file}`, method: 'GET', headers: {}, body: '' });
         assert.equal(denied.status, 401);
         report.unauthenticatedMediaStatus = denied.status;
-        const html = '<!doctype html><html lang="en"><title>Owned direct recovery qualification</title><button>Enable fixture audio</button><video controls playsinline></video><script type="module" src="/direct.js"></script></html>';
-        server = createServer(async (request, response) => {
-            try {
-                if (request.method === 'GET' && request.url === '/') {
-                    response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store', 'content-security-policy': "default-src 'none'; script-src 'self'; media-src 'self' blob:; connect-src 'self'; worker-src blob:" });
-                    response.end(html); return;
-                }
-                if (request.method === 'GET' && /^\/[A-Za-z0-9_.-]+\.js$/.test(request.url || '')) {
-                    const body = await readFile(join(assets, request.url.slice(1)));
-                    response.writeHead(200, { 'content-type': 'text/javascript', 'cache-control': 'no-store' }); response.end(body); return;
-                }
-                if (!['GET', 'POST'].includes(request.method) || !request.url?.startsWith('/api/v1/')) throw new Error('Fixture route is unavailable.');
-                const chunks = []; let bytes = 0;
-                for await (const chunk of request) { bytes += chunk.length; if (bytes > 65536) throw new Error('Fixture request is too large.'); chunks.push(chunk); }
-                const headers = Object.fromEntries(Object.entries(request.headers).filter(([key]) => ['cookie', 'content-type', 'range', 'authorization'].includes(key)));
-                const upstream = await bridge.request({ operation: 'fetch', path: request.url, method: request.method, headers, body: Buffer.concat(chunks).toString('utf8') });
-                requests.push({ method: request.method, path: request.url, status: upstream.status, cookie: typeof headers.cookie === 'string', bearer: typeof headers.authorization === 'string' });
-                if (requests.length > 1000) throw new Error('Fixture request evidence exceeded its bound.');
-                response.writeHead(upstream.status, upstream.headers); response.end(Buffer.from(upstream.body, 'base64'));
-            } catch { response.writeHead(502); response.end('Owned fixture request failed.'); }
-        });
-        await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
-        const origin = `http://127.0.0.1:${server.address().port}`;
+        gateway = await startDirectGateway({ bridge, assets, requests });
+        const origin = gateway.origin;
         const { chromium } = await import(pathToFileURL(join(workspace, 'clients/web/node_modules/@playwright/test/index.mjs')));
         browser = await chromium.launch({ channel: 'chrome', headless: true });
         browserContext = await browser.newContext({ serviceWorkers: 'block' });
@@ -98,6 +73,36 @@ export async function runDirectBrowser({ workspace, directory, context, runtime,
                 assert.equal(played.recovery.quality_reduced, true);
                 assert.equal(played.recovery.skipped_ms, 0);
                 assert.ok(Math.abs(played.offsetMs - decoded.position * 1000) <= 100);
+                assert.equal(played.recoveryNoticeVisible, true);
+                assert.equal(played.recoveryNotice, 'A recovery stream is ready at reduced playback quality.');
+                assert.equal(played.selectedAudioIndex, 2);
+                const region = page.getByRole('region', { name: 'Media player', exact: true });
+                const box = await region.boundingBox();
+                assert.ok(box && box.width >= 320 && box.height >= 180, 'The actual Player must occupy a visible viewport.');
+                await region.hover();
+                await region.getByRole('button', { name: 'Pause', exact: true }).click();
+                const seek = region.getByRole('slider', { name: 'Seek', exact: true });
+                await seek.focus();
+                await page.keyboard.press('Home');
+                for (let step = 0; step < 50; step += 1) await page.keyboard.press('ArrowRight');
+                await page.keyboard.press('Tab');
+                await page.waitForFunction((old) => { const s = window.directFixture.snapshot(); return !s.seeking && s.transcodeId && s.transcodeId !== old && s.offsetMs === 5000 && s.paused; }, played.transcodeId, { timeout: 15000 });
+                await region.getByRole('button', { name: 'Play', exact: true }).click();
+                await page.waitForFunction(() => { const s = window.directFixture.snapshot(); const current = s.generations.find((g) => g.id === s.transcodeId); return current?.frames >= 5 && s.hlsElapsedMs >= 500 && s.peakDb > -60 && Math.abs(s.peakHz - 880) < 20; }, undefined, { timeout: 15000 });
+                await region.getByRole('button', { name: 'Pause', exact: true }).click();
+                const sought = await page.evaluate(() => window.directFixture.snapshot());
+                assert.equal(sought.sessionId, started.sessionId);
+                assert.equal(sought.recovery.attempts, 1);
+                assert.equal(sought.selectedAudioIndex, 2);
+                assert.equal(sought.paused, true);
+                assert.ok(Number.isFinite(sought.firstFrameMediaTime) && sought.firstFrameMediaTime >= 0 && sought.firstFrameMediaTime <= 0.25);
+                assert.ok(sought.frameMediaTime > sought.firstFrameMediaTime);
+                const verified = await bridge.request({ operation: 'verify', report: { resourceId, phase: 'browser', sessionId: started.sessionId, transcodeId: sought.transcodeId, previousTranscodeId: played.transcodeId, positionMs: 5000, paused: sought.paused, attempts: 1 } });
+                assert.equal(verified.verified.passed, true);
+                assert.equal(verified.verified.resourceId, resourceId);
+                report.postSeek = { ...sought, backend: verified.verified.backend };
+                report.recoveryNotice = played.recoveryNotice;
+                report.recoveryNoticeVisible = played.recoveryNoticeVisible;
                 report.passed = true;
                 report.variant = candidate.variant;
                 report.sourceSha256 = candidate.sha256;
@@ -110,11 +115,17 @@ export async function runDirectBrowser({ workspace, directory, context, runtime,
                 report.recovery = played.recovery;
                 report.offsetMs = played.offsetMs;
                 await page.screenshot({ path: join(directory, 'direct-browser.png') });
+                await region.getByRole('button', { name: 'Close player', exact: true }).click();
+                await page.waitForFunction(() => { const s = window.directFixture.snapshot(); return s.closed && !s.sessionId; }, undefined, { timeout: 10000 });
+                report.closedThroughUi = true;
                 await page.evaluate(() => window.directFixture.stop());
                 break;
             } catch (error) {
-                report.trials.push({ variant: candidate.variant, result: error.message.slice(0, 512), snapshot: await page.evaluate(() => window.directFixture.snapshot()) });
+                report.passed = false;
+                await page.screenshot({ path: join(directory, `direct-browser-failed-${candidate.variant}.png`) }).catch(() => {});
+                report.trials.push({ variant: candidate.variant, result: error.message.slice(0, 2048), snapshot: await page.evaluate(() => window.directFixture.snapshot()) });
                 await page.evaluate(() => window.directFixture.stop());
+                if (report.postSeek) throw error;
             }
         }
         report.authenticatedMediaRequests = requests.filter((request) => /\/(stream|transcode)\//.test(request.path));
@@ -122,18 +133,39 @@ export async function runDirectBrowser({ workspace, directory, context, runtime,
         assert.ok(report.authenticatedMediaRequests.some((request) => request.path.endsWith('.m4s') && request.status === 200));
         assert.ok(report.authenticatedMediaRequests.every((request) => request.cookie && !request.bearer));
         assert.deepEqual(pageErrors, []);
+        assert.deepEqual(gateway.errors, []);
         assert.equal(report.passed, true, 'No real native decode failure recovered to decoded authenticated HLS.');
+        await browserContext.close(); browserContext = null;
+        await browser.close(); browser = null;
+        if (nativeManifest) {
+            const url = new URL(nativeManifest.origins[0]);
+            nativeGateway = await startDirectGateway({ bridge, host: url.hostname, port: Number(url.port) });
+            const { runNativeLive } = await import(pathToFileURL(join(workspace, 'clients/web/tests/native/qualification-live.mjs')));
+            report.native = await runNativeLive({ manifest: nativeManifest, ready, gatewayOrigin: nativeGateway.origin, directory, abortSignal,
+                async verifyPlayback(evidence) {
+                    const verified = await bridge.request({ operation: 'verify', report: { ...evidence, resourceId } });
+                    assert.equal(verified.verified.passed, true);
+                    assert.equal(verified.verified.resourceId, resourceId);
+                    return { ...verified.verified.backend, passed: true };
+                } });
+            assert.deepEqual(nativeGateway.errors, []);
+        }
         await bridge.request({ operation: 'complete', report });
     } catch (error) {
         report.passed = false; report.error = error.message;
         if (bridge && !runtimeDone) await bridge.request({ operation: 'complete', report }).catch(() => {});
         throw error;
     } finally {
-        await browserContext?.close();
-        await browser?.close();
-        if (server) { server.closeAllConnections(); await new Promise((resolve) => server.close(resolve)); }
-        await bridge?.close();
+        const failures = [];
+        for (const [name, close] of [
+            ['browserContext', () => browserContext?.close()], ['browser', () => browser?.close()],
+            ['nativeGateway', () => nativeGateway?.close()], ['gateway', () => gateway?.close()], ['bridge', () => bridge?.close()],
+        ]) {
+            try { await close(); } catch { failures.push(name); }
+        }
+        report.cleanup = { passed: failures.length === 0, failures };
         await writeFile(join(directory, 'direct-browser.json'), `${JSON.stringify(report, null, 2)}\n`);
+        if (failures.length) throw new Error(`Owned live-client cleanup failed: ${failures.join(', ')}.`);
     }
     return { execution: await observed, browser: report };
 }

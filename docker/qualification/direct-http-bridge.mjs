@@ -4,11 +4,14 @@
 
 import { createInterface } from 'node:readline';
 import { readFile, writeFile, rename } from 'node:fs/promises';
+import { fixtureResponseHeaders, validateFixtureRequest } from './direct-http-policy.mjs';
 
 const resourceId = process.env.DUSKCUE_TEST_RESOURCE_ID;
 if (!/^[a-f0-9-]{36}$/.test(resourceId || '') || process.env.DUSKCUE_TEST_DIRECT_BROWSER !== 'live') throw new Error('An owned direct-play fixture is required.');
 let active = 0;
 let completed = false;
+const streams = new Map();
+const verified = new Set();
 const emit = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
 async function handle(message) {
     if (!Number.isSafeInteger(message.id) || message.id < 1) throw new Error('Invalid bridge request identity.');
@@ -23,26 +26,49 @@ async function handle(message) {
         await rename('/tmp/direct-complete.pending', '/tmp/direct-complete.json');
         return { completed: true };
     }
-    if (message.operation !== 'fetch' || !['GET', 'POST'].includes(message.method)
-        || !/^\/api\/v1\/[A-Za-z0-9/_-]+(?:\.m3u8|\.m4s|\.mp4)?$/.test(message.path || '')
-        || typeof message.body !== 'string' || message.body.length > 65536) throw new Error('Invalid fixture HTTP request.');
-    const headers = {};
-    for (const [key, value] of Object.entries(message.headers || {})) {
-        if (!['cookie', 'content-type', 'range', 'authorization'].includes(key) || typeof value !== 'string' || value.length > 4096 || /[\r\n]/.test(value)) throw new Error('Invalid fixture header.');
-        headers[key] = value;
+    if (message.operation === 'verify') {
+        const phase = message.report?.phase;
+        if (!['browser', 'native'].includes(phase) || verified.has(phase) || message.report.resourceId !== resourceId || Buffer.byteLength(JSON.stringify(message.report)) > 65536) throw new Error('Invalid live verification.');
+        verified.add(phase);
+        await writeFile(`/tmp/direct-observed-${phase}.pending`, JSON.stringify(message.report), { flag: 'wx', mode: 0o600 });
+        await rename(`/tmp/direct-observed-${phase}.pending`, `/tmp/direct-observed-${phase}.json`);
+        const deadline = Date.now() + 30000;
+        while (Date.now() < deadline) {
+            try {
+                const bytes = await readFile(`/tmp/direct-verified-${phase}.json`);
+                if (bytes.length > 65536) throw new Error('Verification response exceeded its bound.');
+                return { verified: JSON.parse(bytes) };
+            } catch (error) { if (error.code !== 'ENOENT') throw error; }
+            await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+        throw new Error('Live verification exceeded its deadline.');
     }
-    const response = await fetch(`http://127.0.0.1:38081${message.path}`, {
-        method: message.method, headers, ...(message.method === 'POST' ? { body: message.body } : {}),
-        signal: AbortSignal.timeout(30000), redirect: 'error',
+    if (message.operation === 'cancel') {
+        if (!Number.isSafeInteger(message.target)) throw new Error('Invalid event stream.');
+        streams.get(message.target)?.abort();
+        return { cancelled: true };
+    }
+    if (!['fetch', 'stream'].includes(message.operation)) throw new Error('Invalid fixture operation.');
+    const request = validateFixtureRequest(message);
+    const stream = message.operation === 'stream';
+    if (stream && (request.path !== '/api/v1/events' || request.method !== 'GET' || streams.size >= 2)) throw new Error('Invalid event stream.');
+    const controller = new AbortController();
+    if (stream) streams.set(message.id, controller);
+    const response = await fetch(`http://127.0.0.1:38081${request.path}`, {
+        ...request, signal: AbortSignal.any([controller.signal, AbortSignal.timeout(stream ? 120000 : 30000)]), redirect: 'error',
     });
+    const headers = fixtureResponseHeaders(response.headers);
+    if (stream) emit({ id: message.id, type: 'headers', status: response.status, headers });
     let bytes = 0;
     const chunks = [];
     for await (const chunk of response.body || []) {
         bytes += chunk.length;
-        if (bytes > 8388608) throw new Error('Fixture HTTP response exceeded its bound.');
-        chunks.push(Buffer.from(chunk));
+        if (bytes > (stream ? 1048576 : 8388608)) throw new Error('Fixture HTTP response exceeded its bound.');
+        if (stream) {
+            for (let offset = 0; offset < chunk.length; offset += 16384) emit({ id: message.id, type: 'chunk', body: Buffer.from(chunk.subarray(offset, offset + 16384)).toString('base64') });
+        } else chunks.push(Buffer.from(chunk));
     }
-    return { status: response.status, headers: Object.fromEntries([...response.headers].filter(([key]) => ['content-type', 'content-range', 'accept-ranges', 'cache-control'].includes(key))), body: Buffer.concat(chunks).toString('base64') };
+    return stream ? { type: 'end' } : { status: response.status, headers, body: Buffer.concat(chunks).toString('base64') };
 }
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
 lines.on('line', (line) => {
@@ -50,5 +76,9 @@ lines.on('line', (line) => {
     active += 1;
     let message;
     try { message = JSON.parse(line); } catch { emit({ id: 0, error: 'Invalid bridge JSON.' }); active -= 1; return; }
-    void handle(message).then((result) => emit({ id: message.id, ...result }), () => emit({ id: message.id, error: 'Fixture HTTP bridge request failed.' })).finally(() => { active -= 1; });
+    void handle(message).then((result) => emit({ id: message.id, ...result }), () => {
+        if (message.operation === 'stream' && streams.get(message.id)?.signal.aborted) emit({ id: message.id, type: 'end' });
+        else emit({ id: message.id, error: 'Fixture HTTP bridge request failed.' });
+    }).finally(() => { streams.get(message.id)?.abort(); streams.delete(message.id); active -= 1; });
 });
+lines.on('close', () => { for (const controller of streams.values()) controller.abort(); });
