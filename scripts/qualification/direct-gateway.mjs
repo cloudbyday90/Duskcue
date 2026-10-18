@@ -43,7 +43,7 @@ export async function startDirectGateway({ bridge, assets, host = '127.0.0.1', p
         requests.push(record);
         if (request.url === '/api/v1/events' && request.method === 'GET') {
             let stream;
-            const close = () => { void stream?.cancel().catch(() => {}); };
+            const close = () => { void Promise.resolve().then(() => stream?.cancel()).catch(() => {}); };
             response.once('close', close);
             stream = bridge.stream(message, (data) => {
                 if (data.type === 'headers') { record.status = data.status; response.writeHead(data.status, data.headers); response.flushHeaders(); }
@@ -65,7 +65,7 @@ export async function startDirectGateway({ bridge, assets, host = '127.0.0.1', p
     return {
         origin: `http://${host}:${server.address().port}`, requests, errors,
         async close() {
-            await Promise.allSettled([...streams].map((stream) => stream.cancel()));
+            await Promise.allSettled([...streams].map((stream) => Promise.resolve().then(() => stream.cancel())));
             server.closeAllConnections();
             await new Promise((resolve) => server.close(resolve));
             let timer;

@@ -9,6 +9,7 @@ import { fixtureResponseHeaders, validateFixtureRequest } from './direct-http-po
 const resourceId = process.env.DUSKCUE_TEST_RESOURCE_ID;
 if (!/^[a-f0-9-]{36}$/.test(resourceId || '') || process.env.DUSKCUE_TEST_DIRECT_BROWSER !== 'live') throw new Error('An owned direct-play fixture is required.');
 let active = 0;
+let controls = 0;
 let completed = false;
 const streams = new Map();
 const verified = new Set();
@@ -44,7 +45,7 @@ async function handle(message) {
         throw new Error('Live verification exceeded its deadline.');
     }
     if (message.operation === 'cancel') {
-        if (!Number.isSafeInteger(message.target)) throw new Error('Invalid event stream.');
+        if (!Number.isSafeInteger(message.target) || message.target < 1) throw new Error('Invalid event stream.');
         streams.get(message.target)?.abort();
         return { cancelled: true };
     }
@@ -72,13 +73,16 @@ async function handle(message) {
 }
 const lines = createInterface({ input: process.stdin, crlfDelay: Infinity });
 lines.on('line', (line) => {
-    if (line.length > 131072 || active >= 8) { emit({ id: 0, error: 'Bridge request bound exceeded.' }); return; }
-    active += 1;
+    if (line.length > 131072) { emit({ id: 0, error: 'Bridge request bound exceeded.' }); return; }
     let message;
-    try { message = JSON.parse(line); } catch { emit({ id: 0, error: 'Invalid bridge JSON.' }); active -= 1; return; }
+    try { message = JSON.parse(line); } catch { emit({ id: 0, error: 'Invalid bridge JSON.' }); return; }
+    if (!message || typeof message !== 'object' || Array.isArray(message) || !Number.isSafeInteger(message.id) || message.id < 1) { emit({ id: 0, error: 'Invalid bridge request identity.' }); return; }
+    const control = message.operation === 'cancel';
+    if (control ? controls >= 2 : active >= 8) { emit({ id: message.id, error: 'Bridge request bound exceeded.' }); return; }
+    if (control) controls += 1; else active += 1;
     void handle(message).then((result) => emit({ id: message.id, ...result }), () => {
         if (message.operation === 'stream' && streams.get(message.id)?.signal.aborted) emit({ id: message.id, type: 'end' });
         else emit({ id: message.id, error: 'Fixture HTTP bridge request failed.' });
-    }).finally(() => { streams.get(message.id)?.abort(); streams.delete(message.id); active -= 1; });
+    }).finally(() => { streams.get(message.id)?.abort(); streams.delete(message.id); if (control) controls -= 1; else active -= 1; });
 });
 lines.on('close', () => { for (const controller of streams.values()) controller.abort(); });

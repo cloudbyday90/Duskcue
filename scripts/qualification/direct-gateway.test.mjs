@@ -59,3 +59,18 @@ test('gateway forwards actual event bytes and cancels an owned stream when its c
         assert.equal(cancelled, true);
     } finally { finish?.(); await gateway.close(); }
 });
+
+test('gateway still shuts its listener when stream cancellation throws synchronously', async () => {
+    let cancelled = 0;
+    const gateway = await startDirectGateway({ bridge: { stream(_message, emit) {
+        const completion = Promise.withResolvers();
+        queueMicrotask(() => { emit({ type: 'headers', status: 200, headers: { 'content-type': 'text/event-stream' } }); emit({ type: 'chunk', body: Buffer.from('data: {}\n\n').toString('base64') }); });
+        return { done: completion.promise, cancel() { cancelled++; completion.resolve(); throw new Error('Cancellation transport failed.'); } };
+    } } });
+    const response = await fetch(`${gateway.origin}/api/v1/events`);
+    const body = response.text().catch(() => {});
+    await gateway.close();
+    await body;
+    assert.ok(cancelled >= 1);
+    await assert.rejects(fetch(`${gateway.origin}/api/v1/events`, { signal: AbortSignal.timeout(1000) }));
+});
