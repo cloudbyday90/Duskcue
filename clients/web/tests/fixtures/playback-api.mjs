@@ -5,6 +5,10 @@ import { createMediaResponder } from './media-response.mjs';
 import { createProgressiveHlsResponder } from './progressive-hls.mjs';
 
 const sessionId = (number) => `00000000-0000-7000-8000-${String(700 + number).padStart(12, '0')}`;
+const fallbackDescriptor = {
+    video: { content_type: 'video/mp4; codecs="avc1.640028"', width: 320, height: 180, bitrate: 500000, framerate: 30 },
+    audio: { content_type: 'audio/mp4; codecs="mp4a.40.2"', channels: '2', bitrate: 128000, samplerate: 48000 },
+};
 
 export async function installPlaybackApi(page, scenario, media, options = null) {
     options ||= {};
@@ -57,7 +61,8 @@ export async function installPlaybackApi(page, scenario, media, options = null) 
             const id = sessionId(sessions.size + 1);
             const decision = options.mode === 'transcode' ? 'transcode' : 'direct_play';
             const transcodeId = decision === 'transcode' ? id : null;
-            const session = { id, mediaItemId: item.id, mediaFileId: file.id, profileId: scenario.activeProfileId, decision, transcodeId, positionMs: 0, stopped: false };
+            const session = { id, mediaItemId: item.id, mediaFileId: file.id, profileId: scenario.activeProfileId, decision, transcodeId, positionMs: 0, stopped: false,
+                directRevision: options.directFallback && decision === 'direct_play' ? sessionId(2000 + sessions.size) : null, streamOffsetMs: 0, recovery: null };
             sessions.set(id, session);
             state.starts.push({ ...body, session_id: id });
             if (options.startDelayMs) await new Promise((resolve) => setTimeout(resolve, options.startDelayMs));
@@ -66,6 +71,7 @@ export async function installPlaybackApi(page, scenario, media, options = null) 
                 media_item_id: item.id, media_file_id: file.id, source_video_codec: 'h264', source_audio_codec: 'aac', target_video_codec: decision === 'transcode' ? 'h264' : null,
                 target_audio_codec: decision === 'transcode' ? 'aac' : null, transcode_session_id: transcodeId, selected_audio_stream_index: body.audio_stream_index ?? null,
                 selected_subtitle_stream_index: body.subtitle_stream_index ?? null, restart_required: false, playback_mode: 'interactive', ambient_channel_id: null, ambient_channel_updated_at: null,
+                direct_source_revision: session.directRevision, direct_fallback: session.directRevision ? fallbackDescriptor : null,
             });
         }
         if (method === 'POST' && ['/playback/heartbeat', '/playback/stop', '/playback/seek'].includes(path)) {
@@ -75,12 +81,24 @@ export async function installPlaybackApi(page, scenario, media, options = null) 
             session.positionMs = Math.max(0, Number(body.position_ms) || 0);
             if (path === '/playback/heartbeat') {
                 state.heartbeats.push(body);
-                return json({ session_id: session.id, position_ms: session.positionMs, playback_mode: 'interactive' });
+                if (options.directFallback && session.directRevision && body.direct_source_revision === session.directRevision
+                    && body.recovery_requested === true && body.direct_fallback_supported === true) {
+                    session.decision = 'transcode';
+                    session.transcodeId = sessionId(3000 + state.heartbeats.length);
+                    session.streamOffsetMs = session.positionMs;
+                    session.directRevision = null;
+                    session.recovery = { status: 'recovered', attempts: 1, reason: 'direct_decode', skipped_ms: 0, quality_reduced: false };
+                }
+                return json({ session_id: session.id, position_ms: session.positionMs, playback_mode: 'interactive', stream_decision: session.decision,
+                    transcode_session_id: session.transcodeId, stream_offset_ms: session.streamOffsetMs,
+                    direct_source_revision: session.directRevision, direct_fallback: session.directRevision ? fallbackDescriptor : null, recovery: session.recovery });
             }
             if (path === '/playback/seek') {
                 state.seeks.push(body);
                 if (options.seekReplacement && session.decision === 'transcode') session.transcodeId = sessionId(1000 + state.seeks.length);
-                return json({ session_id: session.id, position_ms: session.positionMs, stream_url: options.seekReplacement ? `/api/v1/transcode/${session.transcodeId}/manifest.m3u8` : null, transcode_session_id: options.seekReplacement ? session.transcodeId : null, playback_mode: 'interactive' });
+                if (session.directRevision) session.directRevision = sessionId(4000 + state.seeks.length);
+                return json({ session_id: session.id, position_ms: session.positionMs, stream_url: options.seekReplacement ? `/api/v1/transcode/${session.transcodeId}/manifest.m3u8` : null,
+                    transcode_session_id: options.seekReplacement ? session.transcodeId : null, direct_source_revision: session.directRevision, playback_mode: 'interactive' });
             }
             state.stops.push(body);
             session.stopped = true;
@@ -102,7 +120,10 @@ export async function installPlaybackApi(page, scenario, media, options = null) 
         const info = path.match(/^\/playback\/info\/([^/]+)$/);
         if (method === 'GET' && info) {
             const session = sessions.get(info[1]);
-            return session ? json({ session_id: session.id, media_item_id: session.mediaItemId, stream_decision: session.decision, position_ms: session.positionMs, duration_ms: duration * 1000, transcode_progress: null, is_paused: false, started_at: new Date().toISOString() }) : json({ status: 404 }, 404);
+            return session ? json({ session_id: session.id, media_item_id: session.mediaItemId, media_file_id: session.mediaFileId,
+                stream_decision: session.decision, transcode_session_id: session.transcodeId, stream_offset_ms: session.streamOffsetMs,
+                direct_source_revision: session.directRevision, direct_fallback: session.directRevision ? fallbackDescriptor : null, recovery: session.recovery,
+                position_ms: session.positionMs, duration_ms: duration * 1000, transcode_progress: null, is_paused: false, started_at: new Date().toISOString() }) : json({ status: 404 }, 404);
         }
         if (method === 'GET' && /^\/stream\/[^/]+$/.test(path)) return serve(route, `${clip}.mp4`, 'video/mp4');
         const hls = path.match(/^\/transcode\/([^/]+)\/(manifest\.m3u8|v0\/(index\.m3u8|segment-\d+\.ts))$/);

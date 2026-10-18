@@ -447,6 +447,18 @@ async fn stop_is_idempotent_serializes_heartbeat_seek_and_retains_original_profi
             library,
         })
         .await?;
+        playback_progressive::real_direct_playback(playback_progressive::ProgressiveFixture {
+            pool: &pool,
+            state: &state,
+            source: &source,
+            token: &tokens[0],
+            peer_token: &tokens[1],
+            user: owner,
+            original_profile: original,
+            kids_profile: kids,
+            library,
+        })
+        .await?;
     }
     let deleted_file_session = insert_play(&pool, owner, original, item, library, file).await?;
     sqlx::query("DELETE FROM media_files WHERE id=$1")

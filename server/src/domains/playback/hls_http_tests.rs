@@ -62,6 +62,7 @@ fn session(id: Uuid, owner: Uuid, directory: PathBuf, rendition: &str) -> Transc
             video: crate::services::transcoding::plan::StreamAction::Encode,
             audio: crate::services::transcoding::plan::StreamAction::Encode,
         },
+        output_profile: None,
         target_audio_channels: Some(2),
         target_audio_bitrate: Some(192_000),
         subtitle_stream_index: None,

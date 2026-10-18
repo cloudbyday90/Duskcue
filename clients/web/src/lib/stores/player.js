@@ -20,6 +20,7 @@ import { writable, derived, get } from 'svelte/store';
 import { createPlaybackSessionGuard } from '../playback/session.js';
 import { createPlaybackHeartbeat } from '../playback/heartbeat.js';
 import { playbackRecovery } from '../playback/recovery.js';
+import { directFallbackDescriptor, directSourceRevision, probeCompatibleHlsOutput } from '../playback/capabilities.js';
 import { createPlaybackRelease, playbackContextKey, PlaybackReleaseError } from '../playback/release.js';
 import {
     startPlayback as apiStartPlayback,
@@ -47,7 +48,7 @@ function saveVolume(volume) {
     localStorage.setItem(VOLUME_STORAGE_KEY, String(volume));
 }
 
-export function createPlayerStore() {
+export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } = {}) {
     let pendingStop = null;
     let pendingPlay = null;
     let contextKey = null;
@@ -55,6 +56,8 @@ export function createPlayerStore() {
     let releaseState = { phase: 'idle', error: null };
     let streamRevision = 0;
     let recoveryResumePlaying = null;
+    let directProbe = null;
+    let directAttemptRevision = null;
     const sessionGuard = createPlaybackSessionGuard(apiStopPlayback);
 
     function initialState() {
@@ -66,6 +69,9 @@ export function createPlayerStore() {
         streamDecision: null,
         streamOffsetMs: 0,
         transcodeSessionId: null,
+        directSourceRevision: null,
+        directFallback: null,
+        directFallbackSupported: false,
         recovery: null,
         recoveryRequested: false,
         seeking: false,
@@ -85,17 +91,24 @@ export function createPlayerStore() {
     }
 
     const { subscribe, set, update } = writable(initialState());
+    function cancelDirectProbe() {
+        directProbe?.controller.abort();
+        directProbe = null;
+    }
+
     function ownsHeartbeat(snapshot) {
         const state = get({ subscribe });
         return !pendingStop && !state.loading && !state.seeking && !state.sessionReleased && state.release.phase === 'idle'
             && snapshot.contextKey === contextKey && sessionContextKey === contextKey
             && snapshot.streamRevision === streamRevision && snapshot.sessionId === state.sessionId
-            && (snapshot.transcodeSessionId ?? null) === (state.transcodeSessionId ?? null);
+            && snapshot.streamUrl === state.streamUrl
+            && (snapshot.transcodeSessionId ?? null) === (state.transcodeSessionId ?? null)
+            && (snapshot.directSourceRevision ?? null) === (state.directSourceRevision ?? null);
     }
 
     function recoveryUnavailable(snapshot) {
         if (!snapshot.recoveryRequested || !ownsHeartbeat(snapshot)) return;
-        update((state) => ({ ...state, recoveryRequested: false, isBuffering: false, isPlaying: false,
+        update((state) => ({ ...state, recoveryRequested: false, directFallbackSupported: false, isBuffering: false, isPlaying: false,
             recovery: { status: 'exhausted', attempts: state.recovery?.attempts || 0, reason: 'unavailable', skipped_ms: 0, quality_reduced: false } }));
     }
 
@@ -112,14 +125,29 @@ export function createPlayerStore() {
             if (!Number.isSafeInteger(response.stream_offset_ms) || response.stream_offset_ms < 0
                 || !Number.isSafeInteger(response.position_ms) || response.position_ms < 0) { recoveryUnavailable(snapshot); return; }
             streamRevision += 1;
+            cancelDirectProbe();
             const resumePlaying = recoveryResumePlaying ?? state.isPlaying;
             recoveryResumePlaying = null;
             update((current) => ({ ...current, transcodeSessionId: response.transcode_session_id,
+                streamDecision: response.stream_decision || (current.streamDecision === 'direct_play' ? 'transcode' : current.streamDecision),
                 streamUrl: transcodeManifestUrl(response.transcode_session_id), streamOffsetMs: response.stream_offset_ms,
+                directSourceRevision: null, directFallback: null, directFallbackSupported: false,
                 positionMs: response.position_ms, recovery: recovery || (current.recovery?.status === 'recovered' ? current.recovery : null), recoveryRequested: false,
                 isPlaying: recovery?.status === 'exhausted' ? false : resumePlaying, isBuffering: false, error: null }));
+        } else if (state.streamDecision === 'direct_play' && response.stream_decision === 'direct_play'
+            && directSourceRevision(response.direct_source_revision) && response.direct_source_revision !== state.directSourceRevision
+            && Number.isSafeInteger(response.position_ms) && response.position_ms >= 0) {
+            streamRevision += 1;
+            cancelDirectProbe();
+            const resumePlaying = recoveryResumePlaying ?? state.isPlaying;
+            recoveryResumePlaying = null;
+            update((current) => ({ ...current, directSourceRevision: response.direct_source_revision,
+                directFallback: directFallbackDescriptor(response.direct_fallback), positionMs: response.position_ms,
+                recoveryRequested: false, directFallbackSupported: false, recovery: recovery || null,
+                isPlaying: recovery?.status === 'exhausted' ? false : resumePlaying, isBuffering: false }));
         } else if (recovery?.status === 'exhausted') {
-            update((current) => ({ ...current, recovery, recoveryRequested: false, isPlaying: false, isBuffering: false }));
+            cancelDirectProbe();
+            update((current) => ({ ...current, recovery, recoveryRequested: false, directFallbackSupported: false, isPlaying: false, isBuffering: false }));
         } else if (snapshot.recoveryRequested) {
             recoveryUnavailable(snapshot);
         }
@@ -127,9 +155,9 @@ export function createPlayerStore() {
 
     const heartbeat = createPlaybackHeartbeat({ readState: () => {
         const state = get({ subscribe });
-        return { ...state, contextKey, streamRevision,
+        return { ...state, contextKey, streamRevision, recoveryResumePlaying,
             ...(pendingStop || state.loading || state.seeking || state.sessionReleased || state.release.phase !== 'idle' ? { sessionId: null } : {}) };
-    }, send: apiHeartbeat, onResponse: receiveHeartbeat, onError: (_error, snapshot) => recoveryUnavailable(snapshot), intervalMs: HEARTBEAT_INTERVAL_MS });
+    }, send: apiHeartbeat, isCurrent: ownsHeartbeat, onResponse: receiveHeartbeat, onError: (_error, snapshot) => recoveryUnavailable(snapshot), intervalMs: HEARTBEAT_INTERVAL_MS });
     const release = createPlaybackRelease({
         readContext: () => contextKey,
         drain: heartbeat.drain,
@@ -162,6 +190,8 @@ export function createPlayerStore() {
             const ownedContext = contextKey;
             const token = sessionGuard.begin();
             streamRevision += 1;
+            cancelDirectProbe();
+            directAttemptRevision = null;
             recoveryResumePlaying = null;
             const abort = () => {
                 if (sessionGuard.isCurrent(token)) {
@@ -182,6 +212,7 @@ export function createPlayerStore() {
                 const result = await apiStartPlayback({
                     media_item_id: mediaItem.id,
                     media_file_id: mediaFileId,
+                    direct_recovery_protocol: 1,
                     device_profile: options.deviceProfile || null,
                     max_streaming_bitrate: options.maxBitrate || null,
                     force_transcode: options.forceTranscode || false,
@@ -220,6 +251,9 @@ export function createPlayerStore() {
                     streamUrl,
                     streamDecision: decision,
                     transcodeSessionId: result.transcode_session_id || null,
+                    directSourceRevision: directSourceRevision(result.direct_source_revision),
+                    directFallback: directFallbackDescriptor(result.direct_fallback),
+                    directFallbackSupported: false,
                     streamOffsetMs: 0,
                     positionMs: options.startPositionMs || 0,
                     durationMs: (mediaItem.runtime_seconds || 0) * 1000,
@@ -252,6 +286,7 @@ export function createPlayerStore() {
             const ownedContext = contextKey;
             const token = sessionGuard.begin();
             streamRevision += 1;
+            cancelDirectProbe();
             recoveryResumePlaying = null;
             try {
                 if (release.hasPending()) await release.request();
@@ -263,6 +298,10 @@ export function createPlayerStore() {
                     sessionId,
                     streamDecision: info.stream_decision || null,
                     transcodeSessionId: info.transcode_session_id || null,
+                    mediaFileId: info.media_file_id || s.mediaFileId,
+                    directSourceRevision: directSourceRevision(info.direct_source_revision),
+                    directFallback: directFallbackDescriptor(info.direct_fallback),
+                    directFallbackSupported: false,
                     streamUrl: info.transcode_session_id ? transcodeManifestUrl(info.transcode_session_id) : info.media_file_id ? streamFileUrl(info.media_file_id) : s.streamUrl,
                     streamOffsetMs: Number.isSafeInteger(info.stream_offset_ms) ? info.stream_offset_ms : 0,
                     positionMs: info.position_ms || 0,
@@ -281,20 +320,46 @@ export function createPlayerStore() {
             }
         },
 
+        getPlayIntent() {
+            return recoveryResumePlaying ?? get({ subscribe }).isPlaying;
+        },
+
         setPlaying(playing) {
             if (recoveryResumePlaying !== null) recoveryResumePlaying = playing;
             update((s) => ({ ...s, isPlaying: playing && !s.sessionReleased && s.release.phase === 'idle', isBuffering: false }));
         },
 
-        async reportSourceFailure({ positionMs = Number.NaN, recoveryRequested = false } = {}) {
+        async reportSourceFailure({ positionMs = Number.NaN, recoveryRequested = false, sourceUrl = null, sourceMode = null, mediaErrorCode = null } = {}) {
             const state = get({ subscribe });
-            if (pendingStop || !state.sessionId || state.loading || state.seeking || state.sessionReleased || state.release.phase !== 'idle') return false;
+            if (pendingStop || !state.sessionId || state.loading || state.seeking || state.sessionReleased || state.release.phase !== 'idle'
+                || (sourceUrl && sourceUrl !== state.streamUrl)) return false;
+            if (directProbe) return directProbe.promise;
             recoveryResumePlaying ??= state.isPlaying;
             const request = recoveryRequested && !!state.transcodeSessionId;
+            const direct = recoveryRequested && sourceMode === 'direct' && mediaErrorCode === 3 && state.streamDecision === 'direct_play'
+                && !!state.directSourceRevision && !!state.directFallback && directAttemptRevision !== state.directSourceRevision;
             update((current) => ({ ...current,
                 positionMs: Number.isFinite(positionMs) && positionMs >= 0 ? Math.floor(positionMs) : current.positionMs,
-                isPlaying: false, isBuffering: request,
-                ...(request ? { recoveryRequested: true, recovery: { status: 'pending' } } : {}) }));
+                isPlaying: false, isBuffering: request || direct,
+                ...(request || direct ? { recoveryRequested: request, recovery: { status: 'pending' } } : {}) }));
+            if (direct) {
+                directAttemptRevision = state.directSourceRevision;
+                const snapshot = Object.freeze({ ...state, contextKey, streamRevision, recoveryRequested: true });
+                const record = { controller: new AbortController(), promise: null };
+                record.promise = Promise.resolve().then(async () => {
+                    if (!ownsHeartbeat(snapshot)) return false;
+                    let support;
+                    try { support = await probeFallback(state.directFallback, { signal: record.controller.signal }); }
+                    catch { support = 'unknown'; }
+                    if (record.controller.signal.aborted || !ownsHeartbeat(snapshot)) return false;
+                    if (support !== 'supported') { recoveryUnavailable(snapshot); return false; }
+                    update((current) => ({ ...current, recoveryRequested: true, directFallbackSupported: true }));
+                    await heartbeat.sendNow();
+                    return true;
+                }).finally(() => { if (directProbe === record) directProbe = null; });
+                directProbe = record;
+                return record.promise;
+            }
             if (request) await heartbeat.sendNow();
             return request;
         },
@@ -339,6 +404,7 @@ export function createPlayerStore() {
             if (!state.sessionId || state.sessionReleased || state.release.phase !== 'idle') return null;
             const token = sessionGuard.begin();
             streamRevision += 1;
+            cancelDirectProbe();
             const resumePlaying = recoveryResumePlaying ?? state.isPlaying;
             recoveryResumePlaying = null;
             const abort = () => {
@@ -350,6 +416,7 @@ export function createPlayerStore() {
             options.signal?.addEventListener('abort', abort, { once: true });
 
             update((s) => ({ ...s, positionMs, isPlaying: resumePlaying, isBuffering: true, seeking: true, recoveryRequested: false,
+                directFallbackSupported: false,
                 recovery: s.recovery?.status === 'recovered' ? s.recovery : null }));
 
             try {
@@ -365,13 +432,17 @@ export function createPlayerStore() {
                     update((s) => ({
                         ...s,
                         transcodeSessionId: result.transcode_session_id || s.transcodeSessionId,
+                        streamDecision: result.stream_decision || (result.transcode_session_id && s.streamDecision === 'direct_play' ? 'transcode' : s.streamDecision),
                         streamUrl: result.transcode_session_id ? transcodeManifestUrl(result.transcode_session_id) : result.stream_url || s.streamUrl,
+                        directSourceRevision: result.transcode_session_id ? null : directSourceRevision(result.direct_source_revision) || s.directSourceRevision,
+                        directFallback: result.transcode_session_id ? null : s.directFallback,
                         streamOffsetMs: Number.isSafeInteger(result.stream_offset_ms) ? result.stream_offset_ms : positionMs,
                         positionMs: Number.isSafeInteger(result.position_ms) ? result.position_ms : positionMs,
                         isBuffering: false,
                     }));
                 } else {
-                    update((s) => ({ ...s, isBuffering: false }));
+                    update((s) => ({ ...s, isBuffering: false, positionMs: Number.isSafeInteger(result.position_ms) && result.position_ms >= 0 ? result.position_ms : positionMs,
+                        directSourceRevision: Object.hasOwn(result, 'direct_source_revision') ? directSourceRevision(result.direct_source_revision) : s.directSourceRevision }));
                 }
 
                 return result;
@@ -390,6 +461,7 @@ export function createPlayerStore() {
             const state = { ...get({ subscribe }), contextKey: sessionContextKey };
             const token = sessionGuard.invalidate();
             streamRevision += 1;
+            cancelDirectProbe();
             const ownedContext = contextKey;
             const starting = pendingPlay;
             heartbeat.stopTimer();
@@ -421,6 +493,8 @@ export function createPlayerStore() {
             sessionContextKey = null;
             sessionGuard.invalidate();
             streamRevision += 1;
+            cancelDirectProbe();
+            directAttemptRevision = null;
             recoveryResumePlaying = null;
             heartbeat.stopTimer();
             release.invalidate();
@@ -432,6 +506,8 @@ export function createPlayerStore() {
         reset({ preserveRelease = false } = {}) {
             sessionGuard.invalidate();
             streamRevision += 1;
+            cancelDirectProbe();
+            directAttemptRevision = null;
             recoveryResumePlaying = null;
             heartbeat.stopTimer();
             if (!preserveRelease) release.invalidate();
@@ -458,6 +534,7 @@ export function createPlayerStore() {
 
         destroy() {
             streamRevision += 1;
+            cancelDirectProbe();
             heartbeat.stopTimer();
         },
     };

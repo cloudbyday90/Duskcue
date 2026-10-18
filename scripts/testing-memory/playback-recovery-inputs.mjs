@@ -12,7 +12,7 @@ export function parseRecoveryArguments(args) {
     return { image: args[1] };
 }
 
-export async function owningRecoveryDirectory(workspace, environment) {
+export async function owningRecoveryDirectory(workspace, environment, workload = 'playback-recovery-qualify') {
     const root = await realpath(join(workspace, '.cache/testing-memory'));
     const resourceId = environment.DUSKCUE_TEST_RESOURCE_ID;
     const marker = environment.DUSKCUE_TEST_RESOURCE_CONTAINERS_FILE;
@@ -21,7 +21,7 @@ export async function owningRecoveryDirectory(workspace, environment) {
     let active;
     do {
         active = JSON.parse(await readFile(join(root, 'active.json'), 'utf8'));
-        if (active.pid !== process.ppid || active.workload !== 'playback-recovery-qualify') throw new Error('Recovery qualification must be the child of its owning build workflow.');
+        if (!['playback-recovery-qualify', 'playback-direct-qualify'].includes(workload) || active.pid !== process.ppid || active.workload !== workload) throw new Error('Recovery qualification must be the child of its owning build workflow.');
         if (active.childPid === process.pid) break;
         if (active.childPid !== null) throw new Error('The build workflow owns a different child.');
         await new Promise((resume) => setTimeout(resume, 20));
@@ -52,7 +52,7 @@ export async function recoverySources(workspace) {
     return { files, sha256: createHash('sha256').update(JSON.stringify(files)).digest('hex') };
 }
 
-export async function copyRecoverySnapshot(workspace, directory, expected) {
+export async function copyRecoverySnapshot(workspace, directory, expected, sources = recoverySources) {
     await mkdir(directory);
     for (const file of expected.files) {
         const destination = join(directory, file.path);
@@ -60,7 +60,7 @@ export async function copyRecoverySnapshot(workspace, directory, expected) {
         await copyFile(join(workspace, file.path), destination);
     }
     await writeFile(join(directory, '.dockerignore'), '.git\nnode_modules\n**/node_modules\ntarget\n**/target\n.env\n.env.*\n');
-    if ((await recoverySources(directory)).sha256 !== expected.sha256) throw new Error('Recovery sources changed while copying the current working tree.');
+    if ((await sources(directory)).sha256 !== expected.sha256) throw new Error('Recovery sources changed while copying the current working tree.');
 }
 
 export function validateRecoveryImage(info, { source, base, architecture }) {

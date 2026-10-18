@@ -8,6 +8,8 @@ GitHub MCP pagination returned the complete open pool `[5]` and an empty second 
 
 The bounded playback-recovery iteration repeated the complete open-PR discovery through GitHub MCP: page one contained only PR #5, and page two was empty. A new uniform cryptographic draw over that one-entry pool selected index `0`, again PR #5 at the same head. Its functional dependency delta is already included and superseded by the patched versions below, so this iteration requires no additional PR patch and does not downgrade either lockfile. The canonical PR remains open and unmerged; this recheck made no remote mutation.
 
+On 18 October 2026, the authenticated direct-fallback iteration searched the current open PRs through GitHub MCP and again found only #5. A fresh cryptographic draw selected index `0`; the metadata and complete two-file patch still identify head `c018d77b7f09543e5960a571dc43e2f061cedf0a`. The current lockfiles already supersede that locally applied patch. No additional dependency delta or downgrade is introduced, and no remote merge, comment or closure is performed. Both current npm graphs were audited again and returned zero advisories; the shared client tests were also rerun. Final application and image results are owned by [Direct-play fallback](../design/PLAYBACK_DIRECT_FALLBACK.md).
+
 The selected patch addresses [PostCSS source-map handling](https://github.com/postcss/postcss/security/advisories/GHSA-fxqj-rqcc-2cmp) and the nanoid negative-size loop described in its [official changelog](https://github.com/ai/nanoid/blob/main/CHANGELOG.md). The exact PR versions did not clear every current advisory, so the final lockfiles include a separate compatible security follow-up.
 
 ## Final recommendation and tradeoffs

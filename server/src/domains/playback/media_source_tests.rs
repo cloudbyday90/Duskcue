@@ -8,6 +8,8 @@ use serde_json::json;
 fn details() -> MediaFileDetails {
     MediaFileDetails {
         id: Uuid::now_v7(),
+        file_size: 1,
+        updated_at: chrono::Utc::now(),
         file_path: "movie.mkv".into(),
         container_format: "mkv".into(),
         video_codec: None,
@@ -33,6 +35,26 @@ fn absent_source_metadata_does_not_invent_supported_codecs_or_bit_depth() {
     assert_eq!(media.video_frame_rate, 0.0);
     assert_eq!(media.video_dynamic_range, "unknown");
     assert!(selected.video_stream_index.is_none());
+}
+
+#[test]
+fn actual_source_dimensions_are_preserved_instead_of_using_label_defaults() {
+    let mut source = details();
+    source.video_resolution = Some("320x180".into());
+    let (media, _) = build_media_file_info(&source, None, None).unwrap();
+    assert_eq!(media.video_resolution, (320, 180));
+    source.video_resolution = Some("720p".into());
+    assert_eq!(source_resolution(&source), Some((1280, 720)));
+    for value in [
+        "unknown",
+        "0x720",
+        "1920x0",
+        "999999x999999",
+        "1920x1080x60",
+    ] {
+        source.video_resolution = Some(value.into());
+        assert!(source_resolution(&source).is_none());
+    }
 }
 
 #[test]

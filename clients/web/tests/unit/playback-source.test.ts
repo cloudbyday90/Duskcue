@@ -40,7 +40,7 @@ describe('media source lifecycle and credentials', () => {
         await source.attach('/api/v1/stream/one');
         media.error = { code: 4 };
         media.dispatchEvent(new Event('error'));
-        expect(failure).toHaveBeenCalledExactlyOnceWith(media.error, { url: '/api/v1/stream/one', positionSeconds: 0, recoveryRequested: false });
+        expect(failure).toHaveBeenCalledExactlyOnceWith(media.error, { url: '/api/v1/stream/one', mode: 'direct', mediaErrorCode: 4, positionSeconds: 0, recoveryRequested: false });
         source.release();
         media.dispatchEvent(new Event('error'));
         source.dispose();
@@ -73,7 +73,7 @@ describe('media source lifecycle and credentials', () => {
         expect(instances[0].recoverMediaError).toHaveBeenCalledOnce();
         expect(failure).not.toHaveBeenCalled();
         instances[0].emitError({ fatal: true, type: Hls.ErrorTypes.MEDIA_ERROR });
-        expect(failure.mock.calls[0][1]).toEqual({ url: '/api/v1/transcode/one/manifest.m3u8', positionSeconds: 12.5, recoveryRequested: true });
+        expect(failure.mock.calls[0][1]).toEqual({ url: '/api/v1/transcode/one/manifest.m3u8', mode: 'hls-mse', mediaErrorCode: null, positionSeconds: 12.5, recoveryRequested: true });
         expect(media.currentTime).toBe(0);
         instances[0].emitError({ fatal: true, type: Hls.ErrorTypes.MEDIA_ERROR });
         expect(failure).toHaveBeenCalledOnce();
@@ -152,6 +152,20 @@ describe('media source lifecycle and credentials', () => {
         media.error = { code: 3 };
         media.dispatchEvent(new Event('error'));
         expect(failure.mock.calls[0][1]).toMatchObject({ positionSeconds: 4.25, recoveryRequested: true });
+        source.dispose();
+    });
+
+    it('retains the direct delivery identity and typed decode code before unloading', async () => {
+        const media = video();
+        const failure = vi.fn((_error: unknown, _details: any) => {});
+        media.load.mockImplementation(() => { media.currentTime = 0; });
+        const source = createMediaSource({ video: media, requiresHeaders: () => false, onError: failure });
+        await source.attach('/api/v1/stream/direct');
+        media.currentTime = 7.5;
+        media.error = { code: 3 };
+        media.dispatchEvent(new Event('error'));
+        expect(failure.mock.calls[0][1]).toEqual({ url: '/api/v1/stream/direct', mode: 'direct', mediaErrorCode: 3, positionSeconds: 7.5, recoveryRequested: true });
+        expect(media.currentTime).toBe(0);
         source.dispose();
     });
     it('cannot attach an HLS import that finishes after disposal', async () => {

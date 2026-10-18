@@ -93,6 +93,7 @@
     let retryButton = $state();
     let trackStatus = $derived(playbackState?.fallback?.audio || playbackState?.fallback?.subtitle ? m.tonight_player_track_fallback() : '');
     let recoveryPending = $derived($player.recovery?.status === 'pending');
+    let controlPlaying = $derived(recoveryPending ? player.getPlayIntent() : $isPlaying);
     let recoveryExhausted = $derived($player.recovery?.status === 'exhausted');
     let recoveryMessage = $derived(playbackRecoveryMessage($player.recovery));
     let recoveryNotice = $derived.by(() => {
@@ -158,7 +159,8 @@
         mediaSource = createMediaSource({ video: videoEl, shouldPlay: () => $player.isPlaying, onError: (_error, details) => {
             sourceError = true;
             const positionMs = Number.isFinite(details?.positionSeconds) ? details.positionSeconds * 1000 + ($player.streamOffsetMs || 0) : $player.positionMs;
-            void player.reportSourceFailure({ positionMs, recoveryRequested: details?.recoveryRequested === true });
+            void player.reportSourceFailure({ positionMs, recoveryRequested: details?.recoveryRequested === true,
+                sourceUrl: details?.url, sourceMode: details?.mode, mediaErrorCode: details?.mediaErrorCode });
         }, onPlaybackBlocked: () => player.setPlaying(false), onTimelineChange: (timeline) => {
             if (!isMounted) return;
             sourceTimeline = timeline;
@@ -199,6 +201,8 @@
     });
 
     let lastAttachedUrl = null;
+    let lastAppliedDirectRevision = null;
+    let seekRequestRevision = 0;
     $effect(() => {
         const subtitle = playbackState?.selection?.subtitle;
         const enabled = Number.isInteger(subtitle?.index) && subtitle.index >= 0;
@@ -213,6 +217,14 @@
             sourceError = false;
             mediaSource?.attach(url);
         }
+    });
+
+    $effect(() => {
+        const revision = $player.directSourceRevision;
+        if (!isMounted || closing || exitRequested || $player.seeking || !revision || revision === lastAppliedDirectRevision
+            || $streamDecision !== 'direct_play' || sourceTimeline?.mode !== 'direct' || sourceTimeline?.url !== $streamUrl || !videoEl?.readyState) return;
+        videoEl.currentTime = $player.positionMs / 1000;
+        lastAppliedDirectRevision = revision;
     });
 
     $effect(() => {
@@ -344,7 +356,7 @@
 
     function togglePlayPause() {
         if (!videoEl || controlsDisabled) return;
-        const playing = !$player.isPlaying;
+        const playing = !controlPlaying;
         player.setPlaying(playing);
         if (!playing) videoEl.pause();
         else if (videoEl.currentSrc || videoEl.src) videoEl.play().catch(() => {});
@@ -371,15 +383,28 @@
     function handleSeekEnd() {
         isSeeking = false;
         isKeyboardSeeking = false;
-        const positionMs = seekValue;
-        const decision = $streamDecision;
+        void seekPlayback(seekValue);
+    }
 
-        if (decision === 'direct_play' && videoEl) {
-            videoEl.currentTime = positionMs / 1000;
-            player.setPosition(positionMs);
-        } else {
-            player.seek(positionMs).catch(() => { sourceError = true; });
-        }
+    async function seekPlayback(positionMs) {
+        if (controlsDisabled || !videoEl) return;
+        const revision = ++seekRequestRevision;
+        const ownedSession = $player.sessionId;
+        const ownedUrl = $streamUrl;
+        try {
+            const result = await player.seek(positionMs);
+            if (!result || revision !== seekRequestRevision || !isMounted || closing || exitRequested || $player.sessionId !== ownedSession) return;
+            if ($streamDecision === 'direct_play' && $streamUrl === ownedUrl) {
+                if (sourceTimeline?.url === ownedUrl && sourceTimeline?.mode === 'direct') {
+                    videoEl.currentTime = $player.positionMs / 1000;
+                    lastAppliedDirectRevision = $player.directSourceRevision;
+                } else if (sourceTimeline?.mode === 'detached') {
+                    sourceError = false;
+                    lastAttachedUrl = ownedUrl;
+                    await mediaSource?.attach(ownedUrl);
+                }
+            }
+        } catch { if (revision === seekRequestRevision && isMounted && !closing && !exitRequested && $player.sessionId === ownedSession && $streamUrl === ownedUrl) sourceError = true; }
     }
 
     function handleSeekBarMouseMove(event) {
@@ -408,15 +433,8 @@
     function handleSkip(skipToMs) {
         if (!videoEl || skipToMs == null) return;
         autoplay.reset();
-        const decision = $streamDecision;
         showControls();
-        if (decision === 'direct_play') {
-            const clamped = Math.max(0, Math.min(videoEl.duration || skipToMs / 1000, skipToMs / 1000));
-            videoEl.currentTime = clamped;
-            player.setPosition(clamped * 1000);
-        } else {
-            player.seek(skipToMs).catch(() => { sourceError = true; });
-        }
+        void seekPlayback(Math.max(0, Math.min(durationMs || skipToMs, skipToMs)));
     }
 
     function handleVolumeChange(event) {
@@ -478,8 +496,7 @@
                 event.preventDefault();
                 if (videoEl) {
                     const newPos = Math.max(0, $player.positionMs - PLAYER_SEEK_STEP_S * 1000);
-                    if ($streamDecision === 'direct_play') videoEl.currentTime = newPos / 1000;
-                    else player.seek(newPos).catch(() => { sourceError = true; });
+                    void seekPlayback(newPos);
                 }
                 break;
             case 'ArrowRight':
@@ -487,8 +504,7 @@
                 event.preventDefault();
                 if (videoEl) {
                     const newPos = Math.min(durationMs || Infinity, $player.positionMs + PLAYER_SEEK_STEP_S * 1000);
-                    if ($streamDecision === 'direct_play') videoEl.currentTime = newPos / 1000;
-                    else player.seek(newPos).catch(() => { sourceError = true; });
+                    void seekPlayback(newPos);
                 }
                 break;
             case 'ArrowUp':
@@ -726,8 +742,8 @@
 
         <div class="controls-row">
             <div class="controls-left">
-                <button lang={$isPlaying ? messageLocale('tonight_player_pause') : messageLocale('tonight_player_play')} class="control-btn" disabled={controlsDisabled} onclick={togglePlayPause} aria-label={$isPlaying ? m.tonight_player_pause() : m.tonight_player_play()}>
-                    {#if $isPlaying}
+                <button lang={controlPlaying ? messageLocale('tonight_player_pause') : messageLocale('tonight_player_play')} class="control-btn" disabled={controlsDisabled} onclick={togglePlayPause} aria-label={controlPlaying ? m.tonight_player_pause() : m.tonight_player_play()}>
+                    {#if controlPlaying}
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
                             <rect x="6" y="5" width="4" height="14" rx="1" />
                             <rect x="14" y="5" width="4" height="14" rx="1" />

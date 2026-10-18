@@ -15,6 +15,8 @@ use duskcue::state::{AppState, RuntimeConfig};
 use serde_json::{Value, json};
 use uuid::Uuid;
 
+#[path = "playback_direct.rs"]
+mod direct;
 #[path = "playback_progressive_media.rs"]
 mod media;
 #[path = "playback_progressive_process.rs"]
@@ -43,6 +45,10 @@ pub(super) fn enabled() -> bool {
 
 pub(super) async fn real_recovery_playback(fixture: ProgressiveFixture<'_>) -> anyhow::Result<()> {
     recovery::run(fixture).await
+}
+
+pub(super) async fn real_direct_playback(fixture: ProgressiveFixture<'_>) -> anyhow::Result<()> {
+    direct::run(fixture).await
 }
 
 struct Session {

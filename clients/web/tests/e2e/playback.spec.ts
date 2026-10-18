@@ -42,6 +42,7 @@ test.describe('real direct media', () => {
         await page.keyboard.press('ArrowRight');
         await expect(seek).toBeFocused();
         expect(Number(await seek.inputValue()) - before).toBe(200);
+        expect(playback.seeks).toHaveLength(0);
         await page.keyboard.press('Tab');
         await expect.poll(() => video.evaluate((element: HTMLVideoElement) => Math.round(element.currentTime * 1000))).toBe(Math.round(before + 200));
         const volume = region.getByRole('slider', { name: 'Volume', exact: true });
@@ -50,9 +51,15 @@ test.describe('real direct media', () => {
         await page.keyboard.press('ArrowUp');
         await expect(volume).toBeFocused();
         await expect.poll(() => video.evaluate((element: HTMLVideoElement) => element.volume)).toBe(0.05);
-        expect(api.requests.filter((request) => request.path === '/playback/seek')).toHaveLength(0);
+        const positionMs = Math.round(before + 200);
+        const sessionId = playback.starts[0].session_id;
+        expect(playback.seeks).toEqual([{ session_id: sessionId, position_ms: positionMs }]);
+        expect(api.requests.filter((request) => request.path === '/playback/seek')).toMatchObject([{ method: 'POST', body: { session_id: sessionId, position_ms: positionMs } }]);
+        expect(playback.sessions.get(sessionId).positionMs).toBe(positionMs);
+        expect(playback.starts).toHaveLength(1);
         await region.getByRole('button', { name: 'Close player', exact: true }).click();
         await expect.poll(() => playback.stops.length).toBe(1);
+        expect(playback.stops[0]).toMatchObject({ session_id: sessionId, position_ms: positionMs });
     });
 
     test('real heartbeat carries the playing session position before close', async ({ page, playback }) => {

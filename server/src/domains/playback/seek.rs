@@ -54,7 +54,7 @@ pub(super) async fn seek(
         .try_get("playback_mode")
         .unwrap_or_else(|_| "interactive".to_string());
     let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
-    let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
+    let mut metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
 
     let transcode_session_id = metadata
         .get("transcode_session_id")
@@ -81,9 +81,11 @@ pub(super) async fn seek(
 
         (Some(url), Some(new_id))
     } else {
+        let revision = super::direct::rotate(&mut metadata);
         let merge = serde_json::json!({
             "current_position_ms": position_ms,
-            "current_state": "playing"
+            "current_state": "playing",
+            "direct_source_revision": revision,
         });
         merge_session_metadata(&mut *transaction, session_id, merge).await?;
         (None, None)
@@ -123,6 +125,11 @@ pub(super) async fn seek(
         pending.acknowledge();
     }
     Ok(SeekResponse {
+        direct_source_revision: if new_transcode_session_id.is_none() {
+            super::direct::revision(&metadata)
+        } else {
+            None
+        },
         session_id,
         position_ms,
         stream_url: new_stream_url,

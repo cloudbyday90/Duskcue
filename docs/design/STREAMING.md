@@ -4,6 +4,8 @@
 
 The [playback compatibility initiative](PLAYBACK_COMPATIBILITY.md) owns the October 2026 probe, executable stream-plan and corpus work. Audio-only adaptation preserves compatible video, selected moving-video identity survives seeking, and required but unimplemented HDR transformations fail explicitly. [Bounded playback recovery](PLAYBACK_RECOVERY.md) owns process supervision, per-session attempt budgets, fresh HLS generations and the shared web/desktop heartbeat handoff. It preserves selected streams and the last confirmed client position; legacy HLS heartbeats without a generation cannot overwrite a replacement checkpoint.
 
+[Authenticated direct fallback](PLAYBACK_DIRECT_FALLBACK.md) owns native decode-error promotion to an admitted software H.264/AAC HLS output. Direct starts advertising `direct_recovery_protocol: 1` expose an opaque `direct_source_revision` and an optional bounded `direct_fallback` capability descriptor; they do not expose the private encoder plan. Their heartbeats echo the current revision, and only a fresh exact media-source capability check may set `direct_fallback_supported` on a recovery hint. Explicit direct seeks rotate the revision before the shared player applies the native position. Missing or stale revisions for opted-in sessions return canonical state without checkpoint mutation or output allocation. Omitted/unknown start protocol versions retain normal direct progress bookkeeping and cannot allocate a fallback. Native desktop bearer delivery continues to require authenticated HLS.
+
 This document covers the complete streaming and transcoding architecture: how media is delivered from server to client, how playback decisions are made, how transcoding works, and how adaptive bitrate streaming is handled.
 
 The full video format catalog — supported codecs, container formats, HDR standards, bit depths, and the transcode codec matrix — is documented in [VIDEO_FORMATS.md](VIDEO_FORMATS.md). The transcoding decision engine is documented in [QUALITY_MANAGEMENT.md](QUALITY_MANAGEMENT.md).
@@ -643,7 +645,7 @@ TV and console clients use a 15-second heartbeat cadence, with immediate heartbe
 4. Server commits the new transcode UUID and requested absolute source offset
 5. Client attaches the fresh manifest and applies that source offset to its local media timeline
 
-> **Implemented** in Phase 7 Task 12 — `seek()` in `playback/service.rs` delegates to `TranscodeManager::seek_session()` for transcoded sessions (returns new transcode session ID written to metadata and returned in `SeekResponse`); for Direct Play, updates metadata position only (client-side seek passthrough). See [BUILD_ORDER.md](../../BUILD_ORDER.md) Task 12 for details.
+> **Implemented** in Phase 7 Task 12, with the October 2026 recovery revisions — `seek()` in `playback/seek.rs` replaces an HLS generation and returns its canonical offset. For direct playback it updates the checkpoint, rotates the source revision and returns the same direct URL; the shared player applies the native seek after that acknowledgement. This ordering invalidates decoder recovery evidence from the previous direct position. See [direct fallback](PLAYBACK_DIRECT_FALLBACK.md) for the current contract.
 
 ### Session End
 

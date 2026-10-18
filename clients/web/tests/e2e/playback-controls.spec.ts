@@ -78,6 +78,34 @@ test('the real file audio stream appears as a labeled choice and maps its index 
     await region.getByRole('button', { name: 'Close player', exact: true }).click();
 });
 
+test('a held audio restart does not reclaim focus after the viewer selects another control', async ({ page, api, playback }) => {
+    api.files[mediaIds.resumeMovie][0].additional_streams = { audio: [{ index: 1, language: 'eng', codec: 'aac', channels: 2 }], subtitles: [] };
+    const region = await openPlayback(page, movieUrl, mediaIds.resumeMovie);
+    await expectDecodedPlayback(page);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => { release = resolve; });
+    let requested = false;
+    const startRoute = '**/api/v1/playback/start';
+    await page.route(startRoute, async (route) => { requested = true; await held; await route.fallback(); });
+    const trigger = region.getByRole('button', { name: 'Audio & subtitles', exact: true });
+    const destination = region.getByRole('button', { name: 'Close player', exact: true });
+    try {
+        await trigger.click();
+        await region.getByRole('region', { name: 'Audio & subtitles', exact: true }).getByRole('button', { name: 'English', exact: true }).click();
+        await expect.poll(() => requested).toBe(true);
+        await destination.focus();
+        await expect(destination).toBeFocused();
+        release();
+        await expect.poll(() => playback.starts.length).toBe(2);
+        await expectDecodedPlayback(page);
+        expect(playback.starts[1].audio_stream_index).toBe(1);
+        await expect(destination).toBeFocused();
+        await expect(trigger).not.toBeFocused();
+    } finally { release(); await page.unroute(startRoute); }
+    await destination.click();
+    await expectTitleContext(page, movieUrl);
+});
+
 test.describe('narrow player disclosures', () => {
     test.use({ viewport: { width: 320, height: 740 }, scenarioOptions: { browsePageSize: 1 } });
 

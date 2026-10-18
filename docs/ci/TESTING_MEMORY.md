@@ -1,5 +1,13 @@
 # Testing memory on Windows
 
+## Direct-play browser qualification — October 18, 2026
+
+`node scripts/testing-memory/run.mjs playback-direct-qualify --image <immutable local image SHA256>` extends the owned Linux recovery contract with protocol negotiation and legacy progress persistence, direct-source revision/profile fences, exact output decoding, duplicate admission and rollback cleanup. Its Windows driver heap is 512 MiB for bundling the actual shared client and coordinating one installed Chrome instance. Client source/lockfile identities join the server/helper snapshot; generated bundles stay in the owned ignored evidence directory. Compilation and browser execution are sequential under one workflow lock.
+
+The browser accesses an ephemeral host-loopback gateway. An owned Docker-exec bridge forwards bounded cookie-authenticated requests to a real Axum TCP listener inside the existing isolated container loopback namespace. No container port is published, and no host mount, Docker socket, real account or persistent database is added. The request gateway accepts only the fixture API paths, methods and bounded headers/bodies; tokens remain outside retained command arguments and logs. A trusted native code-3 error, prior presented frames, authenticated replacement HLS frames, selected audio and source identities are mandatory. The complete product UI coupled to the live backend, including Tauri's bearer transport, remains a separate boundary. Final-image execution passed on October 18; its exact identities and outcomes are recorded in the linked design authority below.
+
+The opt-in combined runtime deadline is seven minutes, covering the existing genuine 30-second worker stall, progressive playback, direct contracts and a separately bounded browser case. Container ceilings, five-second metadata reads, ten-second evidence freshness and Linux reserve thresholds are unchanged. Actual outcomes belong to [Direct-play fallback](../design/PLAYBACK_DIRECT_FALLBACK.md).
+
 ## Playback recovery qualification — October 17, 2026
 
 The build-policy preset `playback-recovery-qualify --image <immutable local image SHA256>` compiles and executes the current Linux playback stop/progressive/recovery contract. Invoke it through `node scripts/testing-memory/run.mjs`; it requires that wrapper's registered child, resource UUID and owned-container marker. Source hashing includes the server, native bootstrap, qualification tools and the memory/ownership helper dependency closure. It refuses mutable runtime image tags, source changes during compilation, foreign platforms, absent execution markers and incomplete cleanup.

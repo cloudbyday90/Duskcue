@@ -31,7 +31,7 @@ pub(super) async fn heartbeat(
     let is_buffering = request.is_buffering;
     let mut transaction = pool.begin().await?;
     let row = sqlx::query(
-        "SELECT id, user_id, profile_id, playback_mode, media_item_id, metadata \
+        "SELECT id, user_id, profile_id, playback_mode, stream_decision, media_item_id, metadata \
          FROM play_sessions \
          WHERE id = $1 AND user_id = $2 AND stopped_at IS NULL FOR UPDATE",
     )
@@ -56,10 +56,24 @@ pub(super) async fn heartbeat(
         .unwrap_or_else(|_| "interactive".to_string());
     let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
     let mut metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
+    metadata["stream_decision"] = serde_json::json!(
+        row.try_get::<String, _>("stream_decision")
+            .unwrap_or_else(|_| "direct_play".into())
+    );
 
     let active_transcode = recovery::transcode_id(&metadata);
-    if active_transcode.is_some() && profile_id != actor.profile_id {
+    if (active_transcode.is_some() || super::direct::has_context(&metadata))
+        && profile_id != actor.profile_id
+    {
         return Err(PlaybackError::SessionNotFound);
+    }
+    if active_transcode.is_none()
+        && super::direct::has_context(&metadata)
+        && !super::direct::current_revision(&metadata, request.direct_source_revision)
+    {
+        let response = recovery::response(manager, session_id, playback_mode, &metadata, None);
+        transaction.commit().await?;
+        return Ok(response);
     }
     if (active_transcode.is_some() || request.transcode_session_id.is_some())
         && request.transcode_session_id != active_transcode
@@ -83,7 +97,9 @@ pub(super) async fn heartbeat(
         .await?
         .map(|(id, _)| id);
 
-    let effective_state = if is_buffering.unwrap_or(false) {
+    let effective_state = if request.recovery_requested && is_paused == Some(true) {
+        "paused".to_string()
+    } else if is_buffering.unwrap_or(false) {
         "buffering".to_string()
     } else if let Some(s) = state {
         s.to_string()

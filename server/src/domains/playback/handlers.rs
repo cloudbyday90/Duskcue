@@ -330,6 +330,7 @@ pub async fn get_playback_info(
         &state.pool,
         &state.transcode_manager,
         user.user_id,
+        user.profile_id,
         session_id,
     )
     .await?;

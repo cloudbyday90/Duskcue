@@ -18,7 +18,8 @@ COPY native/ffmpeg-bootstrap ./native/ffmpeg-bootstrap
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/src/target \
-    cargo test --release --locked -p duskcue -j 2 --test playback_stop_contract --no-run --message-format=json > /tmp/playback-cargo-artifacts.jsonl \
+    (cargo test --release --locked -p duskcue -j 2 --test playback_stop_contract --no-run --message-format=json > /tmp/playback-cargo-artifacts.jsonl \
+    || { jq -r 'select(.reason == "compiler-message") | .message.rendered // empty' /tmp/playback-cargo-artifacts.jsonl >&2; exit 1; }) \
     && executable="$(jq -ers '[.[] | select(.reason == "compiler-artifact" and .target.name == "playback_stop_contract" and .profile.test == true) | .executable | select(. != null)] | unique | select(length == 1) | .[0]' /tmp/playback-cargo-artifacts.jsonl)" \
     && case "$executable" in /src/target/release/deps/playback_stop_contract-*) test -x "$executable" ;; *) exit 1 ;; esac \
     && cp "$executable" /tmp/playback-stop-contract
@@ -35,6 +36,7 @@ RUN mkdir -p /qualification/bin /src/.cache/tonight-server-ffmpeg /src/.cache/to
 COPY --from=compiler /tmp/playback-stop-contract /qualification/bin/playback-stop-contract
 COPY --from=compiler /tmp/playback-cargo-artifacts.jsonl /qualification/cargo-artifacts.jsonl
 COPY docker/qualification/recovery-fixture.mjs /qualification/recovery-fixture.mjs
+COPY docker/qualification/direct-http-bridge.mjs /qualification/direct-http-bridge.mjs
 RUN sha256sum -c /usr/local/libexec/duskcue-ffmpeg.sha256 \
     && node --max-old-space-size=64 /qualification/recovery-fixture.mjs \
     && chmod 0555 /qualification/bin/playback-stop-contract \

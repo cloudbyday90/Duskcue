@@ -11,6 +11,7 @@ type PlaybackOptions = {
     seekReplacement?: boolean;
     lostStopAcknowledgements?: number;
     progressiveHls?: boolean;
+    directFallback?: boolean;
     segments?: Array<{ id: string; segment_type: string; start_ms: number; end_ms: number; skip_to_ms: number; is_manual: boolean; confidence: number }>;
 };
 

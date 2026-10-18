@@ -14,11 +14,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+mod direct;
+mod direct_admission;
+mod direct_recovery;
 pub mod error;
 pub mod handlers;
 mod heartbeat;
 mod history;
 mod hls;
+mod media_source;
 mod recovery;
 mod seek;
 pub mod service;

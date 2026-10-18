@@ -10,6 +10,8 @@ The design is mapped against two industry-standard frameworks:
 
 Transport security (TLS, signed URLs, security headers) is documented in [SECURITY.md](SECURITY.md). Authentication and authorization (passkeys, capabilities, sessions) is documented in [AUTH.md](../design/AUTH.md). Rate limiting and CORS conventions are documented in [API_CONVENTIONS.md](../design/API_CONVENTIONS.md). This document covers the application-layer security patterns that prevent the most common API vulnerabilities.
 
+The October 2026 [direct-play fallback](../design/PLAYBACK_DIRECT_FALLBACK.md) treats decoder and capability reports as untrusted admission hints. Only sessions started with `direct_recovery_protocol: 1` can promote. Promotion requires the original active profile, current server-owned revision, unchanged healthy source and selected tracks, and fresh media access on the transaction's existing connection. Only a server-derived bounded software output plan reaches the managed encoder. Missing or stale revisions for opted-in sessions cannot mutate checkpoints. Other clients retain ordinary direct bookkeeping and cannot activate fallback through heartbeat. No client path, raw FFmpeg arguments, diagnostic string or credential-bearing media URL is accepted by this contract. Its two-attempt budget counts committed recovery outcomes; precommit cancellation rolls back the reservation and retires unpublished output, as documented in that authority.
+
 ---
 
 ## Why This Document Exists

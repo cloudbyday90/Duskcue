@@ -113,6 +113,7 @@ describe('server-authoritative playback recovery', () => {
         api.heartbeat.mockReturnValueOnce(pending.promise);
         api.seek.mockResolvedValueOnce({ transcode_session_id: third, position_ms: 300000, stream_offset_ms: 300000 });
         const heartbeat = player.sendHeartbeatNow();
+        await Promise.resolve();
         const seek = player.seek(300000);
         expect(api.seek).not.toHaveBeenCalled();
         pending.resolve(recovered());
@@ -125,6 +126,7 @@ describe('server-authoritative playback recovery', () => {
         const pending = deferred();
         api.heartbeat.mockReturnValueOnce(pending.promise);
         const heartbeat = player.sendHeartbeatNow();
+        await Promise.resolve();
         let stopping: Promise<any> | null = null;
         if (change === 'stop') stopping = player.stop();
         else player.setContext({ serverOrigin: change === 'server' ? 'https://other.test' : 'https://media.test', userId: change === 'account' ? 'account-b' : 'account-a' });

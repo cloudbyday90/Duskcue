@@ -34,6 +34,7 @@ mod encoding;
 pub mod failure;
 mod launcher;
 mod lifecycle;
+pub mod output_profile;
 pub mod plan;
 pub mod progress;
 mod readiness;
@@ -43,6 +44,7 @@ mod start;
 mod watchdog;
 pub use failure::FailureClass;
 use lifecycle::{TranscodeWorkers, WorkerCancellation};
+pub use output_profile::OutputProfile;
 use plan::{StreamAction, StreamPlan};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -196,6 +198,7 @@ pub struct StartSessionParams {
     pub source_video_stream_index: Option<i32>,
     pub source_audio_stream_index: Option<i32>,
     pub stream_plan: StreamPlan,
+    pub output_profile: Option<OutputProfile>,
     pub target_audio_channels: Option<u32>,
     pub target_audio_bitrate: Option<u32>,
     pub subtitle_stream_index: Option<i32>,
@@ -224,6 +227,7 @@ pub struct TranscodeSession {
     pub source_video_stream_index: Option<i32>,
     pub source_audio_stream_index: Option<i32>,
     pub stream_plan: StreamPlan,
+    pub output_profile: Option<OutputProfile>,
     pub target_audio_channels: Option<u32>,
     pub target_audio_bitrate: Option<u32>,
     pub subtitle_stream_index: Option<i32>,
@@ -377,6 +381,7 @@ impl TranscodeManager {
                     video: StreamAction::Copy,
                     audio: StreamAction::Copy,
                 },
+                output_profile: None,
                 target_audio_channels: None,
                 target_audio_bitrate: None,
                 subtitle_stream_index: None,

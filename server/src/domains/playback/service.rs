@@ -23,8 +23,7 @@ use uuid::Uuid;
 use crate::domains::playback::error::PlaybackError;
 use crate::domains::playback::types::*;
 use crate::services::decision_engine::{
-    self, DecisionEngineConfig, DeviceCapabilities, MediaFileInfo, NetworkConditions,
-    StreamDecision,
+    self, DecisionEngineConfig, DeviceCapabilities, NetworkConditions, StreamDecision,
 };
 use crate::services::transcoding::plan::{StreamAction, StreamPlan, apply_delivery_requirements};
 use crate::services::transcoding::{StartSessionParams, TranscodeManager};
@@ -33,6 +32,8 @@ use crate::state::RuntimeConfig;
 pub use super::hls::{
     generate_master_manifest, get_transcode_manifest, get_transcode_playlist, get_transcode_segment,
 };
+use super::media_source::*;
+#[cfg(test)]
 pub(crate) use super::track_selection::default_audio_stream_index;
 pub use super::transcode_access::assert_transcode_profile_access;
 
@@ -172,6 +173,25 @@ pub async fn start_playback(
 
     let stream_url;
     let transcode_session_id;
+    let direct_context = if decision.overall == StreamDecision::DirectPlay
+        && super::direct::supports_protocol(req.direct_recovery_protocol)
+    {
+        Some(
+            super::direct_admission::prepare(
+                &media_file_details,
+                &media_info,
+                &selected_tracks,
+                &device_caps,
+                &network,
+                &engine_config,
+                req.max_streaming_bitrate,
+            )
+            .await,
+        )
+    } else {
+        None
+    };
+    let direct_revision = direct_context.as_ref().map(|_| Uuid::now_v7());
 
     match decision.overall {
         StreamDecision::DirectPlay => {
@@ -210,6 +230,7 @@ pub async fn start_playback(
                         seek_position_ms: None,
                         hw_accel_override: None,
                         recovery_attempts: 0,
+                        output_profile: None,
                     },
                     data_dir,
                 )
@@ -234,6 +255,7 @@ pub async fn start_playback(
         req.max_streaming_bitrate,
         playback_mode,
         ambient_channel.as_ref(),
+        direct_context.as_ref().zip(direct_revision),
     )
     .await
     {
@@ -251,6 +273,9 @@ pub async fn start_playback(
     }
 
     Ok(PlaybackStartResponse {
+        direct_source_revision: direct_revision,
+        direct_fallback: direct_context
+            .and_then(|context| context.candidate.map(|candidate| candidate.descriptor)),
         session_id: play_session_id,
         stream_decision: stream_decision_str.to_string(),
         stream_url,
@@ -271,238 +296,6 @@ pub async fn start_playback(
         ambient_channel_id: ambient_channel.as_ref().map(|channel| channel.id),
         ambient_channel_updated_at: ambient_channel.map(|channel| channel.updated_at),
     })
-}
-
-struct MediaFileDetails {
-    id: Uuid,
-    file_path: String,
-    container_format: String,
-    video_codec: Option<String>,
-    video_resolution: Option<String>,
-    video_bitrate: Option<i32>,
-    video_dynamic_range: Option<String>,
-    video_frame_rate: Option<f64>,
-    audio_codec: Option<String>,
-    audio_channels: Option<i32>,
-    audio_language: Option<String>,
-    audio_bitrate: Option<i32>,
-    #[allow(dead_code)]
-    runtime_seconds: i32,
-    additional_streams: serde_json::Value,
-}
-
-async fn fetch_media_file_details(
-    pool: &PgPool,
-    file_id: Uuid,
-    media_item_id: Uuid,
-) -> Result<MediaFileDetails, PlaybackError> {
-    let row = sqlx::query(
-        "SELECT id, file_path, container_format, video_codec, \
-         video_resolution, video_bitrate, video_dynamic_range, \
-         audio_codec, audio_channels, audio_language, audio_bitrate, \
-         runtime_seconds, additional_streams \
-         FROM media_files WHERE id = $1 AND media_item_id = $2 AND is_healthy = true",
-    )
-    .bind(file_id)
-    .bind(media_item_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(PlaybackError::FileNotFound)?;
-
-    Ok(row_to_media_file_details(&row))
-}
-
-async fn select_best_media_file(
-    pool: &PgPool,
-    media_item_id: Uuid,
-) -> Result<MediaFileDetails, PlaybackError> {
-    let row = sqlx::query(
-        "SELECT id, file_path, container_format, video_codec, \
-         video_resolution, video_bitrate, video_dynamic_range, \
-         audio_codec, audio_channels, audio_language, audio_bitrate, \
-         runtime_seconds, additional_streams \
-         FROM media_files WHERE media_item_id = $1 AND is_healthy = true \
-         ORDER BY file_size DESC LIMIT 1",
-    )
-    .bind(media_item_id)
-    .fetch_optional(pool)
-    .await?
-    .ok_or(PlaybackError::FileNotFound)?;
-
-    Ok(row_to_media_file_details(&row))
-}
-
-fn row_to_media_file_details(row: &sqlx::postgres::PgRow) -> MediaFileDetails {
-    MediaFileDetails {
-        id: row.get("id"),
-        file_path: row.get("file_path"),
-        container_format: row.get("container_format"),
-        video_codec: row.try_get("video_codec").ok().flatten(),
-        video_resolution: row.try_get("video_resolution").ok().flatten(),
-        video_bitrate: row.try_get("video_bitrate").ok().flatten(),
-        video_dynamic_range: row.try_get("video_dynamic_range").ok().flatten(),
-        video_frame_rate: None,
-        audio_codec: row.try_get("audio_codec").ok().flatten(),
-        audio_channels: row.try_get("audio_channels").ok().flatten(),
-        audio_language: row.try_get("audio_language").ok().flatten(),
-        audio_bitrate: row.try_get("audio_bitrate").ok().flatten(),
-        runtime_seconds: row.get("runtime_seconds"),
-        additional_streams: row
-            .try_get("additional_streams")
-            .unwrap_or(serde_json::json!({})),
-    }
-}
-
-struct SelectedTracks {
-    video_stream_index: Option<i32>,
-    audio_stream_index: Option<i32>,
-    subtitle_stream_index: Option<i32>,
-    subtitle_stream_ordinal: Option<usize>,
-}
-
-fn build_media_file_info(
-    details: &MediaFileDetails,
-    audio_stream_index: Option<i32>,
-    subtitle_stream_index: Option<i32>,
-) -> Result<(MediaFileInfo, SelectedTracks), PlaybackError> {
-    let audio_stream_index =
-        audio_stream_index.or_else(|| default_audio_stream_index(&details.additional_streams));
-    let (res_w, res_h) = details
-        .video_resolution
-        .as_deref()
-        .map(decision_engine::parse_resolution_string)
-        .unwrap_or((1920, 1080));
-
-    let bit_depth = extract_video_bit_depth(&details.additional_streams);
-    let selected_audio = audio_stream_index
-        .map(|index| find_stream(&details.additional_streams, "audio", index, "audio"))
-        .transpose()?;
-    let selected_subtitle = subtitle_stream_index
-        .map(|index| find_stream(&details.additional_streams, "subtitles", index, "subtitle"))
-        .transpose()?;
-    let audio = selected_audio.map(|(_, stream)| stream);
-    let (subtitle_format, has_embedded_subtitles) = selected_subtitle
-        .as_ref()
-        .map(|(_, stream)| (stream_codec(stream), true))
-        .unwrap_or((None, false));
-
-    let frame_rate = details
-        .additional_streams
-        .get("video")
-        .and_then(|video| video.get("frame_rate"))
-        .and_then(serde_json::Value::as_f64)
-        .filter(|rate| rate.is_finite() && *rate > 0.0)
-        .or(details.video_frame_rate)
-        .unwrap_or(0.0);
-
-    let media_info = MediaFileInfo {
-        container_format: details.container_format.clone(),
-        video_codec: details
-            .video_codec
-            .clone()
-            .unwrap_or_else(|| "unknown".to_string()),
-        video_profile: extract_video_profile(&details.additional_streams),
-        video_level: extract_video_level(&details.additional_streams),
-        video_bit_depth: bit_depth,
-        video_resolution: (res_w, res_h),
-        video_bitrate_bps: details.video_bitrate.unwrap_or(0) as u64,
-        video_dynamic_range: details
-            .video_dynamic_range
-            .clone()
-            .unwrap_or_else(|| "unknown".to_string()),
-        video_frame_rate: frame_rate,
-        audio_codec: audio
-            .and_then(stream_codec)
-            .or_else(|| details.audio_codec.clone())
-            .unwrap_or_else(|| "unknown".to_string()),
-        audio_channels: audio
-            .and_then(|stream| stream.get("channels"))
-            .and_then(serde_json::Value::as_u64)
-            .map(|channels| channels as u32)
-            .unwrap_or_else(|| details.audio_channels.unwrap_or(2) as u32),
-        audio_bitrate_bps: audio
-            .and_then(|stream| stream.get("bitrate"))
-            .and_then(serde_json::Value::as_u64)
-            .unwrap_or_else(|| details.audio_bitrate.unwrap_or(0) as u64),
-        audio_language: audio
-            .and_then(|stream| stream.get("language"))
-            .and_then(serde_json::Value::as_str)
-            .map(String::from)
-            .or_else(|| details.audio_language.clone()),
-        has_embedded_subtitles,
-        subtitle_format,
-        additional_streams: Some(details.additional_streams.clone()),
-    };
-
-    Ok((
-        media_info,
-        SelectedTracks {
-            video_stream_index: details
-                .additional_streams
-                .get("video")
-                .and_then(|video| video.get("index"))
-                .and_then(serde_json::Value::as_i64)
-                .and_then(|index| i32::try_from(index).ok())
-                .filter(|index| *index >= 0),
-            audio_stream_index,
-            subtitle_stream_index,
-            subtitle_stream_ordinal: selected_subtitle.map(|(ordinal, _)| ordinal),
-        },
-    ))
-}
-
-fn find_stream<'a>(
-    streams: &'a serde_json::Value,
-    category: &str,
-    index: i32,
-    track_name: &'static str,
-) -> Result<(usize, &'a serde_json::Value), PlaybackError> {
-    streams
-        .get(category)
-        .and_then(serde_json::Value::as_array)
-        .and_then(|items| {
-            items.iter().enumerate().find(|(_, stream)| {
-                stream
-                    .get("index")
-                    .and_then(serde_json::Value::as_i64)
-                    .map(|stream_index| stream_index == i64::from(index))
-                    .unwrap_or(false)
-            })
-        })
-        .ok_or(PlaybackError::TrackUnavailable(track_name))
-}
-
-fn stream_codec(stream: &serde_json::Value) -> Option<String> {
-    stream
-        .get("codec")
-        .or_else(|| stream.get("codec_name"))
-        .and_then(serde_json::Value::as_str)
-        .map(String::from)
-}
-
-fn extract_video_bit_depth(streams: &serde_json::Value) -> u32 {
-    streams
-        .get("video")
-        .and_then(|v| v.get("bit_depth"))
-        .and_then(|b| b.as_u64())
-        .map(|b| b as u32)
-        .unwrap_or(0)
-}
-
-fn extract_video_profile(streams: &serde_json::Value) -> Option<String> {
-    streams
-        .get("video")
-        .and_then(|v| v.get("profile"))
-        .and_then(|p| p.as_str())
-        .map(String::from)
-}
-
-fn extract_video_level(streams: &serde_json::Value) -> Option<f32> {
-    streams
-        .get("video")
-        .and_then(|v| v.get("level"))
-        .and_then(|l| l.as_f64())
-        .map(|l| l as f32)
 }
 
 fn build_device_capabilities(
@@ -689,17 +482,22 @@ async fn create_play_session(
     max_streaming_bitrate: Option<u64>,
     playback_mode: &str,
     ambient_channel: Option<&crate::domains::profiles::types::AmbientChannelRow>,
+    direct_context: Option<(&super::direct::DirectContext, Uuid)>,
 ) -> Result<Uuid, PlaybackError> {
     let session_id = Uuid::now_v7();
 
-    let metadata = serde_json::json!({
+    let mut metadata = serde_json::json!({
         "transcode_session_id": transcode_session_id,
         "media_file_id": media_file_id,
         "current_state": "playing",
         "current_position_ms": 0,
         "quality_mode": quality_mode,
         "max_streaming_bitrate": max_streaming_bitrate,
+        "stream_decision": stream_decision,
     });
+    if let Some((context, revision)) = direct_context {
+        super::direct::attach(&mut metadata, context, revision);
+    }
 
     if let Some(channel) = ambient_channel {
         let result = sqlx::query(
@@ -800,10 +598,11 @@ pub async fn get_playback_info(
     pool: &PgPool,
     transcode_manager: &TranscodeManager,
     user_id: Uuid,
+    profile_id: Uuid,
     session_id: Uuid,
 ) -> Result<PlaybackInfoResponse, PlaybackError> {
     let row = sqlx::query(
-        "SELECT id, user_id, media_item_id, stream_decision, started_at, metadata \
+        "SELECT id, user_id, profile_id, media_item_id, stream_decision, started_at, metadata \
          FROM play_sessions WHERE id = $1",
     )
     .bind(session_id)
@@ -822,6 +621,11 @@ pub async fn get_playback_info(
     let stream_decision: String = row.try_get("stream_decision").unwrap_or_default();
     let started_at: chrono::DateTime<chrono::Utc> = row.try_get("started_at").unwrap_or_default();
     let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
+    if super::direct::has_context(&metadata)
+        && row.try_get::<Uuid, _>("profile_id").ok() != Some(profile_id)
+    {
+        return Err(PlaybackError::SessionNotFound);
+    }
 
     let position_ms = metadata
         .get("current_position_ms")
@@ -866,6 +670,9 @@ pub async fn get_playback_info(
     });
 
     Ok(PlaybackInfoResponse {
+        media_file_id,
+        direct_source_revision: super::direct::revision(&metadata),
+        direct_fallback: super::direct::descriptor(&metadata),
         session_id,
         media_item_id,
         stream_decision,
@@ -873,7 +680,9 @@ pub async fn get_playback_info(
         duration_ms,
         transcode_progress,
         transcode_session_id,
-        stream_url: transcode_session_id.map(|id| format!("/api/v1/transcode/{id}/manifest.m3u8")),
+        stream_url: transcode_session_id
+            .map(|id| format!("/api/v1/transcode/{id}/manifest.m3u8"))
+            .or_else(|| media_file_id.map(|id| format!("/api/v1/stream/{id}"))),
         stream_offset_ms: transcode_session_id.map(|id| {
             transcode_manager
                 .get_session(&id)

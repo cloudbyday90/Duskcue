@@ -33,13 +33,15 @@ pub(super) fn transcode_id(metadata: &Value) -> Option<Uuid> {
 }
 
 pub(super) fn startup_recovery(session: &TranscodeSession) -> Option<RecoveryResponse> {
-    (session.recovery_attempts > 0).then_some(RecoveryResponse {
-        status: "recovered",
-        attempts: session.recovery_attempts,
-        reason: "hardware",
-        skipped_ms: 0,
-        quality_reduced: false,
-    })
+    (session.recovery_attempts > 0 && session.output_profile.is_none()).then_some(
+        RecoveryResponse {
+            status: "recovered",
+            attempts: session.recovery_attempts,
+            reason: "hardware",
+            skipped_ms: 0,
+            quality_reduced: false,
+        },
+    )
 }
 
 pub(super) fn stored_recovery(metadata: &Value) -> Option<RecoveryResponse> {
@@ -59,6 +61,10 @@ pub(super) fn stored_recovery(metadata: &Value) -> Option<RecoveryResponse> {
         "replacement_failed" => "replacement_failed",
         "cleanup_failed" => "cleanup_failed",
         "session_lost" => "session_lost",
+        "native_decode" => "native_decode",
+        "fallback_unavailable" => "fallback_unavailable",
+        "output_unsupported" => "output_unsupported",
+        "source_changed" => "source_changed",
         _ => return None,
     };
     Some(RecoveryResponse {
@@ -91,6 +97,17 @@ pub(super) fn response(
     let id = transcode_id(metadata);
     let session = id.and_then(|id| manager.get_session(&id));
     HeartbeatResponse {
+        stream_decision: metadata
+            .get("stream_decision")
+            .and_then(Value::as_str)
+            .unwrap_or(if id.is_some() {
+                "transcode"
+            } else {
+                "direct_play"
+            })
+            .into(),
+        direct_source_revision: super::direct::revision(metadata),
+        direct_fallback: super::direct::descriptor(metadata),
         session_id,
         playback_mode,
         position_ms: metadata
@@ -99,7 +116,15 @@ pub(super) fn response(
             .unwrap_or(0)
             .clamp(0, i64::from(i32::MAX)) as i32,
         transcode_session_id: id,
-        stream_url: id.map(|id| format!("/api/v1/transcode/{id}/manifest.m3u8")),
+        stream_url: id
+            .map(|id| format!("/api/v1/transcode/{id}/manifest.m3u8"))
+            .or_else(|| {
+                metadata
+                    .get("media_file_id")
+                    .and_then(Value::as_str)
+                    .and_then(|id| id.parse::<Uuid>().ok())
+                    .map(|id| format!("/api/v1/stream/{id}"))
+            }),
         stream_offset_ms: id.map(|_| {
             session
                 .as_ref()
@@ -122,6 +147,9 @@ pub(super) async fn recover(
     context: RecoveryContext<'_>,
     metadata: &mut Value,
 ) -> Result<(Option<PendingTranscodeSession>, Option<RecoveryResponse>), PlaybackError> {
+    if transcode_id(metadata).is_none() {
+        return super::direct_recovery::recover(connection, context, metadata).await;
+    }
     let RecoveryContext {
         manager,
         actor,

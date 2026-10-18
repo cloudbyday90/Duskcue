@@ -58,6 +58,16 @@ describe('per-store heartbeat lifecycle', () => {
         await expect(first).resolves.toBeUndefined();
     });
 
+    it('checks context ownership again immediately before dispatching a captured request', async () => {
+        let current = true;
+        const send = vi.fn(async (_body: unknown) => undefined);
+        const heartbeat = createPlaybackHeartbeat({ readState: playing, send, isCurrent: () => current });
+        const pending = heartbeat.sendNow();
+        current = false;
+        await pending;
+        expect(send).not.toHaveBeenCalled();
+    });
+
     it('deduplicates interval ticks while pending and reads a fresh position after settlement', async () => {
         const state = playing();
         const pending = deferred();

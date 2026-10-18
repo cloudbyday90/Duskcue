@@ -38,7 +38,8 @@ export function createMediaSource({ video, loadHls = null, shouldPlay = () => tr
     video.addEventListener?.('error', mediaError);
 
     function fail(error, recoveryRequested = false, detach = false) {
-        const details = { url: attachedUrl, positionSeconds: Number.isFinite(video.currentTime) ? Math.max(0, video.currentTime) : null, recoveryRequested };
+        const details = { url: attachedUrl, mode: timeline.mode, mediaErrorCode: Number.isInteger(error?.code) ? error.code : null,
+            positionSeconds: Number.isFinite(video.currentTime) ? Math.max(0, video.currentTime) : null, recoveryRequested };
         try { onError(error, details); } finally { if (detach) release(); }
     }
 

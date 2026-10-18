@@ -106,6 +106,7 @@ describe('integrated player session lifecycle', () => {
         api.heartbeat.mockImplementationOnce(async () => { await pending.promise; order.push('heartbeat'); });
         api.stopPlayback.mockImplementationOnce(async () => { order.push('stop'); });
         const heartbeat = player.sendHeartbeatNow();
+        await Promise.resolve();
         player.setPosition(9000);
         const firstExit = player.stop();
         const secondExit = player.stop();
@@ -158,6 +159,15 @@ describe('integrated player session lifecycle', () => {
         expect(api.startPlayback).toHaveBeenCalledWith(expect.objectContaining({
             audio_stream_index: 0, subtitle_stream_index: 3, quality_mode: 'manual', max_streaming_bitrate: 4000000, force_transcode: true, force_hls: true,
         }));
+    });
+
+    it('opts the shared player into revision-aware direct recovery at start', async () => {
+        await player.play(item, 'file-1');
+        expect(api.startPlayback).toHaveBeenCalledExactlyOnceWith({
+            media_item_id: item.id, media_file_id: 'file-1', direct_recovery_protocol: 1,
+            device_profile: null, max_streaming_bitrate: null, force_transcode: false,
+            quality_mode: 'auto', audio_stream_index: null, subtitle_stream_index: null,
+        });
     });
 
     it('requests authenticated HLS without requesting video encoding', async () => {

@@ -20,6 +20,11 @@ impl TranscodeManager {
         mut params: StartSessionParams,
         data_dir: &Path,
     ) -> Result<TranscodeSession, PlaybackError> {
+        if let Some(profile) = params.output_profile {
+            profile
+                .validate(&params)
+                .map_err(|message| PlaybackError::FfmpegFailed(message.into()))?;
+        }
         let selected_hardware = params
             .hw_accel_override
             .unwrap_or_else(|| self.get_hw_accel());
@@ -56,6 +61,11 @@ impl TranscodeManager {
         data_dir: &Path,
         observation: &mut Option<(Uuid, WorkerObservation)>,
     ) -> Result<TranscodeSession, PlaybackError> {
+        let profiled_rendition = params
+            .output_profile
+            .map(|profile| profile.rendition(&params))
+            .transpose()
+            .map_err(|message| PlaybackError::FfmpegFailed(message.into()))?;
         let StartSessionParams {
             media_file_id,
             user_id,
@@ -66,6 +76,7 @@ impl TranscodeManager {
             source_video_stream_index,
             source_audio_stream_index,
             stream_plan,
+            output_profile,
             target_audio_channels,
             target_audio_bitrate,
             subtitle_stream_index,
@@ -108,21 +119,23 @@ impl TranscodeManager {
 
         let (target_w, target_h) = target_resolution.unwrap_or(source_video_resolution);
 
-        let mut rendition = TranscodeRendition::smart_ladder(
-            source_video_resolution.0,
-            source_video_resolution.1,
-            target_bitrate.map(|b| b as u64),
-            Some((target_w, target_h)),
-        )
-        .into_iter()
-        .last()
-        .unwrap_or(TranscodeRendition {
-            name: "auto".to_string(),
-            width: target_w,
-            height: target_h,
-            video_bitrate: target_bitrate.unwrap_or(6_000_000),
-            audio_bitrate: 192_000,
-            audio_channels: 2,
+        let mut rendition = profiled_rendition.unwrap_or_else(|| {
+            TranscodeRendition::smart_ladder(
+                source_video_resolution.0,
+                source_video_resolution.1,
+                target_bitrate.map(|b| b as u64),
+                Some((target_w, target_h)),
+            )
+            .into_iter()
+            .last()
+            .unwrap_or(TranscodeRendition {
+                name: "auto".to_string(),
+                width: target_w,
+                height: target_h,
+                video_bitrate: target_bitrate.unwrap_or(6_000_000),
+                audio_bitrate: 192_000,
+                audio_channels: 2,
+            })
         });
 
         if stream_plan.video == StreamAction::Copy {
@@ -146,7 +159,7 @@ impl TranscodeManager {
 
         let segment_filename = segment_dir.join("seg_%04d.m4s");
 
-        let fps = 24u32;
+        let fps = output_profile.map_or(24, |_| output_profile::FRAME_RATE);
         let gop_size = fps * transcoding.segment_duration_seconds;
 
         let mut args = build_ffmpeg_input_args(seek_position_ms, &source_path);
@@ -194,6 +207,9 @@ impl TranscodeManager {
                 rendition.audio_bitrate,
             ),
         ));
+        if let Some(profile) = output_profile {
+            args.extend(profile.output_args());
+        }
 
         args.extend(build_threading_args(cpu));
 
@@ -223,6 +239,7 @@ impl TranscodeManager {
             source_video_stream_index,
             source_audio_stream_index,
             stream_plan,
+            output_profile,
             target_audio_channels: (stream_plan.audio == StreamAction::Encode)
                 .then_some(rendition.audio_channels),
             target_audio_bitrate: (stream_plan.audio == StreamAction::Encode)

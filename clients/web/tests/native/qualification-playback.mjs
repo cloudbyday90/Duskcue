@@ -55,7 +55,7 @@ export async function exerciseNativePlayback(page, runtime, api, screenshot) {
     const region = page.getByRole('region', { name: 'Media player', exact: true });
     const video = await assertDecoded(page);
     await video.evaluate((element) => { element.dataset.qualificationContinuity = 'original-native-video'; });
-    expect(playback.starts[0]).toMatchObject({ media_item_id: mediaIds.episodeOne, quality_mode: 'manual', max_streaming_bitrate: 6_000_000, force_transcode: true });
+    expect(playback.starts[0]).toMatchObject({ media_item_id: mediaIds.episodeOne, quality_mode: 'manual', max_streaming_bitrate: 6_000_000, force_transcode: false, force_hls: true });
     await region.getByRole('slider', { name: 'Volume', exact: true }).focus();
     await page.keyboard.press('Home');
     for (let index = 0; index < 8; index += 1) await page.keyboard.press('ArrowRight');
@@ -141,7 +141,7 @@ export async function exerciseNativeHls(page, api, screenshot) {
     await screenshot('native-hls-player');
     expect(playback.starts.length).toBe(startsBefore + 1);
     const start = playback.starts[startsBefore];
-    expect(start).toMatchObject({ media_item_id: mediaIds.resumeMovie, force_transcode: true });
+    expect(start).toMatchObject({ media_item_id: mediaIds.resumeMovie, force_transcode: false, force_hls: true });
     const prefix = `/transcode/${playback.sessions.get(start.session_id).transcodeId}/`;
     const phaseRequests = api.scenario.requests.slice(requestOffset);
     expect(phaseRequests.some((request) => request.path === `${prefix}manifest.m3u8`)).toBe(true);

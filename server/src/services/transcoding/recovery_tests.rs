@@ -22,6 +22,7 @@ fn session(hw_accel: HwAccelMethod, video: StreamAction) -> TranscodeSession {
             video,
             audio: StreamAction::Encode,
         },
+        output_profile: None,
         target_audio_channels: Some(6),
         target_audio_bitrate: Some(320_000),
         subtitle_stream_index: Some(8),

@@ -5,7 +5,7 @@
 -->
 
 <script>
-    import { onMount, onDestroy } from 'svelte';
+    import { onMount, onDestroy, tick } from 'svelte';
     import { m } from '$lib/paraglide/messages.js';
     import { messageLocale } from '$lib/localization/message-locale.js';
     import { getLocale } from '$lib/paraglide/runtime.js';
@@ -21,6 +21,9 @@
     let tracksTrigger = $state();
     let settingsTrigger = $state();
     let open = $state(null);
+    let disposed = false;
+    let selectionRevision = 0;
+    let cancelSelectionFocus = null;
 
     function triggerFor(kind) {
         return kind === 'episodes' ? episodeTrigger : kind === 'tracks' ? tracksTrigger : settingsTrigger;
@@ -40,6 +43,9 @@
     }
 
     function toggle(kind) {
+        selectionRevision += 1;
+        cancelSelectionFocus?.();
+        cancelSelectionFocus = null;
         if (open === kind) close(false);
         else {
             open = kind;
@@ -47,9 +53,25 @@
         }
     }
 
-    function choose(kind, value) {
+    async function choose(kind, value) {
+        const revision = ++selectionRevision;
+        cancelSelectionFocus?.();
+        const trigger = triggerFor(open);
         close(true);
-        onselect(kind, value);
+        let ownsFocus = document.activeElement === trigger;
+        const changedFocus = (event) => { if (event.target !== trigger && event.target !== document.body) ownsFocus = false; };
+        const cancel = () => { ownsFocus = false; document.removeEventListener('focusin', changedFocus, true); };
+        cancelSelectionFocus = cancel;
+        document.addEventListener('focusin', changedFocus, true);
+        try {
+            await onselect(kind, value);
+            await tick();
+            if (!disposed && revision === selectionRevision && ownsFocus && trigger?.isConnected && !trigger.disabled
+                && (document.activeElement === document.body || document.activeElement === trigger)) trigger.focus();
+        } finally {
+            document.removeEventListener('focusin', changedFocus, true);
+            if (cancelSelectionFocus === cancel) cancelSelectionFocus = null;
+        }
     }
 
     $effect(() => {
@@ -80,6 +102,10 @@
     });
 
     onDestroy(() => {
+        disposed = true;
+        selectionRevision += 1;
+        cancelSelectionFocus?.();
+        cancelSelectionFocus = null;
         if (open) onopenchange(false);
     });
 </script>

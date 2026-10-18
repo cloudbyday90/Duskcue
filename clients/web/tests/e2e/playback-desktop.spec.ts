@@ -19,7 +19,8 @@ test('selected-server HLS requests carry bearer authentication through real deco
         expect(new URL(request.url).origin).toBe(savedServer.origin);
         expect(request.authorization).toBe('Bearer fixture-desktop-token');
     }
-    expect(playback.starts[0].force_transcode).toBe(true);
+    expect(playback.starts[0].force_transcode).toBe(false);
+    expect(playback.starts[0].force_hls).toBe(true);
     expect(api.requests.some((request) => request.path.startsWith('/stream/'))).toBe(false);
     await region.getByRole('button', { name: 'Close player', exact: true }).click();
     await expectTitleContext(page, titleUrl);
