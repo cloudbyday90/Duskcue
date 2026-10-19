@@ -27,6 +27,7 @@ export function assertFormatStart(record, candidate, client) {
     if (record?.method !== 'POST' || record.path !== '/api/v1/playback/start' || record.bearer !== (client === 'native') || record.cookie !== (client === 'browser')
         || record.request?.media_item_id !== candidate.item || record.request.media_file_id !== candidate.file
         || record.request.device_profile !== null || record.request.force_transcode !== false
+        || record.request.quality_mode !== 'manual' || record.request.max_streaming_bitrate !== 1500000
         || record.request.audio_stream_index !== null || record.request.subtitle_stream_index !== null
         || client === 'native' && record.request.force_hls !== true) throw new Error('Format playback did not use its actual conservative client contract.');
     if (candidate.dynamicRange === 'sdr') {

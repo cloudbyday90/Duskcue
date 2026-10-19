@@ -17,7 +17,7 @@ export function directFallbackDescriptor(value) {
     if (!video || !audio || video.content_type !== VIDEO_TYPE || audio.content_type !== AUDIO_TYPE
         || !Number.isSafeInteger(video.width) || video.width < 2 || video.width > 1920 || video.width % 2
         || !Number.isSafeInteger(video.height) || video.height < 2 || video.height > 1080 || video.height % 2
-        || !Number.isSafeInteger(video.bitrate) || video.bitrate < 1 || video.bitrate > 10000000 || video.framerate !== 30
+        || !Number.isSafeInteger(video.bitrate) || video.bitrate < 1000 || video.bitrate > 10000000 || video.framerate !== 30
         || !['1', '2'].includes(audio.channels) || audio.samplerate !== 48000
         || !Number.isSafeInteger(audio.bitrate) || audio.bitrate < 32000 || audio.bitrate > 192000) return null;
     return Object.freeze({

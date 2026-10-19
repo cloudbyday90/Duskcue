@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 use validator::Validate;
 
+pub use super::source_types::*;
+
 pub static VALID_STREAM_DECISIONS: &[&str] = &["direct_play", "direct_stream", "transcode"];
 pub static VALID_PLAYBACK_STATES: &[&str] = &["playing", "paused", "buffering", "stopped"];
 pub static VALID_PLAYBACK_MODES: &[&str] = &["interactive", "ambient"];
@@ -110,6 +112,8 @@ pub struct StartPlaybackRequest {
     #[serde(default)]
     pub direct_recovery_protocol: Option<u8>,
     pub device_profile: Option<serde_json::Value>,
+    #[validate(nested)]
+    pub source_capabilities: Option<SourceCapabilitiesRequest>,
     pub quality_mode: Option<String>,
     pub playback_mode: Option<String>,
     pub ambient_channel_id: Option<Uuid>,
@@ -131,6 +135,7 @@ pub struct HeartbeatRequest {
     pub direct_source_revision: Option<Uuid>,
     #[serde(default)]
     pub direct_fallback_supported: bool,
+    pub copy_fallback: Option<CopyFallbackRequest>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
@@ -232,6 +237,9 @@ pub struct UpdateWatchDataRequest {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PlaybackStartResponse {
+    pub stream_offset_ms: Option<i64>,
+    pub source_route: Option<SourceRouteResponse>,
+    pub copy_fallback: Option<CopyFallbackResponse>,
     pub direct_source_revision: Option<Uuid>,
     pub direct_fallback: Option<DirectFallbackResponse>,
     pub session_id: Uuid,
@@ -255,6 +263,8 @@ pub struct PlaybackStartResponse {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct PlaybackInfoResponse {
+    pub source_route: Option<SourceRouteResponse>,
+    pub copy_fallback: Option<CopyFallbackResponse>,
     pub media_file_id: Option<Uuid>,
     pub direct_source_revision: Option<Uuid>,
     pub direct_fallback: Option<DirectFallbackResponse>,
@@ -274,6 +284,8 @@ pub struct PlaybackInfoResponse {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct HeartbeatResponse {
+    pub source_route: Option<SourceRouteResponse>,
+    pub copy_fallback: Option<CopyFallbackResponse>,
     pub stream_decision: String,
     pub direct_source_revision: Option<Uuid>,
     pub direct_fallback: Option<DirectFallbackResponse>,
@@ -308,6 +320,9 @@ pub struct StopPlaybackResponse {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SeekResponse {
+    pub stream_offset_ms: Option<i64>,
+    pub source_route: Option<SourceRouteResponse>,
+    pub copy_fallback: Option<CopyFallbackResponse>,
     pub direct_source_revision: Option<Uuid>,
     pub session_id: Uuid,
     pub position_ms: i32,

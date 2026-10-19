@@ -13,6 +13,7 @@ pub(super) struct MediaFileDetails {
     pub(super) id: Uuid,
     pub(super) file_size: i64,
     pub(super) updated_at: chrono::DateTime<chrono::Utc>,
+    pub(super) file_modified_at: Option<chrono::DateTime<chrono::Utc>>,
     pub(super) file_path: String,
     pub(super) container_format: String,
     pub(super) video_codec: Option<String>,
@@ -44,7 +45,7 @@ pub(super) async fn fetch_media_file_details_on_connection(
     media_item_id: Uuid,
 ) -> Result<MediaFileDetails, PlaybackError> {
     let row = sqlx::query(
-        "SELECT id, file_size, updated_at, file_path, container_format, video_codec, \
+        "SELECT id, file_size, updated_at, file_modified_at, file_path, container_format, video_codec, \
          video_resolution, video_bitrate, video_dynamic_range, \
          audio_codec, audio_channels, audio_language, audio_bitrate, \
          runtime_seconds, additional_streams \
@@ -64,7 +65,7 @@ pub(super) async fn select_best_media_file(
     media_item_id: Uuid,
 ) -> Result<MediaFileDetails, PlaybackError> {
     let row = sqlx::query(
-        "SELECT id, file_size, updated_at, file_path, container_format, video_codec, \
+        "SELECT id, file_size, updated_at, file_modified_at, file_path, container_format, video_codec, \
          video_resolution, video_bitrate, video_dynamic_range, \
          audio_codec, audio_channels, audio_language, audio_bitrate, \
          runtime_seconds, additional_streams \
@@ -84,6 +85,7 @@ pub(super) fn row_to_media_file_details(row: &sqlx::postgres::PgRow) -> MediaFil
         id: row.get("id"),
         file_size: row.get("file_size"),
         updated_at: row.get("updated_at"),
+        file_modified_at: row.try_get("file_modified_at").ok().flatten(),
         file_path: row.get("file_path"),
         container_format: row.get("container_format"),
         video_codec: row.try_get("video_codec").ok().flatten(),

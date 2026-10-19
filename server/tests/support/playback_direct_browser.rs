@@ -151,6 +151,7 @@ pub(super) async fn run(
         candidates.push(json!({"item":item,"file":file,"title":"Direct browser fixture","variant":variant,"sha256":sha256,"audioHz":880}));
         files.push((path, blake3::hash(&bytes)));
     }
+    if let Some(formats) = &mut formats { formats.prepare_sources(fixture,state,source,root,tools).await?; }
     let listener = tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 38081))).await?;
     let (signal, receiver) = tokio::sync::oneshot::channel::<()>();
     shutdown = Some(signal);
@@ -174,7 +175,8 @@ pub(super) async fn run(
         let authorization = policy::assert_policy(fixture,state,&candidates[0]).await?;
         let ready = json!({"resourceId":resource,"token":fixture.token,"userId":fixture.user,"profileId":fixture.original_profile,
             "user":user,"candidates":candidates,"cleanCandidate":{"item":clean.0,"file":clean.1,"title":"Direct fallback fixture","audioHz":880},
-            "nativeRecovery":native_candidate.is_some(),"nativeCandidate":native_candidate.map(super::native::Candidate::ready),"formats":formats.as_ref().map(formats::Inventory::ready)});
+            "nativeRecovery":native_candidate.is_some(),"nativeCandidate":native_candidate.map(super::native::Candidate::ready),"formats":formats.as_ref().map(formats::Inventory::ready),
+            "sourceCapabilities":formats::source_enabled(),"sourceRecoveryCandidates":formats.as_ref().map(formats::Inventory::source_recovery_ready)});
         let path = Path::new("/tmp/direct-ready.pending");
         let mut options = tokio::fs::OpenOptions::new();
         options.write(true).create_new(true).mode(0o600);
@@ -184,7 +186,7 @@ pub(super) async fn run(
         file.flush().await?;
         drop(file);
         tokio::fs::rename(path, "/tmp/direct-ready.json").await?;
-        let completion_seconds = if formats.is_some() { 900 } else { 240 };
+        let completion_seconds = if formats::source_enabled() { 1650 } else if formats.is_some() { 900 } else { 240 };
         let (mut complete, backend) = tokio::time::timeout(Duration::from_secs(completion_seconds), await_completion(fixture,state,root,tools,resource,native_candidate,formats.as_mut())).await??;
         anyhow::ensure!(complete["resourceId"] == resource.to_string());
         anyhow::ensure!(complete["passed"] == true, "real browser qualification failed: {}", complete.get("error").unwrap_or(&Value::Null));

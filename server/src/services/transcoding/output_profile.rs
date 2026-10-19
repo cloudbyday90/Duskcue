@@ -7,7 +7,7 @@ use super::{HwAccelMethod, StartSessionParams, TranscodeRendition, plan::StreamA
 pub const MAX_WIDTH: u32 = 1920;
 pub const MAX_HEIGHT: u32 = 1080;
 pub const FRAME_RATE: u32 = 30;
-pub const VIDEO_MIN_BITRATE: u32 = 100_000;
+pub const VIDEO_MIN_BITRATE: u32 = 1_000;
 pub const VIDEO_MAX_BITRATE: u32 = 10_000_000;
 pub const AUDIO_SAMPLE_RATE: u32 = 48_000;
 pub const AUDIO_MAX_CHANNELS: u32 = 2;
@@ -17,10 +17,17 @@ pub const AUDIO_MAX_BITRATE: u32 = 192_000;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputProfile {
     CompatibleSdr,
+    SourceCopySdr,
 }
+
+#[path = "source_copy_profile.rs"]
+mod source_copy;
 
 impl OutputProfile {
     pub fn validate(self, params: &StartSessionParams) -> Result<(), &'static str> {
+        if self == Self::SourceCopySdr {
+            return source_copy::validate(params);
+        }
         if params.output_profile != Some(self)
             || params.stream_plan.video != StreamAction::Encode
             || params.stream_plan.audio != StreamAction::Encode
@@ -64,6 +71,9 @@ impl OutputProfile {
         params: &StartSessionParams,
     ) -> Result<TranscodeRendition, &'static str> {
         self.validate(params)?;
+        if self == Self::SourceCopySdr {
+            return Ok(source_copy::rendition(params));
+        }
         let (width, height) = params.target_resolution.unwrap();
         Ok(TranscodeRendition {
             name: "compatible-sdr".into(),
@@ -75,7 +85,10 @@ impl OutputProfile {
         })
     }
 
-    pub fn output_args(self) -> Vec<String> {
+    pub fn output_args(self, params: &StartSessionParams) -> Vec<String> {
+        if self == Self::SourceCopySdr {
+            return source_copy::output_args(params);
+        }
         vec![
             "-level:v".into(),
             "4.0".into(),

@@ -116,7 +116,7 @@ pub(super) async fn recover(
     Ok((pending, Some(status)))
 }
 
-async fn parameters(
+pub(super) async fn parameters(
     connection: &mut PgConnection,
     context: &RecoveryContext<'_>,
     metadata: &Value,
@@ -154,7 +154,9 @@ async fn parameters(
         Err(PlaybackError::TrackUnavailable(_)) => return Ok(None),
         Err(error) => return Err(error),
     };
-    if ResolvedTracks::from_selected(&selected).as_ref() != Some(&candidate.tracks) {
+    if ResolvedTracks::from_selected(&selected).as_ref() != Some(&candidate.tracks)
+        || !super::direct_admission::within_saved_limits(candidate, &media)
+    {
         return Ok(None);
     }
     let position = metadata

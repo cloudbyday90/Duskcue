@@ -128,6 +128,7 @@ async fn exact_identity_detects_probe_and_physical_source_changes() -> anyhow::R
         id: Uuid::now_v7(),
         file_size: 8,
         updated_at: Utc::now(),
+        file_modified_at: None,
         file_path: path.to_string_lossy().into_owned(),
         container_format: "mp4".into(),
         video_codec: Some("h264".into()),

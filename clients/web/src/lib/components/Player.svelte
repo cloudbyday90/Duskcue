@@ -225,7 +225,7 @@
         if (url && url !== lastAttachedUrl) {
             lastAttachedUrl = url;
             sourceError = false;
-            mediaSource?.attach(url);
+            mediaSource?.attach(url, { startPosition: Math.max(0, ($player.positionMs - $player.streamOffsetMs) / 1000) });
         }
     });
 

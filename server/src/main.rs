@@ -394,7 +394,7 @@ async fn main() {
                                 match duskcue::workers::library_scanner::scan_library(
                                     &pool,
                                     library_id,
-                                    mode == "quick",
+                                    mode != "quick",
                                     None,
                                 )
                                 .await

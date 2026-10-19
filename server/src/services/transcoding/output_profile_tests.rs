@@ -181,7 +181,7 @@ fn compatible_output_options_follow_input_and_enforce_the_probed_codecs_and_rate
         ),
         build_audio_encode_args("aac", rendition.audio_channels, rendition.audio_bitrate),
     ));
-    args.extend(profile.output_args());
+    args.extend(profile.output_args(&source));
     args.extend(build_hls_output_args(
         2,
         "/cache/seg_%04d.m4s",

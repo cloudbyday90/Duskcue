@@ -17,6 +17,8 @@ COPY clients/desktop/src-tauri ./clients/desktop/src-tauri
 COPY native/ffmpeg-bootstrap ./native/ffmpeg-bootstrap
 ARG NATIVE_RECOVERY_MODE=none
 ARG FORMAT_CORPUS_MODE=none
+ARG SOURCE_CAPABILITIES_MODE=none
+RUN case "$SOURCE_CAPABILITIES_MODE" in none) ;; exact) test "$FORMAT_CORPUS_MODE" = reference && test "$NATIVE_RECOVERY_MODE" = paced ;; *) exit 1 ;; esac
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/usr/local/cargo/git \
     --mount=type=cache,target=/src/target \
@@ -41,17 +43,38 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
             test "$(wc -c < /tmp/qualification-evidence/format-unit-tests.log)" -le 65536 || exit 1 ;; \
         *) exit 1 ;; \
     esac
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/src/target \
+    if [ "$SOURCE_CAPABILITIES_MODE" = exact ]; then \
+        for selector in services::source_capabilities::tests:: workers::library_scanner::probe::capabilities::tests:: \
+            workers::library_scanner::scan_diff::tests:: domains::playback::source_candidates::tests:: \
+            domains::playback::direct_admission::tests:: \
+            domains::playback::source_freshness::tests:: domains::playback::copy_recovery::tests:: \
+            domains::playback::source_types::tests:: \
+            domains::playback::file_delivery::tests:: domains::playback::range::tests:: \
+            services::transcoding::readiness::source_origin::tests:: \
+            services::transcoding::output_profile::source_copy::tests:: extractors::credential_transport_tests::; do \
+            cargo test --release --locked -p duskcue -j 2 --features duskcue/playback-qualification --lib "$selector" -- --test-threads=1 > /tmp/source-group.log \
+                || { cat /tmp/source-group.log >&2; exit 1; }; \
+            grep -Eq '^test result: ok\. [1-9][0-9]* passed; 0 failed; 0 ignored;' /tmp/source-group.log || { cat /tmp/source-group.log >&2; exit 1; }; \
+            cat /tmp/source-group.log >> /tmp/qualification-evidence/source-unit-tests.log; \
+        done; \
+        test "$(wc -c < /tmp/qualification-evidence/source-unit-tests.log)" -le 65536 || exit 1; \
+    fi
 
 FROM ${RUNTIME_IMAGE} AS runtime
 ARG SOURCE_SHA256
 ARG RUNTIME_BASE_ID
 ARG NATIVE_RECOVERY_MODE=none
 ARG FORMAT_CORPUS_MODE=none
+ARG SOURCE_CAPABILITIES_MODE=none
 LABEL duskcue.qualification.kind="local-playback-recovery-v1" \
       duskcue.qualification.source-sha256="${SOURCE_SHA256}" \
       duskcue.qualification.runtime-base-id="${RUNTIME_BASE_ID}" \
       duskcue.qualification.native-recovery="${NATIVE_RECOVERY_MODE}" \
-      duskcue.qualification.format-corpus="${FORMAT_CORPUS_MODE}"
+      duskcue.qualification.format-corpus="${FORMAT_CORPUS_MODE}" \
+      duskcue.qualification.source-capabilities="${SOURCE_CAPABILITIES_MODE}"
 USER root
 RUN mkdir -p /qualification/bin /src/.cache/tonight-server-ffmpeg /src/.cache/tonight-server-stop \
     && chown 65532:65532 /src/.cache/tonight-server-stop

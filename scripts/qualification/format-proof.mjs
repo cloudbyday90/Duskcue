@@ -5,11 +5,16 @@
 import assert from 'node:assert/strict';
 
 export function validateFormatUnitProof(output) {
-    for (const name of ['inventory::tests::inventory_rejects_paths_and_unsupported_shapes', 'media::tests::avc_configuration_uses_actual_profile_compatibility_and_level', 'media::tests::frame_identifiers_distinguish_seek_target_from_start_and_damage']) {
+    for (const name of ['inventory::tests::inventory_rejects_paths_and_unsupported_shapes', 'media::tests::avc_configuration_uses_actual_profile_compatibility_and_level', 'media::tests::frame_identifiers_distinguish_seek_target_from_start_and_damage',
+        'source_verify::tests::source_proof_requires_both_smooth_support_and_matching_server_context',
+        'source_verify::tests::unavailable_preflight_can_prove_only_conservative_fallback',
+        'source_verify::tests::copied_source_decision_reports_audio_encoding_without_claiming_video_encoding',
+        'source_recovery::corruption::tests::avcc_vcl_damage_preserves_every_length_header_and_non_vcl_nal',
+        'source_recovery::corruption::tests::malformed_avcc_samples_fail_without_partial_corruption']) {
         assert.equal(output.split(/\r?\n/).filter((line) => line === `test playback_progressive::direct::browser::formats::${name} ... ok`).length, 1);
     }
-    assert.match(output, /^test result: ok\. 3 passed; 0 failed; 0 ignored;/m);
-    return { passed: true, cases: 3, execution: 'Linux integration artifact; exact format verifier unit cases' };
+    assert.match(output, /^test result: ok\. 8 passed; 0 failed; 0 ignored;/m);
+    return { passed: true, cases: 8, execution: 'Linux integration artifact; exact format, corruption-authoring and negotiated-source verifier unit cases' };
 }
 
 export function validateFormatProcessProof(output) {

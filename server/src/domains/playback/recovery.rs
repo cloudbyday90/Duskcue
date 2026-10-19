@@ -62,6 +62,7 @@ pub(super) fn stored_recovery(metadata: &Value) -> Option<RecoveryResponse> {
         "cleanup_failed" => "cleanup_failed",
         "session_lost" => "session_lost",
         "native_decode" => "native_decode",
+        "client_decode" => "client_decode",
         "fallback_unavailable" => "fallback_unavailable",
         "output_unsupported" => "output_unsupported",
         "source_changed" => "source_changed",
@@ -97,6 +98,8 @@ pub(super) fn response(
     let id = transcode_id(metadata);
     let session = id.and_then(|id| manager.get_session(&id));
     HeartbeatResponse {
+        source_route: super::source_context::response(metadata),
+        copy_fallback: super::source_context::copy_fallback(manager, metadata),
         stream_decision: metadata
             .get("stream_decision")
             .and_then(Value::as_str)
@@ -149,6 +152,9 @@ pub(super) async fn recover(
 ) -> Result<(Option<PendingTranscodeSession>, Option<RecoveryResponse>), PlaybackError> {
     if transcode_id(metadata).is_none() {
         return super::direct_recovery::recover(connection, context, metadata).await;
+    }
+    if super::copy_recovery::requested(&context, metadata) {
+        return super::copy_recovery::recover(connection, context, metadata).await;
     }
     let RecoveryContext {
         manager,
@@ -211,6 +217,9 @@ pub(super) async fn recover(
     };
     let mut pending = None;
     if let (Some(failure), Some(session)) = (failure, manager.get_session(&id)) {
+        if super::source_context::has_context(metadata) {
+            super::source_context::revalidate(connection, actor, media_item_id, metadata).await?;
+        }
         let position = metadata
             .get("current_position_ms")
             .and_then(Value::as_i64)

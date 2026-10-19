@@ -170,6 +170,27 @@ describe('integrated player session lifecycle', () => {
         });
     });
 
+    it('forwards only the current attempt source observations in the existing Start request', async () => {
+        const sourceCapabilities = { version: 1, source_revision: 'a'.repeat(64), observations: [{ candidate_id: 'hls_video_copy_aac',
+            status: 'reported', supported: true, smooth: true, power_efficient: false, delivery_supported: true }] };
+        await player.play(item, 'file-1', { sourceCapabilities, forceHls: true });
+        expect(api.startPlayback).toHaveBeenCalledWith(expect.objectContaining({ source_capabilities: sourceCapabilities,
+            force_hls: true, audio_stream_index: null, device_profile: null }));
+        expect(get(player)).not.toHaveProperty('sourceCapabilities');
+    });
+
+    it('retains an explicit pause while Start is pending instead of reviving playback on response', async () => {
+        const pending = deferred<{ session_id: string; stream_decision: string; transcode_session_id: null }>();
+        api.startPlayback.mockReturnValueOnce(pending.promise);
+        const starting = player.play(item, 'file-1');
+        await vi.waitFor(() => expect(api.startPlayback).toHaveBeenCalledOnce());
+        player.setPlaying(false);
+        pending.resolve({ session_id: 'session-1', stream_decision: 'direct_play', transcode_session_id: null });
+        await starting;
+        expect(get(player).isPlaying).toBe(false);
+        expect(player.getPlayIntent()).toBe(false);
+    });
+
     it('requests authenticated HLS without requesting video encoding', async () => {
         await player.play(item, 'file-1', { forceHls: true, forceTranscode: false });
         expect(api.startPlayback).toHaveBeenCalledWith(expect.objectContaining({ force_hls: true, force_transcode: false }));

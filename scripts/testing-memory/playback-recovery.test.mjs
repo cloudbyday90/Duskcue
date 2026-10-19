@@ -93,6 +93,30 @@ test('read-only owned runtime rejects root, writable roots, foreign namespaces a
     }
 });
 
+test('source routing qualification adds an explicit mode without weakening the conservative format lane', () => {
+    const input = ['--source-capabilities', '--native-manifest', 'owned/manifest.json', '--image', image];
+    const mode = parseRecoveryInvocation(input);
+    assert.equal(mode.sourceCapabilities, true);
+    assert.equal(mode.formatCorpus, true);
+    assert.equal(mode.nativeRecovery, true);
+    assert.equal(mode.workload, 'playback-source-qualify');
+    assert.equal(PRESETS[mode.workload].policy, 'native');
+    assert.equal(PRESETS[mode.workload].heapMiB, 1536);
+    assert.equal(parseRecoveryInvocation(['--format-corpus', ...input.slice(1)]).sourceCapabilities, false);
+    assert.throws(() => parseRecoveryInvocation(['--source-capabilities', '--image', image]));
+    const expected = { source: 'b'.repeat(64), base: image, architecture: 'amd64', nativeRecovery: true, formatCorpus: true, sourceCapabilities: true };
+    const info = { Id: image, Os: 'linux', Architecture: 'amd64', Config: { User: '65532:65532', Entrypoint: ['/qualification/bin/playback-stop-contract'], Labels: {
+        'duskcue.qualification.kind': 'local-playback-recovery-v1', 'duskcue.qualification.source-sha256': expected.source,
+        'duskcue.qualification.runtime-base-id': image, 'duskcue.qualification.native-recovery': 'paced',
+        'duskcue.qualification.format-corpus': 'reference', 'duskcue.qualification.source-capabilities': 'exact',
+    } } };
+    assert.equal(validateRecoveryImage(info, expected).sourceCapabilitiesMode, 'exact');
+    assert.throws(() => validateRecoveryImage(info, { ...expected, sourceCapabilities: false }));
+    assert.throws(() => validateRecoveryImage(info, { ...expected, nativeRecovery: false }));
+    delete info.Config.Labels['duskcue.qualification.source-capabilities'];
+    assert.throws(() => validateRecoveryImage(info, expected));
+});
+
 test('Linux reserve loss cancels the attached process and remains a cleanup failure', { timeout: 6000 }, async () => {
     let samples = 0;
     const readSample = async () => ({ timestamp: new Date().toISOString(), context: 'local', engineId: 'owned', kernel: 'test', bootId: 'same-boot', totalBytes: 16 * 1024 ** 3, availableBytes: (++samples === 1 ? 8 : 1) * 1024 ** 3 });

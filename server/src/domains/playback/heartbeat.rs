@@ -82,6 +82,16 @@ pub(super) async fn heartbeat(
         transaction.commit().await?;
         return Ok(response);
     }
+    if request.recovery_requested
+        && request
+            .copy_fallback
+            .as_ref()
+            .is_some_and(|acknowledgement| Some(acknowledgement.generation) != active_transcode)
+    {
+        let response = recovery::response(manager, session_id, playback_mode, &metadata, None);
+        transaction.commit().await?;
+        return Ok(response);
+    }
 
     let prev_state = metadata
         .get("current_state")

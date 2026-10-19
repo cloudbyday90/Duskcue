@@ -7,6 +7,7 @@ import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { mp4CodecConfiguration } from '../../scripts/qualification/format-codecs.mjs';
 import { boundedMedia, fileIdentity, mediaPrelude, toolIdentity } from './format-process.mjs';
+import { probeConfiguration } from './format-configuration.mjs';
 import { FILE_LIMIT, FRAME_RATE, FRAMES, HEIGHT, MASTERS, WIDTH, writeReference } from './format-reference.mjs';
 import { compareFramehash, compareMetadata, decodedAudio, decodedVideo, probeOpusPadding, probeSource, validateHdr, validateProbe, verifyReference } from './format-proof.mjs';
 
@@ -121,8 +122,11 @@ export async function generateFormatCorpus({ directory, ffmpeg = 'ffmpeg', ffpro
                     }
                     remux = { ...frames, metadata, exactAudioPcm: true, audio: pcm, master: false };
                 }
-                const capability = capabilityFor(container, configuration, probe, bitrate, tones[1].bitrate, master.dynamicRange);
-                cases.push({ id, master: master.id, container, codec: master.codec, bitDepth: master.bitDepth, dynamicRange: master.dynamicRange, path: output, filename: basename(output), ...identity, videoIndex: 0, audioIndex: 2, audioHz: 880, width: WIDTH, height: HEIGHT, framerate: FRAME_RATE, bitrate, bitrateSource: actualBitrate > 0 ? 'master-video-stream' : 'master-container-ceiling', contentType: capability.video.contentType, audio: { ...capability.audio, channels: 1 }, probe, capability, configuration, remux });
+                const sourceConfiguration = await probeConfiguration(ffprobe, output, master.codec, container);
+                if (sourceConfiguration.bitDepth !== master.bitDepth || sourceConfiguration.codecString.split('.').slice(1).join('.') !== configuration.codecString.split('.').slice(1).join('.')) throw new Error(`Actual container configuration changed its codec parameters: ${id}.`);
+                if (container === 'mp4' && sourceConfiguration.configurationHex !== configuration.configurationHex) throw new Error(`Demuxed MP4 configuration differs from its actual sample-entry record: ${id}.`);
+                const capability = capabilityFor(container, sourceConfiguration, probe, bitrate, tones[1].bitrate, master.dynamicRange);
+                cases.push({ id, master: master.id, container, codec: master.codec, bitDepth: master.bitDepth, dynamicRange: master.dynamicRange, path: output, filename: basename(output), ...identity, videoIndex: 0, audioIndex: 2, audioHz: 880, width: WIDTH, height: HEIGHT, framerate: FRAME_RATE, bitrate, bitrateSource: actualBitrate > 0 ? 'master-video-stream' : 'master-container-ceiling', contentType: capability.video.contentType, audio: { ...capability.audio, channels: 1 }, probe, capability, configuration: sourceConfiguration, remux });
             }
         }
         if (cases.length !== 14) throw new Error('The reference corpus is incomplete.');

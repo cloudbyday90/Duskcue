@@ -44,6 +44,7 @@ pub mod recovery_drill;
 pub mod sandbox;
 pub mod scheduler;
 pub mod segments;
+pub mod source_capabilities;
 pub mod storyboards;
 pub mod subdl_client;
 pub mod subtitle_discovery;

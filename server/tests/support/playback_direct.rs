@@ -92,7 +92,9 @@ pub(super) async fn run(fixture: ProgressiveFixture<'_>) -> anyhow::Result<()> {
     };
     let exercised = tokio::time::timeout(
         Duration::from_secs(
-            if std::env::var("DUSKCUE_TEST_FORMAT_CORPUS").as_deref() == Ok("live") {
+            if std::env::var("DUSKCUE_TEST_SOURCE_CAPABILITIES").as_deref() == Ok("live") {
+                1740
+            } else if std::env::var("DUSKCUE_TEST_FORMAT_CORPUS").as_deref() == Ok("live") {
                 1000
             } else {
                 300

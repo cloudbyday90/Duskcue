@@ -42,7 +42,7 @@ export async function installPlaybackApi(page, scenario, media, options = null) 
         const url = new URL(request.url());
         const path = url.pathname.replace(/^\/api\/v1/, '');
         const method = request.method();
-        const playbackRoute = /^\/(playback\/(start|heartbeat|stop|seek|qoe|info\/[^/]+)|stream\/[^/]+|transcode\/[^/]+\/(manifest\.m3u8|v0\/(index\.m3u8|segment-\d+\.ts))|items\/[^/]+\/(segments|storyboard(?:\/(index\.vtt|sprite-000\.webp))?))$/.test(path);
+        const playbackRoute = /^\/(playback\/(prepare|start|heartbeat|stop|seek|qoe|info\/[^/]+)|stream\/[^/]+|transcode\/[^/]+\/(manifest\.m3u8|v0\/(index\.m3u8|segment-\d+\.ts))|items\/[^/]+\/(segments|storyboard(?:\/(index\.vtt|sprite-000\.webp))?))$/.test(path);
         if (!playbackRoute) return route.fallback();
         const body = request.postData() ? request.postDataJSON() : null;
         if (method === 'POST' && path === '/playback/stop') state.stopAttempts.push(body);
@@ -54,6 +54,7 @@ export async function installPlaybackApi(page, scenario, media, options = null) 
             return json({ status: failure.status, title: 'FIXTURE_PLAYBACK', detail: failure.detail }, failure.status);
         }
 
+        if (method === 'POST' && path === '/playback/prepare') return json({ protocol: 1, source_revision: 'a'.repeat(64), candidates: [] });
         if (method === 'POST' && path === '/playback/start') {
             const item = scenario.mediaItems.find((candidate) => candidate.id === body.media_item_id);
             const file = scenario.files[item?.id]?.find((candidate) => candidate.id === body.media_file_id && candidate.is_healthy);

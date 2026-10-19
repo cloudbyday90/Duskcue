@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createMediaSource } from '../../src/lib/playback/source.js';
 import { createPlaybackAnnotations } from '../../src/lib/playback/annotations.js';
 import { clearBearerToken, clearServerOrigin, mediaRequestHeaders, setBearerToken, setServerOrigin } from '../../src/lib/api/core.js';
@@ -23,7 +23,8 @@ function hlsHarness() {
         startLoad = vi.fn();
         recoverMediaError = vi.fn();
         destroy = vi.fn();
-        constructor() { instances.push(this); }
+        configuration: Record<string, unknown>;
+        constructor(configuration: Record<string, unknown> = {}) { this.configuration = configuration; instances.push(this); }
         on(name: string, callback: (...args: any[]) => void) { this.handlers.set(name, callback); }
         loadSource() {}
         attachMedia() {}
@@ -32,7 +33,31 @@ function hlsHarness() {
     return { Hls, instances };
 }
 
+afterEach(() => { vi.clearAllTimers(); vi.useRealTimers(); });
+
 describe('media source lifecycle and credentials', () => {
+    it('sets the canonical local seek target before loading copied HLS and preserves paused intent', async () => {
+        const media = video();
+        const { Hls, instances } = hlsHarness();
+        const source = createMediaSource({ video: media, loadHls: async () => Hls, shouldPlay: () => false, requiresHeaders: () => false });
+        await source.attach('/api/v1/transcode/copied/manifest.m3u8', { startPosition: (5000 - 3916) / 1000 });
+        expect(instances[0].configuration.startPosition).toBe(1.084);
+        instances[0].handlers.get('manifest')?.();
+        expect(media.play).not.toHaveBeenCalled();
+        source.dispose();
+    });
+
+    it.each([Number.NaN, Infinity, -1, 2147483.648])('refuses unsafe HLS attachment position %s before allocating an engine', async (startPosition) => {
+        const media = video();
+        const { Hls, instances } = hlsHarness();
+        const onError = vi.fn();
+        const source = createMediaSource({ video: media, loadHls: async () => Hls, requiresHeaders: () => false, onError });
+        await source.attach('/api/v1/transcode/copied/manifest.m3u8', { startPosition });
+        expect(instances).toHaveLength(0);
+        expect(onError).toHaveBeenCalledOnce();
+        expect(media.play).not.toHaveBeenCalled();
+        source.dispose();
+    });
     it('reports an actual media error only while its source remains owned', async () => {
         const media = video();
         const failure = vi.fn((_error: unknown) => {});
@@ -77,6 +102,117 @@ describe('media source lifecycle and credentials', () => {
         expect(media.currentTime).toBe(0);
         instances[0].emitError({ fatal: true, type: Hls.ErrorTypes.MEDIA_ERROR });
         expect(failure).toHaveBeenCalledOnce();
+        source.dispose();
+    });
+
+    it('bounds a native HLS decode failure without a library error and retains its position across local reload', async () => {
+        vi.useFakeTimers();
+        const media = video();
+        const { Hls, instances } = hlsHarness();
+        const failure = vi.fn();
+        const source = createMediaSource({ video: media, loadHls: async () => Hls, requiresHeaders: () => false, onError: failure });
+        await source.attach('/api/v1/transcode/one/manifest.m3u8');
+        media.currentTime = 12.5;
+        const error = { code: 3 };
+        media.error = error;
+        instances[0].recoverMediaError.mockImplementation(() => { media.currentTime = 0; media.error = null; });
+        media.dispatchEvent(new Event('error'));
+        expect(instances[0].recoverMediaError).toHaveBeenCalledOnce();
+        expect(failure).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(4999);
+        expect(failure).not.toHaveBeenCalled();
+        await vi.advanceTimersByTimeAsync(1);
+        expect(failure).toHaveBeenCalledExactlyOnceWith(error, { url: '/api/v1/transcode/one/manifest.m3u8', mode: 'hls-mse', mediaErrorCode: 3, positionSeconds: 12.5, recoveryRequested: true });
+        expect(instances[0].destroy).toHaveBeenCalledOnce();
+        source.dispose();
+    });
+
+    it.each(['native', 'hls'])('coalesces paired native/library reports starting with %s and permits only one local retry', async (origin) => {
+        vi.useFakeTimers();
+        const media = video();
+        const { Hls, instances } = hlsHarness();
+        const failure = vi.fn();
+        const source = createMediaSource({ video: media, loadHls: async () => Hls, requiresHeaders: () => false, onError: failure });
+        await source.attach('/api/v1/transcode/one/manifest.m3u8');
+        media.currentTime = 6.5;
+        media.error = { code: 3 };
+        const native = () => media.dispatchEvent(new Event('error'));
+        const library = () => instances[0].emitError({ fatal: true, type: Hls.ErrorTypes.MEDIA_ERROR });
+        if (origin === 'native') { native(); library(); } else { library(); native(); }
+        expect(instances[0].recoverMediaError).toHaveBeenCalledOnce();
+        expect(failure).not.toHaveBeenCalled();
+        media.error = null;
+        media.currentTime = 0;
+        media.dispatchEvent(new Event('loadedmetadata'));
+        media.error = { code: 3 };
+        native();
+        expect(failure.mock.calls[0][1]).toMatchObject({ mode: 'hls-mse', mediaErrorCode: 3, positionSeconds: 6.5, recoveryRequested: true });
+        library();
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(failure).toHaveBeenCalledOnce();
+        expect(instances[0].recoverMediaError).toHaveBeenCalledOnce();
+        source.dispose();
+    });
+
+    it.each([0, 1, 2, 4])('never turns native HLS code %s into a decode retry or server hint', async (code) => {
+        vi.useFakeTimers();
+        const media = video();
+        const { Hls, instances } = hlsHarness();
+        const failure = vi.fn();
+        const source = createMediaSource({ video: media, loadHls: async () => Hls, requiresHeaders: () => false, onError: failure });
+        await source.attach('/api/v1/transcode/one/manifest.m3u8');
+        media.error = { code };
+        media.dispatchEvent(new Event('error'));
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(instances[0].recoverMediaError).not.toHaveBeenCalled();
+        expect(failure).not.toHaveBeenCalled();
+        source.dispose();
+    });
+
+    it('uses live pause intent on local retry and cancels its deadline when the source is replaced', async () => {
+        vi.useFakeTimers();
+        const media = video();
+        const { Hls, instances } = hlsHarness();
+        const failure = vi.fn();
+        let playing = true;
+        const source = createMediaSource({ video: media, loadHls: async () => Hls, shouldPlay: () => playing, requiresHeaders: () => false, onError: failure });
+        await source.attach('/api/v1/transcode/one/manifest.m3u8');
+        media.currentTime = 2.25;
+        media.error = { code: 3 };
+        media.dispatchEvent(new Event('error'));
+        playing = false;
+        media.error = null;
+        media.dispatchEvent(new Event('loadedmetadata'));
+        expect(media.play).not.toHaveBeenCalled();
+        await source.attach('/api/v1/transcode/two/manifest.m3u8', { autoplay: false });
+        await vi.advanceTimersByTimeAsync(5000);
+        instances[0].emitError({ fatal: true, type: Hls.ErrorTypes.MEDIA_ERROR });
+        expect(failure).not.toHaveBeenCalled();
+        expect(instances).toHaveLength(2);
+        source.dispose();
+    });
+
+    it('clears the local retry deadline only after decoded progress and retains the exhausted retry budget', async () => {
+        vi.useFakeTimers();
+        const media = Object.assign(video(), { readyState: 4 });
+        const { Hls, instances } = hlsHarness();
+        const failure = vi.fn();
+        const source = createMediaSource({ video: media, loadHls: async () => Hls, requiresHeaders: () => false, onError: failure });
+        await source.attach('/api/v1/transcode/one/manifest.m3u8');
+        media.currentTime = 2;
+        media.error = { code: 3 };
+        media.dispatchEvent(new Event('error'));
+        media.error = null;
+        media.dispatchEvent(new Event('loadedmetadata'));
+        expect(media.play).toHaveBeenCalledOnce();
+        media.currentTime = 2.1;
+        media.dispatchEvent(new Event('timeupdate'));
+        await vi.advanceTimersByTimeAsync(5000);
+        expect(failure).not.toHaveBeenCalled();
+        media.error = { code: 3 };
+        media.dispatchEvent(new Event('error'));
+        expect(failure.mock.calls[0][1]).toMatchObject({ positionSeconds: 2.1, recoveryRequested: true });
+        expect(instances[0].recoverMediaError).toHaveBeenCalledOnce();
         source.dispose();
     });
 

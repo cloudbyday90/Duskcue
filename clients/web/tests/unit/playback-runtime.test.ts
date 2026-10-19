@@ -70,7 +70,7 @@ function fakePlayer(decision = 'direct_play') {
         try {
             const result = await startResult(media, fileId, options);
             if (generation !== token || options.signal?.aborted) return null;
-            store.update((state) => result ? { ...state, sessionId: result.session_id, streamDecision: result.stream_decision, mediaItem: media, mediaFileId: fileId, loading: false, isPlaying: true, positionMs: options.startPositionMs } : { ...state, loading: false });
+            store.update((state) => result ? { ...state, sessionId: result.session_id, streamDecision: result.stream_decision, mediaItem: media, mediaFileId: fileId, loading: false, isPlaying: options.playing !== false, positionMs: options.startPositionMs } : { ...state, loading: false });
             return result;
         } finally {
             options.signal?.removeEventListener('abort', abort);
@@ -87,12 +87,13 @@ function fakePlayer(decision = 'direct_play') {
     const stop = vi.fn();
     return {
         subscribe: store.subscribe, play, seek, setPlaying, stop, startResult, seekResult,
+        getSourceRevision: () => generation,
         update: (value: any) => store.update((state) => ({ ...state, ...value })),
         replaceSession: (id: string) => { generation++; store.update((state) => ({ ...state, sessionId: id, loading: false })); },
     };
 }
 
-function harness({ value = {}, saved = true, storage = memoryStorage(), getPreferences = undefined, savePreferences = undefined, loadEntry = undefined, authenticated = false, decision = 'direct_play' }: any = {}) {
+function harness({ value = {}, saved = true, storage = memoryStorage(), getPreferences = undefined, savePreferences = undefined, loadEntry = undefined, prepareSource = undefined, authenticated = false, decision = 'direct_play' }: any = {}) {
     const reads = getPreferences || vi.fn(async (_options: any) => response(value, saved));
     const saves = savePreferences || vi.fn(async (_id: string, preferences: any, _options: any) => response(preferences));
     const preferences = createViewingPreferencesStore({ getPreferences: reads, savePreferences: saves, getStorage: () => storage, getDeviceId: () => 'installation-a' });
@@ -105,8 +106,9 @@ function harness({ value = {}, saved = true, storage = memoryStorage(), getPrefe
         return { ...actual, destination: playbackTitleDestination(actual.item, options.returnTo) };
     });
     const onChange = vi.fn((_state: any) => {});
-    const runtime = createPlaybackRuntime({ player, preferences, loadEntry: loader, requiresAuthenticatedSource: () => authenticated, onChange });
-    return { runtime, player, preferences, reads, saves, loader, entries, onChange, storage };
+    const prepare = prepareSource || vi.fn(async (_item: string, _file: string, _options: unknown, _dependencies: unknown): Promise<unknown> => null);
+    const runtime = createPlaybackRuntime({ player, preferences, loadEntry: loader, prepareSource: prepare, requiresAuthenticatedSource: () => authenticated, onChange });
+    return { runtime, player, preferences, reads, saves, loader, entries, onChange, storage, prepare };
 }
 
 async function started(options: any = {}) {
@@ -116,6 +118,53 @@ async function started(options: any = {}) {
 }
 
 describe('per-player playback runtime', () => {
+    it('prepares every operation with resolved global tracks, quality and authenticated delivery', async () => {
+        const evidence = { version: 1, source_revision: 'a'.repeat(64), observations: [] };
+        const prepareSource = vi.fn(async (_item: string, _file: string, _options: unknown, _dependencies: unknown) => evidence);
+        const h = await started({ prepareSource, authenticated: true });
+        expect(prepareSource).toHaveBeenCalledExactlyOnceWith(item.id, file.id, expect.objectContaining({
+            audioStreamIndex: null, subtitleStreamIndex: null, forceTranscode: false, forceHls: true, qualityMode: 'auto',
+        }), expect.objectContaining({ signal: expect.any(AbortSignal), requiresHeaders: true }));
+        expect(h.player.play.mock.calls[0][2].sourceCapabilities).toBe(evidence);
+        await h.runtime.restart({ audio: createTrackOverride('audio', h.runtime.getState().tracks.audio.find((track) => track.index === 5), file.id) });
+        expect(prepareSource).toHaveBeenCalledTimes(2);
+        expect(prepareSource.mock.calls[1][2]).toMatchObject({ audioStreamIndex: 5, forceHls: true });
+        h.runtime.dispose();
+    });
+
+    it('refreshes restart position and preserves an explicit pause while preflight is pending', async () => {
+        const h = await started();
+        h.player.update({ positionMs: 1000 });
+        const pending = deferred();
+        h.prepare.mockReturnValueOnce(pending.promise);
+        const restarting = h.runtime.restart();
+        await vi.waitFor(() => expect(h.prepare).toHaveBeenCalledTimes(2));
+        h.player.update({ positionMs: 4500 });
+        h.player.setPlaying(false);
+        pending.resolve(null);
+        await restarting;
+        expect(h.player.play.mock.calls[1][2]).toMatchObject({ startPositionMs: 4500, playing: false });
+        expect(get(h.player).isPlaying).toBe(false);
+        h.runtime.dispose();
+    });
+
+    it.each(['seek', 'dispose', 'context', 'session'])('rejects a capability result whose ownership changed through %s', async (action) => {
+        const h = await started();
+        const pending = deferred();
+        h.prepare.mockReturnValueOnce(pending.promise);
+        const restarting = h.runtime.restart();
+        const rejected = expect(restarting).rejects.toMatchObject({ name: 'AbortError' });
+        await vi.waitFor(() => expect(h.prepare).toHaveBeenCalledTimes(2));
+        if (action === 'seek') await h.player.seek(9000, {});
+        if (action === 'dispose') h.runtime.dispose();
+        if (action === 'context') h.preferences.invalidate();
+        if (action === 'session') h.player.replaceSession('another-session');
+        pending.resolve({ version: 1, source_revision: 'a'.repeat(64), observations: [] });
+        await rejected;
+        expect(h.player.play).toHaveBeenCalledOnce();
+        h.runtime.dispose();
+    });
+
     it('waits for confirmed preferences before starting and reads the full file tracks', async () => {
         const pending = deferred();
         const reads = vi.fn((_options: any) => pending.promise);

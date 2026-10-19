@@ -22,7 +22,7 @@ function cases() {
             videoIndex: 0, audioIndex: 2, audioHz: 880, sha256: 'a'.repeat(64), capability }))).map((entry, index) => ({ ...entry, index }));
 }
 const start = () => ({ method: 'POST', path: '/api/v1/playback/start', status: 200, bearer: true, cookie: false,
-    request: { media_item_id: item, media_file_id: file, device_profile: null, force_transcode: false, force_hls: true, audio_stream_index: null, subtitle_stream_index: null },
+    request: { media_item_id: item, media_file_id: file, device_profile: null, force_transcode: false, force_hls: true, quality_mode: 'manual', max_streaming_bitrate: 1500000, audio_stream_index: null, subtitle_stream_index: null },
     reply: { session_id: session, transcode_session_id: generation, stream_decision: 'transcode' } });
 
 test('format cases bind all fourteen exact source identities and conservative native starts', () => {

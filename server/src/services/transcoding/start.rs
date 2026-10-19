@@ -66,6 +66,9 @@ impl TranscodeManager {
             .map(|profile| profile.rendition(&params))
             .transpose()
             .map_err(|message| PlaybackError::FfmpegFailed(message.into()))?;
+        let profiled_args = params
+            .output_profile
+            .map(|profile| profile.output_args(&params));
         let StartSessionParams {
             media_file_id,
             user_id,
@@ -159,12 +162,23 @@ impl TranscodeManager {
 
         let segment_filename = segment_dir.join("seg_%04d.m4s");
 
-        let fps = output_profile.map_or(24, |_| output_profile::FRAME_RATE);
+        let fps = if output_profile == Some(OutputProfile::CompatibleSdr) {
+            output_profile::FRAME_RATE
+        } else {
+            24
+        };
         let gop_size = fps * transcoding.segment_duration_seconds;
 
-        let mut args = self
-            .build_session_input_args(seek_position_ms, &source_path)
-            .await?;
+        let timestamp_preserving = output_profile == Some(OutputProfile::SourceCopySdr);
+        let mut args = if timestamp_preserving {
+            vec!["-copyts".into(), "-start_at_zero".into()]
+        } else {
+            Vec::new()
+        };
+        args.extend(
+            self.build_session_input_args(seek_position_ms, &source_path)
+                .await?,
+        );
         args.extend(build_ffmpeg_output_seek_args(seek_position_ms, stream_plan));
 
         let subtitle_filter = if subtitle_burn_in {
@@ -209,8 +223,11 @@ impl TranscodeManager {
                 rendition.audio_bitrate,
             ),
         ));
-        if let Some(profile) = output_profile {
-            args.extend(profile.output_args());
+        if let Some(profile_args) = profiled_args {
+            args.extend(profile_args);
+        }
+        if timestamp_preserving {
+            args.extend(["-avoid_negative_ts".into(), "disabled".into()]);
         }
 
         args.extend(build_threading_args(cpu));
@@ -229,7 +246,7 @@ impl TranscodeManager {
 
         let spawned = spawn_session_ffmpeg(&args, session_id, &source_path, &segment_dir).await?;
 
-        let session = TranscodeSession {
+        let mut session = TranscodeSession {
             id: session_id,
             media_file_id,
             user_id,
@@ -254,7 +271,11 @@ impl TranscodeManager {
             target_audio_codec: effective_audio_codec,
             target_bitrate: rendition.video_bitrate,
             hw_accel,
-            source_start_ms: seek_position_ms.unwrap_or(0),
+            source_start_ms: if timestamp_preserving {
+                0
+            } else {
+                seek_position_ms.unwrap_or(0)
+            },
             recovery_attempts,
             rendition_name: rendition.name,
             segment_dir,
@@ -281,9 +302,14 @@ impl TranscodeManager {
                 ),
             },
             move |line| {
-                if let Some(update) = parser.push(&line)
+                if let Some(mut update) = parser.push(&line)
                     && let Some(mut session) = sessions.get_mut(&session_id)
                 {
+                    if timestamp_preserving {
+                        update.out_time_ms = update
+                            .out_time_ms
+                            .saturating_sub(session.source_start_ms.max(0) as u64);
+                    }
                     session.progress = Some(update);
                 }
                 Next::Continue
@@ -297,7 +323,53 @@ impl TranscodeManager {
             .workers
             .observation(session_id)
             .map(|observation| (session_id, observation));
-        self.confirm_startup(&session, spawned.readiness).await?;
+        let mut publication = self
+            .workers
+            .pending(session_id)
+            .ok_or_else(|| PlaybackError::FfmpegFailed("HLS startup ownership was lost".into()))?;
+        let deadline = tokio::time::Instant::now() + readiness::STARTUP_TIMEOUT;
+        self.confirm_startup(&session, spawned.readiness, deadline)
+            .await?;
+        if timestamp_preserving {
+            let origin = tokio::time::timeout_at(
+                deadline,
+                readiness::copied_source_origin(
+                    &session.segment_dir,
+                    &session.manifest_path,
+                    seek_position_ms.unwrap_or(0),
+                ),
+            )
+            .await
+            .unwrap_or_else(|_| {
+                Err(PlaybackError::FfmpegFailed(
+                    "source-copy timestamp startup deadline exceeded".into(),
+                ))
+            });
+            let origin = match origin {
+                Ok(origin) => origin,
+                Err(error) => {
+                    self.stop_session(session_id).await?;
+                    return Err(error);
+                }
+            };
+            session.source_start_ms = origin;
+            let mut updated = false;
+            if let Some(mut stored) = self.sessions.get_mut(&session_id) {
+                stored.source_start_ms = origin;
+                if let Some(progress) = stored.progress.as_mut() {
+                    progress.out_time_ms = progress.out_time_ms.saturating_sub(origin as u64);
+                }
+                session.progress = stored.progress.clone();
+                updated = true;
+            }
+            if !updated {
+                self.stop_session(session_id).await?;
+                return Err(PlaybackError::FfmpegFailed(
+                    "HLS startup ownership was lost".into(),
+                ));
+            }
+        }
+        publication.acknowledge();
 
         Ok(session)
     }
@@ -330,8 +402,8 @@ impl TranscodeManager {
         &self,
         session: &TranscodeSession,
         launch: LaunchReadiness,
+        deadline: tokio::time::Instant,
     ) -> Result<(), PlaybackError> {
-        let deadline = tokio::time::Instant::now() + readiness::STARTUP_TIMEOUT;
         readiness::confirm(
             &self.workers,
             session.id,

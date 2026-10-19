@@ -28,17 +28,10 @@ pub(super) async fn prepare(
     let candidate = match (
         FileIdentity::read(details).await,
         ResolvedTracks::from_selected(selected),
-        admit(media, device, network, config).and_then(|mut descriptor| {
-            if let Some(limit) = requested_bitrate {
-                descriptor.video.bitrate = descriptor
-                    .video
-                    .bitrate
-                    .min(limit.min(u64::from(u32::MAX)) as u32);
-            }
-            direct::descriptor_valid(&descriptor).then_some(descriptor)
-        }),
+        admit(media, device, network, config, requested_bitrate),
+        total_bitrate_limit(device, network, config, requested_bitrate),
     ) {
-        (Some(identity), Some(tracks), Some(descriptor))
+        (Some(identity), Some(tracks), Some(descriptor), Some(total_limit))
             if tracks.subtitle.is_none() && source_resolution(details).is_some() =>
         {
             Some(PreparedFallback {
@@ -51,7 +44,7 @@ pub(super) async fn prepare(
                         device.max_resolution.1.min(MAX_HEIGHT),
                     ),
                     max_audio_channels: device.max_audio_channels.min(AUDIO_MAX_CHANNELS),
-                    max_bitrate: device.max_bitrate_bps.min(u64::from(VIDEO_MAX_BITRATE)),
+                    max_bitrate: total_limit,
                     quality_mode: format!("{:?}", config.quality_mode).to_ascii_lowercase(),
                     requested_bitrate,
                 },
@@ -70,7 +63,9 @@ fn admit(
     device: &DeviceCapabilities,
     network: &NetworkConditions,
     config: &DecisionEngineConfig,
+    requested_bitrate: Option<u64>,
 ) -> Option<DirectFallbackResponse> {
+    let total_limit = total_bitrate_limit(device, network, config, requested_bitrate)?;
     if media.video_resolution.0 < 2
         || media.video_resolution.1 < 2
         || media.audio_channels == 0
@@ -97,7 +92,7 @@ fn admit(
         device.max_resolution.1.min(MAX_HEIGHT),
     );
     device.max_audio_channels = device.max_audio_channels.min(AUDIO_MAX_CHANNELS);
-    device.max_bitrate_bps = device.max_bitrate_bps.min(u64::from(VIDEO_MAX_BITRATE));
+    device.max_bitrate_bps = total_limit;
     let mut config = config.clone();
     config.default_video_codec = "h264".into();
     config.default_audio_codec = "aac".into();
@@ -144,6 +139,7 @@ fn admit(
     } else {
         AUDIO_MAX_BITRATE
     };
+    bitrate = bitrate.min(total_limit.checked_sub(u64::from(audio_bitrate))?);
     let descriptor = DirectFallbackResponse {
         video: DirectFallbackVideo {
             content_type: direct::VIDEO_CONTENT_TYPE.into(),
@@ -160,6 +156,55 @@ fn admit(
         },
     };
     direct::descriptor_valid(&descriptor).then_some(descriptor)
+}
+
+fn total_bitrate_limit(
+    device: &DeviceCapabilities,
+    network: &NetworkConditions,
+    config: &DecisionEngineConfig,
+    requested: Option<u64>,
+) -> Option<u64> {
+    let mut limit = u64::from(VIDEO_MAX_BITRATE) + u64::from(AUDIO_MAX_BITRATE);
+    if device.max_bitrate_bps > 0 {
+        limit = limit.min(device.max_bitrate_bps);
+    }
+    if config.quality_mode != decision_engine::QualityMode::Maximum
+        && let Some(throughput) = network.estimated_throughput_bps
+    {
+        let factor = config.throughput_safety_factor;
+        if !factor.is_finite() || !(0.0..=1.0).contains(&factor) {
+            return None;
+        }
+        limit = limit.min((throughput as f64 * factor) as u64);
+    }
+    if let Some(requested) = requested {
+        limit = limit.min(requested);
+    }
+    Some(limit)
+}
+
+pub(super) fn within_saved_limits(candidate: &PreparedFallback, media: &MediaFileInfo) -> bool {
+    let descriptor = &candidate.descriptor;
+    let limits = &candidate.limits;
+    let total = u64::from(descriptor.video.bitrate) + u64::from(descriptor.audio.bitrate);
+    direct::descriptor_valid(descriptor)
+        && total <= limits.max_bitrate
+        && limits.requested_bitrate.is_none_or(|limit| total <= limit)
+        && descriptor.video.width <= limits.max_resolution.0
+        && descriptor.video.height <= limits.max_resolution.1
+        && descriptor.video.width <= media.video_resolution.0
+        && descriptor.video.height <= media.video_resolution.1
+        && descriptor
+            .audio
+            .channels
+            .parse::<u32>()
+            .is_ok_and(|channels| {
+                channels <= limits.max_audio_channels && channels <= media.audio_channels
+            })
+        && (media.video_bitrate_bps == 0
+            || u64::from(descriptor.video.bitrate) <= media.video_bitrate_bps)
+        && (media.audio_bitrate_bps == 0
+            || u64::from(descriptor.audio.bitrate) <= media.audio_bitrate_bps)
 }
 
 #[cfg(test)]

@@ -1,5 +1,9 @@
 # Playback dependency review
 
+## Source capability recheck — October 18, 2026
+
+The complete open pool returned by GitHub MCP is `[5]`. A fresh cryptographic draw at `2026-10-18T22:32:44.692Z` selected index zero and [PR #5](https://github.com/cloudbyday90/Duskcue/pull/5), open and unmerged at head `c018d77b7f09543e5960a571dc43e2f061cedf0a`. Both lockfile patches were inspected. Their PostCSS 8.5.23/nanoid 3.3.16 changes are already implemented and superseded locally by 8.5.30/3.3.20. Retain those newer versions and test the current graphs; this increment introduces no new PR delta or downgrade. Selection evidence is `.cache/local-evaluation/capability-pr-selection.json`. No merge, comment, closure or release is performed. Current verification is in progress in [Source-specific playback capabilities](../design/PLAYBACK_SOURCE_CAPABILITIES.md).
+
 ## Format qualification recheck — October 18, 2026
 
 GitHub MCP returned the complete current open pool `[5]`. A fresh `crypto.randomInt` draw at `2026-10-18T18:39:52.538Z` selected index zero and [PR #5](https://github.com/cloudbyday90/Duskcue/pull/5), open and unmerged at head `c018d77b7f09543e5960a571dc43e2f061cedf0a`. Both lockfile patches were inspected. Their PostCSS 8.5.23/nanoid 3.3.16 delta is already implemented and superseded locally by 8.5.30/3.3.20. Retain those newer fixes and regression-test the current graphs; there is no new PR code delta or downgrade. Selection evidence is `.cache/local-evaluation/format-pr-selection.json`. No merge, comment, closure or release is performed.

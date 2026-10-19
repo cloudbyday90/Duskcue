@@ -31,6 +31,12 @@ test('workflow evidence refuses a foreign marker, workload, parent or child befo
         assert.equal(evidence.directory, join(root, `compose-build-${resource}`));
         assert.equal(evidence.resourceId, resource);
         assert.equal(await realpath(dirname(evidence.directory)), await realpath(root));
+        await assert.rejects(ownedWorkflowEvidence(workspace, environment, 'playback-source-qualify'));
+        await save({ ...active, workload: 'playback-source-qualify' });
+        const source = await ownedWorkflowEvidence(workspace, environment, 'playback-source-qualify');
+        assert.equal(source.directory, join(root, `playback-recovery-${resource}`));
+        assert.equal(source.resourceId, resource);
+        assert.equal(await realpath(dirname(source.directory)), await realpath(root));
     } finally {
         const target = await realpath(workspace);
         assert.equal(dirname(target), temporaryRoot);

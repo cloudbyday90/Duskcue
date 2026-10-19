@@ -33,6 +33,7 @@ use crate::services::media_matching;
 use crate::services::metadata::EnrichmentOrchestrator;
 
 mod probe;
+mod scan_diff;
 use probe::probe_file;
 
 const MEDIA_VIDEO_EXTENSIONS: &[&str] = &[
@@ -41,8 +42,6 @@ const MEDIA_VIDEO_EXTENSIONS: &[&str] = &[
 ];
 
 const MEDIA_SUBTITLE_EXTENSIONS: &[&str] = &["srt", "ass", "ssa", "vtt", "sub", "idx", "sup"];
-
-const MTIME_TOLERANCE_SECS: u64 = 2;
 
 const PARTIAL_HASH_CHUNK: usize = 1024 * 1024;
 
@@ -324,13 +323,7 @@ async fn scan_path_pipeline(
         "Phase 2 (Diff) complete"
     );
 
-    let files_to_probe = if full {
-        let mut combined = diff.new_files.clone();
-        combined.extend(diff.modified_files.iter().cloned());
-        combined
-    } else {
-        diff.new_files.clone()
-    };
+    let files_to_probe = scan_diff::files_to_probe(&diff);
 
     let probe_results = phase3_probe(&files_to_probe, &mut errors).await;
     tracing::info!(
@@ -497,67 +490,7 @@ async fn phase2_diff(
         })
         .collect();
 
-    let known_map: HashMap<String, &KnownFile> =
-        known.iter().map(|k| (k.file_path.clone(), k)).collect();
-
-    let discovered_map: HashMap<String, &DiscoveredFile> = discovered
-        .iter()
-        .map(|d| (d.path.to_string_lossy().to_string(), d))
-        .collect();
-
-    let mut new_files = Vec::new();
-    let mut modified_files = Vec::new();
-    let mut unchanged_count = 0;
-
-    for disc in discovered {
-        let path_str = disc.path.to_string_lossy().to_string();
-
-        if !is_media_video_file(&disc.path) {
-            continue;
-        }
-
-        match known_map.get(&path_str) {
-            None => {
-                new_files.push(disc.clone());
-            }
-            Some(known_file) => {
-                if full {
-                    modified_files.push(disc.clone());
-                    continue;
-                }
-
-                let size_changed = disc.size as i64 != known_file.file_size;
-
-                let mtime_changed = match (disc.mtime, known_file.file_modified_at) {
-                    (Some(mtime), Some(db_mtime)) => {
-                        let mtime_chrono = DateTime::<Utc>::from(mtime);
-                        let diff = (mtime_chrono - db_mtime).num_seconds().abs();
-                        diff > MTIME_TOLERANCE_SECS as i64
-                    }
-                    _ => true,
-                };
-
-                if size_changed || mtime_changed {
-                    modified_files.push(disc.clone());
-                } else {
-                    unchanged_count += 1;
-                }
-            }
-        }
-    }
-
-    let deleted_paths: Vec<String> = known_map
-        .keys()
-        .filter(|path| !discovered_map.contains_key(*path))
-        .cloned()
-        .collect();
-
-    Ok(DiffResult {
-        new_files,
-        modified_files,
-        unchanged_count,
-        deleted_paths,
-    })
+    Ok(scan_diff::diff(&known, discovered, full))
 }
 
 async fn phase3_probe(

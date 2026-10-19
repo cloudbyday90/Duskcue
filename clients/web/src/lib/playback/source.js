@@ -18,11 +18,13 @@
 
 import { mediaRequestHeaders, requiresAuthenticatedMediaSource } from '../api/core.js';
 import { onDemandHlsTiming, sourceTimeline } from './timing.js';
+import { createHlsMediaRecovery } from './hls-media-recovery.js';
 
 export function createMediaSource({ video, loadHls = null, shouldPlay = () => true, onError = (_error, _details) => {}, onPlaybackBlocked = (_error) => {}, onTimelineChange = (_timeline) => {}, requestHeaders = mediaRequestHeaders, requiresHeaders = requiresAuthenticatedMediaSource }) {
     const resolveHls = loadHls || (() => import('hls.js').then((module) => module.default));
     let generation = 0;
     let hls = null;
+    let hlsRecovery = null;
     let disposed = false;
     let attachedUrl = null;
     let timeline = sourceTimeline({ generation });
@@ -33,13 +35,16 @@ export function createMediaSource({ video, loadHls = null, shouldPlay = () => tr
     }
 
     const mediaError = () => {
-        if (!disposed && attachedUrl && !hls && video.error && video.error.code !== 1) fail(video.error, video.error.code === 3, true);
+        if (disposed || !attachedUrl || !video.error || video.error.code === 1) return;
+        if (hls) {
+            if (video.error.code === 3) hlsRecovery?.report(video.error, 'native');
+        } else fail(video.error, video.error.code === 3, true);
     };
     video.addEventListener?.('error', mediaError);
 
-    function fail(error, recoveryRequested = false, detach = false) {
+    function fail(error, recoveryRequested = false, detach = false, positionSeconds = null) {
         const details = { url: attachedUrl, mode: timeline.mode, mediaErrorCode: Number.isInteger(error?.code) ? error.code : null,
-            positionSeconds: Number.isFinite(video.currentTime) ? Math.max(0, video.currentTime) : null, recoveryRequested };
+            positionSeconds: positionSeconds ?? (Number.isFinite(video.currentTime) ? Math.max(0, video.currentTime) : null), recoveryRequested };
         try { onError(error, details); } finally { if (detach) release(); }
     }
 
@@ -51,6 +56,8 @@ export function createMediaSource({ video, loadHls = null, shouldPlay = () => tr
     function release() {
         generation += 1;
         attachedUrl = null;
+        hlsRecovery?.dispose();
+        hlsRecovery = null;
         const engine = hls;
         hls = null;
         engine?.destroy();
@@ -60,7 +67,7 @@ export function createMediaSource({ video, loadHls = null, shouldPlay = () => tr
         video.load();
     }
 
-    async function attach(url, { autoplay = true } = {}) {
+    async function attach(url, { autoplay = true, startPosition = 0 } = {}) {
         if (disposed) return;
         release();
         const token = generation;
@@ -68,19 +75,21 @@ export function createMediaSource({ video, loadHls = null, shouldPlay = () => tr
         if (!url) return;
         attachedUrl = url;
         try {
+            if (!Number.isFinite(startPosition) || startPosition < 0 || startPosition > 2147483.647) throw new RangeError('Playback attachment position is invalid');
             if (url.includes('.m3u8')) {
                 publishTimeline('hls-pending');
                 const Hls = await resolveHls();
                 if (!current()) return;
                 if (Hls.isSupported()) {
-                    const engine = new Hls({ ...onDemandHlsTiming, enableWorker: true, lowLatencyMode: false, backBufferLength: 90, xhrSetup: (xhr, requestUrl) => {
+                    const engine = new Hls({ ...onDemandHlsTiming, startPosition, enableWorker: true, lowLatencyMode: false, backBufferLength: 90, xhrSetup: (xhr, requestUrl) => {
                         for (const [name, value] of Object.entries(requestHeaders(requestUrl))) xhr.setRequestHeader(name, value);
                     } });
                     hls = engine;
                     const ownsEngine = () => current() && hls === engine;
                     publishTimeline('hls-mse');
                     let networkRecoveries = 0;
-                    let mediaRecoveries = 0;
+                    hlsRecovery = createHlsMediaRecovery({ video, isCurrent: ownsEngine, retry: () => engine.recoverMediaError(),
+                        resume: () => play(ownsEngine), onFailure: (error, seconds) => fail(error, true, true, seconds) });
                     engine.on(Hls.Events.MANIFEST_PARSED, () => { if (ownsEngine()) play(ownsEngine, autoplay); });
                     engine.on(Hls.Events.LEVEL_UPDATED, (_event, data) => {
                         if (ownsEngine()) publishTimeline('hls-mse', data.details);
@@ -90,7 +99,7 @@ export function createMediaSource({ video, loadHls = null, shouldPlay = () => tr
                         const status = Number(data.response?.code || 0);
                         const denied = status >= 400 && status < 500 && ![408, 429].includes(status);
                         if (data.type === Hls.ErrorTypes.NETWORK_ERROR && !denied && networkRecoveries++ < 1) engine.startLoad();
-                        else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !denied && mediaRecoveries++ < 1) engine.recoverMediaError();
+                        else if (data.type === Hls.ErrorTypes.MEDIA_ERROR && !denied) hlsRecovery.report(data, 'hls');
                         else fail(data, data.type === Hls.ErrorTypes.MEDIA_ERROR && !denied, true);
                     });
                     engine.loadSource(url);

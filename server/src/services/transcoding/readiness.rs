@@ -32,6 +32,17 @@ mod mp4;
 #[path = "readiness_playlist.rs"]
 mod playlist;
 
+#[path = "source_origin.rs"]
+mod source_origin;
+
+pub(super) async fn copied_source_origin(
+    directory: &Path,
+    manifest: &Path,
+    requested_ms: i64,
+) -> Result<i64, PlaybackError> {
+    source_origin::inspect(directory, manifest, requested_ms).await
+}
+
 pub(super) const STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_PLAYLIST_BYTES: u64 = 1_048_576;
 

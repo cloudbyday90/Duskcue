@@ -25,7 +25,7 @@ export async function directSources(workspace) {
         'clients/desktop/src', 'clients/desktop/scripts', 'clients/desktop/package.json', 'clients/desktop/package-lock.json', 'clients/desktop/vite.config.js',
         'clients/desktop/src-tauri/tauri.conf.json', 'clients/desktop/src-tauri/capabilities', 'clients/desktop/src-tauri/icons']) await visit(path);
     for (const entry of await readdir(join(workspace, 'clients/web/tests/fixtures'))) {
-        if (/^format-[a-z0-9-]+\.mjs$/.test(entry)) await visit(`clients/web/tests/fixtures/${entry}`);
+        if (/^(?:format|source)-[a-z0-9-]+\.mjs$/.test(entry)) await visit(`clients/web/tests/fixtures/${entry}`);
     }
     files.sort((left, right) => left.path < right.path ? -1 : left.path > right.path ? 1 : 0);
     return { files, sha256: createHash('sha256').update(JSON.stringify(files)).digest('hex') };

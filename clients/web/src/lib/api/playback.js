@@ -22,6 +22,10 @@ export async function startPlayback(data) {
     return post('/playback/start', data);
 }
 
+export async function preparePlayback(data, options = {}) {
+    return post('/playback/prepare', data, options);
+}
+
 export async function heartbeat(data) {
     return post('/playback/heartbeat', data);
 }

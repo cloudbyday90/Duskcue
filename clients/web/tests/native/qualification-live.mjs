@@ -15,6 +15,8 @@ import { clearNativeLiveCredential, connectNativeLive } from './qualification-li
 import { observeNativeAudio, releaseNativeAudio } from './qualification-live-media.mjs';
 import { recoverPausedNative } from './qualification-live-recovery.mjs';
 import { runFormatNative } from './qualification-format-native.mjs';
+import { runSourceNative } from './qualification-source-native.mjs';
+import { runSourceRecoveryNative } from './qualification-source-recovery.mjs';
 
 async function decoded(video) {
     await expect.poll(() => video.evaluate((element) => ({ ready: element.readyState >= 2, width: element.videoWidth > 0,
@@ -27,7 +29,7 @@ async function decoded(video) {
         currentTime: element.currentTime, width: element.videoWidth, height: element.videoHeight }));
 }
 
-export async function runNativeLive({ manifestPath, manifest, ready, gatewayOrigin, directory, abortSignal, verifyPlayback, armRecovery, verifyFormat }) {
+export async function runNativeLive({ manifestPath, manifest, ready, gatewayOrigin, directory, abortSignal, verifyPlayback, armRecovery, verifyFormat, verifySource }) {
     if (typeof verifyPlayback !== 'function') throw new Error('Native live playback requires real backend verification.');
     const recoveryMode = ready.nativeRecovery === true;
     if (recoveryMode && (typeof armRecovery !== 'function' || !ready.nativeCandidate)) throw new Error('Native worker recovery requires its owned candidate and arm callback.');
@@ -160,6 +162,15 @@ export async function runNativeLive({ manifestPath, manifest, ready, gatewayOrig
             observation.detach();
             report.checks.formats = await runFormatNative({ page, ready, origin: scenario.origin, directory: directory || approved.directory, verifyFormat, abortSignal });
             if (pageErrors || abortSignal?.aborted) throw new Error('Native format playback failed or was canceled.');
+        }
+        if (ready.sourceCapabilities === true) {
+            stage = 'source-matrix';
+            await releaseNativeAudio(page);
+            observation.detach();
+            report.checks.sourceCapabilities = await runSourceNative({ page, ready, origin: scenario.origin, directory: directory || approved.directory, verifySource, abortSignal });
+            stage = 'source-recovery';
+            report.checks.sourceRecovery = await runSourceRecoveryNative({ page, ready, origin: scenario.origin, directory: directory || approved.directory, verifySource, abortSignal });
+            if (pageErrors || abortSignal?.aborted) throw new Error('Native source routing failed or was canceled.');
         }
         report.passed = true;
     } catch (error) {

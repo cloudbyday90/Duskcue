@@ -32,7 +32,16 @@ const DEFAULT_PAGE: u32 = 1;
 const DEFAULT_PAGE_SIZE: u32 = 25;
 const MAX_PAGE_SIZE: u32 = 100;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CredentialTransport {
+    Cookie,
+    Bearer,
+    Legacy,
+}
+
 pub struct AuthenticatedUser {
+    pub transport: CredentialTransport,
     pub user_id: Uuid,
     pub session_id: Uuid,
     pub profile_id: Uuid,
@@ -51,7 +60,7 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
         parts: &mut Parts,
         state: &AppState,
     ) -> Result<Self, Self::Rejection> {
-        let token = extract_session_token(parts)?;
+        let (token, transport) = extract_session_token(parts)?;
 
         let validated = auth::service::validate_session(&state.pool, &token).await?;
 
@@ -81,6 +90,7 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
         }
 
         Ok(AuthenticatedUser {
+            transport,
             user_id: validated.user_id,
             session_id: validated.session.id,
             profile_id: validated.active_profile_id,
@@ -94,7 +104,7 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
     }
 }
 
-fn extract_session_token(parts: &Parts) -> Result<String, AppError> {
+fn extract_session_token(parts: &Parts) -> Result<(String, CredentialTransport), AppError> {
     if let Some(cookie_header) = parts.headers.get(COOKIE)
         && let Ok(val) = cookie_header.to_str()
     {
@@ -103,7 +113,7 @@ fn extract_session_token(parts: &Parts) -> Result<String, AppError> {
             if let Some(token) = cookie.strip_prefix("session=") {
                 let token = token.trim();
                 if !token.is_empty() {
-                    return Ok(token.to_string());
+                    return Ok((token.to_string(), CredentialTransport::Cookie));
                 }
             }
         }
@@ -115,7 +125,7 @@ fn extract_session_token(parts: &Parts) -> Result<String, AppError> {
     {
         let token = token.trim();
         if !token.is_empty() {
-            return Ok(token.to_string());
+            return Ok((token.to_string(), CredentialTransport::Bearer));
         }
     }
 
@@ -428,5 +438,34 @@ fn field_error(field: &str, code: &str, message: &str) -> AppError {
             message: message.to_string(),
         }],
         instance: None,
+    }
+}
+
+#[cfg(test)]
+mod credential_transport_tests {
+    use super::*;
+
+    #[test]
+    fn authenticated_transport_uses_the_same_cookie_first_token_selection() {
+        let (parts, ()) = axum::http::Request::builder()
+            .header(COOKIE, "other=value; session=cookie-token")
+            .header(AUTHORIZATION, "Bearer bearer-token")
+            .body(())
+            .unwrap()
+            .into_parts();
+        let (token, transport) = extract_session_token(&parts).unwrap();
+        assert_eq!(token, "cookie-token");
+        assert_eq!(transport, CredentialTransport::Cookie);
+        let (parts, ()) = axum::http::Request::builder()
+            .header(COOKIE, "session= ; other=value")
+            .header(AUTHORIZATION, "Bearer bearer-token")
+            .body(())
+            .unwrap()
+            .into_parts();
+        let (token, transport) = extract_session_token(&parts).unwrap();
+        assert_eq!(token, "bearer-token");
+        assert_eq!(transport, CredentialTransport::Bearer);
+        let (parts, ()) = axum::http::Request::new(()).into_parts();
+        assert!(extract_session_token(&parts).is_err());
     }
 }

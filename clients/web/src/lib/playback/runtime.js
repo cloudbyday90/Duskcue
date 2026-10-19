@@ -12,6 +12,7 @@ import { normalizePreferenceScope, scopeChangedError } from '../preferences/mode
 import { DEFAULT_DEVICE_PREFERENCES, normalizeDevicePreferences } from '../preferences/device.js';
 import { loadPlaybackEntry, playbackTitleDestination } from './entry.js';
 import { normalizeTracks, resolveTrackSelection } from './tracks.js';
+import { prepareSourceCapabilities } from './source-capabilities.js';
 
 export class PlaybackRuntimeError extends Error {
     constructor(code) {
@@ -54,6 +55,7 @@ export function createPlaybackRuntime({
     loadEntry = loadPlaybackEntry,
     getPlayerState = null,
     requiresAuthenticatedSource = requiresAuthenticatedMediaSource,
+    prepareSource = prepareSourceCapabilities,
     onChange = (_state) => {},
 } = {}) {
     player ||= sharedPlayer;
@@ -114,6 +116,7 @@ export function createPlaybackRuntime({
         const expected = sessionId || ownedSessionId || current.sessionId;
         if ((live?.sessionId || null) !== (expected || null)) throw cancelled();
         if (!sessionId && !current.initialLoading && live?.loading) throw cancelled();
+        if (!sessionId && current.sourceRevision !== player.getSourceRevision?.()) throw cancelled();
     }
 
     function begin(signal) {
@@ -127,6 +130,7 @@ export function createPlaybackRuntime({
         const live = getPlayerState();
         operation = {
             generation: ++generation, controller, sessionId: live?.sessionId || null,
+            sourceRevision: player.getSourceRevision?.(),
             initialLoading: live?.loading === true,
             release: () => signal?.removeEventListener('abort', abort),
         };
@@ -200,14 +204,22 @@ export function createPlaybackRuntime({
                 : request.kind === 'start' ? null : qualityOverride;
             const quality = normalizeDevicePreferences(nextQualityOverride || devicePreferences || DEFAULT_DEVICE_PREFERENCES);
             const selection = resolveTrackSelection(tracks, confirmedPreferences, overrides);
-            const startPositionMs = position(entry.startPositionMs);
-            const result = await player.play(entry.item, entry.file.id, {
-                startPositionMs, signal: current.controller.signal,
+            const options = {
                 forceTranscode: selection.subtitle !== null,
                 forceHls: requiresAuthenticatedSource() || selection.needsTranscode,
                 qualityMode: quality.quality_mode, maxBitrate: quality.max_streaming_bitrate,
                 audioStreamIndex: ['preferred', 'override'].includes(selection.audioSelectionMode) ? selection.audio_stream_index : null,
                 subtitleStreamIndex: selection.subtitle_stream_index,
+            };
+            const sourceCapabilities = await prepareSource(entry.item.id, entry.file.id, options, {
+                signal: current.controller.signal, requiresHeaders: requiresAuthenticatedSource(),
+            });
+            requireOwnership(current);
+            const live = getPlayerState();
+            const startPositionMs = position(request.kind === 'restart' ? live?.positionMs : entry.startPositionMs);
+            const playing = request.kind !== 'restart' || (player.getPlayIntent?.() ?? live?.isPlaying) !== false;
+            const result = await player.play(entry.item, entry.file.id, {
+                ...options, sourceCapabilities, startPositionMs, playing, signal: current.controller.signal,
             });
             requireCurrent(current);
             if (!result?.session_id) throw new PlaybackRuntimeError('START_FAILED');

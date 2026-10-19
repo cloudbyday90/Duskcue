@@ -14,18 +14,26 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+mod copy_recovery;
 mod direct;
 mod direct_admission;
 mod direct_recovery;
 pub mod error;
+mod file_delivery;
 pub mod handlers;
 mod heartbeat;
 mod history;
 mod hls;
 mod media_source;
+mod range;
 mod recovery;
 mod seek;
 pub mod service;
+mod source_candidates;
+mod source_context;
+mod source_freshness;
+mod source_preparation;
+mod source_types;
 mod stop;
 mod track_selection;
 mod transcode_access;
@@ -40,6 +48,7 @@ use crate::state::AppState;
 
 pub fn router(state: AppState) -> Router<AppState> {
     Router::new()
+        .route("/api/v1/playback/prepare", post(handlers::prepare_playback))
         .route("/api/v1/playback/start", post(handlers::start_playback))
         .route("/api/v1/playback/heartbeat", post(handlers::heartbeat))
         .route("/api/v1/playback/stop", post(handlers::stop_playback))

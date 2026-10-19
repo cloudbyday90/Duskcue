@@ -7,6 +7,7 @@ import { get } from 'svelte/store';
 import Player from '../../src/lib/components/Player.svelte';
 import { player } from '../../src/lib/stores/player.js';
 import { loadPlaybackEntry } from '../../src/lib/playback/entry.js';
+import { viewingPreferences } from '../../src/lib/stores/viewing-preferences.js';
 import { createDirectLiveObserver } from './direct-live-observer.mjs';
 import '../../src/app.css';
 
@@ -63,6 +64,18 @@ async function mountPlayer(fixture, candidate, observe = true, wait = false) {
 }
 
 window.directFixture = {
+    async setQuality(fixture, quality) {
+        const snapshot = await viewingPreferences.load(fixture.profileId, { serverOrigin: location.origin, userId: fixture.userId });
+        const previous = { ...snapshot.devicePreferences };
+        viewingPreferences.saveDevice(fixture.profileId, quality);
+        return previous;
+    },
+    async setViewingPreferences(fixture, changes) {
+        const snapshot = await viewingPreferences.load(fixture.profileId, { serverOrigin: location.origin, userId: fixture.userId });
+        const previous = { ...snapshot.preferences };
+        await viewingPreferences.save(fixture.profileId, { ...snapshot.preferences, ...changes });
+        return previous;
+    },
     async start(fixture, candidate) {
         return mountPlayer(fixture, candidate, true, true);
     },

@@ -21,6 +21,9 @@ import { createPlaybackSessionGuard } from '../playback/session.js';
 import { createPlaybackHeartbeat } from '../playback/heartbeat.js';
 import { playbackRecovery } from '../playback/recovery.js';
 import { directFallbackDescriptor, directSourceRevision, probeCompatibleHlsOutput } from '../playback/capabilities.js';
+import { copyFallbackDescriptor, probeCopyFallback } from '../playback/copy-fallback.js';
+import { sourceRoute } from '../playback/source-capabilities.js';
+import { playbackStartRequest } from '../playback/start-request.js';
 import { createPlaybackRelease, playbackContextKey, PlaybackReleaseError } from '../playback/release.js';
 import {
     startPlayback as apiStartPlayback,
@@ -48,7 +51,7 @@ function saveVolume(volume) {
     localStorage.setItem(VOLUME_STORAGE_KEY, String(volume));
 }
 
-export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } = {}) {
+export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput, probeCopy = probeCopyFallback } = {}) {
     let pendingStop = null;
     let pendingPlay = null;
     let contextKey = null;
@@ -58,6 +61,8 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
     let recoveryResumePlaying = null;
     let directProbe = null;
     let directAttemptRevision = null;
+    let copyAttemptGeneration = null;
+    let playIntent = null;
     const sessionGuard = createPlaybackSessionGuard(apiStopPlayback);
 
     function initialState() {
@@ -72,6 +77,9 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
         directSourceRevision: null,
         directFallback: null,
         directFallbackSupported: false,
+        sourceRoute: null,
+        copyFallback: null,
+        copyFallbackSupported: false,
         recovery: null,
         recoveryRequested: false,
         seeking: false,
@@ -108,7 +116,7 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
 
     function recoveryUnavailable(snapshot) {
         if (!snapshot.recoveryRequested || !ownsHeartbeat(snapshot)) return;
-        update((state) => ({ ...state, recoveryRequested: false, directFallbackSupported: false, isBuffering: false, isPlaying: false,
+        update((state) => ({ ...state, recoveryRequested: false, directFallbackSupported: false, copyFallbackSupported: false, isBuffering: false, isPlaying: false,
             recovery: { status: 'exhausted', attempts: state.recovery?.attempts || 0, reason: 'unavailable', skipped_ms: 0, quality_reduced: false } }));
     }
 
@@ -132,6 +140,8 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
                 streamDecision: response.stream_decision || (current.streamDecision === 'direct_play' ? 'transcode' : current.streamDecision),
                 streamUrl: transcodeManifestUrl(response.transcode_session_id), streamOffsetMs: response.stream_offset_ms,
                 directSourceRevision: null, directFallback: null, directFallbackSupported: false,
+                sourceRoute: sourceRoute(response.source_route) || current.sourceRoute,
+                copyFallback: copyFallbackDescriptor(response.copy_fallback, response.transcode_session_id), copyFallbackSupported: false,
                 positionMs: response.position_ms, recovery: recovery || (current.recovery?.status === 'recovered' ? current.recovery : null), recoveryRequested: false,
                 isPlaying: recovery?.status === 'exhausted' ? false : resumePlaying, isBuffering: false, error: null }));
         } else if (state.streamDecision === 'direct_play' && response.stream_decision === 'direct_play'
@@ -143,11 +153,12 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
             recoveryResumePlaying = null;
             update((current) => ({ ...current, directSourceRevision: response.direct_source_revision,
                 directFallback: directFallbackDescriptor(response.direct_fallback), positionMs: response.position_ms,
-                recoveryRequested: false, directFallbackSupported: false, recovery: recovery || null,
+                recoveryRequested: false, directFallbackSupported: false, copyFallback: null, copyFallbackSupported: false,
+                sourceRoute: sourceRoute(response.source_route) || current.sourceRoute, recovery: recovery || null,
                 isPlaying: recovery?.status === 'exhausted' ? false : resumePlaying, isBuffering: false }));
         } else if (recovery?.status === 'exhausted') {
             cancelDirectProbe();
-            update((current) => ({ ...current, recovery, recoveryRequested: false, directFallbackSupported: false, isPlaying: false, isBuffering: false }));
+            update((current) => ({ ...current, recovery, recoveryRequested: false, directFallbackSupported: false, copyFallbackSupported: false, isPlaying: false, isBuffering: false }));
         } else if (snapshot.recoveryRequested) {
             recoveryUnavailable(snapshot);
         }
@@ -189,9 +200,12 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
             if (!contextKey) throw new PlaybackReleaseError('CONTEXT_REQUIRED');
             const ownedContext = contextKey;
             const token = sessionGuard.begin();
+            const intent = { token, playing: options.playing !== false };
+            playIntent = intent;
             streamRevision += 1;
             cancelDirectProbe();
             directAttemptRevision = null;
+            copyAttemptGeneration = null;
             recoveryResumePlaying = null;
             const abort = () => {
                 if (sessionGuard.isCurrent(token)) {
@@ -209,18 +223,7 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
                 if (!sessionGuard.isCurrent(token) || contextKey !== ownedContext) return null;
                 await stopSession(previous);
                 if (!sessionGuard.isCurrent(token)) return null;
-                const result = await apiStartPlayback({
-                    media_item_id: mediaItem.id,
-                    media_file_id: mediaFileId,
-                    direct_recovery_protocol: 1,
-                    device_profile: options.deviceProfile || null,
-                    max_streaming_bitrate: options.maxBitrate || null,
-                    force_transcode: options.forceTranscode || false,
-                    ...(options.forceHls ? { force_hls: true } : {}),
-                    quality_mode: options.qualityMode || 'auto',
-                    audio_stream_index: options.audioStreamIndex ?? null,
-                    subtitle_stream_index: options.subtitleStreamIndex ?? null,
-                });
+                const result = await apiStartPlayback(playbackStartRequest(mediaItem.id, mediaFileId, options));
 
                 if (!sessionGuard.isCurrent(token)) {
                     if (contextKey === ownedContext) await stopSession({ sessionId: result.session_id, positionMs: 0, cancelledBeforeStart: true, contextKey: ownedContext });
@@ -254,10 +257,13 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
                     directSourceRevision: directSourceRevision(result.direct_source_revision),
                     directFallback: directFallbackDescriptor(result.direct_fallback),
                     directFallbackSupported: false,
+                    sourceRoute: sourceRoute(result.source_route),
+                    copyFallback: copyFallbackDescriptor(result.copy_fallback, result.transcode_session_id),
+                    copyFallbackSupported: false,
                     streamOffsetMs: 0,
                     positionMs: options.startPositionMs || 0,
                     durationMs: (mediaItem.runtime_seconds || 0) * 1000,
-                    isPlaying: true,
+                    isPlaying: intent.playing,
                     isBuffering: false,
                     loading: false,
                     error: null,
@@ -272,6 +278,7 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
                 if (sessionGuard.isCurrent(token)) update((s) => ({ ...s, loading: false, error: err }));
                 throw err;
             } finally {
+                if (playIntent === intent) playIntent = null;
                 options.signal?.removeEventListener('abort', abort);
             }
             })();
@@ -302,6 +309,9 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
                     directSourceRevision: directSourceRevision(info.direct_source_revision),
                     directFallback: directFallbackDescriptor(info.direct_fallback),
                     directFallbackSupported: false,
+                    sourceRoute: sourceRoute(info.source_route),
+                    copyFallback: copyFallbackDescriptor(info.copy_fallback, info.transcode_session_id),
+                    copyFallbackSupported: false,
                     streamUrl: info.transcode_session_id ? transcodeManifestUrl(info.transcode_session_id) : info.media_file_id ? streamFileUrl(info.media_file_id) : s.streamUrl,
                     streamOffsetMs: Number.isSafeInteger(info.stream_offset_ms) ? info.stream_offset_ms : 0,
                     positionMs: info.position_ms || 0,
@@ -321,10 +331,15 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
         },
 
         getPlayIntent() {
-            return recoveryResumePlaying ?? get({ subscribe }).isPlaying;
+            return recoveryResumePlaying ?? (playIntent && sessionGuard.isCurrent(playIntent.token) ? playIntent.playing : null) ?? get({ subscribe }).isPlaying;
+        },
+
+        getSourceRevision() {
+            return streamRevision;
         },
 
         setPlaying(playing) {
+            if (playIntent && sessionGuard.isCurrent(playIntent.token)) playIntent.playing = playing;
             if (recoveryResumePlaying !== null) recoveryResumePlaying = playing;
             update((s) => ({ ...s, isPlaying: playing && !s.sessionReleased && s.release.phase === 'idle', isBuffering: false }));
         },
@@ -335,25 +350,30 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
                 || (sourceUrl && sourceUrl !== state.streamUrl)) return false;
             if (directProbe) return directProbe.promise;
             recoveryResumePlaying ??= state.isPlaying;
-            const request = recoveryRequested && !!state.transcodeSessionId;
+            const request = recoveryRequested && !!state.transcodeSessionId && !state.copyFallback;
             const direct = recoveryRequested && sourceMode === 'direct' && mediaErrorCode === 3 && state.streamDecision === 'direct_play'
                 && !!state.directSourceRevision && !!state.directFallback && directAttemptRevision !== state.directSourceRevision;
+            const copy = recoveryRequested && !!state.copyFallback && state.copyFallback.generation === state.transcodeSessionId
+                && copyAttemptGeneration !== state.transcodeSessionId
+                && (sourceMode === 'hls-mse' && (mediaErrorCode === null || mediaErrorCode === 3) || sourceMode === 'native-hls' && mediaErrorCode === 3);
             update((current) => ({ ...current,
                 positionMs: Number.isFinite(positionMs) && positionMs >= 0 ? Math.floor(positionMs) : current.positionMs,
-                isPlaying: false, isBuffering: request || direct,
-                ...(request || direct ? { recoveryRequested: request, recovery: { status: 'pending' } } : {}) }));
-            if (direct) {
-                directAttemptRevision = state.directSourceRevision;
+                isPlaying: false, isBuffering: request || direct || copy,
+                ...(request || direct || copy ? { recoveryRequested: request, recovery: { status: 'pending' } } : {}) }));
+            if (direct || copy) {
+                if (direct) directAttemptRevision = state.directSourceRevision;
+                if (copy) copyAttemptGeneration = state.transcodeSessionId;
                 const snapshot = Object.freeze({ ...state, contextKey, streamRevision, recoveryRequested: true });
                 const record = { controller: new AbortController(), promise: null };
                 record.promise = Promise.resolve().then(async () => {
                     if (!ownsHeartbeat(snapshot)) return false;
                     let support;
-                    try { support = await probeFallback(state.directFallback, { signal: record.controller.signal }); }
+                    try { support = copy ? await probeCopy(state.copyFallback, { signal: record.controller.signal })
+                        : await probeFallback(state.directFallback, { signal: record.controller.signal }); }
                     catch { support = 'unknown'; }
                     if (record.controller.signal.aborted || !ownsHeartbeat(snapshot)) return false;
-                    if (support !== 'supported') { recoveryUnavailable(snapshot); return false; }
-                    update((current) => ({ ...current, recoveryRequested: true, directFallbackSupported: true }));
+                    if (copy ? support !== true : support !== 'supported') { recoveryUnavailable(snapshot); return false; }
+                    update((current) => ({ ...current, recoveryRequested: true, directFallbackSupported: direct, copyFallbackSupported: copy }));
                     await heartbeat.sendNow();
                     return true;
                 }).finally(() => { if (directProbe === record) directProbe = null; });
@@ -417,6 +437,7 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
 
             update((s) => ({ ...s, positionMs, isPlaying: resumePlaying, isBuffering: true, seeking: true, recoveryRequested: false,
                 directFallbackSupported: false,
+                copyFallbackSupported: false,
                 recovery: s.recovery?.status === 'recovered' ? s.recovery : null }));
 
             try {
@@ -436,6 +457,8 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
                         streamUrl: result.transcode_session_id ? transcodeManifestUrl(result.transcode_session_id) : result.stream_url || s.streamUrl,
                         directSourceRevision: result.transcode_session_id ? null : directSourceRevision(result.direct_source_revision) || s.directSourceRevision,
                         directFallback: result.transcode_session_id ? null : s.directFallback,
+                        sourceRoute: sourceRoute(result.source_route) || s.sourceRoute,
+                        copyFallback: result.transcode_session_id ? copyFallbackDescriptor(result.copy_fallback, result.transcode_session_id) : s.copyFallback,
                         streamOffsetMs: Number.isSafeInteger(result.stream_offset_ms) ? result.stream_offset_ms : positionMs,
                         positionMs: Number.isSafeInteger(result.position_ms) ? result.position_ms : positionMs,
                         isBuffering: false,
@@ -462,6 +485,7 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
             const token = sessionGuard.invalidate();
             streamRevision += 1;
             cancelDirectProbe();
+            playIntent = null;
             const ownedContext = contextKey;
             const starting = pendingPlay;
             heartbeat.stopTimer();
@@ -495,6 +519,8 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
             streamRevision += 1;
             cancelDirectProbe();
             directAttemptRevision = null;
+            copyAttemptGeneration = null;
+            playIntent = null;
             recoveryResumePlaying = null;
             heartbeat.stopTimer();
             release.invalidate();
@@ -508,6 +534,8 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput } =
             streamRevision += 1;
             cancelDirectProbe();
             directAttemptRevision = null;
+            copyAttemptGeneration = null;
+            playIntent = null;
             recoveryResumePlaying = null;
             heartbeat.stopTimer();
             if (!preserveRelease) release.invalidate();

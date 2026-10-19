@@ -11,10 +11,26 @@ export function validateFormatReport(report, resourceId, enabled, completed) {
     return phase;
 }
 
+export function validateSourceReport(report, resourceId, enabled, completed) {
+    const phase = report?.phase;
+    if (!enabled || report?.resourceId !== resourceId
+        || !/^(?:source-(?:browser|native)-(?:0[0-9]|1[0-3])|source-recovery-(?:armed-)?(?:browser|native))$/.test(phase || '')
+        || completed.has(phase) || Buffer.byteLength(JSON.stringify(report)) > 65536) throw new Error('Invalid source verification.');
+    return phase;
+}
+
 export function createFormatControl(resourceId, { enabled = false } = {}) {
+    return createControl(resourceId, enabled, validateFormatReport);
+}
+
+export function createSourceControl(resourceId, { enabled = false } = {}) {
+    return createControl(resourceId, enabled, validateSourceReport);
+}
+
+function createControl(resourceId, enabled, validate) {
     const completed = new Set();
     return async (report) => {
-        const phase = validateFormatReport(report, resourceId, enabled, completed);
+        const phase = validate(report, resourceId, enabled, completed);
         completed.add(phase);
         const observed = `/tmp/direct-observed-${phase}`;
         await writeFile(`${observed}.pending`, JSON.stringify(report), { flag: 'wx', mode: 0o600 });

@@ -22,6 +22,7 @@ use uuid::Uuid;
 
 use crate::domains::playback::error::PlaybackError;
 use crate::domains::playback::types::*;
+use crate::extractors::CredentialTransport;
 use crate::services::decision_engine::{
     self, DecisionEngineConfig, DeviceCapabilities, NetworkConditions, StreamDecision,
 };
@@ -34,7 +35,6 @@ use crate::state::RuntimeConfig;
 pub use super::hls::{
     generate_master_manifest, get_transcode_manifest, get_transcode_playlist, get_transcode_segment,
 };
-use super::media_source::*;
 #[cfg(test)]
 pub(crate) use super::track_selection::default_audio_stream_index;
 pub use super::transcode_access::assert_transcode_profile_access;
@@ -53,75 +53,69 @@ pub async fn start_playback(
     config: &RuntimeConfig,
     data_dir: &Path,
 ) -> Result<PlaybackStartResponse, PlaybackError> {
-    let media_item_id = req.media_item_id.ok_or(PlaybackError::MediaNotFound)?;
-    let playback_mode = req.playback_mode.as_deref().unwrap_or("interactive");
-    if !VALID_PLAYBACK_MODES.contains(&playback_mode) {
-        return Err(PlaybackError::InvalidPlaybackMode(
-            playback_mode.to_string(),
-        ));
-    }
-    let profile_scope = crate::domains::profiles::service::load_profile_scope(
+    start_playback_with_transport(
         pool,
-        user_id,
-        profile_id,
-        has_all_library_access,
+        transcode_manager,
+        PlaybackActor {
+            user_id,
+            profile_id,
+            has_all_library_access,
+        },
+        req,
+        config,
+        data_dir,
+        CredentialTransport::Legacy,
     )
     .await
-    .map_err(|_| PlaybackError::AccessDenied)?;
-    crate::domains::profiles::service::assert_media_access(pool, &profile_scope, media_item_id)
-        .await
-        .map_err(|_| PlaybackError::AccessDenied)?;
-    let ambient_channel = if playback_mode == "ambient" {
-        let channel_id = req.ambient_channel_id.ok_or_else(|| {
-            PlaybackError::InvalidPlaybackMode(
-                "ambient playback requires ambient_channel_id".to_string(),
-            )
-        })?;
-        let channel_updated_at = req.ambient_channel_updated_at.ok_or_else(|| {
-            PlaybackError::InvalidPlaybackMode(
-                "ambient playback requires ambient_channel_updated_at".to_string(),
-            )
-        })?;
-        let channel = crate::domains::profiles::service::assert_ambient_playback_allowed(
-            pool,
-            &profile_scope,
-            channel_id,
-            media_item_id,
-        )
-        .await
-        .map_err(|_| PlaybackError::AccessDenied)?;
-        if channel.updated_at != channel_updated_at {
-            return Err(PlaybackError::AmbientChannelStale);
-        }
-        Some(channel)
-    } else {
-        if req.ambient_channel_id.is_some() || req.ambient_channel_updated_at.is_some() {
-            return Err(PlaybackError::InvalidPlaybackMode(
-                "interactive playback cannot include ambient channel fields".to_string(),
-            ));
-        }
-        None
-    };
+}
 
-    let item_row = sqlx::query("SELECT id, library_id FROM media_items WHERE id = $1")
-        .bind(media_item_id)
-        .fetch_optional(pool)
-        .await?
-        .ok_or(PlaybackError::MediaNotFound)?;
+pub async fn prepare_playback(
+    pool: &PgPool,
+    actor: PlaybackActor,
+    req: &PreparePlaybackRequest,
+    config: &RuntimeConfig,
+    transport: CredentialTransport,
+) -> Result<PreparePlaybackResponse, PlaybackError> {
+    let source = super::source_preparation::resolve(pool, actor, &req.selection).await?;
+    let device = build_device_capabilities(req.selection.device_profile.as_ref(), config);
+    let network =
+        build_network_conditions(pool, actor.user_id, req.selection.max_streaming_bitrate).await;
+    let engine = build_decision_engine_config(
+        config,
+        req.selection.quality_mode.as_deref(),
+        req.selection.max_streaming_bitrate,
+    );
+    let mut prepared = super::source_candidates::prepare(super::source_candidates::Context {
+        source: &source,
+        actor,
+        request: &req.selection,
+        device: &device,
+        network: &network,
+        config: &engine,
+        transport,
+    })
+    .await;
+    if req.capability_protocol != Some(1) {
+        prepared.response.candidates.clear();
+    }
+    Ok(prepared.response)
+}
 
-    let library_id: Uuid = item_row.try_get("library_id").unwrap_or_default();
-
-    let media_file_details = if let Some(file_id) = req.media_file_id {
-        fetch_media_file_details(pool, file_id, media_item_id).await?
-    } else {
-        select_best_media_file(pool, media_item_id).await?
-    };
-
-    let (media_info, selected_tracks) = build_media_file_info(
-        &media_file_details,
-        req.audio_stream_index,
-        req.subtitle_stream_index,
-    )?;
+pub async fn start_playback_with_transport(
+    pool: &PgPool,
+    transcode_manager: &TranscodeManager,
+    actor: PlaybackActor,
+    req: &StartPlaybackRequest,
+    config: &RuntimeConfig,
+    data_dir: &Path,
+    transport: CredentialTransport,
+) -> Result<PlaybackStartResponse, PlaybackError> {
+    let PlaybackActor {
+        user_id,
+        profile_id,
+        has_all_library_access: _,
+    } = actor;
+    let source = super::source_preparation::resolve(pool, actor, req).await?;
 
     let device_caps = build_device_capabilities(req.device_profile.as_ref(), config);
 
@@ -133,7 +127,73 @@ pub async fn start_playback(
         req.max_streaming_bitrate,
     );
 
+    let prepared = if req
+        .source_capabilities
+        .as_ref()
+        .is_some_and(|report| report.version == 1)
+    {
+        Some(
+            super::source_candidates::prepare(super::source_candidates::Context {
+                source: &source,
+                actor,
+                request: req,
+                device: &device_caps,
+                network: &network,
+                config: &engine_config,
+                transport,
+            })
+            .await,
+        )
+    } else {
+        None
+    };
+    let selected_candidate = prepared.as_ref().and_then(|prepared| {
+        prepared
+            .select(req.source_capabilities.as_ref())
+            .filter(|candidate| prepared.accept(candidate, &source).is_some())
+    });
+    let accepted_route = prepared
+        .as_ref()
+        .zip(selected_candidate)
+        .and_then(|(prepared, candidate)| prepared.accept(candidate, &source));
+    let negotiated_audio_channels =
+        selected_candidate.and_then(|candidate| candidate.audio_channels);
+    let negotiated_audio_bitrate = selected_candidate.and_then(|candidate| candidate.audio_bitrate);
+    let negotiated_hls = selected_candidate.is_some_and(|candidate| candidate.plan.is_some());
+    let super::source_preparation::ResolvedSource {
+        media_item_id,
+        library_id,
+        playback_mode,
+        ambient_channel,
+        details: media_file_details,
+        media: media_info,
+        tracks: selected_tracks,
+    } = source;
+
     let mut decision = decision_engine::decide(&media_info, &device_caps, &network, &engine_config);
+    if let Some(candidate) = selected_candidate {
+        decision.video = crate::services::decision_engine::VideoDecision::DirectPlay;
+        decision.audio = if candidate
+            .plan
+            .is_some_and(|plan| plan.audio == StreamAction::Encode)
+        {
+            crate::services::decision_engine::AudioDecision::Transcode
+        } else {
+            crate::services::decision_engine::AudioDecision::Passthrough
+        };
+        decision.overall = if candidate.plan.is_none() {
+            StreamDecision::DirectPlay
+        } else {
+            StreamDecision::DirectStream
+        };
+        decision.requires_tone_mapping = false;
+        decision.requires_dv_strip = false;
+        decision.target_video_codec = None;
+        decision.target_audio_codec = negotiated_audio_channels.map(|_| "aac".into());
+        decision.target_audio_channels = negotiated_audio_channels;
+        decision.target_resolution = Some(media_info.video_resolution);
+        decision.target_bitrate_bps = None;
+    }
 
     apply_delivery_requirements(
         &mut decision,
@@ -150,11 +210,15 @@ pub async fn start_playback(
                 .map_err(|error| match error {
                     PlanError::UnsupportedHdrConversion => PlaybackError::HdrConversionUnavailable,
                 })?;
+        let mut output_device = device_caps.clone();
+        if negotiated_hls {
+            output_device.audio_codecs.insert("aac".into());
+        }
         let (video_codec, audio_codec) = plan
             .output_codecs(
                 &decision,
                 &media_info,
-                &device_caps,
+                &output_device,
                 &config.transcoding.default_video_codec,
                 &config.transcoding.default_audio_codec,
             )
@@ -180,7 +244,12 @@ pub async fn start_playback(
     let direct_context = if decision.overall == StreamDecision::DirectPlay
         && super::direct::supports_protocol(req.direct_recovery_protocol)
     {
-        Some(
+        Some(if let Some(route) = accepted_route.as_ref() {
+            super::direct::DirectContext {
+                version: 1,
+                candidate: route.fallback.clone(),
+            }
+        } else {
             super::direct_admission::prepare(
                 &media_file_details,
                 &media_info,
@@ -190,8 +259,8 @@ pub async fn start_playback(
                 &engine_config,
                 req.max_streaming_bitrate,
             )
-            .await,
-        )
+            .await
+        })
     } else {
         None
     };
@@ -223,7 +292,7 @@ pub async fn start_playback(
                             PlaybackError::FfmpegFailed("stream plan is missing".into())
                         })?,
                         target_audio_channels: decision.target_audio_channels,
-                        target_audio_bitrate: None,
+                        target_audio_bitrate: negotiated_audio_bitrate,
                         subtitle_stream_index: selected_tracks.subtitle_stream_index,
                         subtitle_stream_ordinal: selected_tracks.subtitle_stream_ordinal,
                         subtitle_burn_in: decision.subtitle_burn_in_required,
@@ -232,9 +301,11 @@ pub async fn start_playback(
                         target_resolution: target_res,
                         target_bitrate,
                         seek_position_ms: None,
-                        hw_accel_override: None,
+                        hw_accel_override: negotiated_hls
+                            .then_some(crate::services::transcoding::HwAccelMethod::Software),
                         recovery_attempts: 0,
-                        output_profile: None,
+                        output_profile: negotiated_hls
+                            .then_some(crate::services::transcoding::OutputProfile::SourceCopySdr),
                     },
                     data_dir,
                 )
@@ -257,9 +328,10 @@ pub async fn start_playback(
         Some(media_file_details.id),
         req.quality_mode.as_deref(),
         req.max_streaming_bitrate,
-        playback_mode,
+        &playback_mode,
         ambient_channel.as_ref(),
         direct_context.as_ref().zip(direct_revision),
+        accepted_route.as_ref(),
     )
     .await
     {
@@ -276,7 +348,13 @@ pub async fn start_playback(
         pending.acknowledge();
     }
 
+    let route_metadata = serde_json::json!({"source_route_context":accepted_route,"transcode_session_id":transcode_session_id});
     Ok(PlaybackStartResponse {
+        stream_offset_ms: transcode_session_id
+            .and_then(|id| transcode_manager.get_session(&id))
+            .map(|session| session.source_start_ms),
+        source_route: super::source_context::response(&route_metadata),
+        copy_fallback: super::source_context::copy_fallback(transcode_manager, &route_metadata),
         direct_source_revision: direct_revision,
         direct_fallback: direct_context
             .and_then(|context| context.candidate.map(|candidate| candidate.descriptor)),
@@ -302,7 +380,7 @@ pub async fn start_playback(
     })
 }
 
-fn build_device_capabilities(
+pub(super) fn build_device_capabilities(
     device_profile: Option<&serde_json::Value>,
     config: &RuntimeConfig,
 ) -> DeviceCapabilities {
@@ -436,7 +514,7 @@ async fn build_network_conditions(
     }
 }
 
-fn build_decision_engine_config(
+pub(super) fn build_decision_engine_config(
     config: &RuntimeConfig,
     quality_mode: Option<&str>,
     max_streaming_bitrate: Option<u64>,
@@ -487,6 +565,7 @@ async fn create_play_session(
     playback_mode: &str,
     ambient_channel: Option<&crate::domains::profiles::types::AmbientChannelRow>,
     direct_context: Option<(&super::direct::DirectContext, Uuid)>,
+    source_route: Option<&super::source_context::AcceptedRoute>,
 ) -> Result<Uuid, PlaybackError> {
     let session_id = Uuid::now_v7();
 
@@ -501,6 +580,9 @@ async fn create_play_session(
     });
     if let Some((context, revision)) = direct_context {
         super::direct::attach(&mut metadata, context, revision);
+    }
+    if let Some(route) = source_route {
+        super::source_context::attach(&mut metadata, route);
     }
 
     if let Some(channel) = ambient_channel {
@@ -594,6 +676,27 @@ pub async fn seek(
         session_id,
         position_ms,
         data_dir,
+        None,
+    )
+    .await
+}
+
+pub async fn seek_with_profile(
+    pool: &PgPool,
+    manager: &TranscodeManager,
+    actor: PlaybackActor,
+    session_id: Uuid,
+    position_ms: i32,
+    data_dir: &Path,
+) -> Result<SeekResponse, PlaybackError> {
+    super::seek::seek(
+        pool,
+        manager,
+        actor.user_id,
+        session_id,
+        position_ms,
+        data_dir,
+        Some(actor),
     )
     .await
 }
@@ -625,7 +728,7 @@ pub async fn get_playback_info(
     let stream_decision: String = row.try_get("stream_decision").unwrap_or_default();
     let started_at: chrono::DateTime<chrono::Utc> = row.try_get("started_at").unwrap_or_default();
     let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
-    if super::direct::has_context(&metadata)
+    if (super::direct::has_context(&metadata) || super::source_context::has_context(&metadata))
         && row.try_get::<Uuid, _>("profile_id").ok() != Some(profile_id)
     {
         return Err(PlaybackError::SessionNotFound);
@@ -674,6 +777,8 @@ pub async fn get_playback_info(
     });
 
     Ok(PlaybackInfoResponse {
+        source_route: super::source_context::response(&metadata),
+        copy_fallback: super::source_context::copy_fallback(transcode_manager, &metadata),
         media_file_id,
         direct_source_revision: super::direct::revision(&metadata),
         direct_fallback: super::direct::descriptor(&metadata),
@@ -1237,77 +1342,7 @@ pub async fn get_media_file_size(pool: &PgPool, media_file_id: Uuid) -> Result<u
     Ok(metadata.len())
 }
 
-pub struct RangeSpec {
-    pub start: u64,
-    pub end: u64,
-    pub total: u64,
-}
-
-impl RangeSpec {
-    pub fn parse(header: Option<&str>, file_size: u64) -> Result<Option<Self>, PlaybackError> {
-        let header = match header {
-            Some(h) => h,
-            None => return Ok(None),
-        };
-
-        let bytes_spec = header
-            .strip_prefix("bytes=")
-            .ok_or_else(|| PlaybackError::InvalidByteRange("expected bytes= prefix".into()))?;
-
-        let (start, end) = if let Some(rest) = bytes_spec.strip_suffix('-') {
-            let start: u64 = rest.parse().map_err(|_| {
-                PlaybackError::InvalidByteRange(format!("invalid start byte: {rest}"))
-            })?;
-            (start, file_size - 1)
-        } else if let Some(rest) = bytes_spec.strip_prefix('-') {
-            let suffix_len: u64 = rest.parse().map_err(|_| {
-                PlaybackError::InvalidByteRange(format!("invalid suffix length: {rest}"))
-            })?;
-            let start = file_size.saturating_sub(suffix_len);
-            (start, file_size - 1)
-        } else {
-            let parts: Vec<&str> = bytes_spec.split('-').collect();
-            if parts.len() != 2 {
-                return Err(PlaybackError::InvalidByteRange(format!(
-                    "invalid range format: {bytes_spec}"
-                )));
-            }
-            let start: u64 = parts[0].parse().map_err(|_| {
-                PlaybackError::InvalidByteRange(format!("invalid start: {}", parts[0]))
-            })?;
-            let end: u64 = if parts[1].is_empty() {
-                file_size - 1
-            } else {
-                parts[1].parse().map_err(|_| {
-                    PlaybackError::InvalidByteRange(format!("invalid end: {}", parts[1]))
-                })?
-            };
-            (start, end)
-        };
-
-        if start > end || start >= file_size {
-            return Err(PlaybackError::InvalidByteRange(format!(
-                "range {start}-{end} out of bounds for file size {file_size}"
-            )));
-        }
-
-        let end = end.min(file_size - 1);
-
-        Ok(Some(Self {
-            start,
-            end,
-            total: file_size,
-        }))
-    }
-
-    pub fn content_length(&self) -> u64 {
-        self.end - self.start + 1
-    }
-
-    pub fn content_range_header(&self) -> String {
-        format!("bytes {}-{}/{}", self.start, self.end, self.total)
-    }
-}
+pub use super::range::RangeSpec;
 
 pub fn guess_content_type(path: &std::path::Path) -> &'static str {
     match path.extension().and_then(|e| e.to_str()).unwrap_or("") {

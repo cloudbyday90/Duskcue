@@ -22,6 +22,7 @@ import { directSources } from './direct-inputs.mjs';
 import { prepareDirectBrowser, runDirectBrowser } from '../qualification/direct-browser.mjs';
 import { readQualification } from '../../clients/web/tests/native/qualification-config.mjs';
 import { readFormatEvidence } from '../qualification/format-evidence.mjs';
+import { validateSourceBackend, validateSourceSummaries, validateSourceUnitProof } from '../qualification/source-proof.mjs';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 const memory = 4294967296;
@@ -29,7 +30,7 @@ const pids = 256;
 
 async function main() {
     const options = parseRecoveryInvocation(process.argv.slice(2));
-    const { formatCorpus, nativeRecovery, liveClients, directBrowser } = options;
+    const { sourceCapabilities, formatCorpus, nativeRecovery, liveClients, directBrowser } = options;
     const nativeManifest = liveClients ? await readQualification(options.nativeManifestPath) : null;
     const sources = directBrowser ? directSources : recoverySources;
     if (process.platform !== 'win32') throw new Error('Use the owning Windows build memory workflow for this local Docker Desktop qualification.');
@@ -69,12 +70,12 @@ async function main() {
         if ((await metadata(['image', 'inspect', baseTag, '--format', '{{json .}}'])).Id !== base.Id) throw new Error('Local runtime base tag identity changed.');
         const initial = await readLinuxSample(engine);
         const decision = evaluateLinuxHeadroom(initial, initial);
-        if (!decision.allowed) throw new Error(decision.reason);
         result.linuxPreflight = { sample: initial, decision };
+        if (!decision.allowed) throw new Error(decision.reason);
         const samplePath = join(owner.directory, 'linux-memory.jsonl');
         const recordSample = (sample) => appendFile(samplePath, `${JSON.stringify(sample)}\n`);
         await recordSample(initial);
-        const args = ['--context', engine.context, 'build', '--progress=plain', `--platform=linux/${architecture}`, '--target=runtime', '-f', join(snapshot, 'docker/qualification/Dockerfile.recovery'), '--build-arg', `RUNTIME_IMAGE=${baseTag}`, '--build-arg', `RUNTIME_BASE_ID=${base.Id}`, '--build-arg', `SOURCE_SHA256=${result.source.sha256}`, '--build-arg', `NATIVE_RECOVERY_MODE=${nativeRecovery ? 'paced' : 'none'}`, '--build-arg', `FORMAT_CORPUS_MODE=${formatCorpus ? 'reference' : 'none'}`, '-t', runtimeTag, snapshot];
+        const args = ['--context', engine.context, 'build', '--progress=plain', `--platform=linux/${architecture}`, '--target=runtime', '-f', join(snapshot, 'docker/qualification/Dockerfile.recovery'), '--build-arg', `RUNTIME_IMAGE=${baseTag}`, '--build-arg', `RUNTIME_BASE_ID=${base.Id}`, '--build-arg', `SOURCE_SHA256=${result.source.sha256}`, '--build-arg', `NATIVE_RECOVERY_MODE=${nativeRecovery ? 'paced' : 'none'}`, '--build-arg', `FORMAT_CORPUS_MODE=${formatCorpus ? 'reference' : 'none'}`, '--build-arg', `SOURCE_CAPABILITIES_MODE=${sourceCapabilities ? 'exact' : 'none'}`, '-t', runtimeTag, snapshot];
         const probe = nativeRecovery ? await createLinuxDockerProbe(owner, engine, initial) : null;
         try {
             const monitored = probe?.initial || initial;
@@ -84,7 +85,7 @@ async function main() {
             result.compilation = await runCompilerCommand(workspace, args, owner, engine, monitored, recordSample, probe?.read);
         } finally { if (probe) result.compilerProbeCleanup = { removed: await probe.cleanup(), passed: true }; }
         if ((await sources(workspace)).sha256 !== result.source.sha256 || (await sources(snapshot)).sha256 !== result.source.sha256) throw new Error('Current recovery sources changed during compilation.');
-        result.image = validateRecoveryImage(await metadata(['image', 'inspect', runtimeTag, '--format', '{{json .}}']), { source: result.source.sha256, base: base.Id, architecture, nativeRecovery, formatCorpus });
+        result.image = validateRecoveryImage(await metadata(['image', 'inspect', runtimeTag, '--format', '{{json .}}']), { source: result.source.sha256, base: base.Id, architecture, nativeRecovery, formatCorpus, sourceCapabilities });
         const assets = directBrowser ? await prepareDirectBrowser(workspace, owner.directory) : null;
         reserve = await watchLinuxReserve(engine, recordSample);
         result.runtimeLinuxPreflight = reserve.initial;
@@ -118,11 +119,11 @@ async function main() {
         result.testLinuxPreflight = await reserve.admit();
         const runtime = await ownership.create(result.image.id, [STOP_CASE, '--exact', '--include-ignored', '--nocapture'], { memory, pids, network: `container:${pg}`, user: '65532:65532', readOnly: true,
             tmpfs: { '/tmp': 'rw,nosuid,nodev,noexec,size=67108864,uid=65532,gid=65532,mode=1770', '/src/.cache/tonight-server-stop': 'rw,nosuid,nodev,size=536870912,uid=65532,gid=65532,mode=1770', '/data': 'rw,nosuid,nodev,noexec,size=16777216,uid=65532,gid=65532,mode=1770', '/cache': 'rw,nosuid,nodev,noexec,size=16777216,uid=65532,gid=65532,mode=1770' },
-            environment: { DUSKCUE_TEST_RESOURCE_ID: owner.resourceId, DUSKCUE_DATABASE_URL: databaseUrl, ...(directBrowser ? { DUSKCUE_TEST_DIRECT_BROWSER: 'live' } : {}), ...(liveClients ? { DUSKCUE_TEST_NATIVE_CLIENT: 'live' } : {}), ...(nativeRecovery ? { DUSKCUE_TEST_NATIVE_RECOVERY: 'live' } : {}), ...(formatCorpus ? { DUSKCUE_TEST_FORMAT_CORPUS: 'live' } : {}) } });
-        const running = ownership.start(runtime, { log: join(owner.directory, 'playback-stop-contract.log'), bytes: 16777216, captureBytes: 16777216, timeoutMs: formatCorpus ? 1050000 : liveClients ? 600000 : directBrowser ? 420000 : 300000, redact: [databaseUrl, password] });
+            environment: { DUSKCUE_TEST_RESOURCE_ID: owner.resourceId, DUSKCUE_DATABASE_URL: databaseUrl, ...(directBrowser ? { DUSKCUE_TEST_DIRECT_BROWSER: 'live' } : {}), ...(liveClients ? { DUSKCUE_TEST_NATIVE_CLIENT: 'live' } : {}), ...(nativeRecovery ? { DUSKCUE_TEST_NATIVE_RECOVERY: 'live' } : {}), ...(formatCorpus ? { DUSKCUE_TEST_FORMAT_CORPUS: 'live' } : {}), ...(sourceCapabilities ? { DUSKCUE_TEST_SOURCE_CAPABILITIES: 'live' } : {}) } });
+        const running = ownership.start(runtime, { log: join(owner.directory, 'playback-stop-contract.log'), bytes: 16777216, captureBytes: 16777216, timeoutMs: sourceCapabilities ? 1800000 : formatCorpus ? 1050000 : liveClients ? 600000 : directBrowser ? 420000 : 300000, redact: [databaseUrl, password] });
         let execution;
         if (directBrowser) {
-            const direct = await runDirectBrowser({ workspace, directory: owner.directory, context: engine.context, runtime, resourceId: owner.resourceId, execution: running, ownership, assets, abortSignal: reserve.signal, nativeManifest, nativeRecovery, formatCorpus });
+            const direct = await runDirectBrowser({ workspace, directory: owner.directory, context: engine.context, runtime, resourceId: owner.resourceId, execution: running, ownership, assets, abortSignal: reserve.signal, nativeManifest, nativeRecovery, formatCorpus, sourceCapabilities });
             execution = direct.execution;
             result.directBrowser = direct.browser;
             result.limitations = ['Chrome mounts the actual Player component, not the application shell or adapter-node proxy.', 'Physical A/V synchronization and broader format/HDR fidelity remain separate gates.', ...(nativeRecovery ? ['Native recovery uses a paced qualification input and known-keyframe paused seeks; ordinary production performance and arbitrary-playhead copy/remux fidelity remain separate.'] : ['Actual native HLS process-failure recovery requires the paced native mode.']), ...(liveClients ? [] : ['Actual desktop bearer/HLS presentation requires the live-client mode.'])];
@@ -143,6 +144,15 @@ async function main() {
         await ownership.copyOut(runtime, '/qualification/fixture.json', join(owner.directory, 'fixture.json'));
         result.fixture = JSON.parse(await readFile(join(owner.directory, 'fixture.json'), 'utf8'));
         if (formatCorpus) Object.assign(result, await readFormatEvidence({ ownership, runtime, directory: owner.directory, browser: result.directBrowser }));
+        if (sourceCapabilities) {
+            const path = join(owner.directory, 'source-unit-tests.log');
+            await ownership.copyOut(runtime, '/qualification/evidence/source-unit-tests.log', path);
+            const evidence = await lstat(path);
+            if (!evidence.isFile() || evidence.isSymbolicLink() || evidence.size < 1 || evidence.size > 65536) throw new Error('Source unit evidence is not a bounded regular file.');
+            result.sourceUnits = validateSourceUnitProof(await readFile(path, 'utf8'));
+            result.sourceCapabilities = validateSourceSummaries(result.directBrowser, result.formatCorpus);
+            result.sourceBackend = validateSourceBackend(result.direct.browser?.backend?.formats);
+        }
         await ownership.remove(runtime);
         await ownership.remove(pg);
         if ((await sources(workspace)).sha256 !== result.source.sha256) throw new Error('Current working-tree sources changed during recovery qualification.');

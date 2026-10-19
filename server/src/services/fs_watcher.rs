@@ -407,7 +407,7 @@ async fn process_batch(
             match crate::workers::library_scanner::scan_library(
                 &pool,
                 library_id,
-                quick,
+                !quick,
                 Some(enrichment),
             )
             .await

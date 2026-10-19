@@ -30,6 +30,8 @@ export function createPlaybackHeartbeat({ readState, send, isCurrent = (_snapsho
             ...(snapshot.transcodeSessionId ? { transcode_session_id: snapshot.transcodeSessionId } : {}),
             ...(snapshot.directSourceRevision ? { direct_source_revision: snapshot.directSourceRevision } : {}),
             ...(snapshot.directFallbackSupported && snapshot.recoveryRequested ? { direct_fallback_supported: true } : {}),
+            ...(snapshot.copyFallbackSupported && snapshot.recoveryRequested && snapshot.copyFallback?.generation === snapshot.transcodeSessionId
+                ? { copy_fallback: Object.freeze({ generation: snapshot.copyFallback.generation, supported: true, smooth: true }) } : {}),
             ...(snapshot.recoveryRequested && snapshot.recoveryResumePlaying === false ? { is_paused: true } : {}),
             ...(snapshot.recoveryRequested ? { recovery_requested: true } : {}),
         });

@@ -21,6 +21,7 @@ pub(super) async fn seek(
     session_id: Uuid,
     position_ms: i32,
     data_dir: &Path,
+    actor: Option<super::types::PlaybackActor>,
 ) -> Result<SeekResponse, PlaybackError> {
     if position_ms < 0 {
         return Err(PlaybackError::InvalidSeekPosition(format!(
@@ -55,6 +56,24 @@ pub(super) async fn seek(
         .unwrap_or_else(|_| "interactive".to_string());
     let media_item_id: Uuid = row.try_get("media_item_id").unwrap_or_default();
     let mut metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
+    if actor.is_some_and(|current| current.profile_id != profile_id)
+        && (super::direct::has_context(&metadata) || super::source_context::has_context(&metadata))
+    {
+        return Err(PlaybackError::SessionNotFound);
+    }
+    if super::source_context::has_context(&metadata)
+        && let Some(actor) = actor
+    {
+        super::source_context::revalidate(&mut transaction, actor, media_item_id, &metadata)
+            .await?;
+    }
+    if let Some(route) = super::source_context::read(&metadata)
+        && i64::from(position_ms) > route.duration_ms
+    {
+        return Err(PlaybackError::InvalidSeekPosition(
+            "position exceeds the admitted source duration".into(),
+        ));
+    }
 
     let transcode_session_id = metadata
         .get("transcode_session_id")
@@ -74,10 +93,12 @@ pub(super) async fn seek(
         let merge = serde_json::json!({
             "transcode_session_id": new_id,
             "current_position_ms": position_ms,
-            "stream_offset_ms": position_ms,
+            "stream_offset_ms": new_session.source_start_ms,
             "current_state": "playing"
         });
         merge_session_metadata(&mut *transaction, session_id, merge).await?;
+        metadata["transcode_session_id"] = serde_json::json!(new_id);
+        metadata["stream_offset_ms"] = serde_json::json!(new_session.source_start_ms);
 
         (Some(url), Some(new_id))
     } else {
@@ -125,6 +146,10 @@ pub(super) async fn seek(
         pending.acknowledge();
     }
     Ok(SeekResponse {
+        stream_offset_ms: new_transcode_session_id
+            .map(|_| metadata["stream_offset_ms"].as_i64().unwrap_or(0)),
+        source_route: super::source_context::response(&metadata),
+        copy_fallback: super::source_context::copy_fallback(transcode_manager, &metadata),
         direct_source_revision: if new_transcode_session_id.is_none() {
             super::direct::revision(&metadata)
         } else {

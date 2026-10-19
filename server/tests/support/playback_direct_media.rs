@@ -50,13 +50,15 @@ pub(super) async fn clean_source(
             "-pix_fmt".into(),
             "yuv420p".into(),
             "-vf".into(),
-            "setparams=color_primaries=bt709:color_trc=bt709:colorspace=bt709".into(),
+            "setparams=range=limited:color_primaries=bt709:color_trc=bt709:colorspace=bt709".into(),
             "-color_primaries".into(),
             "bt709".into(),
             "-color_trc".into(),
             "bt709".into(),
             "-colorspace".into(),
             "bt709".into(),
+            "-color_range".into(),
+            "tv".into(),
             "-b:v".into(),
             "400000".into(),
             "-minrate".into(),
@@ -156,6 +158,7 @@ pub(super) async fn seed_source(
             && streams[1]["level"] == 40
             && streams[1]["pix_fmt"] == "yuv420p"
             && streams[1]["color_transfer"] == "bt709"
+            && streams[1]["color_range"] == "tv"
             && streams[1]["r_frame_rate"] == "24/1"
             && seconds.is_finite()
             && (seconds - f64::from(runtime)).abs() < 0.25,

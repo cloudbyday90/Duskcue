@@ -2,7 +2,7 @@
 // Copyright (C) 2026-2026 Duskcue Contributors
 // Licensed under AGPL-3.0. See LICENSE for details.
 
-const requestFields = ['session_id', 'media_item_id', 'media_file_id', 'position_ms', 'force_hls', 'force_transcode', 'audio_stream_index', 'subtitle_stream_index'];
+const requestFields = ['session_id', 'media_item_id', 'media_file_id', 'position_ms', 'force_hls', 'force_transcode', 'quality_mode', 'max_streaming_bitrate', 'audio_stream_index', 'subtitle_stream_index'];
 const replyFields = ['session_id', 'transcode_session_id', 'stream_decision', 'position_ms', 'stream_offset_ms', 'recovery'];
 const select = (value, fields) => Object.fromEntries(fields.filter((key) => value?.[key] !== undefined).map((key) => [key, value[key]]));
 

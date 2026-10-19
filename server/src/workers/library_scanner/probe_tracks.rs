@@ -18,6 +18,7 @@ pub(super) fn flag(value: Option<i64>) -> Option<bool> {
 pub(super) fn audio(stream: &FfprobeStream) -> Option<Value> {
     Some(json!({
         "index": stream.stream_index()?, "codec": known(stream.codec_name.as_deref()),
+        "profile": known(stream.profile.as_deref()),
         "channels": stream.channels.filter(|channels| *channels > 0), "language": stream.language(),
         "title": stream.title(), "bitrate": positive_integer(stream.bit_rate.as_deref()),
         "sample_rate": positive_integer(stream.sample_rate.as_deref()), "channel_layout": known(stream.channel_layout.as_deref()),

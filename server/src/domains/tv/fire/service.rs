@@ -415,6 +415,7 @@ mod tests {
         sqlx::query("INSERT INTO play_sessions (id, user_id, profile_id, media_item_id, library_id, started_at, client_name, stream_decision, playback_mode) VALUES ($1, $2, $3, $4, $5, '2026-06-15', 'fixture', 'direct_play', 'interactive')")
             .bind(session).bind(owner).bind(profile).bind(movie).bind(library).execute(&pool).await?;
         let mut user = AuthenticatedUser {
+            transport: crate::extractors::CredentialTransport::Legacy,
             user_id: owner,
             session_id: Uuid::now_v7(),
             profile_id: profile,

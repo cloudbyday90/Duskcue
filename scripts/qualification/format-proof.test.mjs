@@ -7,9 +7,14 @@ import { test } from 'node:test';
 import { validateFormatProcessProof, validateFormatSummaries, validateFormatUnitProof } from './format-proof.mjs';
 
 test('format compiler and process gates require exact executed cases with no skips', () => {
-    const unit = ['inventory::tests::inventory_rejects_paths_and_unsupported_shapes', 'media::tests::avc_configuration_uses_actual_profile_compatibility_and_level', 'media::tests::frame_identifiers_distinguish_seek_target_from_start_and_damage']
-        .map((name) => `test playback_progressive::direct::browser::formats::${name} ... ok`).join('\n') + '\ntest result: ok. 3 passed; 0 failed; 0 ignored;\n';
-    assert.equal(validateFormatUnitProof(unit).cases, 3);
+    const unit = ['inventory::tests::inventory_rejects_paths_and_unsupported_shapes', 'media::tests::avc_configuration_uses_actual_profile_compatibility_and_level', 'media::tests::frame_identifiers_distinguish_seek_target_from_start_and_damage',
+        'source_verify::tests::source_proof_requires_both_smooth_support_and_matching_server_context',
+        'source_verify::tests::unavailable_preflight_can_prove_only_conservative_fallback',
+        'source_verify::tests::copied_source_decision_reports_audio_encoding_without_claiming_video_encoding',
+        'source_recovery::corruption::tests::avcc_vcl_damage_preserves_every_length_header_and_non_vcl_nal',
+        'source_recovery::corruption::tests::malformed_avcc_samples_fail_without_partial_corruption']
+        .map((name) => `test playback_progressive::direct::browser::formats::${name} ... ok`).join('\n') + '\ntest result: ok. 8 passed; 0 failed; 0 ignored;\n';
+    assert.equal(validateFormatUnitProof(unit).cases, 8);
     assert.throws(() => validateFormatUnitProof(unit.replace('... ok', '... ignored')));
     const process = ['format process rejects excess streamed output before unbounded capture', 'format process deadline waits for child exit and does not leave its worker alive', 'format process rejects missing executable and invalid bounds', 'format file identity checks the byte ceiling and exact content', 'Linux format file identity refuses a symlink to an otherwise valid owned file']
         .map((name, index) => `ok ${index + 1} - ${name}`).join('\n') + '\n# tests 5\n# pass 5\n# fail 0\n# skipped 0\n';

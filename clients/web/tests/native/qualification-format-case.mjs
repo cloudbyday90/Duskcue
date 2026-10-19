@@ -32,7 +32,7 @@ async function awaitFormatMedia(observation, generation, client) {
     }).toBe(true);
 }
 
-async function pausedThroughUi(region, video) {
+export async function pausedThroughUi(region, video) {
     await expect.poll(async () => {
         const state = await video.evaluate((element) => ({ ready: element.readyState, paused: element.paused, ended: element.ended }));
         state.playVisible = await region.getByRole('button', { name: 'Play', exact: true }).isVisible();
@@ -41,7 +41,7 @@ async function pausedThroughUi(region, video) {
     }).toBe(true);
 }
 
-async function pauseThroughUi(region, video, replayEnded = false) {
+export async function pauseThroughUi(region, video, replayEnded = false) {
     await expect.poll(async () => {
         const state = await video.evaluate((element) => ({ ready: element.readyState, paused: element.paused, ended: element.ended }));
         state.playVisible = await region.getByRole('button', { name: 'Play', exact: true }).isVisible();

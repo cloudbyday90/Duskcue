@@ -8,6 +8,8 @@ use serde_json::json;
 
 use super::{ProbeResult, ScannerError};
 
+#[path = "probe_capabilities.rs"]
+mod capabilities;
 #[path = "probe_metadata.rs"]
 mod metadata;
 #[path = "probe_model.rs"]
@@ -18,6 +20,7 @@ mod process;
 mod tracks;
 
 pub(super) async fn probe_file(path: &Path) -> Result<ProbeResult, ScannerError> {
+    let before = capabilities::snapshot(path).await;
     let mut failures = Vec::new();
     for (index, profile) in process::PROFILES.into_iter().enumerate() {
         let output = match process::run(path, profile).await {
@@ -41,6 +44,7 @@ pub(super) async fn probe_file(path: &Path) -> Result<ProbeResult, ScannerError>
                     if !output.stderr.is_empty() {
                         tracing::debug!(attempt = index + 1, diagnostic = %process::diagnostic(&output.stderr), "ffprobe completed with warnings");
                     }
+                    capabilities::enrich(path, &mut result, before).await;
                     return Ok(result);
                 }
                 Ok(_) => {
@@ -87,6 +91,15 @@ fn parse_probe_output_at(bytes: &[u8], path: &Path) -> Result<ProbeResult, serde
         .filter_map(tracks::subtitle)
         .collect();
     let mut additional_streams = json!({});
+    if let Some(duration) = probe
+        .format
+        .as_ref()
+        .and_then(|format| format.duration.as_deref())
+        .and_then(|duration| duration.parse::<f64>().ok())
+        .filter(|duration| duration.is_finite() && *duration > 0.0)
+    {
+        additional_streams["format"] = json!({ "duration_seconds": duration });
+    }
     let dolby = video.and_then(metadata::dolby_vision);
     if let Some(video) = video {
         additional_streams["video"] = metadata::video_metadata(video);

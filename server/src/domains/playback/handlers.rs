@@ -24,13 +24,43 @@ use std::net::SocketAddr;
 use validator::Validate;
 
 use crate::domains::playback::error::PlaybackError;
-use crate::domains::playback::service::{self, RangeSpec};
+use crate::domains::playback::service;
 use crate::domains::playback::types::*;
 use crate::domains::tv::service as tv_service;
 use crate::domains::tv::types::TvSurfaceSectionType;
 use crate::error::AppError;
 use crate::extractors::{AuthenticatedUser, CanManageServer, Require};
 use crate::state::AppState;
+
+pub async fn prepare_playback(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+    Json(req): Json<PreparePlaybackRequest>,
+) -> Result<Json<PreparePlaybackResponse>, AppError> {
+    req.validate().map_err(|_| AppError::Validation {
+        errors: vec![crate::error::FieldError {
+            field: "source_capabilities".into(),
+            code: "invalid".into(),
+            message: "The playback preparation request is invalid.".into(),
+        }],
+        instance: Some("/api/v1/playback/prepare".into()),
+    })?;
+    let config = state.runtime_config.load();
+    Ok(Json(
+        service::prepare_playback(
+            &state.pool,
+            PlaybackActor {
+                user_id: user.user_id,
+                profile_id: user.profile_id,
+                has_all_library_access: user.has_all_library_access,
+            },
+            &req,
+            &config,
+            user.transport,
+        )
+        .await?,
+    ))
+}
 
 pub async fn start_playback(
     State(state): State<AppState>,
@@ -62,15 +92,18 @@ pub async fn start_playback(
     })?;
 
     let config = state.runtime_config.load();
-    let result = match service::start_playback(
+    let result = match service::start_playback_with_transport(
         &state.pool,
         &state.transcode_manager,
-        user.user_id,
-        user.profile_id,
-        user.has_all_library_access,
+        PlaybackActor {
+            user_id: user.user_id,
+            profile_id: user.profile_id,
+            has_all_library_access: user.has_all_library_access,
+        },
         &req,
         &config,
         &state.bootstrap.data_dir,
+        user.transport,
     )
     .await
     {
@@ -304,10 +337,14 @@ pub async fn seek(
         }
     })?;
 
-    let result = service::seek(
+    let result = service::seek_with_profile(
         &state.pool,
         &state.transcode_manager,
-        user.user_id,
+        PlaybackActor {
+            user_id: user.user_id,
+            profile_id: user.profile_id,
+            has_all_library_access: user.has_all_library_access,
+        },
         session_id,
         position_ms,
         &state.bootstrap.data_dir,
@@ -617,53 +654,7 @@ pub async fn stream_file(
     crate::domains::profiles::service::assert_media_access(&state.pool, &scope, media_item_id)
         .await?;
     let file_path = service::get_media_file_path(&state.pool, media_file_id).await?;
-    let file_size = service::get_media_file_size(&state.pool, media_file_id).await?;
-
-    let range_header = headers.get("range").and_then(|v| v.to_str().ok());
-    let range = RangeSpec::parse(range_header, file_size)?;
-
-    let content_type = service::guess_content_type(&file_path);
-
-    match range {
-        Some(range) => {
-            let length = range.content_length() as usize;
-            let mut file = tokio::fs::File::open(&file_path)
-                .await
-                .map_err(|_| PlaybackError::FileNotFound)?;
-
-            use tokio::io::{AsyncReadExt, AsyncSeekExt};
-            file.seek(std::io::SeekFrom::Start(range.start))
-                .await
-                .map_err(|_| PlaybackError::FileNotFound)?;
-
-            let mut buffer = vec![0u8; length];
-            file.read_exact(&mut buffer)
-                .await
-                .map_err(|_| PlaybackError::FileNotFound)?;
-
-            Ok(Response::builder()
-                .status(StatusCode::PARTIAL_CONTENT)
-                .header(header::CONTENT_TYPE, content_type)
-                .header(header::CONTENT_LENGTH, length.to_string())
-                .header(header::CONTENT_RANGE, range.content_range_header())
-                .header(header::ACCEPT_RANGES, "bytes")
-                .body(Body::from(buffer))
-                .unwrap())
-        }
-        None => {
-            let data = tokio::fs::read(&file_path)
-                .await
-                .map_err(|_| PlaybackError::FileNotFound)?;
-
-            Ok(Response::builder()
-                .status(StatusCode::OK)
-                .header(header::CONTENT_TYPE, content_type)
-                .header(header::CONTENT_LENGTH, file_size.to_string())
-                .header(header::ACCEPT_RANGES, "bytes")
-                .body(Body::from(data))
-                .unwrap())
-        }
-    }
+    Ok(super::file_delivery::response(&file_path, &headers).await?)
 }
 
 pub async fn get_transcode_manifest(

@@ -6,7 +6,7 @@ import { createInterface } from 'node:readline';
 import { readFile, writeFile, rename } from 'node:fs/promises';
 import { fixtureResponseHeaders, validateFixtureRequest } from './direct-http-policy.mjs';
 import { createNativeStallControl } from './direct-native-control.mjs';
-import { createFormatControl } from './direct-format-control.mjs';
+import { createFormatControl, createSourceControl } from './direct-format-control.mjs';
 
 const resourceId = process.env.DUSKCUE_TEST_RESOURCE_ID;
 if (!/^[a-f0-9-]{36}$/.test(resourceId || '') || process.env.DUSKCUE_TEST_DIRECT_BROWSER !== 'live') throw new Error('An owned direct-play fixture is required.');
@@ -18,6 +18,7 @@ const verified = new Set();
 const nativeRecovery = process.env.DUSKCUE_TEST_NATIVE_RECOVERY === 'live';
 const armNativeStall = createNativeStallControl(resourceId, { enabled: nativeRecovery });
 const verifyFormat = createFormatControl(resourceId, { enabled: nativeRecovery && process.env.DUSKCUE_TEST_FORMAT_CORPUS === 'live' });
+const verifySource = createSourceControl(resourceId, { enabled: nativeRecovery && process.env.DUSKCUE_TEST_SOURCE_CAPABILITIES === 'live' });
 const emit = (value) => process.stdout.write(`${JSON.stringify(value)}\n`);
 async function handle(message) {
     if (!Number.isSafeInteger(message.id) || message.id < 1) throw new Error('Invalid bridge request identity.');
@@ -51,6 +52,7 @@ async function handle(message) {
     }
     if (message.operation === 'arm-native-stall') return { armed: await armNativeStall(message.report) };
     if (message.operation === 'verify-format') return verifyFormat(message.report);
+    if (message.operation === 'verify-source') return verifySource(message.report);
     if (message.operation === 'cancel') {
         if (!Number.isSafeInteger(message.target) || message.target < 1) throw new Error('Invalid event stream.');
         streams.get(message.target)?.abort();

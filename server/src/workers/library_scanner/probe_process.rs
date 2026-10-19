@@ -12,6 +12,7 @@ use tokio::process::{Child, Command};
 
 pub(super) const MAX_STDOUT: usize = 4 * 1024 * 1024;
 pub(super) const MAX_STDERR: usize = 64 * 1024;
+pub(super) const ENRICHMENT_DEADLINE: Duration = Duration::from_secs(5);
 
 #[derive(Clone, Copy)]
 pub(super) struct ProbeProfile {
@@ -81,6 +82,52 @@ pub(super) async fn run(path: &Path, profile: ProbeProfile) -> Result<AttemptOut
             retryable: false,
         })?;
     capture(child, profile.timeout).await
+}
+
+pub(super) fn configuration_arguments(selector: &'static str) -> Vec<&'static str> {
+    vec![
+        "-v",
+        "warning",
+        "-protocol_whitelist",
+        "file",
+        "-threads",
+        "2",
+        "-analyzeduration",
+        "5000000",
+        "-probesize",
+        "5M",
+        "-print_format",
+        "json",
+        "-select_streams",
+        selector,
+        "-show_streams",
+        "-show_data",
+        "-data_dump_format",
+        "base64",
+        "-show_entries",
+        "stream=index,codec_type,codec_name,codec_tag_string,profile,level,width,height,bit_rate,pix_fmt,bits_per_raw_sample,color_transfer,color_primaries,color_space,color_range,avg_frame_rate,r_frame_rate,channels,sample_rate,extradata,extradata_size:stream_disposition:stream_side_data",
+    ]
+}
+
+pub(super) async fn configuration(
+    path: &Path,
+    selector: &'static str,
+    timeout: Duration,
+) -> Result<AttemptOutput, AttemptError> {
+    let child = Command::new("ffprobe")
+        .args(configuration_arguments(selector))
+        .arg("-i")
+        .arg(path)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .map_err(|error| AttemptError {
+            message: format!("ffprobe configuration spawn failed: {error}"),
+            retryable: false,
+        })?;
+    capture(child, timeout).await
 }
 
 async fn capture(mut child: Child, timeout: Duration) -> Result<AttemptOutput, AttemptError> {

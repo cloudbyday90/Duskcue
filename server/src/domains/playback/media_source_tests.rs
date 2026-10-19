@@ -2,6 +2,7 @@
 // Copyright (C) 2026-2026 Duskcue Contributors
 // Licensed under AGPL-3.0. See LICENSE for details.
 
+use super::super::media_source::*;
 use super::*;
 use serde_json::json;
 
@@ -10,6 +11,7 @@ fn details() -> MediaFileDetails {
         id: Uuid::now_v7(),
         file_size: 1,
         updated_at: chrono::Utc::now(),
+        file_modified_at: None,
         file_path: "movie.mkv".into(),
         container_format: "mkv".into(),
         video_codec: None,

@@ -19,7 +19,8 @@ describe('bounded direct fallback output capability', () => {
         const descriptor = directFallbackDescriptor(output());
         expect(descriptor).toEqual(output());
         expect(Object.isFrozen(descriptor.video)).toBe(true);
-        for (const video of [{ width: 321 }, { height: 1082 }, { bitrate: 10000001 }, { framerate: 29.97 }, { content_type: 'video/mp4; codecs="hvc1"' }]) {
+        expect(directFallbackDescriptor({ ...output(), video: { ...output().video, bitrate: 1000 } })).not.toBeNull();
+        for (const video of [{ width: 321 }, { height: 1082 }, { bitrate: 999 }, { bitrate: 10000001 }, { framerate: 29.97 }, { content_type: 'video/mp4; codecs="hvc1"' }]) {
             expect(directFallbackDescriptor({ ...output(), video: { ...output().video, ...video } })).toBeNull();
         }
         for (const audio of [{ channels: '6' }, { samplerate: 44100 }, { bitrate: 192001 }]) {
