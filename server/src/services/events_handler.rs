@@ -38,10 +38,11 @@
 //! receiver, the replay buffer drain, the type-filter check, and —
 //! critically — the [`ConnectionGuard`] (moved into the task). When the
 //! client disconnects, the SSE response future is dropped, the
-//! `ReceiverStream` sender closes, the spawned task observes the closed
-//! channel on its next `tx.send().await` and exits, dropping the guard.
+//! `ReceiverStream` receiver closes, and the spawned task observes the
+//! channel closure even while idle and exits, dropping the guard.
 //! This guarantees the per-user connection count is accurate.
 
+use std::collections::HashSet;
 use std::convert::Infallible;
 use std::time::Duration;
 
@@ -52,13 +53,13 @@ use axum::response::{IntoResponse, Response};
 use serde::Deserialize;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt as _;
-use tokio_stream::wrappers::ReceiverStream;
+use tokio_stream::wrappers::{BroadcastStream, ReceiverStream};
 use uuid::Uuid;
 
 use crate::error::AppError;
 use crate::extractors::AuthenticatedUser;
 use crate::services::event_bus::{
-    ConnectionLimitReached, ServerEvent, matches_filter, parse_type_filter,
+    ConnectionGuard, ConnectionLimitReached, ServerEvent, matches_filter, parse_type_filter,
 };
 use crate::state::AppState;
 
@@ -137,43 +138,13 @@ pub async fn events_handler(
 
     let (tx, rx) = mpsc::channel::<Result<Event, Infallible>>(FORWARDER_CHANNEL_DEPTH);
 
-    tokio::spawn(async move {
-        let _conn_guard = conn_guard;
-
-        if tx
-            .send(Ok(
-                Event::default().retry(Duration::from_millis(RECONNECT_DELAY_MS))
-            ))
-            .await
-            .is_err()
-        {
-            return;
-        }
-
-        for event in replay_events {
-            if matches_filter(&event.event_type, type_filter.as_ref())
-                && tx.send(Ok(encode_event(&event))).await.is_err()
-            {
-                return;
-            }
-        }
-
-        let mut live_rx = live_rx;
-        while let Some(result) = live_rx.next().await {
-            match result {
-                Ok(event) => {
-                    if matches_filter(&event.event_type, type_filter.as_ref())
-                        && tx.send(Ok(encode_event(&event))).await.is_err()
-                    {
-                        return;
-                    }
-                }
-                Err(_lagged) => {
-                    tracing::debug!("SSE subscriber lagged the broadcast channel; skipping");
-                }
-            }
-        }
-    });
+    tokio::spawn(forward_events(
+        conn_guard,
+        tx,
+        replay_events,
+        type_filter,
+        live_rx,
+    ));
 
     let stream = ReceiverStream::new(rx);
     let sse = Sse::new(stream).keep_alive(
@@ -191,6 +162,54 @@ pub async fn events_handler(
     Ok((extra_headers, sse).into_response())
 }
 
+async fn forward_events(
+    conn_guard: ConnectionGuard,
+    tx: mpsc::Sender<Result<Event, Infallible>>,
+    replay_events: Vec<ServerEvent>,
+    type_filter: Option<HashSet<String>>,
+    mut live_rx: BroadcastStream<ServerEvent>,
+) {
+    let _conn_guard = conn_guard;
+    if tx
+        .send(Ok(
+            Event::default().retry(Duration::from_millis(RECONNECT_DELAY_MS))
+        ))
+        .await
+        .is_err()
+    {
+        return;
+    }
+    for event in replay_events {
+        if matches_filter(&event.event_type, type_filter.as_ref())
+            && tx.send(Ok(encode_event(&event))).await.is_err()
+        {
+            return;
+        }
+    }
+    loop {
+        let result = tokio::select! {
+            biased;
+            () = tx.closed() => return,
+            result = live_rx.next() => match result {
+                Some(result) => result,
+                None => return,
+            },
+        };
+        match result {
+            Ok(event) => {
+                if matches_filter(&event.event_type, type_filter.as_ref())
+                    && tx.send(Ok(encode_event(&event))).await.is_err()
+                {
+                    return;
+                }
+            }
+            Err(_lagged) => {
+                tracing::debug!("SSE subscriber lagged the broadcast channel; skipping");
+            }
+        }
+    }
+}
+
 /// Encode a [`ServerEvent`] as a complete SSE wire-format `Event` (with
 /// `event:`, `id:`, and `data:` fields). The receiver emits this as a
 /// single SSE frame followed by the trailing blank-line delimiter.
@@ -205,6 +224,41 @@ fn encode_event(event: &ServerEvent) -> Event {
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[tokio::test]
+    async fn idle_disconnect_releases_connection_slot_without_publishing_an_event() {
+        let bus = crate::services::event_bus::EventBus::new(1);
+        let user = Uuid::now_v7();
+        for filter in [None, Some(HashSet::from(["transcode_progress".to_owned()]))] {
+            let guard = bus.register_connection(user).unwrap();
+            let stream = bus.subscribe_stream(user);
+            let (tx, mut rx) = mpsc::channel(FORWARDER_CHANNEL_DEPTH);
+            let mut forwarder = tokio::spawn(forward_events(guard, tx, Vec::new(), filter, stream));
+            let _retry = tokio::time::timeout(Duration::from_secs(1), rx.recv())
+                .await
+                .expect("forwarder should publish its initial retry")
+                .unwrap()
+                .unwrap();
+            assert_eq!(bus.connection_count(user), 1);
+            assert!(bus.register_connection(user).is_err());
+            drop(rx);
+            let completion = tokio::time::timeout(Duration::from_secs(1), &mut forwarder).await;
+            if completion.is_err() {
+                forwarder.abort();
+                let _ = forwarder.await;
+            }
+            completion
+                .expect("idle disconnect must finish without another event")
+                .unwrap();
+            assert_eq!(bus.connection_count(user), 0);
+            let replacement = bus
+                .register_connection(user)
+                .expect("disconnected slot must allow readmission");
+            assert_eq!(bus.connection_count(user), 1);
+            drop(replacement);
+            assert_eq!(bus.connection_count(user), 0);
+        }
+    }
 
     /// `encode_event` constructs an `Event` via Axum's builder. Axum owns
     /// the wire-format encoder; we verify our payload serialization (the
