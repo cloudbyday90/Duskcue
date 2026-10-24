@@ -22,7 +22,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **PR review:** random selection from the one open candidate chose PR #5. Its PostCSS/Nano ID updates are superseded by both current client lockfiles; no dependency downgrade or PR merge is applicable.
 
-**Next:** qualify one supervised MPEG-TS transport and bounded live output before the full guide UI. The scanner cancellation evaluation below remains a separate workstream. New IPTV resources require their own confirmed cleanup lifecycle.
+**Next:** obtain authenticated details and triage the six dependency alerts reported by GitHub on push (two high, four moderate; the follow-up CLI read failed with HTTP 401), then qualify one supervised MPEG-TS transport and bounded live output before the full guide UI. The authority records that access/evidence boundary; the count alone is not a validated finding. The scanner cancellation evaluation below remains a separate workstream. New IPTV resources require their own confirmed cleanup lifecycle.
 
 ## October 2026 source-specific playback capabilities (COMPLETE)
 
