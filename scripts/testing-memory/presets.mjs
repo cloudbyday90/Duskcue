@@ -5,6 +5,7 @@
 // See LICENSE file for details.
 
 export const PRESETS = {
+    'vite-editor-qualify': { policy: 'unit', heapMiB: 128, command: 'node', args: ['--test', '--test-concurrency=1', 'clients/web/tests/unit/vite-editor-security.test.mjs'] },
     'web-unit': { policy: 'unit', heapMiB: 1536, args: ['--prefix', 'clients/web', 'run', 'test:unit', '--', '--run', '--maxWorkers=1'] },
     'web-install': { policy: 'build', heapMiB: 1536, args: ['--prefix', 'clients/web', 'ci', '--ignore-scripts'] },
     'desktop-install': { policy: 'build', heapMiB: 1536, args: ['--prefix', 'clients/desktop', 'ci', '--ignore-scripts'] },

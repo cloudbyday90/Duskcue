@@ -56,6 +56,10 @@ jobs:
           node-version: '24'
       - name: Install dependencies
         run: npm ci --prefix clients/web
+      - name: Install desktop tooling without lifecycle scripts
+        run: npm ci --prefix clients/desktop --ignore-scripts
+      - name: Check both bundled editor boundaries
+        run: node --max-old-space-size=128 --test --test-concurrency=1 clients/web/tests/unit/vite-editor-security.test.mjs
       - name: Check shared sources
         env:
           NODE_OPTIONS: --max-old-space-size=3072

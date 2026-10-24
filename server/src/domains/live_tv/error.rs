@@ -1,3 +1,7 @@
+// Duskcue — Self-hosted media streaming server
+// Copyright (C) 2026-2026 Duskcue Contributors
+// Licensed under AGPL-3.0. See LICENSE for details.
+
 use axum::extract::rejection::JsonRejection;
 use axum::http::StatusCode;
 use thiserror::Error;
