@@ -22,6 +22,8 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **Next:** IPTV milestone 2: qualify supervised HTTP MPEG-TS transport, restricted FFmpeg input, bounded rolling output, readiness and confirmed cleanup. SvelteKit 3 compatibility assessment and existing compiler-lint maintenance remain separate follow-ups. Do not infer live IPTV, owner-proof or guide support from this dependency increment.
 
+**Provider status:** two post-push REST reads still show the six original alerts open with unchanged October 22 timestamps. Confirm dependency-graph/alert closure separately; the completed checkpoint records local remediation and qualification, not a zero-alert provider state. No dismissal was applied.
+
 ## October 2026 IPTV player contracts (MILESTONE 1 COMPLETE)
 
 **Committed implementation:** `14bab6e8ffefc823fe072b623d46dfbd6ce9a05b` on `main`; no release. Documentation-only descendants preserve that verified source.
