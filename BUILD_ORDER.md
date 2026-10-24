@@ -22,6 +22,8 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **Next:** milestone 3 household authority and encrypted assignment. Review fresh proof challenge binding/expiry/revocation, sensitive authenticator enrollment/recovery and administrator delegation before implementation. A standard viewing session/profile must not grant management. Keep feed networking disabled until saved destination authority and separately owned hostname/TLS transport are qualified. Common viewer admission, Kids/programme policy, root shutdown integration and real Dispatcharr/web/Tauri qualification remain prerequisites for production Live TV. Randomly selected PR #5 is still superseded by current lockfiles; no patch/downgrade applies.
 
+**Active milestone 3 review:** [Household-owner management security](docs/security/HOUSEHOLD_OWNER_SECURITY.md) records October 24 official-source research, current credential-provenance gaps and the open design tree. Five-minute session-bound grants and explicit operator recovery are confirmed. Initial trust, related protected mutations and the first increment's boundary await answers and the required shared-understanding confirmation. This research checkpoint adds no owner-management implementation and marks no new milestone complete.
+
 ## October 2026 development tooling dependency follow-up (COMPLETE)
 
 **Committed implementation:** `207ac7b9082e6eaa3d136f6b9b15951b0a97bbd0` on `main`; no release or PR merge.
