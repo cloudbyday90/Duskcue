@@ -502,3 +502,12 @@ type OutputStream = tokio_process_tools::SingleSubscriberOutputStream<
     tokio_process_tools::ReplayEnabled,
 >;
 type FfmpegHandle = tokio_process_tools::ProcessHandle<OutputStream>;
+
+#[cfg(feature = "playback-qualification")]
+pub(crate) async fn complete_hls_asset(
+    directory: &std::path::Path,
+    name: &str,
+    initialization: bool,
+) -> Result<bool, crate::domains::playback::PlaybackError> {
+    readiness::complete_asset(directory, name, initialization).await
+}

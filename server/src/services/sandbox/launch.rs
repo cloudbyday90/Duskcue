@@ -19,6 +19,16 @@ pub(crate) struct PreparedLaunch {
 }
 
 impl PreparedLaunch {
+    #[cfg(feature = "playback-qualification")]
+    pub(crate) fn pipe(directory: &std::path::Path) -> io::Result<Self> {
+        managed_elf::validate()?;
+        Ok(Self {
+            descriptors: PreparedDescriptors::new(&filter::build_ffmpeg_filter()?)?,
+            filesystem: Some(filesystem::prepare_pipe(directory)?),
+            executable: managed_elf::EXECUTABLE,
+        })
+    }
+
     pub(crate) fn new(config: &SandboxConfig<'_>) -> io::Result<Self> {
         managed_elf::validate()?;
         Self::prepare(config, managed_elf::EXECUTABLE)

@@ -87,6 +87,8 @@ jobs:
           node-version: '24'
       - name: Verify Linux ownership and process-group helpers
         run: node --max-old-space-size=64 --test --test-concurrency=1 scripts/qualification/qualification.test.mjs
+      - name: Verify Live TV qualification proof and ownership helpers
+        run: node --max-old-space-size=128 --test --test-concurrency=1 scripts/testing-memory/live-transport-proof.test.mjs scripts/testing-memory/workflow-evidence.test.mjs
       - name: Compile and qualify owned Linux artifacts
         id: qualify
         run: node --max-old-space-size=128 scripts/qualification/linux.mjs --commit "$GITHUB_SHA" --output "$RUNNER_TEMP/tonight-linux"

@@ -46,6 +46,25 @@ pub(super) async fn copied_source_origin(
 pub(super) const STARTUP_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_PLAYLIST_BYTES: u64 = 1_048_576;
 
+#[cfg(feature = "playback-qualification")]
+pub(super) async fn complete_asset(
+    directory: &Path,
+    name: &str,
+    initialization: bool,
+) -> Result<bool, PlaybackError> {
+    let cache = OwnedCache::new(directory, &directory.join("manifest.m3u8")).await?;
+    mp4::complete(
+        &cache,
+        name,
+        if initialization {
+            mp4::Asset::Initialization
+        } else {
+            mp4::Asset::Fragment
+        },
+    )
+    .await
+}
+
 pub(super) async fn wait(
     directory: &Path,
     manifest: &Path,

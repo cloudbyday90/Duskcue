@@ -1,5 +1,11 @@
 # Project Structure
 
+## IPTV transport qualification — October 24, 2026
+
+The default-off `playback-qualification` feature exposes `live_tv/transport/` for controlled transport qualification. Source destination checks/HTTP, the input pump, FFmpeg arguments/process supervision, rolling-playlist parsing, bounded output and the tracked session owner are separate modules. The domain's five-file production validation boundary remains intact. Small feature-gated pipe-launch and structural fMP4 helpers reuse existing sandbox/readiness infrastructure without changing VOD output policy.
+
+`server/tests/live_transport_contract.rs` composes focused authentication, upstream, media/process and diagnostic helpers. `docker/qualification/Dockerfile.live-transport` builds that exact test executable; dedicated `scripts/testing-memory/live-transport-*` services and `qualify-live-transport.mjs` own proof validation, isolated runtime and source-bound preparation. No schema, product playback route, global singleton or dependency is added. [IPTV transport](IPTV_TRANSPORT.md) owns scope, limits, research and actual execution results.
+
 ## IPTV contract slice — October 24, 2026
 
 `server/src/domains/live_tv/` follows the five-file domain pattern: HTTP translation in `handlers.rs`, bounded URL validation in `service.rs`, typed safe failures in `error.rs`, separate Deserialize/Validate requests and Serialize responses in `types.rs`, and route/body/cache policy in `mod.rs`. Focused parser/HTTP tests and a disposable-PostgreSQL production-router contract cover the boundary. No database Row or migration is introduced because this slice persists nothing. [IPTV.md](IPTV.md) owns the complete design, implementation sequence and evidence; saved connections, imports, authorization policy and live sessions will be separate services rather than additions to a monolithic playback file.

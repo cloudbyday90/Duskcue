@@ -1,5 +1,15 @@
 # Testing memory on Windows
 
+## Controlled IPTV transport — October 24, 2026
+
+`node scripts/testing-memory/run.mjs iptv-transport-qualify --image <immutable local Duskcue runtime SHA256>` owns a separate source-bound compile/runtime experiment. The exact integration executable is selected from Cargo artifacts, copied into a managed-FFmpeg runtime image and verified against source/base/platform/user/entrypoint labels. Compilation retains two jobs, the existing thirty-minute deadline, 32-MiB log ceiling, Linux admission/probe/freshness/reserve and Windows build policy with a 128-MiB driver heap. The existing VOD qualifiers retain their meaning.
+
+The runtime has a 360-second deadline and 1-MiB bounded/redacted log. Runtime and disposable PostgreSQL18 each retain a one-GiB memory/no-extra-swap ceiling, two CPUs and 128 PIDs. The runtime is nonroot/read-only, with bounded tmpfs mounts including a hard 64-MiB fixture filesystem. Network-none PostgreSQL supplies a shared loopback namespace without host ports, mounts or socket access. Its 16-MiB shared buffers / 16 connections are checked by SQL. Deliberately impossible ambient proxy settings must not intercept the authorized stream. Exact owned containers, compiler probe and temporary image tags are cleaned.
+
+Gate `9cd945d0-b676-433a-beae-d3ae9916b7f5` passes in 142.008 seconds including cached preparation; the actual contract takes 117.09 seconds with one pass and zero ignored cases. Its 67 Linux samples preserve at least 5,503,209,472 available bytes. Two window rotations, decoded cookie/bearer media, ownership/expiry/fault refusals, monitored byte/file ceilings, backpressure cancellation and physical cleanup pass. Earlier admission holds and the corrected multithread-runtime failure remain recorded in [IPTV transport](../design/IPTV_TRANSPORT.md); no reserve/cap/deadline or unrelated workload was changed. This is local controlled transport evidence, not actual web/Tauri or production Live TV qualification.
+
+`iptv-transport-unit` runs four proof/ownership cases serially with a 128-MiB heap. Shared Linux CI runs these lightweight receipt cases; hosted runtime execution is not claimed. Feature-enabled host Rust tests pass 975 with seven existing ignores; the six transport tests include real HTTP-header/TLS-handshake cancellation and unsupported-runtime refusal. Default production compilation passes separately. Strict feature/all-target Clippy retains baseline findings on unchanged code; the authority records exact diagnostics and receipt paths.
+
 ## Bundled Vite editor qualification — October 24, 2026
 
 `node scripts/testing-memory/run.mjs vite-editor-qualify` runs twelve cases across both installed client bundles with the existing unit policy, one test stream and a 128-MiB heap. The modular fixture in `clients/web/tests/fixtures/vite-editor.mjs` supplies inert filesystem, platform and process dependencies to trusted bundled launcher helpers. It starts no editor or shell. Windows path/position normalization, percent/newline refusal, file URLs, WSL argument protection and ordinary controls are checked; an unknown bundle layout fails.

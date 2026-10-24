@@ -9,6 +9,18 @@ use super::SandboxConfig;
 pub(super) fn prepare(
     config: &SandboxConfig<'_>,
 ) -> Result<landlock::RulesetCreated, std::io::Error> {
+    prepare_paths(Some(config.media_path), config.transcode_dir)
+}
+
+#[cfg(feature = "playback-qualification")]
+pub(super) fn prepare_pipe(directory: &Path) -> Result<landlock::RulesetCreated, std::io::Error> {
+    prepare_paths(None, directory)
+}
+
+fn prepare_paths(
+    media: Option<&Path>,
+    transcode_dir: &Path,
+) -> Result<landlock::RulesetCreated, std::io::Error> {
     use landlock::{
         ABI, Access, AccessFs, PathBeneath, PathFd, Ruleset, RulesetAttr, RulesetCreatedAttr,
     };
@@ -56,12 +68,12 @@ pub(super) fn prepare(
         }
     }
 
-    if config.media_path.exists() {
-        rs = add_ro_rule(rs, config.media_path)?;
+    if let Some(media) = media.filter(|path| path.exists()) {
+        rs = add_ro_rule(rs, media)?;
     }
 
-    if config.transcode_dir.exists() {
-        rs = add_rw_rule(rs, config.transcode_dir)?;
+    if transcode_dir.exists() {
+        rs = add_rw_rule(rs, transcode_dir)?;
     }
 
     if Path::new("/tmp").exists() {

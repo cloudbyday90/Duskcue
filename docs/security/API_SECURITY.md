@@ -1,5 +1,13 @@
 # API Security Domain
 
+## Controlled IPTV transport boundary — October 24, 2026
+
+[IPTV transport qualification](../design/IPTV_TRANSPORT.md) adds no production playback endpoint. Its default-off test router reuses production cookie/bearer authentication and capability extraction, then requires the exact fixture account and active profile for every output read. It does not establish household-owner step-up or production Live TV policy.
+
+The internal source constructor requires an exact approved literal IP/port; hostnames, redirects, automatic retries, ambient proxies and forbidden metadata/link-local destinations are refused. Explicit LAN destinations remain possible. The HTTP owner checks the connected peer, requires the selected MPEG-TS response contract, applies bounded waits and feeds only bytes to network-isolated managed FFmpeg. URLs/tokens are absent from process arguments and fixed error messages; captured connector/auth diagnostics are checked for fixture secrets. A syntax-validation response is never an egress grant.
+
+Output uses private owned directories, exact resource names, bounded regular-file reads, monitored file/byte ceilings and invalidation before cleanup. Process-group exit, joined input/supervisor tasks and cache removal precede successful Stop. The fixture also supplies a hard bounded tmpfs; monitored limits alone are not a production filesystem quota. Production integration still requires saved destination authority, independently qualified hostname/TLS behavior, common viewer admission, revocation/Kids policy and application shutdown ownership.
+
 ## IPTV connection validation — October 24, 2026
 
 The initial [IPTV slice](../design/IPTV.md) exposes a `can_manage_users`-guarded POST for configuration syntax only. It applies the existing active-Kids refusal before body processing, a 16-KiB body limit, 4,096-byte URL limits, strict request fields, fixed safe rejection messages and no-store responses. Success returns transport/scope only; raw URLs and serde/parser errors do not enter responses or application-error logging. The endpoint performs no DNS/HTTP, persistence or stream allocation and does not grant future egress permission. Later fetching must enforce administrator-configured destinations at connection time, including redirects, retries and nested resources; LAN deployments remain supported. Owner step-up/delegation is a separate planned milestone and is not established by this validator.

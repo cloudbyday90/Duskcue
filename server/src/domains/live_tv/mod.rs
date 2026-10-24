@@ -7,6 +7,9 @@ pub mod handlers;
 pub mod service;
 pub mod types;
 
+#[cfg(feature = "playback-qualification")]
+pub mod transport;
+
 use axum::Router;
 use axum::extract::DefaultBodyLimit;
 use axum::routing::post;

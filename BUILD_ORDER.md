@@ -10,6 +10,18 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 IPTV controlled transport (MILESTONE 2 SCOPED QUALIFICATION COMPLETE)
+
+**Implementation checkpoint:** recorded in the post-implementation documentation checkpoint on `main`; no release, deployment or PR merge.
+
+**Authority:** [IPTV transport qualification](docs/design/IPTV_TRANSPORT.md). The user confirmed literal-IP HTTP MPEG-TS, managed FFmpeg decoding, real cookie/bearer output authorization, an approximately thirty-second rolling buffer, and terminal EOF/stall cleanup without automatic reconnect. Production enablement, hostname support and real Dispatcharr/client journeys remain subsequent work.
+
+**Built slice:** default-off feature-gated source, pump, sandboxed worker, rolling output/readiness and tracked owner services; a newly compiled exact Linux integration executable; modular fixture/auth/media helpers; guarded source-bound Docker/runtime/proof tooling. No production live route, schema or catalog playback record is added. VOD EVENT policy remains unchanged.
+
+**Verification:** managed runtime gate `9cd945d0-b676-433a-beae-d3ae9916b7f5` passes once with zero ignored cases in 117.09 seconds. Both auth paths produce independently decoded 640×360 H.264/AAC output. Sequence 30 proves two complete window rotations; peak cache is 6,843,484 bytes / 19 files. Normal Stop takes 12 ms. Scope/expiry refusals, redirect/proxy boundaries, byte/file faults, EOF/stall, abandoned sessions, backpressured input and owner/shutdown cleanup pass. The exact runtime exits zero without OOM and owned resources are removed. Host checks pass 975 Rust library cases with seven existing ignores, four JavaScript proof/ownership cases, default-feature compilation, format and copyright. Strict Clippy retains existing findings; corrected runtime requirements and held/failed attempts remain explicit in the authority. All admission/reserve/deadline limits are preserved.
+
+**Next:** milestone 3 household authority and encrypted assignment. Review fresh proof challenge binding/expiry/revocation, sensitive authenticator enrollment/recovery and administrator delegation before implementation. A standard viewing session/profile must not grant management. Keep feed networking disabled until saved destination authority and separately owned hostname/TLS transport are qualified. Common viewer admission, Kids/programme policy, root shutdown integration and real Dispatcharr/web/Tauri qualification remain prerequisites for production Live TV. Randomly selected PR #5 is still superseded by current lockfiles; no patch/downgrade applies.
+
 ## October 2026 development tooling dependency follow-up (COMPLETE)
 
 **Committed implementation:** `207ac7b9082e6eaa3d136f6b9b15951b0a97bbd0` on `main`; no release or PR merge.
@@ -20,7 +32,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **Verification:** twelve focused cases, 533 existing unit cases, zero-error/zero-warning type checks, adapter-node/static desktop builds, formatting and copyright pass. Final full browser repeat passes 127 with three existing caption skips. An earlier generated-module fetch failure and its passing traced repeat remain documented rather than suppressed. All guarded work completed without a memory stop. Rust/Cargo remain 1.99.1; existing strict Clippy limitations remain in the toolchain authority. Web audit retains three low SvelteKit/adapter entries representing two separate advisories; their feature prerequisites and major-upgrade follow-up are recorded without dismissal or forced updates.
 
-**Next:** IPTV milestone 2: qualify supervised HTTP MPEG-TS transport, restricted FFmpeg input, bounded rolling output, readiness and confirmed cleanup. SvelteKit 3 compatibility assessment and existing compiler-lint maintenance remain separate follow-ups. Do not infer live IPTV, owner-proof or guide support from this dependency increment.
+**Follow-up:** the scoped IPTV transport experiment is complete in the checkpoint above. SvelteKit 3 compatibility assessment and existing compiler-lint maintenance remain separate follow-ups. Do not infer live IPTV, owner-proof or guide support from this dependency increment.
 
 **Provider status:** two post-push REST reads still show the six original alerts open with unchanged October 22 timestamps. Confirm dependency-graph/alert closure separately; the completed checkpoint records local remediation and qualification, not a zero-alert provider state. No dismissal was applied.
 
@@ -36,7 +48,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **PR review:** random selection from the one open candidate chose PR #5. Its PostCSS/Nano ID updates are superseded by both current client lockfiles; no dependency downgrade or PR merge is applicable.
 
-**Next:** the authenticated six-alert triage and patched dependency qualification are complete in the tooling follow-up above. Qualify one supervised MPEG-TS transport and bounded live output before the full guide UI. The scanner cancellation evaluation below remains a separate workstream. New IPTV resources require their own confirmed cleanup lifecycle.
+**Follow-up:** the authenticated six-alert triage, patched dependency qualification and controlled MPEG-TS transport experiment are complete in the checkpoints above. Household authority is the next IPTV milestone, before imports/production playback/guide UI. The scanner cancellation evaluation below remains a separate workstream. New IPTV resources require their own confirmed cleanup lifecycle.
 
 ## October 2026 source-specific playback capabilities (COMPLETE)
 

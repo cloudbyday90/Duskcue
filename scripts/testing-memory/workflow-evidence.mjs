@@ -8,7 +8,7 @@ import { dirname, join, resolve } from 'node:path';
 const directories = Object.freeze({ 'compose-build': 'compose-build', 'playback-recovery-qualify': 'playback-recovery', 'playback-direct-qualify': 'playback-recovery', 'playback-live-qualify': 'playback-recovery', 'playback-native-recovery-qualify': 'playback-recovery', 'playback-format-qualify': 'playback-recovery', 'playback-source-qualify': 'playback-recovery' });
 
 export async function ownedWorkflowEvidence(workspace, environment, workload) {
-    if (!Object.hasOwn(directories, workload)) throw new Error('An admitted owning workflow is required.');
+    if (!Object.hasOwn(directories, workload) && workload !== 'iptv-transport-qualify') throw new Error('An admitted owning workflow is required.');
     const root = await realpath(join(workspace, '.cache/testing-memory'));
     const resourceId = environment.DUSKCUE_TEST_RESOURCE_ID;
     const marker = environment.DUSKCUE_TEST_RESOURCE_CONTAINERS_FILE;
@@ -23,7 +23,7 @@ export async function ownedWorkflowEvidence(workspace, environment, workload) {
         await new Promise((resume) => setTimeout(resume, 20));
     } while (Date.now() < deadline);
     if (active.childPid !== process.pid) throw new Error('The workflow child was not registered.');
-    const directory = join(root, `${directories[workload]}-${resourceId}`);
+    const directory = join(root, `${workload === 'iptv-transport-qualify' ? 'iptv-transport' : directories[workload]}-${resourceId}`);
     await mkdir(directory);
     if (dirname(await realpath(directory)) !== root || (await lstat(directory)).isSymbolicLink()) throw new Error('Workflow evidence escaped its owning workspace.');
     return { resourceId, marker, directory };

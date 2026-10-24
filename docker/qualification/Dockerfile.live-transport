@@ -1,0 +1,43 @@
+# syntax=docker/dockerfile:1.7
+# Duskcue — Self-hosted media streaming server
+# Copyright (C) 2026-2026 Duskcue Contributors
+# Licensed under AGPL-3.0. See LICENSE for details.
+
+ARG RUST_IMAGE=rust:alpine3.24@sha256:f87aa870663e2b57ec8c69de82c7eedf7383bee987eef7612c0359635eaadb41
+ARG RUNTIME_IMAGE=duskcue:local
+FROM ${RUST_IMAGE} AS compiler
+WORKDIR /src
+RUN apk add --no-cache build-base clang cmake linux-headers perl pkgconf protobuf-dev jq
+COPY Cargo.toml Cargo.lock ./
+COPY vendor ./vendor
+COPY crates ./crates
+COPY server ./server
+COPY clients/desktop/src-tauri ./clients/desktop/src-tauri
+COPY native/ffmpeg-bootstrap ./native/ffmpeg-bootstrap
+RUN --mount=type=cache,target=/usr/local/cargo/registry \
+    --mount=type=cache,target=/usr/local/cargo/git \
+    --mount=type=cache,target=/src/target \
+    rustc --version && cargo --version \
+    && (cargo test --release --locked -p duskcue -j 2 --features playback-qualification --test live_transport_contract --no-run --message-format=json > /tmp/cargo-artifacts.jsonl \
+        || { jq -r 'select(.reason == "compiler-message") | .message.rendered // empty' /tmp/cargo-artifacts.jsonl >&2; exit 1; }) \
+    && executable="$(jq -ers '[.[] | select(.reason == "compiler-artifact" and .target.name == "live_transport_contract" and .profile.test == true) | .executable | select(. != null)] | unique | select(length == 1) | .[0]' /tmp/cargo-artifacts.jsonl)" \
+    && case "$executable" in /src/target/release/deps/live_transport_contract-*) test -x "$executable" ;; *) exit 1 ;; esac \
+    && cp "$executable" /tmp/live-transport-contract
+
+FROM ${RUNTIME_IMAGE} AS runtime
+ARG SOURCE_SHA256
+ARG RUNTIME_BASE_ID
+LABEL duskcue.qualification.kind="iptv-transport-v1" \
+      duskcue.qualification.source-sha256="${SOURCE_SHA256}" \
+      duskcue.qualification.runtime-base-id="${RUNTIME_BASE_ID}"
+USER root
+COPY --from=compiler /tmp/live-transport-contract /qualification/bin/live-transport-contract
+COPY --from=compiler /tmp/cargo-artifacts.jsonl /qualification/live-transport-cargo.jsonl
+RUN sha256sum -c /usr/local/libexec/duskcue-ffmpeg.sha256 \
+    && chmod 0555 /qualification/bin/live-transport-contract
+ENV HOME=/tmp RUST_TEST_THREADS=1
+USER 65532:65532
+WORKDIR /qualification
+HEALTHCHECK NONE
+ENTRYPOINT ["/qualification/bin/live-transport-contract"]
+CMD ["supervised_mpegts_transport_contract", "--exact", "--include-ignored", "--nocapture"]
