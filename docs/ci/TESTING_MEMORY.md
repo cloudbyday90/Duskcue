@@ -1,5 +1,13 @@
 # Testing memory on Windows
 
+## Bundled Vite editor qualification — October 24, 2026
+
+`node scripts/testing-memory/run.mjs vite-editor-qualify` runs twelve cases across both installed client bundles with the existing unit policy, one test stream and a 128-MiB heap. The modular fixture in `clients/web/tests/fixtures/vite-editor.mjs` supplies inert filesystem, platform and process dependencies to trusted bundled launcher helpers. It starts no editor or shell. Windows path/position normalization, percent/newline refusal, file URLs, WSL argument protection and ordinary controls are checked; an unknown bundle layout fails.
+
+The affected baseline correctly fails six security cases while six compatibility controls pass. Patched Vite 8.1.6 passes all twelve, including encoded file-URL and WSL position variants. Clean installations, type/unit/browser checks and both builds run serially through the existing presets with unchanged admission/reserve limits. All completed without a memory stop or interruption. The first browser run had a generated-module fetch failure; a traced isolated repeat and the full 127-case repeat passed, with three existing caption skips. No test timeout, assertion or retry policy was relaxed. [Development tooling security](../security/DEVELOPMENT_TOOLING_SECURITY.md) owns exact evidence, recommendations, limitations and the source commit.
+
+Hosted Ubuntu web CI installs both dependency trees and runs the same serial Node 24 checks with a 128-MiB heap; the Windows sampler wrapper remains Windows-only. Hosted execution is distinct from local workflow parsing and qualification.
+
 ## Source capability qualification — October 18, 2026
 
 `node scripts/testing-memory/run.mjs playback-source-qualify --native-manifest <fresh manifest.json> --image <immutable local image SHA256>` retains the independent manual-quality fourteen-case format lane, then adds an Auto source-route matrix in both actual clients and genuine H.264 copied-video decoder recovery. The source mode has its own immutable image label and private single-use verification markers; older modes retain their existing meaning. Preparation, browser observations and accepted server route must agree. Actual five-second presentation and independent decoded frame 120 remain required, including correct keyframe-preroll timing for copied video.

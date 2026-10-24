@@ -10,6 +10,18 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 development tooling dependency follow-up (COMPLETE)
+
+**Committed implementation:** `207ac7b9082e6eaa3d136f6b9b15951b0a97bbd0` on `main`; no release or PR merge.
+
+**Authority:** [Development tooling security](docs/security/DEVELOPMENT_TOOLING_SECURITY.md). Authenticated intake resolved the earlier six-alert access gap. The six inputs are three upstream launch-editor advisories repeated across web/desktop Vite 8.1.3 copies. Static triage establishes affected development code, with actual attacker/editor prerequisites unproven; no production editor endpoint was identified.
+
+**Built slice:** both client manifests/locks/installations resolve patched Vite 8.1.6 and its bundled launch-editor 2.14.2. Modular inert-process fixtures check both installed bundles; shared web CI installs both copies and runs the same serial checks. Seven existing Live TV files receive only the user-approved legal headers. PR #5 remains superseded; PostCSS/Nano ID versions are preserved.
+
+**Verification:** twelve focused cases, 533 existing unit cases, zero-error/zero-warning type checks, adapter-node/static desktop builds, formatting and copyright pass. Final full browser repeat passes 127 with three existing caption skips. An earlier generated-module fetch failure and its passing traced repeat remain documented rather than suppressed. All guarded work completed without a memory stop. Rust/Cargo remain 1.99.1; existing strict Clippy limitations remain in the toolchain authority. Web audit retains three low SvelteKit/adapter entries representing two separate advisories; their feature prerequisites and major-upgrade follow-up are recorded without dismissal or forced updates.
+
+**Next:** IPTV milestone 2: qualify supervised HTTP MPEG-TS transport, restricted FFmpeg input, bounded rolling output, readiness and confirmed cleanup. SvelteKit 3 compatibility assessment and existing compiler-lint maintenance remain separate follow-ups. Do not infer live IPTV, owner-proof or guide support from this dependency increment.
+
 ## October 2026 IPTV player contracts (MILESTONE 1 COMPLETE)
 
 **Committed implementation:** `14bab6e8ffefc823fe072b623d46dfbd6ce9a05b` on `main`; no release. Documentation-only descendants preserve that verified source.
@@ -22,7 +34,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **PR review:** random selection from the one open candidate chose PR #5. Its PostCSS/Nano ID updates are superseded by both current client lockfiles; no dependency downgrade or PR merge is applicable.
 
-**Next:** obtain authenticated details and triage the six dependency alerts reported by GitHub on push (two high, four moderate; the follow-up CLI read failed with HTTP 401), then qualify one supervised MPEG-TS transport and bounded live output before the full guide UI. The authority records that access/evidence boundary; the count alone is not a validated finding. The scanner cancellation evaluation below remains a separate workstream. New IPTV resources require their own confirmed cleanup lifecycle.
+**Next:** the authenticated six-alert triage and patched dependency qualification are complete in the tooling follow-up above. Qualify one supervised MPEG-TS transport and bounded live output before the full guide UI. The scanner cancellation evaluation below remains a separate workstream. New IPTV resources require their own confirmed cleanup lifecycle.
 
 ## October 2026 source-specific playback capabilities (COMPLETE)
 

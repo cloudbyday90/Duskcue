@@ -59,6 +59,8 @@ GitHub MCP again returned only [open PR #5](https://github.com/cloudbyday90/Dusk
 
 ## Implementation outcome
 
+Implementation checkpoint: `207ac7b9082e6eaa3d136f6b9b15951b0a97bbd0` on `main`. Documentation descendants record the completed source qualification; no release or PR merge is created.
+
 Both manifests now require `vite: ^8.1.6`; both lockfiles and clean installed trees resolve exactly 8.1.6 with the registry integrity. Vite's required Rolldown minimum moves 1.1.4 to 1.1.5, together with its platform bindings and supporting Oxc/Wasm dependencies. All dependency changes remain in that closure. PostCSS 8.5.30 and Nano ID 3.3.20 are preserved. No Cargo dependency or runtime IPTV code changes.
 
 The small `clients/web/tests/fixtures/vite-editor.mjs` loader executes the installed bundle's launcher helpers with controlled filesystem, OS, path and process substitutes; `tests/unit/vite-editor-security.test.mjs` owns twelve cases across both clients. The `vite-editor-qualify` preset retains ordinary unit-memory policy and a 128-MiB heap. The existing shared web CI job now installs both client trees and runs the same serial check on Node 24. A changed/unrecognized bundled layout fails instead of silently skipping checks. This fixture is not a sandbox for untrusted code.
