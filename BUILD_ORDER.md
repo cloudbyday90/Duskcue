@@ -10,6 +10,18 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 IPTV player contracts (MILESTONE 1 COMPLETE)
+
+**Authority:** [IPTV player and Dispatcharr integration](docs/design/IPTV.md). The user confirmed external Dispatcharr Channel Profile feeds assigned per household; administrator-defined limits/delegation; protected owner management using existing password/passkey proof; strict Kids defaults with explicit channel-scoped exceptions; shared household stream caps with an optional lower Live TV cap; and web/Tauri qualification against proxied HTTP MPEG-TS first.
+
+**Built slice:** official-source research, a concrete implementation sequence and administrator-only configuration validation in a modular five-file `live_tv` domain. The real production route validates and redacts input without DNS, HTTP, persistence or playback. Preserve the existing household/profile model and Kids exit-PIN contract. Owner authentication, saved assignments and runtime IPTV remain subsequent milestones; the domain authority owns their exact status. Code checkpoint identity follows in the documentation checkpoint.
+
+**Verification:** updated local Rust/Cargo 1.99.1 and rustup 1.29.2 retain all prior components/target; format passes; 969 Rust library cases pass with seven existing environment-dependent ignores; the real production-router/disposable PostgreSQL contract passes with zero ignored cases and owned database cleanup. Strict Clippy exits 101 on unchanged modules; an all-target diagnostic pass confirms no introduced-file warning. Exact compiler-specific findings, memory evidence and the existing dependency future-compatibility warning are recorded in the authority and [Rust toolchain maintenance](docs/operations/RUST_TOOLCHAIN.md). No strict-pass or release claim is made.
+
+**PR review:** random selection from the one open candidate chose PR #5. Its PostCSS/Nano ID updates are superseded by both current client lockfiles; no dependency downgrade or PR merge is applicable.
+
+**Next:** qualify one supervised MPEG-TS transport and bounded live output before the full guide UI. The scanner cancellation evaluation below remains a separate workstream. New IPTV resources require their own confirmed cleanup lifecycle.
+
 ## October 2026 source-specific playback capabilities (COMPLETE)
 
 **Committed implementation:** `77918259d4e8ead353d57362e3e21bf6f4986da8` and SSE correction `63cf5f37c036c8e04e8fbd9fc63988e9169c4975` on `main`; no release. Complete final-image gate `8b95a16b-23d9-4861-829c-6f305d21db1d` passed, including the formerly failing idle-SSE navigation. The no-cache rebuild and restored runtime evaluation also passed.

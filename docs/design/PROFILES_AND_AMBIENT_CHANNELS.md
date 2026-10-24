@@ -16,6 +16,8 @@ After the integrator added conditional same-field focus recovery and a profile-s
 
 ## Outcome
 
+The October 24 [IPTV contract](IPTV.md) extends this existing model: the administrator assigns the household's Dispatcharr connection and maximum/delegated permissions; the household owner manages viewing profiles within that envelope. Protected management will require fresh proof of the account's existing password/passkey. This is a planned enforcement improvement over the current standard-profile management gate, not a new profile subsystem. Its credential lifecycle and delegated mutations are not implemented by the initial connection-validation slice. The Kids exit PIN below retains its existing limited purpose.
+
 Duskcue has a Netflix-style household model: one authenticated Duskcue user owns one or more selectable profiles. A profile, rather than the authenticated account, owns viewing history, resume points, favorites, ratings, and TV-surface personalization.
 
 The first implementation establishes the server contract and data model for three distinct experiences:

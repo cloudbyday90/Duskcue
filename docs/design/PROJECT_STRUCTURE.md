@@ -1,5 +1,11 @@
 # Project Structure
 
+## IPTV contract slice — October 24, 2026
+
+`server/src/domains/live_tv/` follows the five-file domain pattern: HTTP translation in `handlers.rs`, bounded URL validation in `service.rs`, typed safe failures in `error.rs`, separate Deserialize/Validate requests and Serialize responses in `types.rs`, and route/body/cache policy in `mod.rs`. Focused parser/HTTP tests and a disposable-PostgreSQL production-router contract cover the boundary. No database Row or migration is introduced because this slice persists nothing. [IPTV.md](IPTV.md) owns the complete design, implementation sequence and evidence; saved connections, imports, authorization policy and live sessions will be separate services rather than additions to a monolithic playback file.
+
+The accompanying user-requested [local Rust SDK update](../operations/RUST_TOOLCHAIN.md) preserves the stable MSVC target/component set. It is not a new repository compiler override or an update of immutable Linux qualification images.
+
 ## Overview
 
 This document defines the monorepo layout for the entire platform — Rust server, SvelteKit web client, Tauri desktop wrapper, and Flutter mobile client. It covers Cargo workspace design, SvelteKit module conventions, and how the components relate.

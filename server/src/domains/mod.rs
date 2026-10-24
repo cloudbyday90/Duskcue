@@ -20,6 +20,7 @@ pub mod backup;
 pub mod collections;
 pub mod downloads;
 pub mod libraries;
+pub mod live_tv;
 pub mod media;
 pub mod migration;
 pub mod notifications;

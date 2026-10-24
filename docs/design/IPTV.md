@@ -1,0 +1,109 @@
+# IPTV player and Dispatcharr integration
+
+## Status and authority
+
+Research and contract decisions recorded October 24, 2026. The first implementation slice validates administrator-supplied connection configuration only. Feed fetching, saved assignments, household-management authentication, guide ingestion and live playback are subsequent milestones; they are not implied by configuration validation.
+
+This document owns IPTV behavior. [Household profiles](PROFILES_AND_AMBIENT_CHANNELS.md) owns the existing account/profile model, [authentication](AUTH.md) owns credentials and capabilities, and [streaming](STREAMING.md) owns shared delivery infrastructure. Follow [BUILD_ORDER.md](../../BUILD_ORDER.md) and the existing [guarded verification policy](../ci/TESTING_MEMORY.md).
+
+## Confirmed product contract
+
+- Duskcue is an IPTV player consuming a separately managed Dispatcharr Channel Profile through its M3U and XMLTV feeds. Dispatcharr owns provider accounts, channel curation, guide mapping and upstream failover.
+- One authenticated Duskcue account owns a household and its existing viewing profiles. The server administrator assigns the household's Dispatcharr connection and defines maximum permissions, limits and delegated controls. A designated household owner manages viewing-profile restrictions within that allowance. A viewing profile never expands household access.
+- Household management requires fresh proof of the account's existing owner-held password/passkey, followed by a bounded server-side management context. A signed-in viewing device or selection of a standard profile alone is insufficient. No additional management PIN is selected. The existing Kids exit PIN retains its current purpose.
+- Kids Live TV starts disabled. Enabled Kids access requires approved channels and an allowed current-programme rating. Missing, unknown or stale rating evidence blocks viewing by default. A trusted-channel exception must be explicit, channel-scoped and permitted by administrator delegation. Programme transitions, guide revisions and revocation must re-evaluate active access.
+- Live TV counts toward the household's overall simultaneous-viewer cap. An optional lower Live TV cap can narrow it. Each viewer counts even if Dispatcharr shares an upstream connection. Refuse additional starts at capacity without evicting established viewers.
+- First playback qualification targets cookie-authenticated web and bearer-authenticated Tauri using Dispatcharr's proxied HTTP MPEG-TS output. Additional upstream transports and native clients require separate qualification.
+- Initial product scope is live viewing, channel browsing, favorites, now/next and a programme guide. DVR, provider catch-up, export endpoints, provider-management APIs and channel aggregation are deferred.
+
+The user confirmed the four remaining contract choices on October 24. Detailed owner proof/enrollment/recovery and delegation mutations belong to their implementation milestone; this increment does not claim to enforce them.
+
+## Official-source research and alternatives
+
+URLs below were discovered through MCP web search and opened October 24, 2026. Findings describe the retrieved official material; they do not establish runtime conformance.
+
+| Topic and official source | Recommendation and benefit | Cost or alternative |
+|---|---|---|
+| [Dispatcharr Channel Profiles and output links](https://dispatcharr.github.io/Dispatcharr-Docs/channels/) | Consume the profile's M3U and matching EPG links. Keep paths opaque and accept reverse-proxy base paths. This reuses the upstream lineup and matching work. | A Dispatcharr management API adapter could expose richer configuration, but would duplicate management and couple releases. It is outside this player increment. |
+| [OWASP authorization](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html) | Deny ungranted actions and evaluate account, profile, delegation and object scope on every operation. Shared authorization services keep checks consistent across browse and media delivery. | More explicit checks and revocation handling are required than hiding controls in the client. |
+| [OWASP authentication](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html) and [passkey security](https://cheatsheetseries.owasp.org/cheatsheets/Passkey_Security_Cheat_Sheet.html) | Reuse account authenticators for management proof. Protect enrollment, removal and recovery as sensitive operations so viewing sessions cannot create their own management factor. | Requires a management-session contract and authentication changes. A separate PIN adds another credential and recovery path. |
+| [OWASP SSRF prevention](https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html) and [reqwest client builder](https://docs.rs/reqwest/latest/reqwest/struct.ClientBuilder.html) | Future networking must validate destinations at connection time, pin approved resolution results, and disable automatic redirects and ambient proxies. Permit explicitly configured LAN Dispatcharr destinations while rejecting metadata and forbidden destinations. Recheck every redirect, retry and nested resource before connection. | URL parsing alone is insufficient. A blanket ban on private addresses would break the intended local deployment. Exact allowed destinations require saved administrator configuration. |
+| [XMLTV DTD](https://github.com/XMLTV/xmltv/blob/master/xmltv.dtd) | Parse guides incrementally with bounded compressed/decompressed input, normalize timestamps, preserve language and guide-channel identifiers, and never fetch external entities or DTDs. | XMLTV permits sparse metadata; missing end times, precision and ratings need explicit unavailable states rather than invented values. |
+| [FFmpeg protocols](https://ffmpeg.org/ffmpeg-protocols.html) | Qualify supervised server fetching into a restricted FFmpeg input path. Retain managed FFmpeg network isolation and bounded live output. | The current launcher has null stdin and local-file assumptions; pipe input and rolling output require real implementation and process-lifecycle proof. |
+| [hls.js live sync position](https://hlsjs.video-dev.org/api-docs/hls.js.hls.livesyncposition) | Give live playback a dedicated live-edge/timeline policy while reusing source attachment, authorization and cleanup services. | On-demand zero-start, completion, resume and autoplay semantics cannot be applied unchanged. |
+| [WCAG 2.2](https://www.w3.org/TR/wcag/) and [WAI-ARIA grid pattern](https://www.w3.org/WAI/ARIA/apg/patterns/grid/) | Use native labeled forms, accessible authentication, visible/unobscured focus, keyboard operation and status announcements. Start channel browsing with ordinary semantic controls. Use an interactive guide grid only with its complete keyboard/focus model and an accessible list alternative. | A virtualized grid adds focus, row/column metadata and assistive-technology verification work. Applying ARIA roles alone provides no conformance evidence. |
+
+### Recommended stack
+
+Retain Rust/Axum, PostgreSQL, the existing account/profile/authentication model, `url`, `reqwest`, `quick-xml`, `flate2`, managed FFmpeg, Svelte/ES modules, hls.js and shared Tauri/WebView2. Keep HTTP translation, connection validation, destination authorization, imports, guide queries, access policy, admission and live-session lifecycle in focused services. No dependency is added for this contract slice.
+
+## First code slice: connection configuration validation
+
+`POST /api/v1/live-tv/connections/validate` uses `Require<CanManageUsers>` before processing the JSON body. This is an administrator configuration operation, not a household-owner management grant. Existing capability and active-Kids checks remain authoritative.
+
+Request:
+
+```json
+{
+  "playlist_url": "http://dispatcharr.internal:9191/output/m3u",
+  "guide_url": "http://dispatcharr.internal:9191/output/epg"
+}
+```
+
+The request rejects unknown fields, missing/wrongly typed fields, unsupported media types and oversized bodies. Each URL is limited to 4,096 UTF-8 bytes; the JSON body limit is 16 KiB. Accept absolute HTTP(S) URLs with a host, including local hostnames, IPv4/IPv6, opaque paths and query parameters. Reject raw whitespace/control characters, backslashes, URL userinfo, fragments and invalid syntax. Do not infer feed type from a filename extension or parse Dispatcharr profile IDs from paths. The two feeds may have separate origins.
+
+Success returns only fixed validation scope, per-feed transport and explicit `network_checked: false` / `saved: false`. It returns no URL, hostname, path, query, token or credential. Secret-bearing request types do not implement `Debug` or `Serialize`. Semantic errors use the existing `422 VALID_001` field-error contract; JSON/body errors use fixed safe messages with appropriate 400/413/415/422 statuses. Parser rejection text and submitted values never enter response details or application-error logging. Responses use `Cache-Control: no-store`.
+
+This operation performs no DNS resolution, upstream HTTP, credential check, feed parsing, profile validation, persistence or session allocation. Syntax acceptance is not destination authorization or evidence that a connection will work. Future fetchers must not use this response as a networking permit.
+
+There is no database `Row` DTO because this slice persists nothing. `ConnectionValidationRequest` is Deserialize/Validate only and its response is Serialize only. The domain follows the five-file pattern with focused supporting modules as needed.
+
+## Implementation sequence and acceptance
+
+| Milestone | Deliverable | Required evidence |
+|---|---|---|
+| 1. Research and contracts | This authority, confirmed policy decisions, source-configuration validation and current PR applicability review | URL/body/redaction tests; real route authorization checks; compilation and lint evidence; accurate limitations |
+| 2. Transport qualification | One supervised Dispatcharr proxied MPEG-TS path to bounded authenticated live output | Actual decoded video/audio; cancellation during connect/start; child/readers joined; bounded cache and confirmed resource release |
+| 3. Household authority and assignment | Protected owner proof, sensitive credential lifecycle, admin-defined delegation, saved encrypted source configuration and scoped profile policy | Standard-profile selection and direct API calls cannot confer management; enrollment/reset cannot bypass proof; cross-household access denied; revocation races covered |
+| 4. Channels and guide | Stable channel identities distinct from guide-match keys; M3U/XMLTV imports, last-good snapshots and owned manual/scheduled refresh | Credential rotation preserves identity; duplicate guide IDs do not merge channels; malformed/compressed/timezone fixtures; failed refresh does not erase a valid snapshot |
+| 5. Production live lifecycle | Dedicated live sessions and common account stream reservations; rolling output, policy checks and cleanup | Concurrent VOD/ambient/live admission respects caps; failures/channel changes do not leak reservations; programme changes enforce Kids policy; Stop/disconnect/expiry/shutdown retire owned resources |
+| 6. Client experience | Web/Tauri channel list, groups, favorites, now/next, guide, live edge and channel switching | Actual cookie/bearer journeys; keyboard/focus/status/zoom checks; profile/account switch clears old data; no movie resume/completion/Trakt side effects |
+| 7. Complete qualification | Controlled upstream fixtures plus real Dispatcharr and initial-client integration | Long-running bounded storage, outages, stale guides, revocation and physical cleanup; recorded source/image identities and regression results |
+
+The existing `max_streams` resolver currently exposes configuration without a shared playback-admission reservation. Shared admission is new work; a transcode semaphore is not a household viewer limit. Existing movie `play_sessions` require catalog media/library foreign keys, so live sessions must not be represented by fabricated movie records.
+
+The separately planned scanner/probe cancellation refactor remains separate. New IPTV operations must retain and join their own connections, tasks, readers and workers. Scheduler adapters must not report cancellation complete merely because a caller future was dropped.
+
+## Open implementation details for subsequent milestones
+
+The major policy choices above are confirmed. The transport milestone must qualify first-playable readiness, latency, pause/buffer behavior, rolling retention and termination deadlines against the actual output. The owner-authority milestone must define proof challenge binding, expiry/revocation, protected authenticator enrollment/recovery and delegation revisions before enabling management. Exact endpoint/schema changes are documented with those milestones rather than represented as already implemented here.
+
+## Random open PR applicability
+
+GitHub MCP search with `query: is:open`, scoped to `cloudbyday90/Duskcue`, returned one open PR on October 24: [PR #5](https://github.com/cloudbyday90/Duskcue/pull/5), immutable head `c018d77b7f09543e5960a571dc43e2f061cedf0a`. Random selection from the one-entry candidate set selected #5. The earlier empty-query search returned no entries; it was not used as proof that no PR existed.
+
+The PR requests PostCSS 8.5.16 to 8.5.23 and Nano ID 3.3.15 to 3.3.16 in both client lockfiles. Current main already pins PostCSS 8.5.30 and Nano ID 3.3.20 in both. The requested changes are superseded and are not applicable as a local patch. Do not downgrade current dependencies or merge/close/comment on the PR. [Upstream PostCSS releases](https://github.com/postcss/postcss/releases) and its [changelog](https://github.com/postcss/postcss/blob/main/CHANGELOG.md) were consulted; release material does not replace the current-lockfile comparison.
+
+## Verification and outcome
+
+The implementation registers the five-file `live_tv` domain in the production router. Handlers return `AppError`; generic safe 413/415 variants complement existing validation errors. A scoped response mapper marks this route's JSON error bodies as `application/problem+json`, including extractor/authorization errors generated within the route. Other domains retain their existing response behavior.
+
+Local verification uses the user-requested updated Rust/Cargo 1.99.1 SDK; [toolchain maintenance](../operations/RUST_TOOLCHAIN.md) records the installation and limits.
+
+| Check | Outcome and evidence |
+|---|---|
+| `cargo fmt --all --check` | Passed with the updated formatter. |
+| `node scripts/testing-memory/run.mjs cargo-test --lib -- --quiet` | 969 passed, seven existing environment-dependent cases ignored, zero failed. Includes all eight new Live TV service/body tests. Evidence: `.cache/testing-memory/2026-10-24T12-59-07-493Z-6d7e416f-1d67-45e8-97a9-881a44a0b006.jsonl`. |
+| `node scripts/testing-memory/run.mjs cargo-test --test live_tv_connection_validation -- --ignored --nocapture` | One real production-router/PostgreSQL 18 contract passed with zero ignored cases. Verified cookie/bearer administrator success, member refusal before body parsing, Kids refusal even on an owner account, explicit capability grant/revocation, expired-session refusal, semantic/JSON/body limits, response redaction and no play-session allocation. Evidence: `.cache/testing-memory/2026-10-24T13-10-43-408Z-6b56e464-b148-40ab-9c49-b761e2a1d551.jsonl`. |
+| Disposable PostgreSQL lifecycle | Isolated database with 256-MiB memory/swap ceilings, one CPU, 16-MiB shared buffers, 16 connections and loopback-only ephemeral port. Container `de392604a4467ab448cb5f14f204e3a195b0b6a77d976c11f560c36b988354cb` was label-verified and removed; subsequent label-filtered inventory was empty. No production database was used. |
+| Strict Clippy | `node scripts/testing-memory/run.mjs cargo-clippy` exits 101 on unchanged code under Rust 1.99.1: Cargo reports 28 library diagnostics and 32 library-test diagnostics (28 duplicates). No diagnostic points to a changed/new file. Evidence: `.cache/testing-memory/2026-10-24T13-15-48-586Z-faa3ec13-3faa-4ace-9873-f01cf18f24d6.jsonl`; full log `.cache/iptv-contract/clippy.log`. This is not a strict pass. |
+| Complete lint diagnostic pass | `node scripts/testing-memory/run.mjs cargo-clippy -W warnings` completes all targets, exposing two additional pre-existing casts in `tonight_browse_navigation.rs`; no changed/new file has a warning. This command changes warning severity only for diagnostic completion and is not strict verification. No source allowance or lint-policy change was added. Evidence: `.cache/testing-memory/2026-10-24T13-24-17-487Z-affed56f-094d-4de1-90c4-cf30f7f345dd.jsonl`; log/inventory `.cache/iptv-contract/clippy-diagnostic.log` / `clippy-inventory.json`. |
+| PR #5 comparison | Both lockfiles and both installed dependency trees contain PostCSS 8.5.30 / Nano ID 3.3.20. Both `npm --prefix clients/{web,desktop} ls postcss nanoid --all` invocations exited zero. No PR patch, downgrade or merge was applicable. |
+
+Neither recorded application-test run was stopped for memory. The first compile attempt exposed a `HashMap::contains_key` borrow mismatch in the new validator; it was corrected before passing verification. Review also corrected an unused integration-test import and restored the required `VALID_001.errors` array for JSON shape failures. The complete updated-compiler runs above are the final source evidence, not the earlier eight-case runs under Rust 1.96.0.
+
+Rust/Cargo reports a future-compatibility warning in the existing `proc-macro-error2 2.0.1` dependency: private `proc_macro` re-export, E0365. It does not fail current builds and is recorded for dependency follow-up; no new dependency, vendored patch or lint suppression is introduced here.
+
+Milestone 1 research, confirmed contracts and configuration-validation implementation are complete with the explicit strict-lint limitation above. The next implementation item is milestone 2, supervised MPEG-TS transport qualification. Source checkpoint identity is recorded in BUILD_ORDER.md and PROJECT.md after committing.
+
+This completes no saved assignment, owner step-up, feed/EPG import, real Dispatcharr connection, live stream, native-client qualification or UI/accessibility execution. Those remain the explicit subsequent milestones. No release, PR merge or deployment is part of this work.

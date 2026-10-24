@@ -62,6 +62,12 @@ pub enum AppError {
     #[error("bad request: {0}")]
     BadRequest(String),
 
+    #[error("request body exceeds the allowed limit")]
+    PayloadTooLarge,
+
+    #[error("unsupported request media type")]
+    UnsupportedMediaType,
+
     #[error("conflict: {0}")]
     Conflict(String),
 
@@ -252,6 +258,16 @@ impl IntoResponse for AppError {
                 StatusCode::BAD_REQUEST,
                 "BAD_REQUEST",
                 Cow::Borrowed(msg.as_str()),
+            ),
+            AppError::PayloadTooLarge => (
+                StatusCode::PAYLOAD_TOO_LARGE,
+                "PAYLOAD_TOO_LARGE",
+                Cow::Borrowed("Request body exceeds the allowed limit"),
+            ),
+            AppError::UnsupportedMediaType => (
+                StatusCode::UNSUPPORTED_MEDIA_TYPE,
+                "UNSUPPORTED_MEDIA_TYPE",
+                Cow::Borrowed("This endpoint requires application/json"),
             ),
             AppError::Conflict(msg) => (
                 StatusCode::CONFLICT,

@@ -321,6 +321,8 @@ Optional second factor for password-based authentication.
 
 ## Capability-Based Access Control
 
+The October 24 [IPTV contract](IPTV.md) uses `can_manage_users` for administrator-only connection-configuration validation. Planned household-owner management uses fresh existing password/passkey proof and administrator-defined delegation; selecting a standard profile or obtaining a Kids exit unlock does not establish the proposed management context. Proof, authenticator enrollment/recovery and revocation must be protected together before that later milestone is enabled.
+
 ### Roles (Default Capability Bundles)
 
 | Role | Description | Default Capabilities |

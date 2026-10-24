@@ -170,6 +170,7 @@ pub fn build_router(state: AppState) -> Router<AppState> {
         .merge(crate::domains::auth::router(state.clone()))
         .merge(crate::domains::users::router(state.clone()))
         .merge(crate::domains::libraries::router(state.clone()))
+        .merge(crate::domains::live_tv::router(state.clone()))
         .merge(crate::domains::media::router(state.clone()))
         .merge(crate::domains::notifications::router(state.clone()))
         .merge(crate::domains::system::router(state.clone()))

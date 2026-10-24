@@ -1,5 +1,9 @@
 # Client Contracts
 
+## IPTV configuration validation — October 24, 2026
+
+The first [IPTV contract slice](../design/IPTV.md) adds administrator-only `POST /api/v1/live-tv/connections/validate`. It accepts only `playlist_url` and `guide_url`, returns transport metadata with `validation_scope: configuration_only`, `network_checked: false` and `saved: false`, and exposes no submitted URL components. Request/body failures use safe Problem Details and no-store responses. This is a configuration helper, not a connection test, saved household assignment or live-player capability. Later web/Tauri playback qualification and owner-management proof remain separate milestones.
+
 ## Fire TV accepted catalog contract
 
 Phase 18 adds private/no-store `GET`/`PUT /api/v1/tv/fire/catalog/{platform_content_id}` for capability-gated admin registry reads/writes and `GET /api/v1/tv/fire/playback/{session_id}/authorization` for the authenticated active profile. Admin updates require the current mapping revision and preserve accepted identity permanently. Playback reads revalidate ownership, profile policy, current media access/availability, publication settings, partner configuration, rights, and mapping state. An ineligible response returns no catalog ID, profile key, revision, or expiry. An eligible response grants at most a 60-second lease; it does not assert device customer consent.

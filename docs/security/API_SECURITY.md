@@ -1,5 +1,9 @@
 # API Security Domain
 
+## IPTV connection validation — October 24, 2026
+
+The initial [IPTV slice](../design/IPTV.md) exposes a `can_manage_users`-guarded POST for configuration syntax only. It applies the existing active-Kids refusal before body processing, a 16-KiB body limit, 4,096-byte URL limits, strict request fields, fixed safe rejection messages and no-store responses. Success returns transport/scope only; raw URLs and serde/parser errors do not enter responses or application-error logging. The endpoint performs no DNS/HTTP, persistence or stream allocation and does not grant future egress permission. Later fetching must enforce administrator-configured destinations at connection time, including redirects, retries and nested resources; LAN deployments remain supported. Owner step-up/delegation is a separate planned milestone and is not established by this validator.
+
 ## Overview
 
 This document is the authoritative design for API-layer security. It covers: input validation, object-level authorization (BOLA prevention), SSRF prevention, response DTO separation, request payload limits, admin endpoint isolation, outbound API response validation, dependency auditing, secret scanning, and error response sanitization.

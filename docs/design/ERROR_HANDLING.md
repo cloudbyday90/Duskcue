@@ -710,6 +710,8 @@ Valid values: `development`, `staging`, `production`. Default: `production`.
 
 ## Implementation Rules
 
+The October 24 [IPTV validation slice](IPTV.md) adds generic `PayloadTooLarge` and `UnsupportedMediaType` AppError variants for safe 413/415 JSON-extractor translation. Its domain error enum converts semantic failures into existing `VALID_001` field errors, and malformed/unknown/wrongly typed JSON is represented using fixed messages with a body-level error entry when applicable. No raw serde rejection or supplied URL is logged. This route marks JSON errors as `application/problem+json` through a scoped response mapper; other domains retain their existing behavior.
+
 1. **Domain error enums** live in each module's `error.rs` file — close to the code that produces them
 2. **`AppError`** is the only error type that crosses the HTTP boundary — all Axum handlers return `Result<impl IntoResponse, AppError>`
 3. **Internal errors** (anyhow) are wrapped in `AppError::Internal` — clients see a generic 500 with a `trace_id`; the full error chain is logged server-side via `tracing`
