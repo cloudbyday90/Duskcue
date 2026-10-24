@@ -12,7 +12,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## October 2026 IPTV controlled transport (MILESTONE 2 SCOPED QUALIFICATION COMPLETE)
 
-**Implementation checkpoint:** recorded in the post-implementation documentation checkpoint on `main`; no release, deployment or PR merge.
+**Committed implementation:** `85e9549562e7b90b7099bd691e348a6a84a11f13` on `main`; no release, deployment or PR merge. Documentation-only descendants preserve the qualified source snapshot.
 
 **Authority:** [IPTV transport qualification](docs/design/IPTV_TRANSPORT.md). The user confirmed literal-IP HTTP MPEG-TS, managed FFmpeg decoding, real cookie/bearer output authorization, an approximately thirty-second rolling buffer, and terminal EOF/stall cleanup without automatic reconnect. Production enablement, hostname support and real Dispatcharr/client journeys remain subsequent work.
 

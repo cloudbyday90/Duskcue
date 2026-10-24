@@ -4,6 +4,8 @@
 
 This document owns the first supervised transport slice within [IPTV milestone 2](IPTV.md). The user confirmed the scope, failure/rolling-buffer contract and legal-header exception on October 24 under the repository [grill-me workflow](../../.agents/skills/grill-me/SKILL.md). Existing household, owner-proof, Kids, cap and client decisions remain authoritative. The controlled Linux transport qualification is complete behind the existing default-off `playback-qualification` feature. Production Live TV remains a later milestone.
 
+Committed implementation: `85e9549562e7b90b7099bd691e348a6a84a11f13` on `main`. Documentation-only descendants preserve the exact qualified source snapshot. No release, deployment or PR merge is part of this checkpoint.
+
 Qualify a controlled HTTP MPEG-TS source, restricted managed FFmpeg pipe input, rolling fMP4 HLS, production cookie/bearer authentication in a qualification-only router, decoded video/audio and confirmed resource release. Do not enable a product Live TV start route or invent catalog/play-session records. Real Dispatcharr and complete web/Tauri journeys remain later evidence; this slice targets their agreed HTTP MPEG-TS contract.
 
 ## Official research — October 24, 2026
