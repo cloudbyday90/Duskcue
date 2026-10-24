@@ -12,9 +12,11 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## October 2026 IPTV player contracts (MILESTONE 1 COMPLETE)
 
+**Committed implementation:** `14bab6e8ffefc823fe072b623d46dfbd6ce9a05b` on `main`; no release. Documentation-only descendants preserve that verified source.
+
 **Authority:** [IPTV player and Dispatcharr integration](docs/design/IPTV.md). The user confirmed external Dispatcharr Channel Profile feeds assigned per household; administrator-defined limits/delegation; protected owner management using existing password/passkey proof; strict Kids defaults with explicit channel-scoped exceptions; shared household stream caps with an optional lower Live TV cap; and web/Tauri qualification against proxied HTTP MPEG-TS first.
 
-**Built slice:** official-source research, a concrete implementation sequence and administrator-only configuration validation in a modular five-file `live_tv` domain. The real production route validates and redacts input without DNS, HTTP, persistence or playback. Preserve the existing household/profile model and Kids exit-PIN contract. Owner authentication, saved assignments and runtime IPTV remain subsequent milestones; the domain authority owns their exact status. Code checkpoint identity follows in the documentation checkpoint.
+**Built slice:** official-source research, a concrete implementation sequence and administrator-only configuration validation in a modular five-file `live_tv` domain. The real production route validates and redacts input without DNS, HTTP, persistence or playback. Preserve the existing household/profile model and Kids exit-PIN contract. Owner authentication, saved assignments and runtime IPTV remain subsequent milestones; the domain authority owns their exact status.
 
 **Verification:** updated local Rust/Cargo 1.99.1 and rustup 1.29.2 retain all prior components/target; format passes; 969 Rust library cases pass with seven existing environment-dependent ignores; the real production-router/disposable PostgreSQL contract passes with zero ignored cases and owned database cleanup. Strict Clippy exits 101 on unchanged modules; an all-target diagnostic pass confirms no introduced-file warning. Exact compiler-specific findings, memory evidence and the existing dependency future-compatibility warning are recorded in the authority and [Rust toolchain maintenance](docs/operations/RUST_TOOLCHAIN.md). No strict-pass or release claim is made.
 

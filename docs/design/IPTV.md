@@ -104,6 +104,6 @@ Neither recorded application-test run was stopped for memory. The first compile 
 
 Rust/Cargo reports a future-compatibility warning in the existing `proc-macro-error2 2.0.1` dependency: private `proc_macro` re-export, E0365. It does not fail current builds and is recorded for dependency follow-up; no new dependency, vendored patch or lint suppression is introduced here.
 
-Milestone 1 research, confirmed contracts and configuration-validation implementation are complete with the explicit strict-lint limitation above. The next implementation item is milestone 2, supervised MPEG-TS transport qualification. Source checkpoint identity is recorded in BUILD_ORDER.md and PROJECT.md after committing.
+Milestone 1 research, confirmed contracts and configuration-validation implementation are committed as `14bab6e8ffefc823fe072b623d46dfbd6ce9a05b`, with the explicit strict-lint limitation above. Documentation-only descendants preserve that verified source. The next implementation item is milestone 2, supervised MPEG-TS transport qualification. BUILD_ORDER.md and PROJECT.md reference this checkpoint.
 
 This completes no saved assignment, owner step-up, feed/EPG import, real Dispatcharr connection, live stream, native-client qualification or UI/accessibility execution. Those remain the explicit subsequent milestones. No release, PR merge or deployment is part of this work.
