@@ -8,6 +8,8 @@ The intended next capability is a retained application owner for manual administ
 
 [Owner security](../security/HOUSEHOLD_OWNER_SECURITY.md), [assignment/delegation](IPTV_ASSIGNMENT.md), [destination authority](../security/IPTV_DESTINATION_AUTHORITY.md), [API conventions](API_CONVENTIONS.md), [API security](../security/API_SECURITY.md) and [memory/lifecycle guidance](MEMORY.md) retain their existing boundaries. This document owns the manual-refresh/root integration contract and its eventual execution outcomes.
 
+Verified implementation: `3b060e2a76ea5030ec2aa8cb874390049a6faafd` on `main`. Documentation-only successors preserve this qualified source. All changes remain on main without a release, deployment or PR merge.
+
 ## Confirmed product choices
 
 - Starting refresh requires current CanManageUsers permission and fresh proof on that administrator's own account. Metadata-only reads require current permission without another fresh proof.
