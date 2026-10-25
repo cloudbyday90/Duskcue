@@ -1,5 +1,12 @@
 # Real-Time Push
 
+## Root shutdown follow-up — October 25, 2026
+
+[Root-owned SSE lifecycle](SSE_LIFECYCLE.md) records current-source research, official standards, alternatives and a proposed contract. The existing idle-disconnect fix does not join forwarders at application shutdown or cancel blocked sends/queued output. The qualified HTTP/import root can therefore time out on a connected stream. Two behavior choices and final shared understanding remain pending before implementation. The unchanged focused SSE suite passes five cases; no new shutdown behavior is claimed.
+
+WHATWG HTML section 9.2 is the generic EventSource/wire authority. RFC 8895 defines an ALTO application using SSE and does not define Duskcue's shutdown/control messages. The source list and transport description below now distinguish them. Existing auth, limits, replay, client recovery and event taxonomy remain unchanged by this research checkpoint.
+
+
 ## Overview
 
 This document is the authoritative design for how the Duskcue server pushes events to connected clients (web browser, Smart TV, Tauri desktop, Flutter mobile) in real time. The goal is to deliver state changes — transcode progress, scan progress, notifications, admin session kicks, remote-control commands — without requiring clients to poll REST endpoints.
@@ -26,7 +33,7 @@ The decision documented here: **adopt Server-Sent Events (SSE) as Duskcue's sole
 
 ## Decision — SSE Over WebSocket
 
-**Duskcue adopts Server-Sent Events (SSE) — RFC 8895 / HTML5 `EventSource` — as the only real-time push transport.**
+**Duskcue adopts Server-Sent Events (SSE), defined by WHATWG HTML section 9.2 and its `EventSource` API, as the only real-time push transport.**
 
 ### Why SSE Is the Right Fit
 
@@ -351,7 +358,7 @@ The first concrete consumer of SSE is **storyboard generation progress** (Phase 
 
 ## Research Sources
 
-- **[RFC 8895](https://www.rfc-editor.org/rfc/rfc8895.html)** — Server-Sent Events (the wire format spec; technically the WHATWG HTML spec, but referenced as RFC 8895 in some places)
+- **[RFC 8895](https://www.rfc-editor.org/info/rfc8895/)** — ALTO incremental updates using SSE; an application-specific protocol, not the generic SSE wire specification
 - **[WHATWG HTML §9.2 Server-sent events](https://html.spec.whatwg.org/multipage/server-sent-events.html)** — The authoritative spec for `EventSource` and the `text/event-stream` format
 - **[Mark Nottingham: Server-Sent Events, WebSockets, and HTTP](https://mnot.net/blog/2022/websockets)** — HTTP WG chair's analysis arguing SSE is the right pub/sub mechanism for the web, especially over HTTP/2
 - **[MDN: Using Server-Sent Events](https://developer.mozilla.org/en-US/docs/Web/API/Server-sent_events/Using_server-sent_events)** — Reference for `EventSource` API, reconnection, `Last-Event-ID`

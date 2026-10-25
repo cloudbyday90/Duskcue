@@ -1,5 +1,10 @@
 # Memory Management
 
+## SSE root ownership research — October 25, 2026
+
+[Lifecycle research](SSE_LIFECYCLE.md) identifies untracked forwarders, full-channel sends and queued output as separate shutdown lifetimes. The proposed per-AppState owner must close admission atomically with task registration, cancel producers/output and retain completion under the existing shared thirty-second HTTP/root/import drain. No extra sequential budget, global singleton, pool/key ownership transfer or dependency upgrade is proposed. Transport backpressure can still require the retained nonzero deadline path; ending a producer does not prove remote EOF delivery. Behavior choices and shared understanding remain pending; this checkpoint changes no runtime source.
+
+
 ## Root-owned IPTV refresh and HTTP draining — October 25, 2026
 
 [Refresh authority](IPTV_REFRESH.md) owns the current lifecycle contract. `services/runtime/` retains the actual Axum graceful-server handle and a continuing signal listener. `live_tv/refresh/` owns one import lease across atomic admission, accepted execution, blocking parsing, monitoring, publication and database cleanup. Close admission explicitly; TaskTracker closure alone is insufficient. Request loss cancels only uncommitted admission. Accepted work outlives the request, while explicit actor/source/operator revocation still cancels it.
@@ -323,7 +328,7 @@ FFmpeg CPU-specific settings (threading, priority, affinity) are documented in [
 
 ### Graceful Shutdown
 
-**Target model versus current source, October 25, 2026:** the diagram below is not a qualification claim for current main. The [manual-refresh lifecycle review](IPTV_REFRESH.md) found that main selects/drops `axum::serve` on cancellation, does not register the import owner, and does not establish the continuing second-signal/internal-channel behavior shown below. Root tracker completion alone does not join separately owned imports or prohibit new task admission. Concrete root/HTTP/import drain and failure behavior must be reviewed and qualified before manual refresh is enabled.
+**Qualification boundary, October 25, 2026:** [manual refresh](IPTV_REFRESH.md) qualifies retained HTTP/import root draining and continuing signals at `3b060e2`. This does not qualify every media worker or nested scheduler task. [SSE lifecycle research](SSE_LIFECYCLE.md) records the remaining connected-stream ownership gap; no new SSE runtime behavior is claimed by that research checkpoint.
 
 ```rust
 let shutdown = GracefulShutdown::builder()
