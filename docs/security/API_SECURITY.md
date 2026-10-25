@@ -1,5 +1,9 @@
 # API Security Domain
 
+## Catalog authority contract — October 25, 2026
+
+The [catalog contract](../design/IPTV_CATALOG.md), pending complete confirmation, uses current standard-profile viewing authority without owner-management proof. It preserves the actual capability resolver rather than management-only admin defaults, validates both saved approvals without networking, authenticates each returned row and omits structured upstream references. A server-managed session profile-context revision prevents cursor revival after switching away and back. All application-route results stay no-store; bounded request-owned work and fixed errors avoid raw data/secret diagnostics. No catalog security result is claimed before implementation and qualification.
+
 ## SSE lifecycle and privacy — October 25, 2026
 
 [Lifecycle authority](../design/SSE_LIFECYCLE.md) records the confirmed transport contract and qualification. Authentication still precedes SSE admission and establishes the existing per-user stream context; no new management proof or broader active-session policy is introduced. Closing/failure gates cannot register new retained work after root closure. Normal disconnect/cancellation releases connection guards, while unexpected producer exit or a poisoned gate makes failure sticky and prevents successful cleanup certification.

@@ -1,5 +1,9 @@
 # Memory Management
 
+## Catalog request ownership contract — October 25, 2026
+
+The [catalog contract](IPTV_CATALOG.md) awaits complete confirmation. It proposes four nonqueued materializations per AppState, bounded page/ciphertext/plaintext/response sizes and a three-second work budget plus at most two seconds for normal release. No detached catalog task or new background owner is added. A default-discard pooled lease is installed before BEGIN; normal reads acknowledge rollback before clean reuse or returning data. Dropped/uncertain leases use close_on_drop with retained SQLx pool ownership. Source inspection identifies unacknowledged BEGIN as a specific cancellation qualification case rather than relying on ordinary transaction Drop. Existing awaited pool closure joins fallback close work, potentially after HTTP drain. This does not provide individual cleanup-error reporting or remote PostgreSQL termination acknowledgment. Root budgets remain one shared thirty-second drain and up to sixty seconds of pool closure. These are design/qualification requirements, not new runtime results.
+
 ## SSE root ownership implementation — October 25, 2026
 
 The [confirmed SSE contract](SSE_LIFECYCLE.md) is implemented and locally qualified. Each AppState shares a lifecycle owner with a synchronized registration cutoff, tracked producer/destructor lifetime and sticky failure. Producer preparation and readiness occur outside the admission lock. A cancellation-aware response adapter drops queued output and remains ended; client drop cancels only its producer. The root closes SSE before HTTP drain and joins its completion alongside HTTP/root/import work under the existing thirty-second budget. The pool remains dependent on successful joins, with up to sixty additional seconds for closure.

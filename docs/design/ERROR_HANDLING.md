@@ -1,5 +1,9 @@
 # Error Handling Design
 
+## Catalog error contract — October 25, 2026
+
+The [catalog contract](IPTV_CATALOG.md) awaits complete confirmation. Its fixed proposed mapping is IPTV_CATALOG_001 malformed input (400), _002 current viewing authority absent (403), _003 unavailable entry in the authorized current snapshot (404), _004 changed snapshot/profile/paging context (409), and _005 unavailable data/crypto/storage/deadline/release or busy/closed admission (503, Retry-After 5). Existing authentication and outer rate-limit statuses remain. No raw cursor/import/SQL/crypto detail is substituted for the fixed message. These mappings are not implemented yet.
+
 ## SSE unavailable classification — October 25, 2026
 
 `AppError::EventStream` maps the fixed lifecycle failure to SSE_UNAVAILABLE (503) with Retry-After 5. Exact-route no-store/problem media type is applied without collecting the body, including errors emitted outside the handler. Open-service per-user limits retain SSE_LIMIT_REACHED (429); auth refusals remain unchanged. Malformed query errors use fixed safe text. An unexpected task exit or poisoned gate is retained rather than reset by another request; root cleanup failure still takes the executable's nonzero path. [SSE lifecycle](SSE_LIFECYCLE.md) owns the accepted contract, test results and client retry differences.

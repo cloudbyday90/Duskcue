@@ -1,5 +1,9 @@
 # Testing memory on Windows
 
+## Catalog qualification contract — October 25, 2026
+
+The [catalog contract](../design/IPTV_CATALOG.md) awaits complete confirmation and owns the thirteen-case import baseline receipt. Planned qualification uses real cookie/bearer routes and PostgreSQL for current authority, profile round trips, publication/revocation, row/cursor integrity, bounded sparse guide evidence, lost/delayed BEGIN acknowledgment and default-discard cancellation/pool recovery. Representative 250,000-entry single-guide history/overlap/tie/null query plans must be recorded under unchanged fixture CPU/PID/memory and database/request deadlines. Run heavy checks serially through the existing resource guard; do not relax reserves/jobs/threads or production limits to obtain a pass. No new catalog runtime evidence is claimed.
+
 ## Root-owned SSE qualification — October 25, 2026
 
 [SSE lifecycle](../design/SSE_LIFECYCLE.md) owns the confirmed contract and exact qualification receipts for verified source `7c1c23f` on main. Focused library tests use the existing cargo-test preset with the qualification feature; owned real TCP/PostgreSQL routes use `--test sse_lifecycle -- --ignored --nocapture`. Existing `iptv-refresh` retains actual executable/accepted-import regression coverage, now with connected-stream success plus a separate blocked production request for second-signal qualification. An owned finite test router preserves the actual thirty-second HTTP failure case, and the sixty-second pool failure case remains. No production test route, resolver/trust bypass or new dependency is introduced.

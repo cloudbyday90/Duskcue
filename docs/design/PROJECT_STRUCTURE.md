@@ -1,5 +1,9 @@
 # Project Structure
 
+## Catalog implementation contract — October 25, 2026
+
+The [catalog contract](IPTV_CATALOG.md), pending shared-understanding confirmation, follows the five-file HTTP pattern under focused live_tv/catalog modules and a narrow typed imports reader. Separate authority, cursor, admission, limits and representation helpers keep handlers small. Reuse contextual encryption and the actual auth resolver without widening raw import models or role defaults. The planned migration adds session profile-context revision and only query-plan-justified paging indexes. Both AppState constructors share infallible admission, and root closes admission before HTTP drain. No dependency/Cargo.lock, client UI or catalog source change is claimed at this design checkpoint.
+
 ## Modular SSE lifecycle — October 25, 2026
 
 [SSE lifecycle](SSE_LIFECYCLE.md) owns `services/event_streams/`: small lifecycle/admission/completion, forwarding, output and wire modules with focused adversarial tests. `events_handler.rs` retains HTTP extraction and response construction. Both AppState constructors create one shared owner. `middleware/private_responses.rs` factors the existing household/Live TV response policy and adds exact-path SSE privacy without buffering; household media-type mapping delegates to the same helper.

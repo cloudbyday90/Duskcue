@@ -1,5 +1,9 @@
 # API Conventions
 
+## Profile-scoped catalog contract — October 25, 2026
+
+[Catalog reads](IPTV_CATALOG.md) records the complete contract awaiting shared-understanding confirmation. The proposed three GET routes are selected-profile scoped and no-store, with bounded typed pages, opaque authenticated cursors, UUIDv7 snapshot-entry IDs, windowed programme evidence and a separate unpositionable view. Current authority precedes stale-context refusal; missing matching-generation data is unavailable, and valid empty lineups remain successful empty pages. This is a design checkpoint, not routed implementation or a conditional-read/cache feature.
+
 ## SSE termination and private responses — October 25, 2026
 
 [SSE lifecycle](SSE_LIFECYCLE.md) preserves GET `/api/v1/events`, successful status 200 and existing framing. Established streams end normally on root stop. Valid authenticated late admission uses fixed `SSE_UNAVAILABLE` 503 and Retry-After 5; authentication and open-service connection-limit refusals retain their existing statuses. No shutdown event or HTTP 204 is added. Native EventSource and bearer-fetch HTTP-error retry behavior remain distinct.

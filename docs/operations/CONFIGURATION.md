@@ -1,5 +1,9 @@
 # Configuration Strategy
 
+## Catalog admission contract — October 25, 2026
+
+The [catalog contract](../design/IPTV_CATALOG.md) awaits complete confirmation. It adds no operator setting or global catalog enablement switch: existing explicit assignment/profile grants and current approved source authority govern reads independently of manual-refresh enablement. Proposed fixed admission is four nonqueued materializations per shared AppState, initialized infallibly in both constructors and closed before root HTTP drain. Existing root deadlines and rate limits remain; query/resource limits are fixed in the catalog service. No runtime configuration change is implemented at this checkpoint.
+
 ## SSE root lifecycle — October 25, 2026
 
 The confirmed [SSE lifecycle](../design/SSE_LIFECYCLE.md) adds an infallible per-AppState transport owner before HTTP readiness. It introduces no operator flag, runtime JSON consumer or bootstrap option: the existing authenticated SSE endpoint remains available with its existing limits and wire format. Root shutdown closes admission and cancels producers/output before joining HTTP/root/import/SSE work; existing thirty-second drain and sixty-second pool budgets remain canonical. This does not enable IPTV scheduling, catalog access or playback. The lifecycle authority owns qualification and remaining transport/client boundaries.
