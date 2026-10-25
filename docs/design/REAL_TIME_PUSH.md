@@ -2,7 +2,7 @@
 
 ## Root shutdown follow-up — October 25, 2026
 
-[Root-owned SSE lifecycle](SSE_LIFECYCLE.md) records current-source research, official standards, alternatives and a proposed contract. The existing idle-disconnect fix does not join forwarders at application shutdown or cancel blocked sends/queued output. The qualified HTTP/import root can therefore time out on a connected stream. Two behavior choices and final shared understanding remain pending before implementation. The unchanged focused SSE suite passes five cases; no new shutdown behavior is claimed.
+[Root-owned SSE lifecycle](SSE_LIFECYCLE.md) records current-source research, official standards, alternatives and a proposed contract. The existing idle-disconnect fix does not join forwarders at application shutdown or cancel blocked sends/queued output. The qualified HTTP/import root can therefore time out on a connected stream. Immediate queue discard and normal EOF/late authenticated 503 with existing clients are confirmed. The complete lifecycle/qualification contract now awaits final shared-understanding confirmation before implementation. The unchanged focused SSE suite passes five cases; no new shutdown behavior is claimed.
 
 WHATWG HTML section 9.2 is the generic EventSource/wire authority. RFC 8895 defines an ALTO application using SSE and does not define Duskcue's shutdown/control messages. The source list and transport description below now distinguish them. Existing auth, limits, replay, client recovery and event taxonomy remain unchanged by this research checkpoint.
 

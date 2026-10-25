@@ -2,7 +2,7 @@
 
 ## SSE root ownership research — October 25, 2026
 
-[Lifecycle research](SSE_LIFECYCLE.md) identifies untracked forwarders, full-channel sends and queued output as separate shutdown lifetimes. The proposed per-AppState owner must close admission atomically with task registration, cancel producers/output and retain completion under the existing shared thirty-second HTTP/root/import drain. No extra sequential budget, global singleton, pool/key ownership transfer or dependency upgrade is proposed. Transport backpressure can still require the retained nonzero deadline path; ending a producer does not prove remote EOF delivery. Behavior choices and shared understanding remain pending; this checkpoint changes no runtime source.
+[Lifecycle research](SSE_LIFECYCLE.md) identifies untracked forwarders, full-channel sends and queued output as separate shutdown lifetimes. The proposed per-AppState owner must close admission atomically with task registration, cancel producers/output and retain completion under the existing shared thirty-second HTTP/root/import drain. No extra sequential budget, global singleton, pool/key ownership transfer or dependency upgrade is proposed. Transport backpressure can still require the retained nonzero deadline path; ending a producer does not prove remote EOF delivery. Immediate queue discard and normal EOF/late authenticated 503 are confirmed. The complete contract awaits final shared-understanding confirmation; this checkpoint changes no runtime source.
 
 
 ## Root-owned IPTV refresh and HTTP draining — October 25, 2026
