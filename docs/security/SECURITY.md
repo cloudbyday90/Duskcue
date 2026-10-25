@@ -1,5 +1,9 @@
 # Security & Remote Access Domain
 
+## Explicit household-owner protection — October 24, 2026
+
+[Household-owner security](HOUSEHOLD_OWNER_SECURITY.md) owns the operator-authorized backend activation, five-minute owner grants, account-bound password/passkey proof and recovery boundary. After activation, neither the server-owner role nor standard-profile selection substitutes for proof when changing household profiles/restrictions/PINs or credentials. Internal session bindings survive external token/generation rotation; stale authenticated requests cannot inherit a grant. Ordinary viewing and the existing Kids exit PIN retain their own purposes. The authority records actual qualification and deferred UI/notification/assignment work; this does not redefine every existing server-administration operation.
+
 ## Overview
 
 This document is the authoritative design for the security and remote access domain. It covers: network security tiers, TLS configuration, streaming URL authentication, HTTP security hardening, HTTP compression and BREACH mitigation, timing attack resistance, real-time event security (SSE), security event monitoring, remote access patterns, Cloudflare TOS constraints, and FFmpeg per-process sandboxing (Landlock + seccomp).

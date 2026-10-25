@@ -19,6 +19,7 @@ pub mod auth;
 pub mod backup;
 pub mod collections;
 pub mod downloads;
+pub mod household_security;
 pub mod libraries;
 pub mod live_tv;
 pub mod media;

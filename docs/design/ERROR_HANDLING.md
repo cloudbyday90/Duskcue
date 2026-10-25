@@ -1,5 +1,9 @@
 # Error Handling Design
 
+## Household-owner proof — October 24, 2026
+
+The `household_security` domain adds fixed `OWNER_001`–`OWNER_006` problem details for required proof, invalid/expired proof, temporary lockout/capacity, final-factor refusal, malformed requests and unavailable storage/service. Auth/profile mutations delegate those typed failures through existing `AppError` translation. New management responses remain no-store even when the outer global rate limiter refuses them. [Household-owner security](../security/HOUSEHOLD_OWNER_SECURITY.md) owns the exact status mapping, bounded request contract and execution evidence; parser/crypto/storage diagnostics are not substituted for the fixed client message.
+
 ## Overview
 
 This document defines the error handling strategy for the Rust server. It covers crate selection, architecture layers, API error response format, environment-aware behavior, error codes, and implementation rules.

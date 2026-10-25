@@ -687,6 +687,7 @@ pub async fn passkey_register_start(
         &username,
         &display_name,
         &req.name,
+        (&user).into(),
     )
     .await?;
 
@@ -728,9 +729,14 @@ pub async fn passkey_register_finish(
     if passkey_name.chars().count() > 200 {
         return Err(AppError::BadRequest("Passkey name is too long".into()));
     }
-    let passkey =
-        service::finish_passkey_registration(&state, &challenge_id, &req.credential, passkey_name)
-            .await?;
+    let passkey = service::finish_passkey_registration(
+        &state,
+        &challenge_id,
+        &req.credential,
+        passkey_name,
+        (&user).into(),
+    )
+    .await?;
 
     Ok(Json(passkey))
 }
@@ -740,7 +746,7 @@ pub async fn passkey_delete(
     user: AuthenticatedUser,
     axum::extract::Path(passkey_id): axum::extract::Path<uuid::Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
-    service::delete_passkey(&state.pool, passkey_id, user.user_id).await?;
+    service::delete_passkey(&state.pool, passkey_id, user.user_id, (&user).into()).await?;
     Ok(Json(serde_json::json!({ "status": "deleted" })))
 }
 

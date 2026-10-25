@@ -41,6 +41,7 @@ pub enum CredentialTransport {
 }
 
 pub struct AuthenticatedUser {
+    pub credential_version: i64,
     pub transport: CredentialTransport,
     pub user_id: Uuid,
     pub session_id: Uuid,
@@ -90,6 +91,7 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
         }
 
         Ok(AuthenticatedUser {
+            credential_version: validated.session.credential_version,
             transport,
             user_id: validated.user_id,
             session_id: validated.session.id,

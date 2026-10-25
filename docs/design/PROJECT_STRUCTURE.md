@@ -1,5 +1,11 @@
 # Project Structure
 
+## Household-owner security — October 24, 2026
+
+`server/src/domains/household_security/` follows the five-file domain pattern with separate operator, transaction, factor, challenge and grant services. Existing mutation logic moves into `profiles/management.rs` and `auth/service/passkeys.rs`; callers retain their domain routes and use transaction-time owner checks after explicit activation. Session credential generations prevent an in-flight pre-rotation request from inheriting a new grant while preserving existing internal session foreign keys. Two shared proof slots are owned by `AppState`; this adds no singleton or dependency.
+
+`server/tests/household_owner_security.rs` composes focused HTTP, software-authenticator, operator-command, password and passkey helpers plus existing owned-container/diagnostic services. [Household-owner security](../security/HOUSEHOLD_OWNER_SECURITY.md) owns interfaces, research, limits and qualification; Dispatcharr assignment/delegation remains the next increment.
+
 ## IPTV transport qualification — October 24, 2026
 
 The default-off `playback-qualification` feature exposes `live_tv/transport/` for controlled transport qualification. Source destination checks/HTTP, the input pump, FFmpeg arguments/process supervision, rolling-playlist parsing, bounded output and the tracked session owner are separate modules. The domain's five-file production validation boundary remains intact. Small feature-gated pipe-launch and structural fMP4 helpers reuse existing sandbox/readiness infrastructure without changing VOD output policy.

@@ -1,5 +1,11 @@
 # API Security Domain
 
+## Household-owner management — October 24, 2026
+
+[Household-owner security](HOUSEHOLD_OWNER_SECURITY.md) owns the new `/api/v1/household-management` API, operator-only enrollment/recovery handoffs and explicit activation. All new responses, including errors from the outer global rate guard, are no-store. Strict bounded request DTOs, fixed problem details, account/session/purpose/revision-bound one-use WebAuthn challenges and real cryptographic validation precede authority changes. Raw passwords, handoffs and rotated tokens do not enter security audit events or application diagnostics.
+
+Cookie/bearer proof rotates the external token and credential generation while retaining internal session bindings. Protected profile and passkey writes recheck account status, selected standard profile, session/generation, grant expiry and authority revision in the same transaction as the mutation. Role `owner`, standard-profile selection and ordinary viewing passkeys do not bypass that boundary. Unprotected households preserve their existing behavior. Recovery clears prior management authority without implicitly granting it; the authority records exact execution evidence and deferred client/assignment work.
+
 ## Controlled IPTV transport boundary — October 24, 2026
 
 [IPTV transport qualification](../design/IPTV_TRANSPORT.md) adds no production playback endpoint. Its default-off test router reuses production cookie/bearer authentication and capability extraction, then requires the exact fixture account and active profile for every output read. It does not establish household-owner step-up or production Live TV policy.

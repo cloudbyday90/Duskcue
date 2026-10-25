@@ -99,6 +99,9 @@ pub enum AppError {
     Analytics(#[from] crate::domains::analytics::AnalyticsError),
 
     #[error(transparent)]
+    Household(#[from] crate::domains::household_security::error::OwnerError),
+
+    #[error(transparent)]
     Auth(#[from] crate::domains::auth::AuthError),
 
     #[error(transparent)]
@@ -167,6 +170,10 @@ impl IntoResponse for AppError {
         let (status, code, detail): (StatusCode, &str, Cow<'_, str>) = match &self {
             AppError::Analytics(e) => {
                 let (s, c, d) = analytics_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::Household(e) => {
+                let (s, c, d) = e.http();
                 (s, c, Cow::Owned(d))
             }
             AppError::Auth(e) => {
@@ -549,6 +556,7 @@ fn auth_error_to_http(err: &crate::domains::auth::AuthError) -> (StatusCode, &'s
     use axum::http::StatusCode;
 
     match err {
+        AuthError::Household(e) => e.http(),
         AuthError::PasskeyNotFound => (
             StatusCode::UNAUTHORIZED,
             "AUTH_001",
@@ -1586,6 +1594,7 @@ fn profiles_error_to_http(
     use axum::http::StatusCode;
 
     match err {
+        ProfilesError::Household(e) => e.http(),
         ProfilesError::NotFound | ProfilesError::ChannelNotFound => (
             StatusCode::NOT_FOUND,
             "PROFILE_001",

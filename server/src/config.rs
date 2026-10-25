@@ -14,7 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use clap::Parser;
+use clap::{Parser, Subcommand};
 use serde::Deserialize;
 use std::path::PathBuf;
 
@@ -25,6 +25,9 @@ use std::path::PathBuf;
     about = "Self-hosted media streaming server"
 )]
 pub struct CliArgs {
+    #[command(subcommand)]
+    pub command: Option<OperatorCommand>,
+
     #[arg(long, env = "DUSKCUE_DATABASE_URL")]
     pub database_url: Option<String>,
 
@@ -54,6 +57,14 @@ pub struct CliArgs {
 
     #[arg(long, env = "DUSKCUE_CONFIG")]
     pub config: Option<PathBuf>,
+}
+
+#[derive(Subcommand, Debug, Clone)]
+pub enum OperatorCommand {
+    OwnerHandoff {
+        #[arg(long)]
+        user: uuid::Uuid,
+    },
 }
 
 #[derive(Deserialize, Debug, Clone)]

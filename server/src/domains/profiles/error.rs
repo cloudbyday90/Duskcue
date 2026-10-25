@@ -85,5 +85,8 @@ pub enum ProfilesError {
     ChannelEmpty,
 
     #[error(transparent)]
+    Household(#[from] crate::domains::household_security::error::OwnerError),
+
+    #[error(transparent)]
     Database(#[from] sqlx::Error),
 }

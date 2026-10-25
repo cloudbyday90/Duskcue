@@ -1,5 +1,11 @@
 # Authentication & User Management Domain
 
+## Household-owner authority — October 24, 2026
+
+[Household-owner management security](../security/HOUSEHOLD_OWNER_SECURITY.md) owns the explicitly activated owner-proof foundation. A viewing session, a standard profile or an arbitrary previously enrolled passkey does not establish owner authority. An operator-only one-use handoff designates an owner-held password/passkey or permits verified replacement-passkey registration. The handoff is not an additional ordinary login method.
+
+Fresh proof rotates the external cookie/bearer token and increments its credential generation, preserving the internal session UUID, viewing scope and absolute expiry. Protected transactions reject an older request generation and require a current five-minute grant. Enabled households protect existing credential enrollment/removal; factor changes revoke grants, and final-factor removal is refused. Accounts without activation retain their existing behavior. The authority records real software-authenticator/operator/HTTP qualification and remaining client/notification/general-login boundaries; no interactive owner prompt or authentication-assurance certification is implied.
+
 ## Overview
 
 This document is the authoritative design for the authentication and user management domain. The system is fully self-contained — no external identity provider, no central auth server, no SSO, no OAuth, no federation. All user accounts live in the local PostgreSQL database.
@@ -321,7 +327,7 @@ Optional second factor for password-based authentication.
 
 ## Capability-Based Access Control
 
-The October 24 [IPTV contract](IPTV.md) uses `can_manage_users` for administrator-only connection-configuration validation. Planned household-owner management uses fresh existing password/passkey proof and administrator-defined delegation; selecting a standard profile or obtaining a Kids exit unlock does not establish the proposed management context. Proof, authenticator enrollment/recovery and revocation must be protected together before that later milestone is enabled.
+The October 24 [IPTV contract](IPTV.md) uses `can_manage_users` for administrator-only connection-configuration validation. The qualified [household-owner foundation](../security/HOUSEHOLD_OWNER_SECURITY.md) uses fresh eligible password/passkey proof after explicit activation and protects related profile/credential mutations, enrollment/recovery and revocation together. Selecting a standard profile or obtaining a Kids exit unlock does not establish management authority. Encrypted Dispatcharr assignment and administrator-defined delegation follow separately.
 
 ### Roles (Default Capability Bundles)
 

@@ -28,6 +28,9 @@ use crate::state::{AppState, WebauthnChallenge};
 use super::error::AuthError;
 use super::types::*;
 
+mod passkeys;
+pub use passkeys::{delete_passkey, finish_passkey_registration, start_passkey_registration};
+
 pub async fn validate_session(
     pool: &sqlx::PgPool,
     token: &str,
@@ -36,7 +39,7 @@ pub async fn validate_session(
 
     let row = sqlx::query(
         r#"
-        SELECT id, user_id, active_profile_id, profile_selection_required, token_hash, device_id, device_name,
+        SELECT id, user_id, active_profile_id, profile_selection_required, token_hash, credential_version, device_id, device_name,
             client_name, client_version, client_platform,
             ip_address::text as ip_address, user_agent, is_secure,
             expires_at, last_active_at
@@ -215,7 +218,7 @@ async fn create_session_on_connection(
             client_name, client_version, client_platform,
             ip_address, user_agent, is_secure, expires_at
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::inet, $11, $12, now() + ($13 || ' days')::interval)
-        RETURNING id, expires_at, last_active_at
+        RETURNING id, expires_at, last_active_at, credential_version
         "#,
     )
     .bind(user_id)
@@ -239,6 +242,7 @@ async fn create_session_on_connection(
     let last_active_at: DateTime<Utc> = row.get("last_active_at");
 
     let session = UserSession {
+        credential_version: row.get("credential_version"),
         id: session_id,
         user_id,
         active_profile_id,
@@ -577,6 +581,7 @@ pub async fn user_count(pool: &sqlx::PgPool) -> Result<i64, AuthError> {
 
 fn row_to_session(row: &sqlx::postgres::PgRow) -> UserSession {
     UserSession {
+        credential_version: row.get("credential_version"),
         id: row.get("id"),
         user_id: row.get("user_id"),
         active_profile_id: row.get("active_profile_id"),
@@ -802,145 +807,6 @@ pub struct DeviceInfo {
     pub is_secure: bool,
 }
 
-pub async fn start_passkey_registration(
-    state: &AppState,
-    user_id: Uuid,
-    username: &str,
-    display_name: &str,
-    _passkey_name: &str,
-) -> Result<(String, serde_json::Value), AuthError> {
-    let existing_passkeys = load_user_passkey_credentials(&state.pool, user_id).await?;
-
-    let exclude_credentials: Vec<CredentialID> = existing_passkeys
-        .iter()
-        .map(|pk| pk.credential_id.clone())
-        .collect();
-
-    let (ccr, registration_state) = state
-        .webauthn
-        .start_passkey_registration(
-            user_id,
-            username,
-            display_name,
-            if exclude_credentials.is_empty() {
-                None
-            } else {
-                Some(exclude_credentials)
-            },
-        )
-        .map_err(|e| AuthError::WebauthnRegistrationFailed {
-            reason: e.to_string(),
-        })?;
-
-    let challenge_id = generate_challenge_id();
-    let creation_options =
-        serde_json::to_value(&ccr).map_err(|e| AuthError::WebauthnRegistrationFailed {
-            reason: format!("Failed to serialize creation options: {}", e),
-        })?;
-
-    state.webauthn_challenges.insert(
-        challenge_id.clone(),
-        WebauthnChallenge {
-            registration_state: Some(registration_state),
-            authentication_state: None,
-            user_id: Some(user_id),
-            created_at: std::time::Instant::now(),
-        },
-    );
-
-    Ok((challenge_id, creation_options))
-}
-
-pub async fn finish_passkey_registration(
-    state: &AppState,
-    challenge_id: &str,
-    credential_json: &serde_json::Value,
-    passkey_name: &str,
-) -> Result<PasskeyResponse, AuthError> {
-    let (_, challenge) = state
-        .webauthn_challenges
-        .remove(challenge_id)
-        .ok_or(AuthError::WebauthnChallengeExpired)?;
-
-    let registration_state = challenge
-        .registration_state
-        .ok_or(AuthError::WebauthnChallengeExpired)?;
-
-    if challenge.created_at.elapsed() > std::time::Duration::from_secs(300) {
-        return Err(AuthError::WebauthnChallengeExpired);
-    }
-
-    let user_id = challenge
-        .user_id
-        .ok_or(AuthError::WebauthnChallengeExpired)?;
-
-    let registration = serde_json::from_value::<RegisterPublicKeyCredential>(
-        credential_json.clone(),
-    )
-    .map_err(|e| AuthError::WebauthnRegistrationFailed {
-        reason: format!("Invalid credential data: {}", e),
-    })?;
-
-    let passkey = state
-        .webauthn
-        .finish_passkey_registration(&registration, &registration_state)
-        .map_err(|e| AuthError::WebauthnRegistrationFailed {
-            reason: e.to_string(),
-        })?;
-
-    let credential_id_bytes = passkey.cred_id().clone();
-    let public_key_bytes =
-        serde_json::to_vec(&passkey).map_err(|e| AuthError::WebauthnRegistrationFailed {
-            reason: format!("Failed to serialize passkey: {}", e),
-        })?;
-
-    let credential: webauthn_rs::prelude::Credential = passkey.clone().into();
-    let counter_val: u32 = credential.counter;
-
-    let transports_list: Vec<String> = credential
-        .transports
-        .unwrap_or_default()
-        .iter()
-        .map(|t| format!("{:?}", t).to_lowercase())
-        .collect();
-    let transports_json =
-        serde_json::to_value(&transports_list).unwrap_or(serde_json::Value::Array(vec![]));
-
-    let row = sqlx::query(
-        r#"
-        INSERT INTO user_passkeys (user_id, credential_id, public_key, sign_count, transports, attestation_type, aaguid, name)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-        RETURNING id, created_at
-        "#,
-    )
-    .bind(user_id)
-    .bind(&credential_id_bytes)
-    .bind(&public_key_bytes)
-    .bind(counter_val as i64)
-    .bind(&transports_json)
-    .bind("none")
-    .bind(credential_id_bytes.get(..16).map(|b| {
-        let mut bytes = [0u8; 16];
-        bytes.copy_from_slice(b);
-        Uuid::from_bytes(bytes)
-    }))
-    .bind(passkey_name)
-    .fetch_one(&state.pool)
-    .await?;
-
-    let passkey_id: Uuid = row.get("id");
-    let created_at: DateTime<Utc> = row.get("created_at");
-
-    Ok(PasskeyResponse {
-        id: passkey_id,
-        name: passkey_name.to_string(),
-        aaguid: None,
-        transports: transports_list,
-        last_used_at: None,
-        created_at,
-    })
-}
-
 pub async fn start_passkey_authentication(
     state: &AppState,
 ) -> Result<(String, serde_json::Value), AuthError> {
@@ -965,6 +831,8 @@ pub async fn start_passkey_authentication(
             registration_state: None,
             authentication_state: Some(auth_state),
             user_id: None,
+            owner_scope: None,
+            owner_revision: None,
             created_at: std::time::Instant::now(),
         },
     );
@@ -1083,24 +951,6 @@ pub async fn list_user_passkeys(
         .collect())
 }
 
-pub async fn delete_passkey(
-    pool: &sqlx::PgPool,
-    passkey_id: Uuid,
-    user_id: Uuid,
-) -> Result<(), AuthError> {
-    let result = sqlx::query("DELETE FROM user_passkeys WHERE id = $1 AND user_id = $2")
-        .bind(passkey_id)
-        .bind(user_id)
-        .execute(pool)
-        .await?;
-
-    if result.rows_affected() == 0 {
-        return Err(AuthError::PasskeyNotFound);
-    }
-
-    Ok(())
-}
-
 struct PasskeyCredentialRow {
     credential_id: CredentialID,
 }
@@ -1109,10 +959,12 @@ async fn load_user_passkey_credentials(
     pool: &sqlx::PgPool,
     user_id: Uuid,
 ) -> Result<Vec<PasskeyCredentialRow>, AuthError> {
-    let rows = sqlx::query("SELECT credential_id FROM user_passkeys WHERE user_id = $1")
-        .bind(user_id)
-        .fetch_all(pool)
-        .await?;
+    let rows = sqlx::query(
+        "SELECT credential_id FROM user_passkeys WHERE user_id = $1 ORDER BY id LIMIT 64",
+    )
+    .bind(user_id)
+    .fetch_all(pool)
+    .await?;
 
     Ok(rows
         .iter()

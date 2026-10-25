@@ -281,6 +281,7 @@ pub struct ChangePasswordRequest {
 
 #[derive(Debug, Clone)]
 pub struct UserSession {
+    pub credential_version: i64,
     pub id: Uuid,
     pub user_id: Uuid,
     pub active_profile_id: Uuid,

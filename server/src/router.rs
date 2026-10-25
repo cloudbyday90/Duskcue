@@ -171,6 +171,7 @@ pub fn build_router(state: AppState) -> Router<AppState> {
         .merge(crate::domains::users::router(state.clone()))
         .merge(crate::domains::libraries::router(state.clone()))
         .merge(crate::domains::live_tv::router(state.clone()))
+        .merge(crate::domains::household_security::router(state.clone()))
         .merge(crate::domains::media::router(state.clone()))
         .merge(crate::domains::notifications::router(state.clone()))
         .merge(crate::domains::system::router(state.clone()))
@@ -208,7 +209,10 @@ pub fn build_router(state: AppState) -> Router<AppState> {
         .layer(axum::middleware::from_fn(track_http_metrics))
         .layer(trace_layer)
         .layer(propagate_request_id)
-        .layer(set_request_id);
+        .layer(set_request_id)
+        .layer(axum::middleware::from_fn(
+            crate::domains::household_security::handlers::response_policy,
+        ));
 
     router
 }

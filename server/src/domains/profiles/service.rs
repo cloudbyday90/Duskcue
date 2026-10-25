@@ -30,6 +30,9 @@ const PARENT_PIN_LOCKOUT_MINUTES: i64 = 15;
 const PARENT_UNLOCK_MINUTES: i64 = 10;
 
 pub use super::access::{assert_media_access_on_connection, load_profile_scope_on_connection};
+pub use super::management::{
+    create_profile, create_profile_for_session, delete_profile, update_profile,
+};
 pub use super::viewing_preferences::{
     canonical_viewing_language, get_viewing_preferences, update_viewing_preferences,
 };
@@ -112,157 +115,6 @@ pub async fn list_profiles(
         parent_unlock_expires_at: parent_unlock.expires_at,
         items,
     })
-}
-
-pub async fn create_profile(
-    pool: &PgPool,
-    owner_user_id: Uuid,
-    req: CreateProfileRequest,
-) -> Result<ProfileResponse, ProfilesError> {
-    let profile_type = req.profile_type.unwrap_or_else(|| "standard".to_string());
-    validate_profile_type(&profile_type)?;
-    let is_kids_profile = profile_type == "kids";
-    let max_content_rating = canonical_content_rating(
-        req.max_content_rating
-            .as_deref()
-            .unwrap_or(if is_kids_profile { "TV-Y7" } else { "NC-17" }),
-    )?;
-    let name = req.name.trim();
-    if name.is_empty() {
-        return Err(ProfilesError::InvalidProfileType(
-            "name is required".to_string(),
-        ));
-    }
-    let parent_pin_hash = match req.parent_pin.as_deref() {
-        Some(pin) if is_kids_profile => Some(hash_parent_pin(pin)?),
-        Some(_) => return Err(ProfilesError::ParentPinNotAllowed),
-        None if is_kids_profile => return Err(ProfilesError::ParentPinRequired),
-        None => None,
-    };
-
-    let row = sqlx::query(
-        "INSERT INTO user_profiles (owner_user_id, name, avatar, profile_type, max_content_rating, \
-         allow_search, allow_downloads, allow_external_links, allow_ambient_channels, parent_pin_hash) \
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) \
-         RETURNING id, owner_user_id, name, avatar, profile_type, is_default, max_content_rating, \
-         allow_search, allow_downloads, allow_external_links, allow_ambient_channels, parent_pin_hash, \
-         parent_pin_failed_attempts, parent_pin_locked_until, created_at, updated_at",
-    )
-    .bind(owner_user_id)
-    .bind(name)
-    .bind(req.avatar.as_deref().map(str::trim).filter(|v| !v.is_empty()))
-    .bind(&profile_type)
-    .bind(&max_content_rating)
-    .bind(req.allow_search.unwrap_or(!is_kids_profile))
-    .bind(req.allow_downloads.unwrap_or(!is_kids_profile))
-    .bind(req.allow_external_links.unwrap_or(!is_kids_profile))
-    .bind(req.allow_ambient_channels.unwrap_or(true))
-    .bind(parent_pin_hash)
-    .fetch_one(pool)
-    .await?;
-
-    let profile = row_to_profile(&row);
-    replace_profile_libraries(pool, profile.id, req.library_ids.unwrap_or_default()).await?;
-    profile_response(pool, profile).await
-}
-
-pub async fn update_profile(
-    pool: &PgPool,
-    owner_user_id: Uuid,
-    profile_id: Uuid,
-    req: UpdateProfileRequest,
-) -> Result<ProfileResponse, ProfilesError> {
-    let current = get_owned_profile(pool, owner_user_id, profile_id).await?;
-    let max_content_rating = match req.max_content_rating.as_deref() {
-        Some(value) => Some(canonical_content_rating(value)?),
-        None => None,
-    };
-    let name = req
-        .name
-        .as_deref()
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    if req.name.is_some() && name.is_none() {
-        return Err(ProfilesError::InvalidProfileType(
-            "name is required".to_string(),
-        ));
-    }
-    let parent_pin_hash = match req.parent_pin.as_deref() {
-        Some(pin) if current.profile_type == "kids" => Some(hash_parent_pin(pin)?),
-        Some(_) => return Err(ProfilesError::ParentPinNotAllowed),
-        None => None,
-    };
-
-    let mut transaction = pool.begin().await?;
-    let row = sqlx::query(
-        "UPDATE user_profiles SET name = COALESCE($3, name), avatar = COALESCE($4, avatar), \
-         max_content_rating = COALESCE($5, max_content_rating), allow_search = COALESCE($6, allow_search), \
-         allow_downloads = COALESCE($7, allow_downloads), allow_external_links = COALESCE($8, allow_external_links), \
-         allow_ambient_channels = COALESCE($9, allow_ambient_channels), parent_pin_hash = COALESCE($10, parent_pin_hash), \
-         parent_pin_failed_attempts = CASE WHEN $10 IS NULL THEN parent_pin_failed_attempts ELSE 0 END, \
-         parent_pin_locked_until = CASE WHEN $10 IS NULL THEN parent_pin_locked_until ELSE NULL END, updated_at = now() \
-         WHERE id = $1 AND owner_user_id = $2 \
-         RETURNING id, owner_user_id, name, avatar, profile_type, is_default, max_content_rating, \
-         allow_search, allow_downloads, allow_external_links, allow_ambient_channels, parent_pin_hash, \
-         parent_pin_failed_attempts, parent_pin_locked_until, created_at, updated_at",
-    )
-    .bind(profile_id)
-    .bind(owner_user_id)
-    .bind(name)
-    .bind(req.avatar.as_deref().map(str::trim).filter(|v| !v.is_empty()))
-    .bind(max_content_rating)
-    .bind(req.allow_search)
-    .bind(req.allow_downloads)
-    .bind(req.allow_external_links)
-    .bind(req.allow_ambient_channels)
-    .bind(&parent_pin_hash)
-    .fetch_one(&mut *transaction)
-    .await?;
-
-    if let Some(library_ids) = req.library_ids {
-        replace_profile_libraries_in_transaction(&mut transaction, current.id, library_ids).await?;
-    }
-    if parent_pin_hash.is_some() {
-        sqlx::query(
-            "UPDATE user_sessions SET parent_unlock_profile_id = NULL, parent_unlock_expires_at = NULL \
-             WHERE parent_unlock_profile_id = $1",
-        )
-        .bind(profile_id)
-        .execute(&mut *transaction)
-        .await?;
-    }
-    transaction.commit().await?;
-
-    profile_response(pool, row_to_profile(&row)).await
-}
-
-pub async fn delete_profile(
-    pool: &PgPool,
-    owner_user_id: Uuid,
-    profile_id: Uuid,
-) -> Result<(), ProfilesError> {
-    let profile = get_owned_profile(pool, owner_user_id, profile_id).await?;
-    if profile.is_default {
-        return Err(ProfilesError::CannotDelete);
-    }
-
-    let active: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM user_sessions WHERE user_id = $1 AND active_profile_id = $2)",
-    )
-    .bind(owner_user_id)
-    .bind(profile_id)
-    .fetch_one(pool)
-    .await?;
-    if active {
-        return Err(ProfilesError::CannotDelete);
-    }
-
-    sqlx::query("DELETE FROM user_profiles WHERE id = $1 AND owner_user_id = $2")
-        .bind(profile_id)
-        .bind(owner_user_id)
-        .execute(pool)
-        .await?;
-    Ok(())
 }
 
 pub async fn switch_profile(
@@ -807,7 +659,7 @@ pub fn content_rating_rank(value: &str) -> Option<u8> {
     })
 }
 
-fn validate_profile_type(value: &str) -> Result<(), ProfilesError> {
+pub(super) fn validate_profile_type(value: &str) -> Result<(), ProfilesError> {
     if PROFILE_TYPES.contains(&value) {
         Ok(())
     } else {
@@ -842,7 +694,7 @@ async fn get_owned_profile(
     Ok(row_to_profile(&row))
 }
 
-async fn profile_response(
+pub(super) async fn profile_response(
     pool: &PgPool,
     profile: ProfileRow,
 ) -> Result<ProfileResponse, ProfilesError> {
@@ -880,18 +732,7 @@ async fn list_profile_library_ids(
     .collect::<Result<Vec<Uuid>, sqlx::Error>>()?)
 }
 
-async fn replace_profile_libraries(
-    pool: &PgPool,
-    profile_id: Uuid,
-    library_ids: Vec<Uuid>,
-) -> Result<(), ProfilesError> {
-    let mut tx = pool.begin().await?;
-    replace_profile_libraries_in_transaction(&mut tx, profile_id, library_ids).await?;
-    tx.commit().await?;
-    Ok(())
-}
-
-async fn replace_profile_libraries_in_transaction(
+pub(super) async fn replace_profile_libraries_in_transaction(
     transaction: &mut Transaction<'_, Postgres>,
     profile_id: Uuid,
     library_ids: Vec<Uuid>,
@@ -963,7 +804,7 @@ fn parent_pin_hasher() -> Result<Argon2<'static>, ProfilesError> {
     Ok(Argon2::new(Algorithm::Argon2id, Version::V0x13, params))
 }
 
-fn hash_parent_pin(pin: &str) -> Result<String, ProfilesError> {
+pub(super) fn hash_parent_pin(pin: &str) -> Result<String, ProfilesError> {
     validate_parent_pin(pin)?;
     let salt = SaltString::generate(&mut OsRng);
     parent_pin_hasher()?
@@ -1049,7 +890,7 @@ async fn channel_response(
     })
 }
 
-fn row_to_profile(row: &sqlx::postgres::PgRow) -> ProfileRow {
+pub(super) fn row_to_profile(row: &sqlx::postgres::PgRow) -> ProfileRow {
     ProfileRow {
         id: row.get("id"),
         owner_user_id: row.get("owner_user_id"),

@@ -94,7 +94,9 @@ pub async fn create_profile(
 ) -> Result<(StatusCode, Json<ProfileResponse>), AppError> {
     assert_profile_management_allowed(&state, &user).await?;
     validate_request(&req, "/api/v1/profiles")?;
-    let profile = service::create_profile(&state.pool, user.user_id, req).await?;
+    let profile =
+        service::create_profile_for_session(&state.pool, user.user_id, Some((&user).into()), req)
+            .await?;
     Ok((StatusCode::CREATED, Json(profile)))
 }
 
@@ -107,7 +109,7 @@ pub async fn update_profile(
     assert_profile_management_allowed(&state, &user).await?;
     validate_request(&req, &format!("/api/v1/profiles/{profile_id}"))?;
     Ok(Json(
-        service::update_profile(&state.pool, user.user_id, profile_id, req).await?,
+        service::update_profile(&state.pool, user.user_id, profile_id, (&user).into(), req).await?,
     ))
 }
 
@@ -117,7 +119,7 @@ pub async fn delete_profile(
     Path(profile_id): Path<uuid::Uuid>,
 ) -> Result<Json<serde_json::Value>, AppError> {
     assert_profile_management_allowed(&state, &user).await?;
-    service::delete_profile(&state.pool, user.user_id, profile_id).await?;
+    service::delete_profile(&state.pool, user.user_id, profile_id, (&user).into()).await?;
     Ok(Json(serde_json::json!({ "deleted": true })))
 }
 

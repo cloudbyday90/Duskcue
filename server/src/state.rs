@@ -1051,6 +1051,8 @@ pub struct WebauthnChallenge {
     pub registration_state: Option<PasskeyRegistration>,
     pub authentication_state: Option<PasskeyAuthentication>,
     pub user_id: Option<uuid::Uuid>,
+    pub owner_scope: Option<crate::domains::household_security::types::Scope>,
+    pub owner_revision: Option<i64>,
     pub created_at: std::time::Instant,
 }
 
@@ -1063,6 +1065,7 @@ pub struct AppState {
     pub metrics_handle: PrometheusHandle,
     pub metrics_allowed_subnets: Arc<Vec<IpNet>>,
     pub webauthn: Arc<Webauthn>,
+    pub owner_proof_slots: Arc<tokio::sync::Semaphore>,
     pub webauthn_challenges: Arc<DashMap<String, WebauthnChallenge>>,
     pub trakt_sync_locks: Arc<DashMap<Uuid, std::time::Instant>>,
     pub migration_runs: Arc<DashMap<Uuid, CancellationToken>>,
@@ -1108,6 +1111,7 @@ impl AppState {
             metrics_handle,
             metrics_allowed_subnets: Arc::new(subnets),
             webauthn: Arc::new(webauthn),
+            owner_proof_slots: Arc::new(tokio::sync::Semaphore::new(2)),
             webauthn_challenges: Arc::new(DashMap::new()),
             trakt_sync_locks: Arc::new(DashMap::new()),
             migration_runs: Arc::new(DashMap::new()),
@@ -1171,6 +1175,7 @@ impl AppState {
             metrics_handle,
             metrics_allowed_subnets: Arc::new(subnets),
             webauthn: Arc::new(webauthn),
+            owner_proof_slots: Arc::new(tokio::sync::Semaphore::new(2)),
             webauthn_challenges: Arc::new(DashMap::new()),
             trakt_sync_locks: Arc::new(DashMap::new()),
             migration_runs: Arc::new(DashMap::new()),

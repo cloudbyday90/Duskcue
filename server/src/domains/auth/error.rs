@@ -92,5 +92,8 @@ pub enum AuthError {
     PasswordTooWeak,
 
     #[error(transparent)]
+    Household(#[from] crate::domains::household_security::error::OwnerError),
+
+    #[error(transparent)]
     Database(#[from] sqlx::Error),
 }

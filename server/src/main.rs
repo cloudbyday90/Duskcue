@@ -223,11 +223,22 @@ async fn validate_pg_settings(pool: &sqlx::PgPool) {
 #[tokio::main]
 async fn main() {
     let cli = CliArgs::parse();
+    let operator_command = cli.command.clone();
 
     let bootstrap = build_bootstrap_config(cli).unwrap_or_else(|e| {
         eprintln!("Configuration error: {e}");
         std::process::exit(1);
     });
+
+    if let Some(duskcue::config::OperatorCommand::OwnerHandoff { user }) = operator_command {
+        if let Err(error) =
+            duskcue::domains::household_security::operator::run(&bootstrap, user).await
+        {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+        return;
+    }
 
     let _log_guard = init_logging(&bootstrap.log_level, &bootstrap.data_dir);
 

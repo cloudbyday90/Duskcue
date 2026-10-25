@@ -1,5 +1,9 @@
 # Database Design
 
+## Household-owner authority — October 24, 2026
+
+[20261024190000_household_owner_security.sql](../../server/migrations/20261024190000_household_owner_security.sql) adds account owner-protection state/revision, hashed one-use handoffs, session-bound grants and bounded server-side challenges. Passkey owner eligibility defaults false. A session credential generation supports token rotation without deleting internal session bindings. Session profile changes and account password/status/deletion changes invalidate authority; ordinary login/session/profile tables retain their established ownership. [Household-owner security](../security/HOUSEHOLD_OWNER_SECURITY.md) owns exact activation, proof, recovery, concurrency and verification contracts. No saved Dispatcharr assignment is introduced in this increment.
+
 ## Phase 18 Fire catalog registry
 
 The Fire integration adds `fire_catalog_mappings`, `fire_catalog_mapping_events`, and `fire_profile_keys` through [20261003010000_create_fire_catalog_registry.sql](../../server/migrations/20261003010000_create_fire_catalog_registry.sql). Mappings preserve exact accepted IDs and original media identities, retain tombstones after local deletion, enforce per-catalog uniqueness, and record transactional revision snapshots. Profile keys are independent random 32-byte URL-safe values, stable per profile and removed with that profile. See [FIRE_TV.md](FIRE_TV.md) for eligibility, privacy, and catalog-admission boundaries.
