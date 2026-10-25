@@ -11,7 +11,7 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-playback-qualification = ["dep:hyper", "dep:hyper-util", "dep:webpki-roots"]
+playback-qualification = ["dep:hyper", "dep:hyper-util", "dep:webpki-roots", "dep:quick-xml-import"]
 
 [dependencies]
 axum.workspace = true
@@ -69,6 +69,7 @@ croner.workspace = true
 notify.workspace = true
 notify-debouncer-full.workspace = true
 quick-xml.workspace = true
+quick-xml-import = { workspace = true, optional = true }
 async-trait.workspace = true
 urlencoding.workspace = true
 flate2.workspace = true

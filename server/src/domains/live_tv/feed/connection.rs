@@ -49,6 +49,15 @@ pub(super) async fn fetch(
     pool: &PgPool,
     tls: &TlsConnector,
 ) -> Result<Vec<u8>, FeedError> {
+    fetch_bounded(source, pool, tls, 65536).await
+}
+
+pub(super) async fn fetch_bounded(
+    source: &Source,
+    pool: &PgPool,
+    tls: &TlsConnector,
+    limit: usize,
+) -> Result<Vec<u8>, FeedError> {
     let stream = tokio::time::timeout(Duration::from_secs(5), connect(source, tls))
         .await
         .map_err(|_| FeedError::Deadline)??;
@@ -77,7 +86,7 @@ pub(super) async fn fetch(
             .map_err(|_| FeedError::Deadline)?
             .map_err(|_| FeedError::Response)?;
         head_limit.release();
-        body::read(response).await
+        body::read(response, limit).await
     };
     tokio::pin!(receive, connection);
     tokio::select! {

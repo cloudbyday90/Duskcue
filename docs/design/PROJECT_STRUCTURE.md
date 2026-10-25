@@ -1,5 +1,11 @@
 # Project Structure
 
+## Bounded IPTV imports — October 25, 2026
+
+[Import authority](IPTV_IMPORTS.md) owns the confirmed contract and execution outcomes. The default-off `live_tv/feed/imports/` composes separate source receipt/attempt, M3U, XML fields/structure, time evidence, compression/limits, crypto, storage/publication, status, monitor and operation-owner modules. The existing five-file production domain boundary stays intact. Shared account locking is factored from household-owner transactions; the old 64 KiB feed fixture remains separate from import-purpose body limits.
+
+Quick-xml 0.42.0 is optional and renamed for imports; NFO/plist retain 0.41.0. Flate2 locks 1.1.10. `tests/live_tv_imports.rs` composes shared PostgreSQL/HTTP/TLS support and focused import storage, network, lifecycle and bounded wire-fault helpers. The isolated, nonpublished fixture workspace at `server/tests/fixtures/import-compression/` has its own small lockfile solely to qualify miniz 0.9.1 without the platform's zlib-rs feature unification; its artifacts use root `target/import-compression`. It is not another application workspace or release package.
+
 ## Saved-feed destination authority — October 25, 2026
 
 [Destination authority](../security/IPTV_DESTINATION_AUTHORITY.md) records the confirmed contract. `live_tv/destination/` owns pure address policy and the context-bound approval codec; `assignment/destinations.rs` owns transactional approval persistence and rotation retention. The default-off `live_tv/feed/` composes saved-source admission/fencing, owned TCP/TLS, a response-head input budget, bounded body processing and tracked operation ownership. Three optional direct server dependencies expose already locked Hyper, hyper-util and webpki-roots versions only for qualification. The existing MPEG-TS experiment remains separate.

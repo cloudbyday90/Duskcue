@@ -1,5 +1,11 @@
 # Database Design
 
+## Bounded IPTV catalog storage — October 25, 2026
+
+[Migration 20261025120000](../../server/migrations/20261025120000_live_tv_imports.sql) adds latest-attempt state, one deferred-unique last-good snapshot per assignment, and encrypted guide/channel/programme records. Composite household/assignment/snapshot keys isolate joins; assignment deletion/replacement cascades catalog state. Publication swaps the pointer and deletes the old snapshot in one transaction. Imported metadata and stream/logo references use purpose-separated authenticated encryption; only bounded identities, trusted UTC indexes, evidence flags, counts and timestamps remain indexed plaintext. The authenticated manifest binds source/attempt attribution and counts. [Import authority](IPTV_IMPORTS.md) owns retention, source-generation availability and indeterminate-commit semantics.
+
+These encrypted records allocate UUIDv7 in Rust before sealing associated data, with PostgreSQL version checks; default database-side UUIDv7 generation remains appropriate elsewhere. Dispatcharr's upstream UUID and a stable assignment-scoped channel lookup hash are separate from Duskcue row identities. No client catalog endpoint or production refresh lifecycle is enabled by this migration.
+
 ## Saved-feed destination authority — October 25, 2026
 
 [Migration 20261025100000](../../server/migrations/20261025100000_live_tv_destinations.sql) extends each assignment with a positive source generation, separate encrypted playlist/guide destination approvals and constrained address-count metadata. Null approval requires count zero; present envelopes require one to eight addresses and the existing strict envelope bounds. A users-table trigger advances source generation and representation revision on status/deletion transitions, including disable/re-enable within one transaction. Arithmetic overflow aborts the mutation. Owner viewing-policy revisions remain distinct. [Destination authority](../security/IPTV_DESTINATION_AUTHORITY.md) owns consent, rotation, fencing and qualification status; no channel, programme or production-fetch table is added.
@@ -45,7 +51,7 @@ The same disposable verification exposed the original full-text trigger's invali
 
 ### Decision
 
-All tables use **UUIDv7** as the surrogate primary key, generated natively by PostgreSQL 18's `uuidv7()` function.
+Duskcue surrogate primary keys use **UUIDv7**, normally generated natively by PostgreSQL 18's `uuidv7()` function. Records sealed before persistence may allocate UUIDv7 in Rust first, as the bounded IPTV catalog does; their migration checks the version.
 
 ```sql
 CREATE TABLE example (

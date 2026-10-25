@@ -3,7 +3,7 @@
 // Licensed under AGPL-3.0. See LICENSE for details.
 
 use super::{error::OwnerError, types::Scope};
-use sqlx::{PgPool, Postgres, Row, Transaction};
+use sqlx::{PgConnection, PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
 pub async fn begin(pool: &PgPool, user: Uuid) -> Result<Transaction<'_, Postgres>, OwnerError> {
@@ -25,26 +25,34 @@ pub async fn begin_accounts<'a>(
     users: &[Uuid],
 ) -> Result<Transaction<'a, Postgres>, OwnerError> {
     let mut tx = pool.begin().await?;
+    lock_accounts(&mut tx, users).await?;
+    Ok(tx)
+}
+
+pub(crate) async fn lock_accounts(
+    conn: &mut PgConnection,
+    users: &[Uuid],
+) -> Result<(), OwnerError> {
     sqlx::query("SET LOCAL lock_timeout = '5s'")
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
     sqlx::query("SET LOCAL statement_timeout = '10s'")
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
     let locked: Vec<Uuid> =
         sqlx::query_scalar("SELECT id FROM users WHERE id=ANY($1) ORDER BY id FOR NO KEY UPDATE")
             .bind(users)
-            .fetch_all(&mut *tx)
+            .fetch_all(&mut *conn)
             .await?;
     for user in locked {
         sqlx::query(
             "INSERT INTO household_owner_state(user_id) VALUES ($1) ON CONFLICT DO NOTHING",
         )
         .bind(user)
-        .execute(&mut *tx)
+        .execute(&mut *conn)
         .await?;
     }
-    Ok(tx)
+    Ok(())
 }
 
 pub async fn revoke_management(

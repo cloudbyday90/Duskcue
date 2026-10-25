@@ -1,5 +1,11 @@
 # Testing memory on Windows
 
+## Bounded IPTV import qualification — October 25, 2026
+
+`node scripts/testing-memory/run.mjs iptv-imports` reuses the offline feed driver with `--imports`, the unchanged Cargo admission policy, two Cargo jobs, one Rust test thread and a 128 MiB Node driver heap. Child-only proxy traps, immutable owned PostgreSQL limits, fixed TLS fixtures and verified container/directory cleanup remain intact. `iptv-import-compression` separately runs the locked, offline miniz fixture without workspace feature unification, using root `target/import-compression`; it does not introduce another application package.
+
+The final import contract passes in 144.35 seconds, resource `7726f4c5-af94-4646-a3a3-ccae68d1e604`, with nine safe system audit events, zero ignored cases and zero proxy-trap connections. Receipt: `.cache/testing-memory/2026-10-25T12-43-27-899Z-637f6d90-896d-4c4d-8a4e-89ad7117aaa3.jsonl`. The wrapper exits zero without a memory stop/interruption and retains at least 20,457,865,216 available host bytes. Peak owned private bytes are 3,673,202,688 across compilation and qualification, not a parser-only RSS guarantee. Actual claim/publication wire faults, parser/database cancellation, a 5,000-programme publication and last-good retention pass. Existing destination/assignment/owner regressions run serially, followed by 994 passing library cases, seven existing ignores and 16 workflow cases. Strict lint retains its 28/32 baseline; no introduced warning appears in the final all-target diagnostic. [Import authority](../design/IPTV_IMPORTS.md) records all corrected attempts, receipts, resource limits and deferred root/client/production work.
+
 ## IPTV destination/HTTP/TLS qualification — October 25, 2026
 
 `node scripts/testing-memory/run.mjs iptv-feed-authority` runs the offline Cargo contract under unchanged build admission, two Cargo jobs and a 128 MiB Node driver heap. The driver installs HTTP/HTTPS/all-proxy variables only in its child environment, with an owned loopback proxy trap that destroys any unexpected connection. It changes no system proxy or certificate store. The fixture retains existing PostgreSQL limits and owned container/directory cleanup; real HTTP/TLS peers and tracked operations are bounded separately.

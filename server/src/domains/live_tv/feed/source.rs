@@ -15,11 +15,11 @@ use std::{net::SocketAddr, time::Duration};
 use url::Url;
 use uuid::Uuid;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) struct Fence {
-    user: Uuid,
-    assignment: Uuid,
-    generation: i64,
+    pub user: Uuid,
+    pub assignment: Uuid,
+    pub generation: i64,
 }
 
 pub(super) struct Source {

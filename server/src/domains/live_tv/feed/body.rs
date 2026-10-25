@@ -11,7 +11,7 @@ use hyper::body::Incoming;
 use std::time::Duration;
 use tokio_stream::StreamExt;
 
-pub(super) async fn read(response: Response<Incoming>) -> Result<Vec<u8>, FeedError> {
+pub(super) async fn read(response: Response<Incoming>, limit: usize) -> Result<Vec<u8>, FeedError> {
     let headers = response.headers();
     if response.status() != StatusCode::OK
         || headers
@@ -34,7 +34,7 @@ pub(super) async fn read(response: Response<Incoming>) -> Result<Vec<u8>, FeedEr
             .ok()
             .and_then(|v| v.parse::<u64>().ok())
             .ok_or(FeedError::Response)?;
-        if length > 65536 {
+        if length > limit as u64 {
             return Err(FeedError::Response);
         }
     }
@@ -45,7 +45,7 @@ pub(super) async fn read(response: Response<Incoming>) -> Result<Vec<u8>, FeedEr
         .map_err(|_| FeedError::Deadline)?
     {
         let chunk = chunk.map_err(|_| FeedError::Response)?;
-        if bytes.len().saturating_add(chunk.len()) > 65536 {
+        if bytes.len().saturating_add(chunk.len()) > limit {
             return Err(FeedError::Response);
         }
         bytes.extend_from_slice(&chunk);

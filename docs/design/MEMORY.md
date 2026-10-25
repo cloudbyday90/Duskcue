@@ -1,5 +1,11 @@
 # Memory Management
 
+## Bounded IPTV import ownership — October 25, 2026
+
+[Import authority](IPTV_IMPORTS.md) specifies fixed network, decompression, XML, record and aggregate-payload ceilings. One retained import owner admits one operation without a queue and keeps its slot across both fetches, the cooperative blocking parser/encoder, publication, monitor joining and database cleanup. These numerical ceilings bound supported work; they are not an exact allocator/RSS guarantee.
+
+Started blocking work is signalled and joined, never declared stopped by dropping a handle. Authority monitoring is separately joined. Database connections remain owned through acknowledged rollback/commit or explicit retirement; lost COMMIT acknowledgments require reconciliation or an indeterminate outcome. A thirty-second shutdown timeout reports incomplete cleanup while the tracked operation retains ownership; a cleanup error quarantines the slot. Root/startup and scheduler integration remain subsequent work rather than borrowing the generic scheduler's weaker cancellation ownership.
+
 ## Saved-feed qualification ownership — October 25, 2026
 
 The default-off [saved-feed boundary](../security/IPTV_DESTINATION_AUTHORITY.md) uses a retained operation owner with two concurrent slots and at most one operation per household's assignment, with no admission queue. The HTTP driver and response reader are polled in the same tracked task over owned TCP/TLS. Cancellation drops upstream IO before active-operation capacity is released; shutdown closes admission, cancels and joins with a ten-second cleanup deadline. Completed result buffers remain the qualification caller's responsibility.
