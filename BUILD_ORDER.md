@@ -10,6 +10,14 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 encrypted IPTV assignment (RESEARCH AND DESIGN REVIEW IN PROGRESS)
+
+**Authority:** [Encrypted household assignment and delegation](docs/design/IPTV_ASSIGNMENT.md). Official-source research and source investigation are recorded against the completed owner-security foundation. Recommend strict contextual AES-GCM storage for the complete supplied feed URLs, write-only secret interfaces, transaction-time administrator/owner checks and explicitly delegated profile policy. Retain the existing Rust/Axum/PostgreSQL/ring stack and keep networking disabled.
+
+**Open review:** fresh proof for sensitive administrator writes, the first delegated controls and credential rotation versus assignment replacement. These product answers and the required shared-understanding confirmation are pending. No assignment code/schema or new runtime qualification is claimed. The authority records pros/cons, proposed service boundaries, acceptance and the current random-PR comparison. PR #5 is superseded by both current lockfiles; no patch or merge applies.
+
+**Next:** settle that frontier, confirm the concrete backend contract, then implement and qualify the assignment increment on `main`. Preserve the resource workflow, legal-header-only comment exception and no-release instruction. Do not re-open already confirmed owner-factor, five-minute grant, Kids default or shared-stream-cap decisions.
+
 ## October 2026 household-owner security (MILESTONE 3 FOUNDATION COMPLETE)
 
 **Committed implementation:** `a2292e37e03cbf079a55626c83b76a4f4c30cfa3` on `main`; no release or PR merge. Documentation-only descendants preserve the qualified source snapshot.
