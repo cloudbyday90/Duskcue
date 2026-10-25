@@ -12,6 +12,8 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## October 2026 bounded IPTV imports (SCOPED QUALIFICATION COMPLETE)
 
+**Committed implementation:** `731d26f263a7fe0eb0022feafed6a809a1ab4d79` on `main`. Documentation-only successors preserve the qualified source. No release or PR merge.
+
 **Authority:** [Bounded IPTV imports and last-good snapshots](docs/design/IPTV_IMPORTS.md). October 25 MCP research builds on qualified destination source `30511af`; research checkpoint `3b02c8b` records source findings. All nine product choices are now confirmed, including proxy UUID identity, atomic pairs, explicit incomplete/ambiguous evidence, UTF-8/gzip-file compatibility, valid empty lineups and fresh-generation reuse. Import/storage qualification remains default-off, metadata-only, with Kids disabled.
 
 **Findings/recommendation:** Dispatcharr's persisted proxy UUID is distinct from configurable/shared guide IDs. Current fetch results lose their publication fence; a paired receipt and transactional generation/attempt checks are needed. Prefer bounded encrypted snapshot records, one retained last-good pair, modular parser/compression/time/ownership/publication services and an isolated modern XML dependency. Existing scheduler cancellation/audit behavior does not qualify as an import owner or secret store.
