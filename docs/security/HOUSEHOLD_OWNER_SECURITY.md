@@ -2,6 +2,8 @@
 
 ## Status and authority
 
+**Qualified source:** `a2292e37e03cbf079a55626c83b76a4f4c30cfa3` on `main`. Later documentation-only checkpoints do not change the verified code. No release or PR merge.
+
 Research and design review started October 24, 2026. The user confirmed the complete concrete backend contract below on October 24. The backend foundation is implemented and locally qualified; [BUILD_ORDER.md](../../BUILD_ORDER.md) records its source checkpoint. [IPTV](../design/IPTV.md) owns household/Dispatcharr product behavior; this document owns the shared owner-proof and credential-lifecycle boundary. [Authentication](../design/AUTH.md) owns ordinary account login. The existing Kids exit PIN remains a separate mechanism.
 
 The repository [grill-me entry point](../../.agents/skills/grill-me/SKILL.md) loads [grilling](../../.agents/skills/grilling/SKILL.md). Its shared-understanding confirmation is required before implementing the interviewed plan. Continue on `main`, without a release or PR merge.

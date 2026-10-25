@@ -12,6 +12,8 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## October 2026 household-owner security (MILESTONE 3 FOUNDATION COMPLETE)
 
+**Committed implementation:** `a2292e37e03cbf079a55626c83b76a4f4c30cfa3` on `main`; no release or PR merge. Documentation-only descendants preserve the qualified source snapshot.
+
 **Authority:** [Household-owner security](docs/security/HOUSEHOLD_OWNER_SECURITY.md). The user confirmed operator-only one-use ten-minute handoffs, explicit activation, verified replacement-passkey recovery, scoped fresh proof, rotated cookie/bearer credentials and absolute five-minute session grants. The backend foundation is complete; milestone 3 assignment/delegation remains subsequent work.
 
 **Built:** modular owner operator, factor, challenge, grant and transaction services; protected existing profile/restriction/PIN and passkey mutations; revision/generation checks in the write transaction; bounded proof execution, challenge storage and factor loading. Internal session UUIDs and viewing expiry survive external token rotation. Recovery immediately clears old owner trust and grants while preserving protection and ordinary viewing credentials.
