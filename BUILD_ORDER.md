@@ -10,6 +10,16 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 profile-scoped IPTV catalog (RESEARCH AND DESIGN REVIEW)
+
+**Authority:** [Profile-scoped catalog reads](docs/design/IPTV_CATALOG.md), researched through official MCP sources against `b89e06a` after qualified SSE root ownership. No catalog source changes or implementation claim are made at this checkpoint. Main only; no release or PR merge.
+
+**Findings/recommendation:** use focused viewing authority and authenticated import readers with bounded typed projection, no networking or upstream references, current source/profile checks and snapshot-bound pages. Preserve the real capability resolver: the management helper has different admin defaults. Existing row IDs are UUIDv7 snapshot entries; the stable internal channel key is separate. Strict continuation invalidation needs a dedicated session profile-context revision because A-to-B-to-A restores the existing tuple. Keep last-good retention independent of manual-refresh enablement.
+
+**Review:** the user confirmed selected-standard-profile normal-build reads, allowlisted metadata and snapshot/profile-bound continuation. The second round covers guide-window/uncertain evidence delivery versus computed now/next, public identity lifetime and channel ordering. Complete shared-understanding confirmation still precedes implementation. The authority records alternatives, source facts, planned adversarial qualification and the unchanged thirteen-test import baseline. Random open PR 5 is superseded by both lockfiles; no local patch applies.
+
+**Next:** settle the remaining frontier and concrete contract, then implement the read boundary and its real PostgreSQL/HTTP/race/resource checks. Client catalog UI, owner unlock, automatic refresh, Kids and shared playback admission remain separate.
+
 ## October 2026 SSE root ownership (SCOPED LIFECYCLE QUALIFICATION COMPLETE)
 
 **Authority:** [Root-owned SSE lifecycle](docs/design/SSE_LIFECYCLE.md), researched through official MCP sources against the preceding HTTP/import root. The user confirmed the complete contract after `e1e6275`. Verified implementation: `7c1c23f6d57d0b39402ddcbd875c6752779f235b` on `main`. Documentation-only successors preserve that source. Main only; no release or PR merge.
