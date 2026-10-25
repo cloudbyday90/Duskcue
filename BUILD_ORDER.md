@@ -12,7 +12,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## October 2026 saved-feed destination authority (SCOPED QUALIFICATION COMPLETE)
 
-**Source checkpoint:** verified implementation in this checkpoint; the full hash is recorded in its documentation-only successor. Work remains on `main`; no release or PR merge.
+**Committed implementation:** `30511af8e2347426446b3c5ff3db08ad863e01ed` on `main`. Documentation-only successors preserve the qualified source. No release or PR merge.
 
 **Authority:** [IPTV saved-feed destination authority](docs/security/IPTV_DESTINATION_AUTHORITY.md). The user confirmed the complete contract at design checkpoint `deedd19` before implementation: explicit administrator IP pins, public-root TLS verification, encrypted approvals, generation fencing and controlled qualification behind the default-off feature.
 
