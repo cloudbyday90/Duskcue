@@ -5,6 +5,7 @@
 // See LICENSE file for details.
 
 export const PRESETS = {
+    'iptv-feed-authority': { policy: 'cargo', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/run-feed-authority.mjs'] },
     'iptv-transport-unit': { policy: 'unit', heapMiB: 128, command: 'node', args: ['--test', '--test-concurrency=1', 'scripts/testing-memory/live-transport-proof.test.mjs', 'scripts/testing-memory/workflow-evidence.test.mjs'] },
     'cargo-iptv-clippy': { policy: 'cargo', command: 'cargo.exe', args: ['clippy', '-p', 'duskcue', '--features', 'playback-qualification', '--all-targets', '--locked', '-j', '2', '--', '-D', 'warnings'] },
     'iptv-transport-qualify': { policy: 'build', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/qualify-live-transport.mjs'] },

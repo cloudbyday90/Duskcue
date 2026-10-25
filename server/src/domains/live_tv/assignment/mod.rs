@@ -3,6 +3,7 @@
 // Licensed under AGPL-3.0. See LICENSE for details.
 
 mod authority;
+mod destinations;
 pub mod error;
 mod handlers;
 mod policy;

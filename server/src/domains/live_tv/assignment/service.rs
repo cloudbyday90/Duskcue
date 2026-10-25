@@ -3,7 +3,8 @@
 // Licensed under AGPL-3.0. See LICENSE for details.
 
 use super::{
-    authority, error::AssignmentError, policy, preconditions::Condition, storage, types::*,
+    authority, destinations, error::AssignmentError, policy, preconditions::Condition, storage,
+    types::*,
 };
 use crate::{
     domains::household_security::{transactions, types::Scope},
@@ -130,7 +131,7 @@ pub(super) async fn admin_patch(
         } => {
             let credentials =
                 storage::credentials(&state.encryption_key, user, old_id, playlist_url, guide_url)?;
-            storage::rotate(&mut tx, old_id, credentials).await?;
+            storage::rotate(&mut tx, &state.encryption_key, user, old_id, credentials).await?;
             (old_id, "assignment_credentials_rotated")
         }
         AdminPatch::ReplaceAssignment {
@@ -143,6 +144,27 @@ pub(super) async fn admin_patch(
             storage::remove(&mut tx, old_id).await?;
             storage::insert(&mut tx, user, id, old_policy, credentials).await?;
             (id, "assignment_replaced")
+        }
+        AdminPatch::ApproveDestination {
+            feed,
+            expected_origin,
+            addresses,
+        } => {
+            destinations::approve(
+                &mut tx,
+                &state.encryption_key,
+                user,
+                old_id,
+                feed,
+                &expected_origin,
+                &addresses,
+            )
+            .await?;
+            (old_id, "destination_approved")
+        }
+        AdminPatch::RevokeDestination { feed } => {
+            destinations::save(&mut tx, old_id, feed, None, 0).await?;
+            (old_id, "destination_revoked")
         }
     };
     transactions::revoke_management(&mut tx, user).await?;

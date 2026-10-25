@@ -46,7 +46,7 @@ pub fn capture() -> anyhow::Result<Capture> {
     let writer = capture.clone();
     tracing_subscriber::fmt()
         .with_ansi(false)
-        .with_env_filter("reqwest=trace,hyper_util=trace,hyper=trace,duskcue=trace")
+        .with_env_filter("reqwest=trace,hyper_util=trace,hyper=trace,rustls=trace,duskcue=trace")
         .with_writer(move || writer.clone())
         .try_init()
         .map_err(|_| anyhow::anyhow!("diagnostic subscriber setup failed"))?;

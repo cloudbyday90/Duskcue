@@ -1,8 +1,10 @@
 # Project Structure
 
-## Saved-feed destination authority — October 25, 2026 design checkpoint
+## Saved-feed destination authority — October 25, 2026
 
-[Destination authority](../security/IPTV_DESTINATION_AUTHORITY.md) proposes separate approval policy/storage, source admission, HTTP/TLS connection, bounded body and operation-owner modules, preserving the existing domain pattern. Three narrow direct dependency declarations would expose already locked Hyper, hyper-util and webpki-roots packages without intended version changes. This is a reviewed recommendation awaiting complete-contract confirmation, not an implemented dependency or source change. The existing MPEG-TS experiment remains separately qualified.
+[Destination authority](../security/IPTV_DESTINATION_AUTHORITY.md) records the confirmed contract. `live_tv/destination/` owns pure address policy and the context-bound approval codec; `assignment/destinations.rs` owns transactional approval persistence and rotation retention. The default-off `live_tv/feed/` composes saved-source admission/fencing, owned TCP/TLS, a response-head input budget, bounded body processing and tracked operation ownership. Three optional direct server dependencies expose already locked Hyper, hyper-util and webpki-roots versions only for qualification. The existing MPEG-TS experiment remains separate.
+
+`tests/live_tv_feed_authority.rs` composes focused authority/storage, peer, network and lifecycle helpers with the existing PostgreSQL/actor/HTTP support. Its serial memory-admitted preset configures a process-only proxy trap and runs Cargo offline. Test-only certificate generation does not access certificate stores. The full final contract, assignment/owner regressions and 981 library cases pass; the authority distinguishes receipts, failed attempts, existing lint diagnostics and qualified boundaries.
 
 ## Encrypted IPTV assignment — October 24, 2026
 

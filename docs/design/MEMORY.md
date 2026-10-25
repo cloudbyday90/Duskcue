@@ -1,5 +1,11 @@
 # Memory Management
 
+## Saved-feed qualification ownership — October 25, 2026
+
+The default-off [saved-feed boundary](../security/IPTV_DESTINATION_AUTHORITY.md) uses a retained operation owner with two concurrent slots and at most one operation per household's assignment, with no admission queue. The HTTP driver and response reader are polled in the same tracked task over owned TCP/TLS. Cancellation drops upstream IO before active-operation capacity is released; shutdown closes admission, cancels and joins with a ten-second cleanup deadline. Completed result buffers remain the qualification caller's responsibility.
+
+A separate response-head input gate enforces 32 KiB before Hyper delivers final headers; Hyper's configured buffer ceiling alone is insufficient in locked 1.10.1. Releasing the gate permits the independent 64 KiB body budget. These are input bounds, not claims about exact parser/TLS allocator sizes. There is no persistent feed cache, system resolver, client connection pool or production-root shutdown registration. The current qualification owner must be retained through cleanup; production root integration remains a separate prerequisite. Existing memory-admission/reserve limits are unchanged.
+
 ## Overview
 
 Strategy for runtime memory management: memory budgets, memory pressure watchdog, PostgreSQL connection pool tuning, crash recovery, and process lifecycle. Designed for NAS hardware (2 GB ARM) through dedicated servers (16 GB+ x86_64).

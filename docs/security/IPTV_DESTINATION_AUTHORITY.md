@@ -2,7 +2,7 @@
 
 ## Status and ownership
 
-Research and design checkpoint, October 25, 2026, against `26a4a178adb81ee7e2db767fda5371d1e6cea85e` on `main`. The user confirmed explicit IP pins, public-root TLS verification and controlled qualification behind the default-off `playback-qualification` feature. Confirmation of shared understanding of the complete contract below is pending. This checkpoint changes documentation only; it does not implement or qualify networking. No release or PR merge.
+Research started October 25, 2026, against `26a4a178adb81ee7e2db767fda5371d1e6cea85e` on `main`. Design checkpoint `deedd195a690acae73e1a991059d60d3c143bff4` records the concrete contract. The user confirmed shared understanding of that complete contract before implementation, including explicit IP pins, public-root TLS verification, three direct dependency declarations and controlled qualification behind the default-off `playback-qualification` feature. The scoped implementation and local qualification are complete; the source checkpoint is recorded after commit in a documentation-only successor. No release or PR merge.
 
 [IPTV](../design/IPTV.md) owns the player milestones. [Assignment and delegation](../design/IPTV_ASSIGNMENT.md) owns the already qualified encrypted URL pair, administrator authority and owner controls. [Owner security](HOUSEHOLD_OWNER_SECURITY.md) owns fresh proof and grants. This document owns destination approval, stale-source fencing and the first saved-feed connection qualification. It does not change the settled household, Kids, stream-cap or initial playback decisions.
 
@@ -45,7 +45,7 @@ URLs below were discovered with MCP search and retrieved on October 25, 2026. Lo
 
 Retain Rust/Axum, PostgreSQL, contextual ring AES-GCM, the existing owner-security transaction services, URL parsing, Tokio and Tokio-Rustls. Add three narrowly featured direct dependency declarations for already locked packages: `hyper` with `client,http1`, `hyper-util` with `tokio`, and `webpki-roots`. This is a manifest/dependency-edge change, not a claim of zero dependency changes; no package-version upgrade is intended. Preserve the existing Rust/Cargo 1.99.1 local toolchain and the separately pinned Docker compiler. Use small policy, persistence, admission, connection, body and operation-owner modules; no global client singleton.
 
-## Concrete contract for shared-understanding confirmation
+## Confirmed implementation contract
 
 ### Administrator approval and confidentiality
 
@@ -104,11 +104,43 @@ Feed approval does not authorize stream URLs, logos, XML entities, guide referen
 6. Qualify successful hostname SNI/chain/name verification, IP identities, wrong-name/untrusted/expired certificates, wrong pins, redirect and proxy traps with zero trap hits, framing/byte/header/time limits and refusal without DNS. Exercise cancellation during connection/TLS/headers/body, abandoned callers, capacity recovery and owner shutdown with peer-observed closure. Run bounded trace capture against secret origins, paths, queries, request/response headers and fixture bodies; never weaken capture to suppress a leak.
 7. Run appropriate assignment/owner regressions, library tests, formatting, copyright and compiler/lint checks through the serial memory-admitted wrapper. Preserve resource limits and existing diagnostic baselines; record failures and limitations as well as passes. Update this authority and related MDs with exact qualified source and receipts, then commit/push on `main` without a release.
 
-No implementation, test pass, successful TLS session or production enablement is claimed at this design checkpoint. Additional independent security review and adversarial connection tests remain implementation work.
+The design checkpoint itself claimed no implementation or runtime qualification. The following execution record tracks implementation separately; a passing stage in an incomplete run is not a completed qualification.
+
+## Implementation and execution record
+
+Approval policy and the versioned contextual codec are separate from assignment persistence. The new migration adds generation/approval/count fields and an account-state trigger. Administrator operations retain the existing transaction/proof/precondition/audit services. The default-off feed module separates admission/fencing, TCP/TLS, response-head input, body reading and tracked owner services. No production route, import parser or startup owner is registered.
+
+The three new direct dependency edges are optional server dependencies selected by `playback-qualification`; locked package versions remain unchanged. Fixed test CA/leaf files and public test keys are documented in [the fixture README](../../server/tests/fixtures/iptv-feed/README.md). Their generator uses in-memory .NET cryptography without a certificate-store API. The normal constructor uses public roots; only the fixed-fixture constructor trusts the test CA. The locked server graph does not enable Rustls's logging feature; trace qualification nevertheless includes the `rustls` target so a later feature-graph change cannot silently expose fixture names.
+
+Initial guarded feature compilation passes in 58.12 seconds: `.cache/testing-memory/2026-10-25T09-18-17-576Z-7355e4b0-7101-4fec-b2be-0831ad177c3b.jsonl`. The four new address/origin/bounds/context-encryption tests pass with zero ignored cases: `.cache/testing-memory/2026-10-25T09-19-28-303Z-6435b02a-b1f6-4721-9857-6bfc39fc16a7.jsonl`. These early checks precede the final response-head guard.
+
+The first full contract attempt fails after its authority stage, in 96.50 seconds, on a response result mismatch: `.cache/testing-memory/2026-10-25T09-27-26-159Z-88a79c52-eb56-4081-bfaa-340e0a77163d.jsonl`. A test-only redundant-parentheses warning was removed and failure context improved. The second attempt identifies a complete 33,000-byte header accepted despite `max_buf_size(32768)`, after authority and genuine TLS cases, in 98.61 seconds: `.cache/testing-memory/2026-10-25T09-34-43-358Z-71166800-cc01-4b4d-a1ff-312a76282e0d.jsonl`. Both process-only proxy traps observe zero connections. Neither attempt is reported as a pass.
+
+Installed Hyper 1.10.1 parses a completed head before checking its adaptive-buffer limit. A small IO byte-budget gate now prevents more than 32 KiB from reaching that parser before final-header delivery, then releases body reads. It parses no status line or headers and introduces no replacement HTTP parser. Tests include a head exactly at the ceiling followed by a body exactly at its independent ceiling, oversized heads, header count, conflicting/unsupported framing and truncation. Transfer-encoding duplicates are refused; the identity content-coding token is compared without case sensitivity.
+
+## Local qualification results
+
+| Command or check | Result and receipt |
+|---|---|
+| `node scripts/testing-memory/run.mjs iptv-feed-authority` — corrected contract | Passes in 224.13 seconds with zero ignored cases and 113 safe audit events. `.cache/testing-memory/2026-10-25T09-42-33-314Z-51c46610-99c3-449b-97a9-605b8c4b8d22.jsonl`. This precedes the final deletion/pre-connect additions. |
+| Same command — final contract | **Passes in 235.45 seconds**, zero ignored cases, 121 safe audit events, resource `c083cf1e-92e6-451b-98d0-349ec9ea1a7d`. `.cache/testing-memory/2026-10-25T09-49-22-654Z-e03594c5-6f90-41ab-a8d3-6be783423524.jsonl`. Includes both auth presentations, encrypted context substitution, repair rotation, conditional/permission races, overflow rollback, genuine TLS/SNI/IP identities and certificate refusals, exact/over-limit heads and bodies, framing, deadlines, selected-address refusal, stale-work cancellation, capacity and joined cleanup. Process-only proxy trap: zero connections. |
+| `node scripts/testing-memory/run.mjs cargo-test --test live_tv_assignment -- --ignored --nocapture` | **Passes in 111.31 seconds**, zero ignored cases, 17 safe audit events; `.cache/testing-memory/2026-10-25T09-53-50-148Z-681a6aa3-29c2-46a1-9904-d5454551915b.jsonl`. Also compiles the default-feature production-router contract. |
+| `node scripts/testing-memory/run.mjs cargo-test --test household_owner_security -- --ignored --nocapture` | **Passes in 117.84 seconds**, zero ignored cases, 57 safe audit events; `.cache/testing-memory/2026-10-25T09-58-48-160Z-2435ba6b-c94a-4eef-adf3-d1b7723aa5f4.jsonl`. Includes signed WebAuthn, password/cookie/bearer rotation, actual operator command, recovery, replay and protected legacy mutations. |
+| `node scripts/testing-memory/run.mjs cargo-test --features playback-qualification --lib -- --quiet` | **981 passed, seven existing ignores**, zero failures, 50.58 seconds; `.cache/testing-memory/2026-10-25T10-01-41-759Z-e6dee1ba-0759-4736-ae7b-b6780a2e31ef.jsonl`. |
+| `node scripts/testing-memory/run.mjs cargo-iptv-clippy` | Strict check exits nonzero on the established **28 library / 32 library-test** diagnostics; no Live TV path appears among those findings. `.cache/testing-memory/2026-10-25T10-03-14-573Z-12ae7209-c751-43be-9d73-2f396ac2dc73.jsonl`. The strict preset is unchanged. |
+| `node scripts/testing-memory/run.mjs cargo-iptv-clippy -W warnings` | All targets complete in 48.32 seconds with the same 28 library / 32 library-test findings and two existing Tonight casts; **no introduced warning**. `.cache/testing-memory/2026-10-25T10-05-15-572Z-86ecef7f-01b9-40ad-a3d6-4cfb48ad2d88.jsonl`. This diagnostic run is not reported as a passing strict lint gate. |
+| Formatting, copyright and script syntax | `cargo fmt --all -- --check`, copyright compliance across **758 tracked source files**, JavaScript syntax, PowerShell generator parsing and staged whitespace checks pass. The fixture generator is parsed without regenerating the qualified certificates. Cargo.lock package/version/source tuples have zero changes. |
+| `node scripts/testing-memory/run.mjs iptv-transport-unit scripts/testing-memory/presets.test.mjs scripts/testing-memory/policy.test.mjs` | **Sixteen passed**, no failures/skips; `.cache/testing-memory/2026-10-25T10-07-29-343Z-044893a4-de14-4290-a572-9c661ed37cdb.jsonl`. Preserves ownership, workflow evidence, protected argument limits and memory-admission behavior. |
+
+The final feed contract uses immutable PostgreSQL image `sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336`, the existing owned 512 MiB/no-extra-swap, two-CPU/128-PID fixture, 16 MiB database buffers, sixteen connections and application pool four. One separately owned coordinator observes a blocked permission race; isolated pool-one fixtures qualify authority-check timeout and cancellation before connection. Pool/container/directory cleanup completes before test success. Its wrapper exits zero without interruption or a memory stop, with peak owned private bytes 3,547,168,768, peak working set 5,273,550,848 and minimum available host bytes 18,808,639,488. Reserve and deadline policies are unchanged.
+
+Closure evidence covers connected TCP/TLS peers, stalled TLS handshakes, headers and bodies, abandoned handles/caller futures, owner Drop and shutdown. Pre-connect cancellation is qualified while database admission is deliberately blocked; no OS packet-loss or raw SYN-blackhole experiment is claimed. The gate is an operation-owner limit; qualification retains one owner, and production integration must retain that ownership rather than create an owner per request. No real Dispatcharr endpoint, live public-CA upstream, operating-system certificate store or browser/Tauri client is exercised by this controlled fixture.
 
 ## Documentation checkpoint verification
 
-The changed Markdown documents pass `git diff --check`. A local target-existence check, excluding inline and fenced code examples, verifies 605 links across six documents. It does not verify remote URL availability or Markdown anchor semantics. No heavy build or runtime test was needed or run for this documentation-only checkpoint. Application qualification remains the acceptance plan above.
+At design checkpoint `deedd19`, staged whitespace and 605 local target links across six documents passed. That documentation-only checkpoint ran no heavy build or runtime test; subsequent implementation evidence is recorded above. Link checks exclude inline/fenced code and establish local target existence, not remote availability or Markdown anchor semantics.
+
+Final implementation documentation passes the same whitespace checks and **701 local target links across eleven changed Markdown documents**. Design, schema, module structure, API security, memory/ownership, testing operations, project status and build order cross-reference this boundary rather than inferring production playback from fixture success.
 
 ## Random open PR applicability
 
@@ -116,6 +148,6 @@ MCP GitHub search on October 25 returned one open PR. A random selection from th
 
 ## Deferred work and next item
 
-After this authority and its HTTP/TLS lifecycle are implemented and qualified, the next item is bounded M3U/XMLTV import: stable channel identity, independent guide matching, parsing/decompression limits, last-good snapshots and owned manual/scheduled refresh using the qualified authority. That increment needs its own concrete contract and research.
+The next item is bounded M3U/XMLTV import: stable channel identity, independent guide matching, parsing/decompression limits, generation-checked publication of last-good snapshots and owned manual/scheduled refresh using the qualified authority. That increment needs its own concrete contract and research, including realistic feed-size limits rather than reusing the 64 KiB fixture bound.
 
 Automatic DNS, private-CA administration, production fetch APIs, nested-resource fetching, root lifecycle integration, shared playback admission, Kids programme enforcement, storage-key rotation, interactive owner unlock, client accessibility execution and real Dispatcharr/web/Tauri journeys remain separately scoped. Saved approval does not enable playback or change `network_checked: false` / `playback_available: false` metadata.

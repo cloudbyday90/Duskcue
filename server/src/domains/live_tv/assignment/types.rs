@@ -2,6 +2,7 @@
 // Copyright (C) 2026-2026 Duskcue Contributors
 // Licensed under AGPL-3.0. See LICENSE for details.
 
+use super::secrets::FeedField;
 use serde::{Deserialize, Deserializer, Serialize};
 use uuid::Uuid;
 use validator::{Validate, ValidationError, ValidationErrors};
@@ -11,6 +12,9 @@ pub(super) struct AssignmentRow {
     pub id: Uuid,
     pub household_user_id: Uuid,
     pub revision: i64,
+    pub source_generation: i64,
+    pub playlist_address_count: i16,
+    pub guide_address_count: i16,
     pub playlist_transport: String,
     pub guide_transport: String,
     pub enabled: bool,
@@ -87,6 +91,14 @@ pub enum AdminPatch {
         playlist_url: String,
         guide_url: String,
     },
+    ApproveDestination {
+        feed: FeedField,
+        expected_origin: String,
+        addresses: Vec<String>,
+    },
+    RevokeDestination {
+        feed: FeedField,
+    },
 }
 
 #[derive(Deserialize)]
@@ -121,7 +133,10 @@ impl Validate for AdminPatch {
             Self::Configure {
                 max_live_streams, ..
             } => limit_valid(*max_live_streams),
-            Self::RotateCredentials { .. } | Self::ReplaceAssignment { .. } => Ok(()),
+            Self::RotateCredentials { .. }
+            | Self::ReplaceAssignment { .. }
+            | Self::ApproveDestination { .. }
+            | Self::RevokeDestination { .. } => Ok(()),
         }
     }
 }
@@ -155,6 +170,11 @@ pub struct AssignmentResponse {
     pub assignment_id: Uuid,
     pub household_user_id: Uuid,
     pub revision: i64,
+    pub source_generation: i64,
+    pub playlist_destination_approved: bool,
+    pub guide_destination_approved: bool,
+    pub playlist_address_count: i16,
+    pub guide_address_count: i16,
     pub configured: bool,
     pub playlist_transport: String,
     pub guide_transport: String,

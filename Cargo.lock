@@ -1817,6 +1817,8 @@ dependencies = [
  "fluent-langneg",
  "fluent-templates",
  "governor",
+ "hyper",
+ "hyper-util",
  "ignore",
  "image",
  "ipnet",
@@ -1865,6 +1867,7 @@ dependencies = [
  "validator",
  "webauthn-rs",
  "webp",
+ "webpki-roots",
  "zip",
 ]
 

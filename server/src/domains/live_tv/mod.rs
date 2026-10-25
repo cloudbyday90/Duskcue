@@ -8,6 +8,10 @@ pub mod service;
 pub mod types;
 
 pub mod assignment;
+mod destination;
+
+#[cfg(feature = "playback-qualification")]
+pub mod feed;
 
 #[cfg(feature = "playback-qualification")]
 pub mod transport;

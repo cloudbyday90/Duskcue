@@ -1,5 +1,9 @@
 # Database Design
 
+## Saved-feed destination authority — October 25, 2026
+
+[Migration 20261025100000](../../server/migrations/20261025100000_live_tv_destinations.sql) extends each assignment with a positive source generation, separate encrypted playlist/guide destination approvals and constrained address-count metadata. Null approval requires count zero; present envelopes require one to eight addresses and the existing strict envelope bounds. A users-table trigger advances source generation and representation revision on status/deletion transitions, including disable/re-enable within one transaction. Arithmetic overflow aborts the mutation. Owner viewing-policy revisions remain distinct. [Destination authority](../security/IPTV_DESTINATION_AUTHORITY.md) owns consent, rotation, fencing and qualification status; no channel, programme or production-fetch table is added.
+
 ## Encrypted IPTV assignment — October 24, 2026
 
 [Migration 20261024200000](../../server/migrations/20261024200000_live_tv_assignments.sql) adds one encrypted feed-pair assignment per household and assignment-owned profile access. Composite foreign keys bind both assignment and profile to the same household. Assignment deletion/replacement and profile deletion cascade their policy rows. Positive optional caps, restrictive delegation defaults and a separate assignment revision preserve the confirmed boundary. No channel/guide schema is added. [Assignment authority](IPTV_ASSIGNMENT.md) owns exact policy, interfaces, qualification status and subsequent work.

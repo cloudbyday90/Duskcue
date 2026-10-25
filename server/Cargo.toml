@@ -11,7 +11,7 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-playback-qualification = []
+playback-qualification = ["dep:hyper", "dep:hyper-util", "dep:webpki-roots"]
 
 [dependencies]
 axum.workspace = true
@@ -23,6 +23,9 @@ nonzero_ext.workspace = true
 rusqlite.workspace = true
 rustls.workspace = true
 tokio-rustls.workspace = true
+hyper = { workspace = true, optional = true }
+hyper-util = { workspace = true, optional = true }
+webpki-roots = { workspace = true, optional = true }
 ring.workspace = true
 argon2.workspace = true
 maxminddb.workspace = true

@@ -5,7 +5,8 @@
 use crate::services::encryption::{EncryptionError, EncryptionKey, context::RecordContext};
 use uuid::Uuid;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FeedField {
     Playlist,
     Guide,

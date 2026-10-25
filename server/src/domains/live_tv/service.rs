@@ -57,7 +57,7 @@ fn field_error(field: &str, message: &str) -> FieldError {
     }
 }
 
-fn validate_feed_url(raw: &str) -> Result<FeedTransport, &'static str> {
+pub(super) fn validate_feed_url(raw: &str) -> Result<FeedTransport, &'static str> {
     if raw.is_empty() || raw.len() > MAX_FEED_URL_BYTES {
         return Err("URL must contain between 1 and 4096 UTF-8 bytes");
     }

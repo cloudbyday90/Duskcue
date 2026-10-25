@@ -1,5 +1,11 @@
 # API Security Domain
 
+## Saved-feed destination approval — October 25, 2026
+
+[Destination authority](IPTV_DESTINATION_AUTHORITY.md) extends the existing assignment PATCH with per-feed approval/revocation. Current administrator permission, fresh proof on that administrator's account, strong conditional writes and transactional account locks guard origin/address consent. Encrypted approvals use a different purpose context from URL secrets. Reads expose presence/count/generation metadata without origins, pins or credential material; management writes perform no networking. Rotation, revocation and account-state generations fence admitted source work.
+
+The only saved-feed connection owner is behind the default-off qualification feature, without a production fetch route. It connects directly to approved IPs while verifying the saved TLS identity, and refuses DNS/proxy/redirect fallback. Request credentials come only from the saved URL; browser cookies, bearer tokens and arbitrary headers are not forwarded. The domain authority records exact tests and current qualification status; this API change does not enable imports or playback.
+
 ## Encrypted IPTV assignment — October 24, 2026
 
 [Assignment authority](../design/IPTV_ASSIGNMENT.md) owns write-only supplied feed URLs, strict context-bound storage, fresh administrator-account proof plus current capability, and independently delegated owner policy. Account/session/generation, object ownership, delegation and expected representation are rechecked inside the write transaction. Capability replacement now participates in the account-row lock protocol. No saved configuration grants destination/network authority or production playback access. Fixed attributed audit events contain no URL/ciphertext snapshot. Exact qualification and limitations remain in the domain authority.
