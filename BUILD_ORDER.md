@@ -10,6 +10,16 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 bounded IPTV imports (RESEARCH AND DESIGN REVIEW)
+
+**Authority:** [Bounded IPTV imports and last-good snapshots](docs/design/IPTV_IMPORTS.md). October 25 MCP research builds on qualified destination source `30511af` and documentation HEAD `2242219`. The user confirmed import/storage qualification behind the default-off feature, last-good retention on failed refresh and metadata-only processing with Kids disabled.
+
+**Findings/recommendation:** Dispatcharr's persisted proxy UUID is distinct from configurable/shared guide IDs. Current fetch results lose their publication fence; a paired receipt and transactional generation/attempt checks are needed. Prefer bounded encrypted snapshot records, one retained last-good pair, modular parser/compression/time/ownership/publication services and an isolated modern XML dependency. Existing scheduler cancellation/audit behavior does not qualify as an import owner or secret store.
+
+**Checkpoint boundary:** remaining identity, atomic-publication and uncertainty-preservation answers are pending, followed by exact-contract review. Documentation/research only; no import schema, dependency change, implementation or runtime pass is claimed. Random open PR #5 remains superseded by both lockfiles. Work stays on main; no release or PR merge.
+
+**Next:** settle the import contract, then implement and locally qualify bounded parsing/storage before production root refresh, scheduling, client catalog reads and playback. Preserve all previously confirmed source, owner and Kids boundaries.
+
 ## October 2026 saved-feed destination authority (SCOPED QUALIFICATION COMPLETE)
 
 **Committed implementation:** `30511af8e2347426446b3c5ff3db08ad863e01ed` on `main`. Documentation-only successors preserve the qualified source. No release or PR merge.

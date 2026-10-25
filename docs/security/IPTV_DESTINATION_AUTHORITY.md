@@ -148,6 +148,6 @@ MCP GitHub search on October 25 returned one open PR. A random selection from th
 
 ## Deferred work and next item
 
-The next item is bounded M3U/XMLTV import: stable channel identity, independent guide matching, parsing/decompression limits, generation-checked publication of last-good snapshots and owned manual/scheduled refresh using the qualified authority. That increment needs its own concrete contract and research, including realistic feed-size limits rather than reusing the 64 KiB fixture bound.
+The next item is [bounded M3U/XMLTV import](../design/IPTV_IMPORTS.md): stable channel identity, independent guide matching, parsing/decompression limits and generation-checked publication of last-good snapshots using the qualified authority. Its October 25 research records the user's confirmed import/storage qualification and metadata-only scope. Remaining identity/publication/evidence choices and exact-contract confirmation precede implementation. Production root/manual/scheduled refresh follows separately. Review realistic feed-size limits rather than reusing the 64 KiB fixture bound.
 
 Automatic DNS, private-CA administration, production fetch APIs, nested-resource fetching, root lifecycle integration, shared playback admission, Kids programme enforcement, storage-key rotation, interactive owner unlock, client accessibility execution and real Dispatcharr/web/Tauri journeys remain separately scoped. Saved approval does not enable playback or change `network_checked: false` / `playback_available: false` metadata.
