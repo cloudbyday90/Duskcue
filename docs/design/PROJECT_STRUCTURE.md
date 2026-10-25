@@ -1,5 +1,9 @@
 # Project Structure
 
+## Saved-feed destination authority — October 25, 2026 design checkpoint
+
+[Destination authority](../security/IPTV_DESTINATION_AUTHORITY.md) proposes separate approval policy/storage, source admission, HTTP/TLS connection, bounded body and operation-owner modules, preserving the existing domain pattern. Three narrow direct dependency declarations would expose already locked Hyper, hyper-util and webpki-roots packages without intended version changes. This is a reviewed recommendation awaiting complete-contract confirmation, not an implemented dependency or source change. The existing MPEG-TS experiment remains separately qualified.
+
 ## Encrypted IPTV assignment — October 24, 2026
 
 `live_tv/assignment/` retains the five-file module/HTTP/service/error/types boundary and composes separate authority, storage, policy, precondition and secret-codec modules. `services/encryption/context.rs` extends the existing private AES-GCM key with strict context-bound envelopes. Shared owner transaction/revocation helpers and capability-update row locking support cross-account administration without copying grant verification. This adds no dependency or singleton.

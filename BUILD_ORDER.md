@@ -10,6 +10,16 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 saved-feed destination authority (RESEARCH AND CONTRACT CHECKPOINT)
+
+**Authority:** [IPTV saved-feed destination authority](docs/security/IPTV_DESTINATION_AUTHORITY.md). October 25 MCP research and installed-dependency inspection build on qualified assignment source `898b9c2` and documentation HEAD `26a4a17`. The user confirmed explicit administrator IP pins, public-root TLS verification and controlled qualification behind the default-off feature. The complete concrete contract is documented; shared-understanding confirmation is pending before source implementation.
+
+**Recommendation:** encrypted per-feed origin/address approval, fresh administrator proof and strong conditional writes; a separate source generation for stale-work fencing; same-origin rotation preserves approval while changed origins clear it. An owned Hyper HTTP/1 connection over Tokio/Tokio-Rustls avoids system DNS and detached client drivers. Three direct declarations reuse already locked packages without intended version upgrades. The authority records alternatives, W3C/security review, limits, acceptance tests and deferred work.
+
+**Checkpoint boundary:** documentation only. No migration, source change, new runtime test or successful TLS fetch is claimed. PR #5 was randomly selected from the one open PR and remains superseded by both client lockfiles. Commit/push on `main`; no release or PR merge.
+
+**Next:** after contract confirmation, implement and qualify saved-feed authority and bounded real HTTP/TLS ownership before M3U/XMLTV imports. Production fetching, playback, DNS discovery, private-CA administration and nested resources remain disabled or separately scoped.
+
 ## October 2026 encrypted IPTV assignment (MILESTONE 3 SAVED CONFIGURATION COMPLETE)
 
 **Committed implementation:** `898b9c2e5be7689e9acb78e2001abdb1b5b13127` on `main`; no release or PR merge. Documentation-only descendants preserve the qualified source snapshot.
