@@ -1,5 +1,9 @@
 # API Security Domain
 
+## Root/manual IPTV refresh research — October 25, 2026
+
+[Refresh authority](../design/IPTV_REFRESH.md) records the confirmed product policy and concrete admission boundary awaiting final shared-understanding review. Current import start does not carry the initiating administrator into its delayed durable claim; an earlier permission transaction alone would leave a race. Protected HTTP admission must recheck current authority, assignment and representation in that claim, and status reads need their own current object-level authority. Existing generic JSON configuration paths must not become an unguarded activation route. Cookie SameSite, required JSON/non-simple headers and actual credentialed-CORS policy must be qualified together; this checkpoint adds no general Origin/CSRF middleware and enables no networking API.
+
 ## Saved-feed destination approval — October 25, 2026
 
 [Destination authority](IPTV_DESTINATION_AUTHORITY.md) extends the existing assignment PATCH with per-feed approval/revocation. Current administrator permission, fresh proof on that administrator's account, strong conditional writes and transactional account locks guard origin/address consent. Encrypted approvals use a different purpose context from URL secrets. Reads expose presence/count/generation metadata without origins, pins or credential material; management writes perform no networking. Rotation, revocation and account-state generations fence admitted source work.

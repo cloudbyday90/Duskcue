@@ -244,6 +244,8 @@ No action thresholds initially — PSI metrics are informational for admin dashb
 
 ## Graceful Shutdown
 
+**Target model versus current source, October 25, 2026:** the diagram below is not a qualification claim for current main. The [manual-refresh lifecycle review](IPTV_REFRESH.md) found that main selects/drops `axum::serve` on cancellation, does not register the import owner, and does not establish the continuing second-signal/internal-channel behavior shown below. Root tracker completion alone does not join separately owned imports or prohibit new task admission. Concrete root/HTTP/import drain and failure behavior must be reviewed and qualified before manual refresh is enabled.
+
 ### Signal Handling
 
 The server handles two termination signals plus an internal shutdown trigger:
@@ -455,6 +457,8 @@ let mut process = Process::new(
 FFmpeg CPU-specific settings (threading, priority, affinity) are documented in [CPU.md](CPU.md).
 
 ### Graceful Shutdown
+
+**Target model versus current source, October 25, 2026:** the diagram below is not a qualification claim for current main. The [manual-refresh lifecycle review](IPTV_REFRESH.md) found that main selects/drops `axum::serve` on cancellation, does not register the import owner, and does not establish the continuing second-signal/internal-channel behavior shown below. Root tracker completion alone does not join separately owned imports or prohibit new task admission. Concrete root/HTTP/import drain and failure behavior must be reviewed and qualified before manual refresh is enabled.
 
 ```rust
 let shutdown = GracefulShutdown::builder()

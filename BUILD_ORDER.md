@@ -10,6 +10,16 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 root-owned IPTV manual refresh (CONTRACT READY)
+
+**Authority:** [Root-owned IPTV manual refresh](docs/design/IPTV_REFRESH.md). October 25 MCP research starts from `99b2396` and preserves qualified import source `731d26f`. The next increment is application-root ownership, protected manual refresh and safe status; scheduling, client reads/UI, Kids and playback remain separate.
+
+**Findings/recommendation:** main currently drops the HTTP server on cancellation instead of establishing graceful request drain. The import owner is not root-owned, and its delayed claim does not carry administrator proof/session/capability or an HTTP precondition. Prefer atomic protected admission, retained completion/cleanup, real HTTP/import drain before pool closure and a minimal no-store status resource. Current locked libraries already provide the required lifecycle APIs. Generic configuration writes/reloads need deliberate opt-in coverage rather than a hidden flag with a bypass path.
+
+**Checkpoint boundary:** all six product choices are confirmed. The concrete contract specifies normal-build engine promotion with qualification-only test trust, a dedicated proof-protected default-off control, resource-specific ETags, durable 202 admission, explicit revocation, bounded status/restart uncertainty and actual HTTP/import shutdown ownership. Final shared-understanding confirmation precedes source work. Documentation only; no new schema, source, dependency or runtime pass is claimed. Fresh random open PR #5 remains superseded by both lockfiles. Main only; no release or PR merge.
+
+**Next:** confirm the complete contract, then implement/qualify the root/manual-refresh boundary. Preserve all confirmed import/source/household policies and resource limits.
+
 ## October 2026 bounded IPTV imports (SCOPED QUALIFICATION COMPLETE)
 
 **Committed implementation:** `731d26f263a7fe0eb0022feafed6a809a1ab4d79` on `main`. Documentation-only successors preserve the qualified source. No release or PR merge.

@@ -1,0 +1,144 @@
+# Root-owned IPTV manual refresh
+
+## Status and scope
+
+Research began October 25, 2026, against `99b2396b688cd2d5448ebe7abf799a0edc0b4b0b` on main. The preceding [import/storage authority](IPTV_IMPORTS.md), implementation `731d26f263a7fe0eb0022feafed6a809a1ab4d79`, remains the qualified source. This checkpoint records official-source research and code findings for the next increment. All six product choices below are confirmed. The concrete contract is ready for shared-understanding confirmation before source implementation. No new runtime result, schema migration, dependency update, release or PR merge is claimed.
+
+The intended next capability is a retained application owner for manual administrator-triggered refresh and a safe status API. Preserve the confirmed one-import/no-queue limit, explicit saved origin/IP consent, normal TLS identity verification, strict bounded parsers, UUIDv7 Duskcue identities, encrypted atomic last-good publication, source/attempt fencing and indeterminate-commit handling. Scheduling, client catalog reads/UI, Kids programme enforcement, nested resources, shared viewer admission and playback remain separate milestones.
+
+[Owner security](../security/HOUSEHOLD_OWNER_SECURITY.md), [assignment/delegation](IPTV_ASSIGNMENT.md), [destination authority](../security/IPTV_DESTINATION_AUTHORITY.md), [API conventions](API_CONVENTIONS.md), [API security](../security/API_SECURITY.md) and [memory/lifecycle guidance](MEMORY.md) retain their existing boundaries. This document owns the manual-refresh/root integration contract and its eventual execution outcomes.
+
+## Confirmed product choices
+
+- Starting refresh requires current CanManageUsers permission and fresh proof on that administrator's own account. Metadata-only reads require current permission without another fresh proof.
+- Durable acceptance transfers the operation to the server root. Browser disconnect does not cancel accepted work. Preserve one import per retained root across households, no queue and no automatic replay after uncertainty.
+- Manual refresh is an explicit server-operator capability, default off. Scheduling, client catalog reads/UI, Kids and playback remain disabled.
+- Use a dedicated database-backed control guarded by current CanManageServer plus fresh own-account proof. Generic JSON settings do not control it. Disabling closes admission/cancels active refresh while preserving last-good data.
+- Ordinary five-minute proof expiry does not cancel accepted work. Explicit initiating-account/session/profile/credential/capability revocation, source revocation, operator disable and shutdown cancel it; publication rechecks revocable authority.
+- Restart preserves last-good data and latest durable status. Unfinished work that this root does not own is uncertain, not presumed failed or completed. A new authorized manual start is required; there is no automatic resume/replay or historical run archive.
+
+## Existing-source findings
+
+- `main.rs` currently selects between `axum::serve` and cancellation, dropping the server future on shutdown. It does not use `with_graceful_shutdown`; the subsequent request-drain log does not establish graceful HTTP draining. The root tracker waits up to thirty seconds, then pool close waits up to sixty seconds; timeout paths warn and continue. The current memory diagram describes stronger signal/drain behavior than this source implements.
+- `ImportOwner` has its own tracker, cancellation token and one-slot admission gate. It is not retained by AppState or main. Its shutdown closes admission, cancels and waits thirty seconds; failure can leave work outstanding or the slot quarantined. Dropping a tracker or owner is not joined cleanup.
+- Dropping the returned `Import` cancels its operation. A handler cannot return 202 and discard that handle while promising server-owned work. Retention must cover acceptance, completion and cleanup; HTTP request lifetime and admitted operation lifetime must be explicit.
+- `start()` currently returns before loading sources or claiming an attempt. Its later claim knows household/source generation, but not the initiating administrator, session/credential version, capability, fresh grant or expected HTTP representation. An earlier handler authorization transaction followed by this start would leave a race and could select a replaced assignment.
+- The reusable administrator path locks sorted actor/household account rows, rechecks active role/capability and exact session/profile scope, and requires that administrator's own fresh grant for writes. Several checks accept only SQLx Transaction, whereas retained import transactions operate on PgConnection. Shared connection-level checks are needed rather than copying the authority protocol.
+- The trusted import status function queries latest attempt and authenticated snapshot metadata through the pool. It is not currently an HTTP authorization boundary. Read authorization and its selected metadata must be checked consistently; an attempt UUID is a reference, not permission.
+- Only the latest attempt summary and one committed last-good snapshot are retained. There is no historical attempt archive, request replay key, persisted initiator or root epoch/lease. Status is absent before the first claim. Restart/supersession cannot be described as historical success or failure without evidence.
+- The importer is currently behind the default-off `playback-qualification` feature. AppState constructors are infallible, while owner/TLS construction is fallible. Production root initialization must use the same shared pool/key and establish ownership before claiming readiness. Test-only CA construction must remain isolated from operator-facing trust configuration.
+- Generic configuration writes require CanManageServer but discard the actor, replace JSONB groups and accept unknown nested keys. Placing a new opt-in inside an existing JSON group would expose that write path; a dedicated proof-protected endpoint alone would not close it. Some reloads bypass the AppState reload method, which itself only swaps an Arc and does not cancel work.
+- Cookie authentication has precedence over bearer authentication. Cookies are HttpOnly/SameSite Strict. There is no general Origin/Fetch-Metadata/CSRF-token checker. New mutations must actually require JSON plus their checked non-simple header; a bodyless POST does not inherit JSON enforcement. Existing local wildcard CORS omits credential allowance; exposed credentialed origins are explicit. Native bearer clients may omit Origin.
+- The generic scheduler owns its polling loop, but its execution/cancel wrappers do not establish joined import cleanup. It remains outside this increment. Existing import qualification does not launch the real main executable or establish root HTTP-drain/pool-close ordering.
+
+## Official-source research
+
+URLs were discovered and opened through MCP search on October 25, 2026. Installed locked source supplements inaccessible version-specific rustdoc. These are source constraints, not external mandates for Duskcue's proof duration, queue policy, retention or deadlines.
+
+| Primary source | Finding and application |
+|---|---|
+| [Tokio graceful shutdown](https://tokio.rs/tokio/topics/shutdown), [locked TaskTracker 0.7.18](https://docs.rs/tokio-util/0.7.18/tokio_util/task/struct.TaskTracker.html) | Detection, notification and waiting are separate. Tracker close permits wait completion but does not prevent spawning; dropping it does not abort tasks. Close admission explicitly and retain/join the operation owner. |
+| [Locked Tokio 1.52.3 crate](https://docs.rs/crate/tokio/1.52.3), [current blocking-task documentation](https://docs.rs/tokio/latest/tokio/task/fn.spawn_blocking.html) | Installed locked source agrees that started blocking work cannot be aborted. Runtime shutdown timeouts stop waiting without proving work stopped. Keep cooperative cancellation and retained joins. |
+| [Axum Serve](https://docs.rs/axum/latest/axum/serve/struct.Serve.html), [official graceful-shutdown example](https://github.com/tokio-rs/axum/blob/main/examples/graceful-shutdown/src/main.rs) | HTTP graceful shutdown waits for outstanding requests. This does not establish completion of separately owned background imports; both lifetimes need coordination. |
+| [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html) | 202 accepts incomplete work and should identify a status monitor. Strong If-Match applies to the target resource's selected representation. Automatic POST retries require knowledge that replay is safe; Retry-After alone does not supply it. |
+| [RFC 9111](https://www.rfc-editor.org/rfc/rfc9111.html), [RFC 9457](https://www.rfc-editor.org/rfc/rfc9457.html) | Administrative responses should be no-store and use the existing safe problem-detail contract. Interface errors should not disclose source credentials, XML excerpts, SQL or internal diagnostics. |
+| [OWASP authorization](https://cheatsheetseries.owasp.org/cheatsheets/Authorization_Cheat_Sheet.html), [authentication](https://cheatsheetseries.owasp.org/cheatsheets/Authentication_Cheat_Sheet.html) | Validate current object-level authority for each control/status request. Fresh proof for a sensitive action is an application policy choice; the existing exact-session grant is the reuse point. |
+| [OWASP CSRF prevention](https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html) | Checked custom headers and rejection of simple content types can enforce a browser mutation boundary through preflight. Credentialed CORS needs explicit trusted origins. SameSite is additional protection, not a general Origin checker. |
+| [W3C design principles](https://www.w3.org/TR/design-principles/), [security/privacy questionnaire](https://www.w3.org/TR/security-privacy-questionnaire/), [Web Architecture](https://www.w3.org/TR/webarch/) | Minimize the exposed data and API surface; separate safe retrieval from state-changing actions. Apply these principles to metadata-only status and explicit refresh mutation. |
+| [W3C WCAG 2.2 status messages](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html) | A later interactive UI must announce meaningful status changes programmatically without moving focus. Backend categories can support that work; this increment cannot claim UI accessibility qualification. |
+
+The fetched current documentation identifies Tokio 1.54.1 and tokio-util 0.7.20; Duskcue locks 1.52.3/0.7.18. Their required lifecycle APIs already exist. No dependency upgrade is recommended merely to follow current rustdoc links. Axum remains 0.8.9. The earlier local Rust SDK update remains separate from this increment.
+
+## Alternatives, pros and cons
+
+| Choice | Pros | Cons | Recommendation |
+|---|---|---|---|
+| Retain accepted work in the server root; return 202/status | Browser loss does not discard accepted work; HTTP timing is decoupled from bounded parsing/publication. | Requires durable acceptance identity, retained completion and explicit uncertain/restart behavior. | Confirmed. |
+| Bind the whole refresh to one HTTP request | Fewer ownership transitions; existing handle cancellation is directly usable. | Long request/proxy timeouts and disconnects can discard useful work. | Not selected. |
+| Current permission plus fresh administrator proof at atomic admission | Reuses the established management boundary and prevents a viewing session alone from starting privileged network work. | Requires the administrator's owner-security enrollment/unlock flow; UI unlock remains a separate increment. | Confirmed. |
+| Handler-only authorization followed by the old asynchronous start | Small initial patch. | Permission, session, assignment and version can change before the real claim; accepted identity is unavailable. | Reject as an implementation shortcut. |
+| Explicit default-off operator capability | Controlled rollout without enabling viewing/playback; independent global ingress control. | Must define activation authority, every write path, disable behavior and root lifetime. | Confirmed. |
+| New flag in existing generic JSON configuration | Reuses current settings persistence/UI preservation. | Existing write/reload paths can bypass dedicated proof/cancellation, and previously unknown stored keys can become active. | Requires deliberate migration/guard coverage; do not silently add a typed consumer. |
+| Dedicated domain policy or restart-only deployment opt-in | Clear activation authority; avoids relying on generic JSON reload callbacks. | Adds an explicit policy/control path or requires restart, respectively. | Dedicated database-backed control selected; restart-only switching not selected. |
+| Reuse the scheduler execution wrappers | Existing run/status concepts. | Current wrappers do not retain and join the entire import operation. | Keep scheduling deferred. |
+
+## Recommended stack and contract direction
+
+Retain Rust/Axum, PostgreSQL, the existing ring context-bound encryption and qualified Hyper/Tokio-Rustls import boundary. Reuse locked Tokio cancellation/TaskTracker APIs and the shared household-owner authority, not a new auth mechanism or dependency stack. Use focused root-lifecycle, refresh admission, control/status service, HTTP error/DTO and completion-owner modules. Preserve the five-file domain boundary and avoid a global singleton.
+
+Admission must atomically recheck the initiating administrator, selected assignment/source authority and the appropriate representation precondition while durably claiming its UUIDv7 attempt. Retain the root's one-slot lease through completion and cleanup. A claimed command, an HTTP acknowledgment and a completed import are distinct facts. Lost acceptance/commit responses must not trigger automatic replay. Keep current-source validation, last-good semantics and authenticated snapshot metadata from the import authority.
+
+Define the refresh resource before selecting its validator. Do not copy an assignment ETag onto a differently defined status/action resource and call it strong If-Match semantics. The final contract must specify the status representation before the first run, attempt identity/supersession and polling/retention. Keep source URLs, pin addresses, imported labels and raw diagnostic text out of control/status/audit data.
+
+Root shutdown must close new refresh admission, signal accepted work, establish real HTTP draining and join the import owner before closing its pool/key dependencies. A timeout is cleanup failure, not a successful drain. Existing thirty-second drain/import and sixty-second pool budgets are constraints to reconcile, not permission to add sequential unbounded waits. Broader scheduler/worker ownership is not qualified simply by fixing the HTTP/import boundary.
+
+All six product choices are confirmed. The complete contract below now makes the implementation reviewable; no settled import/source/Kids decision is reopened.
+
+## Concrete implementation contract
+
+### Compilation, root registration and operator control
+
+Promote the qualified import engine and its already locked Hyper/hyper-util/webpki-roots/renamed quick-xml edges into the normal server build. The capability remains runtime default-off; scheduling and playback do not become enabled. Keep the fixed test-CA constructors and controlled fixture adapters behind the qualification feature, with no operator-facing CA or verification bypass. Preserve the earlier finite-feed and MPEG-TS qualification interfaces under their existing test boundary. No dependency version upgrade is required.
+
+Add one dedicated database policy row with UUIDv7 identity, positive revision and `enabled=false`, initialized by a focused migration. This row is the canonical manual-refresh switch, separate from generic server-config JSON. No old unknown JSON value can activate it. A checked no-op update does not create a new epoch; an actual transition increments the revision, and disabling invalidates admitted work. Re-enabling requires a new authorized start and cannot reset a quarantined owner's capacity.
+
+Expose GET/PUT `/api/v1/live-tv/manual-refresh-control`. Both require current CanManageServer and strict current session/profile scope; PUT additionally requires fresh own-account proof and strong version-specific If-Match for that control representation. PUT accepts only an explicit boolean `enabled`. Use a current account-row lock, the policy-row lock and safe fixed audit events. Do not wait for worker cleanup while holding policy/database locks. Existing generic settings endpoints neither write nor supply this policy.
+
+Construct exactly one modular refresh service from the application's shared pool/key, retaining a completion owner in the root. Register its request-facing handle before HTTP readiness. Propagate construction failure rather than silently substituting another key or a partially working root. A one-time per-AppState attachment may preserve existing infallible fixture constructors; it is not a process-global singleton. An unattached, shutting-down or quarantined service cannot admit work.
+
+### HTTP resources and conditional admission
+
+GET `/api/v1/live-tv/households/{household_id}/refresh` selects a small durable control representation: assignment identity/revision/source generation, approved pin counts and configured/enabled metadata, global manual-refresh policy identity/revision/enabled, and nullable latest attempt identity/sequence. It contains no volatile local-ownership observation or imported content. Compute a strong SHA-256 ETag over the actual deterministic serialized response. Before the first import, latest attempt fields are null rather than treating an existing assignment as absent.
+
+POST to that same resource requires the current strong If-Match. It accepts only required `playlist_pin` and `guide_pin` indexes in 0..7, then checks each against the current approved set. No URL, address, hostname, trust root, HTTP header, parser option or credential can be supplied. Require JSON even for malformed/empty inputs, reject unknown fields and reuse the bounded conditional-header parser. Retain the existing 16-KiB management-body and 1,024-byte combined conditional-header ceilings. GET is safe and never starts a refresh.
+
+Use the existing cookie-before-bearer authentication and CanManageUsers extractor, followed by locked service authorization. Factor narrow connection-level session/grant/capability checks shared with existing owner/assignment services. Inside the retained claim transaction, lock sorted actor/household accounts, the control policy and assignment in one documented order; recheck current permission, active exact session/profile/credential version, own fresh grant, policy, selected representation, assignment identity/generation and both encrypted approved sources. Refuse stale conditions, disabled policy, unavailable owner, invalid pins and exhausted sequence/capacity before source I/O. Nonblocking capacity admission adds no queue.
+
+Generate the UUIDv7 attempt before the claim and retain ownership through the commit/reconciliation decision. Only a durable admitted attempt can yield 202 Accepted with attempt ID/sequence, a relative status URL and matching Location. This acknowledgment is not import completion. A browser loss before the commit decision requests rollback and no networking; once the claim is committed or proven by reconciliation, the root retains and completes the accepted command even if the response was lost. Do not replay claim/fetch/publication merely because a caller retries an uncertain POST. The changed durable control representation makes an old If-Match stale after claim; return 412 rather than running another refresh.
+
+### Status, errors and revocation
+
+GET `/api/v1/live-tv/households/{household_id}/refresh/status` returns metadata only under current locked CanManageUsers/session/object authority. An optional expected `attempt_id` selects an observation of that latest bounded record, not a history lookup or bearer capability. The accepted Location can include that query. Return IDs, fixed state/category, counts, timestamps, current-source attribution and a separately named local-ownership/uncertainty observation. A mismatch means the requested attempt is not the current retained record; never fabricate its historical outcome. A durable unfinished attempt not owned here is uncertain; do not rewrite it to ordinary failure on startup. Do not attach the control resource's ETag to this different representation.
+
+Keep only the latest attempt summary and one last-good snapshot. Authenticate snapshot attribution/counts before exposing them. Status/control responses contain no feed URL, origin, pin address, imported label/guide/rating text, ciphertext or verbose parser/SQL error. The assignment API's syntax/configuration metadata remains distinct from a successful import and never grants playback. Audit accepted initiator identity safely while retaining system attribution for background publication; do not impersonate the initiator in system events.
+
+No-store applies to success, failure, extractor and rate-limit responses. Use the existing safe RFC 9457 contract: 428 for missing version condition, 412 stale condition, fixed 400/415/413 input failures, 403 current authority/proof refusal, 404 unavailable assignment and 503 unavailable/disabled/busy service. A short bounded Retry-After can advise backoff but does not authorize automatic POST replay. Return a relative status URL in JSON; expose Location/Retry-After to explicitly permitted browser clients without widening origin or credential policy. Qualify JSON plus the checked non-simple header and current cookie/CORS behavior; do not claim a generic CSRF-token/Origin checker exists.
+
+Capture an opaque initiator receipt at admission: account, exact session/profile/credential version and owner-management revocation revision. During accepted execution, poll current initiating authority and operator policy with the existing source/attempt monitor's bounded cadence/check deadlines. Ignore only ordinary management-grant expiry after admission, not login-session expiry or explicit account/profile/credential/capability/management-revision revocation. Recheck those revocable authorities in the publication transaction using the same lock ordering. No active HTTP connection or request context is retained. Policy/source revocation, cancellation and failed refresh keep last-good semantics; they do not invent a new viewing grant.
+
+### Shutdown and restart ownership
+
+Use real Axum graceful shutdown and retain its completion handle. On first stop, synchronously close refresh admission, signal HTTP/root work and accepted imports, then join HTTP/root-tracked work and the import/completion owners under one shared thirty-second drain budget rather than adding sequential thirty-second waits. Close the pool only after the relevant joins succeed, using at most sixty further seconds; the successful path remains bounded by ninety seconds overall. Preserve the existing import's cooperative blocking/database cleanup and COMMIT uncertainty behavior.
+
+A drain, cleanup or pool-close failure must not log successful shutdown or silently continue into dependency destruction. The executable exits nonzero through an explicit hard-failure path, retaining dependencies until process termination if tasks are unjoined. A continuing second-signal listener also forces a nonzero exit; it is not called joined cleanup. Test the normal path and these failure classifications. This qualifies HTTP/import/root ownership, not all legacy nested scheduler jobs or unrelated platform worker lifetimes.
+
+Startup performs no feed request or automatic resumption. The dedicated policy persists, but an unfinished prior attempt is reported only as durable state plus unowned/uncertain observation until evidence or a fresh authorized command supersedes it. A failed/quarantined owner is never replaced just by toggling the policy. Keep source-generation, latest-attempt, encrypted last-good and assignment-cascade guarantees from the qualified engine.
+
+### Implementation and qualification boundary
+
+Use separate five-file refresh HTTP/service/error/DTO modules, policy/admission/initiator/representation/completion services and small root HTTP/signal/shutdown coordinators. Reuse the engine, strict contextual encryption, connection driver and lock primitives. Add no scheduler executor, catalog/profile delivery, owner UI, image/stream fetch, decoder or release artifact.
+
+Qualify actual production-route cookie/bearer calls and real owned PostgreSQL/HTTP/TLS; observed permission/session/flag/assignment races; fresh-proof expiry versus explicit revocation; acceptance/disconnect/lost-ack/conditional retry; source/body/secret boundaries; prior running-status uncertainty; root registration/readiness and pool/key ordering. Exercise a real HTTP server with the production coordinator, and actual executable signal/drain behavior using the appropriate owned local runtime. Fixed-CA controlled cases stay separate from normal public-root construction. Use immutable fixture identities and existing resource-admission, CPU/PID/job/worker/reserve/deadline policy; no real household credentials or Dispatcharr instance is required for this bounded increment.
+
+After source changes, serially run the new contract, default-feature compilation, relevant import/destination/assignment/owner regressions, library/workflow tests, format/copyright/script/link checks and strict/all-target lint accounting. Record actual source, corrected attempts, exact resource/cleanup receipts and remaining limits, then commit/push all changes on main without a release or PR merge.
+
+## Qualification plan
+
+- Real cookie/bearer production-route checks for capability, fresh proof, session/profile changes, object isolation and locked admission races. Prove no source request precedes admitted authority/claim.
+- JSON/content-type/custom-header and CORS checks; safe fixed problem details and no-store responses including extractor, busy, disabled and failed conditions.
+- Durable accepted identity, client disconnect before/after admission, lost-response reconciliation, busy/no-queue behavior and status supersession without unbounded history or automatic replay.
+- Actual root startup/readiness, accepted work outside request lifetime, admission closure, HTTP drain, blocking-worker/database joins and pool-close order. Qualify timeout/failure states without claiming dropped futures were joined.
+- Opt-in false by default; activation/disable/restart behavior and every reachable configuration writer covered. No scheduler execution, nested-resource fetch, profile catalog/Kids grant or playback enablement.
+- Preserve and rerun relevant import, destination, assignment and owner regressions serially through the unchanged memory-admission wrapper. Record source identity, corrected attempts, resource/cleanup receipts and existing lint baselines; no release or PR merge.
+
+## Random open PR applicability
+
+Fresh MCP GitHub search on October 25 returned one open candidate. Uniform random selection from the complete one-item set selected [PR #5](https://github.com/cloudbyday90/Duskcue/pull/5), head `c018d77b7f09543e5960a571dc43e2f061cedf0a`, open and unmerged with two changed lockfiles. Its patch requests PostCSS 8.5.23/Nano ID 3.3.16. Both current lockfiles resolve 8.5.30/3.3.20. It remains superseded: no downgrade, patch application, merge, closure or comment applies.
+
+## Checkpoint outcome and next item
+
+Official-source research and read-only lifecycle/authorization/configuration exploration are complete. This is a documentation checkpoint; no source, dependency or database change and no new build/runtime pass is claimed. All six product answers are confirmed. The concrete contract above is ready for the required final shared-understanding confirmation before implementation.
+
+Whitespace checks and all **645 local target links across eight changed Markdown documents** pass, excluding inline/fenced code examples. This verifies target paths, not anchors or remote availability. No heavy build/test or dependency operation ran; the checkout stays on main and only documentation changed.
+
+The next work is implementation and qualification of the confirmed concrete root/manual-refresh contract once the pending final shared-understanding confirmation arrives. After that scoped milestone, separately qualify scheduling and profile-scoped catalog reads before client UI, Kids programme policy and production playback.

@@ -1,5 +1,9 @@
 # API Conventions
 
+## Manual IPTV refresh research — October 25, 2026
+
+[Refresh authority](IPTV_REFRESH.md) records all six confirmed manual-refresh product choices and the concrete contract awaiting shared-understanding confirmation. A proposed 202 response must identify incomplete accepted work and a safe status monitor; it cannot claim publication or make a lost-response POST safe to replay. A strong If-Match must represent its actual target resource, rather than borrowing an unrelated assignment validator. Current production routes still expose configuration only. No new API, accepted-operation retention or default-off operator setting is implemented by this research checkpoint.
+
 ## Conditional IPTV management — October 24, 2026
 
 [IPTV assignment](IPTV_ASSIGNMENT.md) adds a current-household assignment resource for administrators and a self-scoped owner-management resource. Creation requires `If-None-Match: *`; mutation/deletion requires current version-specific `If-Match`, checked under transaction locks. Fixed 428/412 errors distinguish missing conditions from stale representations. Strict tagged write variants separate policy, credential rotation and replacement; nullable limit fields on updates must be explicit. Secret input remains write-only. Responses remain no-store; ETags serve mutation concurrency as well as authenticated conditional GET. CORS exposes ETag without widening origins or credential policy. The authority owns paths, body/header bounds, pagination, statuses and current test outcome.
