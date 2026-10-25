@@ -12,7 +12,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## October 2026 SSE root ownership (SCOPED LIFECYCLE QUALIFICATION COMPLETE)
 
-**Authority:** [Root-owned SSE lifecycle](docs/design/SSE_LIFECYCLE.md), researched through official MCP sources against the preceding HTTP/import root. The user confirmed the complete contract after `e1e6275`. Implementation source identity follows the final verification record. Main only; no release or PR merge.
+**Authority:** [Root-owned SSE lifecycle](docs/design/SSE_LIFECYCLE.md), researched through official MCP sources against the preceding HTTP/import root. The user confirmed the complete contract after `e1e6275`. Verified implementation: `7c1c23f6d57d0b39402ddcbd875c6752779f235b` on `main`. Documentation-only successors preserve that source. Main only; no release or PR merge.
 
 **Built:** focused per-AppState lifecycle, forwarding, wire and output services replace the detached handler task. Admission/task registration is synchronized; preparation readiness occurs outside the lock. Producers and output observe root/client cancellation, discard queued output and retain destructor completion. Poisoned admission or unexpected task exit makes failure sticky. Established streams end normally; authenticated late admission uses fixed 503/Retry-After 5. Exact-route no-store covers success and refusals without buffering. Existing auth, five-connection limit, UUIDv7 events, ring100, channel32, filters, retry5000 and heartbeat15s remain scoped as before. Locked dependencies and Cargo.lock are unchanged.
 

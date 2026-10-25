@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-Research began October 25, 2026, against `cd24f154073079132a4ee9211fb836faf7622d7d` on `main`. The preceding [manual-refresh authority](IPTV_REFRESH.md), implementation `3b060e2a76ea5030ec2aa8cb874390049a6faafd`, qualifies actual HTTP/import draining and identifies connected SSE as the next lifecycle gap. This document records current-source findings, MCP-discovered official sources, alternatives and a concrete bounded implementation contract. The user confirmed both behavior choices after research checkpoint `86d9b99`. The user confirmed the complete contract after checkpoint `e1e6275`. Implementation and scoped qualification are complete; final verification results and boundaries are recorded below. No release or PR merge is made.
+Research began October 25, 2026, against `cd24f154073079132a4ee9211fb836faf7622d7d` on `main`. The preceding [manual-refresh authority](IPTV_REFRESH.md), implementation `3b060e2a76ea5030ec2aa8cb874390049a6faafd`, qualifies actual HTTP/import draining and identifies connected SSE as the next lifecycle gap. This document records current-source findings, MCP-discovered official sources, alternatives and a concrete bounded implementation contract. The user confirmed both behavior choices after research checkpoint `86d9b99`. The user confirmed the complete contract after checkpoint `e1e6275`. Implementation and scoped qualification are complete at **`7c1c23f6d57d0b39402ddcbd875c6752779f235b`** on `main`; documentation-only successors preserve that verified source. Final results and boundaries are recorded below. No release or PR merge is made.
 
 [Real-time push](REAL_TIME_PUSH.md) continues to own event taxonomy, authentication, filtering, replay and client behavior. [Memory ownership](MEMORY.md) owns the shared shutdown budget. [API security](../security/API_SECURITY.md) owns safe responses and current authority boundaries. This increment concerns the existing SSE transport, not IPTV catalog delivery or playback.
 
@@ -111,7 +111,7 @@ Already produced HTTP/OS bytes can still reach a client. A permanently stalled t
 
 ## Qualification outcomes and baseline
 
-All heavy checks run serially through `scripts/testing-memory/run.mjs` with the existing reserves and limits. Receipts below are retained under `.cache/testing-memory/`; they are local evidence rather than committed artifacts. The final source identity is recorded after the verification record is complete.
+All heavy checks run serially through `scripts/testing-memory/run.mjs` with the existing reserves and limits. Receipts below are retained under `.cache/testing-memory/`; they are local evidence rather than committed artifacts. The verified source identity above covers all source and fixture changes. Subsequent edits record documentation only.
 
 Final results:
 
