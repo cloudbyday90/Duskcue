@@ -2,6 +2,8 @@
 
 ## Status and authority
 
+**Qualified source:** `898b9c2e5be7689e9acb78e2001abdb1b5b13127` on `main`. Later documentation-only checkpoints preserve the verified code. No release or PR merge.
+
 Research started October 24, 2026 against `10b21c37a999fefca40fe11d97b79f9c1af623db` on `main`; research checkpoint `85122e0` records the source investigation. This is the qualified saved-configuration backend increment following the [household-owner security foundation](../security/HOUSEHOLD_OWNER_SECURITY.md). The user confirmed all three product choices below. The user confirmed shared understanding of the complete concrete contract. The backend assignment/delegation increment is implemented and locally qualified. No release or PR merge.
 
 [IPTV.md](IPTV.md) owns the player contract and milestone sequence. This document owns saved assignment, secret storage, administrator delegation and the first profile-policy slice. [Household-owner security](../security/HOUSEHOLD_OWNER_SECURITY.md) continues to own factor trust, enrollment/recovery and five-minute grants. Existing settled decisions are carried forward rather than reopened.

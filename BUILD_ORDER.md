@@ -12,6 +12,8 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## October 2026 encrypted IPTV assignment (MILESTONE 3 SAVED CONFIGURATION COMPLETE)
 
+**Committed implementation:** `898b9c2e5be7689e9acb78e2001abdb1b5b13127` on `main`; no release or PR merge. Documentation-only descendants preserve the qualified source snapshot.
+
 **Authority:** [Encrypted household assignment and delegation](docs/design/IPTV_ASSIGNMENT.md). The user confirmed fresh administrator-account proof plus permission, two independent default-off owner controls and distinct rotation/replacement semantics, then confirmed the complete concrete backend contract before implementation.
 
 **Built:** strict contextual AES-GCM URL storage, conditional administrator assignment CRUD/policy, delegated standard-profile access and stricter caps, shared account-row authority/revocation checks, bounded profile reads, safe audit attribution and CORS ETag exposure. Composite household/profile keys and restrictive defaults preserve the boundary. Rotation retains identity/policy; replacement resets owner choices. The existing Rust/Axum/PostgreSQL/ring stack gains no dependency or singleton. Networking and production playback remain disabled.
