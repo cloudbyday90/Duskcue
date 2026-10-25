@@ -10,8 +10,8 @@ pub mod types;
 pub mod assignment;
 mod destination;
 
-#[cfg(feature = "playback-qualification")]
 pub mod feed;
+pub mod refresh;
 
 #[cfg(feature = "playback-qualification")]
 pub mod transport;
@@ -36,7 +36,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .layer(cache_control_layer(NO_STORE_CACHE_CONTROL))
         .layer(axum::middleware::map_response(handlers::problem_media_type))
         .with_state(state.clone())
-        .merge(assignment::router(state))
+        .merge(assignment::router(state.clone()))
+        .merge(refresh::router(state))
 }
 
 #[cfg(test)]

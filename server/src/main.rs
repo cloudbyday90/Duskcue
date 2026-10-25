@@ -22,7 +22,6 @@ use mimalloc::MiMalloc;
 static GLOBAL: MiMalloc = MiMalloc;
 
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use clap::Parser;
@@ -39,8 +38,6 @@ use sqlx::postgres::PgPoolOptions;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
-static SHUTDOWN_STARTED: AtomicBool = AtomicBool::new(false);
-
 fn format_listen_url(bind_address: &str, port: u16) -> String {
     if bind_address.contains(':') && !bind_address.starts_with('[') {
         format!("http://[{bind_address}]:{port}")
@@ -56,41 +53,6 @@ fn all_tv_sections() -> Vec<duskcue::domains::tv::types::TvSurfaceSectionType> {
         duskcue::domains::tv::types::TvSurfaceSectionType::NewEpisodes,
         duskcue::domains::tv::types::TvSurfaceSectionType::Recommended,
     ]
-}
-
-async fn wait_for_signal(shutdown: CancellationToken) {
-    let ctrl_c = async {
-        tokio::signal::ctrl_c()
-            .await
-            .expect("failed to listen for ctrl+c");
-    };
-
-    #[cfg(unix)]
-    let terminate = async {
-        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
-            .expect("failed to listen for SIGTERM")
-            .recv()
-            .await;
-    };
-
-    #[cfg(not(unix))]
-    let terminate = std::future::pending::<()>();
-
-    tokio::select! {
-        _ = ctrl_c => {
-            tracing::info!("Received SIGINT (Ctrl+C)");
-        }
-        _ = terminate => {
-            tracing::info!("Received SIGTERM");
-        }
-    }
-
-    if SHUTDOWN_STARTED.swap(true, Ordering::SeqCst) {
-        tracing::warn!("Second shutdown signal received, forcing exit");
-        std::process::exit(1);
-    }
-
-    shutdown.cancel();
 }
 
 async fn connect_with_retry(database_url: &str) -> Result<sqlx::PgPool, sqlx::Error> {
@@ -314,6 +276,11 @@ async fn main() {
         metrics_handle,
         encryption_key,
     );
+    let _refresh_owner = duskcue::domains::live_tv::refresh::RefreshManager::attach(&state)
+        .unwrap_or_else(|_| {
+            tracing::error!(event = "refresh_initialization_failed");
+            std::process::exit(1)
+        });
     tracing::info!("Runtime configuration loaded");
 
     {
@@ -346,11 +313,14 @@ async fn main() {
         });
 
     tracing::info!(url = %format_listen_url(&bind_address, port), "Listening");
-    tracing::info!("Duskcue ready");
 
     let tracker = TaskTracker::new();
     let shutdown = CancellationToken::new();
-    let server_shutdown = shutdown.clone();
+    let signals =
+        duskcue::services::runtime::Signals::listen(shutdown.clone()).unwrap_or_else(|_| {
+            tracing::error!(event = "signal_initialization_failed");
+            std::process::exit(1)
+        });
     let scheduler_shutdown = shutdown.clone();
 
     let enrichment = state.enrichment.clone();
@@ -653,45 +623,18 @@ async fn main() {
         tracing::warn!(error = %e, "Failed to start filesystem watcher — scheduled scans will still work");
     }
 
-    tracker.spawn(async move {
-        tokio::select! {
-            result = axum::serve(
-                listener,
-                app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-            ) => {
-                result.expect("server error");
-            }
-            _ = server_shutdown.cancelled() => {}
-        }
-    });
-
-    wait_for_signal(shutdown.clone()).await;
-
-    tracing::info!("Phase 1: Signal received — stopping HTTP listener and cancelling tasks");
-
-    tracing::info!("Phase 2: Draining in-flight requests (up to 30s)");
-    tracker.close();
-    let drain_result = tokio::time::timeout(Duration::from_secs(30), tracker.wait()).await;
-    if drain_result.is_err() {
-        tracing::warn!("Phase 2: Drain timed out after 30s — some tasks did not complete");
-    } else {
-        tracing::info!("Phase 2: All tasks completed");
-    }
-
-    tracing::info!("Phase 3: Cleanup (up to 90s)");
-    state.fs_watcher.stop();
+    let mut http = duskcue::services::runtime::HttpServer::start(listener, app, shutdown.clone());
+    tracing::info!("Duskcue ready");
+    shutdown.cancelled().await;
+    tracing::info!(event = "shutdown_started");
+    if duskcue::services::runtime::shutdown(&state, &tracker, &mut http)
+        .await
+        .is_err()
     {
-        let pool = state.pool.clone();
-        let close_result = tokio::time::timeout(Duration::from_secs(60), async {
-            pool.close().await;
-        })
-        .await;
-        if close_result.is_err() {
-            tracing::warn!("Phase 3: PG pool close timed out after 60s");
-        } else {
-            tracing::info!("Phase 3: PG connection pool closed");
-        }
+        tracing::error!(event = "shutdown_failed");
+        std::process::exit(1);
     }
+    signals.finish().await;
 
     tracing::info!("Removing startup lockfile");
     lockfile.release();

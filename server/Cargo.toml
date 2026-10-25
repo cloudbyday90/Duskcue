@@ -11,7 +11,7 @@ edition.workspace = true
 license.workspace = true
 
 [features]
-playback-qualification = ["dep:hyper", "dep:hyper-util", "dep:webpki-roots", "dep:quick-xml-import"]
+playback-qualification = []
 
 [dependencies]
 axum.workspace = true
@@ -23,9 +23,9 @@ nonzero_ext.workspace = true
 rusqlite.workspace = true
 rustls.workspace = true
 tokio-rustls.workspace = true
-hyper = { workspace = true, optional = true }
-hyper-util = { workspace = true, optional = true }
-webpki-roots = { workspace = true, optional = true }
+hyper.workspace = true
+hyper-util.workspace = true
+webpki-roots.workspace = true
 ring.workspace = true
 argon2.workspace = true
 maxminddb.workspace = true
@@ -69,7 +69,7 @@ croner.workspace = true
 notify.workspace = true
 notify-debouncer-full.workspace = true
 quick-xml.workspace = true
-quick-xml-import = { workspace = true, optional = true }
+quick-xml-import.workspace = true
 async-trait.workspace = true
 urlencoding.workspace = true
 flate2.workspace = true

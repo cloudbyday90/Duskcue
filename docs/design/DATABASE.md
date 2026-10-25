@@ -1,5 +1,12 @@
 # Database Design
 
+## Manual IPTV refresh policy — October 25, 2026
+
+[Migration 20261025140000](../../server/migrations/20261025140000_live_tv_manual_refresh.sql) adds one `live_tv_refresh_control` row: UUIDv7 identity/version check, unique true singleton key, positive revision and `enabled=false`. Only the dedicated proof/permission-protected control API consumes this canonical policy; generic `server_config` JSON is not an activation source. Real transitions advance its revision; checked no-ops preserve it. Audit writes use fixed safe events and retain initiator attribution for acceptance.
+
+Admission reuses the existing latest-attempt row and atomically advances attempt identity/sequence under sorted account, policy and assignment locks. The root retains the opaque initiating receipt in memory, not a historical command queue. Restart preserves latest durable state and last-good data; unowned unfinished attempts are uncertain and never automatically replayed. [Refresh authority](IPTV_REFRESH.md) owns interfaces, fencing, retained cleanup and execution outcomes. Existing encrypted catalog and UUIDv7 rules are unchanged.
+
+
 ## Bounded IPTV catalog storage — October 25, 2026
 
 [Migration 20261025120000](../../server/migrations/20261025120000_live_tv_imports.sql) adds latest-attempt state, one deferred-unique last-good snapshot per assignment, and encrypted guide/channel/programme records. Composite household/assignment/snapshot keys isolate joins; assignment deletion/replacement cascades catalog state. Publication swaps the pointer and deletes the old snapshot in one transaction. Imported metadata and stream/logo references use purpose-separated authenticated encryption; only bounded identities, trusted UTC indexes, evidence flags, counts and timestamps remain indexed plaintext. The authenticated manifest binds source/attempt attribution and counts. [Import authority](IPTV_IMPORTS.md) owns retention, source-generation availability and indeterminate-commit semantics.

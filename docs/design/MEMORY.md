@@ -1,5 +1,12 @@
 # Memory Management
 
+## Root-owned IPTV refresh and HTTP draining — October 25, 2026
+
+[Refresh authority](IPTV_REFRESH.md) owns the current lifecycle contract. `services/runtime/` retains the actual Axum graceful-server handle and a continuing signal listener. `live_tv/refresh/` owns one import lease across atomic admission, accepted execution, blocking parsing, monitoring, publication and database cleanup. Close admission explicitly; TaskTracker closure alone is insufficient. Request loss cancels only uncommitted admission. Accepted work outlives the request, while explicit actor/source/operator revocation still cancels it.
+
+The root closes admission and signals HTTP/root/import work, then joins them under one shared thirty-second drain budget. It stops the watcher and closes the pool only after these joins succeed, with up to sixty additional seconds for pool closure. Drain/cleanup/pool failure exits nonzero without claiming completion or destructing dependencies before process termination. A second signal forces nonzero exit. A server-task completion guard also notifies the root on abnormal task exit. This replaces the previous dropped HTTP future and warn-only drain path; it does not qualify unrelated nested scheduler worker lifetimes. Runtime opt-in defaults off and does not add a queue or change import resource limits.
+
+
 ## Bounded IPTV import ownership — October 25, 2026
 
 [Import authority](IPTV_IMPORTS.md) specifies fixed network, decompression, XML, record and aggregate-payload ceilings. One retained import owner admits one operation without a queue and keeps its slot across both fetches, the cooperative blocking parser/encoder, publication, monitor joining and database cleanup. These numerical ceilings bound supported work; they are not an exact allocator/RSS guarantee.
@@ -244,166 +251,24 @@ No action thresholds initially — PSI metrics are informational for admin dashb
 
 ## Graceful Shutdown
 
-**Target model versus current source, October 25, 2026:** the diagram below is not a qualification claim for current main. The [manual-refresh lifecycle review](IPTV_REFRESH.md) found that main selects/drops `axum::serve` on cancellation, does not register the import owner, and does not establish the continuing second-signal/internal-channel behavior shown below. Root tracker completion alone does not join separately owned imports or prohibit new task admission. Concrete root/HTTP/import drain and failure behavior must be reviewed and qualified before manual refresh is enabled.
+The current HTTP/import/root contract is implemented in [services/runtime](../../server/src/services/runtime/mod.rs) and qualified under [IPTV_REFRESH.md](IPTV_REFRESH.md). The earlier select-and-drop example has been removed: dropping `axum::serve` does not establish request draining. The implementation uses `with_graceful_shutdown` with the owned `cancelled_owned()` future and retains its completion handle.
 
-### Signal Handling
+| Trigger | Current behavior |
+|---|---|
+| Ctrl+C / Unix SIGTERM / Windows console break | Cancel root work and begin graceful shutdown |
+| Actual HTTP task exit, including abnormal exit | Notify the root; an unsuccessful join fails shutdown |
+| Another signal while stopping | Immediate nonzero exit; no joined-cleanup claim |
 
-The server handles two termination signals plus an internal shutdown trigger:
+The root closes refresh admission and signals accepted imports, closes HTTP admission through Axum, and closes the root tracker. It joins actual HTTP, tracked root tasks and retained import cleanup concurrently under a shared thirty-second limit. Only successful joins allow watcher stop and PostgreSQL pool closure, with at most sixty additional seconds. Lockfile release and the completion log occur only after success. The application's successful-path budget is at most ninety seconds; container/database shutdown budgets remain separately owned by [deployment](../operations/DOCKER_DEPLOYMENT.md).
 
-| Signal | Source | Behavior |
-|---|---|---|
-| `SIGINT` | Ctrl+C in terminal | Begins graceful shutdown |
-| `SIGTERM` | `docker stop`, Kubernetes, systemd | Begins graceful shutdown |
-| Internal | Fatal error, admin API command | Begins graceful shutdown |
+| Failure | Outcome |
+|---|---|
+| Unjoined HTTP/root/import work after thirty seconds | Explicit exit 1; no pool closure or success log |
+| Import cleanup failure or unexpected lease exit | Quarantine capacity; root drain fails rather than claiming cleanup |
+| Pool close exceeds sixty seconds | Explicit exit 1; no completion log |
+| Second signal during either phase | Explicit forced exit 1 |
 
-**Double-signal protection**: If a second signal is received during shutdown, the server forces an immediate `std::process::exit(1)`. This prevents indefinite hangs — the admin can always press Ctrl+C twice or run `docker stop` twice to force exit.
-
-### Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│  Shutdown Triggers                                       │
-│                                                          │
-│  SIGINT (Ctrl+C) / SIGTERM (Docker stop)                 │
-│  Internal shutdown (fatal error, admin command)           │
-│                                                          │
-│  tokio::select! {                                        │
-│      _ = signal::ctrl_c() => { ... }                     │
-│      _ = signal_unix(SignalKind::terminate()) => { ... } │
-│      _ = internal_shutdown.recv() => { ... }             │
-│  }                                                       │
-│                                                          │
-│  Second signal → std::process::exit(1)                   │
-└───────────────┬──────────────────────────────────────────┘
-                │
-                ▼
-┌─────────────────────────────────────────────────────────┐
-│  Phase 1: Signal (immediate)                             │
-│                                                          │
-│  1. CancellationToken::cancel()                          │
-│     → All long-lived tasks begin cooperative shutdown    │
-│  2. Stop accepting new HTTP connections                  │
-│     → Axum graceful shutdown via with_graceful_shutdown  │
-│  3. Stop scheduled task runner                           │
-│     → No new tasks dispatched                            │
-└───────────────┬──────────────────────────────────────────┘
-                │
-                ▼
-┌─────────────────────────────────────────────────────────┐
-│  Phase 2: Drain (up to 30s)                              │
-│                                                          │
-│  1. Gracefully terminate all active FFmpeg processes     │
-│     → tokio-process-tools GracefulShutdown (SIGTERM/     │
-│       CTRL_BREAK → 10s grace → SIGKILL fallback)        │
-│     → Each ProcessHandle terminated via terminate()      │
-│  2. Wait for in-flight HTTP requests to complete         │
-│  3. Flush log buffers (WorkerGuard drop)                 │
-│  4. TaskTracker::wait() for all background tasks         │
-└───────────────┬──────────────────────────────────────────┘
-                │
-                ▼
-┌─────────────────────────────────────────────────────────┐
-│  Phase 3: Cleanup (up to 90s)                            │
-│                                                          │
-│  1. Close PostgreSQL connection pool                     │
-│     → sqlx Pool::close() drains in-flight queries       │
-│  2. Stop embedded PostgreSQL (embedded mode only)        │
-│     → pg_ctl -m fast stop                               │
-│     → Fast mode: aborts open transactions, performs      │
-│       shutdown checkpoint, ensures clean next startup    │
-│     → Up to 60s for PG to flush dirty pages              │
-│  3. Remove startup lockfile                              │
-│  4. Runtime::shutdown_timeout(30s) as hard deadline      │
-│     → If anything still alive, force terminate           │
-└─────────────────────────────────────────────────────────┘
-```
-
-**Total shutdown budget**: ~120s (30s drain + 90s cleanup). Docker `stop_grace_period` must be set to at least 120s to avoid SIGKILL during PG checkpoint. See [DOCKER_DEPLOYMENT.md](../operations/DOCKER_DEPLOYMENT.md).
-
-### PostgreSQL Shutdown Modes
-
-| Signal | Mode | Checkpoint? | Next Startup |
-|---|---|---|---|
-| `SIGTERM` | Smart | Yes (after all sessions exit) | Clean — no WAL replay |
-| `SIGINT` | **Fast** (our choice) | **Yes** (immediately aborts transactions) | **Clean — no WAL replay** |
-| `SIGQUIT` | Immediate | No | WAL replay required on next startup |
-| `SIGKILL` | Kill | No | WAL replay required; shared memory leaks |
-
-We use **Fast mode** (`pg_ctl -m fast stop`) because:
-1. It performs a **shutdown checkpoint** — all dirty pages flushed to disk, WAL consistent
-2. Next startup is instant — no WAL replay needed
-3. It aborts in-flight transactions immediately — doesn't wait for sessions to finish
-4. All committed transactions are durable (fsync + synchronous_commit guarantee this)
-
-### Shutdown Code Pattern
-
-```rust
-use std::sync::atomic::{AtomicBool, Ordering};
-use tokio::signal;
-use tokio::signal::unix::SignalKind;
-use tokio_util::sync::CancellationToken;
-use tokio_util::task::TaskTracker;
-
-static SHUTDOWN_STARTED: AtomicBool = AtomicBool::new(false);
-
-#[tokio::main]
-async fn main() {
-    let shutdown = CancellationToken::new();
-    let tracker = TaskTracker::new();
-    let server_shutdown = shutdown.clone();
-
-    tracker.spawn(async move {
-        tokio::select! {
-            result = axum::serve(listener, app) => {
-                result.expect("server error");
-            }
-            _ = server_shutdown.cancelled() => {}
-        }
-    });
-
-    let mut sigterm = signal::unix::signal(SignalKind::terminate()).unwrap();
-
-    tokio::select! {
-        _ = signal::ctrl_c() => {
-            tracing::info!("Received SIGINT (Ctrl+C)");
-        }
-        _ = sigterm.recv() => {
-            tracing::info!("Received SIGTERM");
-        }
-    }
-
-    if SHUTDOWN_STARTED.swap(true, Ordering::SeqCst) {
-        tracing::warn!("Second shutdown signal received, forcing exit");
-        std::process::exit(1);
-    }
-
-    shutdown.cancel();
-
-    tracing::info!("Phase 2: Draining in-flight requests (up to 30s)");
-    tracker.close();
-    let drain_result = tokio::time::timeout(
-        Duration::from_secs(30),
-        tracker.wait(),
-    ).await;
-
-    if drain_result.is_err() {
-        tracing::warn!("Phase 2: Drain timed out after 30s");
-    }
-
-    tracing::info!("Phase 3: Cleanup (up to 90s)");
-    {
-        let close_result = tokio::time::timeout(Duration::from_secs(60), async {
-            pool.close().await;
-        })
-        .await;
-        if close_result.is_err() {
-            tracing::warn!("Phase 3: PG pool close timed out after 60s");
-        }
-    }
-}
-```
-
-**Implementation note:** The server task uses `tokio::select!` with `server_shutdown.cancelled()` instead of `with_graceful_shutdown(shutdown.cancelled())` because `CancellationToken::cancelled()` borrows `&self`, producing a non-`'static` future that cannot be passed to `with_graceful_shutdown` (which requires `F: Future<Output = ()> + Send + 'static`). Wrapping the server in `tokio::select!` inside the spawned task achieves the same effect — when the token is cancelled, the server future is dropped, stopping the accept loop.
+A timeout stops waiting; it does not prove blocking work stopped. Started import parser/database work remains owned through cooperative cancellation and retained completion. The hard-failure path terminates the executable without dropping dependencies underneath unjoined work. This increment qualifies HTTP/import/root ownership, not every pre-existing nested scheduler or media worker. Main closes its SQLx client pool; deployment retains responsibility for any embedded/external PostgreSQL process. It must not mistake pool closure for a database-server checkpoint or `pg_ctl` shutdown.
 
 ---
 

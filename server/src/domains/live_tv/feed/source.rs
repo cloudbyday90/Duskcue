@@ -16,13 +16,13 @@ use url::Url;
 use uuid::Uuid;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) struct Fence {
+pub(crate) struct Fence {
     pub user: Uuid,
     pub assignment: Uuid,
     pub generation: i64,
 }
 
-pub(super) struct Source {
+pub(crate) struct Source {
     pub url: Url,
     pub address: SocketAddr,
     pub fence: Fence,
@@ -39,7 +39,8 @@ impl Fence {
     }
 }
 
-pub(super) async fn load(
+#[cfg(feature = "playback-qualification")]
+pub(crate) async fn load(
     pool: &PgPool,
     key: &EncryptionKey,
     user: Uuid,
@@ -62,6 +63,16 @@ pub(super) async fn load(
     .map_err(|_| FeedError::Authority)?
     .map_err(|_| FeedError::Authority)?
     .ok_or(FeedError::Authority)?;
+    decode(row, key, user, feed, index)
+}
+
+pub(crate) fn decode(
+    row: sqlx::postgres::PgRow,
+    key: &EncryptionKey,
+    user: Uuid,
+    feed: FeedField,
+    index: usize,
+) -> Result<Source, FeedError> {
     let assignment = row.get("id");
     let secret: String = row.get("secret");
     let envelope: Option<String> = row.get("destination");

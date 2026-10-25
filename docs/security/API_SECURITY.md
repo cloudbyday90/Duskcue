@@ -1,14 +1,16 @@
 # API Security Domain
 
-## Root/manual IPTV refresh research — October 25, 2026
+## Root/manual IPTV refresh — October 25, 2026
 
-[Refresh authority](../design/IPTV_REFRESH.md) records the confirmed product policy and concrete admission boundary awaiting final shared-understanding review. Current import start does not carry the initiating administrator into its delayed durable claim; an earlier permission transaction alone would leave a race. Protected HTTP admission must recheck current authority, assignment and representation in that claim, and status reads need their own current object-level authority. Existing generic JSON configuration paths must not become an unguarded activation route. Cookie SameSite, required JSON/non-simple headers and actual credentialed-CORS policy must be qualified together; this checkpoint adds no general Origin/CSRF middleware and enables no networking API.
+[Refresh authority](../design/IPTV_REFRESH.md) owns the implemented normal-build, runtime-default-off manual-refresh boundary. The dedicated CanManageServer/fresh-own-proof control cannot be activated through generic JSON settings. CanManageUsers/fresh-own-proof admission locks sorted actor/target accounts, the policy and assignment, rechecking exact session/profile/credential, current permission, grant, source and strong representation preconditions before any network request. Status reads recheck current object authority and disclose metadata only. Durable 202 work is root-owned after acceptance; explicit authority revocation still cancels it.
+
+Cookie SameSite=Strict, JSON/non-simple conditional headers and production CORS are qualified together. The existing explicit-origin credentialed branch had an invalid wildcard methods/headers combination that panicked; requested methods/header names are now reflected inside the same origin allowlist. Origins are never mirrored arbitrarily. No general Origin/CSRF-token checker is introduced. Control/status/audit results remain no-store and contain no source URLs, pins, ciphertext or imported text. Fixture CA trust stays isolated from normal verified public-root TLS. Scheduling, client catalog/Kids access and playback remain disabled.
 
 ## Saved-feed destination approval — October 25, 2026
 
 [Destination authority](IPTV_DESTINATION_AUTHORITY.md) extends the existing assignment PATCH with per-feed approval/revocation. Current administrator permission, fresh proof on that administrator's account, strong conditional writes and transactional account locks guard origin/address consent. Encrypted approvals use a different purpose context from URL secrets. Reads expose presence/count/generation metadata without origins, pins or credential material; management writes perform no networking. Rotation, revocation and account-state generations fence admitted source work.
 
-The only saved-feed connection owner is behind the default-off qualification feature, without a production fetch route. It connects directly to approved IPs while verifying the saved TLS identity, and refuses DNS/proxy/redirect fallback. Request credentials come only from the saved URL; browser cookies, bearer tokens and arbitrary headers are not forwarded. The domain authority records exact tests and current qualification status; this API change does not enable imports or playback.
+The earlier standalone saved-feed fixture owner remains qualification-only. The separately qualified manual-refresh root now uses the same bounded connection engine in normal builds under its dedicated default-off control. It connects directly to approved IPs while verifying the saved TLS identity, and refuses DNS/proxy/redirect fallback. Request credentials come only from the saved URL; browser cookies, bearer tokens and arbitrary headers are not forwarded. The domain authority records exact tests and current qualification status; this API change does not enable imports or playback.
 
 ## Encrypted IPTV assignment — October 24, 2026
 

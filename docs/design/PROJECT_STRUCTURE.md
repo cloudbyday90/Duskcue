@@ -1,5 +1,12 @@
 # Project Structure
 
+## Normal-build IPTV manual refresh — October 25, 2026
+
+[Refresh authority](IPTV_REFRESH.md) owns `live_tv/refresh/`: the five-file HTTP boundary plus small admission, authority, database, representation and retained manager services. `services/runtime/` separates HTTP completion, continuing process signals and shutdown coordination. A one-time AppState handle uses the shared pool/key without a global singleton. Connection-level exact-session/grant/capability helpers are shared with household/assignment authorization.
+
+Hyper, hyper-util, webpki-roots and the renamed quick-xml edge are now nonoptional server declarations of the same locked versions. `playback-qualification` continues to gate the legacy fixture adapters and fixed test-CA constructor; production uses verified public roots. Cargo.lock and dependency versions do not change. Modular `live_tv_refresh` support covers production routes, transaction races, commit-wire faults, CORS/TLS trust, the actual executable and HTTP/pool ordering. No scheduling, catalog UI or release package is added.
+
+
 ## Bounded IPTV imports — October 25, 2026
 
 [Import authority](IPTV_IMPORTS.md) owns the confirmed contract and execution outcomes. The default-off `live_tv/feed/imports/` composes separate source receipt/attempt, M3U, XML fields/structure, time evidence, compression/limits, crypto, storage/publication, status, monitor and operation-owner modules. The existing five-file production domain boundary stays intact. Shared account locking is factored from household-owner transactions; the old 64 KiB feed fixture remains separate from import-purpose body limits.

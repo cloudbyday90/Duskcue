@@ -102,6 +102,9 @@ pub enum AppError {
     Household(#[from] crate::domains::household_security::error::OwnerError),
 
     #[error(transparent)]
+    IptvRefresh(#[from] crate::domains::live_tv::refresh::error::RefreshError),
+
+    #[error(transparent)]
     IptvAssignment(#[from] crate::domains::live_tv::assignment::error::AssignmentError),
 
     #[error(transparent)]
@@ -173,6 +176,10 @@ impl IntoResponse for AppError {
         let (status, code, detail): (StatusCode, &str, Cow<'_, str>) = match &self {
             AppError::Analytics(e) => {
                 let (s, c, d) = analytics_error_to_http(e);
+                (s, c, Cow::Owned(d))
+            }
+            AppError::IptvRefresh(e) => {
+                let (s, c, d) = e.http();
                 (s, c, Cow::Owned(d))
             }
             AppError::IptvAssignment(e) => {
@@ -402,8 +409,12 @@ impl IntoResponse for AppError {
                 | AppError::Trakt(crate::domains::trakt::TraktError::Timeout)
         );
 
-        if wants_retry_after {
+        if wants_retry_after
+            || matches!(&self, AppError::IptvRefresh(_))
+                && status == StatusCode::SERVICE_UNAVAILABLE
+        {
             let retry_seconds = match &self {
+                AppError::IptvRefresh(_) => "2".to_string(),
                 AppError::RateLimited { .. } => "0".to_string(),
                 AppError::GatewayTimeout(_) => "30".to_string(),
                 AppError::ServiceUnavailable(_) => "60".to_string(),

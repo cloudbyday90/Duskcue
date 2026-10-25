@@ -1,5 +1,10 @@
 # Bounded IPTV imports and last-good snapshots
 
+## Root/manual refresh follow-up — October 25, 2026
+
+[IPTV_REFRESH.md](IPTV_REFRESH.md) records the subsequent normal-build promotion, protected default-off manual refresh/status API, atomic initiating authority and real HTTP/import root lifetime. The controlled import results below remain attributed to `731d26f`; the follow-up reuses its parser/storage/last-good contract and keeps fixture trust behind the qualification feature. Scheduling, client catalog/UI, Kids and playback remain separate. No dependency version upgrade is needed for that promotion.
+
+
 ## Status and scope
 
 Research started October 25, 2026, against `22422191ee285773392e7f43b2e0dd53bdc65ca6` on `main`; checkpoint `3b02c8bc416707789de4a929d2486143ea72808e` records the initial investigation. The user confirmed all nine product decisions and the complete implementation contract after checkpoint `a7eed5e`. Implementation and controlled qualification are complete for the confirmed slice below. The controlled feature remains default-off. No release or PR merge. Qualified implementation: `731d26f263a7fe0eb0022feafed6a809a1ab4d79` on `main`; documentation-only successors preserve those source bytes.

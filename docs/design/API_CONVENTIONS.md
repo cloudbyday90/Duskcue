@@ -1,8 +1,10 @@
 # API Conventions
 
-## Manual IPTV refresh research — October 25, 2026
+## Manual IPTV refresh — October 25, 2026
 
-[Refresh authority](IPTV_REFRESH.md) records all six confirmed manual-refresh product choices and the concrete contract awaiting shared-understanding confirmation. A proposed 202 response must identify incomplete accepted work and a safe status monitor; it cannot claim publication or make a lost-response POST safe to replay. A strong If-Match must represent its actual target resource, rather than borrowing an unrelated assignment validator. Current production routes still expose configuration only. No new API, accepted-operation retention or default-off operator setting is implemented by this research checkpoint.
+[Refresh authority](IPTV_REFRESH.md) owns the confirmed and implemented normal-build manual-refresh contract and its qualification results. GET/PUT `/api/v1/live-tv/manual-refresh-control` uses current CanManageServer, with fresh own proof and strong If-Match for PUT. GET/POST `/api/v1/live-tv/households/{household_id}/refresh` uses current CanManageUsers, with fresh own proof and strong If-Match for POST. GET `/refresh/status?attempt_id=...` returns metadata only; it does not reuse the control representation's ETag. Exact account/session/profile, permission, proof, policy, source and version checks occur inside the retained claim transaction before networking.
+
+A durable UUIDv7 attempt yields 202 and a relative JSON status URL/Location. HTTP disconnect after acceptance does not cancel the root-owned command. Missing/stale conditions return 428/412; bounded JSON/header errors use fixed 400/413/415; disabled/busy/uncertain service uses 503 and bounded Retry-After without automatic POST replay. All results remain no-store. Explicit-origin credentialed CORS exposes ETag, Location and Retry-After. It reflects requested method/header names within the existing explicit origin allowlist, fixing the earlier wildcard/credentials middleware panic. Origin policy is unchanged. Scheduling, profile catalog reads and playback remain separate.
 
 ## Conditional IPTV management — October 24, 2026
 

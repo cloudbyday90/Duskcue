@@ -22,6 +22,10 @@ pub struct Database {
 
 impl Database {
     pub fn state(&self) -> AppState {
+        self.state_with_key(EncryptionKey::generate().0)
+    }
+
+    pub fn state_with_key(&self, key: EncryptionKey) -> AppState {
         let bootstrap = BootstrapConfig {
             database_url: None,
             bind_address: "127.0.0.1".into(),
@@ -34,7 +38,6 @@ impl Database {
             geoip_license_key: None,
         };
         let recorder = metrics_exporter_prometheus::PrometheusBuilder::new().build_recorder();
-        let (key, _) = EncryptionKey::generate();
         AppState::new(self.pool.clone(), bootstrap, recorder.handle(), key)
     }
 }

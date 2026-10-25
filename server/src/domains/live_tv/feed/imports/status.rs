@@ -33,8 +33,21 @@ pub async fn status(
     key: &EncryptionKey,
     user: Uuid,
 ) -> Result<Option<ImportStatus>, ImportError> {
-    let row=tokio::time::timeout(Duration::from_secs(1),sqlx::query("SELECT a.id AS assignment,a.source_generation AS current_generation,a.enabled AND a.playlist_destination IS NOT NULL AND a.guide_destination IS NOT NULL AND u.status='active' AND u.deleted_at IS NULL AS available,i.attempt_id,i.attempt_sequence,i.state,i.category,i.attempted_at,i.finished_at,s.id AS snapshot,s.source_generation,s.attempt_id AS snapshot_attempt,s.attempt_sequence AS snapshot_sequence,s.channel_count,s.guide_count,s.programme_count,s.imported_at,s.manifest FROM live_tv_assignments a JOIN users u ON u.id=a.household_user_id JOIN live_tv_import_state i ON i.assignment_id=a.id LEFT JOIN live_tv_catalog_snapshots s ON s.id=i.current_snapshot_id WHERE a.household_user_id=$1")
-        .bind(user).fetch_optional(pool)).await.map_err(|_|ImportError::Deadline)??;
+    tokio::time::timeout(Duration::from_secs(1), load(pool, key, user))
+        .await
+        .map_err(|_| ImportError::Deadline)?
+}
+
+pub(crate) async fn load<'e, E>(
+    executor: E,
+    key: &EncryptionKey,
+    user: Uuid,
+) -> Result<Option<ImportStatus>, ImportError>
+where
+    E: sqlx::Executor<'e, Database = sqlx::Postgres>,
+{
+    let row=sqlx::query("SELECT a.id AS assignment,a.source_generation AS current_generation,a.enabled AND a.playlist_destination IS NOT NULL AND a.guide_destination IS NOT NULL AND u.status='active' AND u.deleted_at IS NULL AS available,i.attempt_id,i.attempt_sequence,i.state,i.category,i.attempted_at,i.finished_at,s.id AS snapshot,s.source_generation,s.attempt_id AS snapshot_attempt,s.attempt_sequence AS snapshot_sequence,s.channel_count,s.guide_count,s.programme_count,s.imported_at,s.manifest FROM live_tv_assignments a JOIN users u ON u.id=a.household_user_id JOIN live_tv_import_state i ON i.assignment_id=a.id LEFT JOIN live_tv_catalog_snapshots s ON s.id=i.current_snapshot_id WHERE a.household_user_id=$1")
+        .bind(user).fetch_optional(executor).await?;
     let Some(row) = row else {
         return Ok(None);
     };
@@ -69,6 +82,7 @@ pub async fn status(
             sequence: row.get("snapshot_sequence"),
             snapshot,
             imported_at: result.imported_at.ok_or(ImportError::Storage)?,
+            initiator: None,
         };
         let manifest: String = row.get("manifest");
         let plain = codec::open(

@@ -7,14 +7,14 @@ use sqlx::{PgConnection, PgPool};
 use std::{ops::AsyncFnOnce, time::Duration};
 use tokio::time::{Instant, timeout, timeout_at};
 
-pub(super) async fn write<T, F>(pool: &PgPool, work: F) -> Result<T, ImportError>
+pub(crate) async fn write<T, F>(pool: &PgPool, work: F) -> Result<T, ImportError>
 where
     F: for<'a> AsyncFnOnce(&'a mut PgConnection) -> Result<T, ImportError>,
 {
     write_until(pool, Instant::now() + Duration::from_secs(20), work).await
 }
 
-pub(super) async fn write_until<T, F>(
+pub(crate) async fn write_until<T, F>(
     pool: &PgPool,
     deadline: Instant,
     work: F,

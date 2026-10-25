@@ -7,7 +7,13 @@ use rustls::{ClientConfig, RootCertStore};
 use std::sync::Arc;
 use tokio_rustls::TlsConnector;
 
-pub(super) fn connector(fixture: bool) -> Result<TlsConnector, FeedError> {
+pub(crate) fn connector(fixture: bool) -> Result<TlsConnector, FeedError> {
+    #[cfg(not(feature = "playback-qualification"))]
+    if fixture {
+        return Err(FeedError::Connection);
+    }
+    let roots = RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+    #[cfg(feature = "playback-qualification")]
     let roots = if fixture {
         let mut roots = RootCertStore::empty();
         roots
@@ -17,7 +23,7 @@ pub(super) fn connector(fixture: bool) -> Result<TlsConnector, FeedError> {
             .map_err(|_| FeedError::Connection)?;
         roots
     } else {
-        RootCertStore::from_iter(webpki_roots::TLS_SERVER_ROOTS.iter().cloned())
+        roots
     };
     let mut config =
         ClientConfig::builder_with_provider(Arc::new(rustls::crypto::ring::default_provider()))

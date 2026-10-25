@@ -1,5 +1,10 @@
 # IPTV saved-feed destination authority
 
+## Root/manual refresh follow-up — October 25, 2026
+
+[Refresh authority](../design/IPTV_REFRESH.md) records subsequent normal-build use of this bounded connection engine through protected manual admission and a dedicated default-off control. The earlier standalone source fixture and fixed test-CA constructor remain qualification-only. Explicit approved pins, normal hostname/certificate verification, encrypted authority and refusal of DNS/proxy/redirect fallback are unchanged. Scheduling, private-CA administration, client delivery and playback remain separate. The controlled results below retain their original source attribution.
+
+
 ## Status and ownership
 
 Research started October 25, 2026, against `26a4a178adb81ee7e2db767fda5371d1e6cea85e` on `main`. Design checkpoint `deedd195a690acae73e1a991059d60d3c143bff4` records the concrete contract. The user confirmed shared understanding of that complete contract before implementation, including explicit IP pins, public-root TLS verification, three direct dependency declarations and controlled qualification behind the default-off `playback-qualification` feature. The scoped implementation and local qualification are complete at source `30511af8e2347426446b3c5ff3db08ad863e01ed` on `main`; later documentation-only checkpoints preserve the qualified code. No release or PR merge.

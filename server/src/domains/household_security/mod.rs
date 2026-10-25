@@ -43,3 +43,5 @@ pub fn router(state: AppState) -> Router<AppState> {
         .layer(axum::middleware::map_response(handlers::problem_media_type))
         .with_state(state)
 }
+
+pub(crate) mod access;

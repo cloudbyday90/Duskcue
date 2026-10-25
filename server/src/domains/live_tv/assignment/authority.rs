@@ -4,7 +4,7 @@
 
 use super::error::AssignmentError;
 use crate::{
-    domains::household_security::{error::OwnerError, transactions, types::Scope},
+    domains::household_security::{transactions, types::Scope},
     error::AppError,
 };
 use sqlx::{PgPool, Postgres, Transaction};
@@ -17,18 +17,9 @@ pub(super) async fn administrator(
     write: bool,
 ) -> Result<Transaction<'_, Postgres>, AppError> {
     let mut tx = transactions::begin_accounts(pool, &[actor.user, target]).await?;
-    let role: Option<String> = sqlx::query_scalar(
-        "SELECT role FROM users WHERE id=$1 AND status='active' AND deleted_at IS NULL",
-    )
-    .bind(actor.user)
-    .fetch_optional(&mut *tx)
-    .await
-    .map_err(AssignmentError::from)?;
-    let role = role.ok_or(OwnerError::InvalidProof)?;
-    transactions::scope(&mut tx, actor).await?;
-    let override_value: Option<bool> = sqlx::query_scalar("SELECT is_granted FROM user_capabilities WHERE user_id=$1 AND capability='can_manage_users'")
-        .bind(actor.user).fetch_optional(&mut *tx).await.map_err(AssignmentError::from)?;
-    if role != "owner" && !override_value.unwrap_or(role == "admin") {
+    if !crate::domains::household_security::access::allowed(&mut tx, actor, "can_manage_users")
+        .await?
+    {
         return Err(AssignmentError::Forbidden.into());
     }
     if write {

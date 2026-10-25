@@ -2,10 +2,7 @@
 // Copyright (C) 2026-2026 Duskcue Contributors
 // Licensed under AGPL-3.0. See LICENSE for details.
 
-use super::super::{
-    connection,
-    source::{self, Source},
-};
+use super::super::{connection, source::Source};
 use super::{
     ImportError, codec, compression,
     limits::{self, Work},
@@ -13,12 +10,10 @@ use super::{
     model::{Candidate, Catalog},
     monitor::Monitor,
     publication,
-    receipt::{self, Receipt},
+    receipt::Receipt,
     xml,
 };
-use crate::{
-    domains::live_tv::assignment::secrets::FeedField, services::encryption::EncryptionKey,
-};
+use crate::services::encryption::EncryptionKey;
 use sqlx::PgPool;
 use std::{
     sync::Arc,
@@ -28,6 +23,7 @@ use tokio_rustls::TlsConnector;
 use tokio_util::sync::CancellationToken;
 use uuid::Uuid;
 
+#[cfg(feature = "playback-qualification")]
 pub(super) async fn run(
     pool: &PgPool,
     key: Arc<EncryptionKey>,
@@ -40,12 +36,39 @@ pub(super) async fn run(
     if cancel.is_cancelled() {
         return Err(ImportError::Cancelled);
     }
-    let playlist = source::load(pool, &key, user, FeedField::Playlist, pins.0).await?;
-    let guide = source::load(pool, &key, user, FeedField::Guide, pins.1).await?;
+    let playlist = super::super::source::load(
+        pool,
+        &key,
+        user,
+        crate::domains::live_tv::assignment::secrets::FeedField::Playlist,
+        pins.0,
+    )
+    .await?;
+    let guide = super::super::source::load(
+        pool,
+        &key,
+        user,
+        crate::domains::live_tv::assignment::secrets::FeedField::Guide,
+        pins.1,
+    )
+    .await?;
     if playlist.fence != guide.fence {
         return Err(ImportError::Authority);
     }
-    let receipt = receipt::claim(pool, playlist.fence).await?;
+    let receipt = super::receipt::claim(pool, playlist.fence).await?;
+    execute(pool, key, tls, receipt, (playlist, guide), cancel, deadline).await
+}
+
+pub(crate) async fn execute(
+    pool: &PgPool,
+    key: Arc<EncryptionKey>,
+    tls: &TlsConnector,
+    receipt: Receipt,
+    sources: (Source, Source),
+    cancel: &CancellationToken,
+    deadline: Instant,
+) -> Result<Uuid, ImportError> {
+    let (playlist, guide) = sources;
     let mut monitor = Monitor::start(pool.clone(), receipt);
     let result = async {
         let playlist = fetch(

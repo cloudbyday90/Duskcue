@@ -313,6 +313,7 @@ fn encrypted_rows_bind_source_epoch_indexed_columns_and_field_purpose() {
         sequence: 1,
         snapshot: Uuid::now_v7(),
         imported_at: chrono::Utc::now(),
+        initiator: None,
     };
     let mut row = codec::empty(Uuid::now_v7());
     row.guide = Some(Uuid::now_v7());

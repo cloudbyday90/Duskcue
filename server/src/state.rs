@@ -1076,6 +1076,8 @@ pub struct AppState {
     pub event_bus: Arc<EventBus>,
     pub geoip: Arc<GeoIpService>,
     pub scheduler: Arc<std::sync::OnceLock<Arc<Scheduler>>>,
+    pub live_tv_refresh:
+        Arc<std::sync::OnceLock<Arc<crate::domains::live_tv::refresh::RefreshManager>>>,
 }
 
 impl AppState {
@@ -1122,6 +1124,7 @@ impl AppState {
             event_bus,
             geoip: Arc::new(GeoIpService::disabled()),
             scheduler: Arc::new(std::sync::OnceLock::new()),
+            live_tv_refresh: Arc::new(std::sync::OnceLock::new()),
         }
     }
 
@@ -1186,6 +1189,7 @@ impl AppState {
             event_bus,
             geoip,
             scheduler: Arc::new(std::sync::OnceLock::new()),
+            live_tv_refresh: Arc::new(std::sync::OnceLock::new()),
         }
     }
 

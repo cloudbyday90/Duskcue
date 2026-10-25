@@ -9,17 +9,19 @@ mod limits;
 mod m3u;
 mod model;
 mod monitor;
-mod operation;
+pub(crate) mod operation;
+#[cfg(feature = "playback-qualification")]
 mod owner;
 mod publication;
-mod receipt;
-mod status;
-mod storage;
+pub(crate) mod receipt;
+pub(crate) mod status;
+pub(crate) mod storage;
 mod time;
 mod xml;
 mod xml_fields;
 
 pub use error::ImportError;
+#[cfg(feature = "playback-qualification")]
 pub use owner::{Import, ImportOwner};
 pub use status::{ImportStatus, status};
 

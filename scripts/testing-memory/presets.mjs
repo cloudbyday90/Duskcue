@@ -5,6 +5,7 @@
 // See LICENSE file for details.
 
 export const PRESETS = {
+    'iptv-refresh': { policy: 'cargo', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/run-feed-authority.mjs', '--refresh'] },
     'iptv-import-compression': { policy: 'cargo', command: 'cargo.exe', args: ['test', '--manifest-path', 'server/tests/fixtures/import-compression/Cargo.toml', '--target-dir', 'target/import-compression', '--locked', '--offline', '-j', '2'] },
     'iptv-imports': { policy: 'cargo', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/run-feed-authority.mjs', '--imports'] },
     'iptv-feed-authority': { policy: 'cargo', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/run-feed-authority.mjs'] },

@@ -1,5 +1,14 @@
 # Testing memory on Windows
 
+## Root-owned manual IPTV refresh — October 25, 2026
+
+`node scripts/testing-memory/run.mjs iptv-refresh` retains the Cargo policy, 128-MiB driver heap, two Cargo jobs, two Tokio workers, serial HTTP pacing, owned PostgreSQL18 fixture limits and a process-only proxy trap. The actual executable inherits only fixture database/key/config/data/cache paths. On Windows, run from an attached console/ConPTY: the hidden signal helper verifies the owned executable path and resource UUID before sending console break to its separate process group. It does not signal unrelated apps. No fake cancellation fallback qualifies executable signal behavior.
+
+[Refresh authority](../design/IPTV_REFRESH.md) records exact results and corrected attempts. Production-route authority, commit-wire faults, default-off/config isolation, CORS/normal TLS trust, retained accepted work, restart uncertainty, actual normal/deadline/forced executable exits and actual HTTP/pool ordering are qualified. The publication extension uses a bounded gated TLS peer and a database-observed account lock to commit initiating-capability revocation before publication authorization. Existing import/destination/assignment/owner regressions run serially, with 996 library passes and seven existing ignores. Strict lint retains existing findings; all-target diagnostics distinguish them from introduced warnings.
+
+The thirty-second held-response case deliberately keeps the production SSE response open and verifies failure exit instead of false cleanup. Root-aware SSE cancellation remains a separate next item. Unix signal execution, real Dispatcharr/client playback and an exhausted sixty-second pool-close executable case are not claimed. The actual sixty-second coordinator timeout is separately qualified in 64.27 seconds with retained-connection cleanup. The authority retains resource/cleanup receipts, reserve accounting and remaining limits; no release or PR merge.
+
+
 ## Bounded IPTV import qualification — October 25, 2026
 
 `node scripts/testing-memory/run.mjs iptv-imports` reuses the offline feed driver with `--imports`, the unchanged Cargo admission policy, two Cargo jobs, one Rust test thread and a 128 MiB Node driver heap. Child-only proxy traps, immutable owned PostgreSQL limits, fixed TLS fixtures and verified container/directory cleanup remain intact. `iptv-import-compression` separately runs the locked, offline miniz fixture without workspace feature unification, using root `target/import-compression`; it does not introduce another application package.

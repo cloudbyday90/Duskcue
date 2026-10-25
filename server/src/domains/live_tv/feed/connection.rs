@@ -44,6 +44,7 @@ async fn connect(source: &Source, tls: &TlsConnector) -> Result<Box<dyn Io>, Fee
         .map_err(|_| FeedError::Connection)
 }
 
+#[cfg(feature = "playback-qualification")]
 pub(super) async fn fetch(
     source: &Source,
     pool: &PgPool,

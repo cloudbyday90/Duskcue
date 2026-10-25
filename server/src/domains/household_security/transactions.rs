@@ -71,13 +71,21 @@ async fn session_scope(
     actor: Scope,
     strict: bool,
 ) -> Result<(), OwnerError> {
+    session_scope_conn(tx, actor, strict).await
+}
+
+pub(crate) async fn session_scope_conn(
+    conn: &mut PgConnection,
+    actor: Scope,
+    strict: bool,
+) -> Result<(), OwnerError> {
     let standard:Option<bool>=sqlx::query_scalar("SELECT NOT $3 OR profile_type='standard' FROM user_profiles WHERE id=$1 AND owner_user_id=$2 FOR NO KEY UPDATE")
-        .bind(actor.profile).bind(actor.user).bind(strict).fetch_optional(&mut **tx).await?;
+        .bind(actor.profile).bind(actor.user).bind(strict).fetch_optional(&mut *conn).await?;
     if standard != Some(true) {
         return Err(OwnerError::Required);
     }
     let valid:Option<bool>=sqlx::query_scalar("SELECT active_profile_id=$3 AND (NOT $4 OR NOT profile_selection_required) AND expires_at>clock_timestamp() AND credential_version=$5 FROM user_sessions WHERE id=$1 AND user_id=$2 FOR UPDATE")
-        .bind(actor.session).bind(actor.user).bind(actor.profile).bind(strict).bind(actor.version).fetch_optional(&mut **tx).await?;
+        .bind(actor.session).bind(actor.user).bind(actor.profile).bind(strict).bind(actor.version).fetch_optional(&mut *conn).await?;
     if valid != Some(true) {
         return Err(OwnerError::InvalidProof);
     }
@@ -109,8 +117,12 @@ pub async fn authorize(
 }
 
 pub async fn require(tx: &mut Transaction<'_, Postgres>, scope: Scope) -> Result<(), OwnerError> {
+    require_conn(tx, scope).await
+}
+
+pub(crate) async fn require_conn(conn: &mut PgConnection, scope: Scope) -> Result<(), OwnerError> {
     let valid: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM household_owner_grants g JOIN household_owner_state o ON o.user_id=g.user_id WHERE g.session_id=$1 AND g.user_id=$2 AND g.profile_id=$3 AND g.revision=o.revision AND g.credential_version=$4 AND o.enabled AND g.expires_at>clock_timestamp() AND (o.locked_until IS NULL OR o.locked_until<=clock_timestamp()))")
-        .bind(scope.session).bind(scope.user).bind(scope.profile).bind(scope.version).fetch_one(&mut **tx).await?;
+        .bind(scope.session).bind(scope.user).bind(scope.profile).bind(scope.version).fetch_one(&mut *conn).await?;
     if valid {
         Ok(())
     } else {

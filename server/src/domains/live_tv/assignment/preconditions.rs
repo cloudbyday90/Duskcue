@@ -5,12 +5,12 @@
 use super::error::AssignmentError;
 use axum::http::{HeaderMap, header};
 
-pub(super) enum Condition {
+pub(crate) enum Condition {
     Create,
     Match(Vec<Vec<u8>>),
 }
 
-pub(super) fn condition(headers: &HeaderMap, create: bool) -> Result<Condition, AssignmentError> {
+pub(crate) fn condition(headers: &HeaderMap, create: bool) -> Result<Condition, AssignmentError> {
     let (required, other) = if create {
         (header::IF_NONE_MATCH, header::IF_MATCH)
     } else {

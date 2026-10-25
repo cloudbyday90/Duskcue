@@ -27,7 +27,7 @@ use governor::{Quota, RateLimiter, clock::DefaultClock, state::keyed::DefaultKey
 use metrics::{counter, histogram};
 use tower_http::compression::CompressionLayer;
 use tower_http::compression::predicate::{DefaultPredicate, Predicate};
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowHeaders, AllowMethods, Any, CorsLayer};
 use tower_http::request_id::{MakeRequestId, RequestId, SetRequestIdLayer};
 use tower_http::set_header::SetResponseHeaderLayer;
 use uuid::Uuid;
@@ -161,7 +161,7 @@ pub fn build_cors_layer(network_mode: &NetworkMode, allowed_origins: &[String]) 
             .allow_origin(Any)
             .allow_methods(Any)
             .allow_headers(Any)
-            .expose_headers([header::ETAG]),
+            .expose_headers([header::ETAG, header::LOCATION, header::RETRY_AFTER]),
         NetworkMode::Exposed => {
             let origins: Vec<_> = allowed_origins
                 .iter()
@@ -172,13 +172,13 @@ pub fn build_cors_layer(network_mode: &NetworkMode, allowed_origins: &[String]) 
                     .allow_origin(Any)
                     .allow_methods(Any)
                     .allow_headers(Any)
-                    .expose_headers([header::ETAG])
+                    .expose_headers([header::ETAG, header::LOCATION, header::RETRY_AFTER])
             } else {
                 CorsLayer::new()
                     .allow_origin(origins)
-                    .allow_methods(Any)
-                    .allow_headers(Any)
-                    .expose_headers([header::ETAG])
+                    .allow_methods(AllowMethods::mirror_request())
+                    .allow_headers(AllowHeaders::mirror_request())
+                    .expose_headers([header::ETAG, header::LOCATION, header::RETRY_AFTER])
                     .allow_credentials(true)
             }
         }

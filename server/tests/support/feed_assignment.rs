@@ -12,7 +12,13 @@ use serde_json::{Value, json};
 use uuid::Uuid;
 
 pub async fn setup(db: &database::Database) -> anyhow::Result<Case> {
-    let state = db.state();
+    setup_state(db, db.state()).await
+}
+
+pub async fn setup_state(
+    db: &database::Database,
+    state: duskcue::state::AppState,
+) -> anyhow::Result<Case> {
     let app = duskcue::router::build_router(state.clone()).with_state(state.clone());
     let admin = http::actor(&db.pool, "standard", true).await?;
     sqlx::query("UPDATE users SET role='admin' WHERE id=$1")

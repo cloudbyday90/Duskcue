@@ -7,7 +7,7 @@ mod destinations;
 pub mod error;
 mod handlers;
 mod policy;
-mod preconditions;
+pub(crate) mod preconditions;
 pub mod secrets;
 mod service;
 mod storage;

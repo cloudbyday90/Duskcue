@@ -1,5 +1,10 @@
 # Error Handling Design
 
+## Manual IPTV refresh errors — October 25, 2026
+
+[Refresh authority](IPTV_REFRESH.md) defines safe fixed messages through `AppError::IptvRefresh`: `IPTV_REFRESH_001` malformed input (400), `_002` forbidden (403), `_003` unavailable assignment (404), `_004` disabled/busy/unavailable (503), `_005` uncertain acceptance without replay (503) and `_006` incomplete cleanup (503). Existing owner/precondition and JSON errors retain their 403/428/412/413/415 contracts. Refresh 503 responses include bounded Retry-After; it never authorizes automatic mutation replay. All results remain no-store and expose no raw SQL, transport or imported metadata. Shutdown failures are process exit 1, with fixed event names and no false completion log.
+
+
 ## IPTV assignment — October 24, 2026
 
 The assignment subdomain adds fixed `IPTV_001`–`IPTV_007` problem details for disallowed operations, unavailable objects, stale conditions, required version conditions, malformed requests, invalid policy and unavailable storage/service. Existing owner/authentication errors retain their codes, and feed URL validation retains `VALID_001`. Storage/parser/crypto errors never replace the fixed client message. The outer management response policy supplies no-store even on global rate errors; native non-JSON refusals retain their media type. [Assignment authority](IPTV_ASSIGNMENT.md) owns exact statuses and qualification.

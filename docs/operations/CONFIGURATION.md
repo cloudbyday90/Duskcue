@@ -1,5 +1,12 @@
 # Configuration Strategy
 
+## Manual IPTV refresh control — October 25, 2026
+
+Manual refresh is available in the normal server build but defaults off through the dedicated `live_tv_refresh_control` database row. GET/PUT `/api/v1/live-tv/manual-refresh-control` requires current CanManageServer; PUT also requires fresh own-account proof and its strong If-Match. It accepts only `{ "enabled": true|false }`. This is not a TOML/environment setting or a typed consumer of arbitrary `server_config` JSON. Generic config updates/reloads cannot activate it. No automatic refresh task is registered.
+
+Root startup attaches one refresh owner to the shared pool/key before HTTP readiness. Construction failures terminate startup. Disabling prevents new admission and cancels accepted work, preserving last-good data; enabling requires a new authorized manual start and cannot reset quarantined capacity. Startup never resumes or fetches prior work. Actual HTTP/import drain precedes pool closure; failure and a second signal exit nonzero. [Refresh authority](../design/IPTV_REFRESH.md) and [memory ownership](../design/MEMORY.md) own the detailed contract and qualification boundaries.
+
+
 ## Fire TV integration configuration
 
 `server_config.integrations.fire_tv` adds `watch_activity_enabled` (default `false`), `catalog_reference` (default empty), and `partner_approval_reference` (default empty). All three must be explicitly configured before the server can issue Fire playback authorization. Existing subtitle/Trakt configuration remains compatible because the Fire group defaults when absent. These are operator-owned evidence references, not Amazon credentials or automatic proof of admission. Registration also requires explicit accepted-ID and distribution-rights references with expiry; device customer consent remains separate and unknown by default. See [FIRE_TV.md](../design/FIRE_TV.md).

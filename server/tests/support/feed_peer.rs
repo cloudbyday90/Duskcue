@@ -30,6 +30,8 @@ pub enum Security {
 }
 pub enum Behavior {
     Reply(Vec<u8>),
+    #[allow(dead_code)]
+    GatedReply(Vec<u8>, Arc<tokio::sync::Notify>),
     Close(Vec<u8>),
     HeadersStall,
     BodyStall,
@@ -260,6 +262,11 @@ async fn serve(
     *state.request.lock().unwrap_or_else(|e| e.into_inner()) = String::from_utf8(request)?;
     state.phase.store(3, Ordering::SeqCst);
     match behavior {
+        Behavior::GatedReply(bytes, gate) => {
+            gate.notified().await;
+            stream.write_all(&bytes).await?;
+            stream.flush().await?;
+        }
         Behavior::Reply(bytes) => {
             stream.write_all(&bytes).await?;
             stream.flush().await?;

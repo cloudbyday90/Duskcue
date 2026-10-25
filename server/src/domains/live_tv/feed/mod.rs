@@ -7,10 +7,13 @@ mod connection;
 mod error;
 mod head_limit;
 pub mod imports;
+#[cfg(feature = "playback-qualification")]
 mod operation;
+#[cfg(feature = "playback-qualification")]
 mod owner;
-mod source;
-mod tls;
+pub(crate) mod source;
+pub(crate) mod tls;
 
 pub use error::FeedError;
+#[cfg(feature = "playback-qualification")]
 pub use owner::{FeedOwner, Fetch};
