@@ -1,5 +1,12 @@
 # API Conventions
 
+## SSE termination and private responses — October 25, 2026
+
+[SSE lifecycle](SSE_LIFECYCLE.md) preserves GET `/api/v1/events`, successful status 200 and existing framing. Established streams end normally on root stop. Valid authenticated late admission uses fixed `SSE_UNAVAILABLE` 503 and Retry-After 5; authentication and open-service connection-limit refusals retain their existing statuses. No shutdown event or HTTP 204 is added. Native EventSource and bearer-fetch HTTP-error retry behavior remain distinct.
+
+A common response policy now forces Cache-Control no-store for the exact SSE path, preserving existing household/Live TV private-route behavior. It changes only headers/media type and never collects a streaming body. Axum's successful no-cache header must be overridden. Current CORS origin/credential policy and unrelated cacheable routes are unchanged. Final qualification and the incomplete-transport boundary remain in the authority.
+
+
 ## Manual IPTV refresh — October 25, 2026
 
 [Refresh authority](IPTV_REFRESH.md) owns the confirmed and implemented normal-build manual-refresh contract and its qualification results. GET/PUT `/api/v1/live-tv/manual-refresh-control` uses current CanManageServer, with fresh own proof and strong If-Match for PUT. GET/POST `/api/v1/live-tv/households/{household_id}/refresh` uses current CanManageUsers, with fresh own proof and strong If-Match for POST. GET `/refresh/status?attempt_id=...` returns metadata only; it does not reuse the control representation's ETag. Exact account/session/profile, permission, proof, policy, source and version checks occur inside the retained claim transaction before networking.

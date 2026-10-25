@@ -102,6 +102,9 @@ pub enum AppError {
     Household(#[from] crate::domains::household_security::error::OwnerError),
 
     #[error(transparent)]
+    EventStream(#[from] crate::services::event_streams::Unavailable),
+
+    #[error(transparent)]
     IptvRefresh(#[from] crate::domains::live_tv::refresh::error::RefreshError),
 
     #[error(transparent)]
@@ -178,6 +181,11 @@ impl IntoResponse for AppError {
                 let (s, c, d) = analytics_error_to_http(e);
                 (s, c, Cow::Owned(d))
             }
+            AppError::EventStream(_) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "SSE_UNAVAILABLE",
+                Cow::Borrowed("Event stream service is unavailable"),
+            ),
             AppError::IptvRefresh(e) => {
                 let (s, c, d) = e.http();
                 (s, c, Cow::Owned(d))
@@ -400,7 +408,8 @@ impl IntoResponse for AppError {
 
         let wants_retry_after = matches!(
             &self,
-            AppError::RateLimited { .. }
+            AppError::EventStream(_)
+                | AppError::RateLimited { .. }
                 | AppError::ServiceUnavailable(_)
                 | AppError::GatewayTimeout(_)
                 | AppError::Auth(crate::domains::auth::AuthError::DeviceLinkingSlowDown { .. })
@@ -414,6 +423,7 @@ impl IntoResponse for AppError {
                 && status == StatusCode::SERVICE_UNAVAILABLE
         {
             let retry_seconds = match &self {
+                AppError::EventStream(_) => "5".to_string(),
                 AppError::IptvRefresh(_) => "2".to_string(),
                 AppError::RateLimited { .. } => "0".to_string(),
                 AppError::GatewayTimeout(_) => "30".to_string(),

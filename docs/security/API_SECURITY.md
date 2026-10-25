@@ -1,5 +1,12 @@
 # API Security Domain
 
+## SSE lifecycle and privacy — October 25, 2026
+
+[Lifecycle authority](../design/SSE_LIFECYCLE.md) records the confirmed transport contract and qualification. Authentication still precedes SSE admission and establishes the existing per-user stream context; no new management proof or broader active-session policy is introduced. Closing/failure gates cannot register new retained work after root closure. Normal disconnect/cancellation releases connection guards, while unexpected producer exit or a poisoned gate makes failure sticky and prevents successful cleanup certification.
+
+Exact-route no-store covers successful event streams and extractor/auth/limit/late-admission/outer-rate-limit errors without consuming response bodies. A late authenticated refusal contains only fixed SSE_UNAVAILABLE 503/Retry-After 5, with no event data, credential or task diagnostic. Per-user isolation, limits, existing replay/filter semantics and CORS remain scoped as before. This is lifecycle/privacy hardening, not an exactly-once or cross-restart delivery guarantee, client recovery redesign or general session-revocation audit.
+
+
 ## Root/manual IPTV refresh — October 25, 2026
 
 [Refresh authority](../design/IPTV_REFRESH.md) owns the implemented normal-build, runtime-default-off manual-refresh boundary. The dedicated CanManageServer/fresh-own-proof control cannot be activated through generic JSON settings. CanManageUsers/fresh-own-proof admission locks sorted actor/target accounts, the policy and assignment, rechecking exact session/profile/credential, current permission, grant, source and strong representation preconditions before any network request. Status reads recheck current object authority and disclose metadata only. Durable 202 work is root-owned after acceptance; explicit authority revocation still cancels it.

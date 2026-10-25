@@ -2,11 +2,11 @@
 
 ## Status and scope
 
-Research began October 25, 2026, against `cd24f154073079132a4ee9211fb836faf7622d7d` on `main`. The preceding [manual-refresh authority](IPTV_REFRESH.md), implementation `3b060e2a76ea5030ec2aa8cb874390049a6faafd`, qualifies actual HTTP/import draining and identifies connected SSE as the next lifecycle gap. This document records current-source findings, MCP-discovered official sources, alternatives and a concrete bounded implementation contract. The user confirmed both behavior choices after research checkpoint `86d9b99`. The complete contract below is ready for the required final shared-understanding confirmation. No SSE source change, new lifecycle qualification, release or PR merge is claimed by this checkpoint.
+Research began October 25, 2026, against `cd24f154073079132a4ee9211fb836faf7622d7d` on `main`. The preceding [manual-refresh authority](IPTV_REFRESH.md), implementation `3b060e2a76ea5030ec2aa8cb874390049a6faafd`, qualifies actual HTTP/import draining and identifies connected SSE as the next lifecycle gap. This document records current-source findings, MCP-discovered official sources, alternatives and a concrete bounded implementation contract. The user confirmed both behavior choices after research checkpoint `86d9b99`. The user confirmed the complete contract after checkpoint `e1e6275`. Implementation and scoped qualification are complete; final verification results and boundaries are recorded below. No release or PR merge is made.
 
 [Real-time push](REAL_TIME_PUSH.md) continues to own event taxonomy, authentication, filtering, replay and client behavior. [Memory ownership](MEMORY.md) owns the shared shutdown budget. [API security](../security/API_SECURITY.md) owns safe responses and current authority boundaries. This increment concerns the existing SSE transport, not IPTV catalog delivery or playback.
 
-## Current-source findings
+## Findings at the research baseline
 
 - `services/events_handler.rs` starts an untracked task for each response. That task owns the per-user connection guard, replay and broadcast receiver. Idle client disconnect is handled through `Sender::closed()`; application-root shutdown is not.
 - Initial retry, replay and live-event sends await bounded-channel capacity without root cancellation. An idle-only cancellation branch would leave full-channel sends blocked.
@@ -22,7 +22,7 @@ Research began October 25, 2026, against `cd24f154073079132a4ee9211fb836faf7622d
 1. Confirmed: on root stop, cancel forwarding and discard each connection's remaining application queue. Do not wait to deliver it before closing. Leave the existing process-local replay ring untouched. Bytes already handed to HTTP or the operating system cannot be retracted; no event-delivery acknowledgment is introduced.
 2. Confirmed: end established streams with ordinary SSE EOF, preserve existing clients and reject late authenticated admission with a fixed 503/Retry-After response. Add no shutdown event or HTTP 204. Native HTTP-error recovery remains distinct from bearer-fetch recovery; broader client changes would be a subsequent design decision.
 
-The user accepted both recommendations. The complete concrete contract must receive shared-understanding confirmation through [the repository design review](../../CONTEXT.md#design-review-with-grill-me) before implementation.
+The user accepted both recommendations. The complete concrete contract received shared-understanding confirmation through [the repository design review](../../CONTEXT.md#design-review-with-grill-me) before implementation.
 
 ## Official-source research
 
@@ -109,18 +109,66 @@ Already produced HTTP/OS bytes can still reach a client. A permanently stalled t
 - Retain actual executable second-signal coverage with an observed blocked production request under a separate owned database coordinator connection. Its ordinary lock timeout is sufficient to keep shutdown in progress for the second signal; release/reap everything. Keep the real sixty-second pool-close failure check and unexpected HTTP-task-exit qualification. Do not add a production bypass switch or silently delete failure tests because SSE now ends.
 - Execute heavy checks serially through the existing resource guard: focused SSE lifecycle/TCP/process checks and relevant manual-refresh regression, feature-enabled library tests and default-feature compilation, existing client events-store/transport tests, workflow cases, formatting/copyright/scripts/local document targets and strict/all-target lint accounting. Existing reserves, Cargo jobs, Tokio/test threads, fixture CPU/PID limits and deadlines remain unchanged. No release, deployment or PR merge.
 
-## Baseline and checkpoint outcomes
+## Qualification outcomes and baseline
 
-The unchanged focused SSE suite passes five tests with zero failures/ignores and 998 filtered cases:
+All heavy checks run serially through `scripts/testing-memory/run.mjs` with the existing reserves and limits. Receipts below are retained under `.cache/testing-memory/`; they are local evidence rather than committed artifacts. The final source identity is recorded after the verification record is complete.
+
+Final results:
+
+- Feature-enabled library suite: **1,000 passed, seven existing ignores**, 117.48 seconds. This includes nine lifecycle tests covering idle/full-send cancellation, readiness, permanent output EOF, disconnect/readmission, close/admission races, producer panic and poisoned admission. Receipt `2026-10-25T21-52-56-328Z-8e86c245-2990-407a-8342-f4f539ad8560.jsonl`.
+- Final owned PostgreSQL/TCP contract: **one passed, zero ignored**, 16.36 seconds; resource `f7e2c0d7-c2fc-473c-915e-d413ec1a2d62`, receipt `2026-10-25T21-57-26-228Z-36fd063b-109a-445e-a573-b972eb916a04.jsonl`. Both authentication transports, exact-route privacy, framing/replay/filtering, isolation/caps, disconnect/readmission and connected/paused-reader EOF pass.
+- Full root/manual-refresh regression passes all three contracts in **292.98 seconds**, zero ignored cases and zero proxy-trap connections; resource `1c9ac51e-d6ff-4b05-8641-4a3b38b14374`, receipt `2026-10-25T21-39-19-967Z-dd846403-841b-449b-9b6a-a41409eeb3eb.jsonl`. Actual connected SSE now completes its HTTP response and the executable exits zero. Owned forced second-signal, thirty-second HTTP deadline, sixty-second pool deadline, accepted import/commit/revocation tests and cleanup ordering pass. Wrapper exit is zero without memory stop/interruption; minimum available host memory 6,683,680,768 bytes, peak owned private bytes 7,576,399,872 includes compilation and process qualification rather than an application RSS guarantee.
+- Default-feature all-target compilation passes in 107 seconds; receipt `2026-10-25T21-58-25-203Z-6abbc75a-05d7-43b7-bcda-a939d0ea3f79.jsonl`.
+- Owner-security production-route/PostgreSQL regression: **one passed, zero ignored**, 151.62 seconds; resource `a419e2eb-32d1-4ed2-8755-33b2545e7e06`, 57 safe events, receipt `2026-10-25T22-00-16-405Z-8af515e9-6441-4c73-9d22-0f4259f84f19.jsonl`. Signed WebAuthn, password proof, rotated cookie/bearer sessions, replay/recovery and revocation race remain qualified.
+
+- Assignment production-route/PostgreSQL regression: **one passed, zero ignored**, 132.42 seconds; resource `69d8138f-c7ff-4d25-b3df-30d136e88379`, 17 safe events, receipt `2026-10-25T22-03-35-365Z-bb9ceec4-d8c1-45c1-9435-61f6c1981b03.jsonl`. Conditional writes, current proof/permission, delegation/capability races, encrypted storage, rotation/replacement, Kids refusal and outer privacy remain qualified.
+- Existing client event-store/transport regressions: **21 passed across two files**, 2.92 seconds; receipt `2026-10-25T22-06-32-834Z-75e2e1c5-271b-49a0-b9db-444afcda45ca.jsonl`. The client command also passes its 37 existing Node fixture/pretest cases. No client source is changed.
+- Workflow/resource-policy regressions: **16 passed**, zero failures/skips; receipt `2026-10-25T22-06-47-603Z-0e50ad34-c4c9-4707-98c9-a425c0295c03.jsonl`. Worker/heap budgets and ownership refusal remain intact.
+- Final all-target warning diagnostic completes in 4.91 seconds; receipt `2026-10-25T22-06-50-844Z-bd91247a-b5da-443f-a7a9-58e4e80c7aae.jsonl`. It retains **28 library / 32 library-test baseline warnings plus two existing Tonight integration casts**. Every diagnostic location is outside this change. No introduced warning remains. The existing `proc-macro-error2` future-incompatibility warning remains.
+
+
+- Strict Clippy exits **101** on the same 28 library / 32 library-test findings; receipt `2026-10-25T22-06-58-382Z-6ff4e29f-4a2f-4db9-a773-f67d17e17525.jsonl`. This is not a strict-lint pass. The diagnostic pass above is used only to account for existing versus introduced warnings.
+- Workspace and isolated compression-fixture formatting, staged whitespace, copyright (**800 tracked source files**) and **750 local link targets across thirteen changed documents** pass. All seven containers registered to the initial/final TCP, root, owner and assignment qualification runs are confirmed absent after cleanup. Cargo.lock, manifests and client sources are unchanged. Rust/Cargo remain **1.99.1**, rustup **1.29.2**; no additional SDK/dependency update is required for this lifecycle.
+
+All final functional wrappers exit zero without memory stop/interruption; strict lint records the expected compiler exit 101 without a memory stop/interruption. Final library/TCP/owner/assignment checks preserve at least 11,175,518,208 available host bytes. The separate full root regression above includes compilation and executable qualification and has its own lower minimum and explicit resource accounting. Seven library ignores are existing environment-dependent cases, not unexecuted SSE acceptance tests.
+
+Reproduction commands, run serially with the existing resource guard (Windows executable signal qualification requires the existing attached console/ConPTY):
+
+```powershell
+node scripts/testing-memory/run.mjs cargo-test --features playback-qualification --lib
+node scripts/testing-memory/run.mjs cargo-test --features playback-qualification --test sse_lifecycle -- --ignored --nocapture
+node scripts/testing-memory/run.mjs iptv-refresh
+node scripts/testing-memory/run.mjs cargo-check --all-targets
+node scripts/testing-memory/run.mjs cargo-test --features playback-qualification --test household_owner_security -- --ignored --nocapture
+node scripts/testing-memory/run.mjs cargo-test --features playback-qualification --test live_tv_assignment -- --ignored --nocapture
+node scripts/testing-memory/run.mjs web-unit events-store.test.ts events-transport.test.ts
+node scripts/testing-memory/run.mjs iptv-transport-unit scripts/testing-memory/presets.test.mjs scripts/testing-memory/policy.test.mjs
+node scripts/testing-memory/run.mjs cargo-iptv-clippy --cap-lints warn
+node scripts/testing-memory/run.mjs cargo-iptv-clippy
+```
+
+Corrected and preceding attempts:
+
+- Initial seven lifecycle tests pass in 0.01 seconds; receipt `2026-10-25T21-23-33-215Z-6bc12ff5-4ec3-45e2-b68c-d1838e1d7715.jsonl`. Five unused received-Event warnings in the fixture were corrected rather than suppressed.
+- Readiness-aware seven-test extension passes without new compiler warnings in 0.08 seconds; receipt `2026-10-25T21-30-16-555Z-0bae9fb3-338d-4c18-8ca5-bb14457f7ce5.jsonl`.
+- Real owned PostgreSQL/TCP SSE contract passes in 15.46 seconds with zero ignored cases; resource `08208b71-386a-4ad3-9314-c018579ff37e`, receipt `2026-10-25T21-32-28-715Z-add99e74-5186-46c3-a88c-93c73aadd3d2.jsonl`. Cookie/bearer, replay/filter/isolation, disconnect/readmission/cap, ordinary EOF/paused readers, safe late refusal, malformed query and outer-rate-limit privacy pass.
+- Initial all-target diagnostic completes in 118 seconds with one introduced nested-condition warning in the process fixture, receipt `2026-10-25T21-50-06-243Z-9f2af84f-e863-412c-99e1-17df0597eb5e.jsonl`. The fixture condition was corrected without suppressing the diagnostic. The final diagnostic above confirms its correction, with no introduced warning.
+
+
+Before implementation, the unchanged focused SSE suite passed five tests with zero failures/ignores and 998 filtered cases:
 
 `node scripts/testing-memory/run.mjs cargo-test --features playback-qualification --lib services::events_handler::tests`
 
-Receipt: `.cache/testing-memory/2026-10-25T19-44-23-587Z-c15ebdce-d9bf-4f1c-9315-3160a61c5f51.jsonl`. This proves the existing idle-disconnect and encoding baseline, not new root shutdown behavior. The preceding manual-refresh authority retains the actual connected-SSE deadline failure evidence. The baseline wrapper exits zero without memory stop/interruption, preserving at least 26,155,548,672 available host bytes; peak owned private bytes are 263,061,504. This documentation checkpoint also passes whitespace checks and 618 local link targets across five Markdown documents. No new source build/lint or runtime implementation result is implied.
+Receipt: `.cache/testing-memory/2026-10-25T19-44-23-587Z-c15ebdce-d9bf-4f1c-9315-3160a61c5f51.jsonl`. This proves the existing idle-disconnect and encoding baseline, not new root shutdown behavior. The preceding manual-refresh authority retains the actual connected-SSE deadline failure evidence. The baseline wrapper exits zero without memory stop/interruption, preserving at least 26,155,548,672 available host bytes; peak owned private bytes are 263,061,504. That research-only documentation checkpoint passed whitespace checks and 618 local link targets across five Markdown documents. Its baseline result does not imply a new runtime implementation result.
 
 ## Random open PR applicability
 
 Fresh MCP GitHub search returned one open candidate on October 25. Uniform selection from that one-item set selected [PR 5](https://github.com/cloudbyday90/Duskcue/pull/5), head `c018d77b7f09543e5960a571dc43e2f061cedf0a`, open and unmerged. MCP metadata, the complete two-file path list and both exact file patches were inspected. They request PostCSS 8.5.23 and Nano ID 3.3.16. Both current lockfiles already contain 8.5.30/3.3.20. The PR is superseded: no downgrade, local patch, merge, comment or closure applies.
 
+## Qualification boundaries
+
+The owned TCP cases exercise HTTP/1.1, not a new browser/mobile/TV end-to-end journey or reverse-proxy/HTTP2 matrix. Actual executable signals use the existing Windows console-break helper; Unix signal implementation is unchanged and is not newly process-qualified here. Connected and temporarily paused readers are qualified; already handed-off bytes and permanently stalled transports remain subject to the retained deadline/failure boundary. Existing client unit regressions do not establish identical native and bearer HTTP-error recovery. No schema, dependency version, catalog/playback grant, new scheduler or release is introduced.
+
 ## Next item
 
-Both behavior choices are confirmed. Confirm shared understanding of the complete contract above, then implement and qualify it on main without a release. After connected-client root shutdown is qualified, proceed to profile-scoped channel/EPG reads under current assignment/source authority. Scheduling, owner unlock UI, Kids programme policy and playback remain separate.
+Design standard-profile-scoped, read-only channel/EPG delivery under current household assignment, source generation and profile permissions. Return safe bounded metadata without revealing upstream stream/logo credentials, and preserve explicit missing/stale/ambiguous guide evidence. Resolve that API contract before implementation. Scheduling, owner unlock UI, client recovery, Kids programme policy and shared playback admission remain separate.

@@ -1,5 +1,10 @@
 # Configuration Strategy
 
+## SSE root lifecycle — October 25, 2026
+
+The confirmed [SSE lifecycle](../design/SSE_LIFECYCLE.md) adds an infallible per-AppState transport owner before HTTP readiness. It introduces no operator flag, runtime JSON consumer or bootstrap option: the existing authenticated SSE endpoint remains available with its existing limits and wire format. Root shutdown closes admission and cancels producers/output before joining HTTP/root/import/SSE work; existing thirty-second drain and sixty-second pool budgets remain canonical. This does not enable IPTV scheduling, catalog access or playback. The lifecycle authority owns qualification and remaining transport/client boundaries.
+
+
 ## Manual IPTV refresh control — October 25, 2026
 
 Manual refresh is available in the normal server build but defaults off through the dedicated `live_tv_refresh_control` database row. GET/PUT `/api/v1/live-tv/manual-refresh-control` requires current CanManageServer; PUT also requires fresh own-account proof and its strong If-Match. It accepts only `{ "enabled": true|false }`. This is not a TOML/environment setting or a typed consumer of arbitrary `server_config` JSON. Generic config updates/reloads cannot activate it. No automatic refresh task is registered.

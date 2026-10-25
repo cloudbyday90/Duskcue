@@ -1,5 +1,12 @@
 # Project Structure
 
+## Modular SSE lifecycle — October 25, 2026
+
+[SSE lifecycle](SSE_LIFECYCLE.md) owns `services/event_streams/`: small lifecycle/admission/completion, forwarding, output and wire modules with focused adversarial tests. `events_handler.rs` retains HTTP extraction and response construction. Both AppState constructors create one shared owner. `middleware/private_responses.rs` factors the existing household/Live TV response policy and adds exact-path SSE privacy without buffering; household media-type mapping delegates to the same helper.
+
+`runtime::shutdown` joins SSE with actual HTTP/root/import work under its existing budget. Owned TCP, process and deadline qualification stays in modular integration helpers. No schema, direct dependency or dependency version changes are required. Existing clients and later catalog/playback domains remain separate.
+
+
 ## Normal-build IPTV manual refresh — October 25, 2026
 
 [Refresh authority](IPTV_REFRESH.md) owns `live_tv/refresh/`: the five-file HTTP boundary plus small admission, authority, database, representation and retained manager services. `services/runtime/` separates HTTP completion, continuing process signals and shutdown coordination. A one-time AppState handle uses the shared pool/key without a global singleton. Connection-level exact-session/grant/capability helpers are shared with household/assignment authorization.

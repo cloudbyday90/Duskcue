@@ -1,8 +1,15 @@
 # Memory Management
 
+## SSE root ownership implementation — October 25, 2026
+
+The [confirmed SSE contract](SSE_LIFECYCLE.md) is implemented and locally qualified. Each AppState shares a lifecycle owner with a synchronized registration cutoff, tracked producer/destructor lifetime and sticky failure. Producer preparation and readiness occur outside the admission lock. A cancellation-aware response adapter drops queued output and remains ended; client drop cancels only its producer. The root closes SSE before HTTP drain and joins its completion alongside HTTP/root/import work under the existing thirty-second budget. The pool remains dependent on successful joins, with up to sixty additional seconds for closure.
+
+No database, key ownership, dependency version or extra timeout is introduced. Standard Tokio wakers are reused. Already produced HTTP/OS bytes and permanently stalled transports remain outside an application-queue discard guarantee. Existing HTTP-deadline, second-signal and pool-failure tests are retained with owned fixtures rather than using SSE as an intentionally infinite response after this fix. Qualification outcomes belong to the lifecycle authority.
+
+
 ## SSE root ownership research — October 25, 2026
 
-[Lifecycle research](SSE_LIFECYCLE.md) identifies untracked forwarders, full-channel sends and queued output as separate shutdown lifetimes. The proposed per-AppState owner must close admission atomically with task registration, cancel producers/output and retain completion under the existing shared thirty-second HTTP/root/import drain. No extra sequential budget, global singleton, pool/key ownership transfer or dependency upgrade is proposed. Transport backpressure can still require the retained nonzero deadline path; ending a producer does not prove remote EOF delivery. Immediate queue discard and normal EOF/late authenticated 503 are confirmed. The complete contract awaits final shared-understanding confirmation; this checkpoint changes no runtime source.
+[Lifecycle research](SSE_LIFECYCLE.md) identifies untracked forwarders, full-channel sends and queued output as separate shutdown lifetimes. The resulting per-AppState owner closes admission atomically with task registration, cancels producers/output and retains completion under the existing shared thirty-second HTTP/root/import drain. No extra sequential budget, global singleton, pool/key ownership transfer or dependency upgrade is proposed. Transport backpressure can still require the retained nonzero deadline path; ending a producer does not prove remote EOF delivery. Immediate queue discard and normal EOF/late authenticated 503 are confirmed. The complete contract was confirmed after `e1e6275`; implementation and current qualification are recorded above.
 
 
 ## Root-owned IPTV refresh and HTTP draining — October 25, 2026

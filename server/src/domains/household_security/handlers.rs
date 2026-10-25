@@ -12,9 +12,7 @@ use axum::{
     Json,
     extract::{State, rejection::JsonRejection},
     http::{HeaderMap, HeaderValue, StatusCode, header},
-    response::Response,
 };
-use axum::{extract::Request, middleware::Next};
 
 fn body<T: validator::Validate>(input: Result<Json<T>, JsonRejection>) -> Result<T, AppError> {
     let value = input
@@ -102,31 +100,4 @@ fn response(
     Ok((headers, Json(body)))
 }
 
-pub(super) async fn problem_media_type(mut response: Response) -> Response {
-    if (response.status().is_client_error() || response.status().is_server_error())
-        && response
-            .headers()
-            .get(header::CONTENT_TYPE)
-            .is_some_and(|v| v == "application/json")
-    {
-        response.headers_mut().insert(
-            header::CONTENT_TYPE,
-            HeaderValue::from_static("application/problem+json"),
-        );
-    }
-    response
-}
-
-pub(crate) async fn response_policy(request: Request, next: Next) -> Response {
-    let path = request.uri().path();
-    let owner_path =
-        path.starts_with("/api/v1/household-management/") || path.starts_with("/api/v1/live-tv/");
-    let mut response = next.run(request).await;
-    if owner_path {
-        response
-            .headers_mut()
-            .insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
-        return problem_media_type(response).await;
-    }
-    response
-}
+pub(super) use crate::middleware::private_responses::problem_media_type;

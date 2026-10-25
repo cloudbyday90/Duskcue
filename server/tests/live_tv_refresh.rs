@@ -22,6 +22,8 @@ mod docker;
 #[path = "support/assignment_http.rs"]
 #[allow(dead_code, unused_imports)]
 mod http;
+#[path = "support/refresh_http_deadline.rs"]
+mod http_deadline;
 #[path = "support/import_fixture.rs"]
 #[allow(dead_code)]
 mod import_fixture;
@@ -40,6 +42,8 @@ mod refresh_cases;
 mod root_cases;
 #[path = "support/refresh_runtime_case.rs"]
 mod runtime_case;
+#[path = "support/refresh_stop_request.rs"]
+mod stop_request;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires admitted PostgreSQL18 and owned HTTP/TLS/process workflow"]
@@ -85,4 +89,10 @@ async fn pool_close_deadline_reports_incomplete_shutdown() -> anyhow::Result<()>
         println!("IPTV_REFRESH_POOL_RESULT {}", serde_json::json!({"version":1,"resource_id":db.resource,"pool_deadline_failure":true,"actual_http_joined":true,"released_connection_joined":true}));
         Ok(())
     }).await
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires admitted PostgreSQL18 and the actual thirty-second HTTP deadline"]
+async fn http_drain_deadline_keeps_dependencies_open() -> anyhow::Result<()> {
+    database::run(async |db| http_deadline::run(db).await).await
 }

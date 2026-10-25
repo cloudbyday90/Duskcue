@@ -18,7 +18,7 @@ use tokio::{
     process::Command,
 };
 
-async fn request(
+pub(super) async fn request(
     address: SocketAddr,
     token: &str,
     method: &str,
@@ -61,7 +61,7 @@ async fn request(
 }
 
 pub async fn run(db: &database::Database, case: &mut Case, key: &str) -> anyhow::Result<()> {
-    for mode in ["normal", "deadline", "forced"] {
+    for mode in ["normal", "connected", "forced"] {
         process(db, case, key, mode).await?;
     }
     Ok(())
@@ -170,6 +170,7 @@ async fn process(
         stderr.take(1024 * 1024 + 1).read_to_end(&mut out).await?;
         Ok::<_, std::io::Error>(out)
     });
+    let mut pending = None;
     let outcome = async {
         let path = refresh_cases::path(case);
         let representation = tokio::time::timeout(Duration::from_secs(30), async {
@@ -237,6 +238,17 @@ async fn process(
         } else {
             Some(hold_events(address, &case.admin.token).await?)
         };
+        if mode == "forced" {
+            pending = Some(
+                super::stop_request::HeldRequest::start(
+                    case,
+                    &db.url,
+                    address,
+                    format!("{path}/status"),
+                )
+                .await?,
+            );
+        }
         let pid = child
             .id()
             .ok_or_else(|| anyhow::anyhow!("owned root PID absent"))?;
@@ -251,16 +263,32 @@ async fn process(
         }
         let exit = tokio::time::timeout(Duration::from_secs(35), child.wait()).await??;
         anyhow::ensure!(
-            exit.code() == Some(if mode == "normal" { 0 } else { 1 }),
+            exit.code() == Some(if mode == "forced" { 1 } else { 0 }),
             "root shutdown exit contract failed"
         );
-        drop(held);
+        if let Some(stream) = held
+            && mode == "connected"
+        {
+            let mut bytes = Vec::new();
+            tokio::time::timeout(
+                Duration::from_secs(3),
+                stream.take(65537).read_to_end(&mut bytes),
+            )
+            .await??;
+            anyhow::ensure!(
+                bytes.len() <= 65536 && bytes.ends_with(b"0\r\n\r\n"),
+                "connected SSE did not finish its HTTP response"
+            );
+        }
         Ok::<_, anyhow::Error>(())
     }
     .await;
     if outcome.is_err() {
         child.kill().await.ok();
         let _ = child.wait().await;
+    }
+    if let Some(held) = pending {
+        held.finish().await?;
     }
     let out = output.await??;
     let err = errors.await??;
@@ -283,8 +311,7 @@ async fn process(
     let forced = text.contains("forced_shutdown");
     anyhow::ensure!(
         match mode {
-            "normal" => completed && !failed && !forced,
-            "deadline" => !completed && failed && !forced,
+            "normal" | "connected" => completed && !failed && !forced,
             _ => !completed && forced,
         },
         "root completion evidence differs from exit contract: completed={completed}, failed={failed}, forced={forced}"

@@ -211,7 +211,7 @@ pub fn build_router(state: AppState) -> Router<AppState> {
         .layer(propagate_request_id)
         .layer(set_request_id)
         .layer(axum::middleware::from_fn(
-            crate::domains::household_security::handlers::response_policy,
+            crate::middleware::private_responses::response_policy,
         ));
 
     router

@@ -1074,6 +1074,7 @@ pub struct AppState {
     pub encryption_key: Arc<EncryptionKey>,
     pub transcode_manager: Arc<crate::services::transcoding::TranscodeManager>,
     pub event_bus: Arc<EventBus>,
+    pub event_streams: Arc<crate::services::event_streams::EventStreams>,
     pub geoip: Arc<GeoIpService>,
     pub scheduler: Arc<std::sync::OnceLock<Arc<Scheduler>>>,
     pub live_tv_refresh:
@@ -1122,6 +1123,7 @@ impl AppState {
             encryption_key: Arc::new(encryption_key),
             transcode_manager,
             event_bus,
+            event_streams: Arc::new(crate::services::event_streams::EventStreams::new()),
             geoip: Arc::new(GeoIpService::disabled()),
             scheduler: Arc::new(std::sync::OnceLock::new()),
             live_tv_refresh: Arc::new(std::sync::OnceLock::new()),
@@ -1187,6 +1189,7 @@ impl AppState {
             encryption_key: Arc::new(encryption_key),
             transcode_manager,
             event_bus,
+            event_streams: Arc::new(crate::services::event_streams::EventStreams::new()),
             geoip,
             scheduler: Arc::new(std::sync::OnceLock::new()),
             live_tv_refresh: Arc::new(std::sync::OnceLock::new()),

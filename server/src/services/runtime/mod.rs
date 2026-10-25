@@ -23,11 +23,13 @@ pub async fn shutdown(
     if let Some(owner) = state.live_tv_refresh.get() {
         owner.close();
     }
+    state.event_streams.close();
     http.close();
     tracker.close();
     let drain = async {
         tokio::try_join!(
             http.wait(),
+            async { state.event_streams.drain().await.map_err(|_| ShutdownError) },
             async {
                 tracker.wait().await;
                 Ok::<_, ShutdownError>(())

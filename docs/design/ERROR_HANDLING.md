@@ -1,5 +1,10 @@
 # Error Handling Design
 
+## SSE unavailable classification — October 25, 2026
+
+`AppError::EventStream` maps the fixed lifecycle failure to SSE_UNAVAILABLE (503) with Retry-After 5. Exact-route no-store/problem media type is applied without collecting the body, including errors emitted outside the handler. Open-service per-user limits retain SSE_LIMIT_REACHED (429); auth refusals remain unchanged. Malformed query errors use fixed safe text. An unexpected task exit or poisoned gate is retained rather than reset by another request; root cleanup failure still takes the executable's nonzero path. [SSE lifecycle](SSE_LIFECYCLE.md) owns the accepted contract, test results and client retry differences.
+
+
 ## Manual IPTV refresh errors — October 25, 2026
 
 [Refresh authority](IPTV_REFRESH.md) defines safe fixed messages through `AppError::IptvRefresh`: `IPTV_REFRESH_001` malformed input (400), `_002` forbidden (403), `_003` unavailable assignment (404), `_004` disabled/busy/unavailable (503), `_005` uncertain acceptance without replay (503) and `_006` incomplete cleanup (503). Existing owner/precondition and JSON errors retain their 403/428/412/413/415 contracts. Refresh 503 responses include bounded Retry-After; it never authorizes automatic mutation replay. All results remain no-store and expose no raw SQL, transport or imported metadata. Shutdown failures are process exit 1, with fixed event names and no false completion log.
