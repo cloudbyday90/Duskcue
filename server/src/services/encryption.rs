@@ -18,6 +18,8 @@ use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD as BASE64;
 use ring::rand::SecureRandom as _;
 
+pub mod context;
+
 pub const ENCRYPTED_PREFIX: &str = "encrypted:";
 const KEY_LEN: usize = 32;
 const NONCE_LEN: usize = 12;

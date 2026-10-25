@@ -118,10 +118,9 @@ pub(super) async fn problem_media_type(mut response: Response) -> Response {
 }
 
 pub(crate) async fn response_policy(request: Request, next: Next) -> Response {
-    let owner_path = request
-        .uri()
-        .path()
-        .starts_with("/api/v1/household-management/");
+    let path = request.uri().path();
+    let owner_path =
+        path.starts_with("/api/v1/household-management/") || path.starts_with("/api/v1/live-tv/");
     let mut response = next.run(request).await;
     if owner_path {
         response

@@ -1,5 +1,9 @@
 # HTTP Caching
 
+## IPTV management validators — October 24, 2026
+
+[Saved assignment](IPTV_ASSIGNMENT.md) uses strong validators computed from deterministic redacted administrator/owner representations. A validator from one view cannot stand in for the other. Creation and writes check preconditions under the same locks as authority and mutation. Existing authenticated conditional GET behavior is reused. All management responses remain `no-store`, including outer limiter refusals and 428; validators do not authorize caching secrets or expose raw URLs. CORS exposes the ETag header to already-allowed clients. The assignment authority owns implementation and execution status.
+
 ## Overview
 
 This document is the authoritative design for HTTP-layer response caching in Duskcue — the strategy by which the server emits cache directives (`ETag`, `Cache-Control`) and clients (browsers, Smart TVs, Tauri desktop, Flutter mobile) consume them. The goal is to minimize redundant network traffic and perceived latency without sacrificing correctness for personalized, frequently-changing data.

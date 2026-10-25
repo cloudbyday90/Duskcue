@@ -7,15 +7,9 @@ use sqlx::{PgPool, Postgres, Row, Transaction};
 use uuid::Uuid;
 
 pub async fn begin(pool: &PgPool, user: Uuid) -> Result<Transaction<'_, Postgres>, OwnerError> {
-    let mut tx = pool.begin().await?;
-    sqlx::query("SET LOCAL lock_timeout = '5s'")
-        .execute(&mut *tx)
-        .await?;
-    sqlx::query("SET LOCAL statement_timeout = '10s'")
-        .execute(&mut *tx)
-        .await?;
+    let mut tx = begin_accounts(pool, &[user]).await?;
     let active: Option<bool> = sqlx::query_scalar(
-        "SELECT status = 'active' AND deleted_at IS NULL FROM users WHERE id=$1 FOR NO KEY UPDATE",
+        "SELECT status = 'active' AND deleted_at IS NULL FROM users WHERE id=$1",
     )
     .bind(user)
     .fetch_optional(&mut *tx)
@@ -23,11 +17,41 @@ pub async fn begin(pool: &PgPool, user: Uuid) -> Result<Transaction<'_, Postgres
     if active != Some(true) {
         return Err(OwnerError::InvalidProof);
     }
-    sqlx::query("INSERT INTO household_owner_state(user_id) VALUES ($1) ON CONFLICT DO NOTHING")
+    Ok(tx)
+}
+
+pub async fn begin_accounts<'a>(
+    pool: &'a PgPool,
+    users: &[Uuid],
+) -> Result<Transaction<'a, Postgres>, OwnerError> {
+    let mut tx = pool.begin().await?;
+    sqlx::query("SET LOCAL lock_timeout = '5s'")
+        .execute(&mut *tx)
+        .await?;
+    sqlx::query("SET LOCAL statement_timeout = '10s'")
+        .execute(&mut *tx)
+        .await?;
+    let locked: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM users WHERE id=ANY($1) ORDER BY id FOR NO KEY UPDATE")
+            .bind(users)
+            .fetch_all(&mut *tx)
+            .await?;
+    for user in locked {
+        sqlx::query(
+            "INSERT INTO household_owner_state(user_id) VALUES ($1) ON CONFLICT DO NOTHING",
+        )
         .bind(user)
         .execute(&mut *tx)
         .await?;
+    }
     Ok(tx)
+}
+
+pub async fn revoke_management(
+    tx: &mut Transaction<'_, Postgres>,
+    user: Uuid,
+) -> Result<(), OwnerError> {
+    invalidate(tx, user).await
 }
 
 pub async fn scope(tx: &mut Transaction<'_, Postgres>, actor: Scope) -> Result<(), OwnerError> {

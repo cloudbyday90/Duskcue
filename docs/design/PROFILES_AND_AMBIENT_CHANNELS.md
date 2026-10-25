@@ -1,5 +1,9 @@
 # Household Profiles, Kids Mode, and Ambient Channels
 
+## Assignment-owned Live TV choices — October 24, 2026
+
+[Encrypted IPTV assignment](IPTV_ASSIGNMENT.md) owns standard-profile Live TV choices in a separate assignment/profile table. They do not reuse ambient/search/download flags or become fields on the generic profile-update DTO. Missing/new profile policy is disabled; Kids remain ineligible until channel/current-programme evidence and exception policy are qualified. Composite ownership keys prevent cross-household bindings. Existing profile deletion cascades the assignment-owned setting. The domain authority owns administrator delegation, proof, revocation and exact qualification outcomes.
+
 ## Playback recovery authorization — October 17, 2026
 
 [Bounded playback recovery](PLAYBACK_RECOVERY.md) binds HLS status and replacement allocation to the original active profile and revalidates media access. The profile service now exposes connection-taking access helpers in `profiles/access.rs`; existing pool-taking APIs retain their signatures and delegate after acquiring one connection. Recovery reuses its already locked transaction connection, avoiding nested pool acquisition under contention. Owner, user-library, Kids-library and content-rating rules continue to use the shared policy. The disposable recovery fixture checks those rules while holding the only connection in a one-connection pool and rolls back temporary grants.

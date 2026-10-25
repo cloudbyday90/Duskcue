@@ -1,5 +1,9 @@
 # API Conventions
 
+## Conditional IPTV management — October 24, 2026
+
+[IPTV assignment](IPTV_ASSIGNMENT.md) adds a current-household assignment resource for administrators and a self-scoped owner-management resource. Creation requires `If-None-Match: *`; mutation/deletion requires current version-specific `If-Match`, checked under transaction locks. Fixed 428/412 errors distinguish missing conditions from stale representations. Strict tagged write variants separate policy, credential rotation and replacement; nullable limit fields on updates must be explicit. Secret input remains write-only. Responses remain no-store; ETags serve mutation concurrency as well as authenticated conditional GET. CORS exposes ETag without widening origins or credential policy. The authority owns paths, body/header bounds, pagination, statuses and current test outcome.
+
 ## Overview
 
 This document defines the authoritative conventions for the server's REST API. Covers: URL structure, versioning, HTTP methods, request/response formats, pagination, rate limiting, authentication headers, filtering/sorting, async operations, conditional requests, CORS, and error response integration.
@@ -55,6 +59,8 @@ pub fn router(state: AppState) -> Router<AppState> {
 | Domain | Base Path | Operations |
 |---|---|---|
 | Auth | `/api/v1/auth/*` | Registration, login, logout, passkey management, TOTP, device linking, re-auth |
+| Live TV configuration | `/api/v1/live-tv/*` | Configuration validation and conditional household assignment/delegation writes; no feed networking or playback |
+| Household management | `/api/v1/household-management/*` | Owner proof/lock, scoped Live TV configuration and bounded profile policy |
 | Users | `/api/v1/users` | CRUD, capabilities, library access, sessions |
 | Libraries | `/api/v1/libraries` | CRUD, scan, refresh, items |
 | Media | `/api/v1/media-items` | Get, search, refresh metadata, versions |

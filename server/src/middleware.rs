@@ -160,7 +160,8 @@ pub fn build_cors_layer(network_mode: &NetworkMode, allowed_origins: &[String]) 
         NetworkMode::Local => CorsLayer::new()
             .allow_origin(Any)
             .allow_methods(Any)
-            .allow_headers(Any),
+            .allow_headers(Any)
+            .expose_headers([header::ETAG]),
         NetworkMode::Exposed => {
             let origins: Vec<_> = allowed_origins
                 .iter()
@@ -171,11 +172,13 @@ pub fn build_cors_layer(network_mode: &NetworkMode, allowed_origins: &[String]) 
                     .allow_origin(Any)
                     .allow_methods(Any)
                     .allow_headers(Any)
+                    .expose_headers([header::ETAG])
             } else {
                 CorsLayer::new()
                     .allow_origin(origins)
                     .allow_methods(Any)
                     .allow_headers(Any)
+                    .expose_headers([header::ETAG])
                     .allow_credentials(true)
             }
         }

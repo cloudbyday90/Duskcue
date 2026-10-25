@@ -1,5 +1,9 @@
 # Error Handling Design
 
+## IPTV assignment — October 24, 2026
+
+The assignment subdomain adds fixed `IPTV_001`–`IPTV_007` problem details for disallowed operations, unavailable objects, stale conditions, required version conditions, malformed requests, invalid policy and unavailable storage/service. Existing owner/authentication errors retain their codes, and feed URL validation retains `VALID_001`. Storage/parser/crypto errors never replace the fixed client message. The outer management response policy supplies no-store even on global rate errors; native non-JSON refusals retain their media type. [Assignment authority](IPTV_ASSIGNMENT.md) owns exact statuses and qualification.
+
 ## Household-owner proof — October 24, 2026
 
 The `household_security` domain adds fixed `OWNER_001`–`OWNER_006` problem details for required proof, invalid/expired proof, temporary lockout/capacity, final-factor refusal, malformed requests and unavailable storage/service. Auth/profile mutations delegate those typed failures through existing `AppError` translation. New management responses remain no-store even when the outer global rate limiter refuses them. [Household-owner security](../security/HOUSEHOLD_OWNER_SECURITY.md) owns the exact status mapping, bounded request contract and execution evidence; parser/crypto/storage diagnostics are not substituted for the fixed client message.

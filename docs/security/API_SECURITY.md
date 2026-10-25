@@ -1,5 +1,9 @@
 # API Security Domain
 
+## Encrypted IPTV assignment — October 24, 2026
+
+[Assignment authority](../design/IPTV_ASSIGNMENT.md) owns write-only supplied feed URLs, strict context-bound storage, fresh administrator-account proof plus current capability, and independently delegated owner policy. Account/session/generation, object ownership, delegation and expected representation are rechecked inside the write transaction. Capability replacement now participates in the account-row lock protocol. No saved configuration grants destination/network authority or production playback access. Fixed attributed audit events contain no URL/ciphertext snapshot. Exact qualification and limitations remain in the domain authority.
+
 ## Household-owner management — October 24, 2026
 
 [Household-owner security](HOUSEHOLD_OWNER_SECURITY.md) owns the new `/api/v1/household-management` API, operator-only enrollment/recovery handoffs and explicit activation. All new responses, including errors from the outer global rate guard, are no-store. Strict bounded request DTOs, fixed problem details, account/session/purpose/revision-bound one-use WebAuthn challenges and real cryptographic validation precede authority changes. Raw passwords, handoffs and rotated tokens do not enter security audit events or application diagnostics.

@@ -1,5 +1,9 @@
 # Authentication & User Management Domain
 
+## Saved IPTV administrator authority — October 24, 2026
+
+[Assignment administration](IPTV_ASSIGNMENT.md) requires current `can_manage_users` plus a fresh management grant on the administrator's own account for sensitive writes, independently of the target household. A global server-owner role does not replace that proof. Shared multi-account locking and transaction-time capability checks prevent pending writes from inheriting revoked permissions; capability replacement now locks its subject account. Existing factor enrollment/login and viewing-token contracts retain their ownership. The assignment authority records exact interfaces, runtime evidence and deferred client work.
+
 ## Household-owner authority — October 24, 2026
 
 [Household-owner management security](../security/HOUSEHOLD_OWNER_SECURITY.md) owns the explicitly activated owner-proof foundation. A viewing session, a standard profile or an arbitrary previously enrolled passkey does not establish owner authority. An operator-only one-use handoff designates an owner-held password/passkey or permits verified replacement-passkey registration. The handoff is not an additional ordinary login method.

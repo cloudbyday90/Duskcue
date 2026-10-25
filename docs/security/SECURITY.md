@@ -1,5 +1,9 @@
 # Security & Remote Access Domain
 
+## Saved IPTV secrets and delegation — October 24, 2026
+
+[Encrypted assignment](../design/IPTV_ASSIGNMENT.md) extends the existing ring AES-256-GCM key service with a strict versioned envelope and associated data bound to household, assignment and typed feed field. Complete URLs are secret, including query credentials. Plaintext/legacy compatibility is excluded from this new codec; no decrypt/export endpoint is exposed. Administrator writes require both current capability and fresh proof on the administrator's own account. Delegated owner controls remain narrower than the household allowance. This is backend configuration/policy work; the authority records qualification status and deferred networking, runtime admission, UI and storage-key rotation. Context binding does not detect replay of older valid ciphertext for the same context or restoration of a database snapshot.
+
 ## Explicit household-owner protection — October 24, 2026
 
 [Household-owner security](HOUSEHOLD_OWNER_SECURITY.md) owns the operator-authorized backend activation, five-minute owner grants, account-bound password/passkey proof and recovery boundary. After activation, neither the server-owner role nor standard-profile selection substitutes for proof when changing household profiles/restrictions/PINs or credentials. Internal session bindings survive external token/generation rotation; stale authenticated requests cannot inherit a grant. Ordinary viewing and the existing Kids exit PIN retain their own purposes. The authority records actual qualification and deferred UI/notification/assignment work; this does not redefine every existing server-administration operation.

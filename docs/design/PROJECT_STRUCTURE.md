@@ -1,5 +1,11 @@
 # Project Structure
 
+## Encrypted IPTV assignment — October 24, 2026
+
+`live_tv/assignment/` retains the five-file module/HTTP/service/error/types boundary and composes separate authority, storage, policy, precondition and secret-codec modules. `services/encryption/context.rs` extends the existing private AES-GCM key with strict context-bound envelopes. Shared owner transaction/revocation helpers and capability-update row locking support cross-account administration without copying grant verification. This adds no dependency or singleton.
+
+`tests/support/household_database.rs` and `household_actor.rs` are shared by the existing owner-security and new assignment production-route contracts. They preserve owned local PostgreSQL limits and separate HTTP/scenario/diagnostic helpers. [Assignment design/outcomes](IPTV_ASSIGNMENT.md) owns exact scope and execution evidence.
+
 ## Household-owner security — October 24, 2026
 
 `server/src/domains/household_security/` follows the five-file domain pattern with separate operator, transaction, factor, challenge and grant services. Existing mutation logic moves into `profiles/management.rs` and `auth/service/passkeys.rs`; callers retain their domain routes and use transaction-time owner checks after explicit activation. Session credential generations prevent an in-flight pre-rotation request from inheriting a new grant while preserving existing internal session foreign keys. Two shared proof slots are owned by `AppState`; this adds no singleton or dependency.

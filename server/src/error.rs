@@ -102,6 +102,9 @@ pub enum AppError {
     Household(#[from] crate::domains::household_security::error::OwnerError),
 
     #[error(transparent)]
+    IptvAssignment(#[from] crate::domains::live_tv::assignment::error::AssignmentError),
+
+    #[error(transparent)]
     Auth(#[from] crate::domains::auth::AuthError),
 
     #[error(transparent)]
@@ -171,6 +174,10 @@ impl IntoResponse for AppError {
             AppError::Analytics(e) => {
                 let (s, c, d) = analytics_error_to_http(e);
                 (s, c, Cow::Owned(d))
+            }
+            AppError::IptvAssignment(e) => {
+                let (status, code, detail) = e.http();
+                (status, code, Cow::Owned(detail))
             }
             AppError::Household(e) => {
                 let (s, c, d) = e.http();

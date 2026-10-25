@@ -7,6 +7,8 @@ pub mod handlers;
 pub mod service;
 pub mod types;
 
+pub mod assignment;
+
 #[cfg(feature = "playback-qualification")]
 pub mod transport;
 
@@ -29,7 +31,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .layer(DefaultBodyLimit::max(CONNECTION_BODY_LIMIT))
         .layer(cache_control_layer(NO_STORE_CACHE_CONTROL))
         .layer(axum::middleware::map_response(handlers::problem_media_type))
-        .with_state(state)
+        .with_state(state.clone())
+        .merge(assignment::router(state))
 }
 
 #[cfg(test)]

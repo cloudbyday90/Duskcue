@@ -1,5 +1,9 @@
 # Database Design
 
+## Encrypted IPTV assignment — October 24, 2026
+
+[Migration 20261024200000](../../server/migrations/20261024200000_live_tv_assignments.sql) adds one encrypted feed-pair assignment per household and assignment-owned profile access. Composite foreign keys bind both assignment and profile to the same household. Assignment deletion/replacement and profile deletion cascade their policy rows. Positive optional caps, restrictive delegation defaults and a separate assignment revision preserve the confirmed boundary. No channel/guide schema is added. [Assignment authority](IPTV_ASSIGNMENT.md) owns exact policy, interfaces, qualification status and subsequent work.
+
 ## Household-owner authority — October 24, 2026
 
 [20261024190000_household_owner_security.sql](../../server/migrations/20261024190000_household_owner_security.sql) adds account owner-protection state/revision, hashed one-use handoffs, session-bound grants and bounded server-side challenges. Passkey owner eligibility defaults false. A session credential generation supports token rotation without deleting internal session bindings. Session profile changes and account password/status/deletion changes invalidate authority; ordinary login/session/profile tables retain their established ownership. [Household-owner security](../security/HOUSEHOLD_OWNER_SECURITY.md) owns exact activation, proof, recovery, concurrency and verification contracts. No saved Dispatcharr assignment is introduced in this increment.

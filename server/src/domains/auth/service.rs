@@ -1099,6 +1099,10 @@ pub async fn update_capabilities(
     }
 
     let mut tx = pool.begin().await?;
+    sqlx::query("SELECT id FROM users WHERE id=$1 FOR NO KEY UPDATE")
+        .bind(user_id)
+        .fetch_optional(&mut *tx)
+        .await?;
 
     sqlx::query("DELETE FROM user_capabilities WHERE user_id = $1")
         .bind(user_id)
