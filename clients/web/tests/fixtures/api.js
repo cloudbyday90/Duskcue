@@ -1,12 +1,14 @@
 import { createCatalog, mediaIds, profileIds } from './catalog.js';
 import { accessibleItems, browsingResponse } from './browsing.js';
 import { searchResponse } from './searching.js';
+import { createLiveTvFixture, liveTvResponse } from './live-tv.js';
 
 export function createApiScenario(options = {}) {
     const catalog = createCatalog();
     const activeProfileId = options.activeProfileId || profileIds.alex;
     return {
         ...catalog,
+        liveTv: createLiveTvFixture(),
         activeProfileId,
         user: { ...catalog.user, role: options.userRole || catalog.user.role, active_profile_id: activeProfileId, profile_selection_required: !!options.selectionRequired },
         selectionRequired: !!options.selectionRequired,
@@ -53,6 +55,11 @@ export async function installApiFixture(page, scenario) {
         });
         const failure = scenario.failures.get(`${method} ${path}`);
         if (failure) return json(problem(failure.status, failure.detail), failure.status);
+
+        if (path.startsWith('/live-tv/catalog/') && method === 'GET') {
+            const response = liveTvResponse(scenario, url);
+            return route.fulfill({ status: response.status, headers: response.headers, contentType: 'application/json', body: JSON.stringify(response.body) });
+        }
 
         if (path === '/setup/status' && method === 'GET') return json({ setup_required: false });
         if (path === '/user/sessions' && method === 'GET') {

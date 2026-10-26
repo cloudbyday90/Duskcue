@@ -5,6 +5,225 @@
  */
 
 export const incompleteMessages = {
+    "live_tv_ambiguous": [
+        "en"
+    ],
+    "live_tv_busy": [
+        "en"
+    ],
+    "live_tv_categories": [
+        "en"
+    ],
+    "live_tv_changed": [
+        "en"
+    ],
+    "live_tv_channel_pages": [
+        "en"
+    ],
+    "live_tv_channels": [
+        "en"
+    ],
+    "live_tv_clump": [
+        "en"
+    ],
+    "live_tv_clump_index": [
+        "en"
+    ],
+    "live_tv_conflict": [
+        "en"
+    ],
+    "live_tv_current_time": [
+        "en"
+    ],
+    "live_tv_description": [
+        "en"
+    ],
+    "live_tv_descriptions": [
+        "en"
+    ],
+    "live_tv_earlier": [
+        "en"
+    ],
+    "live_tv_empty_channels": [
+        "en"
+    ],
+    "live_tv_empty_programmes": [
+        "en"
+    ],
+    "live_tv_end": [
+        "en"
+    ],
+    "live_tv_exact_end": [
+        "en"
+    ],
+    "live_tv_exact_start": [
+        "en"
+    ],
+    "live_tv_failed": [
+        "en"
+    ],
+    "live_tv_first": [
+        "en"
+    ],
+    "live_tv_group": [
+        "en"
+    ],
+    "live_tv_guide": [
+        "en"
+    ],
+    "live_tv_guide_name": [
+        "en"
+    ],
+    "live_tv_guide_names": [
+        "en"
+    ],
+    "live_tv_guide_view": [
+        "en"
+    ],
+    "live_tv_history_limit": [
+        "en"
+    ],
+    "live_tv_imported": [
+        "en"
+    ],
+    "live_tv_incomplete_help": [
+        "en"
+    ],
+    "live_tv_incomplete_times": [
+        "en"
+    ],
+    "live_tv_language": [
+        "en"
+    ],
+    "live_tv_later": [
+        "en"
+    ],
+    "live_tv_loading_channels": [
+        "en"
+    ],
+    "live_tv_loading_guide": [
+        "en"
+    ],
+    "live_tv_next": [
+        "en"
+    ],
+    "live_tv_no_guide": [
+        "en"
+    ],
+    "live_tv_no_rating": [
+        "en"
+    ],
+    "live_tv_number": [
+        "en"
+    ],
+    "live_tv_observed": [
+        "en"
+    ],
+    "live_tv_overlap": [
+        "en"
+    ],
+    "live_tv_page": [
+        "en"
+    ],
+    "live_tv_previous": [
+        "en"
+    ],
+    "live_tv_programme_pages": [
+        "en"
+    ],
+    "live_tv_ratings": [
+        "en"
+    ],
+    "live_tv_ratings_help": [
+        "en"
+    ],
+    "live_tv_raw_end": [
+        "en"
+    ],
+    "live_tv_raw_evidence": [
+        "en"
+    ],
+    "live_tv_raw_start": [
+        "en"
+    ],
+    "live_tv_ready": [
+        "en"
+    ],
+    "live_tv_refresh_failed": [
+        "en"
+    ],
+    "live_tv_refresh_running": [
+        "en"
+    ],
+    "live_tv_refresh_state": [
+        "en"
+    ],
+    "live_tv_refresh_succeeded": [
+        "en"
+    ],
+    "live_tv_reload": [
+        "en"
+    ],
+    "live_tv_retry_wait": [
+        "en"
+    ],
+    "live_tv_scheduled": [
+        "en"
+    ],
+    "live_tv_select_channel": [
+        "en"
+    ],
+    "live_tv_session": [
+        "en"
+    ],
+    "live_tv_snapshot_details": [
+        "en"
+    ],
+    "live_tv_standard_only": [
+        "en"
+    ],
+    "live_tv_start": [
+        "en"
+    ],
+    "live_tv_subtitles": [
+        "en"
+    ],
+    "live_tv_time_unknown": [
+        "en"
+    ],
+    "live_tv_time_zone": [
+        "en"
+    ],
+    "live_tv_title": [
+        "en"
+    ],
+    "live_tv_titles": [
+        "en"
+    ],
+    "live_tv_unavailable": [
+        "en"
+    ],
+    "live_tv_uncertain": [
+        "en"
+    ],
+    "live_tv_undeclared": [
+        "en"
+    ],
+    "live_tv_unnamed_channel": [
+        "en"
+    ],
+    "live_tv_unspecified": [
+        "en"
+    ],
+    "live_tv_untitled": [
+        "en"
+    ],
+    "live_tv_window_controls": [
+        "en"
+    ],
+    "live_tv_zone_unknown": [
+        "en"
+    ],
     "tonight_autoplay_cancelled_status": [
         "en"
     ],

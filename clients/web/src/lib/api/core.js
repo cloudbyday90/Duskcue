@@ -16,6 +16,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+import { boundedJson } from './json-body.js';
+import { retryAfterSeconds } from './retry-after.js';
+
 const API_BASE = '/api/v1';
 
 let bearerToken = null;
@@ -179,6 +182,7 @@ export async function request(method, path, options = {}) {
         credentials: 'same-origin',
         signal: requestScope.signal,
     };
+    if (options.cache) fetchOptions['cache'] = options.cache;
     if (hasBody) {
         fetchOptions.body = isFormData ? options.body : JSON.stringify(options.body);
     }
@@ -210,7 +214,9 @@ export async function request(method, path, options = {}) {
         if (!response.ok) {
             let problem;
             try {
-                problem = await response.json();
+                problem = options.maxJsonBytes
+                    ? await boundedJson(response, options.maxJsonBytes, requestScope.signal)
+                    : await response.json();
             } catch {
                 problem = {
                     type: `/errors/http_${response.status}`,
@@ -220,10 +226,14 @@ export async function request(method, path, options = {}) {
                 };
             }
             ensureProfileScopeCurrent(profileScoped, requestRevision);
+            if (options.maxJsonBytes) {
+                requestScope.signal?.throwIfAborted();
+                problem = { status: response.status, title: `HTTP_${response.status}` };
+            }
             const error = new ApiError(problem);
             const retryAfter = response.headers.get('Retry-After');
             if (retryAfter) {
-                error.retryAfter = parseInt(retryAfter, 10);
+                error.retryAfter = options.maxJsonBytes ? retryAfterSeconds(retryAfter) : parseInt(retryAfter, 10);
             }
             throw error;
         }
@@ -240,7 +250,9 @@ export async function request(method, path, options = {}) {
             return blob;
         }
         if (contentType.includes('application/json')) {
-            const body = await response.json();
+            const body = options.maxJsonBytes
+                ? await boundedJson(response, options.maxJsonBytes, requestScope.signal)
+                : await response.json();
             ensureProfileScopeCurrent(profileScoped, requestRevision);
             return body;
         }

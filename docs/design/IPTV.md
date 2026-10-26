@@ -8,7 +8,7 @@ This document owns IPTV behavior. [Household profiles](PROFILES_AND_AMBIENT_CHAN
 
 ## Shared client and Xtream review — October 26, 2026
 
-The user explored Xtream Codes-compatible input, then confirmed Dispatcharr-first use through the existing M3U/XMLTV lane. Xtream is not required for that connection. [Xtream research](IPTV_XTREAM.md) is retained as an optional deferred Live TV/EPG connector; current proxy-UUID parsing does not imply XC support. [Shared catalog UI](IPTV_CLIENT_CATALOG.md) owns the source-neutral client proposal and confirmed browser/list, six-hour window and language-variant choices. These are under design review, with unchanged baseline checks; no new client screen, provider authentication/import or playback capability is claimed.
+The user explored Xtream Codes-compatible input, then confirmed Dispatcharr-first use through the existing M3U/XMLTV lane. Xtream is not required for that connection. [Xtream research](IPTV_XTREAM.md) is retained as an optional deferred Live TV/EPG connector; current proxy-UUID parsing does not imply XC support. [Shared catalog UI](IPTV_CLIENT_CATALOG.md) now implements the confirmed source-neutral channel/list layout, explicit six-hour windows, all supplied text variants, current-profile/snapshot fencing and manual recovery. Sixty browser journeys and fourteen actual native groups pass; that authority records the exact scope and evidence. Provider authentication/import, management UI and production playback are not expanded by this metadata screen.
 
 ## Confirmed product contract
 

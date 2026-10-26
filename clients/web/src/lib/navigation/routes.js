@@ -6,6 +6,7 @@
 
 const desktopPaths = [
     /^\/dashboard$/,
+    /^\/live-tv$/,
     /^\/libraries(?:\/[A-Za-z0-9_-]+)?$/,
     /^\/media(?:\/[A-Za-z0-9_-]+)?$/,
     /^\/play\/[A-Za-z0-9_-]+$/,

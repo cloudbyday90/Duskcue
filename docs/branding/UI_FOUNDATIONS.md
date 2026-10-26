@@ -99,9 +99,11 @@ Artwork requests use the API service's selected server and authentication. A sha
 
 Use Svelte's [effect teardown](https://svelte.dev/docs/svelte/$effect#Understanding-lifecycle) for request cleanup and [lifecycle hooks](https://svelte.dev/docs/svelte/lifecycle-hooks) for document listeners. Keep the installed SvelteKit 2 navigation contract. Its [navigation interceptor](https://svelte.dev/docs/kit/$app-navigation#beforeNavigate) supports guarding unsaved preferences across links, submitted search, and browser history; account/profile switches also need an explicit application-level guard before mutating the session. Native disclosures and modal dialogs preserve normal keyboard behavior. These are implementation defaults under the execution plan, rather than additional prototype decisions.
 
-## IPTV catalog review — October 26, 2026
+## IPTV catalog implementation — October 26, 2026
 
-[Shared catalog authority](../design/IPTV_CLIENT_CATALOG.md) records the confirmed Tonight channel browser/selected-channel list, fixed six-hour guide navigation and preferred text with all supplied language variants accessible. Proposed integration retains semantic tokens, native controls, actual fallback-language markings, explicit status/focus handling and responsive/RTL qualification. The first client remains read-only and source-neutral; [Xtream input research](../design/IPTV_XTREAM.md) is a backend boundary. A multi-channel EPG grid, images/playback and broad accessibility conformance are not implied by this research checkpoint.
+[Shared catalog authority](../design/IPTV_CLIENT_CATALOG.md) owns the implemented Tonight channel browser/selected-channel list, explicit six-hour navigation and preferred text with every supplied language variant accessible. The shared route uses semantic tokens, native controls/disclosures, actual fallback-language markings, logical focus recovery and bounded memory-only pages. Sixty relevant browser journeys and all fourteen actual Tauri/WebView2 groups pass, including 320 CSS pixel RTL views, 400% engine zoom and both selected-server bearer catalog lanes. Static document language/direction now follows the resolved runtime locale without changing preview-locale review gates. The authority records screenshots, supported contrast samples, exact receipts, corrected failures and fixture/platform limits.
+
+The client remains read-only and source-neutral. [Xtream input](../design/IPTV_XTREAM.md), a multi-channel timeline, artwork, playback and source-management UI remain separate. These results do not establish live-provider qualification, spoken assistive-technology behavior or full accessibility conformance.
 
 ## Goals
 

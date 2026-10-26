@@ -7,8 +7,9 @@
 -->
 <script>
     import { m } from '$lib/paraglide/messages.js';
-    import { deLocalizeUrl, localizeUrl } from '$lib/paraglide/runtime.js';
+    import { deLocalizeUrl, localizeUrl, getLocaleForUrl } from '$lib/paraglide/runtime.js';
     import { messageLocale } from '$lib/localization/message-locale.js';
+    import { syncDocumentLanguage } from '$lib/localization/document-language.js';
     import '../app.css';
     import { onMount, untrack, tick, setContext } from 'svelte';
     import { page } from '$app/stores';
@@ -95,7 +96,13 @@
         { href: localizedDestination('/media?type=movie'), label: m.tonight_movies(), locale: messageLocale('tonight_movies'), active: routePathname === '/media' && $page.url.searchParams.get('type') === 'movie' },
         { href: localizedDestination('/media?type=series'), label: m.tonight_tv(), locale: messageLocale('tonight_tv'), active: routePathname === '/media' && $page.url.searchParams.get('type') === 'series' },
         { href: localizedDestination('/collections'), label: m.tonight_collections(), locale: messageLocale('tonight_collections'), active: routePathname.startsWith('/collections') },
+        ...(activeProfile?.profile_type === 'standard' ? [{ href: localizedDestination('/live-tv'), label: m.live_tv_title(), locale: messageLocale('live_tv_title'), active: routePathname === '/live-tv' }] : []),
     ]);
+
+    $effect(() => {
+        const locale = getLocaleForUrl($page.url);
+        syncDocumentLanguage(document, locale);
+    });
 
     $effect(() => {
         const ready = authChecked && $isAuthenticated;
@@ -570,7 +577,7 @@
         .nav-search { order: 4; max-width: none; flex: 1; }
     }
     @media (max-width: 600px) {
-        .nav-links { flex-basis: 100%; justify-content: space-between; gap: 0; }
+        .nav-links { flex-basis: 100%; flex-wrap: wrap; justify-content: space-between; gap: 0; }
         .nav-link { padding-inline: 0.55rem; font-size: 0.85rem; }
         .nav-search { flex-basis: 100%; min-width: 0; }
         .main-content { padding-top: 1.5rem; }

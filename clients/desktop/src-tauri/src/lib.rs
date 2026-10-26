@@ -455,6 +455,7 @@ mod shell {
                 }
             }
             "dashboard" | "home" => Some("/dashboard".to_string()),
+            "live-tv" if segments.is_empty() => Some("/live-tv".to_string()),
             "auth" if segments.first() == Some(&"link") => Some("/auth/link".to_string()),
             _ => None,
         }

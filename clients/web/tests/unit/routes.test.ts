@@ -4,6 +4,7 @@ import { isAllowedDesktopRoute, playRoute, titleRoute } from '../../src/lib/navi
 describe('desktop internal route boundary', () => {
     it.each([
         '/dashboard',
+        '/live-tv',
         '/media',
         '/media?type=series',
         '/media/fixture-title?season=fixture-season&episode=fixture-episode',
@@ -34,6 +35,7 @@ describe('desktop internal route boundary', () => {
         '/search\n',
         '/search?q=raw space',
         '/unknown',
+        '/live-tv/channel',
         null,
         {},
     ])('rejects an unsupported or unsafe destination %s', (route) => {
