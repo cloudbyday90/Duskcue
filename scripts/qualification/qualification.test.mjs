@@ -13,6 +13,7 @@ import { exactPassed, exactTestListed } from './runtime.mjs';
 import { REQUIRED_UNIT_PREFIXES, REQUIRED_UNIT_CASES, selectedUnitCases } from './cases.mjs';
 import { ownedDocker, validateContainer } from './owned.mjs';
 import { runBounded } from './commands.mjs';
+import { validateCompilerDurability } from './compiler-proof.mjs';
 import { SOURCE_ROOTS, SOURCE_FILES, qualificationSources } from './source.mjs';
 import { traceCommand, traceSummary, traceSpecification, TRACE_LIMITS } from './diagnostic.mjs';
 import { PRODUCER_CASE, EVENT_CANDIDATE_CASE, REQUIRED_MANAGED_CASES } from './cases.mjs';
@@ -29,6 +30,13 @@ function elfHeader(machine) {
     header.writeUInt16LE(64, 52);
     return header;
 }
+
+test('compiler evidence requires actual Cargo execution and complete freshness cases', () => {
+    const result = { passed: true, tests: 17, actual_cargo: true, changed_and_reverted_backdated_source: true };
+    const marker = (value) => `DUSKCUE_BUILD_DURABILITY=${JSON.stringify(value)}\n`;
+    assert.deepEqual(validateCompilerDurability(marker(result)), result);
+    for (const input of ['', marker(result).repeat(2), marker({ ...result, passed: false }), marker({ ...result, tests: 0 }), marker({ ...result, actual_cargo: false }), marker({ ...result, changed_and_reverted_backdated_source: false }), 'x'.repeat(65537), 'DUSKCUE_BUILD_DURABILITY={}']) assert.throws(() => validateCompilerDurability(input));
+});
 
 test('native qualification binds Node and runner architecture without cross-execution', () => {
     assert.equal(nativeArchitecture('x64', 'X64').platform, 'linux/amd64');

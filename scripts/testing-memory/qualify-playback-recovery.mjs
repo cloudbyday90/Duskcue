@@ -3,6 +3,7 @@
 // Licensed under AGPL-3.0. See LICENSE for details.
 
 import { runVodRuntime } from '../qualification/vod-runtime.mjs';
+import { validateCompilerDurability } from '../qualification/compiler-proof.mjs';
 import { randomBytes } from 'node:crypto';
 import { appendFile, lstat, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -145,6 +146,11 @@ async function main() {
         }
         await ownership.copyOut(runtime, '/qualification/fixture.json', join(owner.directory, 'fixture.json'));
         result.fixture = JSON.parse(await readFile(join(owner.directory, 'fixture.json'), 'utf8'));
+        const compilerProof = join(owner.directory, 'compile-cache-tests.log');
+        await ownership.copyOut(runtime, '/qualification/evidence/compile-cache-tests.log', compilerProof);
+        const compilerProofMetadata = await lstat(compilerProof);
+        if (!compilerProofMetadata.isFile() || compilerProofMetadata.isSymbolicLink() || compilerProofMetadata.size > 65536) throw new Error('Compiler durability evidence must be a bounded regular file.');
+        result.compilerDurability = validateCompilerDurability(await readFile(compilerProof, 'utf8'));
         if (formatCorpus) Object.assign(result, await readFormatEvidence({ ownership, runtime, directory: owner.directory, browser: result.directBrowser }));
         if (sourceCapabilities) {
             const path = join(owner.directory, 'source-unit-tests.log');

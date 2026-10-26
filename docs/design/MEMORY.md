@@ -1,5 +1,9 @@
 # Memory Management
 
+## Linux build retry durability — October 26, 2026
+
+[Build durability](../ci/LINUX_BUILD_DURABILITY.md) qualifies compiler checkpoints and verified cache reuse without changing resource policy: two Cargo jobs, thirty-minute compiler deadline, 32-MiB logs, 5.5-GiB guest preflight and 1.5-GiB active reserve. Environment changes invalidate the recipe's release cache; compatible source changes clear local packages while retaining dependency work. Compiler reuse does not skip fresh bounded runtime tests or alter server VOD limits. Controlled interruption/retry passed, and the authorized Classifarr handoff restored the original container healthy without changing guest allocation or stopping Harmoniarr.
+
 ## VOD output ownership — October 26, 2026
 
 The [confirmed VOD lifecycle](VOD_OUTPUT_LIFECYCLE.md) is implemented and qualified on native Windows and managed amd64 Linux. Each TranscodeManager shares an internal owner with retained start/replacement/Stop commands, generation retirement, tracked worker destructors, file I/O and bounded response queues. Initial nonqueued limits are 128 output generations, 128 retained commands, 128 delivery responses and eight delivery I/O operations. Preparation, completed output and quarantined cleanup retain their generation capacity independently of encoder permits. Delivery uses 64-KiB chunks, at most two queued chunks and 1-MiB input/normalized playlists; segments stream at their opened length. These are finite service limits, not household viewer enforcement or a total process-memory ceiling.

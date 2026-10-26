@@ -10,13 +10,19 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 Linux build retry durability (SCOPED QUALIFICATION COMPLETE)
+
+The user confirmed the complete [Linux build durability](docs/ci/LINUX_BUILD_DURABILITY.md) contract after VOD source `28f3f9c` and documentation `b658f6d` were pushed. Separate integration/library checkpoints, locked content/environment-verified Cargo reuse, atomic preparation receipts and exact executable/hash validation are implemented. A real interrupted build retained its completed 28-minute integration target; the retry reported it cached and completed the library in six minutes. Seventeen real Cargo/cache checks, seventeen fresh Linux VOD cases plus the actual Stop/recovery contract, and twenty-seven Node cases pass. The authority records exact inventories, images, receipts, corrected attempts and limits. Classifarr was restored healthy; Harmoniarr was untouched. Compiler/telemetry/memory limits, playback retries, dependency locks and sandbox behavior remain unchanged. Main only; no release.
+
+**Next:** coordinated VOD admission/delivery/client start, renewal, recovery and Stop migration with bounded terminal receipts before shared cap enforcement or Live TV play actions. Cached compiler success must never substitute for fresh runtime qualification.
+
 ## October 2026 VOD output lifecycle (SCOPED QUALIFICATION COMPLETE)
 
 **Verified implementation:** `28f3f9c` on `main`; documentation-only successors preserve the qualified source. No release.
 
 [VOD lifecycle authority](docs/design/VOD_OUTPUT_LIFECYCLE.md) records the confirmed contract, modular normal-build owner, bounded direct/HLS delivery, retained commands, worker/output retirement and root cleanup. Verification passes 1,014 default library tests, eighteen native VOD tests, seventeen managed Linux VOD tests plus the real Stop/recovery contract, and three root HTTP/TLS/process regressions. Exact source/image identities, receipts, corrected attempts and the unchanged strict-lint baseline belong to the authority. Classifarr was restored healthy after authorized memory handoffs; Harmoniarr was untouched. [Dependabot maintenance](docs/operations/DEPENDABOT_MAINTENANCE.md) records superseded PR 5 closed without merge. Main only, locked dependencies, no release.
 
-**Next:** the user clarified Linux build/qualification durability across retries. [The proposed tooling contract](docs/ci/LINUX_BUILD_DURABILITY.md) separates compiler checkpoints and guards mutable cache reuse; architecture confirmation is pending. Production VOD admission/delivery/client migration and bounded receipt retention follow before shared viewer enforcement or Live TV play actions. Preserve existing root/resource budgets and explicit cleanup proof.
+**Next:** the user clarified and confirmed [Linux build/qualification retry durability](docs/ci/LINUX_BUILD_DURABILITY.md), now separately qualified above. Production VOD admission/delivery/client migration and bounded receipt retention follow before shared viewer enforcement or Live TV play actions. Preserve existing root/resource budgets and explicit cleanup proof.
 
 ## October 2026 shared playback admission (SCOPED FOUNDATION QUALIFICATION COMPLETE)
 
