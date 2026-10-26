@@ -10,6 +10,10 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 VOD admission migration (RESEARCH AND REVIEW)
+
+Research against `eaaace1` identifies bounded replay-receipt retention as a prerequisite before attaching production VOD traffic. [Receipt retention](docs/design/PLAYBACK_RECEIPT_RETENTION.md) records source findings, official MCP research, alternatives, the recommended locked stack and open decisions. Deleting the current released-row guard without a durable fresh-request refusal policy could revive an old ID; no such pruner or production enforcement is enabled. The user has been asked whether to complete retention first or include the backend protocol now. Final scope and implementation contract remain unconfirmed. Existing viewer/lease/cleanup decisions stay settled; no runtime code, dependency, private feed, service or release change has occurred. Client migration spans shared web/Tauri, Flutter, native ambient and Android/Fire TV.
+
 ## October 2026 Linux build retry durability (SCOPED QUALIFICATION COMPLETE)
 
 **Verified implementation:** `111be74` on `main`; documentation-only successors preserve the qualified source. No release.
