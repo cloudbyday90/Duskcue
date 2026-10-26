@@ -8,6 +8,10 @@ Research and design review started October 24, 2026. The user confirmed the comp
 
 The repository [grill-me entry point](../../.agents/skills/grill-me/SKILL.md) loads [grilling](../../.agents/skills/grilling/SKILL.md). Its shared-understanding confirmation is required before implementing the interviewed plan. Continue on `main`, without a release or PR merge.
 
+## Client follow-up — October 26, 2026
+
+[Household management client](../design/HOUSEHOLD_MANAGEMENT_CLIENT.md) owns the next screen and session-adoption design. The user confirmed owner-security UI before Live TV forms, a dedicated standard-profile settings surface, browser passkeys/native password proof first, and an authoritative session-context read. Its full contract awaits confirmation. The backend trust, operator recovery and five-minute-grant rules below remain authoritative; no new client qualification is claimed here.
+
 ## Existing behavior and the trust gap
 
 - One `users` account owns its `user_profiles`; there is no separate household identity table. Database role `owner` means server superuser. It does not identify the person designated to manage a household.

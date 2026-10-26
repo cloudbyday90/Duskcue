@@ -10,6 +10,14 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 household management client (RESEARCH AND DESIGN REVIEW)
+
+**Authority:** [Household management client](docs/design/HOUSEHOLD_MANAGEMENT_CLIENT.md), researched through official MCP sources against `d3c18a2` on main. Four choices are confirmed: owner-security UI before Live TV forms; Settings → Household management for standard profiles; hosted-browser passkeys/native password proof first; authoritative current-session context. The complete concrete contract is documented and awaits shared-understanding confirmation before coding.
+
+**Findings:** the existing backend trust/grant/recovery boundary is reusable. Proof rotates a session but has no login user summary; current client adoption and cached session probes cannot establish exact authoritative context. Bounded errors also conflate bad owner proof with viewing-session expiry. Packaged Tauri uses a separate document origin. The authority records the context/binding/adoption proposal, official-source tradeoffs, fixed budgets and real browser/native acceptance plan.
+
+**Baseline:** 58 focused units plus 37 Node pretests pass. Fresh random open PR 5 is already superseded by both current lockfiles, so no patch applies. No feature or new backend/ceremony qualification is claimed. Preserve main, locked dependencies, resource limits and the no-release instruction.
+
 ## October 2026 Dispatcharr catalog UI (SCOPED CLIENT QUALIFICATION COMPLETE)
 
 **Authority:** [Shared web/Tauri catalog](docs/design/IPTV_CLIENT_CATALOG.md), researched on October 26 against `34de163`. All six client choices and the complete contract were confirmed after `896ced0`. Verified implementation: `9cabebd3bce753c3f3fbee015ca31265f51a3db4` on `main`; documentation-only successors preserve that source. Main only; no release or PR mutation.
