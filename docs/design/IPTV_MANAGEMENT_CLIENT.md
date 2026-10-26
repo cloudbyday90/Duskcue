@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-Research and design review, October 26, 2026, against `a54e5f6` on `main`; the qualified shared owner-security implementation is `d736b32`. All five product decisions below are confirmed. The user confirmed the complete implementation contract before code changes. The increment is implemented and locally qualified. The verified source identity is recorded after the source commit; documentation-only successors preserve that code. Main only; no release or PR mutation.
+Research and design review, October 26, 2026, against `a54e5f6` on `main`; the qualified shared owner-security implementation is `d736b32`. All five product decisions below are confirmed. The user confirmed the complete implementation contract before code changes. The increment is implemented and locally qualified. Verified implementation: `097027475d674a4df777f9bb67722e9e64f64346` on `main`; documentation-only successors preserve that code. Main only; no release or PR mutation.
 
 This document owns the shared web/Tauri assignment, destination, delegated-owner policy and manual-refresh interfaces. [Assignment](IPTV_ASSIGNMENT.md), [destination authority](../security/IPTV_DESTINATION_AUTHORITY.md), [refresh ownership](IPTV_REFRESH.md), [household-owner security](../security/HOUSEHOLD_OWNER_SECURITY.md) and the qualified [household client](HOUSEHOLD_MANAGEMENT_CLIENT.md) retain their existing backend trust, encryption, revocation and transport contracts. [Catalog UI](IPTV_CLIENT_CATALOG.md), [HTTP conventions](API_CONVENTIONS.md), [client accessibility](CLIENT_ACCESSIBILITY_INPUT.md) and [guarded testing](../ci/TESTING_MEMORY.md) remain authoritative.
 
@@ -158,7 +158,7 @@ All heavy checks run serially under the existing resource guard. No memory reser
 
 The first native attempt exposed a fixture mismatch: cross-origin management responses lacked the ETag/Location/Retry-After exposure already present in the production CORS contract. The fixture now mirrors that header exposure; production CORS is unchanged. The failed attempt retained successful owned process/keyring cleanup. Final native observations remain fixture-backed rather than live-provider or spoken screen-reader qualification. Owner, assignment, refresh and real browser WebAuthn regressions also pass. Final unexpected-media refusal testing cancels untrusted success bodies without buffering or replay.
 
-Supporting checks pass: fourteen workflow/resource-policy cases under a 64-MiB Node heap, Rust formatting, copyright compliance across 875 tracked source files and staged/unstaged whitespace. Local Markdown targets are checked again after the final source-identity update. No source, dependency, migration or production deadline changes occurred during this final verification.
+Supporting checks pass: fourteen workflow/resource-policy cases under a 64-MiB Node heap, Rust formatting, copyright compliance across 875 tracked source files and staged/unstaged whitespace. All 672 local link targets across nine changed Markdown documents pass; the source-identity successor preserves those targets. No source, dependency, migration or production deadline changes occurred during this final verification.
 
 ## Next after this increment
 

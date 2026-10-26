@@ -12,7 +12,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## October 2026 Live TV management client (SCOPED CLIENT QUALIFICATION COMPLETE)
 
-**Authority:** [Management client](docs/design/IPTV_MANAGEMENT_CLIENT.md), researched through official MCP sources against `a54e5f6`. The user confirmed five product decisions and the complete concrete contract before implementation. The authority owns qualified source identity, exact receipts, corrected attempts and limitations. Main only; no release or PR mutation.
+**Authority:** [Management client](docs/design/IPTV_MANAGEMENT_CLIENT.md), researched through official MCP sources against `a54e5f6`. The user confirmed five product decisions and the complete concrete contract before implementation. Verified implementation: `097027475d674a4df777f9bb67722e9e64f64346` on `main`; documentation-only successors preserve that source. The authority owns exact receipts, corrected attempts and limitations. Main only; no release or PR mutation.
 
 **Built:** three shared Settings surfaces for administrator assignment/destination/manual refresh, delegated self-household profile/cap policy and the independent server refresh switch. Modular bounded body-plus-ETag parsing, exact revisions, transaction-checked acting-session binding, retained commands, explicit drafts/unlock/confirmations and bounded visible status observation preserve existing permission/proof, encryption, revocation and UUIDv7 boundaries. Dependencies and Rust/Cargo 1.99.1 remain unchanged.
 
