@@ -57,6 +57,8 @@ A miniature real Cargo workspace tests absent/matching/corrupt receipts, failure
 
 ## Verified outcome
 
+Verified implementation: `111be74` on main. Documentation-only successors preserve the qualified source inventory below.
+
 Final source inventory: `76390e26307d14083a1c2f7b365f84c2ee7be962c49f98cf8e7d0620cacfe78a`. Immutable amd64 runtime: `sha256:9614b5ad74e0f917264a22af628f23584bcc18c2214277e3a5bbea089a995832`, based on `sha256:f45eda1c8bbe3a9685196aae1200543601ec5efc2fb0f858ca863dd9d42ae8dc`. Product Rust and dependency locks remain unchanged from VOD implementation `28f3f9c`; its native/default-library/root qualification remains separately recorded in the VOD authority.
 
 | Check | Observed result |

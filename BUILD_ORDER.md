@@ -12,6 +12,8 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## October 2026 Linux build retry durability (SCOPED QUALIFICATION COMPLETE)
 
+**Verified implementation:** `111be74` on `main`; documentation-only successors preserve the qualified source. No release.
+
 The user confirmed the complete [Linux build durability](docs/ci/LINUX_BUILD_DURABILITY.md) contract after VOD source `28f3f9c` and documentation `b658f6d` were pushed. Separate integration/library checkpoints, locked content/environment-verified Cargo reuse, atomic preparation receipts and exact executable/hash validation are implemented. A real interrupted build retained its completed 28-minute integration target; the retry reported it cached and completed the library in six minutes. Seventeen real Cargo/cache checks, seventeen fresh Linux VOD cases plus the actual Stop/recovery contract, and twenty-seven Node cases pass. The authority records exact inventories, images, receipts, corrected attempts and limits. Classifarr was restored healthy; Harmoniarr was untouched. Compiler/telemetry/memory limits, playback retries, dependency locks and sandbox behavior remain unchanged. Main only; no release.
 
 **Next:** coordinated VOD admission/delivery/client start, renewal, recovery and Stop migration with bounded terminal receipts before shared cap enforcement or Live TV play actions. Cached compiler success must never substitute for fresh runtime qualification.
