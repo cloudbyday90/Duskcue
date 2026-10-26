@@ -1,5 +1,9 @@
 # Root-owned SSE lifecycle
 
+## October 2026 admission integration
+
+Root also supports the optional [viewer admission owner](PLAYBACK_ADMISSION.md). When explicitly attached, it closes admission and drains retained commands/resources alongside the existing owners before database closure, using the same shared thirty-second drain and sixty-second pool-close limits. Production VOD workers are not automatically integrated by this addition.
+
 ## Status and scope
 
 Research began October 25, 2026, against `cd24f154073079132a4ee9211fb836faf7622d7d` on `main`. The preceding [manual-refresh authority](IPTV_REFRESH.md), implementation `3b060e2a76ea5030ec2aa8cb874390049a6faafd`, qualifies actual HTTP/import draining and identifies connected SSE as the next lifecycle gap. This document records current-source findings, MCP-discovered official sources, alternatives and a concrete bounded implementation contract. The user confirmed both behavior choices after research checkpoint `86d9b99`. The user confirmed the complete contract after checkpoint `e1e6275`. Implementation and scoped qualification are complete at **`7c1c23f6d57d0b39402ddcbd875c6752779f235b`** on `main`; documentation-only successors preserve that verified source. Final results and boundaries are recorded below. No release or PR merge is made.

@@ -1,5 +1,9 @@
 # Database Design
 
+## October 2026 admission integration
+
+The [viewer admission foundation](PLAYBACK_ADMISSION.md) adds dedicated `playback_instances`, `playback_reservations` and `playback_operator_events` tables. New identities use UUIDv7. Reservations retain immutable bounded actor/resource fingerprints and terminal receipts separately from partitioned play history; non-released states remain counted through expiry and cleanup uncertainty. Generated actor/subject columns and partial indexes support transactional retirement hooks, including revoke-and-restore and published channel removal. Short household row locks serialize admission. No foreign-key cascade silently erases viewer ownership when an account/profile disappears.
+
 ## Catalog paging and profile context — October 25, 2026
 
 [Session-context migration](../../server/migrations/20261025150000_live_tv_catalog_context.sql) adds positive BIGINT `profile_context_revision` and a BEFORE UPDATE trigger on every session update. Active-profile/selection-state changes advance it; ordinary activity and caller-supplied revision changes preserve the old value. Overflow refuses the transaction. The catalog returns decimal strings and seals this revision into continuation context.

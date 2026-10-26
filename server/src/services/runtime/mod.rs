@@ -20,6 +20,9 @@ pub async fn shutdown(
     tracker: &TaskTracker,
     http: &mut HttpServer,
 ) -> Result<(), ShutdownError> {
+    if let Some(owner) = state.playback_admission.get() {
+        owner.close();
+    }
     if let Some(owner) = state.live_tv_refresh.get() {
         owner.close();
     }
@@ -29,6 +32,12 @@ pub async fn shutdown(
     tracker.close();
     let drain = async {
         tokio::try_join!(
+            async {
+                if let Some(owner) = state.playback_admission.get() {
+                    owner.drain().await.map_err(|_| ShutdownError)?;
+                }
+                Ok::<_, ShutdownError>(())
+            },
             http.wait(),
             async { state.event_streams.drain().await.map_err(|_| ShutdownError) },
             async {

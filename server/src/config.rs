@@ -61,6 +61,20 @@ pub struct CliArgs {
 
 #[derive(Subcommand, Debug, Clone)]
 pub enum OperatorCommand {
+    PlaybackFence {
+        #[arg(long)]
+        instance: uuid::Uuid,
+        #[arg(long)]
+        revision: i64,
+    },
+    PlaybackReconcile {
+        #[arg(long)]
+        instance: uuid::Uuid,
+        #[arg(long)]
+        fence_revision: i64,
+        #[arg(long, required = true)]
+        resources_gone: bool,
+    },
     OwnerHandoff {
         #[arg(long)]
         user: uuid::Uuid,

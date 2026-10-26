@@ -157,3 +157,23 @@ pub(crate) async fn channel(
         .pop()
         .ok_or(CatalogError::Unavailable)
 }
+
+pub(crate) async fn channel_by_key(
+    conn: &mut PgConnection,
+    key: &EncryptionKey,
+    snapshot: &Snapshot,
+    channel_key: &[u8],
+    budget: &mut Budget,
+) -> Result<ChannelEntry, CatalogError> {
+    if channel_key.len() != 32 {
+        return Err(CatalogError::Unavailable);
+    }
+    let fence = snapshot.receipt.fence;
+    let row:ChannelRow=sqlx::query_as("SELECT id,channel_key,guide_id,metadata FROM live_tv_catalog_channels WHERE household_user_id=$1 AND assignment_id=$2 AND snapshot_id=$3 AND channel_key=$4")
+        .bind(fence.user).bind(fence.assignment).bind(snapshot.id()).bind(channel_key).fetch_optional(&mut *conn).await?.ok_or(CatalogError::NotFound)?;
+    budget.cipher(row.metadata.len())?;
+    project(conn, key, snapshot, vec![row], budget)
+        .await?
+        .pop()
+        .ok_or(CatalogError::Unavailable)
+}

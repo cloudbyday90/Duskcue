@@ -40,6 +40,7 @@ pub mod notification_dispatch;
 pub mod omdb_client;
 pub mod opensubtitles_client;
 pub mod overlays;
+pub mod playback_admission;
 pub mod poster_management;
 pub mod recovery_drill;
 pub mod sandbox;

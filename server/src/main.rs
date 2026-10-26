@@ -192,10 +192,18 @@ async fn main() {
         std::process::exit(1);
     });
 
-    if let Some(duskcue::config::OperatorCommand::OwnerHandoff { user }) = operator_command {
-        if let Err(error) =
-            duskcue::domains::household_security::operator::run(&bootstrap, user).await
-        {
+    if let Some(command) = operator_command {
+        let result = match command {
+            duskcue::config::OperatorCommand::OwnerHandoff { user } => {
+                duskcue::domains::household_security::operator::run(&bootstrap, user)
+                    .await
+                    .map_err(|error| error.to_string())
+            }
+            command => duskcue::services::playback_admission::operator::run(&bootstrap, command)
+                .await
+                .map_err(|error| error.to_string()),
+        };
+        if let Err(error) = result {
             eprintln!("{error}");
             std::process::exit(1);
         }

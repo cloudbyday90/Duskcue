@@ -3,7 +3,7 @@
 // Licensed under AGPL-3.0. See LICENSE for details.
 
 mod admission;
-mod authority;
+pub(crate) mod authority;
 pub(crate) mod cursor;
 mod database;
 pub mod error;

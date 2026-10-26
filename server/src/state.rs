@@ -1076,6 +1076,8 @@ pub struct AppState {
     pub event_bus: Arc<EventBus>,
     pub event_streams: Arc<crate::services::event_streams::EventStreams>,
     pub live_tv_catalog: Arc<crate::domains::live_tv::catalog::CatalogReads>,
+    pub playback_admission:
+        Arc<std::sync::OnceLock<Arc<crate::services::playback_admission::AdmissionOwner>>>,
     pub geoip: Arc<GeoIpService>,
     pub scheduler: Arc<std::sync::OnceLock<Arc<Scheduler>>>,
     pub live_tv_refresh:
@@ -1126,6 +1128,7 @@ impl AppState {
             event_bus,
             event_streams: Arc::new(crate::services::event_streams::EventStreams::new()),
             live_tv_catalog: Arc::new(crate::domains::live_tv::catalog::CatalogReads::default()),
+            playback_admission: Arc::new(std::sync::OnceLock::new()),
             geoip: Arc::new(GeoIpService::disabled()),
             scheduler: Arc::new(std::sync::OnceLock::new()),
             live_tv_refresh: Arc::new(std::sync::OnceLock::new()),
@@ -1193,6 +1196,7 @@ impl AppState {
             event_bus,
             event_streams: Arc::new(crate::services::event_streams::EventStreams::new()),
             live_tv_catalog: Arc::new(crate::domains::live_tv::catalog::CatalogReads::default()),
+            playback_admission: Arc::new(std::sync::OnceLock::new()),
             geoip,
             scheduler: Arc::new(std::sync::OnceLock::new()),
             live_tv_refresh: Arc::new(std::sync::OnceLock::new()),

@@ -11,7 +11,7 @@ mod stored;
 #[cfg(all(test, feature = "playback-qualification"))]
 mod qualification;
 
-pub(crate) use channels::{channel, channels};
+pub(crate) use channels::{channel, channel_by_key, channels};
 pub(crate) use programmes::{ProgrammeQuery, programmes};
 pub(crate) use snapshot::{Snapshot, snapshot};
 

@@ -1,5 +1,9 @@
 # Configuration Strategy
 
+## October 2026 admission integration
+
+The [reservation recovery guide](PLAYBACK_RECOVERY.md) documents the server-local `playback-fence` and `playback-reconcile` commands. They use existing bootstrap/database authority, exact revisions and an explicit resources-gone acknowledgment. They expose no HTTP override or generic JSON enable switch. The admission owner is optional in AppState and is not attached by normal playback startup in this increment.
+
 ## Catalog admission — October 25, 2026
 
 The confirmed [catalog service](../design/IPTV_CATALOG.md) adds no operator setting or global enablement switch: explicit assignment/profile access and current approved source authority govern reads independently of manual-refresh enablement. Both AppState constructors create one shared, infallible four-slot nonqueued admission service. Root closes it before HTTP drain. Fixed query/resource/database limits are enforced by the catalog service, with existing rate limits and root deadlines preserved. This does not enable automatic refresh, Kids or playback.

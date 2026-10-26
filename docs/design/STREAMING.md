@@ -1,5 +1,9 @@
 # Streaming & Transcoding Design
 
+## October 2026 admission integration
+
+The [shared viewer admission foundation](PLAYBACK_ADMISSION.md) now owns the new internal ledger contract. Existing production start/direct/HLS paths remain outside that ledger until the VOD delivery, worker and client migration is qualified. Saved streaming limits and physical encoder permits alone do not establish an enforced household viewer cap. The seeded default remains unlimited Admin; zero and invalid policy semantics for new admission are defined in the admission authority.
+
 ## Overview
 
 The [playback compatibility initiative](PLAYBACK_COMPATIBILITY.md) owns the October 2026 probe, executable stream-plan and corpus work. Audio-only adaptation preserves compatible video, selected moving-video identity survives seeking, and required but unimplemented HDR transformations fail explicitly. [Bounded playback recovery](PLAYBACK_RECOVERY.md) owns process supervision, per-session attempt budgets, fresh HLS generations and the shared web/desktop heartbeat handoff. It preserves selected streams and the last confirmed client position; legacy HLS heartbeats without a generation cannot overwrite a replacement checkpoint.
