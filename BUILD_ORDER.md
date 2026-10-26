@@ -10,6 +10,10 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 VOD output lifecycle (RESEARCH / FINAL CONTRACT REVIEW)
+
+[VOD lifecycle authority](docs/design/VOD_OUTPUT_LIFECYCLE.md) records official MCP research against `3127055`, three read-only fact explorations, alternatives and the complete proposed worker/output contract. All six product choices are confirmed: root ownership first; immediate cancellation; old HLS generation retirement; retained/quarantined failure; finite generation/response/I/O/playlist/queue budgets; authorized no-store 503/Retry-After with Stop retry. Final shared-understanding confirmation remains required before implementation. No production viewer enforcement, client protocol, receipt pruning or Live TV playback is enabled. Baseline worker lifecycle: seventeen passes and one existing FFmpeg fixture ignore. [Dependabot maintenance](docs/operations/DEPENDABOT_MAINTENANCE.md) records reviewed superseded PR 5 and verified closure without merge. Keep main, locked dependencies, approved legal headers and existing resource/root budgets.
+
 ## October 2026 shared playback admission (SCOPED FOUNDATION QUALIFICATION COMPLETE)
 
 **Authority:** [Admission](docs/design/PLAYBACK_ADMISSION.md), researched through official MCP sources against `6f678fd`. All ten product choices and the complete contract were confirmed before coding. Verified implementation: `444dc40d4d7475ff9267389901b95e5f00a9e539` on main; documentation-only follow-up preserves that source. Main only; no release or PR mutation.
