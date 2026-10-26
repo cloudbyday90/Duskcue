@@ -24,7 +24,7 @@ use axum::http::HeaderName;
 use axum::routing::get;
 use serde_json::{Value, json};
 use tower_http::request_id::PropagateRequestIdLayer;
-use tower_http::trace::{DefaultMakeSpan, DefaultOnResponse, TraceLayer};
+use tower_http::trace::{DefaultOnResponse, TraceLayer};
 use tracing::Level;
 
 use crate::cache::{
@@ -94,11 +94,7 @@ pub fn build_router(state: AppState) -> Router<AppState> {
         PropagateRequestIdLayer::new(HeaderName::from_static(REQUEST_ID_HEADER));
 
     let trace_layer = TraceLayer::new_for_http()
-        .make_span_with(
-            DefaultMakeSpan::new()
-                .level(Level::INFO)
-                .include_headers(false),
-        )
+        .make_span_with(crate::middleware::request_trace::span)
         .on_response(
             DefaultOnResponse::new()
                 .level(Level::INFO)

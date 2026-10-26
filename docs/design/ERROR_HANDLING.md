@@ -1,8 +1,8 @@
 # Error Handling Design
 
-## Catalog error contract — October 25, 2026
+## Catalog errors — October 25, 2026
 
-The [catalog contract](IPTV_CATALOG.md) awaits complete confirmation. Its fixed proposed mapping is IPTV_CATALOG_001 malformed input (400), _002 current viewing authority absent (403), _003 unavailable entry in the authorized current snapshot (404), _004 changed snapshot/profile/paging context (409), and _005 unavailable data/crypto/storage/deadline/release or busy/closed admission (503, Retry-After 5). Existing authentication and outer rate-limit statuses remain. No raw cursor/import/SQL/crypto detail is substituted for the fixed message. These mappings are not implemented yet.
+The [catalog service](IPTV_CATALOG.md) maps IPTV_CATALOG_001 malformed input to 400, _002 current viewing authority absent to 403, _003 entry absent from the authorized current snapshot to 404, _004 changed snapshot/profile/paging context to 409, and _005 unavailable data/crypto/storage/deadline/release or busy/closed admission to 503 with Retry-After 5. Session rechecks use existing AUTH_005 (401); outer authentication/rate-limit behavior remains. Fixed messages never interpolate cursor, imported text, SQL or crypto details. Private response policy covers extractor and outer-limiter errors as well as successful pages.
 
 ## SSE unavailable classification — October 25, 2026
 

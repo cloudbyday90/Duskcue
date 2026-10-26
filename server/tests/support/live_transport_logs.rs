@@ -42,11 +42,15 @@ impl Capture {
 }
 
 pub fn capture() -> anyhow::Result<Capture> {
+    capture_with_filter("reqwest=trace,hyper_util=trace,hyper=trace,rustls=trace,duskcue=trace")
+}
+
+pub fn capture_with_filter(filter: &str) -> anyhow::Result<Capture> {
     let capture = Capture(Arc::new(Mutex::new((Vec::new(), false))));
     let writer = capture.clone();
     tracing_subscriber::fmt()
         .with_ansi(false)
-        .with_env_filter("reqwest=trace,hyper_util=trace,hyper=trace,rustls=trace,duskcue=trace")
+        .with_env_filter(filter)
         .with_writer(move || writer.clone())
         .try_init()
         .map_err(|_| anyhow::anyhow!("diagnostic subscriber setup failed"))?;

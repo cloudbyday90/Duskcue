@@ -13,6 +13,7 @@ pub(crate) mod operation;
 #[cfg(feature = "playback-qualification")]
 mod owner;
 mod publication;
+pub(crate) mod reader;
 pub(crate) mod receipt;
 pub(crate) mod status;
 pub(crate) mod storage;

@@ -6,8 +6,7 @@ use super::*;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
-#[path = "../../../tests/support/guarded_docker.rs"]
-mod guarded_docker;
+use crate::qualification::docker as guarded_docker;
 
 #[cfg(target_os = "linux")]
 #[path = "arguments_local_tests.rs"]

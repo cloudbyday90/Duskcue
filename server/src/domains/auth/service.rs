@@ -134,7 +134,7 @@ pub async fn resolve_capabilities(
     Ok(caps)
 }
 
-async fn resolve_capabilities_on_connection(
+pub(crate) async fn resolve_capabilities_on_connection(
     connection: &mut PgConnection,
     user_id: Uuid,
     role: &str,

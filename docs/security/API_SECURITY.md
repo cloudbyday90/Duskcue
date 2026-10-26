@@ -1,8 +1,8 @@
 # API Security Domain
 
-## Catalog authority contract — October 25, 2026
+## Catalog viewing authority — October 25, 2026
 
-The [catalog contract](../design/IPTV_CATALOG.md), pending complete confirmation, uses current standard-profile viewing authority without owner-management proof. It preserves the actual capability resolver rather than management-only admin defaults, validates both saved approvals without networking, authenticates each returned row and omits structured upstream references. A server-managed session profile-context revision prevents cursor revival after switching away and back. All application-route results stay no-store; bounded request-owned work and fixed errors avoid raw data/secret diagnostics. No catalog security result is claimed before implementation and qualification.
+The confirmed [catalog contract](../design/IPTV_CATALOG.md) is implemented with current standard-profile viewing authority and the actual capability resolver, independently of management proof. Reads validate both saved approvals without networking and authenticate manifest, metadata and indexed row bindings. A database-managed profile-context revision prevents cursor revival after switching away and back. Explicit DTOs omit structured upstream references; fixed errors and route-family tracing keep cursors, imported text and credentials out of diagnostics. All application-route results remain no-store. Qualification and the limits of SQLx fallback cleanup are recorded in the authority.
 
 ## SSE lifecycle and privacy — October 25, 2026
 

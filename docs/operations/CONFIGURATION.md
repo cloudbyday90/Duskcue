@@ -1,8 +1,8 @@
 # Configuration Strategy
 
-## Catalog admission contract — October 25, 2026
+## Catalog admission — October 25, 2026
 
-The [catalog contract](../design/IPTV_CATALOG.md) awaits complete confirmation. It adds no operator setting or global catalog enablement switch: existing explicit assignment/profile grants and current approved source authority govern reads independently of manual-refresh enablement. Proposed fixed admission is four nonqueued materializations per shared AppState, initialized infallibly in both constructors and closed before root HTTP drain. Existing root deadlines and rate limits remain; query/resource limits are fixed in the catalog service. No runtime configuration change is implemented at this checkpoint.
+The confirmed [catalog service](../design/IPTV_CATALOG.md) adds no operator setting or global enablement switch: explicit assignment/profile access and current approved source authority govern reads independently of manual-refresh enablement. Both AppState constructors create one shared, infallible four-slot nonqueued admission service. Root closes it before HTTP drain. Fixed query/resource/database limits are enforced by the catalog service, with existing rate limits and root deadlines preserved. This does not enable automatic refresh, Kids or playback.
 
 ## SSE root lifecycle — October 25, 2026
 

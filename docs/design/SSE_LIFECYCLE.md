@@ -171,4 +171,4 @@ The owned TCP cases exercise HTTP/1.1, not a new browser/mobile/TV end-to-end jo
 
 ## Next item
 
-Design standard-profile-scoped, read-only channel/EPG delivery under current household assignment, source generation and profile permissions. Return safe bounded metadata without revealing upstream stream/logo credentials, and preserve explicit missing/stale/ambiguous guide evidence. Resolve that API contract before implementation. Scheduling, owner unlock UI, client recovery, Kids programme policy and shared playback admission remain separate.
+The subsequent [profile-scoped catalog](IPTV_CATALOG.md) is now implemented and locally qualified with current viewing/source authority, bounded safe metadata and strict continuation. Its authority owns the separate API, database and root regression outcomes. Next, review the shared web/Tauri read-only catalog experience and its keyboard/focus/status/language/time behavior. Client reconnect/owner unlock, scheduling, Kids programme policy and shared playback admission remain separate.

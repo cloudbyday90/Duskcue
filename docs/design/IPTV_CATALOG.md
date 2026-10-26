@@ -2,11 +2,11 @@
 
 ## Status and scope
 
-Research began October 25, 2026, against `b89e06a632e44628087c70b2195cf9963980a428` on `main`, following qualified [SSE root ownership](SSE_LIFECYCLE.md), source `7c1c23f`. This document records inspected source, MCP-discovered official guidance, alternatives and implementation prerequisites. All six product choices are confirmed: selected-standard-profile normal-build reads, allowlisted metadata, strict snapshot/profile continuation, windowed listings plus separate unpositionable evidence, UUIDv7 snapshot-entry IDs and deterministic internal-key ordering. The complete implementation contract below awaits shared-understanding confirmation. No catalog source changes, release or PR merge are claimed.
+Research began October 25, 2026, against `b89e06a632e44628087c70b2195cf9963980a428` on `main`, following qualified [SSE root ownership](SSE_LIFECYCLE.md), source `7c1c23f`. This document records inspected source, MCP-discovered official guidance, alternatives and implementation prerequisites. All six product choices are confirmed: selected-standard-profile normal-build reads, allowlisted metadata, strict snapshot/profile continuation, windowed listings plus separate unpositionable evidence, UUIDv7 snapshot-entry IDs and deterministic internal-key ordering. The user confirmed the complete implementation contract after checkpoint `3f5de09`. The modular normal-build backend and scoped qualification are complete. Runtime, compilation, static checks and the unchanged strict-lint baseline are recorded below. No release or PR merge is made.
 
 [IPTV](IPTV.md) owns the product contract. [Imports](IPTV_IMPORTS.md) owns encrypted last-good snapshots and uncertain guide evidence. [Assignment](IPTV_ASSIGNMENT.md) owns household/profile access and management delegation. [Owner security](../security/HOUSEHOLD_OWNER_SECURITY.md) owns fresh management proof. Browsing must preserve those boundaries without treating an ordinary viewing request as a management operation.
 
-## Findings in the existing code
+## Findings at the research baseline
 
 ### Viewing authority
 
@@ -78,7 +78,7 @@ URLs were discovered through MCP search and retrieved on October 25, 2026. Canon
 | Return stored JSON or upstream URLs | Fastest client hookup. | Expands the exposed contract and can disclose credentials or trigger unapproved browser networking. | Reject. |
 | Snapshot-bound keyset continuation | Finite indexed pages; coherent snapshot and explicit refresh boundary. | Refresh can require a new read; profile-change history needs an epoch if strict invalidation is promised. | Confirmed. |
 | Silently restart on a new snapshot | Fewer visible restart responses. | Can mix lineups/programmes or skip/duplicate entries across pages. | Not recommended. |
-| Explicit bounds and existing PostgreSQL indexes | Avoids snapshot-sized decryption and new cache invalidation state. | Guide-window/null ordering and query-plan evidence still need qualification. | Prefer. |
+| Explicit bounds and narrow PostgreSQL keyset indexes | Avoids snapshot-sized decryption and new cache invalidation state; measured deep-page and empty-evidence improvements. | Additional index storage/maintenance; residual stop-time filtering can still scan a large guide. | Implemented and qualified below. |
 | Windowed listings plus separately paginated unpositionable evidence | Delivers useful guide data without inventing missing intervals or certainty. | Consumers must handle evidence that cannot be placed on the timeline; no computed now/next yet. | Confirmed. |
 | UUIDv7 snapshot-entry IDs and deterministic internal-key ordering | Reuses qualified storage and existing channel index; no persistent identity registry or lineup-schema rewrite. | Refresh changes public entry IDs; key order is not curated lineup order. | Confirmed; favorites identities and curated ordering follow separately. |
 | Computed now/next, stable favorites, curated ordering and logos together | Richer first client surface. | Adds identity/import/order/network/policy concerns before the read boundary is qualified. | Deferred. |
@@ -146,7 +146,7 @@ For the timed view, both normalized bounds must be present and `starts_at < to A
 | Resource | First-lane bound |
 |---|---|
 | Page size | Default 20, accepted range 1–100; fetch at most limit+1 for lookahead. |
-| Timed window | Required explicit-offset RFC 3339 instants, at most microsecond precision without silent rounding; `from < to`, duration at most 24 hours. Normalize actual instants to UTC. |
+| Timed window | Required explicit-offset RFC 3339 instants, at most six fractional digits, with leap-second labels refused before conversion and no silent rounding; `from < to`, duration at most 24 hours. Normalize actual instants to UTC. |
 | Raw query | At most 8,192 bytes; duplicate/unknown query fields and malformed/out-of-range values receive fixed errors. The unpositionable route accepts no time window. |
 | Cursor | At most 2,048 transport bytes and 1,024 plaintext JSON bytes; strict version/shape and bounded decoded envelope. |
 | Fetched ciphertext / decrypted metadata | At most 2 MiB / 1 MiB across the page, lookahead, distinct guide evidence and small manifest/authority/cursor records. Never load the whole snapshot. |
@@ -190,7 +190,7 @@ Keep the domain five-file HTTP pattern under focused `live_tv/catalog/` modules,
 
 Reuse locked Rust/Axum/Tokio/SQLx/ring/serde/base64/chrono/UUID dependencies; do not change Cargo.lock or SDK versions for these APIs. No release, deployment, PR merge, CHANGELOG update or separate branch. Keep client UI/recovery/owner unlock, automatic refresh, computed now/next, persistent favorites identities, curated lineup storage, logos, Kids rating enforcement, shared playback admission and actual Dispatcharr/client playback qualification separate.
 
-## Planned qualification
+## Qualification coverage
 
 - Real cookie/bearer production routes with selected/unselected/foreign/Kids profiles; correct existing owner/admin/member/explicit capability behavior; no management proof required for authorized viewing reads.
 - Current account/session/credential/profile/access/source checks with database-observed revocation, profile switch and publication races. Qualify profile round trips and the required profile-context revision.
@@ -198,6 +198,82 @@ Reuse locked Rust/Axum/Tokio/SQLx/ring/serde/base64/chrono/UUID dependencies; do
 - Empty snapshots, failed-refresh retention, fresh-generation refusal, shared guide relations, sparse language/time/rating evidence, overlap/conflict/clump and explicit unpositionable evidence behavior.
 - Cursor/context/filter/snapshot/tie/null ordering, tampering and page/output/input bounds; maximum-sized representative snapshots and actual query-plan evidence before adding indexes.
 - Actual lost/delayed BEGIN acknowledgment, request cancellation, database lock/statement deadlines, clean-only-after-rollback pool reuse and real root/SSE regression as affected. Run heavy commands serially through the unchanged resource guard; preserve reserves/jobs/threads/container CPU/PID/deadlines.
+
+## Implementation and focused qualification
+
+The confirmed backend is implemented through focused catalog HTTP/service/authority/cursor/lease modules and a narrow typed import-reader facade. The session-context trigger covers all session updates. Programme queries use the same bounded ID-first selection in production and EXPLAIN qualification. Every returned row and the metadata lookahead are authenticated; stream/logo ciphertext is never selected by the reader. Both AppState constructors own shared admission, and root closes it before HTTP drain. Catalog trace spans record only method, version and a fixed route family, excluding query strings and path values even with verbose request tracing.
+
+Focused metadata, parser/projection, cursor and resource tests pass. The real-route contract covers cookie and bearer transports, actual profile switches and fresh-proof session rotation, capability defaults/overrides, Kids refusal, household isolation, absent owner-state preservation, contextual tampering, same-generation failed refresh retention, source-generation fencing and valid empty lineups. Final extended race/regression outcomes and exact receipts are recorded below.
+
+### Final catalog HTTP and SSE regression
+
+`node scripts/testing-memory/run.mjs cargo-test --features playback-qualification --test live_tv_catalog --test sse_lifecycle -- --ignored --nocapture` passes both production-route contracts, zero failures/ignores. Catalog takes **102.51 seconds** and SSE **13.55 seconds**. Resource `82abfa4e-e3b5-4752-ba32-5771464a07ea`; receipt `.cache/testing-memory/2026-10-26T01-25-00-626Z-e18f271f-6512-4e9e-a0d7-40a06cc9edc8.jsonl`.
+
+The catalog case exercises actual cookie/bearer TCP and production router calls; strict query/path/time/precision errors; bounded ordered pages; shared/absent/undeclared guides; raw language/rating/time evidence; cross-household isolation; contextual ciphertext/index/manifest tampering; no owner-state initialization; real profile A-to-B-to-A and selection round trips; rollback/exhaustion/large-string revisions; fresh-proof session rotation; logout/expiry; actual capability defaults and Kids refusal; last-good/empty/generation behavior; database-observed current capability, source, account-status, profile and credential races; request cancellation, lock deadline/pool recovery and closed admission. Account reactivation advances source generation, so the fixture confirms unavailability before a new matching-generation import. A gated genuine import proves old-reader/new-publication serialization. Reads fetch no feeds, media or logos, and do not acquire playback or management rights. Verbose application/HTTP tracing is captured and checked for credentials, imported text and an exercised sealed cursor.
+
+The existing SSE contract independently retains real authenticated connected clients, cancellation/disconnect, privacy/no-store, limits and retained cleanup. This adds no client reconnect/UI redesign or stronger transport-delivery guarantee.
+
+Corrected attempts remain visible in local receipts: initial handler-future Send/type issues and a fixture inventory rename were compile errors; the first race fixture incorrectly cleared an approval without its required zero address count; a later account-status fixture expected data to revive despite the existing source-generation trigger. The corrected fixture follows those database invariants and explicitly requires a fresh import. Qualification helpers now share one private database/Docker module instead of suppressing duplicate-module lint; decimal-string overflow assertions retain their intended type without an owned-comparison lint. No production limit, authority rule, ignore or test bypass was relaxed.
+
+### Large-guide evidence and index decision
+
+The baseline uses the original `(guide_id, starts_at)` index; resource `33861437-af5b-4f4c-bc6f-4dc5ba30617c` records eight EXPLAIN ANALYZE/BUFFERS plans after genuine production HTTP pages over three independently seeded 250,000-entry single-guide sets. Historical first/last/empty queries took 69.337/0.287/31.111 ms. Dense tied-start/overlap first/last/empty queries took 127.479/108.326/97.533 ms. Null-heavy first/last queries took 1.087/0.200 ms. All use the fixed 1,500-ms statement limit; no deadline is increased.
+
+[Paging migration](../../server/migrations/20261025151000_live_tv_catalog_paging.sql) replaces that index with `(guide_id, starts_at, id) INCLUDE(stops_at)` and adds partial `(guide_id, id) WHERE starts_at IS NULL OR stops_at IS NULL`. Both retain a guide prefix for foreign-key cleanup. Final resource `b162b380-9560-41bc-8b64-068c52c49d2e` records twelve plans and all first/deep-last HTTP pages, passing in **80.02 seconds**:
+
+| Data lane/page | Baseline ms | Indexed ms |
+|---|---:|---:|
+| Historical first / deep last / empty timed window | 69.337 / 0.287 / 31.111 | 62.000 / 0.244 / 24.516 |
+| Dense ties/overlap first / deep last / empty timed window | 127.479 / 108.326 / 97.533 | 11.130 / 0.243 / 90.454 |
+| Null-heavy first / deep last | 1.087 / 0.200 | 1.178 / 0.204 |
+
+Controlled transactional removal/restoration of the partial index, on the same final datasets and through the exact production selector, changes empty unpositionable queries from 0.035 to 25.684 ms for history and 0.283 to 69.856 ms for dense data. The partial index is justified by avoiding scans for absent unpositionable evidence; it does not improve every null-heavy plan.
+
+Baseline fixture encryption/insertion/replacement/analyze took 21,565 / 21,650 / 17,493 ms for history/dense/null lanes; indexed runs took 18,581 / 18,560 / 17,768 ms. This comparison finds no fixture regression, but includes encryption, replacement, database/cache state and ordinary run variance; it is not an isolated index-write benchmark or maximum importer-throughput claim. Existing genuine import/publication regression remains required. Post-three-cycle index relation sizes are 55,050,240 bytes for guide paging, 12,451,840 for unpositionable and 23,674,880 for the primary key. These include dead entries/bloat across the fixture replacements, not a per-live-snapshot storage estimate. Extra storage and index maintenance are the retained tradeoff.
+
+Historical and empty timed windows can still examine a large guide because stop-time filtering is residual. LIMIT bounds selected/decrypted output, not examined rows or universal latency. These are owned PostgreSQL18 fixture observations, not a production hardware/load guarantee. Private bounded codec seeding and authenticated HTTP reading qualify stored-data delivery; they do not qualify a 250,000-entry network import within every production deadline. Fixtures add no normal-build seed API or bypass route.
+
+Plan artifacts are `.cache/testing-memory/{resource_id}.catalog-plans.json`. Final guard receipt: `.cache/testing-memory/2026-10-26T00-47-30-342Z-ecb19ef3-9163-44b9-99a9-9aacc8aaa399.jsonl`; original-index receipt: `.cache/testing-memory/2026-10-26T00-36-42-803Z-67416dc1-54f3-4241-bd2c-fd8d88caa7a5.jsonl`. Both exit zero without a memory stop/interruption. Image identity and full plans/buffer counts are retained in the local artifacts.
+
+### Executed BEGIN and inherited isolation
+
+The final two-case qualification command is `node scripts/testing-memory/run.mjs cargo-test --features playback-qualification --lib qualification:: -- --ignored --nocapture`. It passes both new owned PostgreSQL tests, zero ignores, in **92.74 seconds**, resource `28888641-7f32-49b1-9e67-f8b4266d7018`, receipt `.cache/testing-memory/2026-10-26T01-03-27-268Z-442ca190-d246-4e2c-8ce3-e01a3e383de8.jsonl`.
+
+The protocol fixture withholds actual PostgreSQL CommandComplete/ReadyForQuery after BEGIN executes. Database observation confirms an idle transaction before caller cancellation. The uncertain backend disappears, its pool permit recovers and a different backend serves the next query. Delayed acknowledgment permits ordinary rollback/reuse; lost acknowledgment reaches the three-second work and two-second release limits, refuses success and discards that connection. The pool starts connections with inherited Repeatable Read; the actual lease explicitly establishes Read Committed before reading. No detach/leak or catalog background owner is introduced.
+
+This final run also repeats all twelve large-guide plans and first/deep-last HTTP pages on the same immutable fixture image. Dense deep-last execution is 0.239 ms; historical first/empty timed execution is 72.760/29.725 ms, and dense empty timed execution is 100.411 ms. Empty unpositionable queries are 0.042/0.345 ms with the partial index versus 30.638/76.236 ms in the transactional index-removal control. It confirms the same index decision without turning fixture timings into a production latency promise. The local plan artifact uses that resource UUID.
+
+The guard exits zero without memory stop/interruption, preserving at least 19,222,118,400 available host bytes; peak owned private bytes are 5,456,982,016 across compilation and qualification, not application-only RSS. Library close_on_drop still suppresses individual close errors and does not acknowledge remote termination. The test observes the owned backend disappearing; it does not claim stronger SQLx guarantees or reproduce a vulnerability in unrelated transaction callers.
+
+### Library and genuine importer regression
+
+The final feature-library command `node scripts/testing-memory/run.mjs cargo-test --features playback-qualification --lib` passes **1,009 tests**, zero failures, with nine ignores, in **67.07 seconds**; receipt `.cache/testing-memory/2026-10-26T01-07-22-313Z-cd8a481b-897f-45af-8e4c-e46b7733b877.jsonl`. Seven ignores are the existing external-fixture baseline; the two new database qualifications are executed separately above. The window test includes excess fractional digits beyond the parser's nanosecond representation, exact six-digit offsets, leap-second refusal and both bounds. No submicrosecond input is silently truncated.
+
+`node scripts/testing-memory/run.mjs iptv-imports` passes its existing genuine network/parser/encryption/publication/commit-reconciliation contract, zero ignores, in **148.50 seconds**, resource `07eedf34-6da9-403f-b5a0-2493afc7cc10`. Receipt `.cache/testing-memory/2026-10-26T01-16-19-786Z-66b19881-e11f-46ea-9936-00c10b929369.jsonl`; nine safe audit events and zero proxy-trap connections. This retains actual importer/publication qualification with both new paging indexes. The importer-only artifact describes its exercised scope; catalog HTTP delivery is qualified separately, and no maximum network-import throughput claim follows from stored-data seeding.
+
+### Owner and assignment compatibility
+
+`node scripts/testing-memory/run.mjs cargo-test --features playback-qualification --test household_owner_security --test live_tv_assignment -- --ignored --nocapture` passes both existing production-route contracts, zero failures/ignores. Owner security takes **119.81 seconds**; assignment takes **107.89 seconds**. Resource `003fd2c2-1aad-4643-a360-a485030f1457`; combined receipt `.cache/testing-memory/2026-10-26T01-20-29-571Z-0afa7893-ebbe-4285-99a0-75a22ba2cb93.jsonl`.
+
+These cover real password/signed-WebAuthn proof, factor capacity/recovery, cookie/bearer rotation and replay refusal, protected legacy profile/PIN/passkey mutations, operator handoff, current permission/delegation races, encrypted assignment, conditional writes, rotation/replacement, transaction rollback and outer-rate-limit no-store. The new profile-context trigger preserves the existing security boundary; no owner proof is added to viewing reads and no administrator viewing default is introduced. Captured credentials/imported text stay out of diagnostics. Existing contracts record 57/17 safe audit events respectively.
+
+### Retained root regression
+
+`node scripts/testing-memory/run.mjs iptv-refresh`, run with an attached Windows console/ConPTY, passes all **three** existing real PostgreSQL/HTTP/TLS/process contracts, zero ignores, in **242.98 seconds**. Resource `02abb012-066a-45d4-88f4-c5dcb2c344ef`; receipt `.cache/testing-memory/2026-10-26T01-10-09-583Z-8654ee45-e711-441d-b8d5-bca59b875d88.jsonl`.
+
+The suite retains real thirty-second HTTP and sixty-second pool deadline failures with dependencies held until joined cleanup, protected durable refresh admission and revocation, acceptance/publication commit-wire faults, CORS/normal TLS trust separation, actual executable normal/connected-SSE/forced-second-signal shutdown and HTTP-before-pool join ordering. The process-only proxy trap receives zero connections. No production bypass route or changed root timeout is introduced. Windows signal execution is qualified here; Unix signal behavior and a new reverse-proxy/HTTP2/client playback matrix are not claimed.
+
+The wrapper exits zero without memory stop/interruption, preserving at least 18,810,302,464 available host bytes; peak owned private bytes are 6,792,372,224 across compilation and tests. This is not application-only RSS. Root closes new catalog admission before existing HTTP/SSE/import draining; request-owned reads remain bounded by their own work/release limits and SQLx-owned fallback remains part of awaited pool closure.
+
+### Compilation, lint and static qualification
+
+Normal-build all-target compilation passes through the unchanged guard. Diagnostic Clippy (`cargo-iptv-clippy --cap-lints warn`) completes all targets with exactly the existing **28 library / 32 library-test warnings and two Tonight integration casts**, and no introduced finding. Receipt `.cache/testing-memory/2026-10-26T01-31-55-516Z-673bb1d7-6c02-4c32-9810-5aee93ab44e2.jsonl`. Strict `cargo-iptv-clippy` still exits **101** on that baseline; receipt `.cache/testing-memory/2026-10-26T01-33-36-213Z-9679c539-c634-4422-8f30-71b7987edb80.jsonl`. This is not a strict-lint pass. The existing proc-macro-error2 2.0.1 future-compatibility notice is unchanged.
+
+The final duplicate-module correction shares the same guarded Docker implementation with the existing transcoding test module; it changes test imports only. No test body, production path, warning level or lint allowance is weakened. Rust stable **1.99.1** is the active toolchain; no Cargo manifest/lock, client lock, release or CHANGELOG change is required.
+
+The final normal-build all-target check passes in **36.78 seconds**, receipt `.cache/testing-memory/2026-10-26T01-35-07-183Z-f69bdee3-24af-4f52-aef7-b6a9a1062860.jsonl`. After the test-only helper consolidation, eight catalog tests including the real BEGIN fault qualification pass with zero ignores in **9.57 seconds**, receipt `.cache/testing-memory/2026-10-26T01-36-12-961Z-4b457bc6-3d37-425f-8782-c0fdfe2eea44.jsonl`. The affected existing transcoding-argument tests pass **nine** cases with three existing external-corpus ignores, receipt `.cache/testing-memory/2026-10-26T01-38-19-697Z-b174a2c9-f780-4f0b-83ab-007dc183fce5.jsonl`; no new FFmpeg runtime qualification is claimed.
+
+All **sixteen** existing workflow/resource-policy tests pass, receipt `.cache/testing-memory/2026-10-26T01-38-27-350Z-b6db3a07-5cbc-4e94-ae22-0098b18ddc6b.jsonl`. Workspace formatting, staged whitespace and copyright checks pass (**826** tracked source files). All **788 local file targets across thirteen changed Markdown documents** exist. Heavy commands remain serial under unchanged memory/commit reserves, Cargo jobs, test/Tokio threads, immutable PostgreSQL18 limits and verified fixture cleanup. Successful jobs exit zero without memory stop/interruption; strict Clippy's existing-baseline exit 101 remains explicit. Local receipts include compilation/tooling as well as runtime work and must not be read as application-only RSS.
 
 ## Baseline outcome
 
@@ -211,12 +287,14 @@ Receipt: `.cache/testing-memory/2026-10-25T22-24-12-538Z-17ac7968-f47d-4ff5-b966
 
 ## Complete-contract checkpoint
 
-All six product choices were confirmed after research checkpoint `c193a8d`. The route, DTO, strict profile-context revision, opaque paging, source/row authentication, fixed bounds, default-discard lease and qualification contract above is now concrete and awaits shared-understanding confirmation. Whitespace checks and **724 local link targets across eleven changed Markdown documents** pass. Source, manifests and Cargo.lock remain unchanged; the existing thirteen-case import baseline remains the only execution claim for this catalog work. No new catalog build, strict lint, route or runtime result is implied.
+All six product choices were confirmed after research checkpoint `c193a8d`. The route, DTO, strict profile-context revision, opaque paging, source/row authentication, fixed bounds, default-discard lease and qualification contract was confirmed by the user after `3f5de09`. Whitespace checks and **724 local link targets across eleven changed Markdown documents** pass. At that documentation checkpoint source, manifests and Cargo.lock were unchanged; its execution claim was the existing thirteen-case import baseline. No new catalog build, strict lint, route or runtime result is implied.
 
 ## Random open PR applicability
 
 Fresh MCP search returned one open PR. Uniform selection from that singleton chose [PR 5](https://github.com/cloudbyday90/Duskcue/pull/5), head `c018d77b7f09543e5960a571dc43e2f061cedf0a`, open and unmerged. MCP metadata, exact two-file list and both per-file patches were inspected. The PR requests PostCSS 8.5.23 and Nano ID 3.3.16 in the web/desktop lockfiles; both already resolve 8.5.30/3.3.20. No patch, downgrade, merge, comment or closure is applicable.
 
-## Next step
+## Next recommended item
 
-All six product choices are settled. Confirm shared understanding of the complete contract above, then implement and qualify it modularly on main. Client catalog UI, owner unlock, automatic refresh, Kids programme policy, shared playback admission and actual Dispatcharr/client playback remain separate increments. No release is part of this work.
+Build the shared web/Tauri read-only channel and guide experience against these APIs. Review the client contract before implementation: selected-profile state, explicit restart after 409, no optimistic playback affordance, bounded window/paging ownership, plain-text rendering, validated language attributes, locale/timezone presentation and explicit unpositionable/ambiguous evidence. Qualify keyboard/focus behavior, programmatic status announcements, zoom/contrast and RTL with WCAG 2.2 and the existing client accessibility fixtures. Backend metadata does not establish UI accessibility conformance.
+
+Keep interactive owner unlock/admin assignment flows, automatic refresh, computed now/next, persistent favorites IDs, curated lineup order, logos, Kids rating policy, shared playback admission and actual Dispatcharr/client playback separately scoped. Investigate the pinned-source BEGIN-cancellation concern in unrelated transaction callers as an independent engineering follow-up; the catalog qualification does not establish an upstream vulnerability. No release is part of this work.

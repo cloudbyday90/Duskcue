@@ -23,6 +23,7 @@ pub async fn shutdown(
     if let Some(owner) = state.live_tv_refresh.get() {
         owner.close();
     }
+    state.live_tv_catalog.close();
     state.event_streams.close();
     http.close();
     tracker.close();

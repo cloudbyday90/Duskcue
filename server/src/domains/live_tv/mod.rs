@@ -8,6 +8,7 @@ pub mod service;
 pub mod types;
 
 pub mod assignment;
+pub mod catalog;
 mod destination;
 
 pub mod feed;
@@ -37,7 +38,8 @@ pub fn router(state: AppState) -> Router<AppState> {
         .layer(axum::middleware::map_response(handlers::problem_media_type))
         .with_state(state.clone())
         .merge(assignment::router(state.clone()))
-        .merge(refresh::router(state))
+        .merge(refresh::router(state.clone()))
+        .merge(catalog::router(state))
 }
 
 #[cfg(test)]

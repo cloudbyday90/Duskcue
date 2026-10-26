@@ -1,8 +1,8 @@
 # Project Structure
 
-## Catalog implementation contract — October 25, 2026
+## Modular catalog services — October 25, 2026
 
-The [catalog contract](IPTV_CATALOG.md), pending shared-understanding confirmation, follows the five-file HTTP pattern under focused live_tv/catalog modules and a narrow typed imports reader. Separate authority, cursor, admission, limits and representation helpers keep handlers small. Reuse contextual encryption and the actual auth resolver without widening raw import models or role defaults. The planned migration adds session profile-context revision and only query-plan-justified paging indexes. Both AppState constructors share infallible admission, and root closes admission before HTTP drain. No dependency/Cargo.lock, client UI or catalog source change is claimed at this design checkpoint.
+[Catalog implementation](IPTV_CATALOG.md) follows the five-file HTTP pattern under `live_tv/catalog/`, with focused authority, cursor, admission, limits, query and default-discard database services. A narrow `feed/imports/reader/` facade authenticates stored attribution/row bindings and returns typed metadata without exposing raw import models or stream/logo references. Separate migrations maintain session profile context and evidence-backed programme paging indexes. Both AppState constructors share infallible admission; root closes it before HTTP drain. `middleware/request_trace.rs` removes catalog paths/query values from request spans. No dependency/Cargo.lock or client UI change is required. Owned integration helpers and private library qualification fixtures remain outside normal builds.
 
 ## Modular SSE lifecycle — October 25, 2026
 

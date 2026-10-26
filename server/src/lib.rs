@@ -14,6 +14,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+#[cfg(test)]
+extern crate self as duskcue;
+
+#[cfg(test)]
+mod qualification;
+
 pub mod cache;
 pub mod config;
 pub mod domains;

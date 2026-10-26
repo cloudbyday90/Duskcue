@@ -1,5 +1,11 @@
 # Database Design
 
+## Catalog paging and profile context — October 25, 2026
+
+[Session-context migration](../../server/migrations/20261025150000_live_tv_catalog_context.sql) adds positive BIGINT `profile_context_revision` and a BEFORE UPDATE trigger on every session update. Active-profile/selection-state changes advance it; ordinary activity and caller-supplied revision changes preserve the old value. Overflow refuses the transaction. The catalog returns decimal strings and seals this revision into continuation context.
+
+[Paging migration](../../server/migrations/20261025151000_live_tv_catalog_paging.sql) replaces `(guide_id, starts_at)` with `(guide_id, starts_at, id) INCLUDE(stops_at)` and adds a partial `(guide_id, id)` index for either time bound null. Both retain a guide prefix for foreign-key cleanup. Existing `(snapshot_id, channel_key)` uniqueness supplies deterministic channel keysets. UUIDv7 row allocation and encrypted receipt/row binding remain unchanged. [Catalog authority](IPTV_CATALOG.md) owns actual large-guide plans, write/storage tradeoffs and the residual stop-time scan limit; LIMIT bounds returned rows, not all examined rows.
+
 ## Manual IPTV refresh policy — October 25, 2026
 
 [Migration 20261025140000](../../server/migrations/20261025140000_live_tv_manual_refresh.sql) adds one `live_tv_refresh_control` row: UUIDv7 identity/version check, unique true singleton key, positive revision and `enabled=false`. Only the dedicated proof/permission-protected control API consumes this canonical policy; generic `server_config` JSON is not an activation source. Real transitions advance its revision; checked no-ops preserve it. Audit writes use fixed safe events and retain initiator attribution for acceptance.

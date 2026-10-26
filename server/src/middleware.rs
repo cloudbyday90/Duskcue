@@ -15,6 +15,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 pub(crate) mod private_responses;
+pub(crate) mod request_trace;
 
 use std::net::IpAddr;
 use std::num::NonZeroU32;

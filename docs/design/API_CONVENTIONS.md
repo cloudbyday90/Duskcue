@@ -1,8 +1,8 @@
 # API Conventions
 
-## Profile-scoped catalog contract — October 25, 2026
+## Profile-scoped catalog reads — October 25, 2026
 
-[Catalog reads](IPTV_CATALOG.md) records the complete contract awaiting shared-understanding confirmation. The proposed three GET routes are selected-profile scoped and no-store, with bounded typed pages, opaque authenticated cursors, UUIDv7 snapshot-entry IDs, windowed programme evidence and a separate unpositionable view. Current authority precedes stale-context refusal; missing matching-generation data is unavailable, and valid empty lineups remain successful empty pages. This is a design checkpoint, not routed implementation or a conditional-read/cache feature.
+[Catalog reads](IPTV_CATALOG.md) implements three selected-standard-profile GET routes with bounded typed pages, sealed continuation, UUIDv7 snapshot-entry IDs, windowed programme evidence and a separate unpositionable view. Every page rechecks current viewing/source authority before context validation. Missing matching-generation data is unavailable; valid empty lineups succeed. Responses and refusals are no-store, with no ETag/body buffering or playback grant. The authority owns the confirmed contract and qualification evidence.
 
 ## SSE termination and private responses — October 25, 2026
 
