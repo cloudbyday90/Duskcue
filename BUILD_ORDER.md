@@ -12,7 +12,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## October 2026 Dispatcharr catalog UI (SCOPED CLIENT QUALIFICATION COMPLETE)
 
-**Authority:** [Shared web/Tauri catalog](docs/design/IPTV_CLIENT_CATALOG.md), researched on October 26 against `34de163`. All six client choices and the complete contract were confirmed after `896ced0`. The verified implementation accompanies this entry; documentation-only successors record its exact commit. Main only; no release or PR mutation.
+**Authority:** [Shared web/Tauri catalog](docs/design/IPTV_CLIENT_CATALOG.md), researched on October 26 against `34de163`. All six client choices and the complete contract were confirmed after `896ced0`. Verified implementation: `9cabebd3bce753c3f3fbee015ca31265f51a3db4` on `main`; documentation-only successors preserve that source. Main only; no release or PR mutation.
 
 **Built:** Tonight's shared `/live-tv` route is discoverable for selected standard profiles, with current GET authority, twenty-entry channel/programme pages and sixty-four-entry cursor histories. Modular bounded JSON, typed projection, exact microsecond/revision fences, cancellation/deadline, manual Retry-After/401/409 recovery and memory-only ownership replace generic accumulation. The channel/list layout, six-hour windows, preferred text/all variants, explicit uncertain evidence and raw unclassified ratings use native controls and existing semantic tokens. Static Tauri document language/direction now follows the resolved locale without activating preview locales. UUIDv7 snapshot entries, backend authority and package/lock versions remain unchanged. Xtream stays deferred; Dispatcharr uses the qualified M3U/XMLTV source.
 
