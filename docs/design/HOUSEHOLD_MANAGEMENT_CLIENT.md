@@ -4,6 +4,8 @@
 
 Research and design review, October 26, 2026, against `d3c18a2a63e880786f9d2547520bbbb8e55aea3a` on main. This document owns the confirmed shared owner-security screen and client/session-context integration before Live TV management forms. The user confirmed the complete contract after research checkpoint `8a422ae`; implementation and qualification outcomes follow below.
 
+Verified implementation: `d736b32f794cea2cc98881ddb63e98ce32b8c193` on `main`. Documentation-only successors preserve that qualified source. No release or PR merge.
+
 The user confirmed four decisions: complete owner-security UI before Live TV assignment/destination/refresh forms; use Settings → Household management for selected standard profiles, separate from server security; qualify browser passkeys and native password proof first without widening RP origins or transferring grants; add an authoritative authenticated current-session context API. The user confirmed the complete concrete contract after `8a422ae`; the agreed screen/context increment is implemented and scoped qualification is complete.
 
 [Household-owner security](../security/HOUSEHOLD_OWNER_SECURITY.md) owns trusted factors, operator handoffs, recovery, session rotation and the absolute five-minute grant. [Authentication](AUTH.md), [API security](../security/API_SECURITY.md), [client accessibility](CLIENT_ACCESSIBILITY_INPUT.md), [internationalization](I18N.md) and [guarded testing](../ci/TESTING_MEMORY.md) retain their existing authority. [Live TV assignment](IPTV_ASSIGNMENT.md), [destination approvals](../security/IPTV_DESTINATION_AUTHORITY.md) and [manual refresh](IPTV_REFRESH.md) remain subsequent UI increments. [Catalog UI](IPTV_CLIENT_CATALOG.md) is already qualified.
