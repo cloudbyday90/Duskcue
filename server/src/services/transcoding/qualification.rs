@@ -138,7 +138,7 @@ fn invalid(message: &'static str) -> io::Error {
 
 impl TranscodeManager {
     pub fn with_qualification_input(mut self, input: OwnedPacedInput) -> Self {
-        self.qualification_input = Some(input);
+        self.qualification_input = Some(std::sync::Arc::new(input));
         self
     }
 }

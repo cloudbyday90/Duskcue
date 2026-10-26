@@ -197,7 +197,7 @@ async fn real_fmp4_http_paths_preserve_auth_policy_and_reject_traversal() -> any
         master.clone(),
         "auto",
     ));
-    let app = playback::router(state.clone()).with_state(state);
+    let app = playback::router(state.clone()).with_state(state.clone());
 
     let mut accessible_paths = Vec::new();
     for (id, rendition, directory, is_master) in [
@@ -220,12 +220,14 @@ async fn real_fmp4_http_paths_preserve_auth_policy_and_reject_traversal() -> any
                 .contains("no-store")
         );
         let content = String::from_utf8(bytes)?;
+        assert_eq!(headers["content-length"], content.len().to_string());
         if is_master {
             assert!(content.contains(&playlist_url));
         } else {
             assert!(content.contains(&format!("/{rendition}/init.mp4")));
         }
         let (status, headers, bytes) = get(&app, Some(&tokens[0]), &playlist_url).await?;
+        assert_eq!(headers["content-length"], bytes.len().to_string());
         assert_eq!(status, StatusCode::OK);
         assert_eq!(
             headers.get("content-type").unwrap(),
@@ -349,6 +351,15 @@ async fn real_fmp4_http_paths_preserve_auth_policy_and_reject_traversal() -> any
     for path in &accessible_paths {
         assert_eq!(get(&app, Some(&tokens[0]), path).await?.0, StatusCode::OK);
     }
+    state.transcode_manager.close();
+    for path in &accessible_paths {
+        let (status, headers, _) = get(&app, Some(&tokens[0]), path).await?;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(headers["retry-after"], "5");
+        assert_eq!(headers["cache-control"], "private, no-store");
+        assert_eq!(get(&app, None, path).await?.0, StatusCode::UNAUTHORIZED);
+    }
+    state.transcode_manager.drain().await?;
     sqlx::query("UPDATE play_sessions SET stopped_at=now() WHERE user_id=$1")
         .bind(owner)
         .execute(&pool)
@@ -377,5 +388,60 @@ async fn real_fmp4_http_paths_preserve_auth_policy_and_reject_traversal() -> any
         "temporary fixture must stay under the intended test directory"
     );
     tokio::fs::remove_dir_all(temporary).await?;
+    Ok(())
+}
+
+fn output_manager() -> crate::services::transcoding::TranscodeManager {
+    let mut config = crate::state::RuntimeConfig::default();
+    config.cpu.hw_accel_auto_detect = false;
+    crate::services::transcoding::TranscodeManager::new(std::sync::Arc::new(
+        arc_swap::ArcSwap::from_pointee(config),
+    ))
+}
+
+#[tokio::test]
+async fn stop_discards_held_hls_bodies_before_removing_the_generation_cache() -> anyhow::Result<()>
+{
+    let manager = output_manager();
+    let id = Uuid::now_v7();
+    let directory = std::env::temp_dir().join(format!("duskcue-held-hls-{id}"));
+    tokio::fs::create_dir(&directory).await?;
+    tokio::fs::write(
+        directory.join("manifest.m3u8"),
+        "#EXTM3U\n#EXT-X-MAP:URI=\"init.mp4\"\n#EXTINF:2,\nseg_0000.m4s\n",
+    )
+    .await?;
+    tokio::fs::write(directory.join("seg_0000.m4s"), vec![3; 512 * 1024]).await?;
+    manager.insert_test_session(session(id, Uuid::now_v7(), directory.clone(), "source"));
+    let playlist = super::get_transcode_playlist(&manager, id, "source").await?;
+    let segment = super::get_transcode_segment(&manager, id, "source", "seg_0000.m4s").await?;
+    manager.stop_session(id).await?;
+    assert!(!directory.exists());
+    assert!(to_bytes(playlist.into_body(), 1024).await.is_err());
+    assert!(to_bytes(segment.into_body(), 1024 * 1024).await.is_err());
+    assert!(super::get_transcode_manifest(&manager, id).await.is_err());
+    manager.close();
+    manager.drain().await?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn failed_cache_cleanup_retains_generation_and_allows_explicit_stop_retry()
+-> anyhow::Result<()> {
+    let manager = output_manager();
+    let id = Uuid::now_v7();
+    let directory = std::env::temp_dir().join(format!("duskcue-failed-hls-{id}"));
+    tokio::fs::write(&directory, b"cleanup refusal").await?;
+    manager.insert_test_session(session(id, Uuid::now_v7(), directory.clone(), "source"));
+    assert!(manager.stop_session(id).await.is_err());
+    assert!(manager.get_session(&id).is_some());
+    assert!(super::get_transcode_manifest(&manager, id).await.is_err());
+    tokio::fs::remove_file(&directory).await?;
+    tokio::fs::create_dir(&directory).await?;
+    manager.close();
+    manager.stop_session(id).await?;
+    manager.drain().await?;
+    assert!(!directory.exists());
+    assert!(manager.get_session(&id).is_none());
     Ok(())
 }

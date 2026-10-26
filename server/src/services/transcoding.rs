@@ -30,6 +30,7 @@ use crate::services::hw_accel::{self, HwAccelDetectionResult};
 use crate::state::RuntimeConfig;
 
 pub mod arguments;
+mod commands;
 mod encoding;
 pub mod failure;
 mod launcher;
@@ -293,14 +294,17 @@ impl PendingTranscodeSession {
     }
 }
 
+#[derive(Clone)]
 pub struct TranscodeManager {
     sessions: Arc<DashMap<Uuid, TranscodeSession>>,
+    preparations: Arc<DashMap<Uuid, PathBuf>>,
     semaphore: Arc<Semaphore>,
     workers: TranscodeWorkers,
+    pub(crate) output: Arc<crate::services::vod_lifecycle::VodLifecycle>,
     config: Arc<ArcSwap<RuntimeConfig>>,
     hw_detection: Arc<std::sync::RwLock<HwAccelDetectionResult>>,
     #[cfg(all(target_os = "linux", any(test, feature = "playback-qualification")))]
-    qualification_input: Option<qualification::OwnedPacedInput>,
+    qualification_input: Option<Arc<qualification::OwnedPacedInput>>,
 }
 
 impl TranscodeManager {
@@ -312,8 +316,10 @@ impl TranscodeManager {
 
         Self {
             sessions: Arc::new(DashMap::new()),
+            preparations: Arc::new(DashMap::new()),
             semaphore: Arc::new(Semaphore::new(max_concurrent.max(1))),
             workers: TranscodeWorkers::default(),
+            output: crate::services::vod_lifecycle::VodLifecycle::new(),
             config,
             hw_detection: Arc::new(std::sync::RwLock::new(detection)),
             #[cfg(all(target_os = "linux", any(test, feature = "playback-qualification")))]
@@ -322,20 +328,61 @@ impl TranscodeManager {
     }
 
     pub async fn stop_session(&self, session_id: Uuid) -> Result<(), PlaybackError> {
+        if let Some(generation) = self.output.generation(session_id) {
+            generation.retire();
+        }
+        let manager = self.clone();
+        self.output
+            .command(true, move |_| async move {
+                manager.stop_owned(session_id).await
+            })
+            .await
+    }
+
+    async fn stop_owned(&self, session_id: Uuid) -> Result<(), PlaybackError> {
         if self.workers.stop(session_id).await? {
             return Ok(());
         }
-        if let Some((_, session)) = self.sessions.remove(&session_id) {
-            match tokio::fs::remove_dir_all(&session.segment_dir).await {
-                Ok(()) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-                Err(_) => {
-                    self.sessions.insert(session_id, session);
-                    return Err(PlaybackError::FfmpegFailed(
-                        "transcode cache cleanup failed".into(),
-                    ));
-                }
-            }
+        if let Some(session) = self.get_session(&session_id) {
+            let generation = self.output.begin_generation(session_id, true)?;
+            generation.drain().await?;
+            crate::services::vod_lifecycle::remove_cache(&session.segment_dir).await?;
+            self.sessions.remove(&session_id);
+            self.output.finish_generation(session_id);
+        }
+        if let Some(path) = self
+            .preparations
+            .get(&session_id)
+            .map(|entry| entry.value().clone())
+        {
+            let generation = self.output.begin_generation(session_id, true)?;
+            generation.drain().await?;
+            crate::services::vod_lifecycle::remove_cache(&path).await?;
+            self.preparations.remove(&session_id);
+            self.output.finish_generation(session_id);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn close(&self) {
+        self.output.close();
+        self.workers.cancel_all();
+    }
+
+    pub(crate) async fn drain(&self) -> Result<(), PlaybackError> {
+        self.output.drain_commands().await?;
+        let ids: Vec<_> = self.sessions.iter().map(|entry| *entry.key()).collect();
+        for id in ids {
+            self.stop_owned(id).await?;
+        }
+        let ids: Vec<_> = self.preparations.iter().map(|entry| *entry.key()).collect();
+        for id in ids {
+            self.stop_owned(id).await?;
+        }
+        self.workers.drain().await?;
+        self.output.drain_responses().await?;
+        if !self.output.complete() {
+            return Err(PlaybackError::LifecycleCleanup);
         }
         Ok(())
     }
@@ -352,13 +399,16 @@ impl TranscodeManager {
         position_ms: i64,
         data_dir: &Path,
     ) -> Result<TranscodeSession, PlaybackError> {
+        self.output.ensure_open()?;
         let old_session = self
             .get_session(&session_id)
             .ok_or(PlaybackError::SessionNotFound)?;
-        self.stop_session(session_id).await?;
-
-        self.start_session(old_session.restart_params(position_ms), data_dir)
-            .await
+        self.replace_session(
+            session_id,
+            old_session.restart_params(position_ms),
+            data_dir,
+        )
+        .await
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -421,6 +471,9 @@ impl TranscodeManager {
 
     #[cfg(test)]
     pub(crate) fn insert_test_session(&self, session: TranscodeSession) {
+        self.output
+            .begin_generation(session.id, false)
+            .expect("test output capacity");
         self.sessions.insert(session.id, session);
     }
 
@@ -461,31 +514,6 @@ impl TranscodeManager {
 
     pub fn list_active_sessions(&self) -> Vec<TranscodeSession> {
         self.sessions.iter().map(|r| r.value().clone()).collect()
-    }
-
-    pub async fn cleanup_orphaned_sessions(&self, data_dir: &Path) {
-        let config = self.config.load();
-        let transcode_base =
-            data_dir.join(config.transcoding.transcode_path.trim_start_matches('/'));
-
-        if !transcode_base.exists() {
-            return;
-        }
-
-        let mut entries = match tokio::fs::read_dir(&transcode_base).await {
-            Ok(e) => e,
-            Err(_) => return,
-        };
-
-        while let Ok(Some(entry)) = entries.next_entry().await {
-            let name = entry.file_name();
-            let name_str = name.to_string_lossy();
-            if let Ok(dir_uuid) = Uuid::parse_str(&name_str)
-                && !self.sessions.contains_key(&dir_uuid)
-            {
-                let _ = tokio::fs::remove_dir_all(entry.path()).await;
-            }
-        }
     }
 }
 

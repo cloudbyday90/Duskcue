@@ -21,6 +21,9 @@ async fn fixture(code: &str) -> anyhow::Result<Fixture> {
     let id = Uuid::now_v7();
     workers.start_with_watchdog(
         WorkerLaunch {
+            generation: crate::services::vod_lifecycle::VodLifecycle::new()
+                .begin_generation(Uuid::now_v7(), false)
+                .unwrap(),
             session_id: id,
             handle: child(code)?,
             permit: Arc::clone(&semaphore).acquire_owned().await?,

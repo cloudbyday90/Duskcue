@@ -2,19 +2,13 @@
 // Copyright (C) 2026-2026 Duskcue Contributors
 // Licensed under AGPL-3.0. See LICENSE for details.
 
-use std::pin::Pin;
-use std::sync::{
-    Arc,
-    atomic::{AtomicBool, Ordering},
-};
-use std::task::{Context, Poll};
-
 use axum::body::to_bytes;
 use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
-use tokio::io::{AsyncRead, AsyncSeekExt, AsyncWriteExt, ReadBuf};
+use tokio::io::{AsyncSeekExt, AsyncWriteExt};
 use tokio_stream::StreamExt;
 
-use super::{CHUNK_BYTES, response, stream_body};
+use super::{CHUNK_BYTES, response, response_owned};
+use crate::services::vod_lifecycle::VodLifecycle;
 
 struct Fixture(std::path::PathBuf);
 
@@ -111,68 +105,61 @@ async fn empty_and_unsatisfiable_ranges_use_opened_file_size() {
     assert_eq!(result.headers()[header::CONTENT_RANGE], "bytes */5");
 }
 
-struct TrackedReader {
-    dropped: Arc<AtomicBool>,
-}
-
-impl AsyncRead for TrackedReader {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        _: &mut Context<'_>,
-        buf: &mut ReadBuf<'_>,
-    ) -> Poll<std::io::Result<()>> {
-        let length = buf.remaining().min(CHUNK_BYTES);
-        static ZEROES: [u8; CHUNK_BYTES] = [0; CHUNK_BYTES];
-        buf.put_slice(&ZEROES[..length]);
-        Poll::Ready(Ok(()))
-    }
-}
-
-impl Drop for TrackedReader {
-    fn drop(&mut self) {
-        self.dropped.store(true, Ordering::SeqCst);
-    }
-}
-
 #[tokio::test]
 async fn response_cancellation_releases_the_owned_reader() {
-    let dropped = Arc::new(AtomicBool::new(false));
-    let mut stream = stream_body(
-        TrackedReader {
-            dropped: dropped.clone(),
-        },
-        u64::MAX,
-    )
-    .into_data_stream();
-    assert_eq!(stream.next().await.unwrap().unwrap().len(), CHUNK_BYTES);
-    assert!(!dropped.load(Ordering::SeqCst));
+    let fixture = Fixture::new();
+    tokio::fs::write(&fixture.0, vec![0; CHUNK_BYTES * 8])
+        .await
+        .unwrap();
+    let owner = VodLifecycle::new();
+    let mut stream = response_owned(&owner, &fixture.0, &HeaderMap::new())
+        .await
+        .unwrap()
+        .into_body()
+        .into_data_stream();
+    assert!(stream.next().await.unwrap().unwrap().len() <= CHUNK_BYTES);
     drop(stream);
-    assert!(dropped.load(Ordering::SeqCst));
+    owner.close();
+    owner.drain_responses().await.unwrap();
+    assert!(owner.complete());
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        assert!(
+            std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .open(&fixture.0)
+                .is_ok()
+        );
+    }
 }
 
 #[tokio::test]
 async fn opened_length_limits_a_growing_reader() {
-    let dropped = Arc::new(AtomicBool::new(false));
-    let result = to_bytes(
-        stream_body(
-            TrackedReader {
-                dropped: dropped.clone(),
-            },
-            17,
-        ),
-        17,
-    )
-    .await
-    .unwrap();
-    assert_eq!(result.len(), 17);
-    assert!(dropped.load(Ordering::SeqCst));
+    let fixture = Fixture::new();
+    tokio::fs::write(&fixture.0, [7; 17]).await.unwrap();
+    let result = response(&fixture.0, &HeaderMap::new()).await.unwrap();
+    let mut append = tokio::fs::OpenOptions::new()
+        .append(true)
+        .open(&fixture.0)
+        .await
+        .unwrap();
+    append.write_all(&[8; 17]).await.unwrap();
+    append.flush().await.unwrap();
+    drop(append.into_std().await);
+    assert_eq!(result.headers()[header::CONTENT_LENGTH], "17");
+    assert_eq!(
+        to_bytes(result.into_body(), 17).await.unwrap(),
+        &[7; 17][..]
+    );
 }
 
 #[cfg(target_os = "linux")]
 #[tokio::test]
 async fn cancelled_file_body_releases_its_actual_descriptor() {
     let fixture = Fixture::new();
-    tokio::fs::write(&fixture.0, [0_u8; 128 * 1024])
+    tokio::fs::write(&fixture.0, vec![0_u8; CHUNK_BYTES * 8])
         .await
         .unwrap();
     let descriptors = || {

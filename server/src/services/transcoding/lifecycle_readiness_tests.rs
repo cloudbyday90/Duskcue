@@ -40,6 +40,9 @@ async fn fixture(code: &str) -> anyhow::Result<WorkerFixture> {
     let handle = child(code)?;
     workers.start(
         WorkerLaunch {
+            generation: crate::services::vod_lifecycle::VodLifecycle::new()
+                .begin_generation(Uuid::now_v7(), false)
+                .unwrap(),
             session_id: id,
             handle,
             permit,

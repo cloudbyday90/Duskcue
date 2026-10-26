@@ -453,6 +453,21 @@ impl IntoResponse for AppError {
             }
         }
 
+        if matches!(
+            &self,
+            AppError::Playback(
+                crate::domains::playback::PlaybackError::LifecycleUnavailable
+                    | crate::domains::playback::PlaybackError::LifecycleCleanup
+            )
+        ) {
+            response
+                .headers_mut()
+                .insert("retry-after", HeaderValue::from_static("5"));
+            response.headers_mut().insert(
+                "cache-control",
+                HeaderValue::from_static("private, no-store"),
+            );
+        }
         response
     }
 }
@@ -1464,6 +1479,16 @@ fn playback_error_to_http(
             StatusCode::FORBIDDEN,
             "PLAY_002",
             "User lacks library access or play_media capability".into(),
+        ),
+        PlaybackError::LifecycleUnavailable => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "VOD_UNAVAILABLE",
+            "VOD output is temporarily unavailable".into(),
+        ),
+        PlaybackError::LifecycleCleanup => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "VOD_CLEANUP",
+            "VOD output cleanup could not be confirmed".into(),
         ),
         PlaybackError::TranscodeCapacityReached => (
             StatusCode::SERVICE_UNAVAILABLE,

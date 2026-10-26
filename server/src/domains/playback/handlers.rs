@@ -15,9 +15,8 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 use axum::Json;
-use axum::body::Body;
 use axum::extract::{ConnectInfo, Path, State};
-use axum::http::{HeaderMap, StatusCode, header};
+use axum::http::HeaderMap;
 use axum::response::Response;
 use sqlx::Row;
 use std::net::SocketAddr;
@@ -654,7 +653,10 @@ pub async fn stream_file(
     crate::domains::profiles::service::assert_media_access(&state.pool, &scope, media_item_id)
         .await?;
     let file_path = service::get_media_file_path(&state.pool, media_file_id).await?;
-    Ok(super::file_delivery::response(&file_path, &headers).await?)
+    Ok(
+        super::file_delivery::response_owned(&state.transcode_manager.output, &file_path, &headers)
+            .await?,
+    )
 }
 
 pub async fn get_transcode_manifest(
@@ -670,14 +672,7 @@ pub async fn get_transcode_manifest(
         session_id,
     )
     .await?;
-    let content = service::get_transcode_manifest(&state.transcode_manager, session_id).await?;
-
-    Ok(Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/vnd.apple.mpegurl")
-        .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
-        .body(Body::from(content))
-        .unwrap())
+    Ok(service::get_transcode_manifest(&state.transcode_manager, session_id).await?)
 }
 
 pub async fn get_transcode_playlist(
@@ -693,15 +688,7 @@ pub async fn get_transcode_playlist(
         session_id,
     )
     .await?;
-    let content =
-        service::get_transcode_playlist(&state.transcode_manager, session_id, &rendition).await?;
-
-    Ok(Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, "application/vnd.apple.mpegurl")
-        .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
-        .body(Body::from(content))
-        .unwrap())
+    Ok(service::get_transcode_playlist(&state.transcode_manager, session_id, &rendition).await?)
 }
 
 pub async fn get_transcode_segment(
@@ -717,25 +704,10 @@ pub async fn get_transcode_segment(
         session_id,
     )
     .await?;
-    let data =
+    Ok(
         service::get_transcode_segment(&state.transcode_manager, session_id, &rendition, &segment)
-            .await?;
-
-    let content_type = if segment.ends_with(".m4s") {
-        "video/iso.segment"
-    } else if segment.ends_with(".mp4") || segment.ends_with(".m4v") {
-        "video/mp4"
-    } else {
-        "application/octet-stream"
-    };
-
-    Ok(Response::builder()
-        .status(StatusCode::OK)
-        .header(header::CONTENT_TYPE, content_type)
-        .header(header::CONTENT_LENGTH, data.len().to_string())
-        .header(header::CACHE_CONTROL, "private, no-store")
-        .body(Body::from(data))
-        .unwrap())
+            .await?,
+    )
 }
 
 pub async fn list_streaming_policies(

@@ -1,5 +1,10 @@
 # Error Handling Design
 
+## VOD lifecycle refusal — October 26, 2026
+
+`VOD_UNAVAILABLE` represents closed or full VOD lifecycle admission; `VOD_CLEANUP` represents unavailable completion proof in the new internal owner. Both map to fixed 503 responses with Retry-After 5 and private, no-store. Existing authentication/object authorization still runs before lifecycle admission. Existing physical encoder capacity retains PLAY_003; worker Stop failures retain their existing PLAY_004/history-retry contract. Once media headers are sent, interrupted output fails the body instead of emitting a new JSON problem or successful EOF. [VOD lifecycle](VOD_OUTPUT_LIFECYCLE.md) owns resource bounds and cleanup qualification.
+
+
 ## Owner session-context binding — October 26, 2026
 
 `OWNER_007` is a fixed 409 refusal for a supplied owner-management context that no longer matches current database scope. Malformed/duplicate bindings retain `OWNER_005`/400. The client preserves an allowlist of fixed owner/auth codes while discarding arbitrary error details, so `OWNER_002`/401 is distinguished from independently confirmed viewing-session expiry. [Household management client](HOUSEHOLD_MANAGEMENT_CLIENT.md) owns explicit recovery, bounds and qualification.

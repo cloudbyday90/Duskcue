@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-Research and design review, October 26, 2026, against `3127055` on main. The user confirmed the six product choices below. The complete implementation contract awaits final shared-understanding confirmation. No new VOD implementation or lifecycle qualification is claimed yet.
+Scoped implementation and qualification complete, October 26, 2026, on main. Research began against `3127055`; all six choices and the complete implementation contract were confirmed before coding. The verification record below binds the qualified working tree and runtime image. Main only; no release.
 
 [Build order](../../BUILD_ORDER.md), [shared admission](PLAYBACK_ADMISSION.md), [streaming](STREAMING.md), [recovery](PLAYBACK_RECOVERY.md), [direct fallback](PLAYBACK_DIRECT_FALLBACK.md), [memory](MEMORY.md) and [root lifecycle](SSE_LIFECYCLE.md) retain their existing authority. This increment establishes the physical ownership needed before production viewer admission. It does not attach the viewer ledger, prune its receipts, change client playback protocols or enable Live TV playback. The supplied private feed fixtures remain ignored; this VOD increment does not need to fetch them.
 
@@ -64,6 +64,18 @@ URLs below were discovered through MCP search or retrieved primary-page links an
 
 Recommended stack: retain Rust/Cargo 1.99.1, Axum/Hyper, existing HTTP body types, Tokio 1.52.3, Tokio-util 0.7.18 and tokio-process-tools 0.11.2. Use focused internal modules for admission, generations, retained commands, file I/O, bounded queues/body polling, cleanup and root completion. Extend the existing process supervisor and platform sandbox. Add no external coordinator, new dependency or broad singleton.
 
+## Implementation notes
+
+Normal builds now share one internal owner per TranscodeManager. Focused owner/generation/command/read/I/O/queue/body modules retain accepted work; root joins it alongside HTTP under the existing budgets. Starts reserve generation and command capacity atomically with retained task registration. Replacement commands keep old retirement and new preparation owned through observer loss. The existing supervisor retains retry sequencing, physical encoder permits and completed output; reader retirement precedes cache deletion. The unused map-based orphan sweep is removed rather than treating missing in-memory metadata as cleanup authority for an old instance.
+
+The worker control record retains encoder capacity through unexpected supervisor exit; the actor releases it only after confirmed physical completion. A destructor guard irreversibly retires the generation on lost task completion. Test-only abort handles exercise actual task loss with a real child, independently verify child exit and confirm that the uncertain slot and cache remain quarantined. There is no production abort hook or cleanup-proof override. Retained direct preparation captures only Range fields; HLS playlists retain explicit byte lengths before streaming.
+
+Startup filesystem inspection is retained separately from its caller's timeout. Linux bootstrap observation uses a nonblocking AsyncFd; closing that observer does not leave a blocking filesystem operation. Source-origin inspection also remains owned through timeout. Delivery actors finish outstanding operations and convert Tokio files to standard handles asynchronously before dropping them. Unpolled bodies cannot prevent root queue discard, while unexpected completion loss quarantines capacity and prevents successful root closure.
+
+An additional finite command budget of 128 prevents repeated cleanup observers from accumulating unbounded retained tasks. Stop remains admitted after closure when a command slot is available; internal start cleanup stays within its already-owned command. These are service bounds rather than household viewer policy.
+
+Native qualification exposed an existing Windows cache-path defect: FFmpeg wrote the initialization file in the process directory for a backslash-form playlist path. The [FFmpeg 8.1 HLS source](https://www.ffmpeg.org/doxygen/8.1/hlsenc_8c_source.html), discovered and opened through MCP, confirms that fMP4 setup derives that directory using the last forward slash. Windows HLS output arguments now use forward slashes and normal DOS/UNC spelling; Linux arguments retain their original spelling. The existing owned-cache checks remain authoritative. The failed fixture artifact was retained only under ignored diagnostic storage.
+
 ## Complete contract for shared-understanding confirmation
 
 ### Ownership and scope
@@ -108,8 +120,32 @@ Record corrected attempts, exact qualified source, receipts and limits. Run form
 
 Before implementation, guarded `cargo-test --lib services::transcoding::lifecycle` passes 17 cases with one existing real-FFmpeg fixture ignore, 992 filtered cases and no failures in 6.77 seconds. Receipt: `.cache/testing-memory/2026-10-26T19-33-10-077Z-ea3946da-d55f-4d84-94bf-2541b8d41b73.jsonl`. This is existing worker regression, not new VOD root/output qualification.
 
-All six choices are confirmed. The complete contract above still requires the [review skill](../../.agents/skills/grilling/SKILL.md)'s final shared-understanding confirmation: “Do not act on it until the user confirms you have reached a shared understanding.” Implementation follows that confirmation. Approved standard legal headers remain permitted; explanatory code comments remain excluded.
+All six choices and the complete contract above were confirmed before implementation under the [review skill](../../.agents/skills/grilling/SKILL.md). Approved standard legal headers remain permitted; explanatory code comments remain excluded.
 
 ## Random PR and Dependabot cleanup
 
 The [maintenance outcome](../operations/DEPENDABOT_MAINTENANCE.md) records singleton random selection of open PR 5, inspection of both exact patches/current lockfiles and verified closure without merge. No applicable code patch or rebase was needed; no downgrade or future-update suppression was performed.
+
+## Verification outcome
+
+Final managed Linux source inventory: `62a96b2f740e40fbf627e5ef982cf3d6cd464f02a5d674243bb825879b944d20`. Immutable amd64 runtime: `sha256:7caeabf5f2a81517bb81b4b13a27d507ada3c0d0ae36d37cbbc331133c9e1909`, based on `sha256:f45eda1c8bbe3a9685196aae1200543601ec5efc2fb0f858ca863dd9d42ae8dc`. Ignored local evidence contains no publishable private feed values.
+
+| Qualification | Result and local evidence |
+|---|---|
+| Default Rust library | 1,014 passed, nine existing fixture ignores, 70.81 seconds. `library-final.txt`; memory receipt `2026-10-26T21-56-49-355Z-56f2a321-0cad-4ebf-b3e0-2e9de8ec9c8e.jsonl`. |
+| Native Windows VOD | Eight groups / eighteen tests passed, including real FFmpeg completion/cancellation, actual worker-task loss, manager seek/recovery, authenticated HLS/PostgreSQL, held-file/root deadline and Stop history/profile serialization. Resource `b1885d20-1f87-4e83-8fe4-1d11d10f6cbc`; receipt `2026-10-26T21-36-17-757Z-475a9e73-8d8b-4c8e-86a4-d68e2e0aa32a.jsonl`. |
+| Managed Linux VOD | Six fresh restricted library groups / seventeen tests plus the actual Stop/recovery integration test passed. Root observed its real thirty-second refusal before successful retry; integration passed in 42.76 seconds. Resource `898a0b6e-1c0b-41cd-b39e-7c635a5e2705`; receipt `2026-10-26T22-30-21-827Z-f3ca0cae-ffea-47b4-add6-edc184af1ae3.jsonl`. Owned cleanup passed. |
+| Root HTTP/TLS/process regression | Three passed in 247.96 seconds, including actual HTTP/pool deadlines, connected clients, second signals and pool ordering. Receipt `2026-10-26T20-51-46-043Z-b0b6b089-86f1-48b6-9e84-18efc8aad1b9.jsonl`. Later worker-guard/header refinements did not alter this runtime module. |
+| Final all-target feature lint | Diagnostic completed with existing 28 library / 32 library-test warnings and two existing Tonight navigation casts; no introduced lifecycle warning. Strict lint remains blocked by that baseline, without new suppressions. Diagnostic receipt `2026-10-26T22-28-43-864Z-ba90fcda-8c17-4df0-8378-cb67a5ea5e09.jsonl`; strict receipt `2026-10-26T22-33-01-614Z-b1c3755d-e198-492a-b6f2-2537075a2ad1.jsonl`. |
+
+Linux compilation retains two Cargo jobs, a thirty-minute deadline and 32-MiB logs. Runtime retains four GiB, two CPUs, 256 PIDs, read-only root, unprivileged identity, dropped capabilities, no-new-privileges and bounded tmpfs. Guest preflight requires 5.5 GiB available; active reserve remains 1.5 GiB. The VOD lane reuses the existing owned Docker memory probe, avoiding per-sample WSL control-process startup while preserving engine/boot identity, five-second metadata timeout and ten-second freshness. No guard or guest allocation was changed.
+
+Corrected attempts remain failed evidence: an initial reserve refusal; a cold compiler deadline after integration compilation; a WSL metadata timeout; another reserve refusal; and successful compilation followed by runtime isolation refusal. The last refusal exposed inherited data/cache volumes without bounded overlays in the new library runner. Explicit tmpfs overlays now retain the strict isolation check. Native attempts exposed the Windows HLS separator defect and premature destructor-guard capture; both were corrected and exercised by final normal/aborted-worker tests. Intentional panic fixtures verify retained failure ownership.
+
+Classifarr was temporarily stopped only under explicit user authorization, with exact container/image checks and restoration in a finally block. It was restored running and healthy after each handoff. Harmoniarr and unrelated services were not stopped. The final retry reused completed compilation, while every runtime group executed afresh. Media, database credentials and supplied private feed values remain ignored.
+
+Final workflow regression passes twenty-six cases with two existing skips; receipt `2026-10-26T22-34-21-318Z-20b61449-51ac-46e8-ab18-97badbfe1297.jsonl`. Formatting and staged whitespace pass. Copyright checks include all newly staged sources: 901 files pass. The staged publication check covers 51 task files and 685 local Markdown links with zero missing targets or supplied-private-value matches. Recomputed compiler/qualification source inventory still matches the final Linux receipt; documentation-only changes do not replace that evidence.
+
+## Next item
+
+The user's clarification requests Linux build/qualification durability across retries. [Linux build durability](../ci/LINUX_BUILD_DURABILITY.md) records the concrete proposed checkpoint/cache contract and pending architecture confirmation; it is not claimed implemented here. After that focused tooling work, coordinate VOD admission, direct/HLS delivery and every online client's explicit start/renewal/recovery/Stop outcomes, with bounded terminal-receipt retention, before enabling shared viewer caps or Live TV playback. Browser presentation, ARM64 execution, physical GPU failure, unrelated background jobs and full filesystem fault portability are not established by this increment.

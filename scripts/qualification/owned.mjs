@@ -19,6 +19,7 @@ export async function metadata(args) {
 
 export function validateContainer(info, expected) {
     const host = info.HostConfig || {};
+    if (expected.entrypoint && JSON.stringify(info.Config?.Entrypoint) !== JSON.stringify([expected.entrypoint])) throw new Error('Owned qualification entrypoint changed.');
     if (info.Id !== expected.id || info.Name !== `/${expected.name}` || info.Config?.Labels?.['duskcue.test.resource-id'] !== expected.resourceId
         || host.Privileged || host.Memory !== expected.memory || host.MemorySwap !== expected.memory || host.NanoCpus !== 2000000000
         || Number(host.PidsLimit) !== expected.pids || !host.SecurityOpt?.includes('no-new-privileges')
@@ -51,17 +52,19 @@ export function ownedDocker(directory, resourceId, transport = { command: docker
         return validateContainer(await transport.metadata(['inspect', expected.id, '--format', '{{json .}}']), expected);
     }
     return {
-        async create(imageId, args, { memory = 536870912, pids = 128, environment = {}, network = 'none', user, readOnly = false, tmpfs = {}, noHealthcheck = false } = {}) {
+        async create(imageId, args, { memory = 536870912, pids = 128, environment = {}, network = 'none', user, readOnly = false, tmpfs = {}, noHealthcheck = false, entrypoint } = {}) {
             if (!/^sha256:[a-f0-9]{64}$/.test(imageId) || !/^[a-f0-9-]{36}$/.test(resourceId)) throw new Error('Immutable image and workflow identity required.');
             if (readOnly && (!user || !Object.keys(tmpfs).length || Object.entries(tmpfs).some(([path, options]) => !/^\/[A-Za-z0-9_./-]+$/.test(path)
                 || !/^rw,nosuid,nodev,(?:noexec,)?size=[0-9]+(?:,uid=[0-9]+,gid=[0-9]+)?(?:,mode=[0-7]{3,4})?$/.test(options)))) throw new Error('Read-only qualification requires an explicit user and bounded safe tmpfs mounts.');
+            if (entrypoint && entrypoint !== '/qualification/evidence/vod-lib-tests') throw new Error('Unknown qualification entrypoint.');
             const name = `duskcue-playback-${randomUUID()}`;
-            const expected = { id: null, name, resourceId, memory, pids, readOnly, user, network, image: imageId, tmpfs, noHealthcheck };
+            const expected = { id: null, name, resourceId, memory, pids, readOnly, user, network, image: imageId, tmpfs, noHealthcheck, entrypoint };
             containers.set(name, expected);
             const command = ['create', '--pull=never', '--name', name, '--label', `duskcue.test.resource-id=${resourceId}`, '--memory', String(memory), '--memory-swap', String(memory), '--cpus=2', '--pids-limit', String(pids), '--cap-drop=ALL', '--security-opt=no-new-privileges', '--network', network];
             if (user) command.push('--user', user);
             if (readOnly) command.push('--read-only');
             if (noHealthcheck) command.push('--no-healthcheck');
+            if (entrypoint) command.push('--entrypoint', entrypoint);
             for (const [path, options] of Object.entries(tmpfs)) command.push('--tmpfs', `${path}:${options}`);
             for (const [key, value] of Object.entries(environment)) command.push('--env', `${key}=${value}`);
             command.push(imageId, ...args);

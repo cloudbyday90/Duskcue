@@ -2,6 +2,7 @@
 // Copyright (C) 2026-2026 Duskcue Contributors
 // Licensed under AGPL-3.0. See LICENSE for details.
 
+import { runVodRuntime } from '../qualification/vod-runtime.mjs';
 import { randomBytes } from 'node:crypto';
 import { appendFile, lstat, readFile, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -30,7 +31,7 @@ const pids = 256;
 
 async function main() {
     const options = parseRecoveryInvocation(process.argv.slice(2));
-    const { sourceCapabilities, formatCorpus, nativeRecovery, liveClients, directBrowser } = options;
+    const { vodOutput, sourceCapabilities, formatCorpus, nativeRecovery, liveClients, directBrowser } = options;
     const nativeManifest = liveClients ? await readQualification(options.nativeManifestPath) : null;
     const sources = directBrowser ? directSources : recoverySources;
     if (process.platform !== 'win32') throw new Error('Use the owning Windows build memory workflow for this local Docker Desktop qualification.');
@@ -75,8 +76,8 @@ async function main() {
         const samplePath = join(owner.directory, 'linux-memory.jsonl');
         const recordSample = (sample) => appendFile(samplePath, `${JSON.stringify(sample)}\n`);
         await recordSample(initial);
-        const args = ['--context', engine.context, 'build', '--progress=plain', `--platform=linux/${architecture}`, '--target=runtime', '-f', join(snapshot, 'docker/qualification/Dockerfile.recovery'), '--build-arg', `RUNTIME_IMAGE=${baseTag}`, '--build-arg', `RUNTIME_BASE_ID=${base.Id}`, '--build-arg', `SOURCE_SHA256=${result.source.sha256}`, '--build-arg', `NATIVE_RECOVERY_MODE=${nativeRecovery ? 'paced' : 'none'}`, '--build-arg', `FORMAT_CORPUS_MODE=${formatCorpus ? 'reference' : 'none'}`, '--build-arg', `SOURCE_CAPABILITIES_MODE=${sourceCapabilities ? 'exact' : 'none'}`, '-t', runtimeTag, snapshot];
-        const probe = nativeRecovery ? await createLinuxDockerProbe(owner, engine, initial) : null;
+        const args = ['--context', engine.context, 'build', '--progress=plain', `--platform=linux/${architecture}`, '--target=runtime', '-f', join(snapshot, 'docker/qualification/Dockerfile.recovery'), '--build-arg', `RUNTIME_IMAGE=${baseTag}`, '--build-arg', `RUNTIME_BASE_ID=${base.Id}`, '--build-arg', `SOURCE_SHA256=${result.source.sha256}`, '--build-arg', `VOD_OUTPUT_MODE=${vodOutput ? 'owned' : 'none'}`, '--build-arg', `NATIVE_RECOVERY_MODE=${nativeRecovery ? 'paced' : 'none'}`, '--build-arg', `FORMAT_CORPUS_MODE=${formatCorpus ? 'reference' : 'none'}`, '--build-arg', `SOURCE_CAPABILITIES_MODE=${sourceCapabilities ? 'exact' : 'none'}`, '-t', runtimeTag, snapshot];
+        const probe = nativeRecovery || vodOutput ? await createLinuxDockerProbe(owner, engine, initial) : null;
         try {
             const monitored = probe?.initial || initial;
             const admitted = evaluateLinuxHeadroom(monitored, initial);
@@ -85,7 +86,7 @@ async function main() {
             result.compilation = await runCompilerCommand(workspace, args, owner, engine, monitored, recordSample, probe?.read);
         } finally { if (probe) result.compilerProbeCleanup = { removed: await probe.cleanup(), passed: true }; }
         if ((await sources(workspace)).sha256 !== result.source.sha256 || (await sources(snapshot)).sha256 !== result.source.sha256) throw new Error('Current recovery sources changed during compilation.');
-        result.image = validateRecoveryImage(await metadata(['image', 'inspect', runtimeTag, '--format', '{{json .}}']), { source: result.source.sha256, base: base.Id, architecture, nativeRecovery, formatCorpus, sourceCapabilities });
+        result.image = validateRecoveryImage(await metadata(['image', 'inspect', runtimeTag, '--format', '{{json .}}']), { source: result.source.sha256, base: base.Id, architecture, nativeRecovery, formatCorpus, sourceCapabilities, vodOutput });
         const assets = directBrowser ? await prepareDirectBrowser(workspace, owner.directory) : null;
         reserve = await watchLinuxReserve(engine, recordSample);
         result.runtimeLinuxPreflight = reserve.initial;
@@ -116,6 +117,7 @@ async function main() {
             result.postgresFixtureSettings = JSON.parse(observed.stdout);
             if (result.postgresFixtureSettings.sharedBuffersBytes !== 16777216 || result.postgresFixtureSettings.maxConnections !== 16) throw new Error('The paced disposable database settings do not match the bounded fixture profile.');
         }
+        if (vodOutput) result.vodOutput = await runVodRuntime({ ownership, image: result.image.id, pg, databaseUrl, password, resourceId: owner.resourceId, directory: owner.directory, reserve });
         result.testLinuxPreflight = await reserve.admit();
         const runtime = await ownership.create(result.image.id, [STOP_CASE, '--exact', '--include-ignored', '--nocapture'], { memory, pids, network: `container:${pg}`, user: '65532:65532', readOnly: true,
             tmpfs: { '/tmp': 'rw,nosuid,nodev,noexec,size=67108864,uid=65532,gid=65532,mode=1770', '/src/.cache/tonight-server-stop': 'rw,nosuid,nodev,size=536870912,uid=65532,gid=65532,mode=1770', '/data': 'rw,nosuid,nodev,noexec,size=16777216,uid=65532,gid=65532,mode=1770', '/cache': 'rw,nosuid,nodev,noexec,size=16777216,uid=65532,gid=65532,mode=1770' },

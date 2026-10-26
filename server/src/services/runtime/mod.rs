@@ -28,10 +28,18 @@ pub async fn shutdown(
     }
     state.live_tv_catalog.close();
     state.event_streams.close();
+    state.transcode_manager.close();
     http.close();
     tracker.close();
     let drain = async {
         tokio::try_join!(
+            async {
+                state
+                    .transcode_manager
+                    .drain()
+                    .await
+                    .map_err(|_| ShutdownError)
+            },
             async {
                 if let Some(owner) = state.playback_admission.get() {
                     owner.drain().await.map_err(|_| ShutdownError)?;
@@ -51,6 +59,11 @@ pub async fn shutdown(
                 Ok::<_, ShutdownError>(())
             },
         )?;
+        state
+            .transcode_manager
+            .drain()
+            .await
+            .map_err(|_| ShutdownError)?;
         Ok::<_, ShutdownError>(())
     };
     tokio::time::timeout(Duration::from_secs(30), drain)

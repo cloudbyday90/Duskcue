@@ -154,7 +154,7 @@ async function main() {
             const log = `logs/case-${String(sequence++).padStart(3, '0')}.log`;
             const container = await ownership.create(result.image.id, ['case', test], { environment });
             const sourceClip = result.diagnosticSource?.path ? join(directory, result.diagnosticSource.path) : join(directory, 'producer/source.mkv');
-            if (REQUIRED_MANAGED_CASES.slice(0, 2).includes(test) || test === EVENT_CANDIDATE_CASE) {
+            if (REQUIRED_MANAGED_CASES.slice(0, 2).includes(test) || test === EVENT_CANDIDATE_CASE || test === 'services::transcoding::output_profile::tests::actual_completed_output_seek_recovery_and_root_retirement_are_owned') {
                 try { await ownership.copyIn(container, sourceClip, '/fixtures/source.mkv'); }
                 catch { result.cases.push({ test, passed: false, exactTests: 0, imageId: result.image.id, log, error: 'Fresh producer source is unavailable.' }); failed = true; await ownership.remove(container); continue; }
             }

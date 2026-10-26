@@ -83,6 +83,9 @@ impl Running {
             tokio::time::Instant::now() + crate::services::transcoding::readiness::STARTUP_TIMEOUT;
         workers.start(
             WorkerLaunch {
+                generation: crate::services::vod_lifecycle::VodLifecycle::new()
+                    .begin_generation(Uuid::now_v7(), false)
+                    .unwrap(),
                 session_id: id,
                 handle: spawned.handle,
                 permit,

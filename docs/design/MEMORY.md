@@ -1,5 +1,12 @@
 # Memory Management
 
+## VOD output ownership — October 26, 2026
+
+The [confirmed VOD lifecycle](VOD_OUTPUT_LIFECYCLE.md) is implemented and qualified on native Windows and managed amd64 Linux. Each TranscodeManager shares an internal owner with retained start/replacement/Stop commands, generation retirement, tracked worker destructors, file I/O and bounded response queues. Initial nonqueued limits are 128 output generations, 128 retained commands, 128 delivery responses and eight delivery I/O operations. Preparation, completed output and quarantined cleanup retain their generation capacity independently of encoder permits. Delivery uses 64-KiB chunks, at most two queued chunks and 1-MiB input/normalized playlists; segments stream at their opened length. These are finite service limits, not household viewer enforcement or a total process-memory ceiling.
+
+Root cancels application output immediately, observes outstanding file work and handle closure, and joins process/cache cleanup alongside HTTP under the existing shared thirty-second drain. A final VOD join observes cleanup admitted by already-active HTTP requests. PostgreSQL closure still follows successful joins with its separate sixty-second limit. A timeout or lost observer does not prove cleanup. The previously uncalled UUID-directory orphan sweep is removed; this increment does not infer authority to delete output from an unknown old instance. Unrelated background subprocesses and replay-receipt retention remain separate.
+
+
 ## October 2026 viewer admission budgets
 
 The [admission foundation](PLAYBACK_ADMISSION.md) uses eight nonqueued database command slots and at most 128 local reservation/resource entries, independently of a nullable household policy ceiling. Fingerprints are limited to 2 KiB. Each database operation has a three-second deadline, 500-ms lock timeout, 1,500-ms statement timeout and three-second transaction timeout; interrupted transactions default to connection discard without detaching a replacement beyond the shared pool bound. The one-second monitor scans bounded entries with rotating priority. Each owned resource has its own conservative renewable timer, so a busy monitor cannot extend the lease. Cleanup observation is ten seconds; exceeding it records a sticky failure while retaining actual completion ownership. Root keeps its shared thirty-second drain and sixty-second database-close budgets. These bounds qualify the internal foundation, not production VOD capacity or receipt retention.

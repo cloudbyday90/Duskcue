@@ -65,6 +65,7 @@ pub(super) async fn complete_asset(
     .await
 }
 
+#[cfg(test)]
 pub(super) async fn wait(
     directory: &Path,
     manifest: &Path,
@@ -81,18 +82,28 @@ pub(super) async fn confirm(
     session_id: uuid::Uuid,
     directory: &Path,
     manifest: &Path,
-    bootstrap: impl std::future::Future<Output = Result<(), PlaybackError>>,
+    bootstrap: impl std::future::Future<Output = Result<(), PlaybackError>> + Send + 'static,
     deadline: Instant,
 ) -> Result<(), PlaybackError> {
     let mut pending = workers
         .pending(session_id)
         .ok_or_else(|| failure("HLS startup worker ownership was lost"))?;
-    let startup = tokio::time::timeout_at(deadline, async {
-        let mut execution = workers
-            .execution(session_id)
-            .ok_or_else(|| failure("HLS startup worker ownership was lost"))?;
+    let generation = workers
+        .generation(session_id)
+        .ok_or(PlaybackError::LifecycleCleanup)?;
+    let owned_workers = workers.clone();
+    let directory = directory.to_path_buf();
+    let manifest = manifest.to_path_buf();
+    let startup = tokio::time::timeout_at(deadline, async move {
         bootstrap.await?;
-        wait(directory, manifest, &mut execution, deadline).await
+        generation
+            .inspect(async move {
+                let mut execution = owned_workers
+                    .execution(session_id)
+                    .ok_or_else(|| failure("HLS startup worker ownership was lost"))?;
+                inspect_until_ready(&directory, &manifest, &mut execution).await
+            })
+            .await
     })
     .await
     .unwrap_or_else(|_| Err(failure("first playable HLS startup deadline exceeded")));

@@ -9,55 +9,100 @@ use uuid::Uuid;
 use super::PlaybackError;
 use crate::services::transcoding::{TranscodeManager, TranscodeRendition};
 
+use crate::services::vod_lifecycle::{Content, PLAYLIST, Prepared};
+use axum::{
+    body::Body,
+    http::{StatusCode, header},
+    response::Response,
+};
+
+fn playlist_response(content: String) -> Result<Prepared, PlaybackError> {
+    if content.len() > PLAYLIST {
+        return Err(PlaybackError::SessionNotFound);
+    }
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, "application/vnd.apple.mpegurl")
+        .header(header::CONTENT_LENGTH, content.len().to_string())
+        .header(header::CACHE_CONTROL, "no-cache, no-store, must-revalidate")
+        .body(Body::empty())
+        .expect("static HLS headers");
+    let (parts, _) = response.into_parts();
+    Ok(Prepared {
+        status: parts.status,
+        headers: parts.headers,
+        content: Content::Bytes(content.into()),
+    })
+}
+
 pub async fn get_transcode_manifest(
     manager: &TranscodeManager,
     session_id: Uuid,
-) -> Result<String, PlaybackError> {
+) -> Result<Response, PlaybackError> {
+    manager.output.ensure_open()?;
     let session = manager
         .get_session(&session_id)
         .ok_or(PlaybackError::SessionNotFound)?;
-    let content = read_playlist(&session.manifest_path).await?;
-    let normalized = normalize_manifest(&content, session_id, &session.rendition_name)?;
-    if is_master(&content) {
-        for line in content
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty() && !line.starts_with('#'))
-        {
-            let (_, path) = variant_reference(line)?;
-            let metadata = tokio::fs::metadata(session.segment_dir.join(path))
-                .await
-                .map_err(|_| PlaybackError::SessionNotFound)?;
-            if !metadata.is_file() {
-                return Err(PlaybackError::SessionNotFound);
-            }
-        }
-    }
-    Ok(normalized)
+    manager
+        .output
+        .response(Some(session_id), move |ctx| {
+            Box::pin(async move {
+                let content = ctx
+                    .text(&session.manifest_path, &session.segment_dir)
+                    .await?;
+                let normalized = normalize_manifest(&content, session_id, &session.rendition_name)?;
+                if is_master(&content) {
+                    for line in content
+                        .lines()
+                        .map(str::trim)
+                        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+                    {
+                        let (_, path) = variant_reference(line)?;
+                        let id = ctx
+                            .open(&session.segment_dir.join(path), Some(&session.segment_dir))
+                            .await?;
+                        ctx.close_file(id).await;
+                    }
+                }
+                playlist_response(normalized)
+            })
+        })
+        .await
 }
 
 pub async fn get_transcode_playlist(
     manager: &TranscodeManager,
     session_id: Uuid,
     rendition: &str,
-) -> Result<String, PlaybackError> {
+) -> Result<Response, PlaybackError> {
+    manager.output.ensure_open()?;
     validate_rendition(rendition)?;
     let session = manager
         .get_session(&session_id)
         .ok_or(PlaybackError::SessionNotFound)?;
-    let manifest = read_playlist(&session.manifest_path).await?;
-    let path = rendition_playlist(
-        &manifest,
-        &session.segment_dir,
-        &session.manifest_path,
-        &session.rendition_name,
-        rendition,
-    )?;
-    let content = read_playlist(&path).await?;
-    if is_master(&content) {
-        return Err(PlaybackError::SessionNotFound);
-    }
-    normalize_manifest(&content, session_id, rendition)
+    let rendition = rendition.to_owned();
+    manager
+        .output
+        .response(Some(session_id), move |ctx| {
+            Box::pin(async move {
+                let manifest = ctx
+                    .text(&session.manifest_path, &session.segment_dir)
+                    .await?;
+                let path = rendition_playlist(
+                    &manifest,
+                    &session.segment_dir,
+                    &session.manifest_path,
+                    &session.rendition_name,
+                    &rendition,
+                )?;
+                let content = ctx.text(&path, &session.segment_dir).await?;
+                if is_master(&content) {
+                    return Err(PlaybackError::SessionNotFound);
+                }
+                playlist_response(normalize_manifest(&content, session_id, &rendition)?)
+            })
+        })
+        .await
 }
 
 pub async fn get_transcode_segment(
@@ -65,30 +110,61 @@ pub async fn get_transcode_segment(
     session_id: Uuid,
     rendition: &str,
     filename: &str,
-) -> Result<Vec<u8>, PlaybackError> {
+) -> Result<Response, PlaybackError> {
+    manager.output.ensure_open()?;
     validate_rendition(rendition)?;
     validate_segment_filename(filename)?;
     let session = manager
         .get_session(&session_id)
         .ok_or(PlaybackError::SessionNotFound)?;
-    let manifest = read_playlist(&session.manifest_path).await?;
-    let playlist = rendition_playlist(
-        &manifest,
-        &session.segment_dir,
-        &session.manifest_path,
-        &session.rendition_name,
-        rendition,
-    )?;
-    let directory = playlist.parent().ok_or(PlaybackError::SessionNotFound)?;
-    tokio::fs::read(directory.join(filename))
+    let rendition = rendition.to_owned();
+    let filename = filename.to_owned();
+    manager
+        .output
+        .response(Some(session_id), move |ctx| {
+            Box::pin(async move {
+                let manifest = ctx
+                    .text(&session.manifest_path, &session.segment_dir)
+                    .await?;
+                let playlist = rendition_playlist(
+                    &manifest,
+                    &session.segment_dir,
+                    &session.manifest_path,
+                    &session.rendition_name,
+                    &rendition,
+                )?;
+                let directory = playlist.parent().ok_or(PlaybackError::SessionNotFound)?;
+                let id = ctx
+                    .open(&directory.join(&filename), Some(&session.segment_dir))
+                    .await?;
+                let length = ctx.metadata(id).await?.len();
+                let response = Response::builder()
+                    .status(StatusCode::OK)
+                    .header(
+                        header::CONTENT_TYPE,
+                        if filename.ends_with(".m4s") {
+                            "video/iso.segment"
+                        } else {
+                            "video/mp4"
+                        },
+                    )
+                    .header(header::CONTENT_LENGTH, length.to_string())
+                    .header(header::CACHE_CONTROL, "private, no-store")
+                    .body(Body::empty())
+                    .expect("static segment headers");
+                let (parts, _) = response.into_parts();
+                Ok(Prepared {
+                    status: parts.status,
+                    headers: parts.headers,
+                    content: Content::File {
+                        id,
+                        offset: 0,
+                        length,
+                    },
+                })
+            })
+        })
         .await
-        .map_err(|_| PlaybackError::SessionNotFound)
-}
-
-async fn read_playlist(path: &Path) -> Result<String, PlaybackError> {
-    tokio::fs::read_to_string(path)
-        .await
-        .map_err(|_| PlaybackError::SessionNotFound)
 }
 
 fn validate_rendition(name: &str) -> Result<(), PlaybackError> {
@@ -200,6 +276,7 @@ fn normalize_manifest(
     let master = is_master(content);
     let mut variants = std::collections::HashSet::new();
     let mut result = Vec::new();
+    let mut bytes = 0_usize;
     for line in content.lines() {
         let line = line.trim();
         if line.starts_with('#') && line.contains("URI=") {
@@ -233,6 +310,12 @@ fn normalize_manifest(
             });
         } else {
             result.push(line.to_string());
+        }
+        bytes = bytes
+            .saturating_add(result.last().map_or(0, String::len))
+            .saturating_add(1);
+        if bytes > PLAYLIST {
+            return Err(PlaybackError::SessionNotFound);
         }
     }
     Ok(format!("{}\n", result.join("\n")))

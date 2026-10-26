@@ -28,16 +28,41 @@ use super::FfmpegHandle;
 use super::failure::FailureClass;
 use super::watchdog::NO_PROGRESS_TIMEOUT;
 use crate::domains::playback::PlaybackError;
+use crate::services::vod_lifecycle::Generation;
+use tokio_util::task::TaskTracker;
 
 #[path = "lifecycle_execution.rs"]
 mod execution;
 pub(super) use execution::{ExecutionMonitor, ExecutionState, WorkerObservation};
 
 struct WorkerControl {
+    generation: Arc<Generation>,
+    encoder: Mutex<Option<OwnedSemaphorePermit>>,
+    #[cfg(test)]
+    task: Mutex<Option<tokio::task::AbortHandle>>,
     cancellation: watch::Sender<u64>,
     result: watch::Receiver<Option<Completion>>,
     execution: watch::Receiver<ExecutionState>,
     failure: Arc<Mutex<Option<FailureClass>>>,
+}
+
+struct WorkerCompletion {
+    generation: Arc<Generation>,
+    done: bool,
+}
+
+impl WorkerCompletion {
+    fn complete(&mut self) {
+        self.done = true;
+    }
+}
+
+impl Drop for WorkerCompletion {
+    fn drop(&mut self) {
+        if !self.done {
+            self.generation.fail();
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -57,12 +82,15 @@ fn report(
     }));
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub(super) struct TranscodeWorkers {
     workers: Arc<DashMap<Uuid, Arc<WorkerControl>>>,
+    tracker: TaskTracker,
+    lifetime: Arc<()>,
 }
 
 pub(super) struct WorkerLaunch {
+    pub generation: Arc<Generation>,
     pub session_id: Uuid,
     pub handle: FfmpegHandle,
     pub permit: OwnedSemaphorePermit,
@@ -72,6 +100,7 @@ pub(super) struct WorkerLaunch {
 
 pub(super) struct WorkerCancellation {
     sender: watch::Sender<u64>,
+    generation: Arc<Generation>,
     armed: bool,
 }
 
@@ -84,6 +113,7 @@ impl WorkerCancellation {
 impl Drop for WorkerCancellation {
     fn drop(&mut self) {
         if self.armed {
+            self.generation.retire();
             self.sender
                 .send_modify(|request| *request = request.saturating_add(1));
         }
@@ -108,6 +138,7 @@ impl TranscodeWorkers {
         timeout: Duration,
     ) {
         let WorkerLaunch {
+            generation,
             session_id,
             handle,
             permit,
@@ -115,32 +146,42 @@ impl TranscodeWorkers {
             shutdown,
         } = launch;
         let (cancellation, mut requests) = watch::channel(0);
+        let supervisor_cancellation = cancellation.clone();
         let (completion, result) = watch::channel(None);
         let (execution, execution_state) = watch::channel(ExecutionState::Running);
         let failure = Arc::new(Mutex::new(None));
-        self.workers.insert(
-            session_id,
-            Arc::new(WorkerControl {
-                cancellation,
-                result,
-                execution: execution_state,
-                failure: Arc::clone(&failure),
-            }),
-        );
+        let control = Arc::new(WorkerControl {
+            generation: generation.clone(),
+            encoder: Mutex::new(Some(permit)),
+            #[cfg(test)]
+            task: Mutex::new(None),
+            cancellation,
+            result,
+            execution: execution_state,
+            failure: Arc::clone(&failure),
+        });
+        self.workers.insert(session_id, control.clone());
         let registry = Arc::clone(&self.workers);
-        tokio::spawn(async move {
+        let worker_control = control.clone();
+        let mut worker_completion = WorkerCompletion {
+            generation: generation.clone(),
+            done: false,
+        };
+        let task = self.tracker.spawn(async move {
             let mut process = handle.terminate_on_drop(shutdown.clone());
-            let execution::SupervisedExecution {
-                outcome,
-                failure: classified,
-            } = execution::supervise(
-                &mut process,
-                &mut requests,
-                shutdown.clone(),
-                inspect,
-                timeout,
-            )
-            .await;
+            let execution::SupervisedExecution { outcome, failure: classified } = {
+                let supervised = execution::supervise(
+                    &mut process, &mut requests, shutdown.clone(), inspect, timeout,
+                );
+                tokio::pin!(supervised);
+                tokio::select! {
+                    result = &mut supervised => result,
+                    _ = generation.stop.cancelled() => {
+                        supervisor_cancellation.send_modify(|value| *value = value.saturating_add(1));
+                        supervised.await
+                    }
+                }
+            };
             let terminal_state = outcome.as_ref().copied().unwrap_or(ExecutionState::Failed);
             let terminal_state = if *requests.borrow() > 0 {
                 ExecutionState::Cancelled
@@ -176,22 +217,25 @@ impl TranscodeWorkers {
                 }
             }
             drop(process);
-            drop(permit);
+            if let Ok(mut permit) = worker_control.encoder.lock() {
+                permit.take();
+            } else {
+                generation.fail();
+            }
             if *requests.borrow_and_update() == 0 {
                 let _ = requests.changed().await;
             }
             loop {
-                match tokio::fs::remove_dir_all(&directory).await {
+                let cleanup_result = match generation.drain().await {
+                    Ok(()) => crate::services::vod_lifecycle::remove_cache(&directory).await,
+                    Err(error) => Err(error),
+                };
+                match cleanup_result {
                     Ok(()) => {
                         cleanup();
                         report(&completion, &mut requests, Ok(()));
                         registry.remove(&session_id);
-                        return;
-                    }
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                        cleanup();
-                        report(&completion, &mut requests, Ok(()));
-                        registry.remove(&session_id);
+                        worker_completion.complete();
                         return;
                     }
                     Err(_) => {
@@ -207,6 +251,12 @@ impl TranscodeWorkers {
                 }
             }
         });
+        #[cfg(test)]
+        {
+            *control.task.lock().expect("test task registration") = Some(task.abort_handle());
+        }
+        #[cfg(not(test))]
+        drop(task);
     }
 
     pub(super) async fn stop(&self, session_id: Uuid) -> Result<bool, PlaybackError> {
@@ -218,6 +268,7 @@ impl TranscodeWorkers {
             return Ok(false);
         };
         let mut result = control.result.clone();
+        control.generation.retire();
         if result
             .borrow()
             .as_ref()
@@ -252,6 +303,7 @@ impl TranscodeWorkers {
             .get(&session_id)
             .map(|entry| WorkerCancellation {
                 sender: entry.cancellation.clone(),
+                generation: entry.generation.clone(),
                 armed: true,
             })
     }
@@ -275,6 +327,32 @@ impl TranscodeWorkers {
     pub(super) fn failure(&self, session_id: Uuid) -> Option<FailureClass> {
         self.observation(session_id)?.snapshot().failure
     }
+
+    pub(super) fn generation(&self, session_id: Uuid) -> Option<Arc<Generation>> {
+        self.workers
+            .get(&session_id)
+            .map(|entry| entry.generation.clone())
+    }
+
+    pub(super) fn cancel_all(&self) {
+        for entry in self.workers.iter() {
+            entry.generation.retire();
+            entry
+                .cancellation
+                .send_modify(|value| *value = value.saturating_add(1));
+        }
+    }
+
+    pub(super) async fn drain(&self) -> Result<(), PlaybackError> {
+        self.cancel_all();
+        self.tracker.close();
+        self.tracker.wait().await;
+        if self.workers.is_empty() {
+            Ok(())
+        } else {
+            Err(PlaybackError::LifecycleCleanup)
+        }
+    }
 }
 
 async fn wait_for_cancellation(requests: &mut watch::Receiver<u64>) {
@@ -297,6 +375,9 @@ fn physically_complete<T>(result: &tokio_process_tools::WaitForCompletionResult<
 
 impl Drop for TranscodeWorkers {
     fn drop(&mut self) {
+        if Arc::strong_count(&self.lifetime) != 1 {
+            return;
+        }
         for entry in self.workers.iter() {
             entry
                 .cancellation

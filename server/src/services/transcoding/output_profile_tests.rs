@@ -43,6 +43,98 @@ fn params() -> StartSessionParams {
     }
 }
 
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires guarded real eight-second source and verified FFmpeg on child-only PATH"]
+async fn actual_completed_output_seek_recovery_and_root_retirement_are_owned() -> anyhow::Result<()>
+{
+    anyhow::ensure!(std::env::var("DUSKCUE_TEST_RESOURCE_ID").is_ok());
+    let source =
+        std::path::PathBuf::from(std::env::var("DUSKCUE_TEST_PLAYBACK_SOURCE")?).canonicalize()?;
+    anyhow::ensure!(source.is_file() && source.metadata()?.len() < 2 * 1024 * 1024);
+    let root = std::env::temp_dir()
+        .canonicalize()?
+        .join(format!("duskcue-vod-manager-{}", Uuid::now_v7()));
+    tokio::fs::create_dir(&root).await?;
+    let mut config = crate::state::RuntimeConfig::default();
+    config.cpu.hw_accel_auto_detect = false;
+    config.resource_limits.max_concurrent_transcodes = 1;
+    config.transcoding.segment_duration_seconds = 2;
+    let manager = TranscodeManager::new(Arc::new(arc_swap::ArcSwap::from_pointee(config)));
+    let mut parameters = params();
+    parameters.source_path = source;
+    parameters.source_video_codec = "h264".into();
+    parameters.source_video_resolution = (320, 180);
+    parameters.source_audio_codec = "aac".into();
+    parameters.source_video_stream_index = Some(1);
+    parameters.source_audio_stream_index = Some(0);
+    parameters.output_profile = None;
+    parameters.subtitle_stream_index = None;
+    parameters.subtitle_stream_ordinal = None;
+    parameters.subtitle_burn_in = false;
+    parameters.target_resolution = Some((320, 180));
+    parameters.seek_position_ms = None;
+    parameters.recovery_attempts = 0;
+    let first = manager
+        .start_session(parameters, &root)
+        .await
+        .map_err(|error| anyhow::anyhow!("first output: {error}"))?;
+    tokio::time::timeout(std::time::Duration::from_secs(10), async {
+        while !manager
+            .get_session(&first.id)
+            .is_some_and(|s| s.is_complete)
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    })
+    .await?;
+    assert_eq!(manager.semaphore.available_permits(), 1);
+    assert_eq!(manager.active_session_count(), 1);
+    let held =
+        crate::domains::playback::service::get_transcode_manifest(&manager, first.id).await?;
+    let second = manager
+        .seek_session(first.id, 1000, &root)
+        .await
+        .map_err(|error| anyhow::anyhow!("seek output: {error}"))?;
+    assert_ne!(first.id, second.id);
+    assert!(!first.segment_dir.exists());
+    assert!(
+        axum::body::to_bytes(held.into_body(), 1024 * 1024)
+            .await
+            .is_err()
+    );
+    let action = crate::services::transcoding::recovery::RecoveryAction {
+        position_ms: 2000,
+        software: true,
+        skipped_ms: 0,
+        quality_reduced: false,
+    };
+    let third = manager
+        .recover_session(second.clone(), action, 1, &root)
+        .await
+        .map_err(|error| anyhow::anyhow!("recovery output: {error}"))?;
+    assert_ne!(second.id, third.id);
+    assert!(!second.segment_dir.exists());
+    let held =
+        crate::domains::playback::service::get_transcode_manifest(&manager, third.id).await?;
+    manager.close();
+    manager.drain().await?;
+    assert!(
+        axum::body::to_bytes(held.into_body(), 1024 * 1024)
+            .await
+            .is_err()
+    );
+    assert!(!third.segment_dir.exists());
+    assert_eq!(manager.active_session_count(), 0);
+    assert_eq!(manager.semaphore.available_permits(), 1);
+    assert!(matches!(
+        manager.seek_session(third.id, 0, &root).await,
+        Err(crate::domains::playback::PlaybackError::LifecycleUnavailable)
+    ));
+    anyhow::ensure!(root.parent() == Some(std::env::temp_dir().canonicalize()?.as_path()));
+    tokio::fs::remove_dir_all(root).await?;
+    Ok(())
+}
+
 #[test]
 fn compatible_rendition_preserves_the_admitted_descriptor_without_ladder_rounding() {
     let source = params();

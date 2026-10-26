@@ -13,13 +13,20 @@ use super::lifecycle::{ExecutionState, WorkerLaunch, WorkerObservation};
 use super::progress::ProgressParser;
 use super::*;
 use tokio_process_tools::Next;
+use tokio_util::sync::CancellationToken;
 
 impl TranscodeManager {
-    pub async fn start_session(
+    pub(super) async fn start_owned(
         &self,
         mut params: StartSessionParams,
         data_dir: &Path,
+        stop: &CancellationToken,
+        first_id: Uuid,
     ) -> Result<TranscodeSession, PlaybackError> {
+        self.output.ensure_open()?;
+        if stop.is_cancelled() {
+            return Err(PlaybackError::LifecycleUnavailable);
+        }
         if let Some(profile) = params.output_profile {
             profile
                 .validate(&params)
@@ -34,7 +41,7 @@ impl TranscodeManager {
         params.hw_accel_override = Some(selected_hardware);
         let mut observation = None;
         let result = self
-            .start_attempt(params.clone(), data_dir, &mut observation)
+            .start_attempt(params.clone(), data_dir, &mut observation, stop, first_id)
             .await;
         let hardware_failed = observation.as_ref().is_some_and(|(id, observation)| {
             let snapshot = observation.snapshot();
@@ -50,7 +57,18 @@ impl TranscodeManager {
         {
             params.hw_accel_override = Some(HwAccelMethod::Software);
             params.recovery_attempts += 1;
-            return self.start_attempt(params, data_dir, &mut None).await;
+            let id = Uuid::now_v7();
+            self.output.begin_generation(id, false)?;
+            let result = self
+                .start_attempt(params, data_dir, &mut None, stop, id)
+                .await;
+            if result.is_err()
+                && !self.sessions.contains_key(&id)
+                && !self.preparations.contains_key(&id)
+            {
+                self.output.finish_generation(id);
+            }
+            return result;
         }
         result
     }
@@ -60,6 +78,8 @@ impl TranscodeManager {
         params: StartSessionParams,
         data_dir: &Path,
         observation: &mut Option<(Uuid, WorkerObservation)>,
+        stop: &CancellationToken,
+        session_id: Uuid,
     ) -> Result<TranscodeSession, PlaybackError> {
         let profiled_rendition = params
             .output_profile
@@ -154,7 +174,6 @@ impl TranscodeManager {
             rendition.audio_bitrate = bitrate;
         }
 
-        let session_id = Uuid::now_v7();
         let segment_dir = data_dir
             .join(transcoding.transcode_path.trim_start_matches('/'))
             .join(session_id.to_string());
@@ -240,11 +259,32 @@ impl TranscodeManager {
             &manifest_path.to_string_lossy(),
         ));
 
-        tokio::fs::create_dir_all(&segment_dir).await.map_err(|e| {
-            PlaybackError::FfmpegFailed(format!("failed to create segment dir: {e}"))
-        })?;
-
-        let spawned = spawn_session_ffmpeg(&args, session_id, &source_path, &segment_dir).await?;
+        self.output.ensure_open()?;
+        if stop.is_cancelled() {
+            return Err(PlaybackError::LifecycleUnavailable);
+        }
+        let generation = self.output.begin_generation(session_id, false)?;
+        self.preparations.insert(session_id, segment_dir.clone());
+        let preparation = async {
+            tokio::fs::create_dir_all(&segment_dir).await.map_err(|e| {
+                PlaybackError::FfmpegFailed(format!("failed to create segment dir: {e}"))
+            })?;
+            if stop.is_cancelled() || !generation.active() {
+                return Err(PlaybackError::LifecycleUnavailable);
+            }
+            spawn_session_ffmpeg(&args, session_id, &source_path, &segment_dir).await
+        }
+        .await;
+        let spawned = match preparation {
+            Ok(spawned) => spawned,
+            Err(error) => {
+                generation.drain().await?;
+                crate::services::vod_lifecycle::remove_cache(&segment_dir).await?;
+                self.preparations.remove(&session_id);
+                self.output.finish_generation(session_id);
+                return Err(error);
+            }
+        };
 
         let mut session = TranscodeSession {
             id: session_id,
@@ -289,10 +329,12 @@ impl TranscodeManager {
 
         let sessions = Arc::clone(&self.sessions);
         let cleanup_sessions = Arc::clone(&self.sessions);
+        let output = self.output.clone();
         let mut parser = ProgressParser::default();
         self.sessions.insert(session_id, session.clone());
         self.workers.start(
             WorkerLaunch {
+                generation: generation.clone(),
                 session_id,
                 handle: spawned.handle,
                 permit,
@@ -316,8 +358,10 @@ impl TranscodeManager {
             },
             move || {
                 cleanup_sessions.remove(&session_id);
+                output.finish_generation(session_id);
             },
         );
+        self.preparations.remove(&session_id);
 
         *observation = self
             .workers
@@ -328,16 +372,32 @@ impl TranscodeManager {
             .pending(session_id)
             .ok_or_else(|| PlaybackError::FfmpegFailed("HLS startup ownership was lost".into()))?;
         let deadline = tokio::time::Instant::now() + readiness::STARTUP_TIMEOUT;
-        self.confirm_startup(&session, spawned.readiness, deadline)
-            .await?;
+        {
+            let startup = self.confirm_startup(&session, spawned.readiness, deadline);
+            tokio::pin!(startup);
+            tokio::select! {
+                result = &mut startup => result?,
+                _ = stop.cancelled() => {
+                    generation.retire();
+                    let _ = startup.await;
+                    self.stop_owned(session_id).await?;
+                    return Err(PlaybackError::LifecycleUnavailable);
+                }
+            }
+        }
         if timestamp_preserving {
+            let directory = session.segment_dir.clone();
+            let manifest = session.manifest_path.clone();
             let origin = tokio::time::timeout_at(
                 deadline,
-                readiness::copied_source_origin(
-                    &session.segment_dir,
-                    &session.manifest_path,
-                    seek_position_ms.unwrap_or(0),
-                ),
+                generation.inspect(async move {
+                    readiness::copied_source_origin(
+                        &directory,
+                        &manifest,
+                        seek_position_ms.unwrap_or(0),
+                    )
+                    .await
+                }),
             )
             .await
             .unwrap_or_else(|_| {
@@ -348,7 +408,7 @@ impl TranscodeManager {
             let origin = match origin {
                 Ok(origin) => origin,
                 Err(error) => {
-                    self.stop_session(session_id).await?;
+                    self.stop_owned(session_id).await?;
                     return Err(error);
                 }
             };
@@ -363,7 +423,7 @@ impl TranscodeManager {
                 updated = true;
             }
             if !updated {
-                self.stop_session(session_id).await?;
+                self.stop_owned(session_id).await?;
                 return Err(PlaybackError::FfmpegFailed(
                     "HLS startup ownership was lost".into(),
                 ));

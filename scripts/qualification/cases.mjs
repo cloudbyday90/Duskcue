@@ -15,8 +15,10 @@ export const REQUIRED_MANAGED_CASES = Object.freeze([
 ]);
 
 export const PRODUCER_CASE = 'services::transcoding::arguments::tests::real_audio_first_default_description_and_selected_srt_decode_through_production_arguments';
-export const REQUIRED_UNIT_CASES = Object.freeze(['services::transcoding::arguments::tests::hls_output_defaults_to_append_only_event_publication']);
+export const REQUIRED_UNIT_CASES = Object.freeze(['services::transcoding::output_profile::tests::actual_completed_output_seek_recovery_and_root_retirement_are_owned', 'services::transcoding::arguments::tests::hls_output_defaults_to_append_only_event_publication']);
 export const REQUIRED_UNIT_PREFIXES = Object.freeze([
+    'services::vod_lifecycle::tests::',
+    'domains::playback::file_delivery::tests::',
     'services::transcoding::readiness::tests::',
     'services::transcoding::lifecycle::readiness_tests::',
     'services::transcoding::lifecycle::tests::',

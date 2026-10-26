@@ -102,13 +102,14 @@ impl TranscodeManager {
         attempts: u8,
         data_dir: &std::path::Path,
     ) -> Result<TranscodeSession, PlaybackError> {
-        self.stop_session(session.id).await?;
+        self.output.ensure_open()?;
+        let old_id = session.id;
         let mut params = session.restart_params(action.position_ms);
         if action.software {
             params.hw_accel_override = Some(HwAccelMethod::Software);
         }
         params.recovery_attempts = attempts;
-        self.start_session(params, data_dir).await
+        self.replace_session(old_id, params, data_dir).await
     }
 }
 

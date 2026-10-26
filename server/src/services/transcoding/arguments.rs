@@ -83,10 +83,25 @@ pub fn build_hls_output_args(
         "-hls_playlist_type".to_string(),
         "event".to_string(),
         "-hls_segment_filename".to_string(),
-        segment_filename.to_string(),
+        hls_output_path(segment_filename),
         "-y".to_string(),
-        manifest_path.to_string(),
+        hls_output_path(manifest_path),
     ]
+}
+
+fn hls_output_path(path: &str) -> String {
+    #[cfg(windows)]
+    {
+        let path = path.replace('\\', "/");
+        if let Some(unc) = path.strip_prefix("//?/UNC/") {
+            return format!("//{unc}");
+        }
+        path.strip_prefix("//?/").unwrap_or(&path).to_owned()
+    }
+    #[cfg(not(windows))]
+    {
+        path.to_owned()
+    }
 }
 
 pub fn build_stream_mapping_args(

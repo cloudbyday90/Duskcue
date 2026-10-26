@@ -1,5 +1,10 @@
 # Project Structure
 
+## Modular VOD ownership — October 2026
+
+[VOD lifecycle](VOD_OUTPUT_LIFECYCLE.md) adds focused internal `services/vod_lifecycle/` modules for owner/admission, generations, bounded queues/body polling, retained reads, file operations and response types. `transcoding/commands.rs` retains start/replacement commands while the existing lifecycle supervisor retains actual child cleanup. Playback handlers preserve authorization and delegate direct/HLS delivery through that owner. Root joins it without a new timeout, schema, dependency or global singleton. Qualification-only native and managed Linux orchestration stays under `scripts/testing-memory/`, `scripts/qualification/` and the existing recovery Docker recipe.
+
+
 ## Modular catalog services — October 25, 2026
 
 [Catalog implementation](IPTV_CATALOG.md) follows the five-file HTTP pattern under `live_tv/catalog/`, with focused authority, cursor, admission, limits, query and default-discard database services. A narrow `feed/imports/reader/` facade authenticates stored attribution/row bindings and returns typed metadata without exposing raw import models or stream/logo references. Separate migrations maintain session profile context and evidence-backed programme paging indexes. Both AppState constructors share infallible admission; root closes it before HTTP drain. `middleware/request_trace.rs` removes catalog paths/query values from request spans. No dependency/Cargo.lock or client UI change is required. Owned integration helpers and private library qualification fixtures remain outside normal builds.

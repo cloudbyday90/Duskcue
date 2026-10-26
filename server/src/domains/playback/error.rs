@@ -18,6 +18,11 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum PlaybackError {
+    #[error("VOD output is temporarily unavailable")]
+    LifecycleUnavailable,
+
+    #[error("VOD output cleanup could not be confirmed")]
+    LifecycleCleanup,
     #[error("media item not found")]
     MediaNotFound,
 

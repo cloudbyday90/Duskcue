@@ -1,5 +1,12 @@
 # Streaming & Transcoding Design
 
+## VOD lifecycle — October 2026
+
+The [confirmed worker/output contract](VOD_OUTPUT_LIFECYCLE.md) now has a normal-build implementation qualified on native Windows and managed amd64 Linux. Direct and HLS response actors share the TranscodeManager owner, with bounded file operations and application queues. Stop/seek/recovery retire the old HLS generation, cancel its accepted readers and finish owned I/O before removing cache. Successful FFmpeg completion releases encoder capacity while retaining playable output. Cleanup failure retains metadata and permits explicit Stop retry. Root cancellation also covers direct bodies; their existing route has no logical playback identity, so ordinary Stop does not newly correlate them.
+
+Authorized lifecycle closure or finite output-capacity refusal uses no-store 503/Retry-After 5. Range, MIME, opened-length and current profile/source authorization remain authoritative. Partial cancelled media returns an incomplete body, not a fabricated successful EOF. UUIDv7 generation identity and the existing logical play-session handoff remain separate. No new client replay or Live TV play action is introduced; production viewer admission remains unattached.
+
+
 ## October 2026 admission integration
 
 The [shared viewer admission foundation](PLAYBACK_ADMISSION.md) now owns the new internal ledger contract. Existing production start/direct/HLS paths remain outside that ledger until the VOD delivery, worker and client migration is qualified. Saved streaming limits and physical encoder permits alone do not establish an enforced household viewer cap. The seeded default remains unlimited Admin; zero and invalid policy semantics for new admission are defined in the admission authority.

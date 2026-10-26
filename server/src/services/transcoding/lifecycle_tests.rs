@@ -109,6 +109,9 @@ async fn actual_long_running_ffmpeg_is_terminated_before_its_permit_and_cache_ar
     let id = Uuid::now_v7();
     workers.start(
         WorkerLaunch {
+            generation: crate::services::vod_lifecycle::VodLifecycle::new()
+                .begin_generation(Uuid::now_v7(), false)
+                .unwrap(),
             session_id: id,
             handle,
             permit,
@@ -126,7 +129,8 @@ async fn actual_long_running_ffmpeg_is_terminated_before_its_permit_and_cache_ar
     ready(&seen).await?;
     assert_eq!(semaphore.available_permits(), 0);
     let before = std::time::Instant::now();
-    tokio::time::timeout(Duration::from_secs(5), workers.stop(id)).await??;
+    workers.cancel_all();
+    tokio::time::timeout(Duration::from_secs(5), workers.drain()).await??;
     assert!(before.elapsed() < Duration::from_secs(5));
     assert_eq!(semaphore.available_permits(), 1);
     assert!(!path.exists());
@@ -137,6 +141,73 @@ pub(super) async fn directory() -> anyhow::Result<PathBuf> {
     let path = std::env::temp_dir().join(format!("duskcue-worker-fixture-{}", Uuid::now_v7()));
     tokio::fs::create_dir_all(&path).await?;
     Ok(path)
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn lost_worker_completion_quarantines_output_and_retains_encoder_capacity()
+-> anyhow::Result<()> {
+    let path = directory().await?;
+    let workers = TranscodeWorkers::default();
+    let semaphore = Arc::new(Semaphore::new(1));
+    let owner = crate::services::vod_lifecycle::VodLifecycle::new();
+    let id = Uuid::now_v7();
+    let generation = owner.begin_generation(id, false)?;
+    let handle = child(
+        "process.stdout.write('ready\\n');setInterval(()=>{},1000);setTimeout(()=>process.exit(0),10000);",
+    )?;
+    let pid = handle
+        .id()
+        .ok_or_else(|| anyhow::anyhow!("owned fixture PID absent"))?;
+    let seen = Arc::new(AtomicBool::new(false));
+    let observed = seen.clone();
+    workers.start(
+        WorkerLaunch {
+            generation: generation.clone(),
+            session_id: id,
+            handle,
+            permit: semaphore.clone().acquire_owned().await?,
+            directory: path.clone(),
+            shutdown: shutdown(),
+        },
+        move |_| {
+            observed.store(true, Ordering::Release);
+            Next::Continue
+        },
+        || {},
+    );
+    ready(&seen).await?;
+    workers
+        .workers
+        .get(&id)
+        .unwrap()
+        .task
+        .lock()
+        .unwrap()
+        .as_ref()
+        .unwrap()
+        .abort();
+    workers.tracker.close();
+    tokio::time::timeout(Duration::from_secs(5), workers.tracker.wait()).await?;
+    assert!(!generation.active());
+    assert_eq!(semaphore.available_permits(), 0);
+    assert!(path.exists());
+    assert!(workers.stop(id).await.is_err());
+    assert!(workers.drain().await.is_err());
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let mut system = sysinfo::System::new();
+        let pid = sysinfo::Pid::from_u32(pid);
+        loop {
+            system.refresh_processes(sysinfo::ProcessesToUpdate::Some(&[pid]), true);
+            if system.process(pid).is_none() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await?;
+    anyhow::ensure!(path.parent() == Some(std::env::temp_dir().as_path()));
+    crate::services::vod_lifecycle::remove_cache(&path).await?;
+    Ok(())
 }
 
 async fn ready(seen: &AtomicBool) -> anyhow::Result<()> {
@@ -171,6 +242,9 @@ async fn stop_cancels_a_child_that_closed_stdout_without_exiting_and_releases_it
     let id = Uuid::now_v7();
     workers.start(
         WorkerLaunch {
+            generation: crate::services::vod_lifecycle::VodLifecycle::new()
+                .begin_generation(Uuid::now_v7(), false)
+                .unwrap(),
             session_id: id,
             handle,
             permit,
@@ -210,6 +284,9 @@ async fn retry_waits_for_fresh_cleanup_after_failure_without_releasing_a_live_ch
     let id = Uuid::now_v7();
     workers.start(
         WorkerLaunch {
+            generation: crate::services::vod_lifecycle::VodLifecycle::new()
+                .begin_generation(Uuid::now_v7(), false)
+                .unwrap(),
             session_id: id,
             handle,
             permit,
@@ -262,6 +339,9 @@ async fn abandoned_pending_worker_remains_awaitable_until_confirmed_cleanup() ->
     let id = Uuid::now_v7();
     workers.start(
         WorkerLaunch {
+            generation: crate::services::vod_lifecycle::VodLifecycle::new()
+                .begin_generation(Uuid::now_v7(), false)
+                .unwrap(),
             session_id: id,
             handle,
             permit,

@@ -127,3 +127,19 @@ test('Linux reserve loss cancels the attached process and remains a cleanup fail
         await assert.rejects(reserve.finish(), /Linux MemAvailable/);
     } finally { await reserve.finish().catch(() => {}); }
 });
+
+
+test('VOD qualification mode requires its own image label and admission policy', () => {
+    const mode = parseRecoveryInvocation(['--vod-output', '--image', image]);
+    assert.equal(mode.vodOutput, true);
+    assert.equal(mode.workload, 'vod-linux');
+    assert.equal(PRESETS['vod-linux'].policy, 'build');
+    assert.equal(mode.directBrowser, false);
+    assert.throws(() => parseRecoveryInvocation(['--vod-output', '--image', image, '--native-manifest', 'foreign']));
+    const expected = { source: 'b'.repeat(64), base: image, architecture: 'amd64', vodOutput: true };
+    const info = { Id: image, Os: 'linux', Architecture: 'amd64', Config: { User: '65532:65532', Entrypoint: ['/qualification/bin/playback-stop-contract'], Labels: { 'duskcue.qualification.kind': 'local-playback-recovery-v1', 'duskcue.qualification.source-sha256': expected.source, 'duskcue.qualification.runtime-base-id': image, 'duskcue.qualification.native-recovery': 'none', 'duskcue.qualification.format-corpus': 'none', 'duskcue.qualification.vod-output': 'owned' } } };
+    validateRecoveryImage(info, expected);
+    assert.throws(() => validateRecoveryImage(info, { ...expected, vodOutput: false }));
+    delete info.Config.Labels['duskcue.qualification.vod-output'];
+    assert.throws(() => validateRecoveryImage(info, expected));
+});
