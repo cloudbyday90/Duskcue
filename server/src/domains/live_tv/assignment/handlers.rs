@@ -4,7 +4,7 @@
 
 use super::{error::AssignmentError, policy, preconditions, service, types::*};
 use crate::{
-    domains::household_security::types::Scope,
+    domains::household_security::service::request_scope,
     error::AppError,
     extractors::{AuthenticatedUser, CanManageUsers, Require},
     state::AppState,
@@ -47,11 +47,19 @@ fn response(value: AssignmentResponse) -> Result<(HeaderMap, Json<AssignmentResp
 }
 
 pub async fn admin_read(
+    headers: HeaderMap,
     auth: Require<CanManageUsers>,
     State(state): State<AppState>,
     path: Result<Path<Uuid>, PathRejection>,
 ) -> Result<(HeaderMap, Json<AssignmentResponse>), AppError> {
-    response(service::read(&state, Scope::from(&auth.user), Some(target(path)?)).await?)
+    response(
+        service::read(
+            &state,
+            request_scope(&auth.user, &headers)?,
+            Some(target(path)?),
+        )
+        .await?,
+    )
 }
 
 pub async fn create(
@@ -63,7 +71,7 @@ pub async fn create(
 ) -> Result<(StatusCode, HeaderMap, Json<AssignmentResponse>), AppError> {
     let value = service::create(
         &state,
-        Scope::from(&auth.user),
+        request_scope(&auth.user, &headers)?,
         target(path)?,
         preconditions::condition(&headers, true)?,
         body(input)?,
@@ -83,7 +91,7 @@ pub async fn admin_patch(
     response(
         service::admin_patch(
             &state,
-            Scope::from(&auth.user),
+            request_scope(&auth.user, &headers)?,
             target(path)?,
             preconditions::condition(&headers, false)?,
             body(input)?,
@@ -100,7 +108,7 @@ pub async fn remove(
 ) -> Result<StatusCode, AppError> {
     service::remove(
         &state,
-        Scope::from(&auth.user),
+        request_scope(&auth.user, &headers)?,
         target(path)?,
         preconditions::condition(&headers, false)?,
     )
@@ -109,10 +117,11 @@ pub async fn remove(
 }
 
 pub async fn owner_read(
+    headers: HeaderMap,
     user: AuthenticatedUser,
     State(state): State<AppState>,
 ) -> Result<(HeaderMap, Json<AssignmentResponse>), AppError> {
-    response(service::read(&state, Scope::from(&user), None).await?)
+    response(service::read(&state, request_scope(&user, &headers)?, None).await?)
 }
 
 pub async fn owner_patch(
@@ -124,7 +133,7 @@ pub async fn owner_patch(
     response(
         service::owner_patch(
             &state,
-            Scope::from(&user),
+            request_scope(&user, &headers)?,
             preconditions::condition(&headers, false)?,
             body(input)?,
         )
@@ -133,12 +142,13 @@ pub async fn owner_patch(
 }
 
 pub async fn profiles(
+    headers: HeaderMap,
     user: AuthenticatedUser,
     State(state): State<AppState>,
     query: Result<Query<ProfileQuery>, QueryRejection>,
 ) -> Result<Json<ProfilePage>, AppError> {
     let Query(query) = query.map_err(|_| AssignmentError::InvalidRequest)?;
     Ok(Json(
-        service::profiles(&state, Scope::from(&user), query).await?,
+        service::profiles(&state, request_scope(&user, &headers)?, query).await?,
     ))
 }

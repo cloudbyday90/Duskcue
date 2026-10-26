@@ -82,6 +82,7 @@
     <header><h1 class="tonight-heading" tabindex="-1" bind:this={heading}>{m.household_title()}</h1><p>{m.household_intro()}</p></header>
     {#if !standard}<p>{m.household_standard_only()}</p>
     {:else}
+        <a href="/settings/household-live-tv" lang={messageLocale('iptv_manage_owner_title')}>{m.iptv_manage_owner_title()}</a>
         <p role="status" aria-live="polite" aria-atomic="true">{#if $controller.busy}{m.household_working()}{:else if $controller.status?.expires_at}{m.household_verified({ time: formatInstant($controller.status.expires_at, getLocale()) })}{:else if $controller.status}{m.household_locked()}{/if}</p>
         {#if $controller.error}<p role="alert">{errorText($controller.error)}</p>{/if}
         {#if localError}<p role="alert">{m.household_validation()}</p>{/if}

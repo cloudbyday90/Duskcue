@@ -1,5 +1,9 @@
 # Encrypted IPTV household assignment and delegation
 
+## Shared management client - October 26, 2026
+
+The confirmed [management client](IPTV_MANAGEMENT_CLIENT.md) adds separate shared Settings surfaces and optional transaction-checked acting-session binding to assignment, owner-policy and profile-list handlers. It preserves permission/proof, encrypted write-only sources, conditional writes, delegation and revocation. The client authority owns new qualification and outcomes.
+
 ## Status and authority
 
 **Qualified source:** `898b9c2e5be7689e9acb78e2001abdb1b5b13127` on `main`. Later documentation-only checkpoints preserve the verified code. No release or PR merge.

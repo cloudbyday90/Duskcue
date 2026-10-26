@@ -25,6 +25,7 @@
     import { listProfiles, switchProfile, unlockParentProfile } from '$lib/api/profiles.js';
     import { invalidateProfileScopedRequests, getServerOrigin } from '$lib/api/core.js';
     import { listenSessionChanges } from '$lib/household/session-sync.js';
+    import { createCommandOwner } from '$lib/live-tv-management/commands.js';
     import { createProfileScopeSync } from '$lib/profiles/scope.js';
     import { startDesktopBridge, stopDesktopBridge } from '$lib/desktop/tauri.js';
     import { createShellStartup } from '$lib/desktop/startup.js';
@@ -37,6 +38,8 @@
     import PlaybackReleaseNotice from '$lib/components/PlaybackReleaseNotice.svelte';
 
     let { children } = $props();
+    const managementCommands = createCommandOwner(auth);
+    setContext('live-tv-management-commands', managementCommands);
 
     let authChecked = $state(false);
     let setupRequired = $state(false);
@@ -136,6 +139,7 @@
 
     onMount(() => {
         mounted = true;
+        const unregisterManagement = auth.registerManagementWork(() => managementCommands.pending);
         initializeShell();
         const stopProfileScopeSync = startProfileScopeSync(handleProfileScopeChange);
         const stopSessionSync = listenSessionChanges(() => getServerOrigin() || $page.url.origin, () => {
@@ -145,6 +149,7 @@
 
         return () => {
             mounted = false;
+            unregisterManagement();
             startup.dispose();
             stopProfileScopeSync();
             stopSessionSync();

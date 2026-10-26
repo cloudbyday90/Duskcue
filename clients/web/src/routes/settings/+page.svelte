@@ -11,7 +11,7 @@
     import { onMount, getContext } from 'svelte';
     import { setLocale } from '$lib/paraglide/runtime.js';
     import { getUserPreferences, updateUserPreferences } from '$lib/api/users.js';
-    import { auth, currentUser, userHasAnyCapability } from '$lib/stores/auth.js';
+    import { auth, currentUser, userHasAnyCapability, userHasCapability } from '$lib/stores/auth.js';
     import { notifications } from '$lib/stores/notifications.js';
     import { isTauriDesktop } from '$lib/desktop/tauri.js';
 
@@ -108,6 +108,9 @@
         <section class="settings-section" aria-labelledby="household-heading" lang={messageLocale('household_title')}>
             <h2 id="household-heading" class="section-title">{m.household_title()}</h2>
             <a class="settings-link" href="/settings/household">{m.household_title()}</a>
+            <a class="settings-link" lang={messageLocale('iptv_manage_owner_title')} href="/settings/household-live-tv">{m.iptv_manage_owner_title()}</a>
+            {#if userHasCapability($currentUser, 'can_manage_users')}<a class="settings-link" lang={messageLocale('iptv_manage_admin_title')} href="/settings/live-tv">{m.iptv_manage_admin_title()}</a>{/if}
+            {#if userHasCapability($currentUser, 'can_manage_server')}<a class="settings-link" lang={messageLocale('iptv_manage_control_title')} href="/settings/live-tv-control">{m.iptv_manage_control_title()}</a>{/if}
         </section>
     {/if}
     <section class="settings-section" aria-labelledby="notifications-heading">

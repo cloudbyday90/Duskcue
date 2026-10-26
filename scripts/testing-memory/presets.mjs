@@ -5,6 +5,7 @@
 // See LICENSE file for details.
 
 export const PRESETS = {
+    'management-client': { policy: 'browser', heapMiB: 3072, command: 'cargo.exe', args: ['test', '-p', 'duskcue', '--locked', '-j', '2', '--test', 'live_tv_management_client', '--', '--ignored', '--nocapture'] },
     'owner-client': { policy: 'browser', heapMiB: 3072, command: 'cargo.exe', args: ['test', '-p', 'duskcue', '--locked', '-j', '2', '--test', 'household_client', '--', '--ignored', '--nocapture'] },
     'iptv-refresh': { policy: 'cargo', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/run-feed-authority.mjs', '--refresh'] },
     'iptv-import-compression': { policy: 'cargo', command: 'cargo.exe', args: ['test', '--manifest-path', 'server/tests/fixtures/import-compression/Cargo.toml', '--target-dir', 'target/import-compression', '--locked', '--offline', '-j', '2'] },

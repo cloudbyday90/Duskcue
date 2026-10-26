@@ -1,5 +1,9 @@
 # API Security Domain
 
+## Live TV management request binding - October 26, 2026
+
+The [management client](../design/IPTV_MANAGEMENT_CLIENT.md) extends optional `X-Session-Context` parsing/checking to assignment, delegated owner/profile, refresh-control/resource/status and start handlers. Services check the acting session under existing transaction locks before side effects or acceptance. Legacy unbound callers retain current authority. The digest grants no permission or proof and is not a CSRF secret. ETags, explicit JSON/non-simple headers, current permissions, fresh grants and credentialed origin policy remain independent requirements.
+
 ## Owner client context — October 26, 2026
 
 The [household management client](../design/HOUSEHOLD_MANAGEMENT_CLIENT.md) adds an authenticated no-store current-session context read and transaction-checked optional `X-Session-Context` binding on owner routes. The digest and metadata-only cross-tab notices grant no authority. The client retains rotated-cookie/bearer adoption and native secure-store ownership, discards stale management presentation and never automatically repeats a proof after an uncertain response. Existing owner trust, five-minute grant, operator handoff and revocation rules remain authoritative.

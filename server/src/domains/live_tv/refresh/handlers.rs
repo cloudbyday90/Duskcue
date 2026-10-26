@@ -4,7 +4,7 @@
 
 use super::{admission, error::RefreshError, representation, service, types::*};
 use crate::{
-    domains::{household_security::types::Scope, live_tv::assignment::preconditions},
+    domains::{household_security::service::request_scope, live_tv::assignment::preconditions},
     error::AppError,
     extractors::{CanManageServer, CanManageUsers, Require},
     state::AppState,
@@ -43,10 +43,11 @@ fn response<T: serde::Serialize>(value: T) -> Result<(HeaderMap, Json<T>), AppEr
 }
 
 pub async fn control(
+    headers: HeaderMap,
     auth: Require<CanManageServer>,
     State(state): State<AppState>,
 ) -> Result<(HeaderMap, Json<ControlResponse>), AppError> {
-    response(service::control(&state, Scope::from(&auth.user)).await?)
+    response(service::control(&state, request_scope(&auth.user, &headers)?).await?)
 }
 pub async fn configure(
     auth: Require<CanManageServer>,
@@ -57,7 +58,7 @@ pub async fn configure(
     response(
         service::configure(
             &state,
-            Scope::from(&auth.user),
+            request_scope(&auth.user, &headers)?,
             preconditions::condition(&headers, false)?,
             body(input)?,
         )
@@ -65,13 +66,15 @@ pub async fn configure(
     )
 }
 pub async fn resource(
+    headers: HeaderMap,
     auth: Require<CanManageUsers>,
     State(state): State<AppState>,
     path: Result<Path<Uuid>, PathRejection>,
 ) -> Result<(HeaderMap, Json<ResourceResponse>), AppError> {
-    response(service::resource(&state, Scope::from(&auth.user), target(path)?).await?)
+    response(service::resource(&state, request_scope(&auth.user, &headers)?, target(path)?).await?)
 }
 pub async fn status(
+    headers: HeaderMap,
     auth: Require<CanManageUsers>,
     State(state): State<AppState>,
     path: Result<Path<Uuid>, PathRejection>,
@@ -80,7 +83,7 @@ pub async fn status(
     Ok(Json(
         service::status(
             &state,
-            Scope::from(&auth.user),
+            request_scope(&auth.user, &headers)?,
             target(path)?,
             query.map(|Query(v)| v).map_err(|_| RefreshError::Invalid)?,
         )
@@ -97,7 +100,7 @@ pub async fn start(
     let pins = body(input)?;
     pins.validate()?;
     let request = admission::Request {
-        actor: Scope::from(&auth.user),
+        actor: request_scope(&auth.user, &headers)?,
         target: target(path)?,
         condition: preconditions::condition(&headers, false)?,
         pins,

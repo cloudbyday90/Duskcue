@@ -5,6 +5,7 @@ import { installPlaybackApi } from '../fixtures/playback-api.mjs';
 import { createQualificationEvents } from './qualification-events.mjs';
 import { createNativePreferenceFixture } from './qualification-viewing-preferences.mjs';
 import { handleHouseholdFixture } from '../fixtures/household.js';
+import { handleManagementFixture } from '../fixtures/live-tv-management.js';
 
 export async function installQualificationApi(page, manifest) {
     const scenario = createApiScenario({ authenticated: false });
@@ -52,6 +53,7 @@ export async function installQualificationApi(page, manifest) {
         const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
         if (await events.handle(route)) return;
         if (await viewing.handle(route)) return;
+        if (await handleManagementFixture(route, scenario, { authenticated: authorization === `Bearer ${tokens.get(url.origin)}`, transport: 'bearer' })) return;
         if (path === '/auth/session-context' || path.startsWith('/household-management/')) {
             await handleHouseholdFixture(route, scenario, { authenticated: authorization === `Bearer ${tokens.get(url.origin)}`, transport: 'bearer', rotateToken: () => {
                 const token = `tonight-fixture-${randomUUID()}`; tokens.set(url.origin, token); return token;

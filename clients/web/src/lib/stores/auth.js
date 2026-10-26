@@ -51,6 +51,7 @@ function withWebDeviceIdentity(data) {
 function createAuthStore() {
     let revision = 0;
     let sessionContext = null;
+    let managementWork = () => false;
     const { subscribe, set: setState, update } = writable({
         user: null,
         isAuthenticated: false,
@@ -81,7 +82,7 @@ function createAuthStore() {
     const replacement = createCredentialReplacement({
         begin(expected) {
             const lease = capture();
-            if (get({ subscribe }).loading || !get({ subscribe }).isAuthenticated || lease.userId !== expected.user_id || lease.profileId !== expected.profile_id
+            if (managementWork() || get({ subscribe }).loading || !get({ subscribe }).isAuthenticated || lease.userId !== expected.user_id || lease.profileId !== expected.profile_id
                 || !sessionContext || sessionContext.context_id !== expected.context_id) throw new DOMException('Session context changed', 'AbortError');
             lease.revision = ++revision;
             update((state) => ({ ...state, credential_pending: true }));
@@ -153,6 +154,7 @@ function createAuthStore() {
         capture,
         isCurrent: current,
         credentialWork: () => replacement.pending,
+        registerManagementWork(read) { managementWork = read; return () => { if (managementWork === read) managementWork = () => false; }; },
         replaceSession: (submit, expected) => replacement.run(submit, expected),
         async readContext(signal = null) {
             if (replacement.pending) throw new Error('Credential replacement is busy');

@@ -4,7 +4,7 @@
  * Licensed under AGPL-3.0. See LICENSE for details.
  */
 
-export async function boundedJson(response, maxBytes, signal) {
+export async function boundedJson(response, maxBytes, signal, reviver = undefined) {
     if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) throw new Error('Invalid JSON budget');
     signal?.throwIfAborted();
     const length = response.headers.get('Content-Length');
@@ -30,7 +30,7 @@ export async function boundedJson(response, maxBytes, signal) {
             text += decoder.decode(value, { stream: true });
         }
         text += decoder.decode();
-        return JSON.parse(text);
+        return JSON.parse(text, reviver);
     } catch (error) {
         await reader.cancel().catch(() => {});
         throw error;

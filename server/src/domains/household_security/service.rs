@@ -5,6 +5,8 @@
 use super::{error::OwnerError, factors, grants, operator, transactions, types::*};
 use crate::state::AppState;
 
+pub use super::context::scope as request_scope;
+
 pub use super::factors::{
     allow_delete, ensure_enrollment_capacity, trusted_change, validate_client_context,
 };

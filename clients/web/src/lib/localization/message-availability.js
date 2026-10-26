@@ -137,6 +137,369 @@ export const incompleteMessages = {
     "household_zone": [
         "en"
     ],
+    "iptv_manage_accepted": [
+        "en"
+    ],
+    "iptv_manage_addresses": [
+        "en"
+    ],
+    "iptv_manage_admin_cap": [
+        "en"
+    ],
+    "iptv_manage_admin_intro": [
+        "en"
+    ],
+    "iptv_manage_admin_title": [
+        "en"
+    ],
+    "iptv_manage_approval": [
+        "en"
+    ],
+    "iptv_manage_approve": [
+        "en"
+    ],
+    "iptv_manage_assignment": [
+        "en"
+    ],
+    "iptv_manage_assignment_id": [
+        "en"
+    ],
+    "iptv_manage_attempted": [
+        "en"
+    ],
+    "iptv_manage_back": [
+        "en"
+    ],
+    "iptv_manage_cap_error": [
+        "en"
+    ],
+    "iptv_manage_cap_help": [
+        "en"
+    ],
+    "iptv_manage_changed": [
+        "en"
+    ],
+    "iptv_manage_check_status": [
+        "en"
+    ],
+    "iptv_manage_choose_household": [
+        "en"
+    ],
+    "iptv_manage_choose_pin": [
+        "en"
+    ],
+    "iptv_manage_configured_help": [
+        "en"
+    ],
+    "iptv_manage_confirm": [
+        "en"
+    ],
+    "iptv_manage_confirmation": [
+        "en"
+    ],
+    "iptv_manage_control_help": [
+        "en"
+    ],
+    "iptv_manage_control_intro": [
+        "en"
+    ],
+    "iptv_manage_control_title": [
+        "en"
+    ],
+    "iptv_manage_counts": [
+        "en"
+    ],
+    "iptv_manage_create": [
+        "en"
+    ],
+    "iptv_manage_credentials": [
+        "en"
+    ],
+    "iptv_manage_current_source": [
+        "en"
+    ],
+    "iptv_manage_delegate_cap": [
+        "en"
+    ],
+    "iptv_manage_delegate_profiles": [
+        "en"
+    ],
+    "iptv_manage_delegation_missing": [
+        "en"
+    ],
+    "iptv_manage_delete": [
+        "en"
+    ],
+    "iptv_manage_delete_question": [
+        "en"
+    ],
+    "iptv_manage_destination": [
+        "en"
+    ],
+    "iptv_manage_destination_error": [
+        "en"
+    ],
+    "iptv_manage_destination_help": [
+        "en"
+    ],
+    "iptv_manage_disable_question": [
+        "en"
+    ],
+    "iptv_manage_discard": [
+        "en"
+    ],
+    "iptv_manage_discard_question": [
+        "en"
+    ],
+    "iptv_manage_empty": [
+        "en"
+    ],
+    "iptv_manage_enabled": [
+        "en"
+    ],
+    "iptv_manage_failed": [
+        "en"
+    ],
+    "iptv_manage_feed": [
+        "en"
+    ],
+    "iptv_manage_field_error": [
+        "en"
+    ],
+    "iptv_manage_first": [
+        "en"
+    ],
+    "iptv_manage_forbidden": [
+        "en"
+    ],
+    "iptv_manage_generation": [
+        "en"
+    ],
+    "iptv_manage_global_disabled": [
+        "en"
+    ],
+    "iptv_manage_global_enabled": [
+        "en"
+    ],
+    "iptv_manage_guide": [
+        "en"
+    ],
+    "iptv_manage_guide_pin": [
+        "en"
+    ],
+    "iptv_manage_guide_url": [
+        "en"
+    ],
+    "iptv_manage_hide_sources": [
+        "en"
+    ],
+    "iptv_manage_household_pages": [
+        "en"
+    ],
+    "iptv_manage_households": [
+        "en"
+    ],
+    "iptv_manage_imported": [
+        "en"
+    ],
+    "iptv_manage_indeterminate": [
+        "en"
+    ],
+    "iptv_manage_keep": [
+        "en"
+    ],
+    "iptv_manage_latest": [
+        "en"
+    ],
+    "iptv_manage_locked": [
+        "en"
+    ],
+    "iptv_manage_missing": [
+        "en"
+    ],
+    "iptv_manage_never_imported": [
+        "en"
+    ],
+    "iptv_manage_next": [
+        "en"
+    ],
+    "iptv_manage_no_households": [
+        "en"
+    ],
+    "iptv_manage_no_profiles": [
+        "en"
+    ],
+    "iptv_manage_not_assigned": [
+        "en"
+    ],
+    "iptv_manage_not_current": [
+        "en"
+    ],
+    "iptv_manage_not_playback": [
+        "en"
+    ],
+    "iptv_manage_origin": [
+        "en"
+    ],
+    "iptv_manage_owner_cap": [
+        "en"
+    ],
+    "iptv_manage_owner_intro": [
+        "en"
+    ],
+    "iptv_manage_owner_title": [
+        "en"
+    ],
+    "iptv_manage_page": [
+        "en"
+    ],
+    "iptv_manage_pin": [
+        "en"
+    ],
+    "iptv_manage_playlist": [
+        "en"
+    ],
+    "iptv_manage_playlist_pin": [
+        "en"
+    ],
+    "iptv_manage_playlist_url": [
+        "en"
+    ],
+    "iptv_manage_previous": [
+        "en"
+    ],
+    "iptv_manage_profile_enabled": [
+        "en"
+    ],
+    "iptv_manage_profile_help": [
+        "en"
+    ],
+    "iptv_manage_profile_pages": [
+        "en"
+    ],
+    "iptv_manage_profiles": [
+        "en"
+    ],
+    "iptv_manage_refresh": [
+        "en"
+    ],
+    "iptv_manage_refresh_help": [
+        "en"
+    ],
+    "iptv_manage_reload": [
+        "en"
+    ],
+    "iptv_manage_replace": [
+        "en"
+    ],
+    "iptv_manage_replace_question": [
+        "en"
+    ],
+    "iptv_manage_revision": [
+        "en"
+    ],
+    "iptv_manage_revoke": [
+        "en"
+    ],
+    "iptv_manage_revoke_question": [
+        "en"
+    ],
+    "iptv_manage_rotate": [
+        "en"
+    ],
+    "iptv_manage_rotation_help": [
+        "en"
+    ],
+    "iptv_manage_running": [
+        "en"
+    ],
+    "iptv_manage_save_control": [
+        "en"
+    ],
+    "iptv_manage_save_owner_cap": [
+        "en"
+    ],
+    "iptv_manage_save_policy": [
+        "en"
+    ],
+    "iptv_manage_saved": [
+        "en"
+    ],
+    "iptv_manage_scope_reset": [
+        "en"
+    ],
+    "iptv_manage_selected": [
+        "en"
+    ],
+    "iptv_manage_self_revocation": [
+        "en"
+    ],
+    "iptv_manage_service_unavailable": [
+        "en"
+    ],
+    "iptv_manage_session": [
+        "en"
+    ],
+    "iptv_manage_show_sources": [
+        "en"
+    ],
+    "iptv_manage_source_error": [
+        "en"
+    ],
+    "iptv_manage_source_help": [
+        "en"
+    ],
+    "iptv_manage_source_operation": [
+        "en"
+    ],
+    "iptv_manage_standard_only": [
+        "en"
+    ],
+    "iptv_manage_start": [
+        "en"
+    ],
+    "iptv_manage_state_disabled": [
+        "en"
+    ],
+    "iptv_manage_state_enabled": [
+        "en"
+    ],
+    "iptv_manage_stop_watching": [
+        "en"
+    ],
+    "iptv_manage_succeeded": [
+        "en"
+    ],
+    "iptv_manage_unavailable": [
+        "en"
+    ],
+    "iptv_manage_uncertain": [
+        "en"
+    ],
+    "iptv_manage_unfinished_uncertain": [
+        "en"
+    ],
+    "iptv_manage_unknown": [
+        "en"
+    ],
+    "iptv_manage_unlock": [
+        "en"
+    ],
+    "iptv_manage_validation": [
+        "en"
+    ],
+    "iptv_manage_verified": [
+        "en"
+    ],
+    "iptv_manage_wait": [
+        "en"
+    ],
+    "iptv_manage_watch_help": [
+        "en"
+    ],
+    "iptv_manage_working": [
+        "en"
+    ],
     "live_tv_ambiguous": [
         "en"
     ],

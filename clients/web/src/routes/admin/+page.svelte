@@ -21,6 +21,7 @@
             id: 'admin-server-heading',
             title: m.routes_admin_page_server(),
             items: [
+                { href: '/settings/live-tv-control', label: m.iptv_manage_control_title(), desc: m.iptv_manage_control_intro(), capability: 'can_manage_server', icon: 'M4 7h16M4 12h16M4 17h16' },
                 {
                     href: '/settings/system',
                     label: m.routes_settings_page_system(),
@@ -75,6 +76,7 @@
             id: 'admin-access-heading',
             title: m.routes_admin_page_access_and_delivery(),
             items: [
+                { href: '/settings/live-tv', label: m.iptv_manage_admin_title(), desc: m.iptv_manage_admin_intro(), capability: 'can_manage_users', icon: 'M4 7h16M4 12h16M4 17h16' },
                 {
                     href: '/settings/users',
                     label: m.routes_settings_page_users(),

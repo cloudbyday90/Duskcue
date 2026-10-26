@@ -1,5 +1,9 @@
 # Household management client
 
+## Subsequent management integration - October 26, 2026
+
+The subsequent [Live TV management client](IPTV_MANAGEMENT_CLIENT.md) reuses this unlock/enrollment screen for three separate administrator/owner/operator settings surfaces. One retained management-command slot coordinates with the existing credential-adoption owner; unlock never resumes a mutation automatically. This document retains the original owner-security client contract and qualified source; the later authority owns the additional forms, binding integration and regression evidence.
+
 ## Status and authority
 
 Research and design review, October 26, 2026, against `d3c18a2a63e880786f9d2547520bbbb8e55aea3a` on main. This document owns the confirmed shared owner-security screen and client/session-context integration before Live TV management forms. The user confirmed the complete contract after research checkpoint `8a422ae`; implementation and qualification outcomes follow below.

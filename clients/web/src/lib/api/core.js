@@ -163,6 +163,7 @@ function buildHeaders(options) {
 }
 
 export async function request(method, path, options = {}) {
+    if (options.resultMetadata && (!options.maxJsonBytes || options.returnResponse || options.responseType)) throw new Error('Invalid bounded response mode');
     const url = options.root ? buildRootUrl(path, options.params) : buildApiUrl(path, options.params);
 
     const headers = buildHeaders(options);
@@ -183,6 +184,7 @@ export async function request(method, path, options = {}) {
         signal: requestScope.signal,
     };
     if (options.cache) fetchOptions['cache'] = options.cache;
+    if (options.redirect) fetchOptions['redirect'] = options.redirect;
     if (hasBody) {
         fetchOptions.body = isFormData ? options.body : JSON.stringify(options.body);
     }
@@ -208,7 +210,7 @@ export async function request(method, path, options = {}) {
         }
 
         if (response.status === 204 || response.status === 304) {
-            return null;
+            return options.resultMetadata ? responseMetadata(response, null) : null;
         }
 
         if (!response.ok) {
@@ -241,6 +243,10 @@ export async function request(method, path, options = {}) {
         }
 
         const contentType = response.headers.get('Content-Type') || '';
+        if (options.resultMetadata && contentType.split(';')[0].trim().toLowerCase() !== 'application/json') {
+            await response.body?.cancel().catch(() => {});
+            throw new Error('Unexpected bounded response media type');
+        }
         if (options.responseType === 'text') {
             const text = await response.text();
             ensureProfileScopeCurrent(profileScoped, requestRevision);
@@ -253,16 +259,26 @@ export async function request(method, path, options = {}) {
         }
         if (contentType.includes('application/json')) {
             const body = options.maxJsonBytes
-                ? await boundedJson(response, options.maxJsonBytes, requestScope.signal)
+                ? await boundedJson(response, options.maxJsonBytes, requestScope.signal, options.jsonReviver)
                 : await response.json();
             ensureProfileScopeCurrent(profileScoped, requestRevision);
-            return body;
+            return options.resultMetadata ? responseMetadata(response, body) : body;
         }
 
         return null;
     } finally {
         requestScope.dispose();
     }
+}
+
+function responseMetadata(response, body) {
+    const selected = {};
+    for (const [key, limit] of [['ETag', 256], ['Location', 512], ['Retry-After', 128]]) {
+        const value = response.headers.get(key);
+        if (value !== null && value.length > limit) throw new Error('Response metadata exceeds its budget');
+        selected[key] = value;
+    }
+    return { body, status: response.status, etag: selected.ETag, location: selected.Location, retryAfter: retryAfterSeconds(selected['Retry-After']) };
 }
 
 function createRequestScope(externalSignal, profileScoped) {

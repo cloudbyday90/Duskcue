@@ -1,5 +1,9 @@
 # Root-owned IPTV manual refresh
 
+## Shared management client - October 26, 2026
+
+The confirmed [management client](IPTV_MANAGEMENT_CLIENT.md) uses separate administrator/operator settings, exact resource ETags, explicit pin choices and bounded visible observation without POST replay. Optional acting-session binding is checked by existing control/resource/status/admission transactions. Accepted work retains its established ownership and shutdown budgets. The client authority owns new qualification and outcomes.
+
 ## SSE lifecycle follow-up — October 25, 2026
 
 The connected-SSE failure evidence below belongs to qualified source `3b060e2`. The subsequent [SSE lifecycle contract](SSE_LIFECYCLE.md), confirmed after `e1e6275`, adds locally qualified root-owned stream cancellation. Its connected-stream process case now passes normal completion and complete HTTP EOF; independent owned HTTP-deadline, pool-failure and second-signal cases preserve failure coverage without a production bypass. Existing admission, import, source and owner-security contracts remain scoped as before.

@@ -1,5 +1,9 @@
 # IPTV saved-feed destination authority
 
+## Subsequent management integration - October 26, 2026
+
+The subsequent [management client](../design/IPTV_MANAGEMENT_CLIENT.md) exposes explicit per-feed approval/revocation forms and numbered address choices while keeping origins/IPs write-only. Its scope parser binds the acting session under existing assignment transactions. It adds no DNS discovery, redirect/proxy fallback, TLS bypass or production stream authorization; that client authority owns its qualification outcomes.
+
 ## Root/manual refresh follow-up — October 25, 2026
 
 [Refresh authority](../design/IPTV_REFRESH.md) records subsequent normal-build use of this bounded connection engine through protected manual admission and a dedicated default-off control. The earlier standalone source fixture and fixed test-CA constructor remain qualification-only. Explicit approved pins, normal hostname/certificate verification, encrypted authority and refusal of DNS/proxy/redirect fallback are unchanged. Scheduling, private-CA administration, client delivery and playback remain separate. The controlled results below retain their original source attribution.
