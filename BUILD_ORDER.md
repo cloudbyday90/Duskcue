@@ -12,6 +12,8 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## October 2026 VOD output lifecycle (SCOPED QUALIFICATION COMPLETE)
 
+**Verified implementation:** `28f3f9c` on `main`; documentation-only successors preserve the qualified source. No release.
+
 [VOD lifecycle authority](docs/design/VOD_OUTPUT_LIFECYCLE.md) records the confirmed contract, modular normal-build owner, bounded direct/HLS delivery, retained commands, worker/output retirement and root cleanup. Verification passes 1,014 default library tests, eighteen native VOD tests, seventeen managed Linux VOD tests plus the real Stop/recovery contract, and three root HTTP/TLS/process regressions. Exact source/image identities, receipts, corrected attempts and the unchanged strict-lint baseline belong to the authority. Classifarr was restored healthy after authorized memory handoffs; Harmoniarr was untouched. [Dependabot maintenance](docs/operations/DEPENDABOT_MAINTENANCE.md) records superseded PR 5 closed without merge. Main only, locked dependencies, no release.
 
 **Next:** the user clarified Linux build/qualification durability across retries. [The proposed tooling contract](docs/ci/LINUX_BUILD_DURABILITY.md) separates compiler checkpoints and guards mutable cache reuse; architecture confirmation is pending. Production VOD admission/delivery/client migration and bounded receipt retention follow before shared viewer enforcement or Live TV play actions. Preserve existing root/resource budgets and explicit cleanup proof.

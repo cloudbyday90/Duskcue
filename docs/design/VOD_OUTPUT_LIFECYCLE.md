@@ -128,6 +128,8 @@ The [maintenance outcome](../operations/DEPENDABOT_MAINTENANCE.md) records singl
 
 ## Verification outcome
 
+Verified implementation commit: `28f3f9c` on main. Documentation-only successors preserve the qualified source inventory below.
+
 Final managed Linux source inventory: `62a96b2f740e40fbf627e5ef982cf3d6cd464f02a5d674243bb825879b944d20`. Immutable amd64 runtime: `sha256:7caeabf5f2a81517bb81b4b13a27d507ada3c0d0ae36d37cbbc331133c9e1909`, based on `sha256:f45eda1c8bbe3a9685196aae1200543601ec5efc2fb0f858ca863dd9d42ae8dc`. Ignored local evidence contains no publishable private feed values.
 
 | Qualification | Result and local evidence |
