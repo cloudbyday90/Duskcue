@@ -10,6 +10,16 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 Dispatcharr catalog UI (RESEARCH / DESIGN REVIEW)
+
+**Authorities:** [Shared web/Tauri catalog](docs/design/IPTV_CLIENT_CATALOG.md) and [Xtream Codes sources](docs/design/IPTV_XTREAM.md), researched through official MCP sources on October 26 against `34de163`. The qualified backend catalog remains unchanged. Main only; no release or PR mutation.
+
+**Confirmed:** channel browser plus selected-channel programme list in Tonight's shell; explicit six-hour windows with device-zone display; preferred text with all supplied variants accessible. The user then confirmed Dispatcharr-first M3U/XMLTV input, with Xtream deferred as an optional future connector. If resumed, Xtream starts with backend-held credentials and Live TV/EPG; movies/series and catch-up stay separate. Remaining client discoverability/recovery/state choices and final shared understanding are under review.
+
+**Findings:** existing cookie/bearer transport and profile cancellation are reusable. Generic paging is context-blind and unbounded for this contract. Cached capability data cannot establish current Live TV entitlement. No Live TV client route or Xtream backend connector exists. The current M3U identity adapter rejects ordinary XC/provider IDs; the storage/read boundary can support a separately qualified producer without exposing provider credentials or changing client DTOs. The Xtream authority records source/credential/identity/egress/import questions before backend work.
+
+**Baseline:** 44 focused client units plus 37 existing Node pretests pass; unchanged Svelte checking has zero errors/warnings. These are baseline results, not new UI or Xtream qualification. Random selection again finds only PR 5; both patches are superseded by current lockfiles. The authorities contain official sources, alternatives/pros/cons, recommended locked stack, concrete client proposal and Xtream design frontier. Resolve shared understanding through the repository review before implementing.
+
 ## October 2026 profile-scoped IPTV catalog (SCOPED BACKEND QUALIFICATION COMPLETE)
 
 **Authority:** [Profile-scoped catalog reads](docs/design/IPTV_CATALOG.md), researched through official MCP sources after qualified SSE root ownership. All six product choices and the complete contract were confirmed after `3f5de09`. Verified implementation: `451fb8b2587978c73773b9853735613d6dc54fce` on `main`. Documentation-only successors preserve the qualified source. No release or PR merge.

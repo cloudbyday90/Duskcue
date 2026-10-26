@@ -99,6 +99,10 @@ Artwork requests use the API service's selected server and authentication. A sha
 
 Use Svelte's [effect teardown](https://svelte.dev/docs/svelte/$effect#Understanding-lifecycle) for request cleanup and [lifecycle hooks](https://svelte.dev/docs/svelte/lifecycle-hooks) for document listeners. Keep the installed SvelteKit 2 navigation contract. Its [navigation interceptor](https://svelte.dev/docs/kit/$app-navigation#beforeNavigate) supports guarding unsaved preferences across links, submitted search, and browser history; account/profile switches also need an explicit application-level guard before mutating the session. Native disclosures and modal dialogs preserve normal keyboard behavior. These are implementation defaults under the execution plan, rather than additional prototype decisions.
 
+## IPTV catalog review — October 26, 2026
+
+[Shared catalog authority](../design/IPTV_CLIENT_CATALOG.md) records the confirmed Tonight channel browser/selected-channel list, fixed six-hour guide navigation and preferred text with all supplied language variants accessible. Proposed integration retains semantic tokens, native controls, actual fallback-language markings, explicit status/focus handling and responsive/RTL qualification. The first client remains read-only and source-neutral; [Xtream input research](../design/IPTV_XTREAM.md) is a backend boundary. A multi-channel EPG grid, images/playback and broad accessibility conformance are not implied by this research checkpoint.
+
 ## Goals
 
 1. Define one baseline visual direction for the product before implementation starts.

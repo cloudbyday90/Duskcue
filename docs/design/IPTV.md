@@ -6,6 +6,10 @@ Research and contract decisions recorded October 24, 2026. The production Live T
 
 This document owns IPTV behavior. [Household profiles](PROFILES_AND_AMBIENT_CHANNELS.md) owns the existing account/profile model, [authentication](AUTH.md) owns credentials and capabilities, and [streaming](STREAMING.md) owns shared delivery infrastructure. Follow [BUILD_ORDER.md](../../BUILD_ORDER.md) and the existing [guarded verification policy](../ci/TESTING_MEMORY.md).
 
+## Shared client and Xtream review — October 26, 2026
+
+The user explored Xtream Codes-compatible input, then confirmed Dispatcharr-first use through the existing M3U/XMLTV lane. Xtream is not required for that connection. [Xtream research](IPTV_XTREAM.md) is retained as an optional deferred Live TV/EPG connector; current proxy-UUID parsing does not imply XC support. [Shared catalog UI](IPTV_CLIENT_CATALOG.md) owns the source-neutral client proposal and confirmed browser/list, six-hour window and language-variant choices. These are under design review, with unchanged baseline checks; no new client screen, provider authentication/import or playback capability is claimed.
+
 ## Confirmed product contract
 
 - Duskcue is an IPTV player consuming a separately managed Dispatcharr Channel Profile through its M3U and XMLTV feeds. Dispatcharr owns provider accounts, channel curation, guide mapping and upstream failover.
