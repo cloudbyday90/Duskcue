@@ -12,7 +12,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## October 2026 shared playback admission (SCOPED FOUNDATION QUALIFICATION COMPLETE)
 
-**Authority:** [Admission](docs/design/PLAYBACK_ADMISSION.md), researched through official MCP sources against `6f678fd`. All ten product choices and the complete contract were confirmed before coding. Verified source is recorded by the documentation follow-up. Main only; no release or PR mutation.
+**Authority:** [Admission](docs/design/PLAYBACK_ADMISSION.md), researched through official MCP sources against `6f678fd`. All ten product choices and the complete contract were confirmed before coding. Verified implementation: `444dc40d4d7475ff9267389901b95e5f00a9e539` on main; documentation-only follow-up preserves that source. Main only; no release or PR mutation.
 
 **Built:** focused internal services, UUIDv7 instance/reservation receipts, strict inherited caps and current actor/resource checks, atomic household admission, sixty-second renewal, retained resource ownership, durable transactional retirement and two-step local fenced-instance reconciliation. Metadata refresh preserves a verified private channel while actual removal/revocation remains irreversible for that reservation. Cap-only reductions preserve existing authorized viewers. Optional root ownership drains before pool closure under unchanged budgets. Normal production playback does not attach the owner. Dependencies and Rust/Cargo 1.99.1 remain unchanged.
 
