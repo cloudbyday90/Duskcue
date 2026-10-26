@@ -4,7 +4,6 @@
  * Licensed under AGPL-3.0. See LICENSE for details.
  */
 
-import { instant } from './instant.js';
 
 export function textLanguage(raw) {
     if (typeof raw !== 'string' || raw.length > 64 || !/^[a-zA-Z]{2,8}(?:-[a-zA-Z0-9]{1,8})*$/.test(raw)) return '';
@@ -19,13 +18,4 @@ export function preferredText(variants, locale) {
         || variants[0] || null;
 }
 
-export function formatInstant(value, locale) {
-    if (!value) return '';
-    try {
-        return new Intl.DateTimeFormat(locale, { dateStyle: 'medium', timeStyle: 'short' }).format(instant(value).milliseconds);
-    } catch { return value; }
-}
-
-export function deviceTimeZone() {
-    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch { return ''; }
-}
+export { formatInstant, deviceTimeZone } from '../time/presentation.js';

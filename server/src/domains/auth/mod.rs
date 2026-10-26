@@ -73,6 +73,10 @@ pub fn router(state: AppState) -> Router<AppState> {
 
     let authenticated_routes = Router::new()
         .route(
+            "/api/v1/auth/session-context",
+            get(handlers::session_context),
+        )
+        .route(
             "/api/v1/auth/reauth/request",
             post(handlers::reauth_request),
         )

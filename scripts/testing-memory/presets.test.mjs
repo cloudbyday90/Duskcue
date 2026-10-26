@@ -24,3 +24,11 @@ test('extra arguments cannot increase protected worker, Cargo or heap budgets', 
     }
     assert.doesNotThrow(() => validateExtraArguments(['playback-recovery.spec.ts', '--debug', '--config', 'qa.json']));
 });
+
+test('real owner browser qualification retains the guarded browser and compiler limits', () => {
+    const preset = PRESETS['owner-client'];
+    assert.equal(preset.policy, 'browser');
+    assert.equal(preset.heapMiB, 3072);
+    assert.deepEqual(preset.args, ['test', '-p', 'duskcue', '--locked', '-j', '2', '--test', 'household_client', '--', '--ignored', '--nocapture']);
+    assert.equal(workloadEnvironment(preset, {}).RUST_TEST_THREADS, '1');
+});

@@ -27,6 +27,7 @@ pub(crate) async fn problem_media_type(mut response: Response) -> Response {
 pub(crate) async fn response_policy(request: Request, next: Next) -> Response {
     let path = request.uri().path();
     let private = path == "/api/v1/events"
+        || path == "/api/v1/auth/session-context"
         || path.starts_with("/api/v1/household-management/")
         || path.starts_with("/api/v1/live-tv/");
     let mut response = next.run(request).await;

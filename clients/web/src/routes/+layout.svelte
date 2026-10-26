@@ -24,6 +24,7 @@
     import { authReturnDestination, playbackSignInPath } from '$lib/navigation/auth-return.js';
     import { listProfiles, switchProfile, unlockParentProfile } from '$lib/api/profiles.js';
     import { invalidateProfileScopedRequests, getServerOrigin } from '$lib/api/core.js';
+    import { listenSessionChanges } from '$lib/household/session-sync.js';
     import { createProfileScopeSync } from '$lib/profiles/scope.js';
     import { startDesktopBridge, stopDesktopBridge } from '$lib/desktop/tauri.js';
     import { createShellStartup } from '$lib/desktop/startup.js';
@@ -43,6 +44,7 @@
     let desktopStartupError = $state('');
     let desktopConnecting = $state(false);
     let mounted = false;
+    let credentialProfile = null;
     const startup = createShellStartup({ auth, onChange: (state) => {
         authChecked = state.ready;
         desktopSession = state.desktop;
@@ -105,6 +107,19 @@
     });
 
     $effect(() => {
+        const epoch = $auth.credential_epoch;
+        const profileId = $currentUser?.active_profile_id;
+        const userId = $currentUser?.id;
+        untrack(() => {
+            const previous = credentialProfile;
+            credentialProfile = { epoch, profileId, userId };
+            if (mounted && previous?.userId === userId && previous.epoch !== epoch && previous.profileId !== profileId && userId) {
+                handleProfileScopeChange({ user_id: userId });
+            }
+        });
+    });
+
+    $effect(() => {
         const ready = authChecked && $isAuthenticated;
         const userId = ready ? $currentUser?.id : null;
         const origin = desktopSession?.server?.origin || getServerOrigin() || $page.url.origin;
@@ -123,11 +138,16 @@
         mounted = true;
         initializeShell();
         const stopProfileScopeSync = startProfileScopeSync(handleProfileScopeChange);
+        const stopSessionSync = listenSessionChanges(() => getServerOrigin() || $page.url.origin, () => {
+            if (!$isAuthenticated || auth.credentialWork()) return;
+            auth.checkSession({ revalidate: true, expectedContext: { serverOrigin: getServerOrigin() || $page.url.origin, userId: $currentUser?.id } });
+        });
 
         return () => {
             mounted = false;
             startup.dispose();
             stopProfileScopeSync();
+            stopSessionSync();
             stopDesktopBridge();
         };
     });
@@ -204,6 +224,7 @@
     });
 
     $effect(() => {
+        const credentialEpoch = $auth.credential_epoch;
         if (!authChecked || desktopConnecting) return;
         if ($isAuthenticated && profileScopeReady) {
             events.connect();
@@ -214,6 +235,7 @@
     });
 
     $effect(() => {
+        const credentialEpoch = $auth.credential_epoch;
         if (!authChecked || desktopConnecting) return;
         const profileId = $currentUser?.active_profile_id;
         const userId = $currentUser?.id;

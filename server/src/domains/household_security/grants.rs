@@ -36,7 +36,20 @@ pub(super) async fn rotate(
     .execute(&mut **tx)
     .await?;
     transactions::audit(tx, scope.user, Some(scope.user), "owner_proof_verified").await?;
+    let context = super::context::read(
+        tx,
+        Scope {
+            version: scope
+                .version
+                .checked_add(1)
+                .ok_or(OwnerError::Unavailable)?,
+            binding: None,
+            ..scope
+        },
+    )
+    .await?;
     Ok(Proven {
+        context,
         token,
         expires_at,
         session_expires_at,

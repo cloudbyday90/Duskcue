@@ -53,7 +53,7 @@ export async function exerciseConnection(page, manifest, api, health, screenshot
     await page.reload();
     await expect(page.getByRole('heading', { name: 'Continue watching', exact: true })).toBeVisible();
     expect(await page.evaluate(() => localStorage.getItem('duskcue_device_id'))).toBe(api.authRequests[0].deviceId);
-    const sessionRequests = api.transportRequests.filter((entry) => entry.path === '/user/sessions');
+    const sessionRequests = api.transportRequests.filter((entry) => entry.path === '/auth/session-context');
     expect(sessionRequests.length).toBeGreaterThan(0);
     expect(sessionRequests.every((entry) => entry.authenticated && entry.origin === manifest.origins[0])).toBe(true);
     return { realHealth: true, savedNativeFile: true, realKeyringRoundTrip: true, restoredAfterReload: true };

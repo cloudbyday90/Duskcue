@@ -133,3 +133,5 @@ export async function resendInvitation(invitationId) {
 export async function listCapabilities() {
     return get('/auth/capabilities');
 }
+
+export { getSessionContext } from './household.js';

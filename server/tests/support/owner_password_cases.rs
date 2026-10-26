@@ -174,6 +174,8 @@ pub async fn run(
             .fetch_one(pool)
             .await?;
     let old_scope = duskcue::domains::household_security::types::Scope {
+        transport: duskcue::extractors::CredentialTransport::Bearer,
+        binding: None,
         user: actor.user,
         session: internal_session,
         profile: actor.profile,

@@ -86,23 +86,25 @@ export function createDesktopSession({ isDesktop = isTauriDesktop, invoke = invo
         });
     }
 
-    async function persist(token, expectedOrigin = null) {
+    async function persist(token, expectedOrigin = null, isCurrent = () => true) {
         if (!isDesktop()) return snapshot();
         if (typeof token !== 'string' || !token.trim()) throw new Error('The server did not return a session token.');
         await initialize();
         return serialize(async () => {
-            if (!server || (expectedOrigin && server.origin !== expectedOrigin)) throw new DOMException('The selected server changed.', 'AbortError');
+            if (!isCurrent() || !server || (expectedOrigin && server.origin !== expectedOrigin)) throw new DOMException('The selected server changed.', 'AbortError');
             await invoke('write_session_token', { req: { server_origin: server.origin, token } });
+            if (!isCurrent()) throw new DOMException('Authentication changed.', 'AbortError');
             setToken(token);
             hasToken = true;
             return snapshot();
         });
     }
 
-    async function clear(expectedOrigin = null) {
+    async function clear(expectedOrigin = null, isCurrent = () => true) {
         if (!isDesktop()) return snapshot();
         await initialize();
         return serialize(async () => {
+            if (!isCurrent()) return snapshot();
             if (expectedOrigin && server?.origin !== expectedOrigin) throw new DOMException('The selected server changed.', 'AbortError');
             clearToken();
             hasToken = false;

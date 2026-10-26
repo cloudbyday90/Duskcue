@@ -152,4 +152,25 @@ describe('desktop native session boundary', () => {
         await expect(service.persist('unsaved-secret', firstServer.origin)).rejects.toThrow('locked');
         expect(mediaRequestHeaders(`${firstServer.origin}/api/v1/stream/file`)).toEqual({ Authorization: 'Bearer first-native-secret' });
     });
+
+    it('does not publish a superseded write or let its queued cleanup erase a newer credential', async () => {
+        const { service, invoke, tokens } = nativeFixture();
+        await service.initialize();
+        const writing = deferred(); let current = true;
+        const base = invoke.getMockImplementation()!;
+        invoke.mockImplementation(async (command, args) => {
+            if (command === 'write_session_token' && args.req.token === 'older-proof') await writing.promise;
+            return base(command, args);
+        });
+        const old = service.persist('older-proof', firstServer.origin, () => current);
+        const rejected = expect(old).rejects.toMatchObject({ name: 'AbortError' });
+        await vi.waitFor(() => expect(invoke.mock.calls.some(([command, args]) => command === 'write_session_token' && args.req.token === 'older-proof')).toBe(true));
+        current = false;
+        const newer = service.persist('newer-login', firstServer.origin);
+        const cleanup = service.clear(firstServer.origin, () => current);
+        writing.resolve(undefined);
+        await rejected; await newer; await cleanup;
+        expect(tokens.get(firstServer.origin)).toBe('newer-login');
+        expect(mediaRequestHeaders(`${firstServer.origin}/api/v1/stream/file`)).toEqual({ Authorization: 'Bearer newer-login' });
+    });
 });

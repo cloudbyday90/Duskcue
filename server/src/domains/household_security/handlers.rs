@@ -31,43 +31,52 @@ fn body<T: validator::Validate>(input: Result<Json<T>, JsonRejection>) -> Result
 pub async fn status(
     State(app): State<AppState>,
     user: AuthenticatedUser,
+    headers: HeaderMap,
 ) -> Result<Json<StatusResponse>, AppError> {
-    Ok(Json(service::status(&app, Scope::from(&user)).await?))
+    Ok(Json(
+        service::status(&app, super::context::scope(&user, &headers)?).await?,
+    ))
 }
 
 pub async fn password(
     State(app): State<AppState>,
     user: AuthenticatedUser,
+    headers: HeaderMap,
     input: Result<Json<PasswordRequest>, JsonRejection>,
 ) -> Result<(HeaderMap, Json<ProofResponse>), AppError> {
-    let proven = service::password(&app, Scope::from(&user), body(input)?).await?;
+    let proven =
+        service::password(&app, super::context::scope(&user, &headers)?, body(input)?).await?;
     response(&app, &user, proven)
 }
 
 pub async fn start(
     State(app): State<AppState>,
     user: AuthenticatedUser,
+    headers: HeaderMap,
     input: Result<Json<PasskeyStartRequest>, JsonRejection>,
 ) -> Result<Json<ChallengeResponse>, AppError> {
     Ok(Json(
-        challenges::start(&app, Scope::from(&user), body(input)?).await?,
+        challenges::start(&app, super::context::scope(&user, &headers)?, body(input)?).await?,
     ))
 }
 
 pub async fn finish(
     State(app): State<AppState>,
     user: AuthenticatedUser,
+    headers: HeaderMap,
     input: Result<Json<PasskeyFinishRequest>, JsonRejection>,
 ) -> Result<(HeaderMap, Json<ProofResponse>), AppError> {
-    let proven = challenges::finish(&app, Scope::from(&user), body(input)?).await?;
+    let proven =
+        challenges::finish(&app, super::context::scope(&user, &headers)?, body(input)?).await?;
     response(&app, &user, proven)
 }
 
 pub async fn lock(
     State(app): State<AppState>,
     user: AuthenticatedUser,
+    headers: HeaderMap,
 ) -> Result<StatusCode, AppError> {
-    service::lock(&app, Scope::from(&user)).await?;
+    service::lock(&app, super::context::scope(&user, &headers)?).await?;
     Ok(StatusCode::NO_CONTENT)
 }
 

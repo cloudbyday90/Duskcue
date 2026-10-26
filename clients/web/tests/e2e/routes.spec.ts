@@ -76,7 +76,7 @@ test.describe('profile loading failure', () => {
         await page.goto('/dashboard');
         await expect(page.getByRole('heading', { name: 'Profiles are unavailable', exact: true })).toBeVisible();
         api.failures.set('GET /profiles', { status: 401, detail: 'Fixture session expired' });
-        api.failures.set('GET /user/sessions', { status: 401, detail: 'Fixture session expired' });
+        api.failures.set('GET /auth/session-context', { status: 401, detail: 'Fixture session expired' });
         await page.getByRole('button', { name: 'Try again', exact: true }).click();
         await expect(page).toHaveURL(/\/auth\/login$/);
         await expect(page.getByRole('heading', { name: 'Sign In', exact: true })).toBeVisible();
@@ -87,7 +87,7 @@ test.describe('profile loading failure', () => {
 });
 
 test('rejects stale cached account details before requesting profiles', async ({ page, api }) => {
-    api.failures.set('GET /user/sessions', { status: 401, detail: 'Fixture session expired' });
+    api.failures.set('GET /auth/session-context', { status: 401, detail: 'Fixture session expired' });
     await page.goto('/dashboard');
     await expect(page).toHaveURL(/\/auth\/login$/);
     await expect(page.getByRole('heading', { name: 'Sign In', exact: true })).toBeVisible();

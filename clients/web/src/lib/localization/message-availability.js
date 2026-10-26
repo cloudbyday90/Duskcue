@@ -5,6 +5,138 @@
  */
 
 export const incompleteMessages = {
+    "household_activate": [
+        "en"
+    ],
+    "household_activation_help": [
+        "en"
+    ],
+    "household_browser_help": [
+        "en"
+    ],
+    "household_busy": [
+        "en"
+    ],
+    "household_changed": [
+        "en"
+    ],
+    "household_check": [
+        "en"
+    ],
+    "household_choose_key": [
+        "en"
+    ],
+    "household_disabled": [
+        "en"
+    ],
+    "household_duration": [
+        "en"
+    ],
+    "household_enabled": [
+        "en"
+    ],
+    "household_existing_key": [
+        "en"
+    ],
+    "household_existing_password": [
+        "en"
+    ],
+    "household_factor_count": [
+        "en"
+    ],
+    "household_handoff": [
+        "en"
+    ],
+    "household_handoff_help": [
+        "en"
+    ],
+    "household_handoff_title": [
+        "en"
+    ],
+    "household_intro": [
+        "en"
+    ],
+    "household_invalid": [
+        "en"
+    ],
+    "household_key": [
+        "en"
+    ],
+    "household_key_name": [
+        "en"
+    ],
+    "household_lock": [
+        "en"
+    ],
+    "household_locked": [
+        "en"
+    ],
+    "household_method": [
+        "en"
+    ],
+    "household_new_key": [
+        "en"
+    ],
+    "household_passkey_title": [
+        "en"
+    ],
+    "household_password": [
+        "en"
+    ],
+    "household_password_help": [
+        "en"
+    ],
+    "household_password_title": [
+        "en"
+    ],
+    "household_pending": [
+        "en"
+    ],
+    "household_protection": [
+        "en"
+    ],
+    "household_recover": [
+        "en"
+    ],
+    "household_session": [
+        "en"
+    ],
+    "household_standard_only": [
+        "en"
+    ],
+    "household_title": [
+        "en"
+    ],
+    "household_uncertain": [
+        "en"
+    ],
+    "household_unknown_zone": [
+        "en"
+    ],
+    "household_username": [
+        "en"
+    ],
+    "household_validation": [
+        "en"
+    ],
+    "household_verified": [
+        "en"
+    ],
+    "household_verify_passkey": [
+        "en"
+    ],
+    "household_verify_password": [
+        "en"
+    ],
+    "household_wait": [
+        "en"
+    ],
+    "household_working": [
+        "en"
+    ],
+    "household_zone": [
+        "en"
+    ],
     "live_tv_ambiguous": [
         "en"
     ],

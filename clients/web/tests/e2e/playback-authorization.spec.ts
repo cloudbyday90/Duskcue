@@ -2,6 +2,7 @@ import type { Page, Route } from '@playwright/test';
 import { test, expect } from './playback-fixtures';
 import { expectDecodedPlayback, expectTitleContext, openPlayback } from './playback-journey';
 import { createApiScenario, installApiFixture } from '../fixtures/api.js';
+import { fixtureSessionContext } from '../fixtures/household.js';
 import { mediaIds, profileIds } from '../fixtures/catalog.js';
 
 const titleUrl = `/media/${mediaIds.series}?season=${mediaIds.seasonOne}&episode=${mediaIds.episodeOne}&from=${encodeURIComponent('/media?type=series')}`;
@@ -16,13 +17,13 @@ async function installAuthorizationApi(page: Page, api: ReturnType<typeof create
         const request = route.request();
         const path = new URL(request.url()).pathname.replace('/api/v1', '');
         const method = request.method();
-        if (!(method === 'GET' && ['/user/sessions', '/user/preferences'].includes(path)) && !(method === 'POST' && path === '/auth/login')) return route.fallback();
+        if (!(method === 'GET' && ['/auth/session-context', '/user/preferences'].includes(path)) && !(method === 'POST' && path === '/auth/login')) return route.fallback();
         api.requests.push({ method, path, body: request.postData() ? request.postDataJSON() : null, query: {} });
         const json = (body: object, status = 200) => route.fulfill({ status, contentType: status >= 400 ? 'application/problem+json' : 'application/json', body: JSON.stringify(body) });
-        if (path === '/user/sessions') {
+        if (path === '/auth/session-context') {
             if (state.sessionProbe) return state.sessionProbe(route);
             if (state.sessionStatus === 'network') return route.abort('connectionreset');
-            return state.sessionStatus === 200 ? json({ items: [] }) : json({ status: state.sessionStatus, title: 'FIXTURE_SESSION', detail: 'Fixture session validation unavailable' }, state.sessionStatus);
+            return state.sessionStatus === 200 ? json(fixtureSessionContext(api)) : json({ status: state.sessionStatus, title: 'FIXTURE_SESSION', detail: 'Fixture session validation unavailable' }, state.sessionStatus);
         }
         if (path === '/user/preferences') return json({ locale: 'en', available_locales: [{ tag: 'en', name: 'English' }] });
         api.user = { ...state.loginUser };
@@ -46,9 +47,9 @@ test('definitive current-session expiry releases the physical player and preserv
     const authorization = await installAuthorizationApi(page, api);
     const region = await openPlayback(page, titleUrl, mediaIds.episodeOne);
     await expectDecodedPlayback(page);
-    expect(api.requests.filter((request) => request.path === '/user/sessions')).toHaveLength(1);
+    expect(api.requests.filter((request) => request.path === '/auth/session-context')).toHaveLength(1);
     authorization.sessionStatus = 401;
-    authorization.loginUser = { ...api.user, active_profile_id: null, profile_selection_required: true };
+    authorization.loginUser = { ...api.user, active_profile_id: profileIds.alex, profile_selection_required: true };
     api.failures.set('POST /playback/stop', { status: 401, detail: 'Fixture expired playback credential' });
     await region.getByRole('button', { name: 'Close player', exact: true }).focus();
     await page.keyboard.press('Enter');
@@ -58,7 +59,7 @@ test('definitive current-session expiry releases the physical player and preserv
     await expect(page.locator('video')).toHaveCount(0);
     await expect(page.getByRole('button', { name: /^Retry closing/ })).toHaveCount(0);
     expect(await page.evaluate(() => localStorage.getItem('duskcue_user'))).toBeNull();
-    expect(api.requests.filter((request) => request.path === '/user/sessions')).toHaveLength(2);
+    expect(api.requests.filter((request) => request.path === '/auth/session-context')).toHaveLength(2);
     expect(api.requests.filter((request) => request.path === '/auth/logout')).toHaveLength(0);
     expect(playback.stopAttempts).toHaveLength(1);
     expect(playback.stops).toHaveLength(0);
@@ -82,7 +83,7 @@ for (const sessionStatus of [200, 503, 'network'] as const) {
         const authorization = await installAuthorizationApi(page, api);
         const region = await openPlayback(page, titleUrl, mediaIds.episodeOne);
         const video = await expectDecodedPlayback(page);
-        expect(api.requests.filter((request) => request.path === '/user/sessions')).toHaveLength(1);
+        expect(api.requests.filter((request) => request.path === '/auth/session-context')).toHaveLength(1);
         authorization.sessionStatus = sessionStatus;
         api.failures.set('POST /playback/stop', { status: 401, detail: 'Fixture endpoint-specific release denial' });
         await region.getByRole('button', { name: 'Close player', exact: true }).focus();
@@ -93,7 +94,7 @@ for (const sessionStatus of [200, 503, 'network'] as const) {
         expect(new URL(page.url()).pathname).toBe(`/play/${mediaIds.episodeOne}`);
         expect(await video.evaluate((element: HTMLVideoElement) => ({ paused: element.paused, source: element.getAttribute('src') }))).toEqual({ paused: true, source: null });
         expect(await page.evaluate(() => JSON.parse(localStorage.getItem('duskcue_user')!).id)).toBe(api.user.id);
-        expect(api.requests.filter((request) => request.path === '/user/sessions')).toHaveLength(2);
+        expect(api.requests.filter((request) => request.path === '/auth/session-context')).toHaveLength(2);
         expect(api.requests.filter((request) => request.path === '/auth/logout')).toHaveLength(0);
         await page.clock.install();
         await page.clock.fastForward(16_000);
@@ -112,7 +113,7 @@ test('a superseded session probe is actually canceled during cross-tab profile t
     const authorization = await installAuthorizationApi(page, api);
     const region = await openPlayback(page, titleUrl, mediaIds.episodeOne);
     await expectDecodedPlayback(page);
-    expect(api.requests.filter((request) => request.path === '/user/sessions')).toHaveLength(1);
+    expect(api.requests.filter((request) => request.path === '/auth/session-context')).toHaveLength(1);
     let finishProbe!: () => void;
     const pendingProbe = new Promise<void>((resolve) => { finishProbe = resolve; });
     let deliveredProbe = false;
@@ -125,8 +126,8 @@ test('a superseded session probe is actually canceled during cross-tab profile t
     const other = await page.context().newPage();
     try {
         await region.getByRole('button', { name: 'Close player', exact: true }).click();
-        await expect.poll(() => api.requests.filter((request) => request.path === '/user/sessions').length).toBe(2);
-        const failedProbe = page.waitForEvent('requestfailed', { predicate: (request) => new URL(request.url()).pathname === '/api/v1/user/sessions' });
+        await expect.poll(() => api.requests.filter((request) => request.path === '/auth/session-context').length).toBe(2);
+        const failedProbe = page.waitForEvent('requestfailed', { predicate: (request) => new URL(request.url()).pathname === '/api/v1/auth/session-context' });
         await installApiFixture(other, api);
         await other.goto('/dashboard');
         await other.getByRole('button', { name: 'User menu', exact: true }).click();
@@ -139,6 +140,7 @@ test('a superseded session probe is actually canceled during cross-tab profile t
         await expect(page).toHaveURL(/\/auth\/login$/);
         const newerId = '00000000-0000-7000-8000-000000009901';
         authorization.loginUser = { ...api.user, id: newerId, active_profile_id: profileIds.morgan, profile_selection_required: false };
+        authorization.sessionProbe = null;
         await signIn(page);
         await expect.poll(() => new URL(page.url()).pathname).toBe('/dashboard');
         await expect(page.getByRole('button', { name: 'User menu', exact: true })).toHaveText(/Morgan/);

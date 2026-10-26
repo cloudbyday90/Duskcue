@@ -6,6 +6,8 @@
 mod authenticator;
 #[path = "support/owner_capacity.rs"]
 mod capacity;
+#[path = "support/owner_context_cases.rs"]
+mod context_cases;
 #[path = "support/household_database.rs"]
 mod database;
 #[path = "support/guarded_docker.rs"]
@@ -41,6 +43,7 @@ async fn contract(db: &database::Database, capture: &logs::Capture) -> anyhow::R
     secrets.push(cli_actor.token.clone());
     operator_cases::run(&db.url, &db.root, &pool, cli_actor.user, &mut secrets).await?;
     password_cases::run(&app, &state, &pool, &mut secrets).await?;
+    context_cases::run(&app, &pool, &mut secrets).await?;
     println!("OWNER_SECURITY_STAGE password_contract_passed");
     legacy_cases::run(&app, &pool, &mut secrets).await?;
     passkey_cases::run(&app, &state, &pool, &mut secrets).await?;

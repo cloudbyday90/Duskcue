@@ -89,6 +89,7 @@ pub(crate) async fn session_scope_conn(
     if valid != Some(true) {
         return Err(OwnerError::InvalidProof);
     }
+    super::context::check(conn, actor).await?;
     Ok(())
 }
 

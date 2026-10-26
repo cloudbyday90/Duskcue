@@ -150,6 +150,14 @@ describe('profile request isolation', () => {
 });
 
 describe('API failures', () => {
+    it.each(['OWNER_002', 'UNTRUSTED_SERVER_DETAIL'])('bounds owner errors and only preserves explicitly permitted problem codes (%s)', async (title) => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ title, status: 200, detail: 'private verifier diagnostic', trace_id: 'private' }), { status: 401, headers: { 'Content-Type': 'application/problem+json' } })));
+        const error = await get('/household-management/status', {}, { maxJsonBytes: 262_144, problemTitles: ['OWNER_002'] }).catch((failure) => failure);
+        expect(error.status).toBe(401);
+        expect(error.title).toBe(title === 'OWNER_002' ? 'OWNER_002' : 'HTTP_401');
+        expect(error.detail).not.toContain('private');
+        expect(error.traceId).not.toBe('private');
+    });
     it('preserves RFC 9457 fields, validation details and retry timing', async () => {
         const problem = {
             type: '/errors/validation',

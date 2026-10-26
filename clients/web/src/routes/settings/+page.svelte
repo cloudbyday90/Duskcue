@@ -8,7 +8,7 @@
 <script>
     import { m } from '$lib/paraglide/messages.js';
     import { messageLocale } from '$lib/localization/message-locale.js';
-    import { onMount } from 'svelte';
+    import { onMount, getContext } from 'svelte';
     import { setLocale } from '$lib/paraglide/runtime.js';
     import { getUserPreferences, updateUserPreferences } from '$lib/api/users.js';
     import { auth, currentUser, userHasAnyCapability } from '$lib/stores/auth.js';
@@ -16,6 +16,7 @@
     import { isTauriDesktop } from '$lib/desktop/tauri.js';
 
     const ADMIN_CAPABILITIES = ['can_manage_server', 'can_manage_users', 'can_manage_libraries'];
+    const activeProfile = getContext('active-profile');
 
     let preferencesLoading = $state(true);
     let preferences = $state(null);
@@ -103,6 +104,12 @@
         {/if}
     </section>
 
+    {#if activeProfile?.()?.profile_type === 'standard'}
+        <section class="settings-section" aria-labelledby="household-heading" lang={messageLocale('household_title')}>
+            <h2 id="household-heading" class="section-title">{m.household_title()}</h2>
+            <a class="settings-link" href="/settings/household">{m.household_title()}</a>
+        </section>
+    {/if}
     <section class="settings-section" aria-labelledby="notifications-heading">
         <h2 id="notifications-heading" class="section-title">{m.routes_settings_page_notifications()}</h2>
         <a href="/settings/notifications" class="settings-link">

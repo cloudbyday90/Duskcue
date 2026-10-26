@@ -1,5 +1,9 @@
 # API Conventions
 
+## Current-session context — October 26, 2026
+
+Authenticated `GET /api/v1/auth/session-context` returns only the current account/session/profile, selection state, transport, expiry, observation and opaque decimal revisions. It is no-store, including outer refusals. Owner status/proof include the same contextual projection. Supplied `X-Session-Context` bindings are validated under current owner transaction scope before side effects; malformed bindings return fixed 400 and stale bindings fixed 409. The identifier is not proof or an access token. [Household management client](HOUSEHOLD_MANAGEMENT_CLIENT.md) owns exact bounds, adoption and qualification.
+
 ## Profile-scoped catalog reads — October 25, 2026
 
 [Catalog reads](IPTV_CATALOG.md) implements three selected-standard-profile GET routes with bounded typed pages, sealed continuation, UUIDv7 snapshot-entry IDs, windowed programme evidence and a separate unpositionable view. Every page rechecks current viewing/source authority before context validation. Missing matching-generation data is unavailable; valid empty lineups succeed. Responses and refusals are no-store, with no ETag/body buffering or playback grant. The authority owns the confirmed contract and qualification evidence.

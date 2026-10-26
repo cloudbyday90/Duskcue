@@ -122,11 +122,11 @@ test('valid empty snapshots remain distinct from failures', async ({ page, api }
 test('a catalog 401 revalidates the current session without replaying or logging out a valid account', async ({ page, api }) => {
     await page.goto('/live-tv'); await channel(page).click();
     await expect(page.locator('.programme')).toHaveCount(20);
-    const probes = api.requests.filter((entry) => entry.path === '/user/sessions').length;
+    const probes = api.requests.filter((entry) => entry.path === '/auth/session-context').length;
     api.liveTv.status = 401;
     await page.getByRole('button', { name: 'Later', exact: true }).click();
     await expect(page.getByRole('status').filter({ hasText: 'session needs verification' })).toBeVisible();
-    await expect.poll(() => api.requests.filter((entry) => entry.path === '/user/sessions').length).toBe(probes + 1);
+    await expect.poll(() => api.requests.filter((entry) => entry.path === '/auth/session-context').length).toBe(probes + 1);
     await expect(page.getByRole('button', { name: 'User menu', exact: true })).toBeVisible();
     await expect(page.locator('.programme, .channels')).toHaveCount(0);
     const before = requests(api).length;

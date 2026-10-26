@@ -25,8 +25,10 @@ pub async fn status(state: &AppState, actor: Scope) -> Result<StatusResponse, Ow
             .bind(actor.user)
             .fetch_one(&mut *tx)
             .await?;
+    let context = super::context::read(&mut tx, actor).await?;
     tx.commit().await?;
     Ok(StatusResponse {
+        context,
         protection_enabled: enabled,
         expires_at,
         password_available,
@@ -117,6 +119,7 @@ pub async fn lock(state: &AppState, actor: Scope) -> Result<(), OwnerError> {
 
 pub(super) fn proof_body(proven: &Proven, bearer: bool) -> ProofResponse {
     ProofResponse {
+        context: proven.context.clone(),
         expires_at: proven.expires_at,
         session_token: bearer.then(|| proven.token.clone()),
     }

@@ -2,6 +2,7 @@
 // Copyright (C) 2026-2026 Duskcue Contributors
 // Licensed under AGPL-3.0. See LICENSE for details.
 
+use crate::domains::auth::service::session_context::SessionContextResponse;
 use crate::extractors::AuthenticatedUser;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -14,6 +15,8 @@ pub struct Scope {
     pub user: Uuid,
     pub session: Uuid,
     pub profile: Uuid,
+    pub transport: crate::extractors::CredentialTransport,
+    pub binding: Option<[u8; 32]>,
 }
 
 impl From<&AuthenticatedUser> for Scope {
@@ -23,6 +26,8 @@ impl From<&AuthenticatedUser> for Scope {
             user: user.user_id,
             session: user.session_id,
             profile: user.profile_id,
+            transport: user.transport,
+            binding: None,
         }
     }
 }
@@ -90,6 +95,7 @@ pub struct ChallengeResponse {
 
 #[derive(Serialize)]
 pub struct StatusResponse {
+    pub context: SessionContextResponse,
     pub protection_enabled: bool,
     pub expires_at: Option<DateTime<Utc>>,
     pub password_available: bool,
@@ -98,12 +104,14 @@ pub struct StatusResponse {
 
 #[derive(Serialize)]
 pub struct ProofResponse {
+    pub context: SessionContextResponse,
     pub expires_at: DateTime<Utc>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub session_token: Option<String>,
 }
 
 pub(super) struct Proven {
+    pub context: SessionContextResponse,
     pub token: String,
     pub expires_at: DateTime<Utc>,
     pub session_expires_at: DateTime<Utc>,

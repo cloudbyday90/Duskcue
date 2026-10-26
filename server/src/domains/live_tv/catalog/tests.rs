@@ -21,6 +21,8 @@ fn view() -> Viewing {
     let user = Uuid::now_v7();
     Viewing {
         actor: Scope {
+            transport: crate::extractors::CredentialTransport::Bearer,
+            binding: None,
             user,
             session: Uuid::now_v7(),
             profile: Uuid::now_v7(),

@@ -29,6 +29,7 @@ use super::error::AuthError;
 use super::types::*;
 
 mod passkeys;
+pub mod session_context;
 pub use passkeys::{delete_passkey, finish_passkey_registration, start_passkey_registration};
 
 pub async fn validate_session(

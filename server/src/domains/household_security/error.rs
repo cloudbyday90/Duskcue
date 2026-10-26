@@ -7,6 +7,8 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum OwnerError {
+    #[error("household-management session context changed")]
+    ContextChanged,
     #[error("fresh household-owner proof is required")]
     Required,
     #[error("household-owner proof is invalid or expired")]
@@ -26,6 +28,7 @@ pub enum OwnerError {
 impl OwnerError {
     pub fn http(&self) -> (StatusCode, &'static str, String) {
         let (status, code) = match self {
+            Self::ContextChanged => (StatusCode::CONFLICT, "OWNER_007"),
             Self::Required => (StatusCode::FORBIDDEN, "OWNER_001"),
             Self::InvalidProof => (StatusCode::UNAUTHORIZED, "OWNER_002"),
             Self::Locked => (StatusCode::TOO_MANY_REQUESTS, "OWNER_003"),

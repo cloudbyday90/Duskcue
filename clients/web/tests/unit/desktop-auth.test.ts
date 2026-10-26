@@ -3,6 +3,7 @@ import { get } from 'svelte/store';
 
 const mocks = vi.hoisted(() => ({
     scope: { isDesktop: true, server: { origin: 'https://first.invalid:48027' }, hasToken: true },
+    contextUser: null as any,
     persist: vi.fn(), clear: vi.fn(), login: vi.fn(), setup: vi.fn(), sessions: vi.fn(), logout: vi.fn(),
 }));
 
@@ -12,9 +13,11 @@ vi.mock('../../src/lib/desktop/session.js', () => ({
     clearDesktopSession: mocks.clear,
 }));
 vi.mock('../../src/lib/api/auth.js', () => ({
-    setup: mocks.setup, loginWithInvite: mocks.login, loginWithPassword: mocks.login,
+    setup: async (body) => { const result = await mocks.setup(body); mocks.contextUser = result.user; return result; },
+    loginWithInvite: async (body) => { const result = await mocks.login(body); mocks.contextUser = result.user; return result; },
+    loginWithPassword: async (body) => { const result = await mocks.login(body); mocks.contextUser = result.user; return result; },
     startWebauthnAuth: vi.fn(), finishWebauthnAuth: mocks.login,
-    logout: mocks.logout, logoutAll: mocks.logout, listSessions: mocks.sessions,
+    logout: mocks.logout, logoutAll: mocks.logout, listSessions: mocks.sessions, getSessionContext: mocks.sessions,
 }));
 
 function deferred<T = any>() {
@@ -34,7 +37,8 @@ beforeEach(() => {
     mocks.persist.mockResolvedValue({});
     mocks.clear.mockResolvedValue({});
     mocks.login.mockResolvedValue({ session_token: 'native-only-secret', user });
-    mocks.sessions.mockResolvedValue({ items: [] });
+    mocks.contextUser = user;
+    mocks.sessions.mockImplementation(async () => ({ user_id: mocks.contextUser.id, profile_id: mocks.contextUser.active_profile_id, session_id: 'current-session', credential_revision: '0', profile_selection_required: false, context_id: 'context-current' }));
     mocks.logout.mockResolvedValue({});
     values = new Map();
     vi.stubGlobal('localStorage', {
@@ -45,6 +49,29 @@ beforeEach(() => {
 });
 
 describe('shared auth desktop persistence', () => {
+    it('rejects an authoritative account mismatch without adopting a cached identity', async () => {
+        values.set(cacheKey, JSON.stringify(user));
+        mocks.sessions.mockResolvedValueOnce({ user_id: 'other-account', session_id: 'foreign-session' });
+        const { auth } = await import('../../src/lib/stores/auth.js');
+        auth.init();
+        expect(await auth.checkSession()).toBe(false);
+        expect(get(auth).isAuthenticated).toBe(false);
+    });
+
+    it('advances authority when cookie context changes and fences an older expiry probe', async () => {
+        const { auth } = await import('../../src/lib/stores/auth.js');
+        await auth.loginWithPassword({ username: 'fixture', password: 'fixture' });
+        const gate = deferred();
+        mocks.sessions.mockImplementationOnce(async () => { await gate.promise; throw Object.assign(new Error('Old proof'), { status: 401 }); });
+        const old = auth.checkSession({ revalidate: true });
+        mocks.sessions.mockResolvedValueOnce({ user_id: user.id, profile_id: user.active_profile_id, session_id: 'current-session', credential_revision: '1', profile_selection_required: false, context_id: 'rotated-context' });
+        expect(await auth.checkSession({ revalidate: true })).toMatchObject({ status: 'valid' });
+        gate.resolve({});
+        expect(await old).toMatchObject({ status: 'superseded' });
+        expect(get(auth).isAuthenticated).toBe(true);
+        expect(mocks.clear).not.toHaveBeenCalled();
+    });
+
     it('does not authenticate a cached browser account before the server validates its cookie', async () => {
         mocks.scope = { isDesktop: false, server: null, hasToken: false };
         values.set('duskcue_user', JSON.stringify(user));
@@ -88,7 +115,7 @@ describe('shared auth desktop persistence', () => {
         expect(outcome.isCurrent()).toBe(true);
         expect(get(auth)).toMatchObject({ user: null, isAuthenticated: false, loading: false, error: null });
         expect(values.has(cacheKey)).toBe(false);
-        expect(mocks.clear).toHaveBeenCalledExactlyOnceWith(mocks.scope.server.origin);
+        expect(mocks.clear).toHaveBeenCalledExactlyOnceWith(mocks.scope.server.origin, expect.any(Function));
         auth.setUser({ ...user, id: 'new-account' });
         expect(outcome.isCurrent()).toBe(false);
     });
@@ -175,9 +202,9 @@ describe('shared auth desktop persistence', () => {
         mocks.persist.mockReturnValue(writing.promise);
         const { auth } = await import('../../src/lib/stores/auth.js');
         const login = auth.loginWithPassword({ username: 'fixture', password: 'fixture' });
-        await Promise.resolve();
+        await vi.waitFor(() => expect(mocks.persist).toHaveBeenCalled());
         expect(get(auth).isAuthenticated).toBe(false);
-        expect(mocks.persist).toHaveBeenCalledWith('native-only-secret', mocks.scope.server.origin);
+        expect(mocks.persist).toHaveBeenCalledWith('native-only-secret', mocks.scope.server.origin, expect.any(Function));
         writing.resolve({});
         await login;
         expect(get(auth)).toMatchObject({ isAuthenticated: true, user });
@@ -203,8 +230,8 @@ describe('shared auth desktop persistence', () => {
         });
         const { auth } = await import('../../src/lib/stores/auth.js');
         await expect(auth.loginWithPassword({ username: 'fixture', password: 'fixture' })).rejects.toThrow('unavailable');
-        expect(mocks.persist).toHaveBeenCalledWith('native-only-secret', mocks.scope.server.origin);
-        expect(mocks.clear).toHaveBeenCalledWith(mocks.scope.server.origin);
+        expect(mocks.persist).toHaveBeenCalledWith('native-only-secret', mocks.scope.server.origin, expect.any(Function));
+        expect(mocks.clear).toHaveBeenCalledWith(mocks.scope.server.origin, expect.any(Function));
         expect(get(auth).isAuthenticated).toBe(false);
     });
 
@@ -221,7 +248,7 @@ describe('shared auth desktop persistence', () => {
     it('does not invent an account when a secure token lacks its scoped user summary', async () => {
         const { auth } = await import('../../src/lib/stores/auth.js');
         expect(await auth.checkSession()).toBe(false);
-        expect(mocks.clear).toHaveBeenCalledWith(mocks.scope.server.origin);
+        expect(mocks.clear).toHaveBeenCalledWith(mocks.scope.server.origin, expect.any(Function));
         expect(get(auth).user).toBeNull();
     });
 
@@ -234,7 +261,7 @@ describe('shared auth desktop persistence', () => {
         expect(values.has(cacheKey)).toBe(true);
         mocks.sessions.mockRejectedValueOnce(Object.assign(new Error('Expired'), { status: 401 }));
         expect(await auth.checkSession()).toBe(false);
-        expect(mocks.clear).toHaveBeenCalledWith(mocks.scope.server.origin);
+        expect(mocks.clear).toHaveBeenCalledWith(mocks.scope.server.origin, expect.any(Function));
         expect(values.has(cacheKey)).toBe(false);
     });
 
@@ -248,7 +275,7 @@ describe('shared auth desktop persistence', () => {
         response.resolve({ session_token: 'late-secret', user });
         await rejection;
         expect(mocks.persist).not.toHaveBeenCalled();
-        expect(mocks.clear).toHaveBeenCalledWith(mocks.scope.server.origin);
+        expect(mocks.clear).toHaveBeenCalledWith(mocks.scope.server.origin, expect.any(Function));
         expect(get(auth).isAuthenticated).toBe(false);
     });
 

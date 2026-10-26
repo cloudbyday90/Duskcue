@@ -27,12 +27,22 @@ use crate::domains::tv::service as tv_service;
 use crate::domains::tv::types::TvSurfaceSectionType;
 use crate::error::AppError;
 use crate::extractors::{AuthenticatedUser, CanManageUsers, Require};
+
 use crate::state::{AppState, NetworkMode};
 
 use super::error::AuthError;
 use super::service;
 use super::service::DeviceInfo;
 use super::types::*;
+
+pub async fn session_context(
+    State(state): State<AppState>,
+    user: AuthenticatedUser,
+) -> Result<Json<service::session_context::SessionContextResponse>, AppError> {
+    Ok(Json(
+        service::session_context::current(&state.pool, &user).await?,
+    ))
+}
 
 fn build_session_cookie_value(state: &AppState, token: &str, max_age_days: i32) -> String {
     let config = state.runtime_config.load();

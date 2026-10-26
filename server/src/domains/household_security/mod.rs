@@ -3,6 +3,7 @@
 // Licensed under AGPL-3.0. See LICENSE for details.
 
 mod challenges;
+mod context;
 pub mod error;
 mod factors;
 mod grants;

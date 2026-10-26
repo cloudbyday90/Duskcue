@@ -1,5 +1,9 @@
 # API Security Domain
 
+## Owner client context — October 26, 2026
+
+The [household management client](../design/HOUSEHOLD_MANAGEMENT_CLIENT.md) adds an authenticated no-store current-session context read and transaction-checked optional `X-Session-Context` binding on owner routes. The digest and metadata-only cross-tab notices grant no authority. The client retains rotated-cookie/bearer adoption and native secure-store ownership, discards stale management presentation and never automatically repeats a proof after an uncertain response. Existing owner trust, five-minute grant, operator handoff and revocation rules remain authoritative.
+
 ## Catalog viewing authority — October 25, 2026
 
 The confirmed [catalog contract](../design/IPTV_CATALOG.md) is implemented with current standard-profile viewing authority and the actual capability resolver, independently of management proof. Reads validate both saved approvals without networking and authenticate manifest, metadata and indexed row bindings. A database-managed profile-context revision prevents cursor revival after switching away and back. Explicit DTOs omit structured upstream references; fixed errors and route-family tracing keep cursors, imported text and credentials out of diagnostics. All application-route results remain no-store. Qualification and the limits of SQLx fallback cleanup are recorded in the authority.

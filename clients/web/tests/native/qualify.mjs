@@ -20,6 +20,7 @@ import { captureNativeArtifact, createNativeCaptureInventory } from './qualifica
 import { exerciseNativeBrowsing } from './qualification-browsing.mjs';
 import { awaitNativeFirstRun } from './qualification-startup.mjs';
 import { exerciseNativeLiveTv } from './qualification-live-tv.mjs';
+import { exerciseNativeHousehold } from './qualification-household.mjs';
 
 if (process.argv[2] === '--prepare') {
     const manifest = await prepareQualification();
@@ -50,6 +51,7 @@ if (process.argv[2] === '--prepare') {
         result.checks.eventsPrimary = await exerciseNativeEvents(page, api, manifest.origins[0], screenshot, 'primary');
         await screenshot('native-home');
         result.checks.liveTvPrimary = await exerciseNativeLiveTv(page, api, manifest, uiEvidence);
+        result.checks.householdPrimary = await exerciseNativeHousehold(page, api, manifest, uiEvidence);
         result.checks.browsing = await exerciseNativeBrowsing(page, api, screenshot);
         result.checks.preferences = await exercisePreferences(page, api, screenshot);
         result.checks.playback = await exerciseNativePlayback(page, runtime, api, screenshot);
@@ -60,6 +62,7 @@ if (process.argv[2] === '--prepare') {
         result.checks.serverSwitch = await exerciseServerSwitch(page, manifest, api, health);
         result.checks.eventsSwitched = await exerciseNativeEvents(page, api, manifest.origins[1], screenshot, 'switched');
         result.checks.liveTvSwitched = await exerciseNativeLiveTv(page, api, manifest, uiEvidence, 'switched');
+        result.checks.householdSwitched = await exerciseNativeHousehold(page, api, manifest, uiEvidence, 'switched');
         expect(api.scenario.unhandledRequests).toEqual([]);
         expect(api.transportErrors).toEqual([]);
         expect(runtime.pageErrors).toEqual([]);

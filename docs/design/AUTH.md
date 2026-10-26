@@ -1,5 +1,9 @@
 # Authentication & User Management Domain
 
+## Current-session context and owner client — October 26, 2026
+
+[Household management client](HOUSEHOLD_MANAGEMENT_CLIENT.md) owns the shared standard-profile settings screen and retained cookie/bearer rotation. Authenticated `GET /api/v1/auth/session-context` provides the actual account/session/profile, transport, absolute expiry and decimal credential/profile revisions with no-store. Its nonsecret `sc1.` context identifier binds owner requests under existing transaction locks. Successful proof also identifies its actual context; it is adopted without requiring a login user summary. Browser passkeys and native existing-password proof preserve the configured RP and origin-keyed secure store. Bad `OWNER_002` proof does not expire viewing; independent current-session validation establishes expiry. General passkey-login repair and native passkeys remain separate.
+
 ## Saved IPTV administrator authority — October 24, 2026
 
 [Assignment administration](IPTV_ASSIGNMENT.md) requires current `can_manage_users` plus a fresh management grant on the administrator's own account for sensitive writes, independently of the target household. A global server-owner role does not replace that proof. Shared multi-account locking and transaction-time capability checks prevent pending writes from inheriting revoked permissions; capability replacement now locks its subject account. Existing factor enrollment/login and viewing-token contracts retain their ownership. The assignment authority records exact interfaces, runtime evidence and deferred client work.
@@ -8,7 +12,7 @@
 
 [Household-owner management security](../security/HOUSEHOLD_OWNER_SECURITY.md) owns the explicitly activated owner-proof foundation. A viewing session, a standard profile or an arbitrary previously enrolled passkey does not establish owner authority. An operator-only one-use handoff designates an owner-held password/passkey or permits verified replacement-passkey registration. The handoff is not an additional ordinary login method.
 
-Fresh proof rotates the external cookie/bearer token and increments its credential generation, preserving the internal session UUID, viewing scope and absolute expiry. Protected transactions reject an older request generation and require a current five-minute grant. Enabled households protect existing credential enrollment/removal; factor changes revoke grants, and final-factor removal is refused. Accounts without activation retain their existing behavior. The authority records real software-authenticator/operator/HTTP qualification and remaining client/notification/general-login boundaries; no interactive owner prompt or authentication-assurance certification is implied.
+Fresh proof rotates the external cookie/bearer token and increments its credential generation, preserving the internal session UUID, viewing scope and absolute expiry. Protected transactions reject an older request generation and require a current five-minute grant. Enabled households protect existing credential enrollment/removal; factor changes revoke grants, and final-factor removal is refused. Accounts without activation retain their existing behavior. The authority records real software-authenticator/operator/HTTP qualification and remaining client/notification/general-login boundaries; the shared interactive consumer is now qualified in the client authority above, without an authentication-assurance certification claim.
 
 ## Overview
 

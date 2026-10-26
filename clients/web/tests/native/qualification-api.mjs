@@ -4,6 +4,7 @@ import { ensurePlaybackMedia } from '../fixtures/playback-media.mjs';
 import { installPlaybackApi } from '../fixtures/playback-api.mjs';
 import { createQualificationEvents } from './qualification-events.mjs';
 import { createNativePreferenceFixture } from './qualification-viewing-preferences.mjs';
+import { handleHouseholdFixture } from '../fixtures/household.js';
 
 export async function installQualificationApi(page, manifest) {
     const scenario = createApiScenario({ authenticated: false });
@@ -29,8 +30,9 @@ export async function installQualificationApi(page, manifest) {
     const observedRequest = (request) => {
         const url = new URL(request.url());
         if (!url.pathname.startsWith('/api/v1/')) return;
+        const expectedToken = tokens.get(url.origin);
         const task = request.allHeaders().then((headers) => {
-            transportRequests.push({ method: request.method(), path: url.pathname.replace('/api/v1', ''), origin: url.origin, originAllowed: tokens.has(url.origin), authenticated: headers.authorization === `Bearer ${tokens.get(url.origin)}` });
+            transportRequests.push({ method: request.method(), path: url.pathname.replace('/api/v1', ''), origin: url.origin, originAllowed: tokens.has(url.origin), authenticated: headers.authorization === `Bearer ${expectedToken}` });
         }).catch((error) => { if (observing) transportErrors.push({ path: url.pathname, message: error.message }); });
         headerReads.add(task);
         task.finally(() => headerReads.delete(task));
@@ -50,6 +52,12 @@ export async function installQualificationApi(page, manifest) {
         const json = (body, status = 200) => route.fulfill({ status, contentType: 'application/json', body: JSON.stringify(body) });
         if (await events.handle(route)) return;
         if (await viewing.handle(route)) return;
+        if (path === '/auth/session-context' || path.startsWith('/household-management/')) {
+            await handleHouseholdFixture(route, scenario, { authenticated: authorization === `Bearer ${tokens.get(url.origin)}`, transport: 'bearer', rotateToken: () => {
+                const token = `tonight-fixture-${randomUUID()}`; tokens.set(url.origin, token); return token;
+            } });
+            return;
+        }
         if (method === 'POST' && path === '/auth/login') {
             const body = request.postDataJSON();
             authRequests.push({ origin: url.origin, clientPlatform: body.client_platform, deviceIdPresent: typeof body.device_id === 'string', deviceId: body.device_id ?? null });

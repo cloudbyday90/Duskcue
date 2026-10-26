@@ -1,5 +1,9 @@
 # Error Handling Design
 
+## Owner session-context binding — October 26, 2026
+
+`OWNER_007` is a fixed 409 refusal for a supplied owner-management context that no longer matches current database scope. Malformed/duplicate bindings retain `OWNER_005`/400. The client preserves an allowlist of fixed owner/auth codes while discarding arbitrary error details, so `OWNER_002`/401 is distinguished from independently confirmed viewing-session expiry. [Household management client](HOUSEHOLD_MANAGEMENT_CLIENT.md) owns explicit recovery, bounds and qualification.
+
 ## Catalog errors — October 25, 2026
 
 The [catalog service](IPTV_CATALOG.md) maps IPTV_CATALOG_001 malformed input to 400, _002 current viewing authority absent to 403, _003 entry absent from the authorized current snapshot to 404, _004 changed snapshot/profile/paging context to 409, and _005 unavailable data/crypto/storage/deadline/release or busy/closed admission to 503 with Retry-After 5. Session rechecks use existing AUTH_005 (401); outer authentication/rate-limit behavior remains. Fixed messages never interpolate cursor, imported text, SQL or crypto details. Private response policy covers extractor and outer-limiter errors as well as successful pages.

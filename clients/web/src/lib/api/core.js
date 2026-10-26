@@ -228,7 +228,9 @@ export async function request(method, path, options = {}) {
             ensureProfileScopeCurrent(profileScoped, requestRevision);
             if (options.maxJsonBytes) {
                 requestScope.signal?.throwIfAborted();
-                problem = { status: response.status, title: `HTTP_${response.status}` };
+                const title = typeof problem?.title === 'string' && options.problemTitles?.includes(problem.title)
+                    ? problem.title : `HTTP_${response.status}`;
+                problem = { status: response.status, title };
             }
             const error = new ApiError(problem);
             const retryAfter = response.headers.get('Retry-After');

@@ -2,6 +2,7 @@ import { createCatalog, mediaIds, profileIds } from './catalog.js';
 import { accessibleItems, browsingResponse } from './browsing.js';
 import { searchResponse } from './searching.js';
 import { createLiveTvFixture, liveTvResponse } from './live-tv.js';
+import { createHouseholdFixture, handleHouseholdFixture } from './household.js';
 
 export function createApiScenario(options = {}) {
     const catalog = createCatalog();
@@ -9,6 +10,7 @@ export function createApiScenario(options = {}) {
     return {
         ...catalog,
         liveTv: createLiveTvFixture(),
+        household: createHouseholdFixture(),
         activeProfileId,
         user: { ...catalog.user, role: options.userRole || catalog.user.role, active_profile_id: activeProfileId, profile_selection_required: !!options.selectionRequired },
         selectionRequired: !!options.selectionRequired,
@@ -55,6 +57,7 @@ export async function installApiFixture(page, scenario) {
         });
         const failure = scenario.failures.get(`${method} ${path}`);
         if (failure) return json(problem(failure.status, failure.detail), failure.status);
+        if (await handleHouseholdFixture(route, scenario)) return;
 
         if (path.startsWith('/live-tv/catalog/') && method === 'GET') {
             const response = liveTvResponse(scenario, url);
@@ -62,6 +65,7 @@ export async function installApiFixture(page, scenario) {
         }
 
         if (path === '/setup/status' && method === 'GET') return json({ setup_required: false });
+        if (path === '/user/preferences' && method === 'GET') return json({ locale: 'en', available_locales: [{ tag: 'en', name: 'English' }] });
         if (path === '/user/sessions' && method === 'GET') {
             return scenario.authenticated
                 ? json({ items: [] })
@@ -114,6 +118,8 @@ export async function installApiFixture(page, scenario) {
             if (!profile) return json(problem(404, 'Fixture profile not found'), 404);
             if (scenario.parentUnlockRequired && profile.profile_type === 'standard') return json(problem(403, 'Parent unlock required'), 403);
             scenario.activeProfileId = profile.id;
+            scenario.household.profileRevision = String(BigInt(scenario.household.profileRevision) + 1n);
+            scenario.household.grant = null;
             scenario.selectionRequired = false;
             scenario.parentUnlockRequired = profile.profile_type === 'kids';
             if (body?.remember_on_device === true) scenario.rememberedProfileId = profile.id;

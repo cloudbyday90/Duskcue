@@ -25,8 +25,11 @@ import {
     finishWebauthnAuth as apiFinishWebauthnAuth,
     logout as apiLogout,
     logoutAll as apiLogoutAll,
-    listSessions as apiListSessions,
+    getSessionContext as apiSessionContext,
 } from '../api/auth.js';
+import { createCredentialReplacement } from '../household/credential-replacement.js';
+import { announceSessionChange } from '../household/session-sync.js';
+import { invalidateProfileScopedRequests } from '../api/core.js';
 import { getDeviceIdentity } from '../device/identity.js';
 import { persistDesktopSession, clearDesktopSession, getDesktopSessionScope } from '../desktop/session.js';
 
@@ -47,11 +50,54 @@ function withWebDeviceIdentity(data) {
 
 function createAuthStore() {
     let revision = 0;
-    const { subscribe, set, update } = writable({
+    let sessionContext = null;
+    const { subscribe, set: setState, update } = writable({
         user: null,
         isAuthenticated: false,
         loading: false,
         error: null,
+        credential_epoch: 0,
+        credential_pending: false,
+    });
+
+    function set(value) { setState({ credential_epoch: 0, credential_pending: false, ...value }); }
+    function capture() {
+        const user = get({ subscribe }).user;
+        return { revision, origin: getDesktopSessionScope().server?.origin || globalThis.location?.origin, userId: user?.id, profileId: user?.active_profile_id, context: sessionContext };
+    }
+    function current(lease, profile = false) {
+        const value = capture();
+        return value.revision === lease.revision && value.origin === lease.origin && value.userId === lease.userId && (!profile || value.profileId === lease.profileId);
+    }
+    function publishContext(context) {
+        sessionContext = context;
+        invalidateProfileScopedRequests();
+        update((state) => {
+            const user = { ...state.user, active_profile_id: context.profile_id, profile_selection_required: context.profile_selection_required };
+            persistUser(user);
+            return { ...state, user, credential_epoch: (state.credential_epoch || 0) + 1 };
+        });
+    }
+    const replacement = createCredentialReplacement({
+        begin(expected) {
+            const lease = capture();
+            if (get({ subscribe }).loading || !get({ subscribe }).isAuthenticated || lease.userId !== expected.user_id || lease.profileId !== expected.profile_id
+                || !sessionContext || sessionContext.context_id !== expected.context_id) throw new DOMException('Session context changed', 'AbortError');
+            lease.revision = ++revision;
+            update((state) => ({ ...state, credential_pending: true }));
+            return lease;
+        },
+        current, persist: persistDesktopSession, readContext: apiSessionContext, publish: publishContext,
+        async failed(error, lease) {
+            if (['OWNER_001', 'OWNER_002', 'OWNER_003', 'OWNER_004', 'OWNER_005', 'OWNER_007'].includes(error.title)) return;
+            invalidateProfileScopedRequests();
+            if (getDesktopSessionScope().isDesktop) {
+                try { await clearDesktopSession(lease.origin, () => current(lease)); } catch {}
+                if (current(lease)) { persistUser(null); set({ user: null, isAuthenticated: false, loading: false, error: null, credential_epoch: 0, credential_pending: false }); }
+            }
+        },
+        announce: announceSessionChange,
+        ended: () => update((state) => ({ ...state, credential_pending: false })),
     });
 
     function userStorageKey() {
@@ -88,11 +134,15 @@ function createAuthStore() {
 
     async function handleSessionResult(result, expectedRevision, origin) {
         if (revision !== expectedRevision || origin !== getDesktopSessionScope().server?.origin) throw new DOMException('Authentication changed.', 'AbortError');
-        await persistDesktopSession(result.session_token, origin);
+        await persistDesktopSession(result.session_token, origin, () => revision === expectedRevision && origin === getDesktopSessionScope().server?.origin);
         if (revision !== expectedRevision || origin !== getDesktopSessionScope().server?.origin) throw new DOMException('Authentication changed.', 'AbortError');
         const user = result.user || null;
+        const context = await apiSessionContext();
+        if (revision !== expectedRevision || origin !== getDesktopSessionScope().server?.origin) throw new DOMException('Authentication changed.', 'AbortError');
+        if (context.user_id !== user?.id) throw new Error('Session account changed');
+        sessionContext = context;
         try { persistUser(user); } catch (error) {
-            await clearDesktopSession(origin);
+            await clearDesktopSession(origin, () => revision === expectedRevision && origin === getDesktopSessionScope().server?.origin);
             throw error;
         }
         set({ user, isAuthenticated: !!user, loading: false, error: null });
@@ -100,6 +150,20 @@ function createAuthStore() {
 
     return {
         subscribe,
+        capture,
+        isCurrent: current,
+        credentialWork: () => replacement.pending,
+        replaceSession: (submit, expected) => replacement.run(submit, expected),
+        async readContext(signal = null) {
+            if (replacement.pending) throw new Error('Credential replacement is busy');
+            const lease = capture();
+            const context = await apiSessionContext(signal);
+            if (!current(lease, true)) throw new DOMException('Session changed', 'AbortError');
+            if (context.user_id !== lease.userId || context.profile_id !== lease.profileId || (sessionContext && sessionContext.session_id !== context.session_id)) throw new Error('Session context changed');
+            if (sessionContext && sessionContext.context_id !== context.context_id) { revision += 1; invalidateProfileScopedRequests(); }
+            sessionContext = context;
+            return { context, lease: capture() };
+        },
 
         init() {
             const cached = restoreUser();
@@ -109,7 +173,8 @@ function createAuthStore() {
         },
 
         async checkSession({ revalidate = false, expectedContext = null } = {}) {
-            const expectedRevision = revision;
+            let expectedRevision = revision;
+            if (replacement.pending) return revalidate ? { status: 'unavailable', isCurrent: () => revision === expectedRevision } : false;
             const desktop = getDesktopSessionScope();
             const desktopOrigin = desktop.server?.origin;
             const userId = get({ subscribe }).user?.id || null;
@@ -138,25 +203,31 @@ function createAuthStore() {
                     set({ user: null, isAuthenticated: false, loading: false, error: null });
                     return false;
                 }
-                await apiListSessions();
+                const context = await apiSessionContext();
                 if (!current()) return revalidate ? outcome('superseded') : false;
-                const cached = restoreUser();
+                let cached = restoreUser();
+                if (cached && (cached.id !== context.user_id || (revalidate && (context.user_id !== userId || (sessionContext && sessionContext.session_id !== context.session_id))))) cached = null;
                 if (!cached) {
-                    if (revalidate) {
-                        update((s) => ({ ...s, loading: false, error: null }));
-                        return outcome('valid');
+                    if (revalidate && get({ subscribe }).user?.id === context.user_id && (!sessionContext || sessionContext.session_id === context.session_id)) {
+                        cached = get({ subscribe }).user;
+                    } else {
+                        await clearDesktopSession(desktopOrigin, current);
+                        if (!current()) return false;
+                        set({ user: null, isAuthenticated: false, loading: false, error: null });
+                        return revalidate ? outcome('changed') : false;
                     }
-                    await clearDesktopSession(desktopOrigin);
-                    if (!current()) return false;
-                    set({ user: null, isAuthenticated: false, loading: false, error: null });
-                    return false;
                 }
+                const changed = sessionContext && sessionContext.context_id !== context.context_id;
+                sessionContext = context;
+                if (changed) { expectedRevision = ++revision; invalidateProfileScopedRequests(); }
+                cached = { ...cached, active_profile_id: context.profile_id, profile_selection_required: context.profile_selection_required };
                 update((s) => ({
                     ...s,
                     user: cached,
                     isAuthenticated: true,
                     loading: false,
                     error: null,
+                    credential_epoch: (s.credential_epoch || 0) + (changed ? 1 : 0),
                 }));
                 if (revalidate && cached.id !== userId) {
                     revision += 1;
@@ -171,7 +242,7 @@ function createAuthStore() {
                 }
                 if (revalidate) {
                     let clearingError = null;
-                    try { await clearDesktopSession(desktopOrigin); } catch (error) { clearingError = error; }
+                    try { await clearDesktopSession(desktopOrigin, current); } catch (error) { clearingError = error; }
                     if (!current()) return outcome('superseded');
                     try { persistUser(null); } catch (error) { clearingError ||= error; }
                     set({ user: null, isAuthenticated: false, loading: false, error: clearingError });
@@ -179,7 +250,7 @@ function createAuthStore() {
                 }
                 if (err.status === 401) {
                     persistUser(null);
-                    try { await clearDesktopSession(desktopOrigin); } catch (storageError) {
+                    try { await clearDesktopSession(desktopOrigin, current); } catch (storageError) {
                         if (!current()) return false;
                         set({ user: null, isAuthenticated: false, loading: false, error: storageError });
                         return false;
@@ -264,7 +335,7 @@ function createAuthStore() {
             if (revision !== expectedRevision || origin !== getDesktopSessionScope().server?.origin) return;
             persistUser(null);
             let error = null;
-            try { await clearDesktopSession(origin); } catch (err) { error = err; }
+            try { await clearDesktopSession(origin, () => revision === expectedRevision && origin === getDesktopSessionScope().server?.origin); } catch (err) { error = err; }
             if (revision === expectedRevision) set({ user: null, isAuthenticated: false, loading: false, error });
         },
 
@@ -278,7 +349,7 @@ function createAuthStore() {
             if (revision !== expectedRevision || origin !== getDesktopSessionScope().server?.origin) return;
             persistUser(null);
             let error = null;
-            try { await clearDesktopSession(origin); } catch (err) { error = err; }
+            try { await clearDesktopSession(origin, () => revision === expectedRevision && origin === getDesktopSessionScope().server?.origin); } catch (err) { error = err; }
             if (revision === expectedRevision) set({ user: null, isAuthenticated: false, loading: false, error });
         },
 
@@ -288,6 +359,7 @@ function createAuthStore() {
 
         resetForServerSelection() {
             revision += 1;
+            sessionContext = null;
             set({ user: null, isAuthenticated: false, loading: false, error: null });
         },
 
