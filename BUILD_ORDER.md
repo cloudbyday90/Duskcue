@@ -12,11 +12,11 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## October 2026 same-viewer VOD reconfiguration (DESIGN REVIEW)
 
-**Review draft:** [VOD reconfiguration](docs/design/VOD_RECONFIGURATION.md), researched through official MCP sources against `7a1aaa1` on main. The user confirmed the same admitted item/file, cleanup before replacement, one operation without a queue, and a counted nondeliverable viewer for explicit recovery. Progress, configuration/recovery scope, transcode-claim transitions, failed replacement correction and bounded operation receipts remain under review. The complete implementation contract has not yet been confirmed.
+**Implementation contract for confirmation:** [VOD reconfiguration](docs/design/VOD_RECONFIGURATION.md), researched through official MCP sources against `7a1aaa1` on main; initial checkpoint `9adc976`. All ten product choices are confirmed: same item/file and viewer/history, drain before replacement, one operation, retained explicit recovery/correction, separate revision-bound checkpoints, preserved seek/recovery configuration, worker and qualified decoder recovery, retained transcode claims, and 24-hour operation receipts with 256/8,192/131,072 limits. The concrete API/ownership/storage/qualification contract is documented; its final shared-understanding confirmation is pending.
 
 **Recommendation:** preserve immutable Start and history attribution; add bounded retained operations and immutable output revisions under one viewer. Reuse the existing Rust/Cargo 1.99.1 stack, short SQL transactions, scoped output/read owners and unchanged root/resource limits. Qualification must cover actual PostgreSQL/HTTP/FFmpeg behavior, replay, races, faults, timing and Windows/Linux ownership. No runtime implementation or new qualification result is claimed at this checkpoint. GitHub MCP returns zero open PRs; no random patch or stale Dependabot rebase applies. Main only; no release.
 
-**Next:** finish the design review and confirm the concrete contract before implementing this isolated backend lane. Migrate all online clients and close legacy delivery/control bypasses afterward, before production caps. Live TV output, provider VOD and recordings remain separate.
+**Next:** confirm the documented version-two backend contract, then implement and qualify it under unchanged media/root budgets. Migrate all online clients and close legacy delivery/control bypasses afterward, before production caps. Live TV output, provider VOD and recordings remain separate.
 
 ## October 2026 VOD command/delivery migration (SCOPED QUALIFICATION COMPLETE)
 

@@ -1,5 +1,9 @@
 # Shared playback admission
 
+## Same-viewer reconfiguration contract — October 27, 2026
+
+All ten choices for [VOD reconfiguration](VOD_RECONFIGURATION.md) are confirmed; its complete implementation contract awaits shared-understanding confirmation. The proposal preserves this ledger's immutable Start/actor attribution and one total viewer while adding separately attributed operations/output revisions and current/pending permission checks. Direct-to-encoded needs capacity; encoded-to-encoded keeps its claim through replacement/failure; encoded-to-direct releases its claim only after direct publication and verified old cleanup. Numeric cap reductions do not evict an existing authorized encoded viewer. Root Stop/revocation/fencing must cover every revision. This is a documented next increment, not a new qualified runtime behavior or production attachment.
+
 ## VOD command integration — October 27, 2026
 
 The following [command/delivery increment](VOD_COMMAND_DELIVERY.md) composes this ledger with full canonical start attribution, classified transcode-viewer limits and retained direct/HLS resource factories. Source preparation, positive readiness publication and cleanup are separate from admission. Captured cleanup, uncertain commits, exact actor context and policy/source revocation retain this foundation's rules. Known completed resources may retry ledger release; lost completion remains counted and fails root. Production attachment, client migration and shared-cap enforcement remain deferred. The command authority owns its current qualification status and next protocol frontier.

@@ -1,5 +1,9 @@
 # VOD worker and output lifecycle
 
+## Same-viewer output revisions — October 27, 2026
+
+The documented [reconfiguration contract](VOD_RECONFIGURATION.md) has ten confirmed choices and awaits complete-contract confirmation. It proposes one retained viewer owner with immutable direct/HLS output revisions, cleanup before replacement, exact revision URLs and reader groups, and retained explicit recovery/correction without another viewer/history row. Current/pending/uncertain revisions remain owned through Stop and root shutdown under this document's unchanged output/read/cache/deadline limits. Successful encoding remains playable; the proposed new lane would retain a failed viewer for explicit recovery after output cleanup. This is not yet implemented or qualified; existing runtime outcomes below remain authoritative until that increment is verified.
+
 ## Session-bound command integration — October 27, 2026
 
 The following [VOD command/delivery increment](VOD_COMMAND_DELIVERY.md) adds logical viewer groups without consuming additional physical-generation permits. Direct readers register with their viewer; HLS readers register with both the viewer and physical generation. Scoped retirement discards queued output and joins actual I/O before process/cache cleanup and counted ledger release. Successful encoding retains playable output; physical failure/retirement cancels its bound viewer. Existing legacy clients and root/resource budgets retain this document's boundary. The command authority owns the new exact-session protocol and its final qualification; production mounting and client/cap migration remain separate.

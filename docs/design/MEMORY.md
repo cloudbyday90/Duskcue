@@ -1,5 +1,9 @@
 # Memory Management
 
+## Proposed VOD reconfiguration ownership — October 27, 2026
+
+The [complete reconfiguration contract](VOD_RECONFIGURATION.md), with ten confirmed choices and final confirmation pending, preserves all existing output, I/O, SQL, compiler and root limits. It adds at most one pending operation per retained viewer, drain-before-replacement output groups and separately bounded operation storage; it introduces no queue or concurrent replacement generation. Additional 256/viewer, 8,192/household and 131,072/global operation quotas supplement parent receipt limits. Maintenance shares its existing reserved operation and 128-logical-receipt pass. Unknown cleanup/claims stay owned. These are proposed database/resource invariants, not new measured process-memory guarantees or qualified runtime changes.
+
 ## VOD command ownership — October 27, 2026
 
 The [command protocol](VOD_COMMAND_DELIVERY.md) shares seven regular admission SQL permits plus the reserved maintenance permit. Per-AppState command coordination is bounded to 128 viewers. Logical viewer groups do not consume the separate 128 physical-generation budget. Readers retain both group and physical-generation completion where applicable, sharing 128 responses, eight I/O operations, 64-KiB chunks/two queued chunks and 1-MiB playlists. Source inspection is retained under existing command/group ownership and shares the I/O budget.

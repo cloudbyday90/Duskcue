@@ -1,5 +1,9 @@
 # Playback reservation receipt retention
 
+## Operation-receipt contract — October 27, 2026
+
+The [same-viewer VOD contract](VOD_RECONFIGURATION.md) proposes independently bounded operation/output receipts, with the user-confirmed minimum 24 hours after terminal outcome and observed output cleanup and ceilings of 256/viewer, 8,192/household and 131,072/global. Existing parent quotas/windows remain unchanged. New operation IDs require their own replay/time checks; a parent receipt alone cannot prevent a deleted child ID from starting work again. The proposed maintenance shares at most 128 logical receipt deletions per existing reserved pass, prunes eligible operation/output pairs before their parent and prevents a large parent cascade. Pending/current/uncertain resources never age out. This complete contract awaits final confirmation and implementation; the qualified child-deletion rules below still describe the current runtime.
+
 ## VOD command child records — October 27, 2026
 
 The [command/delivery increment](VOD_COMMAND_DELIVERY.md) adds bounded child attribution under each reservation's existing release/retention lifecycle. It does not change first-use windows, the monotonic cutoff, row quotas, 24-hour receipt retention, pruning batches or maintenance ownership. Parent deletion cascades only after existing release/age/replay guards pass; child rows cannot be deleted independently. The new foreign key preempts a bare parent TRUNCATE with PostgreSQL 0A000; the CASCADE form still exercises the PBR04 trigger guard. Both refusals and the existing timed/race/fault retention suite remain qualified by the command increment. History and instance/audit retention remain separate.

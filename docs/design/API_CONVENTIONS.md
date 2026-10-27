@@ -1,5 +1,9 @@
 # API Conventions
 
+## Proposed VOD reconfiguration — October 27, 2026
+
+The [same-viewer contract](VOD_RECONFIGURATION.md) has ten confirmed product choices and awaits complete-contract confirmation before implementation. It proposes explicit `duskcue-vod-command/2` acknowledgement, GET/POST of the same configuration resource with strong If-Match, UUIDv7 operation/status identities, immutable revision-scoped file/HLS delivery and separate checkpoint reporting/observation. Checkpoints and status never renew or trigger implicit recovery. Existing X-Session-Context, cookie/bearer, no-store/problem and captured cleanup boundaries remain. Exact replay proves the original accepted operation before reconciling an old condition; new stale writes cannot execute. Production registration and existing client changes remain deferred. This entry documents a proposal, not currently mounted endpoints.
+
 ## Current-session context — October 26, 2026
 
 Authenticated `GET /api/v1/auth/session-context` returns only the current account/session/profile, selection state, transport, expiry, observation and opaque decimal revisions. It is no-store, including outer refusals. Owner status/proof include the same contextual projection. Supplied `X-Session-Context` bindings are validated under current owner transaction scope before side effects; malformed bindings return fixed 400 and stale bindings fixed 409. The identifier is not proof or an access token. [Household management client](HOUSEHOLD_MANAGEMENT_CLIENT.md) owns exact bounds, adoption and qualification.

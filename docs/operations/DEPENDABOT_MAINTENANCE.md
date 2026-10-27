@@ -29,4 +29,4 @@ The October 27 [VOD command/delivery review](../design/VOD_COMMAND_DELIVERY.md),
 
 The completed October 27 VOD command implementation repeated GitHub MCP open-PR discovery and still found zero candidates. No random local patch, stale rebase, merge, dependency change or alert dismissal applied.
 
-The October 27 [same-viewer reconfiguration research](../design/VOD_RECONFIGURATION.md), against `7a1aaa1`, repeated repository-wide GitHub MCP discovery twice with zero open PRs. No random candidate or stale Dependabot branch can be selected or rebased. No PR, dependency, advisory or release mutation was made at this design-review checkpoint.
+The October 27 [same-viewer reconfiguration research](../design/VOD_RECONFIGURATION.md), against `7a1aaa1`, repeated repository-wide GitHub MCP discovery twice with zero open PRs. The complete-contract checkpoint against `9adc976` repeated discovery with the same result. No random candidate or stale Dependabot branch can be selected or rebased. No PR, dependency, advisory or release mutation was made at these design-review checkpoints.
