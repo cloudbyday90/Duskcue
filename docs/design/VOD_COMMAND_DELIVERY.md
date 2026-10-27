@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-Research and design review, October 27, 2026, against `84fa21e` on main, published in `b2c32dd`. The user confirmed all seven product decisions and the complete concrete implementation contract. The confirmed contract is implemented and scoped qualification passes on native Windows and managed amd64 Linux. The final documentation checkpoint records the runtime commit. Main only; no release, branch or PR merge.
+Research and design review, October 27, 2026, against `84fa21e` on main, published in `b2c32dd`. The user confirmed all seven product decisions and the complete concrete implementation contract. The confirmed contract is implemented and scoped qualification passes on native Windows and managed amd64 Linux. Verified runtime implementation: `e8914d12d880502de67e4ed1a4fe427bea2e5f4e` on main; documentation-only successors preserve its qualified source. Main only; no release, branch or PR merge.
 
 [Receipt retention](PLAYBACK_RECEIPT_RETENTION.md), [admission](PLAYBACK_ADMISSION.md), [VOD ownership](VOD_OUTPUT_LIFECYCLE.md), [streaming](STREAMING.md), [source qualification](PLAYBACK_SOURCE_CAPABILITIES.md), [memory](MEMORY.md) and [root lifecycle](SSE_LIFECYCLE.md) retain their existing authority. Preserve one online viewer through preparation/pause, sixty-second renewal, current viewing authority and confirmed physical cleanup before release. Downloads/offline viewing, history retention and instance/audit retention remain separate.
 
