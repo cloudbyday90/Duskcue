@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-Research and decision review, October 26, 2026, against `eaaace1` on main. No implementation or retention qualification is claimed. The proposed first increment is bounded reservation replay retention before production VOD traffic; the user has been asked whether to take that prerequisite first or include the VOD backend protocol now. Numerical policies, final scope and the complete contract remain unconfirmed.
+Research began October 26, 2026 against `eaaace1`; research checkpoint `df4e475` is pushed on main. The user confirmed retention-first scope and the four product choices below. The complete concrete contract is ready for shared-understanding confirmation; no implementation or retention qualification is claimed yet.
 
 [Shared admission](PLAYBACK_ADMISSION.md) owns the already confirmed viewer/lease/cleanup semantics. [VOD output ownership](VOD_OUTPUT_LIFECYCLE.md), [build durability](../ci/LINUX_BUILD_DURABILITY.md), [streaming](STREAMING.md) and [root lifecycle](SSE_LIFECYCLE.md) retain their authority. One viewer per logical session, preparation/pause counting, sixty-second renewal, explicit revocation and confirmed physical cleanup before release are settled. Production admission remains unattached, and Live TV playback stays separate. Main only; no release or PR merge.
 
@@ -45,23 +45,58 @@ URLs were discovered through MCP search or its retrieved links and opened on Oct
 | Monotonic durable fresh-request cutoff plus finite terminal retention and backlog bounds | Can discard old terminal rows without reviving their IDs, retain a defined reconciliation window and refuse new growth when maintenance falls behind. | Requires atomic claim/prune coordination, explicit clock-error behavior, quota policy and real race/fault evidence. |
 | Full VOD/backend/all-client migration in this increment | Delivers an end-to-end feature once every path is qualified. | Couples retention with command readiness, direct/HLS authority, source replacement, transport adoption and several native client runtimes. |
 
-Recommendation for review: complete the reservation receipt boundary first, then migrate the VOD protocol/delivery and clients against it. Prefer a database-persisted cutoff that never silently retreats, checked only for genuinely absent fresh claims; keep existing active/replayed requests distinct. Advance the necessary refusal boundary transactionally before deleting eligible released rows. A clock rollback must not turn a pruned identity into a new start. This is a proposed architecture, not implemented behavior.
+The confirmed direction is the reservation receipt boundary first, followed by VOD protocol/delivery and client migration. Use a database-persisted cutoff that never silently retreats, checked only for genuinely absent fresh claims; keep existing active/replayed requests distinct. Advance the necessary refusal boundary transactionally before deleting eligible released rows. A clock rollback must not turn a pruned identity into a new start. The concrete architecture below remains unimplemented pending complete-contract confirmation.
 
 Time retention alone is not a hard row bound. The reviewed contract must distinguish the reconciliation window, finite prune work and admission/backlog limits. New-start backpressure must preserve renewal, retirement and cleanup of existing reservations. Prune eligibility must never include held, retiring, foreign-uncertain or cleanup-unconfirmed rows merely because a timer expired.
 
 Recommended stack: locked Rust/Cargo 1.99.1, SQLx 0.9/PostgreSQL 18, UUIDv7, Tokio/Tokio-util and the existing owner/transaction services. Use focused policy/cutoff, quota, bounded database pruning and retained maintenance modules. Add no cache service, new dependency, generic settings escape hatch or broad singleton. Keep current three-second database, eight-command and root 30/60-second bounds unless separately reviewed.
 
-## Open decisions and acceptance work
+## Confirmed product decisions
 
-1. Confirm retention-first scope or include the VOD backend contract now.
-2. Choose how long a definitively released receipt remains exactly reconcilable, and the expired outcome afterward. Long-lived active viewers must not expire because their original start is old.
-3. Choose fresh-request age/future-skew behavior or an alternative server-issued identity scheme; define durable clock rollback handling and later client server-time use.
-4. Choose household/global retained-row ceilings and maintenance/backpressure behavior without falsely reporting a viewer-cap refusal.
-5. Bound maintenance batches/cadence/ownership, and distinguish reservation pruning from instance/operator/history retention. Do not add incidental deletion of those other domains.
+1. Complete bounded playback-reservation receipt retention first. VOD delivery/protocol, client migration, production cap enablement and Live TV playback remain separate.
+2. Preserve a definitively released receipt for at least 24 hours after its first confirmed release/cleanup evidence. Then it may be deleted and yield an explicit expired result. Never prune held, retiring or cleanup-uncertain ownership by age. Frozen Stop/history records remain separate.
+3. A genuinely absent new UUIDv7 request must be within five minutes behind or two minutes ahead of database time. Check existing receipts first. Persist a rejection cutoff that never moves backward; clock errors refuse new starts rather than reopen pruned IDs. Future clients can anchor generation to scoped server-time context. UUID time is eligibility data, not authentication.
+4. Count all retained reservation states toward initial limits of 4,096 rows per household and 65,536 total. Refuse additional growth when full while preserving existing renewal, retirement and cleanup. Never evict a receipt before its retention window to make space.
 
-Qualification should use disposable PostgreSQL 18 and genuine admission services: old-ID replay after deletion, fresh and existing requests at boundaries, clock rollback/advance, multi-instance claims/pruning, quota races and recovery, commit-acknowledgment loss, caller cancellation, root cutoff/drain and restart. Prove that held/retiring/uncertain ownership is retained and failed pruning cannot revive an identity or free an unconfirmed resource. Inspect a realistically sized indexed query plan. Run relevant existing admission/root/playback regressions under unchanged guards; private feeds are unnecessary for this retention work.
+## Complete contract for shared-understanding confirmation
 
-No new implementation test or production enablement is claimed at this research checkpoint. After the open decisions are settled, record a complete concrete contract and obtain the shared-understanding confirmation required by the [repository review procedure](../../.agents/skills/grilling/SKILL.md), then implement and qualify it. Standard legal-header authorization remains in effect; explanatory source comments remain excluded.
+### Scope and modular ownership
+
+Extend the normal-build internal admission service with focused retention policy/types, bounded database pruning/accounting and owned maintenance modules. Keep handlers, public viewing APIs and clients unchanged. Do not attach admission during normal production bootstrap, add a management/prune override, enable playback caps or fetch private feeds. Reuse locked dependencies and approved standard legal headers only. Add no explanatory code comments or unrelated scheduler repair.
+
+Keep reservation replay retention distinct from play-session/frozen Stop history, instance identities, operator events and unrelated analytics retention. Do not delete those records incidentally. Retain existing instance fencing, current authority, resource completion and replay semantics; a receipt remains neither a credential nor delivery permission.
+
+### Atomic database invariants and migration
+
+Install schema/backfill/guards atomically in a forward migration. Preserve all existing identities, fingerprints, states, deadlines, first release timestamps and uncertain ownership. Seed exact counters from existing rows. If legacy data is already above a ceiling, retain it and refuse further growth until eligible pruning lowers the count; do not delete protected data or clamp accounting to manufacture compliance.
+
+Use a durable database retention record for the monotonic cutoff and global count, plus bounded household accounting. Enforce insertion eligibility, quotas, immutable identity/accounting keys and first-release evidence in database guards as well as typed service flow. Counter changes and reservation insertion/deletion commit together. A refusal, rollback, duplicate request or uncertain acknowledgment must not create a second reservation or grant speculative capacity. Protect against direct identity mutation, unsafe deletion and TRUNCATE bypass; no automatic floor reset or permissive counter reinitialization is allowed. Missing or invalid retention metadata refuses new mutation rather than becoming unlimited policy.
+
+An existing matching row is reconciled before the first-use age rule; mismatched reuse remains refused. Old active reservations retain their settled renewal/authority rules regardless of original UUID age. For absent identities, use millisecond-consistent database time, the five-minute/two-minute bounds and the persisted floor. Once an identity is behind the committed rejection floor, it can never allocate again after pruning, including after restart or clock rollback. Retention reads/replays do not extend the lease or reset the original release time. Distinguish expired request, invalid clock/first-use time and retained-row backpressure from viewer-cap refusal, generic storage failure and indeterminate commit. Use narrow fixed database error mapping without exposing raw SQL or fingerprints.
+
+### Eligibility and bounded pruning
+
+Prune only released rows whose first release is at least 24 elapsed hours old and whose exact UUID is permanently excluded by the durable floor. Use hour/minute durations and explicit millisecond boundaries. Legacy UUIDs can contain far-future times; those receipts must remain until safe eligibility, even when release age alone would permit deletion.
+
+Maintain a trigger-derived indexed eligibility field that accounts for both release age and UUID exclusion, rather than scanning past a large future-ID backlog with a residual time filter. Protect its derivation and release evidence from arbitrary mutation; recheck deletion safety against committed database state. Advance the floor under compatible locks before deletion. Use an ordered candidate window of at most 128 rows and bounded row-lock acquisition/skip behavior so a locked prefix does not cause an unbounded search for another 128 rows. One attempt performs one finite batch, not a loop until the table is empty. Row ceilings are not a promise about total PostgreSQL disk bytes or vacuum behavior.
+
+### Maintenance, failures and root
+
+Register maintenance through the admission owner's synchronized gate and tracker. Permit one bounded startup attempt and one automatic attempt every sixty seconds, with no overlapping or accumulated catch-up batches. Reserve one operation for maintenance and seven for ordinary admission/renew/use/retirement work, preserving the existing maximum of eight. Share the regular-operation constant with monitor rotation to preserve fairness across the 128 retained resource entries. Keep current pool/container and three-second database, 500-ms lock, 1,500-ms statement and three-second transaction bounds.
+
+Classify ordinary maintenance contention/storage/uncertain-commit outcomes and retry later using current authoritative state. They must not set the resource-failure flag that rejects existing renewals or cancel healthy viewers. Quotas continue to stop unsafe growth while cleanup is delayed. Unexpected lost maintenance completion is retained separately: refuse further new starts and fail root completion without falsely treating existing physical resources as cleaned. Accepted operations stay owned through observer cancellation; no detached replacement or concurrent retry may escape the operation/pool bound.
+
+Root closes maintenance admission, cancels future ticks and joins accepted SQL/connection work before pool closure under unchanged thirty-second drain and sixty-second pool-close budgets. Preserve existing nonzero deadline, cleanup and second-signal behavior. No scheduled executor is assumed to be root-owned merely because it was registered.
+
+### Qualification and delivery
+
+Use genuine PostgreSQL 18 and admission services for deterministic policy boundaries, actual old-ID replay after deletion, first-use time errors, long-lived existing receipts, floor rollback refusal, clock rollback/advance, restart and multi-instance races. Exercise quota equality/exhaustion/recovery, legacy over-limit backfill, future-ID/young/held/retiring/uncertain rows, immutable-field and direct SQL/bulk/TRUNCATE refusals, and unchanged first-release evidence. Inspect actual plans/row/buffer work on a realistically sized mixed backlog and locked candidate prefix. Backfill fixtures start at the real preceding schema and apply the real forward migration; add no production clock or trigger bypass.
+
+Use the existing wire-fault fixtures for BEGIN and both COMMIT acknowledgment outcomes, counter/floor/deletion atomicity, observer loss and root drain with real database locks. Verify reserved maintenance capacity, monitor fairness, ordinary-failure isolation and unexpected completion loss. Test actual native Windows and managed Linux execution with disposable PostgreSQL; extend existing qualification-only executable checkpoints and narrowly allowlisted owned runtime commands as needed. Preserve source/image/hash/mode checks, two Cargo jobs, existing compiler/memory/log/container guards and fresh runtime execution. Retain the existing identity-checked temporary Classifarr handoff only if required by Linux admission, with healthy restoration in finally; Harmoniarr remains untouched.
+
+Run appropriate existing admission/root/VOD regressions, normal/qualification compilation, library tests, strict-lint baseline comparison, formatting, copyright, staged whitespace, local links and private-value exclusion. Record exact qualified source/images/receipts, corrected attempts and limitations; commit and push all task changes on main without a release or PR merge. The next increment is the VOD backend command/delivery contract and client migration against this bounded ledger.
+
+The [repository review procedure](../../.agents/skills/grilling/SKILL.md) requires confirmation of this complete shared understanding before implementation. All four product choices above are already confirmed and do not need to be asked again.
 
 The documentation checkpoint passes staged whitespace, 611 local link targets and supplied-private-value exclusion checks across five task documents. The previously qualified runtime source inventory is unchanged. No runtime build/test was repeated for these research-only edits.
 
