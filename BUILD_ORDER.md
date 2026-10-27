@@ -12,6 +12,8 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## October 2026 playback receipt retention (SCOPED QUALIFICATION COMPLETE)
 
+**Verified implementation:** `5dbf636deaee7e0dce4663fec7f0e565b26bdcdb` on main. Documentation-only successors preserve the qualified source. No release.
+
 The confirmed [receipt-retention contract](docs/design/PLAYBACK_RECEIPT_RETENTION.md) is implemented: 24-hour released receipts, five-minute-past/two-minute-future UUIDv7 first use with a monotonic cutoff, 4,096/65,536 retained-row bounds, atomic backfill/replay/quota guards and indexed 128-row owned maintenance within seven regular plus one reserved operation. Twenty native Windows and twenty fresh managed Linux tests pass, including nine PostgreSQL retention subcontracts, actual long-lived renewal and maintenance-loss root refusal. Library regression passes 1,014 tests; existing admission, three HTTP/TLS/process root cases and twenty-seven workflow cases pass. Strict lint retains its documented baseline with no introduced warning. Exact source/image/receipts and corrected attempts belong to the authority. The Linux retry reuses all three completed compiler checkpoints; Classifarr is restored healthy and Harmoniarr is untouched. Main only; no release.
 
 **Next:** VOD backend command/readiness/delivery migration with canonical start identity, exact direct/HLS authority and stable logical viewers through source changes, followed by all online client families. Production admission and Live TV playback stay disabled until those paths are qualified. History and instance/audit retention remain separate.

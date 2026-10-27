@@ -4,6 +4,8 @@
 
 Research began October 26, 2026 against `eaaace1`; research checkpoint `df4e475` and concrete contract `cab9bad` are pushed on main. The user confirmed the complete implementation contract on October 27. Scoped implementation and qualification are complete: twenty native Windows tests, twenty fresh managed Linux tests, library/admission/root/workflow regressions, both compilation modes, unchanged lint baseline and publication checks below. Production admission remains disabled.
 
+Verified implementation: `5dbf636deaee7e0dce4663fec7f0e565b26bdcdb` on main. Documentation-only successors preserve the qualified source inventory. No release.
+
 [Shared admission](PLAYBACK_ADMISSION.md) owns the already confirmed viewer/lease/cleanup semantics. [VOD output ownership](VOD_OUTPUT_LIFECYCLE.md), [build durability](../ci/LINUX_BUILD_DURABILITY.md), [streaming](STREAMING.md) and [root lifecycle](SSE_LIFECYCLE.md) retain their authority. One viewer per logical session, preparation/pause counting, sixty-second renewal, explicit revocation and confirmed physical cleanup before release are settled. Production admission remains unattached, and Live TV playback stays separate. Main only; no release or PR merge.
 
 ## Source findings
