@@ -28,3 +28,5 @@ The October 27 retention implementation repeated the repository-wide GitHub MCP 
 The October 27 [VOD command/delivery review](../design/VOD_COMMAND_DELIVERY.md), against `84fa21e`, repeated that GitHub MCP search with the same zero-open-PR result. No random implementation or stale Dependabot rebase applies; this research checkpoint changes no dependency and creates no PR mutation.
 
 The completed October 27 VOD command implementation repeated GitHub MCP open-PR discovery and still found zero candidates. No random local patch, stale rebase, merge, dependency change or alert dismissal applied.
+
+The October 27 [same-viewer reconfiguration research](../design/VOD_RECONFIGURATION.md), against `7a1aaa1`, repeated repository-wide GitHub MCP discovery twice with zero open PRs. No random candidate or stale Dependabot branch can be selected or rebased. No PR, dependency, advisory or release mutation was made at this design-review checkpoint.

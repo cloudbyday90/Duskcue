@@ -177,4 +177,4 @@ GitHub MCP open-PR search returned zero candidates. No random patch or stale Dep
 
 The earlier documentation-only checkpoint covered seven Markdown files, 679 local links and 911 source headers; it claimed no runtime result. Final publication checks below apply to the implemented source.
 
-Next: add seek/source recovery/track-quality replacement to this protocol while preserving one viewer, then migrate all online client families and close legacy bypasses before production caps. Live TV media output, provider-VOD connector/switches and recordings remain separate milestones.
+Next: the [same-viewer reconfiguration review](VOD_RECONFIGURATION.md) develops seek/source recovery/track-quality replacement while preserving one viewer and the original Start/history evidence. Its review draft claims no new runtime qualification. Then migrate all online client families and close legacy bypasses before production caps. Live TV media output, provider-VOD connector/switches and recordings remain separate milestones.

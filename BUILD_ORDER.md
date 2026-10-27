@@ -10,6 +10,14 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 same-viewer VOD reconfiguration (DESIGN REVIEW)
+
+**Review draft:** [VOD reconfiguration](docs/design/VOD_RECONFIGURATION.md), researched through official MCP sources against `7a1aaa1` on main. The user confirmed the same admitted item/file, cleanup before replacement, one operation without a queue, and a counted nondeliverable viewer for explicit recovery. Progress, configuration/recovery scope, transcode-claim transitions, failed replacement correction and bounded operation receipts remain under review. The complete implementation contract has not yet been confirmed.
+
+**Recommendation:** preserve immutable Start and history attribution; add bounded retained operations and immutable output revisions under one viewer. Reuse the existing Rust/Cargo 1.99.1 stack, short SQL transactions, scoped output/read owners and unchanged root/resource limits. Qualification must cover actual PostgreSQL/HTTP/FFmpeg behavior, replay, races, faults, timing and Windows/Linux ownership. No runtime implementation or new qualification result is claimed at this checkpoint. GitHub MCP returns zero open PRs; no random patch or stale Dependabot rebase applies. Main only; no release.
+
+**Next:** finish the design review and confirm the concrete contract before implementing this isolated backend lane. Migrate all online clients and close legacy delivery/control bypasses afterward, before production caps. Live TV output, provider VOD and recordings remain separate.
+
 ## October 2026 VOD command/delivery migration (SCOPED QUALIFICATION COMPLETE)
 
 **Authority:** [VOD command and delivery](docs/design/VOD_COMMAND_DELIVERY.md), researched through official MCP sources against `84fa21e` on main. All seven choices and the complete contract were confirmed after documentation checkpoint `b2c32dd`. The modular implementation and controlled Windows/Linux qualification are complete. Verified implementation: `e8914d12d880502de67e4ed1a4fe427bea2e5f4e` on main. Documentation-only successors preserve the qualified source; exact source/image/receipts belong to the authority. Main only; no release.
@@ -18,7 +26,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **Verification:** 22 native Windows and 22 managed amd64 Linux qualification tests pass, including 28 command and nine receipt-retention subcontracts. Default Windows library passes 1,017 with eleven fixture-dependent ignores; admission, all three root HTTP/TLS/process cases and 27 workflow tests pass. Lint retains its exact existing baseline with no introduced diagnostic. Linux reuses all three input-verified compiler checkpoints and validates seventeen real Cargo/cache cases; every runtime group executes afresh. The bounded fault relay correction and failed attempts are recorded in the authority. Classifarr is restored healthy after approved handoffs; Harmoniarr was not stopped by this task. Private feed data remains ignored.
 
-**Next:** implement same-viewer seek/source recovery/track-quality reconfiguration, then migrate every online client and close legacy delivery bypasses before enabling production caps. Live TV media output, provider VOD and recordings remain separate. GitHub MCP still returns zero open PRs; no random patch or stale Dependabot rebase applies.
+**Next:** the [same-viewer reconfiguration design review](docs/design/VOD_RECONFIGURATION.md) is underway. Then migrate every online client and close legacy delivery bypasses before enabling production caps. Live TV media output, provider VOD and recordings remain separate. GitHub MCP still returns zero open PRs; no random patch or stale Dependabot rebase applies.
 
 ## October 2026 playback receipt retention (SCOPED QUALIFICATION COMPLETE)
 
