@@ -60,11 +60,33 @@ pub(super) async fn stop_playback(
         return cancel_before_start(pool, manager, user_id, session_id).await;
     }
     let mut transaction = pool.begin().await?;
+    let (response, transcode) = freeze_on_connection(
+        &mut transaction,
+        user_id,
+        session_id,
+        None,
+        final_position_ms,
+    )
+    .await?;
+    transaction.commit().await?;
+    if let Some(transcode) = transcode {
+        manager.stop_session(transcode).await?;
+    }
+    Ok(response)
+}
+
+pub(super) async fn freeze_on_connection(
+    conn: &mut sqlx::PgConnection,
+    user_id: Uuid,
+    session_id: Uuid,
+    expected_started_at: Option<chrono::DateTime<chrono::Utc>>,
+    final_position_ms: Option<i32>,
+) -> Result<(StopPlaybackResponse, Option<Uuid>), PlaybackError> {
     let row = sqlx::query(
         "SELECT profile_id, playback_mode, media_item_id, started_at, stopped_at, duration_seconds, percent_complete, metadata \
          FROM play_sessions WHERE id=$1 AND user_id=$2 \
-           AND metadata -> 'cancelled_before_start' IS DISTINCT FROM 'true'::jsonb FOR UPDATE",
-    ).bind(session_id).bind(user_id).fetch_optional(&mut *transaction).await?
+           AND ($3::timestamptz IS NULL OR started_at=$3) AND metadata -> 'cancelled_before_start' IS DISTINCT FROM 'true'::jsonb FOR UPDATE",
+    ).bind(session_id).bind(user_id).bind(expected_started_at).fetch_optional(&mut *conn).await?
         .ok_or(PlaybackError::SessionNotFound)?;
     let profile_id: Option<Uuid> = row.try_get("profile_id")?;
     let media_item_id: Uuid = row.try_get("media_item_id")?;
@@ -85,7 +107,7 @@ pub(super) async fn stop_playback(
                     && let Some(profile_id) = profile_id
                 {
                     sqlx::query_scalar::<_, i32>("SELECT play_count FROM user_item_data WHERE user_id=$1 AND profile_id=$2 AND media_item_id=$3")
-                        .bind(user_id).bind(profile_id).bind(media_item_id).fetch_optional(&mut *transaction).await?.unwrap_or(0)
+                        .bind(user_id).bind(profile_id).bind(media_item_id).fetch_optional(&mut *conn).await?.unwrap_or(0)
                 } else {
                     0
                 };
@@ -99,11 +121,10 @@ pub(super) async fn stop_playback(
                 }
             }
         };
-        transaction.commit().await?;
-        if let Some(transcode) = transcode {
-            manager.stop_session(transcode).await?;
-        }
-        return Ok(snapshot.response(session_id, media_item_id, playback_mode));
+        return Ok((
+            snapshot.response(session_id, media_item_id, playback_mode),
+            transcode,
+        ));
     }
     let stored_file_id = metadata
         .get("media_file_id")
@@ -115,7 +136,7 @@ pub(super) async fn stop_playback(
         .and_then(|value| i32::try_from(value).ok())
         .unwrap_or(0);
     let final_position = final_position_ms.unwrap_or(stored_position);
-    let file = played_file(&mut *transaction, media_item_id, stored_file_id).await?;
+    let file = played_file(&mut *conn, media_item_id, stored_file_id).await?;
     let media_file_id = file.map(|(id, _)| id);
     let runtime_seconds = file.and_then(|(_, runtime)| runtime);
     let percent_complete = runtime_seconds
@@ -131,7 +152,7 @@ pub(super) async fn stop_playback(
         && let Some(profile_id) = profile_id
     {
         upsert_user_item_data_stop(
-            &mut *transaction,
+            &mut *conn,
             user_id,
             profile_id,
             media_item_id,
@@ -150,11 +171,11 @@ pub(super) async fn stop_playback(
         play_count,
     };
     let merge = json!({ "current_state": "stopped", "current_position_ms": final_position, (RESULT_KEY): snapshot });
-    sqlx::query("UPDATE play_sessions SET stopped_at=now(),duration_seconds=$3,percent_complete=$4,metadata=metadata || $5,updated_at=now() WHERE id=$1 AND user_id=$2")
-        .bind(session_id).bind(user_id).bind(duration_seconds).bind(percent_complete).bind(merge)
-        .execute(&mut *transaction).await?;
+    sqlx::query("UPDATE play_sessions SET stopped_at=now(),duration_seconds=$3,percent_complete=$4,metadata=metadata || $5,updated_at=now() WHERE id=$1 AND user_id=$2 AND started_at=$6")
+        .bind(session_id).bind(user_id).bind(duration_seconds).bind(percent_complete).bind(merge).bind(started_at)
+        .execute(&mut *conn).await?;
     emit_play_event(
-        &mut *transaction,
+        &mut *conn,
         session_id,
         user_id,
         "stop",
@@ -162,11 +183,10 @@ pub(super) async fn stop_playback(
         json!({"duration_seconds": duration_seconds, "percent_complete": percent_complete}),
     )
     .await?;
-    transaction.commit().await?;
-    if let Some(transcode) = transcode {
-        manager.stop_session(transcode).await?;
-    }
-    Ok(snapshot.response(session_id, media_item_id, playback_mode))
+    Ok((
+        snapshot.response(session_id, media_item_id, playback_mode),
+        transcode,
+    ))
 }
 
 async fn cancel_before_start(

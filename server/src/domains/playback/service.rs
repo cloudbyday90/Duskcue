@@ -26,9 +26,6 @@ use crate::extractors::CredentialTransport;
 use crate::services::decision_engine::{
     self, DecisionEngineConfig, DeviceCapabilities, NetworkConditions, StreamDecision,
 };
-use crate::services::transcoding::plan::{
-    PlanError, StreamAction, StreamPlan, apply_delivery_requirements,
-};
 use crate::services::transcoding::{StartSessionParams, TranscodeManager};
 use crate::state::RuntimeConfig;
 
@@ -117,49 +114,17 @@ pub async fn start_playback_with_transport(
     } = actor;
     let source = super::source_preparation::resolve(pool, actor, req).await?;
 
-    let device_caps = build_device_capabilities(req.device_profile.as_ref(), config);
-
     let network = build_network_conditions(pool, user_id, req.max_streaming_bitrate).await;
-
-    let engine_config = build_decision_engine_config(
-        config,
-        req.quality_mode.as_deref(),
-        req.max_streaming_bitrate,
-    );
-
-    let prepared = if req
-        .source_capabilities
-        .as_ref()
-        .is_some_and(|report| report.version == 1)
-    {
-        Some(
-            super::source_candidates::prepare(super::source_candidates::Context {
-                source: &source,
-                actor,
-                request: req,
-                device: &device_caps,
-                network: &network,
-                config: &engine_config,
-                transport,
-            })
-            .await,
-        )
-    } else {
-        None
-    };
-    let selected_candidate = prepared.as_ref().and_then(|prepared| {
-        prepared
-            .select(req.source_capabilities.as_ref())
-            .filter(|candidate| prepared.accept(candidate, &source).is_some())
-    });
-    let accepted_route = prepared
-        .as_ref()
-        .zip(selected_candidate)
-        .and_then(|(prepared, candidate)| prepared.accept(candidate, &source));
-    let negotiated_audio_channels =
-        selected_candidate.and_then(|candidate| candidate.audio_channels);
-    let negotiated_audio_bitrate = selected_candidate.and_then(|candidate| candidate.audio_bitrate);
-    let negotiated_hls = selected_candidate.is_some_and(|candidate| candidate.plan.is_some());
+    let super::planning::Prepared {
+        source,
+        decision,
+        stream_plan,
+        negotiated_hls,
+        negotiated_audio_bitrate,
+        accepted_route,
+        direct_context,
+        direct_revision,
+    } = super::planning::prepare(source, actor, req, config, transport, network).await?;
     let super::source_preparation::ResolvedSource {
         media_item_id,
         library_id,
@@ -170,69 +135,6 @@ pub async fn start_playback_with_transport(
         tracks: selected_tracks,
     } = source;
 
-    let mut decision = decision_engine::decide(&media_info, &device_caps, &network, &engine_config);
-    if let Some(candidate) = selected_candidate {
-        decision.video = crate::services::decision_engine::VideoDecision::DirectPlay;
-        decision.audio = if candidate
-            .plan
-            .is_some_and(|plan| plan.audio == StreamAction::Encode)
-        {
-            crate::services::decision_engine::AudioDecision::Transcode
-        } else {
-            crate::services::decision_engine::AudioDecision::Passthrough
-        };
-        decision.overall = if candidate.plan.is_none() {
-            StreamDecision::DirectPlay
-        } else {
-            StreamDecision::DirectStream
-        };
-        decision.requires_tone_mapping = false;
-        decision.requires_dv_strip = false;
-        decision.target_video_codec = None;
-        decision.target_audio_codec = negotiated_audio_channels.map(|_| "aac".into());
-        decision.target_audio_channels = negotiated_audio_channels;
-        decision.target_resolution = Some(media_info.video_resolution);
-        decision.target_bitrate_bps = None;
-    }
-
-    apply_delivery_requirements(
-        &mut decision,
-        req.force_transcode.unwrap_or(false),
-        req.force_hls.unwrap_or(false),
-        selected_tracks.subtitle_stream_index.is_some(),
-    );
-
-    let stream_plan = if decision.overall == StreamDecision::DirectPlay {
-        None
-    } else {
-        let plan =
-            StreamPlan::compile(&decision, &media_info, req.force_transcode.unwrap_or(false))
-                .map_err(|error| match error {
-                    PlanError::UnsupportedHdrConversion => PlaybackError::HdrConversionUnavailable,
-                })?;
-        let mut output_device = device_caps.clone();
-        if negotiated_hls {
-            output_device.audio_codecs.insert("aac".into());
-        }
-        let (video_codec, audio_codec) = plan
-            .output_codecs(
-                &decision,
-                &media_info,
-                &output_device,
-                &config.transcoding.default_video_codec,
-                &config.transcoding.default_audio_codec,
-            )
-            .map_err(|message| PlaybackError::FfmpegFailed(message.into()))?;
-        decision.target_video_codec = video_codec;
-        decision.target_audio_codec = audio_codec;
-        decision.overall = if plan.video == StreamAction::Copy && plan.audio == StreamAction::Copy {
-            StreamDecision::DirectStream
-        } else {
-            StreamDecision::Transcode
-        };
-        Some(plan)
-    };
-
     let stream_decision_str = match decision.overall {
         StreamDecision::DirectPlay => "direct_play",
         StreamDecision::DirectStream => "direct_stream",
@@ -241,31 +143,6 @@ pub async fn start_playback_with_transport(
 
     let stream_url;
     let transcode_session_id;
-    let direct_context = if decision.overall == StreamDecision::DirectPlay
-        && super::direct::supports_protocol(req.direct_recovery_protocol)
-    {
-        Some(if let Some(route) = accepted_route.as_ref() {
-            super::direct::DirectContext {
-                version: 1,
-                candidate: route.fallback.clone(),
-            }
-        } else {
-            super::direct_admission::prepare(
-                &media_file_details,
-                &media_info,
-                &selected_tracks,
-                &device_caps,
-                &network,
-                &engine_config,
-                req.max_streaming_bitrate,
-            )
-            .await
-        })
-    } else {
-        None
-    };
-    let direct_revision = direct_context.as_ref().map(|_| Uuid::now_v7());
-
     match decision.overall {
         StreamDecision::DirectPlay => {
             stream_url = format!("/api/v1/stream/{}", media_file_details.id);
@@ -551,8 +428,8 @@ fn max_resolution_for_manual_bitrate(bitrate_bps: u64) -> (u32, u32) {
     }
 }
 
-async fn create_play_session(
-    pool: &PgPool,
+pub(super) async fn create_play_session<'e, E: sqlx::Executor<'e, Database = sqlx::Postgres>>(
+    executor: E,
     user_id: Uuid,
     profile_id: Uuid,
     media_item_id: Uuid,
@@ -606,7 +483,7 @@ async fn create_play_session(
         .bind(channel.updated_at)
         .bind(stream_decision)
         .bind(&metadata)
-        .execute(pool)
+        .execute(executor)
         .await?;
         if result.rows_affected() == 0 {
             return Err(PlaybackError::AmbientChannelStale);
@@ -625,7 +502,7 @@ async fn create_play_session(
         .bind(playback_mode)
         .bind(stream_decision)
         .bind(&metadata)
-        .execute(pool)
+        .execute(executor)
         .await?;
     }
 
@@ -639,6 +516,11 @@ pub async fn heartbeat(
     request: &HeartbeatRequest,
     data_dir: &Path,
 ) -> Result<HeartbeatResponse, PlaybackError> {
+    super::legacy::session(
+        pool,
+        request.session_id.ok_or(PlaybackError::SessionNotFound)?,
+    )
+    .await?;
     super::heartbeat::heartbeat(pool, manager, actor, request, data_dir).await
 }
 
@@ -650,6 +532,7 @@ pub async fn stop_playback(
     final_position_ms: Option<i32>,
     cancelled_before_start: bool,
 ) -> Result<StopPlaybackResponse, PlaybackError> {
+    super::legacy::session(pool, session_id).await?;
     super::stop::stop_playback(
         pool,
         transcode_manager,
@@ -669,6 +552,7 @@ pub async fn seek(
     position_ms: i32,
     data_dir: &Path,
 ) -> Result<SeekResponse, PlaybackError> {
+    super::legacy::session(pool, session_id).await?;
     super::seek::seek(
         pool,
         transcode_manager,
@@ -689,6 +573,7 @@ pub async fn seek_with_profile(
     position_ms: i32,
     data_dir: &Path,
 ) -> Result<SeekResponse, PlaybackError> {
+    super::legacy::session(pool, session_id).await?;
     super::seek::seek(
         pool,
         manager,
@@ -728,6 +613,9 @@ pub async fn get_playback_info(
     let stream_decision: String = row.try_get("stream_decision").unwrap_or_default();
     let started_at: chrono::DateTime<chrono::Utc> = row.try_get("started_at").unwrap_or_default();
     let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
+    if metadata.get("vod_command_protocol") == Some(&serde_json::json!(1)) {
+        return Err(PlaybackError::SessionNotFound);
+    }
     if (super::direct::has_context(&metadata) || super::source_context::has_context(&metadata))
         && row.try_get::<Uuid, _>("profile_id").ok() != Some(profile_id)
     {
@@ -1431,7 +1319,7 @@ pub async fn create_streaming_policy(
     let allowed_ip_json = ip_ranges_to_jsonb(req.allowed_ip_ranges.as_deref());
     let blocked_ip_json = ip_ranges_to_jsonb(req.blocked_ip_ranges.as_deref());
 
-    let mut tx = pool.begin().await?;
+    let mut tx = super::policy_transactions::begin(pool).await?;
 
     if req.is_default.unwrap_or(false) {
         sqlx::query("UPDATE streaming_policies SET is_default = false WHERE is_default = true")
@@ -1516,7 +1404,7 @@ pub async fn update_streaming_policy(
         .as_ref()
         .map(|r| ip_ranges_to_jsonb(Some(r)));
 
-    let mut tx = pool.begin().await?;
+    let mut tx = super::policy_transactions::begin(pool).await?;
 
     if req.is_default.unwrap_or(false) {
         sqlx::query(
@@ -1578,9 +1466,10 @@ pub async fn update_streaming_policy(
 }
 
 pub async fn delete_streaming_policy(pool: &PgPool, policy_id: Uuid) -> Result<(), PlaybackError> {
+    let mut tx = super::policy_transactions::begin(pool).await?;
     let row = sqlx::query("SELECT is_system, is_default FROM streaming_policies WHERE id = $1")
         .bind(policy_id)
-        .fetch_optional(pool)
+        .fetch_optional(&mut *tx)
         .await?
         .ok_or(PlaybackError::PolicyNotFound)?;
 
@@ -1596,7 +1485,7 @@ pub async fn delete_streaming_policy(pool: &PgPool, policy_id: Uuid) -> Result<(
             "SELECT COUNT(*) FROM streaming_policies WHERE is_default = true AND id != $1",
         )
         .bind(policy_id)
-        .fetch_one(pool)
+        .fetch_one(&mut *tx)
         .await?;
 
         if other_default == 0 {
@@ -1606,18 +1495,19 @@ pub async fn delete_streaming_policy(pool: &PgPool, policy_id: Uuid) -> Result<(
 
     sqlx::query("UPDATE users SET streaming_policy_id = NULL WHERE streaming_policy_id = $1")
         .bind(policy_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
     let result = sqlx::query("DELETE FROM streaming_policies WHERE id = $1")
         .bind(policy_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await?;
 
     if result.rows_affected() == 0 {
         return Err(PlaybackError::PolicyNotFound);
     }
 
+    tx.commit().await?;
     Ok(())
 }
 

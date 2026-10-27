@@ -11,6 +11,7 @@ mod owner;
 mod policy;
 mod retention;
 mod types;
+pub(crate) mod vod;
 
 pub use error::AdmissionError;
 pub use owner::AdmissionOwner;

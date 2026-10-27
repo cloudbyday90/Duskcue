@@ -5,6 +5,7 @@
 mod commands;
 mod lifecycle;
 mod maintenance;
+mod sql;
 
 use super::{
     AdmissionError, Request,
@@ -28,11 +29,13 @@ use uuid::Uuid;
 
 struct Entry {
     request: Request,
+    binding: Option<super::vod::Binding>,
     cancel: CancellationToken,
     pending: AtomicBool,
     attached: AtomicBool,
     checking: AtomicBool,
     deadline: watch::Sender<Option<Instant>>,
+    completed: AtomicBool,
 }
 struct Gate {
     closed: bool,
@@ -141,7 +144,7 @@ impl AdmissionOwner {
         self.tracker.wait().await;
         let entries = self.entries()?;
         for entry in entries {
-            if !entry.attached.load(Ordering::SeqCst) {
+            if !entry.attached.load(Ordering::SeqCst) || entry.completed.load(Ordering::SeqCst) {
                 if self.ledger.retire(entry.request, true).await.is_ok() {
                     self.remove(entry.request.id);
                 } else {

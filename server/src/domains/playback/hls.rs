@@ -39,34 +39,54 @@ pub async fn get_transcode_manifest(
     manager: &TranscodeManager,
     session_id: Uuid,
 ) -> Result<Response, PlaybackError> {
+    manifest_scoped(manager, session_id, None).await
+}
+
+pub(super) async fn manifest_scoped(
+    manager: &TranscodeManager,
+    session_id: Uuid,
+    scope: Option<(
+        Uuid,
+        std::sync::Arc<crate::services::vod_lifecycle::Generation>,
+    )>,
+) -> Result<Response, PlaybackError> {
     manager.output.ensure_open()?;
     let session = manager
         .get_session(&session_id)
         .ok_or(PlaybackError::SessionNotFound)?;
     manager
         .output
-        .response(Some(session_id), move |ctx| {
-            Box::pin(async move {
-                let content = ctx
-                    .text(&session.manifest_path, &session.segment_dir)
-                    .await?;
-                let normalized = normalize_manifest(&content, session_id, &session.rendition_name)?;
-                if is_master(&content) {
-                    for line in content
-                        .lines()
-                        .map(str::trim)
-                        .filter(|line| !line.is_empty() && !line.starts_with('#'))
-                    {
-                        let (_, path) = variant_reference(line)?;
-                        let id = ctx
-                            .open(&session.segment_dir.join(path), Some(&session.segment_dir))
-                            .await?;
-                        ctx.close_file(id).await;
+        .response_scoped(
+            Some(session_id),
+            scope.as_ref().map(|scope| scope.1.clone()),
+            move |ctx| {
+                Box::pin(async move {
+                    let content = ctx
+                        .text(&session.manifest_path, &session.segment_dir)
+                        .await?;
+                    let normalized = normalize_scoped(
+                        &content,
+                        session_id,
+                        &session.rendition_name,
+                        scope.as_ref().map(|scope| scope.0),
+                    )?;
+                    if is_master(&content) {
+                        for line in content
+                            .lines()
+                            .map(str::trim)
+                            .filter(|line| !line.is_empty() && !line.starts_with('#'))
+                        {
+                            let (_, path) = variant_reference(line)?;
+                            let id = ctx
+                                .open(&session.segment_dir.join(path), Some(&session.segment_dir))
+                                .await?;
+                            ctx.close_file(id).await;
+                        }
                     }
-                }
-                playlist_response(normalized)
-            })
-        })
+                    playlist_response(normalized)
+                })
+            },
+        )
         .await
 }
 
@@ -74,6 +94,18 @@ pub async fn get_transcode_playlist(
     manager: &TranscodeManager,
     session_id: Uuid,
     rendition: &str,
+) -> Result<Response, PlaybackError> {
+    playlist_scoped(manager, session_id, rendition, None).await
+}
+
+pub(super) async fn playlist_scoped(
+    manager: &TranscodeManager,
+    session_id: Uuid,
+    rendition: &str,
+    scope: Option<(
+        Uuid,
+        std::sync::Arc<crate::services::vod_lifecycle::Generation>,
+    )>,
 ) -> Result<Response, PlaybackError> {
     manager.output.ensure_open()?;
     validate_rendition(rendition)?;
@@ -83,25 +115,34 @@ pub async fn get_transcode_playlist(
     let rendition = rendition.to_owned();
     manager
         .output
-        .response(Some(session_id), move |ctx| {
-            Box::pin(async move {
-                let manifest = ctx
-                    .text(&session.manifest_path, &session.segment_dir)
-                    .await?;
-                let path = rendition_playlist(
-                    &manifest,
-                    &session.segment_dir,
-                    &session.manifest_path,
-                    &session.rendition_name,
-                    &rendition,
-                )?;
-                let content = ctx.text(&path, &session.segment_dir).await?;
-                if is_master(&content) {
-                    return Err(PlaybackError::SessionNotFound);
-                }
-                playlist_response(normalize_manifest(&content, session_id, &rendition)?)
-            })
-        })
+        .response_scoped(
+            Some(session_id),
+            scope.as_ref().map(|scope| scope.1.clone()),
+            move |ctx| {
+                Box::pin(async move {
+                    let manifest = ctx
+                        .text(&session.manifest_path, &session.segment_dir)
+                        .await?;
+                    let path = rendition_playlist(
+                        &manifest,
+                        &session.segment_dir,
+                        &session.manifest_path,
+                        &session.rendition_name,
+                        &rendition,
+                    )?;
+                    let content = ctx.text(&path, &session.segment_dir).await?;
+                    if is_master(&content) {
+                        return Err(PlaybackError::SessionNotFound);
+                    }
+                    playlist_response(normalize_scoped(
+                        &content,
+                        session_id,
+                        &rendition,
+                        scope.as_ref().map(|scope| scope.0),
+                    )?)
+                })
+            },
+        )
         .await
 }
 
@@ -110,6 +151,19 @@ pub async fn get_transcode_segment(
     session_id: Uuid,
     rendition: &str,
     filename: &str,
+) -> Result<Response, PlaybackError> {
+    segment_scoped(manager, session_id, rendition, filename, None).await
+}
+
+pub(super) async fn segment_scoped(
+    manager: &TranscodeManager,
+    session_id: Uuid,
+    rendition: &str,
+    filename: &str,
+    scope: Option<(
+        Uuid,
+        std::sync::Arc<crate::services::vod_lifecycle::Generation>,
+    )>,
 ) -> Result<Response, PlaybackError> {
     manager.output.ensure_open()?;
     validate_rendition(rendition)?;
@@ -121,49 +175,53 @@ pub async fn get_transcode_segment(
     let filename = filename.to_owned();
     manager
         .output
-        .response(Some(session_id), move |ctx| {
-            Box::pin(async move {
-                let manifest = ctx
-                    .text(&session.manifest_path, &session.segment_dir)
-                    .await?;
-                let playlist = rendition_playlist(
-                    &manifest,
-                    &session.segment_dir,
-                    &session.manifest_path,
-                    &session.rendition_name,
-                    &rendition,
-                )?;
-                let directory = playlist.parent().ok_or(PlaybackError::SessionNotFound)?;
-                let id = ctx
-                    .open(&directory.join(&filename), Some(&session.segment_dir))
-                    .await?;
-                let length = ctx.metadata(id).await?.len();
-                let response = Response::builder()
-                    .status(StatusCode::OK)
-                    .header(
-                        header::CONTENT_TYPE,
-                        if filename.ends_with(".m4s") {
-                            "video/iso.segment"
-                        } else {
-                            "video/mp4"
+        .response_scoped(
+            Some(session_id),
+            scope.as_ref().map(|scope| scope.1.clone()),
+            move |ctx| {
+                Box::pin(async move {
+                    let manifest = ctx
+                        .text(&session.manifest_path, &session.segment_dir)
+                        .await?;
+                    let playlist = rendition_playlist(
+                        &manifest,
+                        &session.segment_dir,
+                        &session.manifest_path,
+                        &session.rendition_name,
+                        &rendition,
+                    )?;
+                    let directory = playlist.parent().ok_or(PlaybackError::SessionNotFound)?;
+                    let id = ctx
+                        .open(&directory.join(&filename), Some(&session.segment_dir))
+                        .await?;
+                    let length = ctx.metadata(id).await?.len();
+                    let response = Response::builder()
+                        .status(StatusCode::OK)
+                        .header(
+                            header::CONTENT_TYPE,
+                            if filename.ends_with(".m4s") {
+                                "video/iso.segment"
+                            } else {
+                                "video/mp4"
+                            },
+                        )
+                        .header(header::CONTENT_LENGTH, length.to_string())
+                        .header(header::CACHE_CONTROL, "private, no-store")
+                        .body(Body::empty())
+                        .expect("static segment headers");
+                    let (parts, _) = response.into_parts();
+                    Ok(Prepared {
+                        status: parts.status,
+                        headers: parts.headers,
+                        content: Content::File {
+                            id,
+                            offset: 0,
+                            length,
                         },
-                    )
-                    .header(header::CONTENT_LENGTH, length.to_string())
-                    .header(header::CACHE_CONTROL, "private, no-store")
-                    .body(Body::empty())
-                    .expect("static segment headers");
-                let (parts, _) = response.into_parts();
-                Ok(Prepared {
-                    status: parts.status,
-                    headers: parts.headers,
-                    content: Content::File {
-                        id,
-                        offset: 0,
-                        length,
-                    },
+                    })
                 })
-            })
-        })
+            },
+        )
         .await
 }
 
@@ -262,6 +320,22 @@ fn public_segment(
     Ok(format!(
         "/api/v1/transcode/{session_id}/{rendition}/{filename}"
     ))
+}
+
+fn normalize_scoped(
+    content: &str,
+    session_id: Uuid,
+    rendition: &str,
+    scope: Option<Uuid>,
+) -> Result<String, PlaybackError> {
+    let content = normalize_manifest(content, session_id, rendition)?;
+    Ok(match scope {
+        Some(id) => content.replace(
+            &format!("/api/v1/transcode/{session_id}/"),
+            &format!("/api/v1/playback-commands/{id}/hls/"),
+        ),
+        None => content,
+    })
 }
 
 fn normalize_manifest(

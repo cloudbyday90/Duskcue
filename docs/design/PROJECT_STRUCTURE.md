@@ -1,5 +1,11 @@
 # Project Structure
 
+## Modular VOD command protocol — October 27, 2026
+
+`domains/playback/commands/` retains the five-file HTTP boundary plus focused intent, preparation, database, readiness/ownership, representation, delivery and captured-cleanup authentication services. Its router is normal-build code without production registration. Each AppState shares its own bounded coordinator. `playback/planning.rs` factors existing source/decision logic for both legacy and new commands; `legacy.rs` refuses protocol-bound history on weaker controls. `policy_transactions.rs` owns bounded policy writes.
+
+`services/playback_admission/vod.rs` composes strict policy/classification/attribution through existing ledger transactions; `owner/sql.rs` retains bounded connection work through observer loss. Logical viewer groups compose the existing file/process/output owners. One forward migration owns durable command attribution and revocation hooks. Focused real PostgreSQL/HTTP/FFmpeg tests reuse native and managed Linux drivers and the existing three verified compiler checkpoints. [Protocol authority](VOD_COMMAND_DELIVERY.md) owns scope and results. Dependencies and Cargo.lock are unchanged.
+
 ## Modular playback receipt retention — October 27, 2026
 
 [Receipt retention](PLAYBACK_RECEIPT_RETENTION.md) adds focused `services/playback_admission/retention/` policy/types, database and pruning-query modules, plus `owner/maintenance.rs` for synchronized retained work. The existing transaction/owner services keep their resource and shutdown limits. One forward migration owns accounting/backfill/guards; independent PostgreSQL integration helpers cover migration, quotas, time, wire faults and resource ownership. Native and managed Linux drivers reuse the existing owned fixture and add an independently verified retention executable checkpoint. No dependency, public route or production admission attachment is added.

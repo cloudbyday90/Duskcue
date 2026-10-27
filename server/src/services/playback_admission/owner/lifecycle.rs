@@ -44,7 +44,11 @@ impl AdmissionOwner {
             self.tracker.spawn(async move {
                 let _permit = permit;
                 if !entry.cancel.is_cancelled()
-                    && owner.ledger.check(entry.request, false).await.is_err()
+                    && owner
+                        .ledger
+                        .check(entry.request, false, entry.binding)
+                        .await
+                        .is_err()
                 {
                     entry.cancel.cancel();
                 }
@@ -52,7 +56,8 @@ impl AdmissionOwner {
                     if owner.ledger.retire(entry.request, false).await.is_err() {
                         owner.failed.store(true, Ordering::SeqCst);
                     }
-                    if !entry.attached.load(Ordering::SeqCst)
+                    if (!entry.attached.load(Ordering::SeqCst)
+                        || entry.completed.load(Ordering::SeqCst))
                         && owner.ledger.retire(entry.request, true).await.is_ok()
                     {
                         owner.remove(entry.request.id);
@@ -98,6 +103,9 @@ impl AdmissionOwner {
             return;
         }
         let _permit = self.commands.acquire().await;
+        entry
+            .completed
+            .store(entry.binding.is_some(), Ordering::SeqCst);
         if self.ledger.retire(entry.request, true).await.is_ok() {
             self.remove(entry.request.id);
         } else {

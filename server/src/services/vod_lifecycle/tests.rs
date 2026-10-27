@@ -17,6 +17,52 @@ fn prepared(bytes: &'static [u8]) -> Prepared {
     }
 }
 
+#[tokio::test]
+async fn viewer_groups_cancel_only_their_queues_without_using_generation_capacity() {
+    let owner = VodLifecycle::new();
+    let first = Generation::viewer();
+    let second = Generation::viewer();
+    let a = owner
+        .response_scoped(None, Some(first.clone()), |_| {
+            Box::pin(async {
+                Ok(Prepared {
+                    status: StatusCode::OK,
+                    headers: Default::default(),
+                    content: Content::Bytes(vec![1; CHUNK * 4].into()),
+                })
+            })
+        })
+        .await
+        .unwrap();
+    let b = owner
+        .response_scoped(None, Some(second.clone()), |_| {
+            Box::pin(async { Ok(prepared(b"other viewer")) })
+        })
+        .await
+        .unwrap();
+    let ids: Vec<_> = (0..128).map(|_| Uuid::now_v7()).collect();
+    for id in &ids {
+        owner.begin_generation(*id, false).unwrap();
+    }
+    tokio::time::timeout(Duration::from_secs(2), first.drain())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(to_bytes(a.into_body(), CHUNK * 4).await.is_err());
+    assert_eq!(
+        to_bytes(b.into_body(), 32).await.unwrap().as_ref(),
+        b"other viewer"
+    );
+    assert!(second.active());
+    second.drain().await.unwrap();
+    owner.close();
+    for id in ids {
+        owner.finish_generation(id);
+    }
+    drain(&owner).await;
+    assert!(owner.complete());
+}
+
 async fn drain(owner: &Arc<VodLifecycle>) {
     tokio::time::timeout(Duration::from_secs(3), async {
         owner.drain_commands().await.unwrap();

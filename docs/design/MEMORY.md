@@ -1,5 +1,11 @@
 # Memory Management
 
+## VOD command ownership — October 27, 2026
+
+The [command protocol](VOD_COMMAND_DELIVERY.md) shares seven regular admission SQL permits plus the reserved maintenance permit. Per-AppState command coordination is bounded to 128 viewers. Logical viewer groups do not consume the separate 128 physical-generation budget. Readers retain both group and physical-generation completion where applicable, sharing 128 responses, eight I/O operations, 64-KiB chunks/two queued chunks and 1-MiB playlists. Source inspection is retained under existing command/group ownership and shares the I/O budget.
+
+Control bodies and representations are bounded to 32 KiB, body acquisition to five seconds and SQL to existing three-second/default-discard transactions. No SQL permit spans FFmpeg preparation or file/process/cache cleanup. Completion loss is sticky; uncertainty remains counted. Root joins retained late cleanup SQL after HTTP/VOD completion within the same thirty-second drain, before the existing sixty-second pool closure. No resource ceiling or Linux/compiler guard is increased. Final verification belongs to the command authority.
+
 ## Playback receipt maintenance — October 27, 2026
 
 [Receipt retention](PLAYBACK_RECEIPT_RETENTION.md) partitions the existing eight admission database operations into seven regular commands and one reserved maintenance operation. Monitor rotation shares the seven-operation stride across 128 entries. One retained startup batch and one batch every sixty seconds examine at most 128 indexed candidates; a locked prefix does not expand that window. All retained states count toward 4,096 rows per household and 65,536 globally. Existing over-limit rows remain protected and refuse growth. These are logical row bounds, not a total PostgreSQL byte/vacuum guarantee.

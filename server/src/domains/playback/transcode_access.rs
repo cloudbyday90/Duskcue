@@ -19,7 +19,8 @@ pub async fn assert_transcode_profile_access(
     let media_item_id = sqlx::query_scalar::<_, Uuid>(
         "SELECT media_item_id FROM play_sessions \
          WHERE metadata ->> 'transcode_session_id' = $1 \
-           AND user_id = $2 AND profile_id = $3 AND stopped_at IS NULL",
+           AND user_id = $2 AND profile_id = $3 AND stopped_at IS NULL \
+           AND metadata->'vod_command_protocol' IS DISTINCT FROM '1'::jsonb",
     )
     .bind(transcode_session_id.to_string())
     .bind(user_id)

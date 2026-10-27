@@ -1,8 +1,12 @@
 # Streaming & Transcoding Design
 
-## VOD command/delivery review — October 27, 2026
+## VOD command/delivery implementation — October 27, 2026
 
-The [new protocol authority](VOD_COMMAND_DELIVERY.md) records seven confirmed choices and a concrete contract awaiting shared-understanding confirmation. It scopes backend Start/status/renew/Stop and exact-session direct/HLS qualification, retained preparation/readiness/cleanup, complete UUIDv7 intent and separate total/transcode-viewer limits. Established quality survives quality-only edits; actual viewing/mode revocation retires the viewer. No runtime implementation, production registration, client migration or cap enforcement is claimed. Provider VOD controls and recordings remain independent.
+The [confirmed protocol authority](VOD_COMMAND_DELIVERY.md) owns an isolated backend Start/status/renew/Stop and exact-session direct/HLS lane. Its modular implementation has passed scoped real Windows/managed Linux qualification. Accepted preparation, ready publication and verified cleanup are separate outcomes. Complete UUIDv7 intent, total/transcode-viewer limits, grandfathered quality and transactional viewing/mode revocation retain their agreed semantics.
+
+New direct readers share a logical viewer group; HLS readers also retain physical-generation ownership. Retirement cancels queued output and joins actual I/O, process and cache cleanup. Successful encoding retains playable output; failed or retired output retires its viewer. The bounded first lane selects software FFmpeg to avoid an unqualified hardware fallback changing its bound generation. Existing legacy hardware/source-recovery behavior remains separate.
+
+Normal production registration, client migration and shared-cap enforcement remain deferred. Provider Movies/Series controls and recordings are independent. Exact qualification evidence and rollout limits belong to the protocol authority.
 
 ## VOD lifecycle — October 2026
 

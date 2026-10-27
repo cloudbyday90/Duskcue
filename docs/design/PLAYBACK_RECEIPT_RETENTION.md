@@ -1,5 +1,9 @@
 # Playback reservation receipt retention
 
+## VOD command child records — October 27, 2026
+
+The [command/delivery increment](VOD_COMMAND_DELIVERY.md) adds bounded child attribution under each reservation's existing release/retention lifecycle. It does not change first-use windows, the monotonic cutoff, row quotas, 24-hour receipt retention, pruning batches or maintenance ownership. Parent deletion cascades only after existing release/age/replay guards pass; child rows cannot be deleted independently. The new foreign key preempts a bare parent TRUNCATE with PostgreSQL 0A000; the CASCADE form still exercises the PBR04 trigger guard. Both refusals and the existing timed/race/fault retention suite remain qualified by the command increment. History and instance/audit retention remain separate.
+
 ## Status and authority
 
 Research began October 26, 2026 against `eaaace1`; research checkpoint `df4e475` and concrete contract `cab9bad` are pushed on main. The user confirmed the complete implementation contract on October 27. Scoped implementation and qualification are complete: twenty native Windows tests, twenty fresh managed Linux tests, library/admission/root/workflow regressions, both compilation modes, unchanged lint baseline and publication checks below. Production admission remains disabled.

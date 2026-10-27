@@ -1,5 +1,9 @@
 # VOD worker and output lifecycle
 
+## Session-bound command integration — October 27, 2026
+
+The following [VOD command/delivery increment](VOD_COMMAND_DELIVERY.md) adds logical viewer groups without consuming additional physical-generation permits. Direct readers register with their viewer; HLS readers register with both the viewer and physical generation. Scoped retirement discards queued output and joins actual I/O before process/cache cleanup and counted ledger release. Successful encoding retains playable output; physical failure/retirement cancels its bound viewer. Existing legacy clients and root/resource budgets retain this document's boundary. The command authority owns the new exact-session protocol and its final qualification; production mounting and client/cap migration remain separate.
+
 ## Status and authority
 
 Scoped implementation and qualification complete, October 26, 2026, on main. Research began against `3127055`; all six choices and the complete implementation contract were confirmed before coding. The verification record below binds the qualified working tree and runtime image. Main only; no release.

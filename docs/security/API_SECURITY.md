@@ -1,5 +1,11 @@
 # API Security Domain
 
+## Session-bound VOD commands — October 27, 2026
+
+The isolated [VOD command protocol](../design/VOD_COMMAND_DELIVERY.md) authenticates every control/status/media request with existing cookies or Authorization headers. UUIDv7 command IDs and session-context preconditions are not credentials. Start/renew bind the exact current account/sign-in/credential revision/transport/profile revision in bounded admission transactions. Ready publication additionally requires current source and viewing/mode authority; uncertain admission or readiness commit cannot publish media URLs. No token is placed in a delivery query string.
+
+Only the captured active account/session/version/transport may request Stop or read retirement evidence after a profile switch/deletion. That path grants no viewing or progress mutation. JSON-only bounded controls reject simple-form requests; all representations and fixed problems are private/no-store, with redacted command paths/query data. New bound history and generation identities refuse weaker legacy controls/HLS. Production mounting, all-client migration and closure of generic legacy file access remain prerequisites to a production-wide shared-cap claim. Final qualification and limitations belong to the protocol authority.
+
 ## Live TV management request binding - October 26, 2026
 
 The [management client](../design/IPTV_MANAGEMENT_CLIENT.md) extends optional `X-Session-Context` parsing/checking to assignment, delegated owner/profile, refresh-control/resource/status and start handlers. Services check the acting session under existing transaction locks before side effects or acceptance. Legacy unbound callers retain current authority. The digest grants no permission or proof and is not a CSRF secret. ETags, explicit JSON/non-simple headers, current permissions, fresh grants and credentialed origin policy remain independent requirements.

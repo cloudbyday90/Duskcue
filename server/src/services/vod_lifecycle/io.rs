@@ -28,6 +28,17 @@ impl ReadContext {
         path: &Path,
         cache: Option<&Path>,
     ) -> Result<usize, PlaybackError> {
+        self.open_inner(path, cache, false).await
+    }
+    pub(crate) async fn open_source(&mut self, path: &Path) -> Result<usize, PlaybackError> {
+        self.open_inner(path, None, true).await
+    }
+    async fn open_inner(
+        &mut self,
+        path: &Path,
+        cache: Option<&Path>,
+        strict: bool,
+    ) -> Result<usize, PlaybackError> {
         let _permit = self.permit().await?;
         if let Some(root) = cache {
             check_cache(root, path).await?;
@@ -35,9 +46,16 @@ impl ReadContext {
         let mut options = tokio::fs::OpenOptions::new();
         options.read(true);
         #[cfg(unix)]
-        options.custom_flags(libc::O_NONBLOCK | if cache.is_some() { libc::O_NOFOLLOW } else { 0 });
+        options.custom_flags(
+            libc::O_NONBLOCK
+                | if cache.is_some() || strict {
+                    libc::O_NOFOLLOW
+                } else {
+                    0
+                },
+        );
         #[cfg(windows)]
-        if cache.is_some() {
+        if cache.is_some() || strict {
             options.custom_flags(0x00200000);
         }
         let mut file = options

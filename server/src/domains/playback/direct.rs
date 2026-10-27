@@ -31,6 +31,73 @@ pub(super) struct FileIdentity {
 }
 
 impl FileIdentity {
+    pub(super) async fn read_owned(
+        owner: &std::sync::Arc<crate::services::vod_lifecycle::VodLifecycle>,
+        details: &MediaFileDetails,
+    ) -> Option<Self> {
+        let output = owner.clone();
+        let details = details.clone();
+        tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            owner.command(false, move |stop| async move {
+                let _permit = output.inspection_permit(&stop).await?;
+                Self::inspect_strict(&details)
+                    .await
+                    .ok_or(super::PlaybackError::FileNotFound)
+            }),
+        )
+        .await
+        .ok()?
+        .ok()
+    }
+    pub(super) async fn read_scoped(
+        owner: &std::sync::Arc<crate::services::vod_lifecycle::VodLifecycle>,
+        group: &std::sync::Arc<crate::services::vod_lifecycle::Generation>,
+        details: &MediaFileDetails,
+    ) -> Option<Self> {
+        let output = owner.clone();
+        let details = details.clone();
+        let stop = group.stop.clone();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(2),
+            group.inspect(async move {
+                let _permit = output.inspection_permit(&stop).await?;
+                Self::inspect_strict(&details)
+                    .await
+                    .ok_or(super::PlaybackError::FileNotFound)
+            }),
+        )
+        .await
+        .ok()
+        .and_then(Result::ok);
+        if result.is_none() {
+            group.retire();
+        }
+        result
+    }
+    async fn inspect_strict(details: &MediaFileDetails) -> Option<Self> {
+        let metadata = tokio::fs::symlink_metadata(&details.file_path).await.ok()?;
+        if !metadata.is_file() || metadata.file_type().is_symlink() {
+            return None;
+        }
+        Self::inspect(details).await
+    }
+    pub(super) fn matches_details(&self, details: &MediaFileDetails) -> bool {
+        self.file_id == details.id
+            && self.path == details.file_path
+            && self.bytes == u64::try_from(details.file_size).unwrap_or(u64::MAX)
+            && self.updated_at == details.updated_at
+            && Self::probe_hash(details).as_deref() == Some(self.probe_hash.as_str())
+    }
+    pub(super) fn matches_metadata(&self, metadata: &std::fs::Metadata) -> bool {
+        metadata.is_file()
+            && metadata.len() == self.bytes
+            && metadata
+                .modified()
+                .ok()
+                .and_then(|value| value.duration_since(UNIX_EPOCH).ok())
+                .is_some_and(|value| value.as_nanos().to_string() == self.modified_ns)
+    }
     pub(super) async fn read(details: &MediaFileDetails) -> Option<Self> {
         tokio::time::timeout(std::time::Duration::from_secs(2), Self::inspect(details))
             .await
@@ -49,22 +116,7 @@ impl FileIdentity {
         {
             return None;
         }
-        let probe = serde_json::to_vec(&json!({
-            "container": details.container_format, "video_codec": details.video_codec,
-            "resolution": details.video_resolution, "video_bitrate": details.video_bitrate,
-            "dynamic_range": details.video_dynamic_range, "audio_codec": details.audio_codec,
-            "audio_channels": details.audio_channels, "audio_bitrate": details.audio_bitrate,
-            "streams": details.additional_streams,
-        }))
-        .ok()?;
-        if probe.len() > 65_536 {
-            return None;
-        }
-        let probe_hash = ring::digest::digest(&ring::digest::SHA256, &probe)
-            .as_ref()
-            .iter()
-            .map(|byte| format!("{byte:02x}"))
-            .collect();
+        let probe_hash = Self::probe_hash(details)?;
         Some(Self {
             file_id: details.id,
             path: details.file_path.clone(),
@@ -79,6 +131,26 @@ impl FileIdentity {
                 .to_string(),
             probe_hash,
         })
+    }
+    fn probe_hash(details: &MediaFileDetails) -> Option<String> {
+        let probe = serde_json::to_vec(&json!({
+            "container": details.container_format, "video_codec": details.video_codec,
+            "resolution": details.video_resolution, "video_bitrate": details.video_bitrate,
+            "dynamic_range": details.video_dynamic_range, "audio_codec": details.audio_codec,
+            "audio_channels": details.audio_channels, "audio_bitrate": details.audio_bitrate,
+            "streams": details.additional_streams,
+        }))
+        .ok()?;
+        if probe.len() > 65_536 {
+            return None;
+        }
+        Some(
+            ring::digest::digest(&ring::digest::SHA256, &probe)
+                .as_ref()
+                .iter()
+                .map(|byte| format!("{byte:02x}"))
+                .collect(),
+        )
     }
 }
 

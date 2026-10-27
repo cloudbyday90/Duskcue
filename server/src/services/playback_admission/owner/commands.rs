@@ -27,13 +27,28 @@ impl AdmissionOwner {
         F: FnOnce(CancellationToken) -> Fut + Send + 'static,
         Fut: Future<Output = Result<(), AdmissionError>> + Send + 'static,
     {
-        let receive = self.enqueue(request, factory)?;
+        let receive = self.enqueue(request, None, factory)?;
+        receive.await.map_err(|_| AdmissionError::Storage)?
+    }
+
+    pub(crate) async fn start_vod<F, Fut>(
+        self: &Arc<Self>,
+        request: Request,
+        binding: super::super::vod::Binding,
+        factory: F,
+    ) -> Result<Receipt, AdmissionError>
+    where
+        F: FnOnce(CancellationToken) -> Fut + Send + 'static,
+        Fut: Future<Output = Result<(), AdmissionError>> + Send + 'static,
+    {
+        let receive = self.enqueue(request, Some(binding), factory)?;
         receive.await.map_err(|_| AdmissionError::Storage)?
     }
 
     fn enqueue<F, Fut>(
         self: &Arc<Self>,
         request: Request,
+        binding: Option<super::super::vod::Binding>,
         factory: F,
     ) -> Result<oneshot::Receiver<Result<Receipt, AdmissionError>>, AdmissionError>
     where
@@ -55,7 +70,7 @@ impl AdmissionOwner {
             return Err(AdmissionError::Closed);
         }
         let (entry, inserted) = if let Some(entry) = gate.entries.get(&request.id) {
-            if entry.request.encode()? != request.encode()? {
+            if entry.request.encode()? != request.encode()? || entry.binding != binding {
                 return Err(AdmissionError::Conflict);
             }
             if entry.pending.load(Ordering::SeqCst) {
@@ -68,11 +83,13 @@ impl AdmissionOwner {
             }
             let entry = Arc::new(Entry {
                 request,
+                binding,
                 cancel: CancellationToken::new(),
                 pending: AtomicBool::new(true),
                 attached: AtomicBool::new(false),
                 checking: AtomicBool::new(false),
                 deadline: watch::channel(None).0,
+                completed: AtomicBool::new(false),
             });
             gate.entries.insert(request.id, entry.clone());
             (entry, true)
@@ -81,7 +98,7 @@ impl AdmissionOwner {
         self.tracker.spawn(async move {
             let _permit = permit;
             let began = Instant::now();
-            let result = owner.ledger.claim(request, inserted).await;
+            let result = owner.ledger.claim(request, inserted, binding).await;
             if inserted {
                 match &result {
                     Ok(receipt) if receipt.fresh && receipt.state == ReservationState::Held => {
@@ -176,7 +193,7 @@ impl AdmissionOwner {
         self.tracker.spawn(async move {
             let _permit = permit;
             let began = Instant::now();
-            let result = owner.ledger.check(request, renew).await;
+            let result = owner.ledger.check(request, renew, entry.binding).await;
             if renew && let Ok(receipt) = &result {
                 entry.deadline.send_replace(Some(
                     began

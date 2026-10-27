@@ -3,6 +3,7 @@
 // Licensed under AGPL-3.0. See LICENSE for details.
 
 use super::*;
+use tokio_util::sync::CancellationToken;
 
 struct OwnedStart {
     session: TranscodeSession,
@@ -10,20 +11,72 @@ struct OwnedStart {
 }
 
 impl TranscodeManager {
+    pub(crate) fn output_usable(&self, id: Uuid) -> bool {
+        self.output
+            .generation(id)
+            .is_some_and(|generation| generation.active())
+            && self.workers.execution(id).is_some_and(|execution| {
+                matches!(
+                    execution.state(),
+                    lifecycle::ExecutionState::Running | lifecycle::ExecutionState::Succeeded
+                )
+            })
+    }
+
+    pub(crate) async fn output_retired(&self, id: Uuid) {
+        let Some(generation) = self.output.generation(id) else {
+            return;
+        };
+        let Some(mut execution) = self.workers.execution(id) else {
+            return;
+        };
+        loop {
+            match execution.state() {
+                lifecycle::ExecutionState::Succeeded => {
+                    generation.stop.cancelled().await;
+                    return;
+                }
+                lifecycle::ExecutionState::Running => {}
+                _ => return,
+            }
+            tokio::select! {
+                _ = generation.stop.cancelled() => return,
+                _ = execution.changed() => {},
+            }
+        }
+    }
+
     pub async fn start_session(
         &self,
         params: StartSessionParams,
         data_dir: &Path,
     ) -> Result<TranscodeSession, PlaybackError> {
+        self.start_session_bound(params, data_dir, Uuid::now_v7(), None)
+            .await
+    }
+
+    pub(crate) async fn start_session_bound(
+        &self,
+        params: StartSessionParams,
+        data_dir: &Path,
+        first_id: Uuid,
+        external: Option<CancellationToken>,
+    ) -> Result<TranscodeSession, PlaybackError> {
         let manager = self.clone();
         let data_dir = data_dir.to_path_buf();
-        let first_id = Uuid::now_v7();
         let result = self
             .output
             .start_command(first_id, move |stop| async move {
-                let result = manager
-                    .start_owned(params, &data_dir, &stop, first_id)
-                    .await;
+                let local = stop.child_token();
+                let external = external.unwrap_or_default();
+                let result = {
+                    let started = manager.start_owned(params, &data_dir, &local, first_id);
+                    tokio::pin!(started);
+                    tokio::select! { biased;
+                        _=external.cancelled()=>{local.cancel();started.await},
+                        result=&mut started=>result,
+                    }
+                };
                 if result.is_err()
                     && !manager.sessions.contains_key(&first_id)
                     && !manager.preparations.contains_key(&first_id)

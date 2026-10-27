@@ -58,7 +58,7 @@ impl Request {
         }
         Ok(value)
     }
-    pub(super) fn decode(id: Uuid, value: &str) -> Result<Self, AdmissionError> {
+    pub(crate) fn decode(id: Uuid, value: &str) -> Result<Self, AdmissionError> {
         if value.len() > 2048 {
             return Err(AdmissionError::Authority);
         }

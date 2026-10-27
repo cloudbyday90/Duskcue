@@ -2,13 +2,14 @@
 // Copyright (C) 2026-2026 Duskcue Contributors
 // Licensed under AGPL-3.0. See LICENSE for details.
 
-use sqlx::{PgConnection, PgPool, Row};
+use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 
 use super::PlaybackError;
 use super::track_selection::default_audio_stream_index;
 use crate::services::decision_engine::{self, MediaFileInfo};
 
+#[derive(Clone)]
 pub(super) struct MediaFileDetails {
     pub(super) id: Uuid,
     pub(super) file_size: i64,
@@ -28,15 +29,6 @@ pub(super) struct MediaFileDetails {
     #[allow(dead_code)]
     pub(super) runtime_seconds: i32,
     pub(super) additional_streams: serde_json::Value,
-}
-
-pub(super) async fn fetch_media_file_details(
-    pool: &PgPool,
-    file_id: Uuid,
-    media_item_id: Uuid,
-) -> Result<MediaFileDetails, PlaybackError> {
-    let mut connection = pool.acquire().await?;
-    fetch_media_file_details_on_connection(&mut connection, file_id, media_item_id).await
 }
 
 pub(super) async fn fetch_media_file_details_on_connection(
@@ -60,8 +52,8 @@ pub(super) async fn fetch_media_file_details_on_connection(
     Ok(row_to_media_file_details(&row))
 }
 
-pub(super) async fn select_best_media_file(
-    pool: &PgPool,
+pub(super) async fn select_best_media_file_on_connection(
+    connection: &mut PgConnection,
     media_item_id: Uuid,
 ) -> Result<MediaFileDetails, PlaybackError> {
     let row = sqlx::query(
@@ -73,7 +65,7 @@ pub(super) async fn select_best_media_file(
          ORDER BY file_size DESC LIMIT 1",
     )
     .bind(media_item_id)
-    .fetch_optional(pool)
+    .fetch_optional(connection)
     .await?
     .ok_or(PlaybackError::FileNotFound)?;
 

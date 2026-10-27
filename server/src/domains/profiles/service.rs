@@ -609,18 +609,28 @@ pub async fn assert_ambient_playback_allowed(
     channel_id: Uuid,
     media_item_id: Uuid,
 ) -> Result<AmbientChannelRow, ProfilesError> {
-    let channel = get_available_channel(pool, scope, channel_id).await?;
+    let mut conn = pool.acquire().await?;
+    assert_ambient_playback_allowed_on_connection(&mut conn, scope, channel_id, media_item_id).await
+}
+
+pub(crate) async fn assert_ambient_playback_allowed_on_connection(
+    conn: &mut sqlx::PgConnection,
+    scope: &ProfileScope,
+    channel_id: Uuid,
+    media_item_id: Uuid,
+) -> Result<AmbientChannelRow, ProfilesError> {
+    let channel = get_available_channel_on_connection(conn, scope, channel_id).await?;
     let is_member: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM ambient_channel_items WHERE channel_id = $1 AND media_item_id = $2)",
     )
     .bind(channel_id)
     .bind(media_item_id)
-    .fetch_one(pool)
+    .fetch_one(&mut *conn)
     .await?;
     if !is_member {
         return Err(ProfilesError::ChannelUnavailable);
     }
-    assert_media_access(pool, scope, media_item_id).await?;
+    assert_media_access_on_connection(conn, scope, media_item_id).await?;
     Ok(channel)
 }
 
@@ -852,6 +862,15 @@ async fn get_available_channel(
     scope: &ProfileScope,
     channel_id: Uuid,
 ) -> Result<AmbientChannelRow, ProfilesError> {
+    let mut conn = pool.acquire().await?;
+    get_available_channel_on_connection(&mut conn, scope, channel_id).await
+}
+
+async fn get_available_channel_on_connection(
+    conn: &mut sqlx::PgConnection,
+    scope: &ProfileScope,
+    channel_id: Uuid,
+) -> Result<AmbientChannelRow, ProfilesError> {
     if !scope.allow_ambient_channels {
         return Err(ProfilesError::FeatureDisabled);
     }
@@ -863,7 +882,7 @@ async fn get_available_channel(
     .bind(channel_id)
     .bind(scope.owner_user_id)
     .bind(audience)
-    .fetch_optional(pool)
+    .fetch_optional(conn)
     .await?
     .ok_or(ProfilesError::ChannelUnavailable)?;
     Ok(row_to_channel(&row))

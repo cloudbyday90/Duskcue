@@ -106,7 +106,9 @@ impl FromRequestParts<AppState> for AuthenticatedUser {
     }
 }
 
-fn extract_session_token(parts: &Parts) -> Result<(String, CredentialTransport), AppError> {
+pub(crate) fn extract_session_token(
+    parts: &Parts,
+) -> Result<(String, CredentialTransport), AppError> {
     if let Some(cookie_header) = parts.headers.get(COOKIE)
         && let Ok(val) = cookie_header.to_str()
     {

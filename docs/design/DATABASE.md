@@ -1,5 +1,11 @@
 # Database Design
 
+## VOD command attribution — October 27, 2026
+
+[Migration 20261027130000](../../server/migrations/20261027130000_vod_commands.sql) adds one bounded `playback_vod_commands` row per reservation, with immutable SHA-256 intent/policy/source attribution and classified delivery/encoding state. Atomic admission owns its creation. Ready publication binds the exact history ID and partition timestamp, while cleanup uncertainty and completion evidence remain monotonic. The parent reservation owns its 24-hour retention and deletion; standalone command deletion/truncation and state revival refuse. No history archive or raw path/request payload is introduced. The new child foreign key makes bare parent TRUNCATE fail with PostgreSQL 0A000 before trigger dispatch; the explicit CASCADE case still exercises the existing PBR04 retention refusal. Both paths remain tested, as do child deletion/truncation and state-revival refusals.
+
+Strict inherited policy resolution and deferred final-state policy/default/assignment checks retire affected viewers transactionally. Numeric cap or quality-only reductions preserve established viewers. Source, ambient membership and current permission changes retain irreversible retirement. Consistent policy-before-household locks and bounded default-discard SQL transactions preserve uncertain commit semantics. [Command authority](VOD_COMMAND_DELIVERY.md) owns protocol details and qualification; production admission remains unattached.
+
 ## Playback receipt retention — October 27, 2026
 
 [Migration 20261027010000](../../server/migrations/20261027010000_playback_receipt_retention.sql) atomically backfills exact global/household accounting and installs replay, quota, immutable-identity, release-evidence and deletion guards. `playback_retention` holds the nondecreasing millisecond rejection cutoff and total count; `playback_receipt_households` holds exact retained-row counts without an account cascade. Zero-count household metadata is removed only after its last eligible receipt. Legacy data above either ceiling is preserved.

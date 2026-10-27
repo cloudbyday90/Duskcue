@@ -64,6 +64,9 @@ pub async fn shutdown(
             .drain()
             .await
             .map_err(|_| ShutdownError)?;
+        if let Some(owner) = state.playback_admission.get() {
+            owner.drain().await.map_err(|_| ShutdownError)?;
+        }
         Ok::<_, ShutdownError>(())
     };
     tokio::time::timeout(Duration::from_secs(30), drain)

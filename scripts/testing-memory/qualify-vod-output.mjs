@@ -23,6 +23,8 @@ async function fixture(root, path, directory = false) {
 
 async function main() {
     const args = process.argv.slice(2);
+    const commandsOnly=args[0]==='--commands-only';
+    if(commandsOnly) args.shift();
     if (args.length !== 6 || args[0] !== '--ffmpeg-bin' || args[2] !== '--source' || args[4] !== '--hls') throw new Error('Provide --ffmpeg-bin, --source and --hls ignored fixture paths.');
     const workflow = await createGuardedDocker(workspace);
     const cache = await realpath(join(workspace, '.cache'));
@@ -76,6 +78,7 @@ async function main() {
         const url = `postgres://postgres:${password}@127.0.0.1:${port}/${database}`;
         const env = { ...process.env, PATH: `${ffmpeg};${process.env.PATH}`, DUSKCUE_TEST_PLAYBACK_SOURCE: source, DUSKCUE_HLS_TEST_MEDIA_DIR: hls, DUSKCUE_DATABASE_URL: url, DUSKCUE_TRANSCODE_ACCESS_TESTS: 'disposable' };
         const cases = [
+            ['commands','--lib','domains::playback::commands::tests::command_protocol_retains_scope_readiness_delivery_and_confirmed_cleanup',true],
             ['retention', '--test', 'playback_retention', true],
             ['maintenance-loss', '--lib', 'lost_maintenance_completion_is_retained_at_root', true],
             ['owner', '--lib', 'services::vod_lifecycle::tests::', false],
@@ -88,9 +91,10 @@ async function main() {
             ['stop', '--test', 'playback_stop_contract', true],
         ];
         for (const [name, target, selector, ignored] of cases) {
+            if(commandsOnly&&name!=='commands')continue;
             const args = ['test', '-p', 'duskcue', '--locked', '--offline', '-j', '2', target, selector, '--', ...(ignored ? ['--ignored'] : []), '--nocapture'];
             const execution = await runBounded('cargo.exe', args, { cwd: workspace, env, log: join(directory, `${name}.log`), redact: [password, url], timeoutMs: 1800000, bytes: 16777216,
-                onLine: name === 'retention' ? (line) => { const marker = line.match(/\bRETENTION_CASE [a-z_]+ passed$/)?.[0]; if (marker) console.log(marker); } : undefined });
+                onLine: ['retention','commands'].includes(name) ? (line) => { const marker = line.match(/\b(?:RETENTION_CASE|VOD_COMMAND_CASE) [a-z_]+ passed$/)?.[0]; if (marker) console.log(marker); } : undefined });
             const match = execution.stdout.match(/test result: ok\. (\d+) passed; 0 failed; 0 ignored;/);
             const passed = execution.code === 0 && !execution.signal && !!match && Number(match[1]) > 0 && (['owner', 'direct'].includes(name) || Number(match[1]) === 1);
             result.cases.push({ name, passed, tests: match ? Number(match[1]) : 0 });

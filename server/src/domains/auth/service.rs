@@ -53,6 +53,12 @@ pub async fn validate_session(
     .await?
     .ok_or(AuthError::SessionExpired)?;
 
+    if row
+        .try_get::<Option<Uuid>, _>("active_profile_id")?
+        .is_none()
+    {
+        return Err(AuthError::SessionExpired);
+    }
     let session = row_to_session(&row);
 
     let user = sqlx::query(

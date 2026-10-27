@@ -1,5 +1,9 @@
 # Shared playback admission
 
+## VOD command integration — October 27, 2026
+
+The following [command/delivery increment](VOD_COMMAND_DELIVERY.md) composes this ledger with full canonical start attribution, classified transcode-viewer limits and retained direct/HLS resource factories. Source preparation, positive readiness publication and cleanup are separate from admission. Captured cleanup, uncertain commits, exact actor context and policy/source revocation retain this foundation's rules. Known completed resources may retry ledger release; lost completion remains counted and fails root. Production attachment, client migration and shared-cap enforcement remain deferred. The command authority owns its current qualification status and next protocol frontier.
+
 ## Status and authority
 
 Scoped foundation qualification complete, October 26, 2026, researched against `6f678fd` on `main`. This document owns shared household viewer reservation, renewal, durable retirement and confirmed release. The user confirmed all ten product decisions and the complete contract before implementation. Production enforcement remains disabled. Verified implementation: `444dc40d4d7475ff9267389901b95e5f00a9e539` on main; the documentation-only follow-up preserves that source.

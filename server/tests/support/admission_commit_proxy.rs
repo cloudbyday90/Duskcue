@@ -16,6 +16,7 @@ use tokio_util::sync::CancellationToken;
 pub struct Proxy {
     pub url: String,
     dropped: Arc<AtomicUsize>,
+    enabled: Arc<AtomicBool>,
     cancel: CancellationToken,
     task: Option<JoinHandle<anyhow::Result<()>>>,
 }
@@ -45,6 +46,8 @@ impl Proxy {
         let token = cancel.clone();
         let dropped = Arc::new(AtomicUsize::new(0));
         let count = dropped.clone();
+        let enabled = Arc::new(AtomicBool::new(true));
+        let active = enabled.clone();
         let task = tokio::spawn(async move {
             let mut tasks = JoinSet::new();
             let mut admitted = 0;
@@ -55,11 +58,11 @@ impl Proxy {
                     result=tasks.join_next(),if !tasks.is_empty()=>{if let Some(result)=result {result??;}},
                     accepted=listener.accept(),if admitted<64=>{
                         let (client,_)=accepted?;admitted+=1;
-                        let target=target.clone();let token=token.clone();let count=count.clone();
+                        let target=target.clone();let token=token.clone();let count=count.clone();let active=active.clone();
                         tasks.spawn(async move {
                             tokio::select! {
                                 _=token.cancelled()=>Ok(()),
-                                result=relay(client,&target,count,needle,before_commit,begin_ack)=>result,
+                                result=relay(client,&target,count,active,needle,before_commit,begin_ack)=>result,
                             }
                         });
                     }
@@ -74,6 +77,7 @@ impl Proxy {
         Ok(Self {
             url: url.into(),
             dropped,
+            enabled,
             cancel,
             task: Some(task),
         })
@@ -81,7 +85,15 @@ impl Proxy {
     pub fn dropped(&self) -> usize {
         self.dropped.load(Ordering::SeqCst)
     }
+    pub fn resume(&self) {
+        self.enabled.store(false, Ordering::SeqCst);
+    }
+    #[allow(dead_code)]
+    pub fn arm(&self) {
+        self.enabled.store(true, Ordering::SeqCst);
+    }
     pub async fn finish(mut self) -> anyhow::Result<()> {
+        self.resume();
         self.cancel.cancel();
         tokio::time::timeout(
             std::time::Duration::from_secs(3),
@@ -104,11 +116,14 @@ async fn relay(
     client: TcpStream,
     target: &str,
     dropped: Arc<AtomicUsize>,
+    enabled: Arc<AtomicBool>,
     needle: &'static [u8],
     before_commit: bool,
     begin_ack: bool,
 ) -> anyhow::Result<()> {
     let server = TcpStream::connect(target).await?;
+    client.set_nodelay(true)?;
+    server.set_nodelay(true)?;
     let (mut client_read, mut client_write) = client.into_split();
     let (mut server_read, mut server_write) = server.into_split();
     let armed = AtomicBool::new(false);
@@ -128,6 +143,7 @@ async fn relay(
                 armed.store(true, Ordering::SeqCst);
             }
             if before_commit
+                && enabled.load(Ordering::SeqCst)
                 && armed.load(Ordering::SeqCst)
                 && tail.windows(7).any(|v| v == b"COMMIT\0")
             {
@@ -156,6 +172,7 @@ async fn relay(
             let mut payload = vec![0; (length - 4) as usize];
             server_read.read_exact(&mut payload).await?;
             if head[0] == b'C'
+                && enabled.load(Ordering::SeqCst)
                 && ((payload == b"COMMIT\0" && armed.load(Ordering::SeqCst))
                     || (begin_ack && payload == b"BEGIN\0"))
             {

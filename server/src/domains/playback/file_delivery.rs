@@ -19,14 +19,34 @@ pub(super) async fn response_owned(
     path: &Path,
     headers: &HeaderMap,
 ) -> Result<Response, PlaybackError> {
+    response_scoped(owner, path, headers, None, None).await
+}
+
+pub(super) async fn response_scoped(
+    owner: &Arc<VodLifecycle>,
+    path: &Path,
+    headers: &HeaderMap,
+    viewer: Option<Arc<crate::services::vod_lifecycle::Generation>>,
+    expected: Option<super::direct::FileIdentity>,
+) -> Result<Response, PlaybackError> {
     let path = path.to_path_buf();
     let range_count = headers.get_all(header::RANGE).iter().count();
     let range_value = headers.get(header::RANGE).cloned();
     owner
-        .response(None, move |ctx| {
+        .response_scoped(None, viewer, move |ctx| {
             Box::pin(async move {
-                let id = ctx.open(&path, None).await?;
+                let id = if expected.is_some() {
+                    ctx.open_source(&path).await?
+                } else {
+                    ctx.open(&path, None).await?
+                };
                 let metadata = ctx.metadata(id).await?;
+                if expected
+                    .as_ref()
+                    .is_some_and(|expected| !expected.matches_metadata(&metadata))
+                {
+                    return Err(PlaybackError::FileNotFound);
+                }
                 let size = metadata.len();
                 let range = if range_count > 1 {
                     Err(PlaybackError::InvalidByteRange(

@@ -1,5 +1,11 @@
 # Error Handling Design
 
+## Isolated VOD command refusals — October 27, 2026
+
+The [command protocol](VOD_COMMAND_DELIVERY.md) maps fixed `VOD_COMMAND_001` invalid input to 400, `_002` changed context/intent to 409, `_003` current permission/policy/retirement to 403, `_004` expired reconciliation to 410, `_005` viewer/receipt capacity to 503 and `_006` unavailable storage/ownership/indeterminate outcome to 503. Both 503 responses include Retry-After 5. RFC 9457 bodies and outer authentication errors are private/no-store; paths, raw bodies, file locations and SQL are omitted. Retry-After does not authorize replaying a mutation.
+
+Acceptance is independent of readiness: a fresh known start returns 202/preparing; lease renewal returns a lease-only acknowledgement; Stop returns 202/stopping with a retirement status URI. Cleanup uncertainty is metadata, never a grant to view or release. Captured exact-session cleanup remains possible after profile deletion without panicking on a null selected profile; ordinary viewing authentication fails closed. Lost SQL/process/read completion retains the existing nonzero shutdown outcome. No client error/recovery UI is introduced.
+
 ## Internal playback receipt refusals — October 27, 2026
 
 [Receipt retention](PLAYBACK_RECEIPT_RETENTION.md) distinguishes `Expired`, `RequestTime` and `ReceiptCapacity` from viewer `Capacity`, storage failure and indeterminate commit. Only fixed database SQLSTATE values `PBR01`–`PBR04` map to deterministic internal refusals; unrecognized database errors remain `Storage`. Commit acknowledgment loss remains `Indeterminate`, even if subsequent state inspection finds a committed result. Ordinary maintenance failures do not poison healthy resource renewal; lost completion is independently sticky. This internal increment adds no public HTTP error mapping or automatic client replay.

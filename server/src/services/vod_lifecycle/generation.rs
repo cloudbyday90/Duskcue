@@ -32,6 +32,12 @@ pub(crate) struct Generation {
 }
 impl Generation {
     pub(super) fn new(permit: OwnedSemaphorePermit) -> Self {
+        Self::create(Some(permit))
+    }
+    pub(crate) fn viewer() -> Arc<Self> {
+        Arc::new(Self::create(None))
+    }
+    fn create(permit: Option<OwnedSemaphorePermit>) -> Self {
         Self {
             gate: Mutex::new(Gate {
                 retired: false,
@@ -40,7 +46,7 @@ impl Generation {
             stop: CancellationToken::new(),
             tracker: TaskTracker::new(),
             failed: AtomicBool::new(false),
-            permit: Mutex::new(Some(permit)),
+            permit: Mutex::new(permit),
         }
     }
     pub(super) fn register(

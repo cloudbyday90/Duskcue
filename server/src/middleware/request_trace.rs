@@ -9,6 +9,13 @@ use tracing::{Level, Span};
 pub(crate) fn span(request: &Request) -> Span {
     if request.uri().path().starts_with("/api/v1/live-tv/catalog/") {
         tracing::info_span!("request", method = %request.method(), route = "/api/v1/live-tv/catalog/*", version = ?request.version())
+    } else if request.uri().path() == "/api/v1/playback-commands"
+        || request
+            .uri()
+            .path()
+            .starts_with("/api/v1/playback-commands/")
+    {
+        tracing::info_span!("request", method = %request.method(), route = "/api/v1/playback-commands/*", version = ?request.version())
     } else {
         DefaultMakeSpan::new()
             .level(Level::INFO)

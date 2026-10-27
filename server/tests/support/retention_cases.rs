@@ -209,6 +209,13 @@ pub async fn time_and_guards(db: &Database) -> anyhow::Result<()> {
             .execute(&db.pool)
             .await
             .unwrap_err(),
+        "0A000",
+    );
+    code(
+        sqlx::query("TRUNCATE playback_reservations CASCADE")
+            .execute(&db.pool)
+            .await
+            .unwrap_err(),
         "PBR04",
     );
     code(

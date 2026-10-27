@@ -73,12 +73,16 @@ struct Completion {
     id: Uuid,
     entry: Arc<ResponseEntry>,
     _generation_task: Option<TaskTrackerToken>,
+    _viewer_task: Option<TaskTrackerToken>,
     done: bool,
 }
 impl Completion {
     fn finish(mut self) {
         if let Some(generation) = &self.entry.generation {
             generation.remove(self.id);
+        }
+        if let Some(viewer) = &self.entry.viewer {
+            viewer.remove(self.id);
         }
         if let Ok(mut registry) = self.owner.registry.lock() {
             registry.responses.remove(&self.id);
@@ -95,12 +99,16 @@ impl Drop for Completion {
             if let Some(generation) = &self.entry.generation {
                 generation.fail();
             }
+            if let Some(viewer) = &self.entry.viewer {
+                viewer.fail();
+            }
             self.owner.fail();
         }
     }
 }
 
 impl VodLifecycle {
+    #[cfg(test)]
     pub async fn response<F>(
         self: &Arc<Self>,
         generation: Option<Uuid>,
@@ -109,7 +117,18 @@ impl VodLifecycle {
     where
         F: for<'a> FnOnce(&'a mut ReadContext) -> Preparation<'a> + Send + 'static,
     {
-        let (receive, output) = self.enqueue_response(generation, prepare)?;
+        self.response_scoped(generation, None, prepare).await
+    }
+    pub(crate) async fn response_scoped<F>(
+        self: &Arc<Self>,
+        generation: Option<Uuid>,
+        viewer: Option<Arc<super::Generation>>,
+        prepare: F,
+    ) -> Result<Response, PlaybackError>
+    where
+        F: for<'a> FnOnce(&'a mut ReadContext) -> Preparation<'a> + Send + 'static,
+    {
+        let (receive, output) = self.enqueue_response(generation, viewer, prepare)?;
         let (status, headers) = receive
             .await
             .map_err(|_| PlaybackError::LifecycleCleanup)??;
@@ -121,6 +140,7 @@ impl VodLifecycle {
     fn enqueue_response<F>(
         self: &Arc<Self>,
         generation: Option<Uuid>,
+        viewer: Option<Arc<super::Generation>>,
         prepare: F,
     ) -> ResponseAdmission
     where
@@ -153,9 +173,14 @@ impl VodLifecycle {
             .as_ref()
             .map(|g| g.register(id, &queue))
             .transpose()?;
+        let viewer_task = viewer
+            .as_ref()
+            .map(|viewer| viewer.register(id, &queue))
+            .transpose()?;
         let entry = Arc::new(ResponseEntry {
             queue: queue.clone(),
             generation,
+            viewer,
             _permit: permit,
         });
         registry.responses.insert(id, entry.clone());
@@ -164,6 +189,7 @@ impl VodLifecycle {
             id,
             entry: entry.clone(),
             _generation_task: generation_task,
+            _viewer_task: viewer_task,
             done: false,
         };
         let (send, receive) = oneshot::channel();

@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod commands;
 mod copy_recovery;
 mod direct;
 mod direct_admission;
@@ -24,7 +25,10 @@ pub mod handlers;
 mod heartbeat;
 mod history;
 mod hls;
+mod legacy;
 mod media_source;
+mod planning;
+mod policy_transactions;
 mod range;
 mod recovery;
 mod seek;

@@ -33,6 +33,9 @@ pub(super) async fn verify(
 ) -> Result<Verified, AdmissionError> {
     request.encode()?;
     let actor = request.actor;
+    crate::domains::household_security::context::check(conn, actor)
+        .await
+        .map_err(|_| AdmissionError::Conflict)?;
     let user=sqlx::query("SELECT role,has_all_library_access FROM users WHERE id=$1 AND status='active' AND deleted_at IS NULL")
         .bind(actor.user).fetch_optional(&mut *conn).await?.ok_or(AdmissionError::Authority)?;
     authority::session(conn, actor, Some(request.profile_revision), idle).await?;

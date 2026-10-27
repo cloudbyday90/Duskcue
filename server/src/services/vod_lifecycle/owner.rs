@@ -19,6 +19,7 @@ use uuid::Uuid;
 pub(super) struct ResponseEntry {
     pub queue: Arc<Queue>,
     pub generation: Option<Arc<Generation>>,
+    pub viewer: Option<Arc<Generation>>,
     pub(super) _permit: OwnedSemaphorePermit,
 }
 pub(super) struct Registry {
@@ -129,6 +130,20 @@ impl VodLifecycle {
         } else {
             Ok(())
         }
+    }
+    pub(crate) async fn inspection_permit(
+        &self,
+        stop: &CancellationToken,
+    ) -> Result<OwnedSemaphorePermit, PlaybackError> {
+        let permit = tokio::select! {biased;
+            _=self.stop.cancelled()=>return Err(PlaybackError::LifecycleUnavailable),
+            _=stop.cancelled()=>return Err(PlaybackError::LifecycleUnavailable),
+            permit=self.io.clone().acquire_owned()=>permit.map_err(|_|PlaybackError::LifecycleCleanup)?,
+        };
+        if self.stop.is_cancelled() || stop.is_cancelled() {
+            return Err(PlaybackError::LifecycleUnavailable);
+        }
+        Ok(permit)
     }
     pub async fn command<T, F, Fut>(
         self: &Arc<Self>,

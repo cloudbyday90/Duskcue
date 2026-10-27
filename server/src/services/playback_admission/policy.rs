@@ -6,13 +6,18 @@ use super::AdmissionError;
 use sqlx::{PgConnection, Row};
 use uuid::Uuid;
 
+pub(super) async fn fence(conn: &mut PgConnection) -> Result<(), AdmissionError> {
+    sqlx::query("LOCK TABLE streaming_policies IN SHARE MODE")
+        .execute(conn)
+        .await?;
+    Ok(())
+}
+
 pub(super) async fn ceiling(
     conn: &mut PgConnection,
     user: Uuid,
 ) -> Result<Option<i32>, AdmissionError> {
-    sqlx::query("LOCK TABLE streaming_policies IN SHARE MODE")
-        .execute(&mut *conn)
-        .await?;
+    fence(conn).await?;
     let row = sqlx::query(
         "SELECT max_streams,max_transcode_streams,streaming_policy_id FROM users WHERE id=$1",
     )
