@@ -1,5 +1,9 @@
 # Streaming & Transcoding Design
 
+## VOD command/delivery review — October 27, 2026
+
+The [new protocol authority](VOD_COMMAND_DELIVERY.md) records seven confirmed choices and a concrete contract awaiting shared-understanding confirmation. It scopes backend Start/status/renew/Stop and exact-session direct/HLS qualification, retained preparation/readiness/cleanup, complete UUIDv7 intent and separate total/transcode-viewer limits. Established quality survives quality-only edits; actual viewing/mode revocation retires the viewer. No runtime implementation, production registration, client migration or cap enforcement is claimed. Provider VOD controls and recordings remain independent.
+
 ## VOD lifecycle — October 2026
 
 The [confirmed worker/output contract](VOD_OUTPUT_LIFECYCLE.md) now has a normal-build implementation qualified on native Windows and managed amd64 Linux. Direct and HLS response actors share the TranscodeManager owner, with bounded file operations and application queues. Stop/seek/recovery retire the old HLS generation, cancel its accepted readers and finish owned I/O before removing cache. Successful FFmpeg completion releases encoder capacity while retaining playable output. Cleanup failure retains metadata and permits explicit Stop retry. Root cancellation also covers direct bodies; their existing route has no logical playback identity, so ordinary Stop does not newly correlate them.

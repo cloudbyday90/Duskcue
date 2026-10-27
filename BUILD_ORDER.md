@@ -10,6 +10,14 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 VOD command/delivery migration (RESEARCH AND CONTRACT REVIEW)
+
+**Authority:** [VOD command and delivery](docs/design/VOD_COMMAND_DELIVERY.md), researched through official MCP sources against `84fa21e` on main. All seven product choices are confirmed; the complete concrete implementation contract awaits shared-understanding confirmation. No runtime changes or new qualification are claimed at this checkpoint.
+
+**Selected scope:** an isolated backend Start/status/renew/Stop/direct/HLS lane with complete UUIDv7 start intent, exact session context, retained accepted preparation, durable readiness, classified transcode-viewer limits, transactional mode revocation and owned delivery/cleanup. Preserve receipt retention, root/resource limits, legacy clients and locked dependencies. Normal-build handlers receive controlled qualification; production registration, client migration and shared-cap enforcement remain separate. Provider Movies and Series have independent default-off administrator controls as future [connector requirements](docs/design/IPTV_XTREAM.md); local libraries and recordings remain independent.
+
+**Next:** confirm the concrete contract, then implement modularly and qualify real PostgreSQL, HTTP, FFmpeg/files and native Windows/managed Linux fault/race/root behavior. Seek/recovery/reconfiguration follows this bounded lane, then every online client and legacy closure before production caps. GitHub MCP currently returns zero open PRs; no random patch or stale Dependabot rebase applies. Main only; no release.
+
 ## October 2026 playback receipt retention (SCOPED QUALIFICATION COMPLETE)
 
 **Verified implementation:** `5dbf636deaee7e0dce4663fec7f0e565b26bdcdb` on main. Documentation-only successors preserve the qualified source. No release.

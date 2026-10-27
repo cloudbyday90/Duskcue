@@ -1,5 +1,11 @@
 # Xtream Codes sources
 
+## Provider VOD controls — confirmed October 27, 2026
+
+Provider Movies and Series are independent optional capabilities, each controlled by a server-administrator switch and off by default. Household/profile permission may narrow the allowance. Enabling either does not enable the other, Live TV, local libraries or recordings. These are confirmed future connector requirements; switches, provider VOD and DVR are not implemented by this documentation change.
+
+The [local VOD command/delivery increment](VOD_COMMAND_DELIVERY.md) concerns existing local libraries and shared-viewer ownership. Do not implement provider switches by disabling those libraries or classify scanned movies/episodes as recordings without trusted provenance. The Live TV/EPG-first connector boundary below remains unchanged.
+
 ## Status and confirmed scope
 
 Research checkpoint, October 26, 2026, against `34de1637be7f6a4efdac7e0c5f3e394e2f0491f9`. The user requested Xtream Codes-compatible access to Dispatcharr or a direct IPTV provider, and confirmed **Live TV and EPG first**. Provider credentials and requests stay on the backend under existing household administrator controls. Movies/series and catch-up remain later increments.

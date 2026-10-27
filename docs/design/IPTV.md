@@ -6,6 +6,10 @@ Research and contract decisions recorded October 24, 2026. The production Live T
 
 This document owns IPTV behavior. [Household profiles](PROFILES_AND_AMBIENT_CHANNELS.md) owns the existing account/profile model, [authentication](AUTH.md) owns credentials and capabilities, and [streaming](STREAMING.md) owns shared delivery infrastructure. Follow [BUILD_ORDER.md](../../BUILD_ORDER.md) and the existing [guarded verification policy](../ci/TESTING_MEMORY.md).
 
+## Provider VOD controls — October 27, 2026
+
+Future IPTV-provider Movies and Series each require an independent server-administrator switch, both off by default; household/profile permissions may restrict access further. These controls do not govern local movie/TV libraries, Live TV or recordings. The [connector authority](IPTV_XTREAM.md) records this confirmed deferred requirement. The current [VOD command/delivery review](VOD_COMMAND_DELIVERY.md) concerns existing local playback ownership and implements no provider switch or recording feature.
+
 ## Shared client and Xtream review — October 26, 2026
 
 The user explored Xtream Codes-compatible input, then confirmed Dispatcharr-first use through the existing M3U/XMLTV lane. Xtream is not required for that connection. [Xtream research](IPTV_XTREAM.md) is retained as an optional deferred Live TV/EPG connector; current proxy-UUID parsing does not imply XC support. [Shared catalog UI](IPTV_CLIENT_CATALOG.md) now implements the confirmed source-neutral channel/list layout, explicit six-hour windows, all supplied text variants, current-profile/snapshot fencing and manual recovery. Sixty browser journeys and fourteen actual native groups pass; that authority records the exact scope and evidence. Provider authentication/import, management UI and production playback are not expanded by this metadata screen.

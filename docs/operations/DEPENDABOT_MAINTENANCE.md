@@ -24,3 +24,5 @@ The [VOD lifecycle authority](../design/VOD_OUTPUT_LIFECYCLE.md) owns the subseq
 The follow-on [receipt-retention research](../design/PLAYBACK_RECEIPT_RETENTION.md) against `eaaace1` repeated the GitHub MCP open-PR search on October 26 and found zero candidates. No random PR patch, stale Dependabot rebase, merge or dependency change applied at that checkpoint.
 
 The October 27 retention implementation repeated the repository-wide GitHub MCP search and again found zero open PRs. No candidate can be randomly selected or rebased; the superseded PR 5 closure above remains complete. Dependency locks and future Dependabot updates remain unchanged.
+
+The October 27 [VOD command/delivery review](../design/VOD_COMMAND_DELIVERY.md), against `84fa21e`, repeated that GitHub MCP search with the same zero-open-PR result. No random implementation or stale Dependabot rebase applies; this research checkpoint changes no dependency and creates no PR mutation.
