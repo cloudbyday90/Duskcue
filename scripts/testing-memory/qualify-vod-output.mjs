@@ -76,6 +76,8 @@ async function main() {
         const url = `postgres://postgres:${password}@127.0.0.1:${port}/${database}`;
         const env = { ...process.env, PATH: `${ffmpeg};${process.env.PATH}`, DUSKCUE_TEST_PLAYBACK_SOURCE: source, DUSKCUE_HLS_TEST_MEDIA_DIR: hls, DUSKCUE_DATABASE_URL: url, DUSKCUE_TRANSCODE_ACCESS_TESTS: 'disposable' };
         const cases = [
+            ['retention', '--test', 'playback_retention', true],
+            ['maintenance-loss', '--lib', 'lost_maintenance_completion_is_retained_at_root', true],
             ['owner', '--lib', 'services::vod_lifecycle::tests::', false],
             ['direct', '--lib', 'domains::playback::file_delivery::tests::', false],
             ['worker', '--lib', 'actual_long_running_ffmpeg_is_terminated_before_its_permit_and_cache_are_released', true],
@@ -87,7 +89,8 @@ async function main() {
         ];
         for (const [name, target, selector, ignored] of cases) {
             const args = ['test', '-p', 'duskcue', '--locked', '--offline', '-j', '2', target, selector, '--', ...(ignored ? ['--ignored'] : []), '--nocapture'];
-            const execution = await runBounded('cargo.exe', args, { cwd: workspace, env, log: join(directory, `${name}.log`), redact: [password, url], timeoutMs: 1800000, bytes: 16777216 });
+            const execution = await runBounded('cargo.exe', args, { cwd: workspace, env, log: join(directory, `${name}.log`), redact: [password, url], timeoutMs: 1800000, bytes: 16777216,
+                onLine: name === 'retention' ? (line) => { const marker = line.match(/\bRETENTION_CASE [a-z_]+ passed$/)?.[0]; if (marker) console.log(marker); } : undefined });
             const match = execution.stdout.match(/test result: ok\. (\d+) passed; 0 failed; 0 ignored;/);
             const passed = execution.code === 0 && !execution.signal && !!match && Number(match[1]) > 0 && (['owner', 'direct'].includes(name) || Number(match[1]) === 1);
             result.cases.push({ name, passed, tests: match ? Number(match[1]) : 0 });

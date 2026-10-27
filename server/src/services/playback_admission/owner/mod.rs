@@ -4,10 +4,12 @@
 
 mod commands;
 mod lifecycle;
+mod maintenance;
 
 use super::{
     AdmissionError, Request,
     ledger::{IdlePolicy, Ledger},
+    retention::REGULAR_OPERATIONS,
 };
 use crate::{services::encryption::EncryptionKey, state::AppState};
 use sqlx::PgPool;
@@ -41,6 +43,10 @@ pub struct AdmissionOwner {
     ledger: Ledger,
     gate: Mutex<Gate>,
     commands: Arc<Semaphore>,
+    maintenance: Arc<Semaphore>,
+    maintenance_lost: Arc<AtomicBool>,
+    #[cfg(test)]
+    maintenance_task: Mutex<Option<tokio::task::AbortHandle>>,
     tracker: TaskTracker,
     closed: CancellationToken,
     failed: AtomicBool,
@@ -68,7 +74,11 @@ impl AdmissionOwner {
                 closed: false,
                 entries: BTreeMap::new(),
             }),
-            commands: Arc::new(Semaphore::new(8)),
+            commands: Arc::new(Semaphore::new(REGULAR_OPERATIONS)),
+            maintenance: Arc::new(Semaphore::new(1)),
+            maintenance_lost: Arc::new(AtomicBool::new(false)),
+            #[cfg(test)]
+            maintenance_task: Mutex::new(None),
             tracker: TaskTracker::new(),
             closed: CancellationToken::new(),
             failed: AtomicBool::new(false),
@@ -83,6 +93,7 @@ impl AdmissionOwner {
                 owner.monitor().await;
             }
         });
+        owner.start_maintenance();
         Ok(owner)
     }
 
@@ -138,7 +149,10 @@ impl AdmissionOwner {
                 }
             }
         }
-        if self.failed.load(Ordering::SeqCst) || !self.entries()?.is_empty() {
+        if self.failed.load(Ordering::SeqCst)
+            || self.maintenance_lost.load(Ordering::SeqCst)
+            || !self.entries()?.is_empty()
+        {
             return Err(AdmissionError::Cleanup);
         }
         Ok(())

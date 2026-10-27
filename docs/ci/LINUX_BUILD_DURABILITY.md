@@ -1,5 +1,9 @@
 # Linux build durability
 
+## Receipt-retention qualification extension — October 27, 2026
+
+The confirmed [retention increment](../design/PLAYBACK_RECEIPT_RETENTION.md) adds a third independent compiler checkpoint for the normal-build `playback_retention` integration target. Cargo target/kind/profile/features/path validation and copied SHA256 verification apply to this executable as they do to the library and Stop target. Only its exact evidence entrypoint is added to owned runtime admission. Runtime tests still execute afresh; compiler success alone cannot qualify retention. The retention authority records current outcomes, while the historical durability evidence below remains scoped to `111be74`. Compiler jobs, deadline, log bound, guest reserve and container isolation are unchanged.
+
 Status: scoped implementation and qualification complete, October 26, 2026, on main without a release. This supplements [VOD output lifecycle](../design/VOD_OUTPUT_LIFECYCLE.md). It concerns Linux Rust compilation and qualification, following the user's clarification of “durable due to the retry.”
 
 ## Problem and evidence

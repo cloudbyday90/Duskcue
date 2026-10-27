@@ -1,5 +1,11 @@
 # Database Design
 
+## Playback receipt retention — October 27, 2026
+
+[Migration 20261027010000](../../server/migrations/20261027010000_playback_receipt_retention.sql) atomically backfills exact global/household accounting and installs replay, quota, immutable-identity, release-evidence and deletion guards. `playback_retention` holds the nondecreasing millisecond rejection cutoff and total count; `playback_receipt_households` holds exact retained-row counts without an account cascade. Zero-count household metadata is removed only after its last eligible receipt. Legacy data above either ceiling is preserved.
+
+The protected `prune_after` field indexes both 24 elapsed hours after first release and safe UUIDv7 exclusion. New first-release evidence uses database time; repeated release preserves it. The partial `(prune_after,id)` index supports a materialized 128-candidate window before skip-lock acquisition. A full household index supports the foreign-key check when deleting an empty counter; the existing active-viewer partial index cannot cover released receipts. Both indexes add bounded per-row write/storage cost. Advancing the floor, deleting eligible receipts and decrementing counts share one transaction. Neither age nor client Stop alone establishes release. [Retention authority](PLAYBACK_RECEIPT_RETENTION.md) owns policy, exact qualification and remaining production migration. Play history, instance identities and operator events retain separate lifecycles.
+
 ## October 2026 admission integration
 
 The [viewer admission foundation](PLAYBACK_ADMISSION.md) adds dedicated `playback_instances`, `playback_reservations` and `playback_operator_events` tables. New identities use UUIDv7. Reservations retain immutable bounded actor/resource fingerprints and terminal receipts separately from partitioned play history; non-released states remain counted through expiry and cleanup uncertainty. Generated actor/subject columns and partial indexes support transactional retirement hooks, including revoke-and-restore and published channel removal. Short household row locks serialize admission. No foreign-key cascade silently erases viewer ownership when an account/profile disappears.

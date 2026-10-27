@@ -8,7 +8,7 @@ manifest="$1"
 target="$2"
 mode="$3"
 output="$4"
-case "$target" in playback_stop_contract) kind=test ;; duskcue) kind=lib ;; *) exit 1 ;; esac
+case "$target" in playback_stop_contract|playback_retention) kind=test ;; duskcue) kind=lib ;; *) exit 1 ;; esac
 case "$mode" in none|paced) ;; *) exit 1 ;; esac
 executable="$(jq -ers --arg target "$target" --arg kind "$kind" \
     '[.[] | select(.reason == "compiler-artifact" and .target.name == $target and ((.target.kind // []) | index($kind)) and .profile.test == true) | .executable | select(. != null)] | unique | select(length == 1) | .[0]' "$manifest")"

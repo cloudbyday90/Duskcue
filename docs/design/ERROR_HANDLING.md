@@ -1,5 +1,9 @@
 # Error Handling Design
 
+## Internal playback receipt refusals — October 27, 2026
+
+[Receipt retention](PLAYBACK_RECEIPT_RETENTION.md) distinguishes `Expired`, `RequestTime` and `ReceiptCapacity` from viewer `Capacity`, storage failure and indeterminate commit. Only fixed database SQLSTATE values `PBR01`–`PBR04` map to deterministic internal refusals; unrecognized database errors remain `Storage`. Commit acknowledgment loss remains `Indeterminate`, even if subsequent state inspection finds a committed result. Ordinary maintenance failures do not poison healthy resource renewal; lost completion is independently sticky. This internal increment adds no public HTTP error mapping or automatic client replay.
+
 ## VOD lifecycle refusal — October 26, 2026
 
 `VOD_UNAVAILABLE` represents closed or full VOD lifecycle admission; `VOD_CLEANUP` represents unavailable completion proof in the new internal owner. Both map to fixed 503 responses with Retry-After 5 and private, no-store. Existing authentication/object authorization still runs before lifecycle admission. Existing physical encoder capacity retains PLAY_003; worker Stop failures retain their existing PLAY_004/history-retry contract. Once media headers are sent, interrupted output fails the body instead of emitting a new JSON problem or successful EOF. [VOD lifecycle](VOD_OUTPUT_LIFECYCLE.md) owns resource bounds and cleanup qualification.

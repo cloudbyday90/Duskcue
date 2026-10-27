@@ -1,5 +1,11 @@
 # Memory Management
 
+## Playback receipt maintenance — October 27, 2026
+
+[Receipt retention](PLAYBACK_RECEIPT_RETENTION.md) partitions the existing eight admission database operations into seven regular commands and one reserved maintenance operation. Monitor rotation shares the seven-operation stride across 128 entries. One retained startup batch and one batch every sixty seconds examine at most 128 indexed candidates; a locked prefix does not expand that window. All retained states count toward 4,096 rows per household and 65,536 globally. Existing over-limit rows remain protected and refuse growth. These are logical row bounds, not a total PostgreSQL byte/vacuum guarantee.
+
+Ordinary maintenance contention, storage failure or uncertain commit does not set the physical-resource failure flag. A lost maintenance completion independently blocks new starts and fails root completion. Accepted work remains tracked through observer loss, and closure cancels future ticks before joining current database work. SQL, pool, cleanup and root 30/60-second budgets are unchanged; production admission remains unattached. Exact qualification outcomes belong to the retention authority.
+
 ## Linux build retry durability — October 26, 2026
 
 [Build durability](../ci/LINUX_BUILD_DURABILITY.md) qualifies compiler checkpoints and verified cache reuse without changing resource policy: two Cargo jobs, thirty-minute compiler deadline, 32-MiB logs, 5.5-GiB guest preflight and 1.5-GiB active reserve. Environment changes invalidate the recipe's release cache; compatible source changes clear local packages while retaining dependency work. Compiler reuse does not skip fresh bounded runtime tests or alter server VOD limits. Controlled interruption/retry passed, and the authorized Classifarr handoff restored the original container healthy without changing guest allocation or stopping Harmoniarr.
@@ -13,7 +19,7 @@ Root cancels application output immediately, observes outstanding file work and 
 
 ## October 2026 viewer admission budgets
 
-The [admission foundation](PLAYBACK_ADMISSION.md) uses eight nonqueued database command slots and at most 128 local reservation/resource entries, independently of a nullable household policy ceiling. Fingerprints are limited to 2 KiB. Each database operation has a three-second deadline, 500-ms lock timeout, 1,500-ms statement timeout and three-second transaction timeout; interrupted transactions default to connection discard without detaching a replacement beyond the shared pool bound. The one-second monitor scans bounded entries with rotating priority. Each owned resource has its own conservative renewable timer, so a busy monitor cannot extend the lease. Cleanup observation is ten seconds; exceeding it records a sticky failure while retaining actual completion ownership. Root keeps its shared thirty-second drain and sixty-second database-close budgets. These bounds qualify the internal foundation, not production VOD capacity or receipt retention.
+The [admission foundation](PLAYBACK_ADMISSION.md) uses eight nonqueued database operation slots, now partitioned as above, and at most 128 local reservation/resource entries, independently of a nullable household policy ceiling. Fingerprints are limited to 2 KiB. Each database operation has a three-second deadline, 500-ms lock timeout, 1,500-ms statement timeout and three-second transaction timeout; interrupted transactions default to connection discard without detaching a replacement beyond the shared pool bound. The one-second monitor scans bounded entries with rotating priority. Each owned resource has its own conservative renewable timer, so a busy monitor cannot extend the lease. Cleanup observation is ten seconds; exceeding it records a sticky failure while retaining actual completion ownership. Root keeps its shared thirty-second drain and sixty-second database-close budgets. These bounds do not establish production VOD cap enforcement.
 
 ## Catalog request ownership — October 25, 2026
 

@@ -60,6 +60,18 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,id=duskcue-recovery-v1-${TARGETPLATFORM},target=/src/target,sharing=locked \
     sh /usr/local/libexec/duskcue-compile-cache.sh \
     && case "$NATIVE_RECOVERY_MODE" in none) set -- ;; paced) set -- --features duskcue/playback-qualification ;; *) exit 1 ;; esac \
+    && case "$VOD_OUTPUT_MODE" in \
+        none) ;; \
+        owned) (cargo test --release --locked -p duskcue -j 2 --test playback_retention --no-run --message-format=json "$@" > /tmp/retention-cargo-artifacts.jsonl \
+            || { jq -r 'select(.reason == "compiler-message") | .message.rendered // empty' /tmp/retention-cargo-artifacts.jsonl >&2; exit 1; }) \
+            && sh /usr/local/libexec/duskcue-cargo-artifact.sh /tmp/retention-cargo-artifacts.jsonl playback_retention "$NATIVE_RECOVERY_MODE" /tmp/qualification-evidence/playback-retention ;; \
+        *) exit 1 ;; \
+    esac
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/git,sharing=locked \
+    --mount=type=cache,id=duskcue-recovery-v1-${TARGETPLATFORM},target=/src/target,sharing=locked \
+    sh /usr/local/libexec/duskcue-compile-cache.sh \
+    && case "$NATIVE_RECOVERY_MODE" in none) set -- ;; paced) set -- --features duskcue/playback-qualification ;; *) exit 1 ;; esac \
     && if [ "$NATIVE_RECOVERY_MODE" = paced ]; then \
         cargo test --release --locked -p duskcue -j 2 --lib "$@" services::transcoding::qualification::tests:: -- --test-threads=1 > /tmp/qualification-evidence/pacing-unit-tests.log \
         || { cat /tmp/qualification-evidence/pacing-unit-tests.log >&2; exit 1; }; \
@@ -123,11 +135,11 @@ COPY docker/qualification/direct-format-control.mjs /qualification/direct-format
 COPY docker/qualification/format-*.mjs /qualification/docker/qualification/
 COPY scripts/qualification/format-codecs.mjs /qualification/scripts/qualification/format-codecs.mjs
 RUN (cd /qualification/bin && sha256sum -c playback-stop-contract.sha256) \
-    && if [ "$VOD_OUTPUT_MODE" = owned ]; then (cd /qualification/evidence && sha256sum -c vod-lib-tests.sha256); fi \
+    && if [ "$VOD_OUTPUT_MODE" = owned ]; then (cd /qualification/evidence && sha256sum -c vod-lib-tests.sha256 && sha256sum -c playback-retention.sha256); fi \
     && sha256sum -c /usr/local/libexec/duskcue-ffmpeg.sha256 \
     && node --max-old-space-size=64 /qualification/recovery-fixture.mjs \
     && chmod 0555 /qualification/bin/playback-stop-contract \
-    && if [ "$VOD_OUTPUT_MODE" = owned ]; then chmod 0555 /qualification/evidence/vod-lib-tests; fi \
+    && if [ "$VOD_OUTPUT_MODE" = owned ]; then chmod 0555 /qualification/evidence/vod-lib-tests /qualification/evidence/playback-retention; fi \
     && chmod 0444 /src/.cache/tonight-server-ffmpeg/* /qualification/cargo-artifacts.jsonl
 RUN case "$FORMAT_CORPUS_MODE" in \
         none) ;; \

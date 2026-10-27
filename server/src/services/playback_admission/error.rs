@@ -10,6 +10,12 @@ pub enum AdmissionError {
     Policy,
     #[error("viewer capacity unavailable")]
     Capacity,
+    #[error("playback request reconciliation expired")]
+    Expired,
+    #[error("playback request time unavailable")]
+    RequestTime,
+    #[error("playback receipt storage capacity unavailable")]
+    ReceiptCapacity,
     #[error("request identity conflicts")]
     Conflict,
     #[error("playback request is still in progress")]
@@ -27,8 +33,18 @@ pub enum AdmissionError {
 }
 
 impl From<sqlx::Error> for AdmissionError {
-    fn from(_: sqlx::Error) -> Self {
-        Self::Storage
+    fn from(error: sqlx::Error) -> Self {
+        match error
+            .as_database_error()
+            .and_then(|error| error.code())
+            .as_deref()
+        {
+            Some("PBR01") => Self::Expired,
+            Some("PBR02") => Self::RequestTime,
+            Some("PBR03") => Self::ReceiptCapacity,
+            Some("PBR04") => Self::Conflict,
+            _ => Self::Storage,
+        }
     }
 }
 

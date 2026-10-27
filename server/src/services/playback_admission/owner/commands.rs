@@ -48,7 +48,10 @@ impl AdmissionOwner {
             .map_err(|_| AdmissionError::Capacity)?;
         let (send, receive) = oneshot::channel();
         let mut gate = self.gate.lock().map_err(|_| AdmissionError::Closed)?;
-        if gate.closed || self.failed.load(Ordering::SeqCst) {
+        if gate.closed
+            || self.failed.load(Ordering::SeqCst)
+            || self.maintenance_lost.load(Ordering::SeqCst)
+        {
             return Err(AdmissionError::Closed);
         }
         let (entry, inserted) = if let Some(entry) = gate.entries.get(&request.id) {

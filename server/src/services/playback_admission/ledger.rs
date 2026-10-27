@@ -69,7 +69,7 @@ impl Ledger {
                 }
                 return row.receipt(now,false,self.instance);
             }
-            if !allow_insert {return Err(AdmissionError::Indeterminate);}
+            if !allow_insert {super::retention::database::missing(conn,request.id).await?;return Err(AdmissionError::Indeterminate);}
             let cap=policy::ceiling(conn,request.actor.user).await?;
             let verified=authority::verify(conn,&self.key,self.idle.current(),request,None).await?;
             let (total,live):(i64,i64)=sqlx::query_as("SELECT count(*),count(*) FILTER (WHERE kind='live') FROM playback_reservations WHERE household_id=$1 AND state<>'released'")

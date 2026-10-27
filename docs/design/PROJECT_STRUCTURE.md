@@ -1,5 +1,9 @@
 # Project Structure
 
+## Modular playback receipt retention — October 27, 2026
+
+[Receipt retention](PLAYBACK_RECEIPT_RETENTION.md) adds focused `services/playback_admission/retention/` policy/types, database and pruning-query modules, plus `owner/maintenance.rs` for synchronized retained work. The existing transaction/owner services keep their resource and shutdown limits. One forward migration owns accounting/backfill/guards; independent PostgreSQL integration helpers cover migration, quotas, time, wire faults and resource ownership. Native and managed Linux drivers reuse the existing owned fixture and add an independently verified retention executable checkpoint. No dependency, public route or production admission attachment is added.
+
 ## Modular VOD ownership — October 2026
 
 [VOD lifecycle](VOD_OUTPUT_LIFECYCLE.md) adds focused internal `services/vod_lifecycle/` modules for owner/admission, generations, bounded queues/body polling, retained reads, file operations and response types. `transcoding/commands.rs` retains start/replacement commands while the existing lifecycle supervisor retains actual child cleanup. Playback handlers preserve authorization and delegate direct/HLS delivery through that owner. Root joins it without a new timeout, schema, dependency or global singleton. Qualification-only native and managed Linux orchestration stays under `scripts/testing-memory/`, `scripts/qualification/` and the existing recovery Docker recipe.

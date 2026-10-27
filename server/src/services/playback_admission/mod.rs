@@ -9,8 +9,10 @@ mod ledger;
 pub mod operator;
 mod owner;
 mod policy;
+mod retention;
 mod types;
 
 pub use error::AdmissionError;
 pub use owner::AdmissionOwner;
+pub use retention::MaintenanceReceipt;
 pub use types::{Receipt, Request, ReservationState, Subject};

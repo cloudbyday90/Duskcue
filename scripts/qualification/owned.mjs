@@ -56,7 +56,7 @@ export function ownedDocker(directory, resourceId, transport = { command: docker
             if (!/^sha256:[a-f0-9]{64}$/.test(imageId) || !/^[a-f0-9-]{36}$/.test(resourceId)) throw new Error('Immutable image and workflow identity required.');
             if (readOnly && (!user || !Object.keys(tmpfs).length || Object.entries(tmpfs).some(([path, options]) => !/^\/[A-Za-z0-9_./-]+$/.test(path)
                 || !/^rw,nosuid,nodev,(?:noexec,)?size=[0-9]+(?:,uid=[0-9]+,gid=[0-9]+)?(?:,mode=[0-7]{3,4})?$/.test(options)))) throw new Error('Read-only qualification requires an explicit user and bounded safe tmpfs mounts.');
-            if (entrypoint && entrypoint !== '/qualification/evidence/vod-lib-tests') throw new Error('Unknown qualification entrypoint.');
+            if (entrypoint && !['/qualification/evidence/vod-lib-tests', '/qualification/evidence/playback-retention'].includes(entrypoint)) throw new Error('Unknown qualification entrypoint.');
             const name = `duskcue-playback-${randomUUID()}`;
             const expected = { id: null, name, resourceId, memory, pids, readOnly, user, network, image: imageId, tmpfs, noHealthcheck, entrypoint };
             containers.set(name, expected);

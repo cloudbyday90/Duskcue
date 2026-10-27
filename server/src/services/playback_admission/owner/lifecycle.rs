@@ -2,7 +2,7 @@
 // Copyright (C) 2026-2026 Duskcue Contributors
 // Licensed under AGPL-3.0. See LICENSE for details.
 
-use super::super::AdmissionError;
+use super::super::{AdmissionError, retention::REGULAR_OPERATIONS};
 use super::{AdmissionOwner, Entry};
 use std::{
     future::Future,
@@ -19,7 +19,7 @@ impl AdmissionOwner {
             return;
         };
         if !entries.is_empty() {
-            let offset = self.scan.fetch_add(8, Ordering::SeqCst) % entries.len();
+            let offset = self.scan.fetch_add(REGULAR_OPERATIONS, Ordering::SeqCst) % entries.len();
             entries.rotate_left(offset);
         }
         for entry in entries {

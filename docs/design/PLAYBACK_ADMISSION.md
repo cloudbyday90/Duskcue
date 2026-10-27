@@ -23,7 +23,7 @@ Scoped foundation qualification complete, October 26, 2026, researched against `
 
 ## Repository findings
 
-The subsequent [receipt-retention review](PLAYBACK_RECEIPT_RETENTION.md) records the bounded production-retention prerequisite and VOD/client integration findings against `eaaace1`. Its retention-first scope, replay/time windows and row ceilings are confirmed; complete-contract review remains pending. The current foundation still retains released receipts and normal production playback remains unattached.
+The subsequent [receipt-retention increment](PLAYBACK_RECEIPT_RETENTION.md) completes the bounded production-retention prerequisite with real Windows/Linux qualification. It adds a monotonic UUIDv7 first-use cutoff, finite terminal receipts, exact quotas and bounded owned maintenance, preserving the existing admission/root contracts. Its authority records exact source/images/receipts and the unchanged lint baseline. VOD command/delivery and online-client migration remain prerequisites; normal production playback remains unattached.
 
 Three read-only fact explorations inspected playback, Live TV and every current client family. They changed no files and ran no heavy checks.
 
