@@ -6,6 +6,10 @@ Research and contract decisions recorded October 24, 2026. The production Live T
 
 This document owns IPTV behavior. [Household profiles](PROFILES_AND_AMBIENT_CHANNELS.md) owns the existing account/profile model, [authentication](AUTH.md) owns credentials and capabilities, and [streaming](STREAMING.md) owns shared delivery infrastructure. Follow [BUILD_ORDER.md](../../BUILD_ORDER.md) and the existing [guarded verification policy](../ci/TESTING_MEMORY.md).
 
+## Local-first source lifecycle — October 28, 2026
+
+The confirmed [source-lifecycle policy](IPTV_SOURCE_LIFECYCLE.md) treats Live TV → Recording → VOD → Local Media as progression, with ready Local → completed Recording → owner-approved provider VOD for normal title/episode Play and Watch live separate. Replacement is per episode, preserves an already authorized viewer and does not delete recordings. Expired provider fallback needs fresh owner opt-in to reactivate. Trusted identity/readiness, source resolution, provider VOD and DVR implementation remain future work.
+
 ## Provider VOD controls — October 27, 2026
 
 Future IPTV-provider Movies and Series each require an independent server-administrator switch, both off by default; household/profile permissions may restrict access further. These controls do not govern local movie/TV libraries, Live TV or recordings. The [connector authority](IPTV_XTREAM.md) records this confirmed deferred requirement. The current [VOD command/delivery review](VOD_COMMAND_DELIVERY.md) concerns existing local playback ownership and implements no provider switch or recording feature.

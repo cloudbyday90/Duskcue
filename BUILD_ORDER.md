@@ -10,6 +10,14 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 shared web/Tauri VOD client migration (RESEARCH AND DESIGN REVIEW)
+
+**Authority:** [Client migration](docs/design/VOD_CLIENT_MIGRATION.md), researched through official MCP sources against `903e670` on main. Q1–Q9 are confirmed: the complete shared web/Tauri player first, positive protocol negotiation without mid-session downgrade, a minimal tab-local reconciliation journal, bounded eligible automatic recovery, cleanup after a bounded final checkpoint attempt, and independent renewal with explicit expiry reconciliation. Conclusive Start settlement, profile-change cleanup journals and bounded monitoring are also confirmed. The concrete client/settlement proposal is documented; final shared-understanding confirmation is pending.
+
+**Findings:** four online source families still use legacy controls; native mobile ambient and Fire TV observer paths are independent migration boundaries. New server routes and admission ownership are not attached in normal startup. Migrate the complete control/output lifecycle together; Start-only adoption fails. Reuse modular client/API/auth/source primitives and the locked server stack. No new application code or runtime result is claimed at this research checkpoint. GitHub MCP reports zero open PR candidates; no patch or stale Dependabot rebase applies.
+
+**Next:** confirm the concrete [client](docs/design/VOD_CLIENT_MIGRATION.md) and [Start-settlement](docs/design/VOD_START_SETTLEMENT.md) contracts, then implement and qualify real backend/browser and isolated actual Tauri behavior. The newly confirmed [Local/Recording/provider policy](docs/design/IPTV_SOURCE_LIFECYCLE.md) is recorded for its future milestones. Keep normal production attachment/shared caps off; remaining client families and legacy-path closure precede final enforcement. Main only; no release.
+
 ## October 2026 same-viewer VOD reconfiguration (SCOPED QUALIFICATION COMPLETE)
 
 **Verified implementation:** `0bd3962a62660dc310b7e492b6776c8d63b072c1` on `main`; documentation-only successors preserve the qualified source. The complete [VOD reconfiguration contract](docs/design/VOD_RECONFIGURATION.md), researched through official MCP sources, was confirmed after `17970cb`. All ten choices are implemented. No release.
