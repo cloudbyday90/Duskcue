@@ -1,5 +1,9 @@
 # Streaming & Transcoding Design
 
+## Shared browser/Tauri command migration — October 28, 2026
+
+The [shared player](VOD_CLIENT_MIGRATION.md) and [Start settlement](VOD_START_SETTLEMENT.md) are implemented and qualified on main. Complete negotiated commands, independent renewal, actual-output checkpoints, explicit play intent and conclusive exact-UUID withdrawal preserve one viewer/history through replacement and uncertain observations. Real browser, actual Tauri and managed Linux evidence belongs to those authorities. Non-Auto command HLS uses currently permitted full encoding; Auto retains qualified copy. Normal production registration/caps remain off pending remaining client migrations and legacy delivery closure.
+
 ## Same-viewer reconfiguration contract — October 27, 2026
 
 The user confirmed the complete [version-two contract](VOD_RECONFIGURATION.md) after `17970cb`; its modular backend implementation preserves one item/file/viewer/history through explicit seek, worker recovery, qualified decoder downgrade and track/quality changes. Old output drains before replacement; checkpoints remain separate from renewal. Seek/recovery preserve negotiated configuration, while explicit changes obtain a fresh currently permitted plan. Known failed replacements retain an unavailable viewer for explicit correction. Worker failure no longer ends the version-two viewer by itself. The authority owns qualification evidence and exceptions; production registration, online-client adoption and legacy delivery closure remain separate.

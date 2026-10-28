@@ -2,15 +2,15 @@
 
 ## Status and authority
 
-Research and design review, October 28, 2026, against `903e670` on main. The user confirmed Q1: migrate and qualify the complete shared web/Tauri player first, including Start/status, seek, track/quality changes, recovery, checkpoints, renewal and Stop. Normal production attachment and shared-cap enforcement remain off. Flutter interactive playback, native Android/iOS ambient playback and Android/Fire TV follow before final rollout.
+Scoped implementation and qualification complete, October 28, 2026, at `577b95f6bb473a64a79b506b2020f56d653264ba` on main; research baseline `903e670`. The user confirmed Q1: migrate and qualify the complete shared web/Tauri player first, including Start/status, seek, track/quality changes, recovery, checkpoints, renewal and Stop. Normal production attachment and shared-cap enforcement remain off. Flutter interactive playback, native Android/iOS ambient playback and Android/Fire TV follow before final rollout.
 
 Here a client is an existing platform app connecting to the same Duskcue server. Browser and Tauri desktop share one player implementation; mobile/background and TV players have their own existing platform code. The migration creates no additional app or household model. All platforms retain the same backend permissions and source-priority rules.
 
-This is the complete proposed client contract, not an implementation or a new runtime qualification. Q1–Q9 below are confirmed; final shared-understanding confirmation of the concrete contract is still required before implementation under [the repository procedure](../../CONTEXT.md#design-review-with-grill-me). No release, branch, dependency update or CHANGELOG change is proposed.
+The user confirmed the complete client and settlement contract after `67c6efc`. The implementation and scoped evidence below fulfill that contract. No normal production attachment, branch, dependency update, release or CHANGELOG change is included.
 
 The qualified [protocol-two backend](VOD_RECONFIGURATION.md), [command/delivery](VOD_COMMAND_DELIVERY.md), [admission](PLAYBACK_ADMISSION.md), [receipt retention](PLAYBACK_RECEIPT_RETENTION.md), [output lifecycle](VOD_OUTPUT_LIFECYCLE.md), [recovery](PLAYBACK_RECOVERY.md), [source capabilities](PLAYBACK_SOURCE_CAPABILITIES.md) and [memory](MEMORY.md) retain their authority. Earlier server qualification does not qualify this new client adoption.
 
-## Verified repository facts
+## Repository facts at the design baseline
 
 Three read-only fact explorations inspected client families, server rollout and shared player/qualification code. They changed no files, ran no builds/tests, accessed no private feeds and stopped no services.
 
@@ -147,4 +147,27 @@ Preserve existing managed testing, memory/headroom, source-freeze, process/SQL/d
 
 GitHub MCP's repository-wide open-PR search returns zero candidates. No random local patch or stale Dependabot rebase applies; [superseded PR 5 cleanup](../operations/DEPENDABOT_MAINTENANCE.md) remains complete. No PR was merged, dependency changed or alert dismissed.
 
-All nine client decisions and the concrete implementation contract were confirmed after `67c6efc`. Research/fact inspection only at this checkpoint. No new application implementation, build/runtime qualification or production enablement is claimed. Existing backend results remain historical evidence for the unchanged source. Commit/push of documentation on main does not complete the pending client implementation.
+## Qualified implementation — October 28, 2026
+
+Implemented on main at `577b95f6bb473a64a79b506b2020f56d653264ba` after the confirmed contract at `67c6efc`. Dependencies and Rust/Cargo 1.99.1 remain unchanged. Normal production registration and shared-cap rollout remain off; no branch, tag or release is created. The source-policy authority remains [Local/Recording/provider lifecycle](IPTV_SOURCE_LIFECYCLE.md); provider/DVR implementation is separate.
+
+The shared browser/Tauri player now composes schema/transport, scoped server-time UUIDv7 generation, one bounded journal, retained command/status observation, independent renewal, sequenced checkpoints and an existing-store adapter. Positive complete capability acknowledgement selects protocol two. Unknown outcomes detach media and require explicit status or exact-UUID withdrawal; no legacy downgrade or command replay follows an uncertain result. Profile-only changes retain cleanup authority, while stronger context changes clear the local identity and leave retirement to the server. Close attempts bounded progress saving before conclusive cleanup.
+
+Real media testing found that queued events from retired output could overwrite explicit user intent. The command adapter now owns the latest explicit play/pause intent independently of media observations, restores it on replacement and rejects stale play events after Pause. User changes during preparation still win. Legacy behavior remains covered by regression tests. Checkpoint epochs reset on new output; retired acknowledgements cannot advance its progress. Explicit status reconciliation restores actual server configuration rather than drafts.
+
+Protocol-two non-Auto HLS quality selection conservatively requests full encoding and obtains matching source-capability evidence. This can consume encoder capacity and a transcode-viewer slot, and still requires current permissions. Auto retains qualified copy behavior. This avoids claiming unqualified copied-video timing at nonzero positions; broader format qualification is separate.
+
+| Verification | Outcome and retained receipt |
+|---|---|
+| Real backend/browser | Six journeys pass: direct/seek/audio/quality/second Play; lost Start plus reload cleanup; lost accepted change; lost renewal; lost withdrawal; genuine copied-AVC decoder error with retained recovery. Actual PostgreSQL verifies all viewer/history attribution, released resources and settled Start intents. |
+| Actual Tauri/WebView2 | Real keyring and bearer HLS, paused seek/quality replacement, focus return, one Start/history, exact settlement, genuine trusted decoder error and one accepted Recover followed by decoded replacement pass. Exact owned credential cleared; zero owned processes remain. |
+| Client regression/builds | 582 Vitest cases in 44 files plus 37 Node pretests; Svelte zero errors/warnings; production SSR web and static desktop builds; fresh isolated native build pass. |
+| Runtime identity | `.cache/vod-lifecycle/8ea025dd-5dc8-412b-8907-3a658d3c7976/result.json`; server inventory `d3d062ec32454112572654c3834806553ba106d93ee85022b2fdee90678a16be`; client inventory `1316f8bb29245eec348b78553724a293f4aee67278f950a226f4f0253d224623`. A trailing empty line in the shared qualification Pause helper was removed after this run; application semantics did not change. |
+| Native executable | Isolated identifier `com.duskcue.tonightqualification.td48f1bca93794f40a6304969e17edb6a`; executable SHA-256 `3dfcf8e8121e7b25e870a56590f99ac6482c162eaa7bfc49b78db37a418ce534`; exact report `.cache/tonight-desktop/d48f1bca93794f40a6304969e17edb6a/vod-command-result.json`. Controls capture was visually inspected: decoded authored image, paused Play control, no spinner. |
+| Managed evidence | Client/native memory receipt `2026-10-28T14-23-25-785Z-5f2ba434-655a-4627-b754-b56e20017cd5.jsonl`; final units `2026-10-28T14-26-20-100Z-fa899787-8e02-4128-8e91-4c596eea571a.jsonl`; web build `2026-10-28T14-26-36-662Z-2add9fd7-d603-4824-8423-e36b5f958935.jsonl`. |
+
+Initial runtime attempts are failed evidence, not qualification passes. Real browser testing caught output-bound checkpoint sequence reuse and lost-response reconciliation errors. Native attempts at `dd3e88d6715d47a392f6413aefade38c`, `5cbb56f7e7d949eb94430a9d37ad2154`, `9b37fa6ae7704ff1b6f74ab7ea662be3`, `3ded68cac6c84f9eb82847f6c44d6a41`, `825fd44f2fd0491596210a149516e37a` and `f81ff35305d5406bb396e1f8a04f232b` did not qualify the increment. Corrections separate admission from the unchanged five-second decoder check, give browser/native recovery titles independent physical files/history, and preserve actual user intent through source retirement. The final fresh identity passes the complete cases. No synthetic decoder error, relaxed decoder deadline or reduced acceptance replaces the real failure/recovery check.
+
+Physical-display fidelity, assistive-technology speech, all native devices/codecs and arbitrary OS suspension behavior are not established by these fixtures. Hard unload/OS termination still cannot acknowledge Stop. The server's retained lease/cleanup obligations remain authoritative.
+
+The final recommendation is the locked stack and modular controller described above. Keep normal advertisement/attachment and production-wide caps off until Flutter interactive, Android/iOS ambient and Android/Fire TV clients migrate their complete lifecycle and legacy delivery paths close. Then qualify actual Dispatcharr media output and Live TV play actions separately. GitHub MCP again returned zero open PRs on October 28; no random patch or stale Dependabot rebase applies. Private feeds were not used and no supplied identifying values/data are committed.

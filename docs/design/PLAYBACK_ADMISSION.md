@@ -1,5 +1,9 @@
 # Shared playback admission
 
+## Conclusive Start settlement and shared client — October 28, 2026
+
+The qualified [settlement authority](VOD_START_SETTLEMENT.md) extends exact UUIDv7 identity to preparation before reservation admission, with actual completion, durable absence fences, compatible-instance checks and one-count intent/reservation accounting. [Shared browser/Tauri adoption](VOD_CLIENT_MIGRATION.md) is now qualified. Normal production attachment/caps remain off until other online clients and legacy delivery paths are migrated.
+
 ## Same-viewer reconfiguration contract — October 27, 2026
 
 The user confirmed the complete [VOD reconfiguration contract](VOD_RECONFIGURATION.md) after `17970cb`. Its modular version-two implementation preserves immutable Start/actor attribution and one total viewer while adding independently attributed operations/output revisions, current/pending permission checks and retained transcode-viewer claims. Direct-to-encoded reserves capacity before disturbing old output; encoded-to-encoded retains its claim through cleanup, replacement and known failure; encoded-to-direct releases it after direct publication and verified old cleanup. Cap-only reductions preserve existing authorized viewers. Stop/revocation/fencing cover every revision. The authority records qualification outcomes and limits; production attachment, client migration and shared-cap enforcement remain separate.

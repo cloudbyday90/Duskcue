@@ -1,5 +1,9 @@
 # Same-viewer VOD reconfiguration
 
+## Shared browser/Tauri adoption — October 28, 2026
+
+The [shared-client successor](VOD_CLIENT_MIGRATION.md) and [Start settlement](VOD_START_SETTLEMENT.md) are qualified at `577b95f6bb473a64a79b506b2020f56d653264ba` on main. Real browser and actual Tauri conditional controls/checkpoints/decoder recovery preserve this backend contract; current Linux reconfiguration passes all 28 internal cases, including actual worker recovery. The authorities own complete receipts and corrected attempts. Normal production attachment/caps and the remaining online client families stay separate.
+
 ## Status and authority
 
 Research and design review, October 27, 2026, against `7a1aaa17987e0d9fc308d3168131e45b94a1cc60` on main; initial research checkpoint `9adc976`. All ten product decisions below are confirmed. The user confirmed the complete implementation contract published at `17970cb`. Modular implementation and controlled Windows/Linux qualification are complete at `0bd3962a62660dc310b7e492b6776c8d63b072c1` on main. Documentation-only successors preserve the qualified source; exact evidence and corrected attempts follow below. No dependency update, production registration, client migration or release is claimed.

@@ -1,5 +1,9 @@
 # VOD worker and output lifecycle
 
+## Start preparation and shared-client successor — October 28, 2026
+
+The qualified [Start-settlement successor](VOD_START_SETTLEMENT.md) binds preparation before inspection and observes actual blocking filesystem completion under this existing output/I/O/root owner. Withdrawal, observer loss and timeouts do not prove physical cleanup. The [shared browser/Tauri player](VOD_CLIENT_MIGRATION.md) now adopts immutable session-bound output, preserves explicit user intent and waits for conclusive settlement. Limits and normal production registration remain unchanged; other online clients and legacy delivery closure still precede production caps.
+
 ## Same-viewer output revisions — October 27, 2026
 
 The confirmed [reconfiguration implementation](VOD_RECONFIGURATION.md) adds one retained viewer owner with immutable direct/HLS output revisions, cleanup before replacement, revision-specific URLs/read groups, and explicit recovery/correction without another viewer/history row. Stop and root closure cancel every current/pending revision. Process cancellation and reader draining begin together; physical-generation ownership still prevents cache deletion before its I/O completes. Failed cleanup retains uncertainty, ownership and retry rather than freeing capacity.

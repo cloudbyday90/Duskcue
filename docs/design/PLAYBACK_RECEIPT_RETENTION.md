@@ -1,5 +1,9 @@
 # Playback reservation receipt retention
 
+## Pre-admission intent retention — October 28, 2026
+
+The qualified [Start-settlement contract](VOD_START_SETTLEMENT.md) accounts for one logical identity across pre-admission intent and promoted reservation. Terminal withdrawal retains at least 24 hours after confirmed completion/settlement, and pruning requires permanent UUIDv7 replay refusal. Atomic backfill, exact attribution, quota guards, indexed bounded pruning and unresolved-instance fencing preserve existing 4,096/65,536 limits and maintenance/root budgets. Held, preparing or uncertain obligations cannot age out; full storage does not block cleanup of already registered work.
+
 ## Operation-receipt contract — October 27, 2026
 
 The confirmed [same-viewer implementation](VOD_RECONFIGURATION.md) independently bounds operation/output receipts: at least 24 hours after terminal outcome and observed output cleanup, with 256/viewer, 8,192/household and 131,072/global ceilings. Existing parent quotas/windows remain unchanged. Child UUIDv7 IDs have their own monotonic replay cutoff; pruning cannot turn an old ID into new work. Counters, attribution, deletion and cascade guards are transactional.

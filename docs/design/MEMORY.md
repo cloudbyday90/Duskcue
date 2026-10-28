@@ -1,5 +1,9 @@
 # Memory Management
 
+## Pre-admission Start and client ownership — October 28, 2026
+
+[Start settlement](VOD_START_SETTLEMENT.md) binds durable preparation before I/O and retains actual blocking filesystem completion under the existing eight-operation owner. Timeout/cancellation/outer-future return cannot settle physical work. Intent/reservation pairs share existing quotas, bounded maintenance and seven regular/one reserved SQL operations; root/pool 30/60-second budgets are unchanged. The [shared player](VOD_CLIENT_MIGRATION.md) has one bounded journal/command owner, one in-flight renewal/checkpoint/status observation and bounded queues/deadlines. Current Windows/Linux/native evidence introduces no budget, dependency or Linux guard increase.
+
 ## Version-two VOD ownership — October 27, 2026
 
 The confirmed [reconfiguration implementation](VOD_RECONFIGURATION.md) preserves existing output, I/O, SQL, compiler and root limits. Each retained viewer has at most one pending operation and at most two locally retained output owners while old cleanup and replacement are observed; there is no operation queue or overlapping replacement generation. Separate limits of 256/viewer, 8,192/household and 131,072/global operations supplement parent receipts. Maintenance shares its existing reserved operation and 128-logical-receipt budget, using an indexed bounded scan with a durable cursor. Unknown cleanup/claims remain owned.

@@ -2,11 +2,11 @@
 
 ## Status and authority
 
-Implementation contract confirmed after `67c6efc`, October 28, 2026, against `903e670`. The user confirmed Q7 of [shared client migration](VOD_CLIENT_MIGRATION.md): include bounded server-owned withdrawal for an uncertain Start; permanently fence the exact UUID against later admission, retain already-owned preparation through actual completion, and report conclusive settlement. The user confirmed the complete concrete implementation contract. Implementation and qualification are in progress; no new passing runtime evidence is claimed yet.
+Implementation contract confirmed after `67c6efc`, October 28, 2026, against `903e670`. The user confirmed Q7 of [shared client migration](VOD_CLIENT_MIGRATION.md): include bounded server-owned withdrawal for an uncertain Start; permanently fence the exact UUID against later admission, retain already-owned preparation through actual completion, and report conclusive settlement. The user confirmed the complete concrete implementation contract. Scoped implementation and qualification are complete at `577b95f6bb473a64a79b506b2020f56d653264ba` on main; exact evidence and limits follow below.
 
 Preserve [admission](PLAYBACK_ADMISSION.md), [retention](PLAYBACK_RECEIPT_RETENTION.md), [command/delivery](VOD_COMMAND_DELIVERY.md), [reconfiguration](VOD_RECONFIGURATION.md), [output ownership](VOD_OUTPUT_LIFECYCLE.md) and [memory](MEMORY.md). This prerequisite supports controlled client qualification; it does not mount normal production routes, enable shared caps or add provider/recording playback.
 
-## Verified gap
+## Gap found during design
 
 [Start](../../server/src/domains/playback/commands/service.rs) performs retained preparation before receipt admission and before the [local viewer registry](../../server/src/domains/playback/commands/ownership.rs) can register its resolved plan. A concurrent status read can return `unknown`, then the original Start can later acquire the household lock and commit. Current Stop requires an existing receipt. Neither observation is an absent-request cancellation fence.
 
@@ -49,7 +49,7 @@ Preserve first-use UUIDv7/server-time rules and a monotonic durable rejection fl
 
 Atomically backfill consistent existing admitted VOD attribution without inventing a pre-admission source identity or cleanup proof. Extend instance fencing and exact resources-gone reconciliation to unresolved preparation records. Old instances that could have unindexed preparation cannot be treated as settled by a new process; compatible ownership or explicit fenced reconciliation is required before advertising conclusive settlement. Legacy reservation insertion must not bypass a committed withdrawal fence.
 
-## Proposed API and ownership
+## API and ownership
 
 Keep explicit protocol two and advertise the complete required capability only in controlled qualification. The acknowledgement must cover conclusive Start settlement, conditional controls, checkpoints and lease observation; the old protocol number alone does not establish the new feature.
 
@@ -67,6 +67,22 @@ Required tests include nonempty atomic migration/backfill; same-ID duplicate/mis
 
 The shared client cannot clear its journal or permit replacement playback merely because a status read is unknown or age-expired. It uses this conclusive settlement path, or known existing-parent release, under the confirmed client rules.
 
-## Outcome
+## Qualified implementation — October 28, 2026
 
-Q7 and its discovered ownership/absence constraints are documented. Application code and the existing qualified source remain unchanged. This proposal is a prerequisite within the complete shared web/Tauri increment, not a claim that the client or settlement path already works.
+Implemented on main at `577b95f6bb473a64a79b506b2020f56d653264ba` after the confirmed contract at `67c6efc`. Dependencies and Rust/Cargo 1.99.1 remain unchanged. Normal production registration and shared-cap rollout remain off; no branch, tag or release is created. The source-policy authority remains [Local/Recording/provider lifecycle](IPTV_SOURCE_LIFECYCLE.md); provider/DVR implementation is separate.
+
+The migration `20261028120000_vod_start_settlement.sql` introduces durable exact-actor Start registration before preparation, monotonic withdrawal fences, promotion attribution and independent physical completion. Focused settlement database/service/handler/type modules share existing admission ownership, quotas and SQL limits. Retained synchronous inspection owns the actual blocking task/permit; cancellation never substitutes for completion. Unknown commits remain sticky/uncertain. Operator fencing/reconciliation covers unresolved preparations and incompatible older instances.
+
+Intent/reservation pairs count once under existing 4,096-household/65,536-global ceilings. Terminal settlements retain at least 24 hours; indexed bounded pruning first advances a permanent replay floor. Existing work can withdraw/clean up at full storage/command capacity. Normal startup mounts no command/settlement router and attaches no admission owner; capability advertisement remains controlled-qualification only.
+
+| Verification | Outcome and receipt |
+|---|---|
+| Updated Windows Start/settlement | 42 internal cases pass in `.cache/vod-lifecycle/8c28e464-7c76-4050-9a20-410647e6b597/result.json`, including atomic migration/backfill and rollback, absence/admission races, exact scope, real blocked inspection/root drain, full quotas/128 command slots, indexed pruning/replay floor, before/after-COMMIT faults and exact operator recovery. Cleanup passes. |
+| Windows full regression | Earlier broader pack: 12 groups/23 Rust test functions, including 27 reconfiguration cases and actual FFmpeg/HTTP/history/root cleanup, passes in `.cache/vod-lifecycle/cb284bdd-6500-4e5d-af76-933bb0c50edf/result.json` at inventory `eac68b40b2175937de269b6c361812f9684bb16e429a408fcc535ee8ec244f65`. Subsequent settlement changes have the updated 42-case qualification; later Rust edits concern client fixtures. |
+| Current managed Linux | All 10 library groups/22 Rust functions pass, plus the actual HTTP/Stop subprocess contract and verified cleanup. Exact report `.cache/testing-memory/vod-linux-783371dd-0050-4f5b-84f6-d4afc4708812/result.json`; source inventory `41f60a1bd19ebc5b5a040c2091c21f1f83db1b2730bdd0ee9d11adacbae702d5`; runtime image `sha256:e5d55e24f3ac236810a2681d9ce33ac834de6566579b2c958a5bfa80ab4c0838`; base `sha256:f45eda1c8bbe3a9685196aae1200543601ec5efc2fb0f858ca863dd9d42ae8dc`. |
+| Client adoption | Six real browser journeys plus isolated actual Tauri pass against the latest backend, including genuine decoder recovery and conclusive settlement; [client authority](VOD_CLIENT_MIGRATION.md) owns exact executable and artifact identities. |
+| Regression and hygiene | Default Rust library: 1,017 pass, 13 fixture ignores. Fresh real PostgreSQL/resource admission regression passes in 143.12 seconds (`2026-10-28T14-33-05-266Z-8b374a4d-94db-456a-bc7e-7832422a7e14.jsonl`). Workflow: 30 pass, two existing skips. Formatting, copyright (990 files), whitespace and privacy checks pass. Strict Clippy remains nonzero with the same 31 diagnostics: normalized message/path multiplicities are unchanged; no warning suppression or introduced diagnostic. |
+
+Linux used the existing guarded compiler/cache/checkpoint and live telemetry rules; no resource/deadline reserve was increased. Fresh headroom admitted this run without stopping Classifarr; Harmoniarr and Classifarr remained running. All 42 Start and 28 reconfiguration cases execute on Linux. Seventeen additional actual-Cargo durability checks pass, including changed/reverted backdated source; integration and library checkpoints complete within the existing compiler deadline. Every runtime attempt is fresh even when compiler checkpoints are reusable. Linux memory receipt: `2026-10-28T14-38-56-304Z-3872156c-2877-4ca4-9ec9-6a481e795ab3.jsonl`. An interrupted Windows admission compilation produced no completion record and was replaced by the complete fresh result above.
+
+These are scoped server and shared-client qualifications, not production cap enforcement or provider/DVR/Live TV playback qualification. Remaining online client migration, legacy-path closure, instance/audit/history retention and actual provider transport remain separate. Source URLs, credentials and supplied private feed data are absent from published changes.
