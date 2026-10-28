@@ -97,6 +97,18 @@ pub(super) fn configuration(
         playback_state: control.playback_state.clone(),
         recovery_budget: control.recovery_budget.clone(),
         recovery_offer: offer(local)?,
+        worker_recovery: control.checkpoint_sequence > 0
+            && control.checkpoint_output == Some(local.id)
+            && control.checkpoint_position.is_some_and(|position| {
+                super::recovery::prepare(
+                    state,
+                    local,
+                    &control.recovery_budget,
+                    &super::types::Evidence::Worker,
+                    position,
+                )
+                .is_ok()
+            }),
     };
     let etag = format!("\"vod-config-{}\"", intent::digest(&value)?);
     Ok((value, etag))

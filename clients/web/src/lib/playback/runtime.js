@@ -11,7 +11,7 @@ import { requiresAuthenticatedMediaSource } from '../api/core.js';
 import { normalizePreferenceScope, scopeChangedError } from '../preferences/model.js';
 import { DEFAULT_DEVICE_PREFERENCES, normalizeDevicePreferences } from '../preferences/device.js';
 import { loadPlaybackEntry, playbackTitleDestination } from './entry.js';
-import { normalizeTracks, resolveTrackSelection } from './tracks.js';
+import { createTrackOverride, normalizeTracks, resolveTrackSelection } from './tracks.js';
 import { prepareSourceCapabilities } from './source-capabilities.js';
 
 export class PlaybackRuntimeError extends Error {
@@ -204,29 +204,41 @@ export function createPlaybackRuntime({
                 : request.kind === 'start' ? null : qualityOverride;
             const quality = normalizeDevicePreferences(nextQualityOverride || devicePreferences || DEFAULT_DEVICE_PREFERENCES);
             const selection = resolveTrackSelection(tracks, confirmedPreferences, overrides);
-            const options = {
-                forceTranscode: selection.subtitle !== null,
-                forceHls: requiresAuthenticatedSource() || selection.needsTranscode,
+            const forceHls = requiresAuthenticatedSource() || selection.needsTranscode;
+            const conservativeCommand = player.isCommandPlayback?.() && forceHls && quality.quality_mode !== 'auto';
+            let options = {
+                forceTranscode: selection.subtitle !== null || conservativeCommand === true,
+                forceHls,
                 qualityMode: quality.quality_mode, maxBitrate: quality.max_streaming_bitrate,
                 audioStreamIndex: ['preferred', 'override'].includes(selection.audioSelectionMode) ? selection.audio_stream_index : null,
                 subtitleStreamIndex: selection.subtitle_stream_index,
             };
-            const sourceCapabilities = await prepareSource(entry.item.id, entry.file.id, options, {
+            let sourceCapabilities = await prepareSource(entry.item.id, entry.file.id, options, {
                 signal: current.controller.signal, requiresHeaders: requiresAuthenticatedSource(),
             });
             requireOwnership(current);
+            if (sourceCapabilities?.commandProtocol && forceHls && quality.quality_mode !== 'auto' && !options.forceTranscode) {
+                const protocol = sourceCapabilities.commandProtocol;
+                options = { ...options, forceTranscode: true };
+                sourceCapabilities = await prepareSource(entry.item.id, entry.file.id, options, {
+                    signal: current.controller.signal, requiresHeaders: requiresAuthenticatedSource(),
+                });
+                requireOwnership(current);
+                if (sourceCapabilities?.commandProtocol !== protocol) throw new PlaybackRuntimeError('START_FAILED');
+            }
             const live = getPlayerState();
             const startPositionMs = position(request.kind === 'restart' ? live?.positionMs : entry.startPositionMs);
             const playing = request.kind !== 'restart' || (player.getPlayIntent?.() ?? live?.isPlaying) !== false;
-            const result = await player.play(entry.item, entry.file.id, {
-                ...options, sourceCapabilities, startPositionMs, playing, signal: current.controller.signal,
+            const result = await (request.kind === 'restart' && player.isCommandPlayback?.() ? player.reconfigure : player.play)(entry.item, entry.file.id, {
+                ...options, sourceCapabilities, commandProtocol: sourceCapabilities?.commandProtocol, startPositionMs, playing, signal: current.controller.signal,
             });
             requireCurrent(current);
             if (!result?.session_id) throw new PlaybackRuntimeError('START_FAILED');
             requireOwnership(current, result.session_id);
             ownedSessionId = result.session_id;
             const decision = result.stream_decision || result.playback_type || getPlayerState()?.streamDecision;
-            if (startPositionMs > 0 && ['transcode', 'direct_stream'].includes(decision)) {
+            const commandPlayback = player.isCommandPlayback?.();
+            if (startPositionMs > 0 && !(request.kind === 'restart' && commandPlayback) && (commandPlayback || ['transcode', 'direct_stream'].includes(decision))) {
                 try {
                     const seekResult = await player.seek(startPositionMs, { signal: current.controller.signal });
                     requireOwnership(current, result.session_id);
@@ -277,6 +289,43 @@ export function createPlaybackRuntime({
         return execute({ ...lastRequest, revalidate: lastRequest.kind === 'start' });
     }
 
+    async function reconcileCommand() {
+        if (!player.isCommandPlayback?.()) throw new PlaybackRuntimeError('START_FAILED');
+        const current = begin();
+        try {
+            const result = await player.checkCommandStatus();
+            requireCurrent(current);
+            if (!result) { publish({ loading: false, error: null }); return; }
+            const expectedItem = state.item || lastRequest?.entry?.item;
+            const expectedFile = state.file || lastRequest?.entry?.file;
+            if (!expectedItem || !expectedFile || result.media_item_id !== expectedItem.id || result.media_file_id !== expectedFile.id) throw scopeChangedError();
+            const entry = await loadEntry(expectedItem.id, { fileId: expectedFile.id, returnTo: state.destination, signal: current.controller.signal });
+            requireOwnership(current, result.session_id);
+            if (entry.item.id !== result.media_item_id || entry.file.id !== result.media_file_id || entry.file.is_healthy !== true) throw scopeChangedError();
+            const tracks = normalizeTracks(entry.file);
+            const overrides = {};
+            for (const [kind, index] of [['audio', result.audio_stream_index], ['subtitle', result.subtitle_stream_index]]) {
+                const rows = kind === 'audio' ? tracks.audio : tracks.subtitles;
+                const track = index === null ? null : rows.find((row) => row.index === index && row.selectable);
+                if (index !== null && !track) throw new PlaybackRuntimeError('FILES_UNAVAILABLE');
+                overrides[kind] = createTrackOverride(kind, track, entry.file.id);
+            }
+            const config = result.configuration;
+            if (!config || config.media_item_id !== entry.item.id || config.media_file_id !== entry.file.id
+                || config.audio_stream_index !== result.audio_stream_index || config.subtitle_stream_index !== result.subtitle_stream_index
+                || !['auto', 'maximum', 'manual'].includes(config.quality_mode)) throw new PlaybackRuntimeError('START_FAILED');
+            const quality = normalizeDevicePreferences(config);
+            const selection = resolveTrackSelection(tracks, confirmedPreferences, overrides);
+            ownedSessionId = result.session_id;
+            qualityOverride = quality;
+            publish({ item: entry.item, file: entry.file, tracks, selection, overrides, quality,
+                fallback: trackFallback(tracks, selection, overrides), destination: playbackTitleDestination(entry.item, entry.destination), loading: false, error: null });
+        } catch (error) {
+            if (!disposed && current.generation === generation) publish({ loading: false, error });
+            throw error;
+        } finally { current.release(); if (operation === current) operation = null; }
+    }
+
     function dispose() {
         if (disposed) return;
         disposed = true;
@@ -288,5 +337,5 @@ export function createPlaybackRuntime({
     }
 
     onChange(getState());
-    return { start, restart, transition, refreshPreferences, retry, getState, dispose };
+    return { start, restart, transition, refreshPreferences, retry, reconcileCommand, getState, dispose };
 }

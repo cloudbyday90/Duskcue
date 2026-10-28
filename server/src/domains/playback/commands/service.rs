@@ -5,7 +5,7 @@
 use super::{
     database,
     error::CommandError,
-    preparation, representation,
+    representation, settlement, starting,
     types::{RenewalResponse, StartRequest, StatusResponse},
 };
 use crate::{
@@ -36,17 +36,29 @@ pub async fn start(
             let result = async {
                 let id = intent.id;
                 let hash = intent.hash;
-                if representation::load(&state, &owner, scope, id, false)
-                    .await?
-                    .is_some()
-                {
+                let deadline = starting::deadline();
+                let registered = settlement::register(&state, &owner, scope, id, hash).await;
+                if matches!(registered, Err(AdmissionError::Indeterminate)) {
+                    state.transcode_manager.output.fail();
+                }
+                if !registered? {
                     return representation::status(&state, &owner, scope, id, false, Some(hash))
                         .await;
                 }
-                let prepared = preparation::prepare(&state, &owner, scope, intent).await?;
+                let prepared = starting::prepare(&state, &owner, scope, intent, deadline).await?;
                 let request = prepared.request;
                 let binding = prepared.binding;
-                let viewer = state.vod_commands.register(prepared)?;
+                let viewer = match state.vod_commands.register(prepared) {
+                    Ok(viewer) => viewer,
+                    Err(error) => {
+                        if let Err(completion) = settlement::complete(&owner, scope, id, true).await
+                        {
+                            state.transcode_manager.output.fail();
+                            return Err(completion);
+                        }
+                        return Err(error);
+                    }
+                };
                 let resources = viewer.clone();
                 let resources_state = state.clone();
                 let resources_owner = owner.clone();
@@ -74,10 +86,12 @@ pub async fn start(
                         state.vod_commands.remove(&viewer)?;
                     }
                     Err(AdmissionError::Indeterminate) => {
+                        let _ = settlement::withdraw(&state, scope, id).await;
                         state.vod_commands.remove(&viewer)?;
                         return Err(AdmissionError::Indeterminate);
                     }
                     Err(error) => {
+                        let _ = settlement::withdraw(&state, scope, id).await;
                         state.vod_commands.remove(&viewer)?;
                         return Err(error);
                     }

@@ -20,6 +20,7 @@
     import { loadTitleEpisodes } from '../media/title-data.js';
     import PlayerMenus from './PlayerMenus.svelte';
     import AutoplayCard from './AutoplayCard.svelte';
+    import CommandStatus from './player/CommandStatus.svelte';
     import { createControlsVisibility } from '../playback/visibility.js';
     import { createFullscreenController } from '../playback/fullscreen.js';
     import {
@@ -94,7 +95,7 @@
     let retryButton = $state();
     let trackStatus = $derived(playbackState?.fallback?.audio || playbackState?.fallback?.subtitle ? m.tonight_player_track_fallback() : '');
     let recoveryPending = $derived($player.recovery?.status === 'pending');
-    let controlPlaying = $derived(recoveryPending ? player.getPlayIntent() : $isPlaying);
+    let controlPlaying = $derived(recoveryPending || $player.commandProtocol ? player.getPlayIntent() : $isPlaying);
     let recoveryExhausted = $derived($player.recovery?.status === 'exhausted');
     let recoveryMessage = $derived(playbackRecoveryMessage($player.recovery));
     let failureMessage = $derived(playbackFailureMessage({ recoveryExhausted, sourceError, preferencesReady: playbackState?.preferencesReady, error: $playerError || playbackState?.error }));
@@ -166,7 +167,7 @@
         if (preferenceContext) player.setContext(preferenceContext);
         containerEl?.focus();
         captionLayout = createCaptionLayout({ container: containerEl, stage: videoStage, video: videoEl, readObstructions: () => [...containerEl.querySelectorAll('.player-heading, .player-controls, .track-fallback:not(:empty), .recovery-status:not(:empty), .player-popover:not([hidden]), .autoplay-card, .fullscreen-error, .skip-button, .seek-preview')] });
-        mediaSource = createMediaSource({ video: videoEl, shouldPlay: () => $player.isPlaying, onError: (_error, details) => {
+        mediaSource = createMediaSource({ video: videoEl, shouldPlay: () => $player.commandProtocol ? player.getPlayIntent() : $player.isPlaying, onError: (_error, details) => {
             sourceError = true;
             const positionMs = Number.isFinite(details?.positionSeconds) ? details.positionSeconds * 1000 + ($player.streamOffsetMs || 0) : $player.positionMs;
             void player.reportSourceFailure({ positionMs, recoveryRequested: details?.recoveryRequested === true,
@@ -220,6 +221,10 @@
         tick().then(() => { if (isMounted) captionLayout?.update(enabled); });
     });
     $effect(() => {
+        if (!$streamUrl && lastAttachedUrl) {
+            mediaSource?.release();
+            lastAttachedUrl = null;
+        }
         if (!isMounted || exitRequested || closing || playbackState?.loading || $playerLoading || $player.sessionReleased || $player.release?.phase === 'failed') return;
         const url = $streamUrl;
         if (url && url !== lastAttachedUrl) {
@@ -267,7 +272,7 @@
         if (!isMounted || closing || exitRequested || state.loading || state.error || $playerLoading
             || !event?.isTrusted || !videoEl?.ended || sourceTimeline?.url !== $streamUrl || !canCompleteSource(sourceTimeline)) return;
         updateDuration(true);
-        if (Number.isFinite(videoEl?.currentTime)) player.setPosition(videoEl.currentTime * 1000 + ($player.streamOffsetMs || 0));
+        if (Number.isFinite(videoEl?.currentTime)) player.setPosition(videoEl.currentTime * 1000 + ($player.streamOffsetMs || 0), sourceTimeline?.url);
         player.setPlaying(false);
         autoplay.ended({ item: state.item, profileId, autoplayEnabled: state.autoplayEnabled, preferencesReady: state.preferencesReady });
     }
@@ -313,27 +318,43 @@
     });
 
     function handlePlay() {
-        if (!videoEl?.paused && sourceTimeline?.mode !== 'detached' && sourceTimeline?.url === $streamUrl) player.setPlaying(true);
+        if (!videoEl?.paused && sourceTimeline?.mode !== 'detached' && sourceTimeline?.url === $streamUrl) {
+            const accepted = player.setPlaying(true, true);
+            if ($player.commandProtocol && accepted === false) videoEl.pause();
+        }
+        checkpointTransition();
     }
 
     function handlePause() {
-        if (videoEl?.readyState > 0 && sourceTimeline?.mode !== 'detached' && sourceTimeline?.url === $streamUrl && !recoveryPending) player.setPlaying(false);
+        if (videoEl?.paused && videoEl.readyState > 0 && sourceTimeline?.mode !== 'detached' && sourceTimeline?.url === $streamUrl && !recoveryPending) player.setPlaying(false, true);
+        checkpointTransition();
     }
 
     function handleWaiting() {
+        if ($player.commandProtocol && (!videoEl || videoEl.paused || videoEl.readyState >= 3 || sourceTimeline?.mode === 'detached' || sourceTimeline?.url !== $streamUrl)) return;
         player.setBuffering(true);
         telemetry.waiting();
+        checkpointTransition();
     }
 
     function handlePlaying() {
+        if ($player.commandProtocol && (!videoEl || videoEl.paused || videoEl.readyState < 2 || sourceTimeline?.mode === 'detached' || sourceTimeline?.url !== $streamUrl)) return;
         player.setBuffering(false);
         telemetry.playing();
+        checkpointTransition();
+    }
+
+    function checkpointTransition() {
+        if (isMounted && !exitRequested && videoEl?.readyState >= 2 && !videoEl.seeking && !isSeeking
+            && sourceTimeline?.mode !== 'detached' && sourceTimeline?.url === $streamUrl) {
+            player.setPosition(videoEl.currentTime * 1000 + ($player.streamOffsetMs || 0), sourceTimeline.url, true);
+        }
     }
 
     function handleTimeUpdate() {
-        if (isMounted && !exitRequested && videoEl && !isSeeking && !$player.isBuffering
+        if (isMounted && !exitRequested && videoEl && videoEl.readyState >= 2 && !videoEl.seeking && !isSeeking && !$player.isBuffering
             && sourceTimeline?.mode !== 'detached' && sourceTimeline?.url === $streamUrl) {
-            player.setPosition(videoEl.currentTime * 1000 + ($player.streamOffsetMs || 0));
+            player.setPosition(videoEl.currentTime * 1000 + ($player.streamOffsetMs || 0), sourceTimeline?.url);
             updateBuffered();
         }
     }
@@ -539,7 +560,7 @@
         if (closePromise) return closePromise;
         const heldFocus = containerEl?.contains(document.activeElement);
         const requestedContext = preferenceContext ? { ...preferenceContext } : null;
-        if (!exitRequested && videoEl?.readyState > 0 && Number.isFinite(videoEl.currentTime)) player.setPosition(videoEl.currentTime * 1000 + ($player.streamOffsetMs || 0));
+        if (!exitRequested && videoEl?.readyState >= 2 && !videoEl.seeking && sourceTimeline?.url === $streamUrl && sourceTimeline?.mode !== 'detached' && Number.isFinite(videoEl.currentTime)) player.setPosition(videoEl.currentTime * 1000 + ($player.streamOffsetMs || 0), sourceTimeline?.url);
         exitRequested = true;
         closing = true;
         closeFailed = false;
@@ -586,12 +607,13 @@
 
     async function handleRetry(event) {
         const heldFocus = document.activeElement === event.currentTarget;
-        if (videoEl?.readyState > 0 && Number.isFinite(videoEl.currentTime) && sourceTimeline?.mode !== 'detached') player.setPosition(videoEl.currentTime * 1000 + ($player.streamOffsetMs || 0));
+        if (videoEl?.readyState >= 2 && !videoEl.seeking && Number.isFinite(videoEl.currentTime) && sourceTimeline?.mode !== 'detached') player.setPosition(videoEl.currentTime * 1000 + ($player.streamOffsetMs || 0), sourceTimeline?.url);
         player.clearError();
         sourceError = false;
         mediaSource?.release();
         lastAttachedUrl = null;
         try {
+            if (player.isCommandPlayback?.()) { await runtime.reconcileCommand(); return; }
             if ($player.release?.phase === 'failed') await player.retryRelease();
             await runtime.retry();
             autoplay.reset();
@@ -643,6 +665,7 @@
     {#if fullscreenError}
         <p lang={messageLocale('tonight_player_fullscreen_failed')} class="fullscreen-error" role="status">{m.tonight_player_fullscreen_failed()}</p>
     {/if}
+    {#if $player.commandProtocol}<CommandStatus phase={$player.commandPhase} progressUncertain={$player.progressUncertain} retryAfter={$player.commandRetryAfter} />{/if}
     <p lang={messageLocale('tonight_player_track_fallback')} class="track-fallback" class:visible={controlsVisible} role="status" aria-live="polite">{trackStatus}</p>
     {#if recoveryNotice}<p lang={messageLocale(recoveryMessage)} class="recovery-status" role="status" aria-live="polite">{recoveryNotice}</p>{/if}
 
@@ -691,7 +714,7 @@
             <div class="error-display">
                 <p class="error-title">{m.lib_components_player_playback_error()}</p>
                 <p lang={messageLocale(failureMessage)} class="error-message" role="alert">{failureText}</p>
-                <button bind:this={retryButton} class="error-retry" onclick={handleRetry}>{m.lib_components_player_retry()}</button>
+                <button bind:this={retryButton} class="error-retry" disabled={$player.commandRetryAfter > 0} onclick={handleRetry}>{$player.commandProtocol ? m.tonight_player_command_check_status() : m.lib_components_player_retry()}</button>
             </div>
         </div>
     {/if}

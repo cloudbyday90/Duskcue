@@ -49,10 +49,15 @@ async fn change_owned(
     id: Uuid,
     mut intent: intent::Intent,
 ) -> Result<OperationResponse, CommandError> {
-    if let Some(replay) = database::replay(state, scope, id, &intent).await? {
+    if let Some(replay) = database::replay(state, scope, id, &intent)
+        .await
+        .inspect_err(|error| tracing::debug!(stage="replay",category=%error,"VOD change refused"))?
+    {
         return Ok(replay);
     }
-    let (owner, request, viewer) = database::selected(state, scope, id).await?;
+    let (owner, request, viewer) = database::selected(state, scope, id).await.inspect_err(
+        |error| tracing::debug!(stage="selected",category=%error,"VOD change refused"),
+    )?;
     let guard = viewer.begin().map_err(|error| {
         if error == AdmissionError::Pending {
             CommandError::Busy
@@ -68,7 +73,7 @@ async fn change_owned(
             if intent.condition!=etag {return Err(CommandError::ConditionFailed);}
             if !matches!(configuration.state.as_str(),"ready"|"unavailable") {return Err(CommandError::Busy);}
             let previous=viewer.current()?;
-            if previous.id!=intent.body.expected_output {return Err(CommandError::Conflict);}
+            if previous.id!=intent.body.expected_output {tracing::debug!(stage="expected_output","VOD change refused");return Err(CommandError::Conflict);}
             let identity=playback::direct::FileIdentity::read_scoped(&state.transcode_manager.output,&viewer.group,&previous.prepared.plan.source.details).await;
             if identity.as_ref()!=Some(&previous.prepared.identity) {return Err(CommandError::Forbidden);}
             previous.snapshot(&state)?;
@@ -102,12 +107,12 @@ async fn change_owned(
                     (recovery.prepared,recovery.position,Some(recovery.parameters))
                 },
             };
-            let duration=playback::source_candidates::duration_ms(&prepared.plan.source).ok_or(CommandError::Conflict)?;
+            let duration=playback::source_candidates::duration_ms(&prepared.plan.source).ok_or_else(||{tracing::debug!(stage="duration","VOD change refused");CommandError::Conflict})?;
             if position<0 || i64::from(position)>duration {return Err(CommandError::Invalid);}
             let target=Output::new(prepared,Some(intent.body.operation_id),position,parameters,note)?;
             if position>0 && target.parameters.as_ref().is_some_and(|p| p.stream_plan.video==crate::services::transcoding::plan::StreamAction::Copy && p.output_profile!=Some(crate::services::transcoding::OutputProfile::SourceCopySdr)) {return Err(CommandError::Conflict);}
             let operation=intent.body.operation_id;
-            let result=database::accept(&state,&owner,request,&viewer,&target,database::Acceptance {operation,expected:previous.id,hash:intent.hash,condition:intent.condition,action:intent::name(&intent.body.action),checkpoint,budget:changed_budget,evidence}).await;
+            let result=database::accept(&state,&owner,request,&viewer,&target,database::Acceptance {operation,expected:previous.id,hash:intent.hash,condition:intent.condition,action:intent::name(&intent.body.action),checkpoint,budget:changed_budget,evidence}).await.inspect_err(|error|tracing::debug!(stage="accept",category=%error,"VOD change refused"));
             match result {
                 Ok((response,false))=>Ok(response),
                 Ok((response,true))=>{

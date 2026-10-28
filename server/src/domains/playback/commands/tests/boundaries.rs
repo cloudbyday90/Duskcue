@@ -222,8 +222,11 @@ pub(super) async fn foreign(db: &Database) -> anyhow::Result<()> {
         let first=Uuid::now_v7();f.start(first,false,false).await?;f.ready(first).await?;
         let old=AdmissionOwner::new(db.pool.clone(),f.base.state.encryption_key.clone(),None).await?;
         let id=Uuid::now_v7();
-        sqlx::query("INSERT INTO playback_reservations(id,instance_id,household_id,fingerprint,kind) SELECT $1,$2,household_id,fingerprint,kind FROM playback_reservations WHERE id=$3").bind(id).bind(old.instance()).bind(first).execute(&db.pool).await?;
-        sqlx::query("INSERT INTO playback_vod_commands(reservation_id,intent_hash,policy_hash,source_hash,delivery_mode,encodes,source_4k) SELECT $1,intent_hash,policy_hash,source_hash,delivery_mode,encodes,source_4k FROM playback_vod_commands WHERE reservation_id=$2").bind(id).bind(first).execute(&db.pool).await?;
+        sqlx::query("INSERT INTO playback_start_intents(id,household_id,session_id,credential_version,transport,profile_id,profile_revision,intent_hash,instance_id,preparation_complete) SELECT $1,household_id,session_id,credential_version,transport,profile_id,profile_revision,intent_hash,$2,true FROM playback_start_intents WHERE id=$3").bind(id).bind(old.instance()).bind(first).execute(&db.pool).await?;
+        let mut promotion=db.pool.begin().await?;
+        sqlx::query("INSERT INTO playback_reservations(id,instance_id,household_id,fingerprint,kind) SELECT $1,$2,household_id,fingerprint,kind FROM playback_reservations WHERE id=$3").bind(id).bind(old.instance()).bind(first).execute(&mut *promotion).await?;
+        sqlx::query("INSERT INTO playback_vod_commands(reservation_id,intent_hash,policy_hash,source_hash,delivery_mode,encodes,source_4k,protocol) SELECT $1,intent_hash,policy_hash,source_hash,delivery_mode,encodes,source_4k,protocol FROM playback_vod_commands WHERE reservation_id=$2").bind(id).bind(first).execute(&mut *promotion).await?;
+        promotion.commit().await?;
         old.close();old.drain().await?;
         let start=f.json(Method::POST,"/api/v1/playback-commands",Some(f.start_body(id,false,false))).await?;
         anyhow::ensure!(start.0==StatusCode::ACCEPTED&&start.1["status"]=="uncertain"&&f.base.state.vod_commands.get(id).is_none());

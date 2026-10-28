@@ -87,7 +87,7 @@ Separate bounded wire/schema/URL validation, server-time UUIDv7 generation, exac
 8. **Q8 confirmed:** a profile-only change detaches media and retains one cleanup-only journal record. Account/server/session/credential changes clear that local record and rely on server retirement; clearing it is never proof that a slot was released.
 9. **Q9 confirmed:** known accepted Start/change/Stop/withdrawal may be observed at most once per second for at most sixty seconds, then through explicit Check status. Timeout is not server failure. No mutation replay; valid renewal remains independent.
 
-The following concrete contract, acceptance criteria and deferred items require the final shared-understanding confirmation before implementation. Hard unload/OS termination cannot establish successful Stop; Tauri tray Quit currently exits directly. Server-owned expiry and confirmed cleanup remain authoritative when a client can no longer observe them.
+The following concrete contract, acceptance criteria and deferred items were confirmed by the user after `67c6efc`. Hard unload/OS termination cannot establish successful Stop; Tauri tray Quit currently exits directly. Server-owned expiry and confirmed cleanup remain authoritative when a client can no longer observe them.
 
 ## Concrete rollout and protocol selection
 
@@ -147,4 +147,4 @@ Preserve existing managed testing, memory/headroom, source-freeze, process/SQL/d
 
 GitHub MCP's repository-wide open-PR search returns zero candidates. No random local patch or stale Dependabot rebase applies; [superseded PR 5 cleanup](../operations/DEPENDABOT_MAINTENANCE.md) remains complete. No PR was merged, dependency changed or alert dismissed.
 
-All nine client decisions and the concrete proposed contract are recorded; final shared-understanding confirmation is pending. Research/fact inspection only at this checkpoint. No new application implementation, build/runtime qualification or production enablement is claimed. Existing backend results remain historical evidence for the unchanged source. Commit/push of documentation on main does not complete the pending client implementation.
+All nine client decisions and the concrete implementation contract were confirmed after `67c6efc`. Research/fact inspection only at this checkpoint. No new application implementation, build/runtime qualification or production enablement is claimed. Existing backend results remain historical evidence for the unchanged source. Commit/push of documentation on main does not complete the pending client implementation.

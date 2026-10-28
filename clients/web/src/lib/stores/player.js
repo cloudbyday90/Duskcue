@@ -18,6 +18,8 @@
 
 import { writable, derived, get } from 'svelte/store';
 import { createPlaybackSessionGuard } from '../playback/session.js';
+import { createCommandAdapter } from '../playback/commands/adapter.js';
+import { PROTOCOL } from '../playback/commands/schema.js';
 import { createPlaybackHeartbeat } from '../playback/heartbeat.js';
 import { playbackRecovery } from '../playback/recovery.js';
 import { directFallbackDescriptor, directSourceRevision, probeCompatibleHlsOutput } from '../playback/capabilities.js';
@@ -99,6 +101,7 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput, pr
     }
 
     const { subscribe, set, update } = writable(initialState());
+    const commands = createCommandAdapter({ update, read: () => get({ subscribe }), revision: () => { streamRevision += 1; } });
     function cancelDirectProbe() {
         directProbe?.controller.abort();
         directProbe = null;
@@ -221,6 +224,12 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput, pr
                 await precedingStop;
                 await Promise.resolve(precedingPlay).catch(() => {});
                 if (!sessionGuard.isCurrent(token) || contextKey !== ownedContext) return null;
+                await commands.restore();
+                if (options.commandProtocol === PROTOCOL || commands.active() || commands.selected()) {
+                    if (options.commandProtocol !== PROTOCOL) throw new Error('VOD_STATUS_REQUIRED');
+                    if (!commands.active()) await stopSession(previous);
+                    return await commands.play(mediaItem, mediaFileId, options, () => sessionGuard.isCurrent(token) && contextKey === ownedContext);
+                }
                 await stopSession(previous);
                 if (!sessionGuard.isCurrent(token)) return null;
                 const result = await apiStartPlayback(playbackStartRequest(mediaItem.id, mediaFileId, options));
@@ -331,6 +340,7 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput, pr
         },
 
         getPlayIntent() {
+            if (commands.selected()) return commands.playing();
             return recoveryResumePlaying ?? (playIntent && sessionGuard.isCurrent(playIntent.token) ? playIntent.playing : null) ?? get({ subscribe }).isPlaying;
         },
 
@@ -338,13 +348,23 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput, pr
             return streamRevision;
         },
 
-        setPlaying(playing) {
-            if (playIntent && sessionGuard.isCurrent(playIntent.token)) playIntent.playing = playing;
-            if (recoveryResumePlaying !== null) recoveryResumePlaying = playing;
-            update((s) => ({ ...s, isPlaying: playing && !s.sessionReleased && s.release.phase === 'idle', isBuffering: false }));
+        setPlaying(playing, observed = false) {
+            const command = commands.selected();
+            const actual = command ? commands.setPlaying(playing, observed) : playing;
+            if (!command || !observed) {
+                if (playIntent && sessionGuard.isCurrent(playIntent.token)) playIntent.playing = playing;
+                if (recoveryResumePlaying !== null) recoveryResumePlaying = playing;
+            }
+            update((s) => ({ ...s, isPlaying: actual && !s.sessionReleased && s.release.phase === 'idle', isBuffering: false }));
+            return get({ subscribe }).isPlaying;
         },
 
         async reportSourceFailure({ positionMs = Number.NaN, recoveryRequested = false, sourceUrl = null, sourceMode = null, mediaErrorCode = null } = {}) {
+            if (commands.active()) {
+                if (sourceUrl !== get({ subscribe }).streamUrl) return false;
+                if (!recoveryRequested) return false;
+                return commands.failure({ sourceMode, mediaErrorCode }).catch(() => false);
+            }
             const state = get({ subscribe });
             if (pendingStop || !state.sessionId || state.loading || state.seeking || state.sessionReleased || state.release.phase !== 'idle'
                 || (sourceUrl && sourceUrl !== state.streamUrl)) return false;
@@ -388,8 +408,9 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput, pr
             update((s) => ({ ...s, isBuffering: buffering }));
         },
 
-        setPosition(positionMs) {
+        setPosition(positionMs, sourceUrl = null, transition = false) {
             update((s) => s.sessionReleased || s.release.phase !== 'idle' ? s : ({ ...s, positionMs }));
+            if (commands.active()) commands.observe(positionMs, sourceUrl, transition);
         },
 
         setDuration(durationMs) {
@@ -419,6 +440,7 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput, pr
         },
 
         async seek(positionMs, options = {}) {
+            if (commands.active()) return commands.seek(positionMs);
             if (options.signal?.aborted) return null;
             const state = get({ subscribe });
             if (!state.sessionId || state.sessionReleased || state.release.phase !== 'idle') return null;
@@ -480,6 +502,11 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput, pr
         },
 
         stop({ retry = false } = {}) {
+            if (commands.active() || commands.selected()) {
+                sessionGuard.invalidate();
+                heartbeat.stopTimer();
+                return commands.stop();
+            }
             if (pendingStop) return pendingStop;
             const state = { ...get({ subscribe }), contextKey: sessionContextKey };
             const token = sessionGuard.invalidate();
@@ -506,6 +533,7 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput, pr
         },
 
         async retryRelease() {
+            if (commands.active()) return commands.stop();
             heartbeat.stopTimer();
             await stopSession(get({ subscribe }), { retry: true });
         },
@@ -514,6 +542,7 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput, pr
             const next = playbackContextKey(context);
             if (next === contextKey) return;
             contextKey = next;
+            commands.invalidate();
             sessionContextKey = null;
             sessionGuard.invalidate();
             streamRevision += 1;
@@ -544,6 +573,7 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput, pr
         },
 
         async sendHeartbeatNow() {
+            if (commands.active()) return commands.checkpoint();
             await heartbeat.sendNow();
         },
 
@@ -561,10 +591,14 @@ export function createPlayerStore({ probeFallback = probeCompatibleHlsOutput, pr
         },
 
         destroy() {
+            commands.dispose();
             streamRevision += 1;
             cancelDirectProbe();
             heartbeat.stopTimer();
         },
+        isCommandPlayback: () => commands.selected(),
+        reconfigure: (item, file, options) => commands.reconfigure(item, file, options),
+        checkCommandStatus: () => commands.check(),
     };
 }
 

@@ -118,6 +118,37 @@ async function started(options: any = {}) {
 }
 
 describe('per-player playback runtime', () => {
+    it('prepares fresh evidence for conservative non-Auto command HLS without changing legacy requests', async () => {
+        const storage = memoryStorage();
+        const deviceScope = normalizePreferenceScope('alex', context, 'installation-a');
+        writeDevicePreferences(deviceScope, { quality_mode: 'manual', max_streaming_bitrate: 6000000 }, storage);
+        const prepare = vi.fn(async (_item, _file, options) => ({ commandProtocol: 'duskcue-vod-command/2', source_revision: options.forceTranscode ? 'encoded' : 'copy' }));
+        const h = await started({ authenticated: true, storage, prepareSource: prepare });
+        expect(prepare.mock.calls.map((call) => call[2].forceTranscode)).toEqual([false, true]);
+        expect(h.player.play.mock.calls[0][2]).toMatchObject({ forceTranscode: true, sourceCapabilities: { source_revision: 'encoded' } });
+        h.runtime.dispose();
+        const legacy = await started({ authenticated: true, storage });
+        expect(legacy.player.play.mock.calls[0][2].forceTranscode).toBe(false);
+        legacy.runtime.dispose();
+    });
+    it('restores confirmed tracks and quality after an uncertain command without replaying playback', async () => {
+        const h = await started();
+        const session = get(h.player).sessionId;
+        Object.assign(h.player, {
+            isCommandPlayback: () => true,
+            reconfigure: vi.fn().mockRejectedValue(new Error('uncertain')),
+            checkCommandStatus: vi.fn().mockResolvedValue({ session_id: session, media_item_id: item.id, media_file_id: file.id,
+                audio_stream_index: 5, subtitle_stream_index: 8,
+                configuration: { media_item_id: item.id, media_file_id: file.id, audio_stream_index: 5, subtitle_stream_index: 8,
+                    quality_mode: 'manual', max_streaming_bitrate: 1500000 } }),
+        });
+        await expect(h.runtime.restart()).rejects.toThrow('uncertain');
+        await h.runtime.reconcileCommand();
+        expect(h.runtime.getState()).toMatchObject({ error: null, loading: false, selection: { audio_stream_index: 5, subtitle_stream_index: 8 },
+            quality: { quality_mode: 'manual', max_streaming_bitrate: 1500000 } });
+        expect(h.player.play).toHaveBeenCalledTimes(1);
+        h.runtime.dispose();
+    });
     it('prepares every operation with resolved global tracks, quality and authenticated delivery', async () => {
         const evidence = { version: 1, source_revision: 'a'.repeat(64), observations: [] };
         const prepareSource = vi.fn(async (_item: string, _file: string, _options: unknown, _dependencies: unknown) => evidence);

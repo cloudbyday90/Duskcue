@@ -95,7 +95,7 @@ describe('exact current-attempt source capability admission', () => {
         const prepare = vi.fn(async (_body: unknown, _options: { signal?: AbortSignal }) => reply);
         const observe = vi.fn(async (_values: unknown, _options: { signal?: AbortSignal }) => [evidence()]);
         const value = await prepareSourceCapabilities('item', 'file', options, { prepare, observe, requiresHeaders: true });
-        expect(prepare).toHaveBeenCalledExactlyOnceWith({ ...playbackStartRequest('item', 'file', options), capability_protocol: 1 }, { signal: expect.any(AbortSignal) });
+        expect(prepare).toHaveBeenCalledExactlyOnceWith({ ...playbackStartRequest('item', 'file', options), capability_protocol: 1 }, { signal: expect.any(AbortSignal), cache: 'no-store', maxJsonBytes: 32768 });
         expect(observe).toHaveBeenCalledExactlyOnceWith([reply.candidates[0].configuration], { signal: expect.any(AbortSignal) });
         expect(prepare.mock.calls[0][1].signal).toBe(observe.mock.calls[0][1].signal);
         expect(value).toEqual({ version: 1, source_revision: revision, observations: [{ candidate_id: 'hls_video_copy_aac', ...evidence() }] });

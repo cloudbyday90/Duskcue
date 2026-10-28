@@ -10,6 +10,8 @@ mod actors;
 mod adversity;
 mod boundaries;
 mod cases;
+mod client;
+mod client_media;
 #[path = "../../../../tests/support/admission_commit_proxy.rs"]
 #[allow(dead_code)]
 mod commit_proxy;
@@ -21,6 +23,10 @@ mod faults;
 #[allow(dead_code)]
 mod fixture;
 mod reconfiguration;
+mod settlement;
+mod settlement_capacity;
+mod settlement_faults;
+mod settlement_lifecycle;
 mod support;
 
 #[test]
@@ -136,6 +142,28 @@ async fn same_viewer_operations_preserve_revisions_progress_claims_and_cleanup()
 async fn command_protocol_retains_scope_readiness_delivery_and_confirmed_cleanup()
 -> anyhow::Result<()> {
     tokio::time::timeout(std::time::Duration::from_secs(600), async {
+        database::run(settlement::boundaries).await?;
+        println!("VOD_COMMAND_CASE start_settlement passed");
+        database::run(settlement_lifecycle::pruning).await?;
+        println!("VOD_COMMAND_CASE start_pruning passed");
+        database::run(settlement_lifecycle::instance_recovery).await?;
+        println!("VOD_COMMAND_CASE start_instance_recovery passed");
+        database::run(settlement_lifecycle::inconsistent_migration).await?;
+        println!("VOD_COMMAND_CASE start_migration_rollback passed");
+        database::run(settlement_lifecycle::legacy_compatibility).await?;
+        println!("VOD_COMMAND_CASE start_legacy_fence passed");
+        for phase in 0..3 {
+            for before in [true, false] {
+                database::run(async |db| settlement_faults::wire(db, phase, before).await).await?;
+                println!("VOD_COMMAND_CASE start_wire_fault passed");
+            }
+        }
+        database::run(settlement::retained_inspection).await?;
+        println!("VOD_COMMAND_CASE retained_inspection passed");
+        database::run(settlement_capacity::quotas).await?;
+        println!("VOD_COMMAND_CASE settlement_quota passed");
+        database::run(settlement_capacity::no_command_slot).await?;
+        println!("VOD_COMMAND_CASE settlement_no_slot passed");
         database::run(cases::direct).await?;
         println!("VOD_COMMAND_CASE direct passed");
         database::run(cases::hls).await?;

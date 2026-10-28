@@ -25,6 +25,7 @@ pub mod handlers;
 mod heartbeat;
 mod history;
 mod hls;
+mod inspection;
 mod legacy;
 mod media_source;
 mod planning;

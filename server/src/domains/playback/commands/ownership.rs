@@ -19,6 +19,8 @@ use uuid::Uuid;
 
 pub(crate) struct Commands {
     viewers: Mutex<BTreeMap<Uuid, Arc<Viewer>>>,
+    preparations: Mutex<BTreeMap<Uuid, tokio_util::sync::CancellationToken>>,
+    pub(super) mounted: AtomicBool,
 }
 
 pub(super) struct Viewer {
@@ -54,7 +56,45 @@ impl Commands {
     pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {
             viewers: Mutex::new(BTreeMap::new()),
+            preparations: Mutex::new(BTreeMap::new()),
+            mounted: AtomicBool::new(false),
         })
+    }
+    pub(super) fn prepare(
+        &self,
+        id: Uuid,
+    ) -> Result<tokio_util::sync::CancellationToken, AdmissionError> {
+        let mut entries = self
+            .preparations
+            .lock()
+            .map_err(|_| AdmissionError::Closed)?;
+        if entries.contains_key(&id) {
+            return Err(AdmissionError::Pending);
+        }
+        if entries.len() >= 128 {
+            return Err(AdmissionError::Capacity);
+        }
+        let stop = tokio_util::sync::CancellationToken::new();
+        entries.insert(id, stop.clone());
+        Ok(stop)
+    }
+    pub(super) fn cancel_preparation(&self, id: Uuid) -> Result<(), AdmissionError> {
+        if let Some(stop) = self
+            .preparations
+            .lock()
+            .map_err(|_| AdmissionError::Closed)?
+            .get(&id)
+        {
+            stop.cancel();
+        }
+        Ok(())
+    }
+    pub(super) fn finish_preparation(&self, id: Uuid) -> Result<(), AdmissionError> {
+        self.preparations
+            .lock()
+            .map_err(|_| AdmissionError::Closed)?
+            .remove(&id);
+        Ok(())
     }
     pub(super) fn register(
         &self,

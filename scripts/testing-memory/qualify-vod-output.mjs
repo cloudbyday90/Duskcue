@@ -11,6 +11,8 @@ import { createGuardedDocker } from './guarded-docker.mjs';
 import { runBounded } from '../qualification/commands.mjs';
 import { qualificationSources, hashFile } from '../qualification/source.mjs';
 import { createVodSource } from '../qualification/vod-fixtures.mjs';
+import { vodClientSources } from '../qualification/vod-client-source.mjs';
+import { authorVodDamage } from '../qualification/vod-damaged-source.mjs';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -26,13 +28,18 @@ async function main() {
     const args = process.argv.slice(2);
     const commandsOnly=args[0]==='--commands-only';
     const configurationOnly=args[0]==='--configuration-only';
-    if(commandsOnly||configurationOnly) args.shift();
+    const startOnly=args[0]==='--start-only';
+    const clientOnly=args[0]==='--client-only';
+    if(commandsOnly||configurationOnly||clientOnly||startOnly) args.shift();
+    let nativeManifest;
+    if(clientOnly&&args[0]==='--native-manifest') {args.shift();nativeManifest=args.shift();if(!nativeManifest)throw new Error('Provide the owned native manifest.');}
     if (args.length !== 6 || args[0] !== '--ffmpeg-bin' || args[2] !== '--source' || args[4] !== '--hls') throw new Error('Provide --ffmpeg-bin, --source and --hls ignored fixture paths.');
     const workflow = await createGuardedDocker(workspace);
     const cache = await realpath(join(workspace, '.cache'));
     const ffmpeg = await fixture(cache, args[1], true);
     const source = await fixture(cache, args[3]);
     const hls = await fixture(cache, args[5], true);
+    if(nativeManifest)nativeManifest=await fixture(cache,nativeManifest);
     const directory = join(cache, 'vod-lifecycle', workflow.resourceId);
     await mkdir(directory);
     if (dirname(await realpath(directory)) !== await realpath(join(cache, 'vod-lifecycle'))) throw new Error('VOD evidence left its owner directory.');
@@ -55,8 +62,10 @@ async function main() {
         const evidence = JSON.parse(probe.stdout);
         if (Number(evidence.format?.duration) < 8 || Number(evidence.format?.duration) > 9 || !evidence.streams?.some((s) => s.index === 1 && s.codec_name === 'h264' && s.width === 320 && s.height === 180)) throw new Error('VOD qualification requires the established eight-second audio-first source.');
         result.source = await qualificationSources(workspace);
+        if (clientOnly) result.clientSource = await vodClientSources(workspace);
         result.driverSha256 = await hashFile(fileURLToPath(import.meta.url));
         result.configurationFixture = await createVodSource(source, join(directory, 'source'), join(ffmpeg, 'ffmpeg.exe'));
+        if (clientOnly) result.damageFixture = await authorVodDamage(result.configurationFixture.copyPath, join(directory, 'source', 'damaged.mp4'), join(ffmpeg, 'ffprobe.exe'));
         const image = JSON.parse(await checked(['image', 'inspect', 'postgres:18', '--format', '{{json .}}']));
         if (!/^sha256:[a-f0-9]{64}$/.test(image.Id || '') || image.Os !== 'linux') throw new Error('VOD PostgreSQL image must be immutable Linux PostgreSQL18.');
         result.postgresImage = image.Id;
@@ -82,7 +91,12 @@ async function main() {
         }
         const url = `postgres://postgres:${password}@127.0.0.1:${port}/${database}`;
         const env = { ...process.env, PATH: `${ffmpeg};${process.env.PATH}`, DUSKCUE_TEST_PLAYBACK_SOURCE: source, DUSKCUE_TEST_CONFIGURATION_SOURCE: result.configurationFixture.path, DUSKCUE_TEST_CONFIGURATION_COPY: result.configurationFixture.copyPath, DUSKCUE_TEST_CONFIGURATION_CORPUS: result.configurationFixture.corpus, DUSKCUE_HLS_TEST_MEDIA_DIR: hls, DUSKCUE_DATABASE_URL: url, DUSKCUE_TRANSCODE_ACCESS_TESTS: 'disposable' };
+        delete env.DUSKCUE_TEST_VOD_NATIVE_MANIFEST;
+        delete env.DUSKCUE_TEST_VOD_DAMAGED_COPY;
+        if (clientOnly) env.DUSKCUE_TEST_VOD_DAMAGED_COPY=result.damageFixture.path;
+        if(nativeManifest)env.DUSKCUE_TEST_VOD_NATIVE_MANIFEST=nativeManifest;
         const cases = [
+            ['client','--lib','domains::playback::commands::tests::client::real_shared_player_protocol_two',true],
             ['commands','--lib','domains::playback::commands::tests::command_protocol_retains_scope_readiness_delivery_and_confirmed_cleanup',true],
             ['configuration','--lib','domains::playback::commands::tests::same_viewer_operations_preserve_revisions_progress_claims_and_cleanup',true],
             ['retention', '--test', 'playback_retention', true],
@@ -97,7 +111,9 @@ async function main() {
             ['stop', '--test', 'playback_stop_contract', true],
         ];
         for (const [name, target, selector, ignored] of cases) {
+            if(clientOnly&&name!=='client'||!clientOnly&&name==='client')continue;
             if(commandsOnly&&!['commands','configuration'].includes(name))continue;
+            if(startOnly&&name!=='commands')continue;
             if(configurationOnly&&name!=='configuration')continue;
             const args = ['test', '-p', 'duskcue', '--locked', '--offline', '-j', '2', target, selector, '--', ...(ignored ? ['--ignored'] : []), '--nocapture'];
             const execution = await runBounded('cargo.exe', args, { cwd: workspace, env, log: join(directory, `${name}.log`), redact: [password, url], timeoutMs: 1800000, bytes: 16777216,
@@ -109,6 +125,7 @@ async function main() {
             if (!passed) throw new Error(`VOD ${name} qualification failed; inspect its bounded log.`);
         }
         if ((await qualificationSources(workspace)).sha256 !== result.source.sha256 || await hashFile(fileURLToPath(import.meta.url)) !== result.driverSha256) throw new Error('VOD qualification sources changed during execution.');
+        if (clientOnly && (await vodClientSources(workspace)).sha256 !== result.clientSource.sha256) throw new Error('VOD client sources changed during execution.');
         result.status = 'passed';
     } catch (error) { failure = error; result.status = 'failed'; result.error = error.message; }
     finally {

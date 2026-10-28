@@ -323,7 +323,11 @@ pub async fn quotas(db: &Database) -> anyhow::Result<()> {
     sqlx::query("ANALYZE playback_reservations")
         .execute(&db.pool)
         .await?;
-    for query in [super::queries::PRUNE, super::queries::PRUNE_SHARED] {
+    for query in [
+        super::queries::PRUNE,
+        super::queries::PRUNE_SHARED,
+        super::queries::PRUNE_QUARTER,
+    ] {
         let mut explain = db.pool.begin().await?;
         let plan: serde_json::Value = sqlx::query(AssertSqlSafe(format!(
             "EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) {}",

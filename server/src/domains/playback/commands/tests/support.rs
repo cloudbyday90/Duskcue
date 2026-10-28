@@ -36,16 +36,20 @@ impl Fixture {
         db: &database::Database,
         owner_pool: Option<sqlx::PgPool>,
     ) -> anyhow::Result<Self> {
-        Self::with_options(db, owner_pool, false).await
+        Self::with_options(db, owner_pool, false, false).await
+    }
+    pub async fn browser(db: &database::Database) -> anyhow::Result<Self> {
+        Self::with_options(db, None, false, true).await
     }
     #[cfg(target_os = "linux")]
     pub async fn paced(db: &database::Database) -> anyhow::Result<Self> {
-        Self::with_options(db, None, true).await
+        Self::with_options(db, None, true, false).await
     }
     async fn with_options(
         db: &database::Database,
         owner_pool: Option<sqlx::PgPool>,
         paced: bool,
+        browser: bool,
     ) -> anyhow::Result<Self> {
         database::upgrade(&db.pool).await?;
         sqlx::query("CREATE TABLE play_sessions_commands_test PARTITION OF play_sessions DEFAULT")
@@ -133,9 +137,19 @@ impl Fixture {
             );
         }
         let owner = AdmissionOwner::attach(&base.state).await?;
-        let app = playback::commands::router(base.state.clone())
-            .merge(playback::router(base.state.clone()))
-            .with_state(base.state.clone());
+        let config = base.state.runtime_config.load_full();
+        let commands = playback::commands::router(base.state.clone());
+        let app = if browser {
+            crate::router::build_router(base.state.clone()).merge(commands.layer(
+                crate::middleware::build_cors_layer(
+                    &config.auth.network_mode,
+                    &config.security.allowed_origins,
+                ),
+            ))
+        } else {
+            commands.merge(playback::router(base.state.clone()))
+        }
+        .with_state(base.state.clone());
         let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
         let url = format!("http://{}", listener.local_addr()?);
         let stop = CancellationToken::new();
@@ -286,9 +300,11 @@ impl Fixture {
     pub async fn close(&mut self) -> anyhow::Result<()> {
         self.owner.close();
         self.base.state.transcode_manager.close();
+        self.base.state.event_streams.close();
         self.stop.cancel();
         tokio::time::timeout(Duration::from_secs(15), async {
             self.close_http().await?;
+            self.base.state.event_streams.drain().await?;
             let admission = self.owner.drain().await;
             let output = self.base.state.transcode_manager.drain().await;
             admission?;

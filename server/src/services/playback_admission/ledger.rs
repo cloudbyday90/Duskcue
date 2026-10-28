@@ -36,7 +36,7 @@ impl Ledger {
     ) -> Result<Self, AdmissionError> {
         let instance = Uuid::now_v7();
         database::transaction(&pool, async |conn| {
-            sqlx::query("INSERT INTO playback_instances(id) VALUES ($1)")
+            sqlx::query("INSERT INTO playback_instances(id,start_intent_protocol) VALUES ($1,2)")
                 .bind(instance)
                 .execute(conn)
                 .await?;

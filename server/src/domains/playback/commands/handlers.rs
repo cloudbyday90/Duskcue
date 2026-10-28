@@ -29,7 +29,7 @@ pub(super) fn target<T>(path: Result<Path<T>, PathRejection>) -> Result<T, Comma
     path.map(|Path(value)| value)
         .map_err(|_| CommandError::Invalid)
 }
-fn json_type(headers: &HeaderMap) -> bool {
+pub(super) fn json_type(headers: &HeaderMap) -> bool {
     headers.get_all(header::CONTENT_TYPE).iter().count() == 1
         && headers
             .get(header::CONTENT_TYPE)

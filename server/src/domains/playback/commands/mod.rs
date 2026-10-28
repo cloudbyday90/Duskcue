@@ -15,6 +15,8 @@ mod preparation;
 mod publication;
 mod representation;
 pub mod service;
+mod settlement;
+mod starting;
 pub mod types;
 pub(crate) use ownership::Commands;
 
@@ -31,6 +33,10 @@ use axum::{
 };
 
 pub fn router(state: AppState) -> Router<AppState> {
+    state
+        .vod_commands
+        .mounted
+        .store(true, std::sync::atomic::Ordering::Release);
     Router::new()
         .route("/api/v1/playback-commands", post(handlers::start))
         .route("/api/v1/playback-commands/{id}", get(handlers::status))
@@ -39,6 +45,14 @@ pub fn router(state: AppState) -> Router<AppState> {
             post(handlers::renew),
         )
         .route("/api/v1/playback-commands/{id}/stop", post(handlers::stop))
+        .route(
+            "/api/v1/playback-commands/{id}/withdraw",
+            post(settlement::handlers::withdraw),
+        )
+        .route(
+            "/api/v1/playback-commands/{id}/settlement",
+            get(settlement::handlers::read),
+        )
         .route(
             "/api/v1/playback-commands/{id}/retirement",
             get(handlers::retirement),
@@ -80,4 +94,24 @@ pub fn router(state: AppState) -> Router<AppState> {
             crate::middleware::private_responses::problem_media_type,
         ))
         .with_state(state)
+}
+
+pub(super) async fn capability(state: &AppState) -> Option<serde_json::Value> {
+    if !state
+        .vod_commands
+        .mounted
+        .load(std::sync::atomic::Ordering::Acquire)
+    {
+        return None;
+    }
+    let owner = state.playback_admission.get()?;
+    owner
+        .sql(false, |conn| {
+            Box::pin(async move { settlement::compatible(conn).await })
+        })
+        .await
+        .ok()?;
+    Some(
+        serde_json::json!({"protocol":types::PROTOCOL,"features":["start-settlement","conditional-controls","checkpoints","lease-observation"]}),
+    )
 }

@@ -1176,5 +1176,16 @@
     "iptv_manage_state_enabled": "Enabled",
     "iptv_manage_state_disabled": "Disabled",
     "iptv_manage_not_playback": "Playback is not enabled by this configuration screen.",
-    "iptv_manage_missing": "The requested household configuration is unavailable. Reload metadata or ask the server administrator to review access."
+    "iptv_manage_missing": "The requested household configuration is unavailable. Reload metadata or ask the server administrator to review access.",
+    "tonight_player_command_preparing": "Playback was accepted. Preparing the source.",
+    "tonight_player_command_changing": "Changing the source. The previous output is being retired.",
+    "tonight_player_command_recovering": "Recovering this viewer with a verified replacement source.",
+    "tonight_player_command_uncertain": "The playback outcome is unconfirmed. Check status or close this viewer.",
+    "tonight_player_command_expired": "The confirmed playback lease expired. Check status before continuing.",
+    "tonight_player_command_status_required": "Playback is detached. Check status or close the retained viewer.",
+    "tonight_player_command_withdrawing": "Closing playback. Waiting for confirmed preparation and resource cleanup.",
+    "tonight_player_command_unavailable": "This viewer has no playable output. Choose a correction or close playback.",
+    "tonight_player_command_progress_uncertain": "The final progress update could not be confirmed. Cleanup continues independently.",
+    "tonight_player_command_check_status": "Check status",
+    "tonight_player_command_retry_after": "Status checking will be available after the server’s retry delay."
 }

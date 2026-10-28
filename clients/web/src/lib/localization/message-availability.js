@@ -1106,6 +1106,39 @@ export const incompleteMessages = {
     "tonight_player_closing": [
         "en"
     ],
+    "tonight_player_command_changing": [
+        "en"
+    ],
+    "tonight_player_command_check_status": [
+        "en"
+    ],
+    "tonight_player_command_expired": [
+        "en"
+    ],
+    "tonight_player_command_preparing": [
+        "en"
+    ],
+    "tonight_player_command_progress_uncertain": [
+        "en"
+    ],
+    "tonight_player_command_recovering": [
+        "en"
+    ],
+    "tonight_player_command_retry_after": [
+        "en"
+    ],
+    "tonight_player_command_status_required": [
+        "en"
+    ],
+    "tonight_player_command_unavailable": [
+        "en"
+    ],
+    "tonight_player_command_uncertain": [
+        "en"
+    ],
+    "tonight_player_command_withdrawing": [
+        "en"
+    ],
     "tonight_player_episode_label": [
         "en"
     ],

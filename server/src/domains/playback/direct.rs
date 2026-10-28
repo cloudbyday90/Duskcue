@@ -35,6 +35,9 @@ impl FileIdentity {
         owner: &std::sync::Arc<crate::services::vod_lifecycle::VodLifecycle>,
         details: &MediaFileDetails,
     ) -> Option<Self> {
+        if super::inspection::active() {
+            return Self::read(details).await;
+        }
         let output = owner.clone();
         let details = details.clone();
         tokio::time::timeout(
@@ -99,6 +102,17 @@ impl FileIdentity {
                 .is_some_and(|value| value.as_nanos().to_string() == self.modified_ns)
     }
     pub(super) async fn read(details: &MediaFileDetails) -> Option<Self> {
+        if super::inspection::active() {
+            let details = details.clone();
+            return super::inspection::run(move || {
+                let metadata = std::fs::symlink_metadata(&details.file_path).ok()?;
+                if !metadata.is_file() || metadata.file_type().is_symlink() {
+                    return None;
+                }
+                Self::from_metadata(&details, &metadata)
+            })
+            .await;
+        }
         tokio::time::timeout(std::time::Duration::from_secs(2), Self::inspect(details))
             .await
             .ok()
@@ -110,6 +124,9 @@ impl FileIdentity {
             return None;
         }
         let metadata = tokio::fs::metadata(&details.file_path).await.ok()?;
+        Self::from_metadata(details, &metadata)
+    }
+    fn from_metadata(details: &MediaFileDetails, metadata: &std::fs::Metadata) -> Option<Self> {
         if !metadata.is_file()
             || metadata.len() == 0
             || u64::try_from(details.file_size).ok()? != metadata.len()

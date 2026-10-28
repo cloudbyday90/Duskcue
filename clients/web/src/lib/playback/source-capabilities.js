@@ -5,6 +5,7 @@
 import { preparePlayback } from '../api/playback.js';
 import { boundedDecodingObservations } from './decoding-capabilities.js';
 import { playbackStartRequest } from './start-request.js';
+import { capability } from './commands/schema.js';
 
 const candidateIds = ['native_file', 'hls_video_copy_audio_copy', 'hls_video_copy_aac'];
 const fingerprint = (value) => typeof value === 'string' && /^[a-f0-9]{64}$/.test(value);
@@ -68,23 +69,28 @@ export async function prepareSourceCapabilities(mediaItemId, mediaFileId, option
     let timer;
     let abort;
     let timedOut = false;
+    let commandProtocol = null;
     const deadline = new Promise((resolve, reject) => {
         abort = () => { reject(new DOMException('Playback request cancelled', 'AbortError')); controller.abort(); };
         signal?.addEventListener('abort', abort, { once: true });
         timer = setTimeout(() => { timedOut = true; resolve(null); controller.abort(); }, timeoutMs);
     });
     const run = async () => {
-        const response = await prepare({ ...playbackStartRequest(mediaItemId, mediaFileId, options), capability_protocol: 1 }, { signal: controller.signal });
+        const response = await prepare({ ...playbackStartRequest(mediaItemId, mediaFileId, options), capability_protocol: 1 }, { signal: controller.signal, cache: 'no-store', maxJsonBytes: 32768 });
+        try { commandProtocol = capability(response?.command_capability); }
+        catch { throw new Error('VOD_CAPABILITY_REFUSED'); }
         if (controller.signal.aborted) return null;
         const prepared = sourcePreparation(response, { requiresHeaders, forceHls: options.forceHls === true });
-        if (!prepared) return null;
+        if (!prepared) { if (commandProtocol) throw new Error('VOD_CAPABILITY_REFUSED'); return null; }
         const observations = await observe(prepared.candidates.map((candidate) => candidate.configuration), { signal: controller.signal });
         if (controller.signal.aborted || observations.length !== prepared.candidates.length) return null;
-        return { version: 1, source_revision: prepared.source_revision, observations: observations.map((observation, index) => ({ candidate_id: prepared.candidates[index].id, ...observation })) };
+        const report = { version: 1, source_revision: prepared.source_revision, observations: observations.map((observation, index) => ({ candidate_id: prepared.candidates[index].id, ...observation })) };
+        Object.defineProperty(report, 'commandProtocol', { value: commandProtocol });
+        return report;
     };
-    try { return await Promise.race([run(), deadline]); }
+    try { const result = await Promise.race([run(), deadline]); if (commandProtocol && !result) throw new Error('VOD_CAPABILITY_REFUSED'); return result; }
     catch (error) {
-        if (signal?.aborted || error?.name === 'AbortError' && !timedOut || error?.status === 401 || error?.status === 403) throw error;
+        if (commandProtocol || error?.message === 'VOD_CAPABILITY_REFUSED' || signal?.aborted || error?.name === 'AbortError' && !timedOut || error?.status === 401 || error?.status === 403) throw error;
         return null;
     } finally {
         clearTimeout(timer);

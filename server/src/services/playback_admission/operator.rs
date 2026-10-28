@@ -11,6 +11,7 @@ pub async fn fence(pool: &PgPool, instance: Uuid, expected: i64) -> Result<i64, 
         let revision:Option<i64>=sqlx::query_scalar("UPDATE playback_instances SET fenced=true,revision=revision+1,fenced_at=clock_timestamp() WHERE id=$1 AND revision=$2 AND NOT fenced RETURNING revision")
             .bind(instance).bind(expected).fetch_optional(&mut *conn).await?;
         let revision=revision.ok_or(AdmissionError::Conflict)?;
+        sqlx::query("UPDATE playback_start_intents SET admission_fenced=true WHERE instance_id=$1 AND NOT admission_fenced").bind(instance).execute(&mut *conn).await?;
         sqlx::query("UPDATE playback_reservations SET state='retiring' WHERE instance_id=$1 AND state='held'").bind(instance).execute(&mut *conn).await?;
         sqlx::query("INSERT INTO playback_operator_events(instance_id,revision,operation) VALUES ($1,$2,'fence')").bind(instance).bind(revision).execute(conn).await?;
         Ok(revision)
@@ -32,6 +33,7 @@ pub async fn reconcile(
         sqlx::query("SELECT playback_vod_complete_outputs(id) FROM playback_reservations WHERE instance_id=$1 AND state<>'released' ORDER BY id").bind(instance).execute(&mut *conn).await?;
         sqlx::query("UPDATE playback_vod_commands c SET resources_completed=true,state=CASE WHEN c.state='preparing' THEN 'failed' WHEN c.state='ready' THEN 'stopping' ELSE c.state END FROM playback_reservations r WHERE r.id=c.reservation_id AND r.instance_id=$1 AND r.state<>'released'").bind(instance).execute(&mut *conn).await?;
         let count=sqlx::query("UPDATE playback_reservations SET state='released',released_at=clock_timestamp() WHERE instance_id=$1 AND state<>'released'").bind(instance).execute(&mut *conn).await?.rows_affected();
+        sqlx::query("UPDATE playback_start_intents SET admission_fenced=true,preparation_complete=true WHERE instance_id=$1").bind(instance).execute(&mut *conn).await?;
         sqlx::query("UPDATE playback_instances SET reconciled_at=clock_timestamp() WHERE id=$1").bind(instance).execute(&mut *conn).await?;
         sqlx::query("INSERT INTO playback_operator_events(instance_id,revision,operation) VALUES ($1,$2,'reconcile')").bind(instance).bind(revision).execute(conn).await?;
         Ok(count)

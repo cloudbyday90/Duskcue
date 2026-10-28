@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-Design proposal, October 28, 2026, against `903e670`. The user confirmed Q7 of [shared client migration](VOD_CLIENT_MIGRATION.md): include bounded server-owned withdrawal for an uncertain Start; permanently fence the exact UUID against later admission, retain already-owned preparation through actual completion, and report conclusive settlement. The complete concrete implementation contract still requires the repository's final shared-understanding confirmation. No implementation or new runtime qualification is claimed here.
+Implementation contract confirmed after `67c6efc`, October 28, 2026, against `903e670`. The user confirmed Q7 of [shared client migration](VOD_CLIENT_MIGRATION.md): include bounded server-owned withdrawal for an uncertain Start; permanently fence the exact UUID against later admission, retain already-owned preparation through actual completion, and report conclusive settlement. The user confirmed the complete concrete implementation contract. Implementation and qualification are in progress; no new passing runtime evidence is claimed yet.
 
 Preserve [admission](PLAYBACK_ADMISSION.md), [retention](PLAYBACK_RECEIPT_RETENTION.md), [command/delivery](VOD_COMMAND_DELIVERY.md), [reconfiguration](VOD_RECONFIGURATION.md), [output ownership](VOD_OUTPUT_LIFECYCLE.md) and [memory](MEMORY.md). This prerequisite supports controlled client qualification; it does not mount normal production routes, enable shared caps or add provider/recording playback.
 

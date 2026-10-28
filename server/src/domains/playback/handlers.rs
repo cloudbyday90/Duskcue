@@ -35,7 +35,7 @@ pub async fn prepare_playback(
     State(state): State<AppState>,
     user: AuthenticatedUser,
     Json(req): Json<PreparePlaybackRequest>,
-) -> Result<Json<PreparePlaybackResponse>, AppError> {
+) -> Result<(HeaderMap, Json<serde_json::Value>), AppError> {
     req.validate().map_err(|_| AppError::Validation {
         errors: vec![crate::error::FieldError {
             field: "source_capabilities".into(),
@@ -45,7 +45,7 @@ pub async fn prepare_playback(
         instance: Some("/api/v1/playback/prepare".into()),
     })?;
     let config = state.runtime_config.load();
-    Ok(Json(
+    let mut response = serde_json::to_value(
         service::prepare_playback(
             &state.pool,
             PlaybackActor {
@@ -58,7 +58,17 @@ pub async fn prepare_playback(
             user.transport,
         )
         .await?,
-    ))
+    )
+    .map_err(|error| AppError::Internal(error.into()))?;
+    if let Some(capability) = super::commands::capability(&state).await {
+        response["command_capability"] = capability;
+    }
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("private, no-store"),
+    );
+    Ok((headers, Json(response)))
 }
 
 pub async fn start_playback(

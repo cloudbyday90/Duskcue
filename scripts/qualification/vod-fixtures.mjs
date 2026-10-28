@@ -33,7 +33,7 @@ export async function createVodSource(source, directory, ffmpeg) {
     await unlink(raw);
     for (const caption of captions) await unlink(caption);
     const copyPath = join(directory, 'source.mp4');
-    const copy = await runBounded(ffmpeg, ['-v', 'error', '-nostdin', '-i', path, '-map', '0:0', '-map', '0:1', '-map', '0:2', '-c', 'copy', '-movflags', '+faststart', '-disposition:a:0', '0', '-disposition:a:1', 'default', '-n', copyPath], { timeoutMs: 30000, bytes: 1048576 });
+    const copy = await runBounded(ffmpeg, ['-v', 'error', '-nostdin', '-i', path, '-map', '0:0', '-map', '0:1', '-map', '0:2', '-c', 'copy', '-movflags', '+faststart', '-disposition:a:0', '0', '-disposition:a:1', 'default', '-metadata:s:a:0', 'language=eng', '-metadata:s:a:1', 'language=fra', '-n', copyPath], { timeoutMs: 30000, bytes: 1048576 });
     if (copy.code !== 0 || copy.signal) throw new Error('Owned VOD copy source creation failed.');
     const variants = [];
     for (const master of MASTERS.filter((m) => m.dynamicRange === 'sdr')) {

@@ -26,9 +26,10 @@ impl Ledger {
                 .fetch_one(&mut *conn).await?;
             let now: DateTime<Utc> = sqlx::query_scalar("SELECT date_trunc('milliseconds',clock_timestamp())")
                 .fetch_one(&mut *conn).await?;
-            let query=if operations==0 {queries::PRUNE}else{queries::PRUNE_SHARED};
+            let starts:i32=sqlx::query_scalar("SELECT playback_start_prune($1)").bind(if operations==0 {64i32} else {32i32}).fetch_one(&mut *conn).await?;
+            let query=if operations==0 && starts==0 {queries::PRUNE}else if operations==0 || starts==0 {queries::PRUNE_SHARED}else{queries::PRUNE_QUARTER};
             let deleted = sqlx::query_scalar::<_, Uuid>(query).bind(now).fetch_all(&mut *conn).await?;
-            Ok(MaintenanceReceipt { deleted: deleted.len()+operations, cutoff })
+            Ok(MaintenanceReceipt { deleted: deleted.len()+operations+usize::try_from(starts).map_err(|_|AdmissionError::Storage)?, cutoff })
         }).await
     }
 }

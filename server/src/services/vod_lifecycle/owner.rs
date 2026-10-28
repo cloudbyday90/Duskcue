@@ -131,6 +131,9 @@ impl VodLifecycle {
             Ok(())
         }
     }
+    pub(crate) fn shutdown_token(&self) -> CancellationToken {
+        self.stop.clone()
+    }
     pub(crate) async fn inspection_permit(
         &self,
         stop: &CancellationToken,
@@ -244,7 +247,7 @@ impl VodLifecycle {
         self.commands.close();
         self.response_tasks.close();
     }
-    pub(super) fn fail(&self) {
+    pub(crate) fn fail(&self) {
         self.failed.store(true, Ordering::Release);
     }
     pub async fn drain_commands(&self) -> Result<(), PlaybackError> {

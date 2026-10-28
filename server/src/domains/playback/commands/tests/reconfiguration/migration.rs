@@ -31,7 +31,7 @@ async fn insert(
             .await?;
     let id = Uuid::now_v7();
     let household = Uuid::now_v7();
-    sqlx::query("INSERT INTO playback_reservations(id,instance_id,household_id,fingerprint,kind) VALUES ($1,$2,$3,jsonb_build_object('session',uuidv7(),'profile',uuidv7())::text,'vod')").bind(id).bind(instance).bind(household).execute(pool).await?;
+    sqlx::query("INSERT INTO playback_reservations(id,instance_id,household_id,fingerprint,kind) VALUES ($1,$2,$3,jsonb_build_object('user',$3::uuid,'session',uuidv7(),'profile',uuidv7(),'version',1,'profile_revision',1,'transport',0,'subject',jsonb_build_object('Vod',jsonb_build_object('file',uuidv7(),'item',uuidv7())))::text,'vod')").bind(id).bind(instance).bind(household).execute(pool).await?;
     let history = (state == "ready").then(Uuid::now_v7);
     let stamp = chrono::Utc::now();
     sqlx::query("INSERT INTO playback_vod_commands(reservation_id,intent_hash,policy_hash,source_hash,delivery_mode,encodes,source_4k,state,history_id,history_started_at,generation_id,result,resources_completed,cleanup_uncertain) VALUES ($1,decode(repeat('11',32),'hex'),decode(repeat('22',32),'hex'),decode(repeat('33',32),'hex'),'transcode',true,false,$2,$3,$4,$5,$6,$7,$8)")
@@ -65,6 +65,16 @@ pub(in super::super) async fn backfill(db: &Database) -> anyhow::Result<()> {
     anyhow::ensure!(before == after);
     let (outputs,controls,operations):(i64,i64,i64)=sqlx::query_as("SELECT (SELECT count(*) FROM playback_vod_outputs WHERE uuid_extract_version(id)=7),(SELECT count(*) FROM playback_vod_controls),(SELECT count(*) FROM playback_vod_operations)").fetch_one(&db.pool).await?;
     anyhow::ensure!(outputs == 4 && controls == 4 && operations == 0);
+    let intents:i64=sqlx::query_scalar("SELECT count(*) FROM playback_start_intents i JOIN playback_reservations r ON r.id=i.id JOIN playback_vod_commands c ON c.reservation_id=i.id WHERE i.preparation_complete AND i.promoted AND i.intent_hash=c.intent_hash AND i.session_id=(r.fingerprint::jsonb->>'session')::uuid AND i.credential_version=(r.fingerprint::jsonb->>'version')::bigint AND i.transport=(r.fingerprint::jsonb->>'transport')::smallint AND i.profile_id=(r.fingerprint::jsonb->>'profile')::uuid").fetch_one(&db.pool).await?;
+    anyhow::ensure!(intents == 4);
+    let accounting: i64 =
+        sqlx::query_scalar("SELECT retained_count FROM playback_retention WHERE id")
+            .fetch_one(&db.pool)
+            .await?;
+    anyhow::ensure!(
+        accounting == 4,
+        "backfill must not count intent/reservation pairs twice"
+    );
     for id in [pending, uncertain] {
         let (claim,resources,generation):(bool,bool,Option<Uuid>)=sqlx::query_as("SELECT v.claim_encodes,o.resources_completed,o.generation_id FROM playback_vod_controls v JOIN playback_vod_outputs o ON o.id=v.current_output WHERE v.reservation_id=$1").bind(id).fetch_one(&db.pool).await?;
         anyhow::ensure!(claim && !resources && generation.is_none());

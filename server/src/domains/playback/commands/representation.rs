@@ -50,6 +50,11 @@ pub(super) async fn status(
     cleanup: bool,
     intent: Option<[u8; 32]>,
 ) -> Result<StatusResponse, AdmissionError> {
+    if !cleanup
+        && let Some(pending) = super::settlement::pending(state, owner, scope, id, intent).await?
+    {
+        return Ok(pending);
+    }
     let Some((row, request)) = load(state, owner, scope, id, cleanup).await? else {
         let now = owner
             .sql(cleanup, |conn| {

@@ -27,6 +27,7 @@ export function createMediaSource({ video, loadHls = null, shouldPlay = () => tr
     let hlsRecovery = null;
     let disposed = false;
     let attachedUrl = null;
+    let metadataListener = null;
     let timeline = sourceTimeline({ generation });
 
     function publishTimeline(mode, details = null) {
@@ -54,6 +55,8 @@ export function createMediaSource({ video, loadHls = null, shouldPlay = () => tr
     }
 
     function release() {
+        if (metadataListener) video.removeEventListener?.('loadedmetadata', metadataListener);
+        metadataListener = null;
         generation += 1;
         attachedUrl = null;
         hlsRecovery?.dispose();
@@ -111,8 +114,18 @@ export function createMediaSource({ video, loadHls = null, shouldPlay = () => tr
             if (requiresHeaders()) throw new Error('Authenticated playback requires HLS');
             if (!current()) return;
             publishTimeline(url.includes('.m3u8') ? 'native-hls' : 'direct');
+            if (startPosition > 0) {
+                metadataListener = () => {
+                    video.removeEventListener?.('loadedmetadata', metadataListener);
+                    metadataListener = null;
+                    if (!current()) return;
+                    try { video.currentTime = startPosition; play(current, autoplay); }
+                    catch (error) { fail(error, false, true); }
+                };
+                video.addEventListener?.('loadedmetadata', metadataListener);
+            }
             video.src = url;
-            play(current, autoplay);
+            if (startPosition === 0) play(current, autoplay);
         } catch (error) { if (current()) fail(error); }
     }
 

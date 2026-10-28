@@ -8,15 +8,29 @@ use super::media_source::MediaFileDetails;
 use crate::services::source_capabilities::ScanIdentity;
 
 pub(super) async fn matches(details: &MediaFileDetails, scan: &ScanIdentity) -> bool {
+    if super::inspection::active() {
+        let details = details.clone();
+        let scan = scan.clone();
+        return super::inspection::run(move || {
+            let mut options = std::fs::OpenOptions::new();
+            options.read(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+            }
+            let file = options.open(&details.file_path).ok()?;
+            Some(current(&details, &scan, &file.metadata().ok()?))
+        })
+        .await
+        .unwrap_or(false);
+    }
     tokio::time::timeout(Duration::from_secs(2), inspect(details, scan))
         .await
         .unwrap_or(false)
 }
 
 async fn inspect(details: &MediaFileDetails, scan: &ScanIdentity) -> bool {
-    let Some(scanned_modified) = details.file_modified_at else {
-        return false;
-    };
     let mut options = tokio::fs::OpenOptions::new();
     options.read(true);
     #[cfg(unix)]
@@ -25,6 +39,13 @@ async fn inspect(details: &MediaFileDetails, scan: &ScanIdentity) -> bool {
         return false;
     };
     let Ok(metadata) = file.metadata().await else {
+        return false;
+    };
+    current(details, scan, &metadata)
+}
+
+fn current(details: &MediaFileDetails, scan: &ScanIdentity, metadata: &std::fs::Metadata) -> bool {
+    let Some(scanned_modified) = details.file_modified_at else {
         return false;
     };
     let Some(modified) = metadata

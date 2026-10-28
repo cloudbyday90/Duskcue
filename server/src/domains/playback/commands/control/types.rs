@@ -88,6 +88,7 @@ pub(super) struct ConfigurationResponse {
     pub playback_state: String,
     pub recovery_budget: Value,
     pub recovery_offer: Option<RecoveryOffer>,
+    pub worker_recovery: bool,
 }
 
 #[derive(Serialize)]
