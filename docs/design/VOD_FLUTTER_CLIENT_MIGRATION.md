@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-Research and design review, October 28, 2026, against `5576b032a0e80bc8a956d7dab8f51f4fed980971` on main. The next recommended item is the existing Flutter interactive player, following the qualified [shared browser/Tauri migration](VOD_CLIENT_MIGRATION.md) and [Start settlement](VOD_START_SETTLEMENT.md). This is a research checkpoint and provisional recommendation, not an approved implementation contract, application change or native runtime qualification. Initial mobile-specific questions are pending. No branch, release, dependency update, emulator installation or production enablement is included at this checkpoint.
+Research and design review, October 28, 2026, against `5576b032a0e80bc8a956d7dab8f51f4fed980971` on main. The next recommended item is the existing Flutter interactive player, following the qualified [shared browser/Tauri migration](VOD_CLIENT_MIGRATION.md) and [Start settlement](VOD_START_SETTLEMENT.md). This is a research checkpoint and provisional recommendation, not an approved implementation contract, application change or native runtime qualification. Q1–Q6 are confirmed: Android interactive/emulator first, one bounded app-scoped journal, server-positive worker recovery with typed decoder downgrade deferred, independent ambient lifetime, explicit Play after background reconciliation and a bounded video-encoded HLS lane. Native media transport ownership and final concrete-contract confirmation remain pending. No branch, release, dependency update, emulator installation or production enablement is included at this checkpoint.
 
 Preserve the qualified [protocol-two backend](VOD_RECONFIGURATION.md), [command/delivery](VOD_COMMAND_DELIVERY.md), [admission](PLAYBACK_ADMISSION.md), [retention](PLAYBACK_RECEIPT_RETENTION.md), [output lifecycle](VOD_OUTPUT_LIFECYCLE.md), [source capabilities](PLAYBACK_SOURCE_CAPABILITIES.md) and [memory](MEMORY.md) authorities. Local library, recording and provider source choices retain the separate [Local → Recording → approved provider VOD](IPTV_SOURCE_LIFECYCLE.md) policy; Watch live stays explicit. Migrating Flutter creates no new client app or household model.
 
@@ -11,6 +11,18 @@ Preserve the qualified [protocol-two backend](VOD_RECONFIGURATION.md), [command/
 Do not repeat the settled lifecycle interview. Positive complete acknowledgement selects protocol two; an initially unsupported server retains the legacy path; selected/uncertain new-lane work cannot downgrade. Capture exact origin/account/session/profile/context/credential/transport, generate UUIDv7 from authenticated database-time evidence, reuse one immutable identity/body per intended mutation and never automatically replay an uncertain command. Accepted work is server-owned.
 
 One logical viewer/history survives same-item/file seek, tracks/quality and recovery. Adopt only the current immutable output and its server-supplied source-time origin. Renewal is independent of sequenced actual-output checkpoints. Keep the sixty-second lease, conclusive exact-UUID Start withdrawal, bounded final checkpoint before cleanup, at-most-once-per-second/sixty-second status monitoring and explicit reconciliation after uncertainty. Profile-only changes may retain cleanup-only identity; stronger scope changes clear the local record and rely on server retirement. Clearing local data never proves release. Production mounting/advertisement/caps and remaining online families stay separate until qualified.
+
+## Confirmed mobile decisions
+
+1. **Q1 confirmed:** implement and qualify Android interactive playback first with an isolated emulator. Provision a bounded owned test environment; leave iOS scaffold/device qualification, native ambient migration, offline playback and production caps separate.
+2. **Q2 confirmed:** one app-scoped journal, at most four KiB, using existing secure storage. Store command IDs and exact scope identifiers, without credentials, media metadata or request bodies. Restart offers explicit status/cleanup recovery; no automatic Start or playback resume.
+3. **Q3 confirmed:** support server-confirmed worker recovery. Generic plugin errors cannot establish decoder proof; automatic native decoder downgrade remains deferred until typed observation/probing is qualified.
+
+4. **Q4 confirmed:** preserve existing independent interactive/ambient lifetimes with no automatic stop/handoff. Once both paths are migrated, simultaneous sessions represent two viewers. Platform audio focus remains separate from server cleanup; this increment claims neither tracked legacy ambient viewers nor production-wide cap enforcement.
+5. **Q5 confirmed:** pause interactive video on lost activity, renew while Dart can execute, reconcile fresh status on return and require an explicit Play action. Disable uncontrolled plugin auto-resume; suspension or uncertainty never creates a new Start.
+6. **Q6 confirmed:** qualify the bounded H.264/AAC, SDR/stereo, up-to-1080p video-encoded HLS lane first. Require current transcode permission, transcode-viewer capacity and physical encoder capacity. Compatible AAC may pass through, as clarified during the question round; direct/copied video, broader formats and unsupported HDR conversion remain outside this lane.
+
+These answers settle the mobile behavior frontier. The native media transport owner and final implementation/qualification contract are not silently assumed.
 
 ## Repository and local-environment findings
 
@@ -61,6 +73,18 @@ URLs were discovered with the connected MCP search service and retrieved or chec
 
 These ownership, persistence, polling and rollout choices are engineering recommendations from the sources and inspected contracts. The sources do not prescribe Duskcue's journal policy, lease length or qualification order.
 
+## Native media transport findings and pending choice
+
+Further read-only inspection found that locked video_player_android constructs a private `HttpVideoAsset` with `DefaultHttpDataSource.Factory`, sets cross-protocol redirects on and installs default HTTP headers. Its public creation API exposes URI/format/headers/user agent, without a data-source factory or per-request policy hook. The app declares Media3 1.10.1 while the plugin declares 1.9.2; final resolved dependency identity still needs build evidence. Cached 1.10.1 class inspection confirms a twenty-hop manual HTTP/HTTPS redirect loop that reapplies default request properties at each hop without an origin comparison. No current Duskcue redirect or credential exposure is alleged by that capability finding.
+
+Dio's redirect option does control its Dart upstream transport, but does not control this native player. Initial output-URL validation therefore cannot establish exact-origin credentials for every native HLS request. Neither a superficial URL check nor a wrapper that delegates to the same redirecting data source establishes the boundary.
+
+**Q7 is pending:** keep video_player bearer-free behind a small app-owned loopback HLS relay, or replace its interactive integration with a narrow app-owned native Media3 adapter. The recommended relay would bind only literal loopback with an ephemeral in-memory capability, accept only the current viewer/output's allowlisted generated HLS resources, attach the captured bearer upstream, refuse redirects, preserve normal TLS verification and cancel on scope/output changes. It is not a provider connector, general proxy, download cache or decoder-proof adapter. No listener, credential or media URL would be restored from the journal. A plugin fork is not recommended.
+
+The relay must own finite native connections, upstream requests, response bytes and application queues. Plain `HttpServer.bind` request-callback counters do not bound pre-header sockets: the Dart implementation accepts/parses them internally before emitting a request. Installed Dart 3.12.2 has a fixed one-MiB header-parser budget, while its ordinary socket reads aggregate available input rather than honoring an application-selected chunk size. `idleTimeout` is not an absolute per-accept header deadline. `HttpClient.maxConnectionsPerHost` also has an internal pending queue, so it cannot replace explicit caller admission. Socket-level acceptance/deadline ownership and a chosen finite HTTP subset must be named in the final design; no unsupported small-memory claim follows from high-level stream APIs alone.
+
+The server's existing subset helps bound this design: generated rendition names are at most 64 ASCII alphanumeric/underscore/hyphen characters; media resources are `init.mp4` or numeric `seg_*.m4s` with bounded names. Existing rewriting binds references to the exact viewer/output, allows media-playlist URI tags only for `EXT-X-MAP`, and does not expose encrypted-HLS/key handling. The relay should reuse that narrow subset rather than accepting arbitrary upstream URI references. Its explicit admission, parser/streaming limits, storage/native completion semantics and actual-emulator attack/failure cases remain part of the pending concrete implementation contract.
+
 ## Alternatives and tradeoffs
 
 | Choice | Pros | Cons | Provisional recommendation |
@@ -72,6 +96,8 @@ These ownership, persistence, polling and rollout choices are engineering recomm
 | Treat generic video errors as decoder proof | Superficially automatic recovery. | Misclassifies network/auth/unsupported-source errors and violates evidence/budget boundaries. | Reject fabricated proof. |
 | Typed native decoder probe now | Can preserve qualified automatic downgrade on supported devices. | Native observer/probe and descriptor/device qualification become part of this increment. | Q3 recommends deferral while retaining server-positive worker recovery. |
 | Real Android emulator first | Exercises actual plugin, app storage, bearer HLS and lifecycle on this host. | Requires isolated SDK runtime provisioning, measured budgets and honest device-fidelity limits. | Initial Q1 recommends it; actual iOS remains separate. |
+| Bearer-free loopback relay | Preserves the locked player while allowing exact-server upstream policy and output cancellation. | Adds socket/HTTP/stream ownership and adversarial qualification; plain HttpServer callbacks are insufficient. | Q7 recommends it, pending the user's choice and concrete bounds. |
+| App-owned native Media3 adapter | Can own each network request and later expose typed evidence without a new playback engine. | Replaces current plugin integration and needs native view/channel/lifecycle qualification. | Q7 alternative; not silently selected. |
 | Unit/APK-only qualification | Fast initial feedback without a runtime install. | Cannot establish native playback, headers, restoration, interruption or cleanup. | Useful supporting evidence, insufficient for a native playback claim. |
 
 ## Recommended stack and modular plan
@@ -80,17 +106,13 @@ Keep Flutter 3.44.4/Dart 3.12.2, current Riverpod, Dio 5.10.0, secure storage 10
 
 Separate typed context/schema, captured bounded transport, server-time UUIDv7, serialized journal, retained command/status owner, lease, checkpoint epochs, conditional changes/recovery, native media ownership and the widget adapter. App/session invalidation and provider composition must outlive route disposal. Preserve offline playback and current legacy behavior before positive new-lane selection. Avoid a second global orchestrator or shared mutable credential capture.
 
-After the design choices and final concrete contract are confirmed: implement focused units for exact scope/replay/uncertain outcomes, then widget semantics/navigation and actual native completion races; add managed toolchain/runtime ownership; build an isolated Android qualification app; exercise real PostgreSQL/FFmpeg Start/change/renew/checkpoint/withdrawal and bearer direct/HLS transport. Bind results to current source/app/tool identities and require verified cleanup. Decoder, source-format and iOS claims must match the selected scope. Existing backend source/root limits and normal production-off state remain unchanged.
+After the design choices and final concrete contract are confirmed: implement focused units for exact scope/replay/uncertain outcomes, then widget semantics/navigation and actual native completion races; add managed toolchain/runtime ownership; build an isolated Android qualification app; exercise real PostgreSQL/FFmpeg Start/change/renew/checkpoint/withdrawal and the agreed native bearer-media lane. Bind results to current source/app/tool identities and require verified cleanup. Decoder, source-format and iOS claims must match the selected scope. Existing backend source/root limits and normal production-off state remain unchanged.
 
 ## Open decision tree and outcome
 
-Initial frontier questions were sent through the text question tool:
+Q1–Q6 above are confirmed. Native media request scoping is the remaining architectural question under factual inspection. Locked Android plugin code hard-codes a redirect-capable Media3 data source and exposes no public injection point for an exact-origin/no-redirect policy. Cached Media3 bytecode confirms that its manual redirect loop can carry configured request headers across HTTP/HTTPS origins. This is an implementation capability, not a claim that current Duskcue outputs redirect.
 
-1. Q1: Android interactive plus isolated emulator qualification first, versus protocol foundation only; iOS native scaffold/runtime, ambient, offline and production caps separate.
-2. Q2: One app-scoped, four-KiB secure-storage IDs/context journal with explicit restart status/cleanup, versus memory-only identity.
-3. Q3: Server-positive worker recovery with automatic decoder proof/downgrade deferred, versus adding typed native evidence/probe qualification now.
-
-No answer or final shared-understanding confirmation has been assumed. Subsequent scope-dependent decisions include interactive/ambient concurrency or handoff, background/resume play intent, source-format lanes and truthful native qualification boundaries. Existing accepted web/backend rules remain settled.
+Strict JSON/resource URL checks alone therefore cannot establish the desired native bearer-media request boundary. The final concrete contract must name the media transport owner, finite streaming/socket/queue limits, current scope cancellation, observed native/storage completion and the actual emulator qualification. Q7 has been sent as the remaining transport-owner choice. No application implementation or final shared-understanding confirmation has been assumed. Existing accepted web/backend rules remain settled.
 
 GitHub MCP's repository-wide open-PR search returns zero candidates. There is no random local PR patch or stale Dependabot rebase to apply; prior [PR 5 cleanup](../operations/DEPENDABOT_MAINTENANCE.md) remains complete. No PR, alert or dependency was mutated. Supplied private IPTV feeds are unnecessary and unused.
 

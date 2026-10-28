@@ -12,7 +12,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## October 2026 Flutter interactive VOD migration (RESEARCH AND DESIGN REVIEW)
 
-**Authority:** [Flutter migration](docs/design/VOD_FLUTTER_CLIENT_MIGRATION.md), researched through official MCP sources against `5576b03` on main. Carry forward the qualified shared-player/backend rules. Initial mobile-specific questions cover Android/emulator scope, an app-scoped recovery journal and truthful decoder recovery; answers and final concrete-contract confirmation remain pending.
+**Authority:** [Flutter migration](docs/design/VOD_FLUTTER_CLIENT_MIGRATION.md), researched through official MCP sources against `5576b03` on main. Carry forward the qualified shared-player/backend rules. Q1–Q6 confirm Android interactive/emulator first, one bounded app-scoped journal, worker recovery with decoder proof deferred, ambient independence, explicit Play after background reconciliation and bounded video-encoded HLS. Native media transport ownership and final concrete-contract confirmation remain pending.
 
 **Findings:** the Flutter screen owns asynchronous playback and loses cleanup identity/outcomes; cached auth lacks exact server context, while the existing context endpoint already supplies it. Native ambient is independent legacy ownership. Installed plugin errors cannot prove decoder failure. No emulator/device is present, iOS has no native target, and managed mobile runtime tooling is absent. The authority records exact locked tools/packages, alternatives, security/accessibility implications and proposed modular services. Research/documentation only; no application/build/runtime claim. No open PR or stale Dependabot rebase applies.
 
