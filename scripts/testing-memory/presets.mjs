@@ -5,6 +5,17 @@
 // See LICENSE file for details.
 
 export const PRESETS = {
+    'flutter-tooling-test': { policy: 'unit', heapMiB: 128, command: 'node', args: ['--test', '--test-concurrency=1', 'scripts/testing-memory/flutter-release.test.mjs'] },
+    'flutter-sdk-update': { policy: 'build', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/flutter-sdk.mjs'] },
+    'flutter-version': { policy: 'check', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/flutter-command.mjs', 'version'] },
+    'flutter-pub': { policy: 'check', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/flutter-command.mjs', 'pub'] },
+    'flutter-check': { policy: 'check', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/flutter-command.mjs', 'analyze'] },
+    'flutter-test': { policy: 'unit', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/flutter-command.mjs', 'test'] },
+    'flutter-format': { policy: 'check', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/flutter-command.mjs', 'format'] },
+    'flutter-format-write': { policy: 'check', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/flutter-command.mjs', 'format-write'] },
+    'flutter-fix-braces': { policy: 'check', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/flutter-command.mjs', 'fix'] },
+    'flutter-apk': { policy: 'build', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/flutter-command.mjs', 'build'] },
+    'flutter-apk-production': { policy: 'build', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/flutter-command.mjs', 'build-production'] },
     'vod-client': { policy: 'browser', heapMiB: 3072, command: 'node', args: ['scripts/testing-memory/qualify-vod-output.mjs', '--client-only'] },
     'vod-client-native': { policy: 'native', heapMiB: 1536, command: 'node', args: ['scripts/testing-memory/qualify-vod-output.mjs', '--client-only'] },
     'vod-linux': { policy: 'build', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/qualify-playback-recovery.mjs', '--vod-output'] },

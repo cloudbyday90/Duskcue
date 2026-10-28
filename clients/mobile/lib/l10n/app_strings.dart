@@ -60,6 +60,29 @@ class AppStrings {
   String get playbackEntry => 'Playback entry';
   String get playbackTaskNotice => 'Playback is not ready for this item.';
   String get loadingPlayback => 'Starting playback...';
+  String get trackOff => 'Off';
+  String get close => 'Close';
+  String get checkPlaybackStatus => 'Check status';
+  String get stopPlayback => 'Stop and close';
+  String get progressUnconfirmed => 'Recent progress could not be confirmed. Cleanup can still continue.';
+  String commandState(String state) => switch (state) {
+    'idle' || 'checking' => 'Checking playback support…',
+    'starting' || 'preparing' => 'Preparing playback…',
+    'changing' => 'Preparing the replacement source…',
+    'ready' => 'Playback ready',
+    'settled' => 'Playback cleanup confirmed',
+    'cleanup' => 'A previous playback needs status or cleanup review.',
+    'withdrawing' || 'pending' || 'stopping' => 'Waiting for confirmed cleanup…',
+    _ => 'Playback is unavailable. Check status or stop playback.',
+  };
+  String commandError(String code) => switch (code) {
+    'storage_unavailable' || 'storage_busy' => 'Playback recovery storage is unavailable. No command will be repeated.',
+    'lease_uncertain' => 'The viewing lease could not be confirmed. Check status before playing.',
+    'scope_changed' => 'Your session or profile changed. Playback has detached.',
+    'native_cleanup_pending' => 'Device cleanup is unconfirmed. A new player cannot attach yet.',
+    'checkpoint_required' => 'Confirmed playback progress is required before this change.',
+    _ => 'The playback outcome could not be confirmed. Check status or stop; the command will not be repeated.',
+  };
   String get audio => 'Audio';
   String get subtitles => 'Subtitles';
   String get quality => 'Quality';

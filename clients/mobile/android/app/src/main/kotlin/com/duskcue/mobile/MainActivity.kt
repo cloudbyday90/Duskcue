@@ -6,7 +6,7 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.plugin.common.MethodChannel
 
-class MainActivity : FlutterActivity() {
+open class MainActivity : FlutterActivity() {
     private val storageChannel = "duskcue/mobile_storage"
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {

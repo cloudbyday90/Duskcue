@@ -17,6 +17,19 @@ android {
         versionName = flutter.versionName
     }
 
+    flavorDimensions += "environment"
+    productFlavors {
+        production {
+            dimension = "environment"
+            isDefault = true
+        }
+        qualification {
+            dimension = "environment"
+            applicationIdSuffix = ".qualification"
+            versionNameSuffix = "-qualification"
+        }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -39,3 +52,19 @@ dependencies {
     implementation "androidx.media3:media3-session:$media3_version"
     implementation "androidx.media3:media3-ui:$media3_version"
 }
+
+def qualificationGraph = tasks.register("qualificationRuntimeGraph") {
+    doLast {
+        def components = configurations.qualificationDebugRuntimeClasspath.incoming.resolutionResult.allComponents
+        if (components.size() > 1024) throw new GradleException("Qualification dependency graph exceeded its bound")
+        def rows = components.collect { component ->
+            [id: component.id.displayName, module: component.moduleVersion?.toString(),
+                dependencies: component.dependencies.findAll { it instanceof org.gradle.api.artifacts.result.ResolvedDependencyResult }
+                    .collect { it.selected.id.displayName }.sort()]
+        }.sort { left, right -> left.id <=> right.id }
+        def target = layout.buildDirectory.file("outputs/qualification/runtime-graph.json").get().asFile
+        target.parentFile.mkdirs()
+        target.text = groovy.json.JsonOutput.toJson(rows)
+    }
+}
+tasks.matching { it.name == "assembleQualificationDebug" }.configureEach { finalizedBy(qualificationGraph) }

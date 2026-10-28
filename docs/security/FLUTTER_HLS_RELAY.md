@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-Concrete design proposal, October 28, 2026. Q7 of [Flutter interactive migration](../design/VOD_FLUTTER_CLIENT_MIGRATION.md) is confirmed: retain the locked player behind a bounded owned loopback HLS relay. All seven product choices are settled; final confirmation of this concrete contract and implementation/qualification is pending. No listener, application implementation, native runtime result or production enablement is claimed by this document.
+Implementation checkpoint, October 28, 2026. Q7 and the complete contract at `21cd8b1` are confirmed. The existing player now uses modular owned loopback relay services; current unit/socket and APK preparation results are recorded below. Actual Android transport/decoder/backpressure qualification is still pending. Production enablement is not claimed.
 
 The [command/delivery](../design/VOD_COMMAND_DELIVERY.md), [reconfiguration](../design/VOD_RECONFIGURATION.md), [Start settlement](../design/VOD_START_SETTLEMENT.md) and [memory](../design/MEMORY.md) authorities retain their server-side scope. This is a client media-transport boundary, not a provider connector, Dispatcharr replacement, download cache or server authorization override.
 
@@ -12,7 +12,7 @@ Locked video_player_android owns a redirect-capable Media3 data source without a
 
 The selected relay keeps the server bearer out of the native player. It can enforce captured server/output authority without a player fork or new engine. Its costs are an owned local listener, a deliberately narrow HTTP/HLS subset, streaming/backpressure complexity and actual-device-process qualification. Typed decoder proof remains deferred; a relay does not make generic player errors into decoder evidence.
 
-Official source links were discovered/retrieved with MCP search on October 28: [Android media troubleshooting](https://developer.android.com/media/media3/exoplayer/troubleshooting?hl=en), [Dart HttpServer](https://api.dart.dev/dart-io/HttpServer-class.html), [RawServerSocket](https://api.dart.dev/dart-io/RawServerSocket-class.html), [bounded RawSocket.read](https://api.dart.dev/dart-io/RawSocket/read.html), [HttpClient](https://api.dart.dev/dart-io/HttpClient-class.html) and [automatic decompression](https://api.dart.dev/dart-io/HttpClient/autoUncompress.html). Inspected Dart 3.12.2 and locked native sources govern exact behavior. The resource numbers below are Duskcue engineering limits, not limits prescribed by those APIs.
+Official source links were discovered/retrieved with MCP search on October 28: [Android media troubleshooting](https://developer.android.com/media/media3/exoplayer/troubleshooting?hl=en), [Dart HttpServer](https://api.dart.dev/dart-io/HttpServer-class.html), [RawServerSocket](https://api.dart.dev/dart-io/RawServerSocket-class.html), [bounded RawSocket.read](https://api.dart.dev/dart-io/RawSocket/read.html), [HttpClient](https://api.dart.dev/dart-io/HttpClient-class.html) and [automatic decompression](https://api.dart.dev/dart-io/HttpClient/autoUncompress.html). Starting inspection used Dart 3.12.2 and the locked native sources. The operator-updated Dart 3.13.7 passes the current control/socket suite; actual native qualification remains required. The resource numbers below are Duskcue engineering limits, not limits prescribed by those APIs.
 
 ## Authority and routing
 
@@ -56,4 +56,10 @@ Unit/socket tests must cover incomplete/oversized headers, concurrent acceptance
 
 Actual [Android qualification](../ci/ANDROID_PLAYBACK_QUALIFICATION.md) must show native Media3 consumes only bearer-free loopback resources while relay requests authenticate to the real controlled backend. Bind output revisions, source position and scope changes to native playback; confirm listener/socket/controller cleanup and zero owned emulator/ADB/test-server processes. Fixture trust and fault injection stay qualification-only.
 
-Design is concrete; implementation and runtime results are pending final shared-understanding confirmation. Precise source/tool/app identities, corrected failures and limitations will be added here after execution. No claim covers direct/copied-video, encrypted HLS, arbitrary providers, other mobile platforms or production-cap rollout.
+The concrete contract is confirmed. Modular request/parser, playlist, raw-socket connection, upstream and output-owner services are implemented. The current Flutter suite passes 52 tests, including real socket/HTTP authorization, wrong-output references, redirect canaries, coding/range refusal and incomplete-header closure. This is an initial implementation checkpoint; the complete adversarial matrix, measured native backpressure and actual emulator qualification remain required. Precise source/tool/app identities, corrected failures and limitations will be added here after execution. No claim covers direct/copied-video, encrypted HLS, arbitrary providers, other mobile platforms or production-cap rollout.
+
+## Implementation checkpoint
+
+The current [Flutter/Dart toolchain](../ci/FLUTTER_TOOLCHAIN.md) is operator-updated to 3.47.8/3.13.7. Both APK flavors compile. The native player receives only a loopback capability URI; upstream requests attach captured bearer/context and refuse redirects. Native initialization/disposal and relay completion remain retained; timeout does not authorize another attachment. Completed native and network cleanup are joined before releasing the generation. Reserved cleanup context reads use the cleanup budget; screen disposal does not replay an already-attempted withdrawal.
+
+No native transport, memory-peak, codec, physical-device or complete penetration-test claim follows from these source/unit/build checks. The remaining acceptance cases above and [Android qualification](../ci/ANDROID_PLAYBACK_QUALIFICATION.md) still govern completion.

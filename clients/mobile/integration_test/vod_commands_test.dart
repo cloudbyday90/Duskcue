@@ -1,0 +1,166 @@
+// Duskcue — Self-hosted media streaming server
+// Copyright (C) 2026-2026 Duskcue Contributors
+// Licensed under AGPL-3.0. See LICENSE for details.
+
+import 'dart:convert';
+import 'dart:ui' as ui;
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:integration_test/integration_test.dart';
+import 'package:duskcue_mobile/l10n/app_strings.dart';
+import 'package:duskcue_mobile/playback/commands/clock.dart';
+import 'package:duskcue_mobile/playback/commands/controller.dart';
+import 'package:duskcue_mobile/playback/commands/journal.dart';
+import 'package:duskcue_mobile/playback/commands/scope.dart';
+import 'package:duskcue_mobile/playback/commands/transport.dart';
+import 'package:duskcue_mobile/playback/commands/wire.dart';
+import 'package:duskcue_mobile/playback/coordinator.dart';
+import 'package:duskcue_mobile/playback/provider.dart';
+import 'package:duskcue_mobile/screens/command_playback_screen.dart';
+import 'package:video_player/video_player.dart';
+
+void main() {
+  final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
+  const channel = MethodChannel('duskcue/qualification');
+  testWidgets(
+    'actual Android encoded HLS retains viewer and confirms cleanup',
+    (tester) async {
+      final raw = await channel.invokeMethod<String>('bootstrap');
+      require(raw != null && utf8.encode(raw).length <= 4096);
+      final fixture = decodeWire(utf8.encode(raw!));
+      final origin = Uri.parse(text(fixture['origin']));
+      require(origin.host == '127.0.0.1' && origin.scheme == 'http');
+      final identity = PlaybackIdentity(
+        origin: origin,
+        token: text(fixture['token'], max: 2048),
+        credentialEpoch: 1,
+        profileEpoch: 1,
+        user: entity(fixture['user']),
+        profile: entity(fixture['profile']),
+        ready: true,
+      );
+      final commands = PlaybackCommands(
+        PlaybackTransport(identity: () => identity, clock: PlaybackClock()),
+        PlaybackJournal(SecureJournalStorage()),
+      );
+      final coordinator = PlaybackCoordinator(commands);
+      Future<void> until(bool Function() condition, {int seconds = 30}) async {
+        final end = DateTime.now().add(Duration(seconds: seconds));
+        while (!condition() && DateTime.now().isBefore(end)) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(
+          condition(),
+          isTrue,
+          reason: 'Bounded native observation failed',
+        );
+      }
+
+      try {
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              playbackCoordinatorProvider.overrideWithValue(coordinator),
+            ],
+            child: MaterialApp(
+              localizationsDelegates: [const AppStringsDelegate()],
+              supportedLocales: AppStrings.supportedLocales,
+              home: CommandPlaybackScreen(itemId: entity(fixture['item'])),
+            ),
+          ),
+        );
+        await until(
+          () =>
+              coordinator.native.controller?.value.isInitialized == true &&
+              !coordinator.attaching,
+        );
+        final start = commands.record!.start,
+            history = commands.receipt!.ready!.history;
+        await until(
+          () =>
+              coordinator.native.controller!.value.position.inMilliseconds >=
+              500,
+        );
+        await binding.convertFlutterSurfaceToImage();
+        await tester.pump();
+        final frame = await binding.takeScreenshot('android-decoded-frame');
+        require(frame.length <= 16 * 1024 * 1024);
+        final codec = await ui.instantiateImageCodec(Uint8List.fromList(frame));
+        final image = (await codec.getNextFrame()).image;
+        final pixels = await image.toByteData(
+          format: ui.ImageByteFormat.rawRgba,
+        );
+        require(pixels != null);
+        final rect = tester.getRect(find.byType(VideoPlayer));
+        final scale = tester.view.devicePixelRatio;
+        final colors = <int>{};
+        for (var row = 1; row < 5; row++) {
+          for (var column = 1; column < 5; column++) {
+            final x = ((rect.left + rect.width * column / 5) * scale)
+                .round()
+                .clamp(0, image.width - 1);
+            final y = ((rect.top + rect.height * row / 5) * scale)
+                .round()
+                .clamp(0, image.height - 1);
+            final at = (y * image.width + x) * 4;
+            colors.add(
+              (pixels!.getUint8(at) ~/ 32) * 64 +
+                  (pixels.getUint8(at + 1) ~/ 32) * 8 +
+                  pixels.getUint8(at + 2) ~/ 32,
+            );
+          }
+        }
+        image.dispose();
+        codec.dispose();
+        expect(
+          colors.length,
+          greaterThanOrEqualTo(3),
+          reason: 'Decoded authored picture must differ from a black texture',
+        );
+        await coordinator.pause();
+        await tester.pump();
+        expect(coordinator.native.controller!.value.isPlaying, isFalse);
+        await commands.checkpoints.flush(force: true);
+        final previous = commands.record!.output;
+        await coordinator.seek(2000);
+        await until(
+          () =>
+              !coordinator.attaching &&
+              coordinator.native.ready?.output == commands.record?.output &&
+              commands.record?.output != previous,
+        );
+        expect(coordinator.native.controller!.value.isPlaying, isFalse);
+        expect(commands.record!.start, start);
+        expect(commands.receipt!.ready!.history, history);
+        coordinator.lifecycle(false);
+        await tester.pump();
+        coordinator.lifecycle(true);
+        await tester.pump();
+        expect(coordinator.requiresPlay, isTrue);
+        await until(() => commands.canAct);
+        await coordinator.play();
+        await until(
+          () => coordinator.native.controller?.value.isPlaying == true,
+        );
+        await coordinator.close();
+        expect(commands.record, isNull);
+        expect(coordinator.native.generation, isNull);
+        await channel.invokeMethod<void>('clearBootstrap');
+        binding.reportData = {
+          'protocol_two': true,
+          'decoded_authored_frame': true,
+          'same_viewer': true,
+          'paused_seek': true,
+          'explicit_background_play': true,
+          'confirmed_cleanup': true,
+        };
+      } finally {
+        await coordinator.close();
+        coordinator.dispose();
+      }
+    },
+    timeout: const Timeout(Duration(minutes: 3)),
+  );
+}

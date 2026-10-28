@@ -14,6 +14,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+import 'dart:async';
 import 'package:duskcue_mobile/api/client_error.dart';
 import 'package:duskcue_mobile/api/problem_detail.dart';
 import 'package:dio/dio.dart';
@@ -24,8 +25,20 @@ class DuskcueApiClient {
   final Dio _dio;
   Uri? _serverOrigin;
   String? _bearerToken;
+  int _credentialEpoch = 0;
+  int _profileEpoch = 0;
+  final _changes = StreamController<void>.broadcast(sync: true);
+  int get credentialEpoch => _credentialEpoch;
+  int get profileEpoch => _profileEpoch;
+  Stream<void> get scopeChanges => _changes.stream;
+
+  void fenceProfile() {
+    _profileEpoch += 1;
+    _changes.add(null);
+  }
 
   void configure(Uri serverOrigin, {String? bearerToken}) {
+    _credentialEpoch += 1;
     _serverOrigin = serverOrigin;
     _bearerToken = bearerToken;
     _dio.options = BaseOptions(
@@ -36,16 +49,21 @@ class DuskcueApiClient {
         if (bearerToken != null) 'Authorization': 'Bearer $bearerToken',
       },
     );
+    _changes.add(null);
   }
 
   void setBearerToken(String token) {
+    _credentialEpoch += 1;
     _bearerToken = token;
     _dio.options.headers['Authorization'] = 'Bearer $token';
+    _changes.add(null);
   }
 
   void clearBearerToken() {
+    _credentialEpoch += 1;
     _bearerToken = null;
     _dio.options.headers.remove('Authorization');
+    _changes.add(null);
   }
 
   bool get isConfigured => _serverOrigin != null;

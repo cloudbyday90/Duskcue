@@ -395,15 +395,11 @@ jobs:
       - name: Install Flutter SDK
         run: |
           curl -fsSL https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json -o "$RUNNER_TEMP/flutter-releases.json"
-          python3 - "$RUNNER_TEMP/flutter-releases.json" <<'PY' > "$RUNNER_TEMP/flutter-archive"
-          import json
-          import sys
-          data = json.load(open(sys.argv[1], encoding="utf-8"))
-          release = next(item for item in data["releases"] if item["channel"] == "stable")
-          print(release["archive"])
-          PY
-          archive="$(cat "$RUNNER_TEMP/flutter-archive")"
+          node scripts/ci/flutter-release.mjs "$RUNNER_TEMP/flutter-releases.json" > "$RUNNER_TEMP/flutter-archive"
+          archive="$(sed -n '1p' "$RUNNER_TEMP/flutter-archive")"
+          digest="$(sed -n '2p' "$RUNNER_TEMP/flutter-archive")"
           curl -fsSL "https://storage.googleapis.com/flutter_infra_release/releases/$archive" -o "$RUNNER_TEMP/flutter.tar.xz"
+          printf '%s  %s\n' "$digest" "$RUNNER_TEMP/flutter.tar.xz" | sha256sum --check --status
           tar -xf "$RUNNER_TEMP/flutter.tar.xz" -C "$RUNNER_TEMP"
           echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
 
@@ -426,4 +422,4 @@ jobs:
 
       - name: Build Android debug APK
         working-directory: clients/mobile
-        run: flutter build apk --debug
+        run: flutter build apk --debug --flavor production

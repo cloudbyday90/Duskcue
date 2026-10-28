@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-Concrete qualification proposal, October 28, 2026, for the seven confirmed choices in [Flutter migration](../design/VOD_FLUTTER_CLIENT_MIGRATION.md) and its [owned HLS relay](../security/FLUTTER_HLS_RELAY.md). Final concrete-contract confirmation is pending. This document claims no newly installed SDK component, application build, native test result or OS change.
+Implementation and managed preparation checkpoint, October 28, 2026. The complete contract at `21cd8b1` is confirmed. The operator subsequently authorized the [Flutter/Dart update](FLUTTER_TOOLCHAIN.md), then separately approved WHPX enablement with `-NoRestart`. Actual emulator qualification is still pending; preparation/build results do not complete this phase.
 
 Qualification covers the existing Flutter interactive Android player and bounded video-encoded HLS lane. Native ambient remains independent, offline remains separate and iOS scaffold/runtime, typed decoder probes, direct/copied video and broader devices/formats remain deferred. Normal production routes/owner/advertisement/caps remain off.
 
@@ -56,4 +56,21 @@ Authored fixture images and known codec metadata can establish this emulator lan
 
 ## Outcome and next gate
 
-This is the concrete design/acceptance document. Implementation, SDK acquisition, APK/native execution and all result receipts are pending final shared-understanding confirmation. After code/tests/APK are ready, request the operator-controlled WHPX enable/restart handoff; actual native qualification remains required before marking this increment complete. Keep all source changes on main and commit/push reviewed task checkpoints without creating a release. Record final identities, results, failures and limitations here after execution.
+Flutter 3.47.8/Dart 3.13.7 are installed and selected for the project. Static analysis reports no diagnostics; all **52 Flutter tests pass**. New tests use real local HTTP/raw sockets for protocol and relay boundaries, plus widget-level large-text/RTL cleanup/status checks. The compiled native test entry is not a native execution result.
+
+| Current check | Result / ignored memory receipt |
+| --- | --- |
+| Analysis | Pass; `2026-10-28T21-04-06-188Z-d43494e5-1e1d-4fc4-b279-567b126bd496.jsonl` |
+| Complete Flutter suite | 52 pass; `2026-10-28T21-04-44-123Z-fcdd5152-2a58-4c08-ad73-4021f79023e7.jsonl` |
+| Qualification APK / exact package+launcher | Pass; `2026-10-28T21-05-58-916Z-b12ab4b5-52c9-442c-80fd-f2eb793014c5.jsonl` |
+| Normal debug APK / exact package+launcher | Pass; `2026-10-28T21-07-18-194Z-7edbced1-ca44-4107-a201-a2d4c8ba7f0e.jsonl` |
+
+Both APKs bind source inventory `14171733fb942d9aff0741c5c4799c4598ac80be9cbd62d8a7950aab683fa26d`. Qualification APK SHA-256: `4e8776a18749d6c536536bc913f217c3f8f6bee99dd4e94c5a91db9b14cdacfa`. Normal APK SHA-256: `89d9a401f0490f12b8f647b0ba280a17c4da69d91356dbded5c4a9fe976ace74`. Resolved component graph SHA-256: `fd9934978d95097b2aa1a79d7b289f9e87b677cdfb68c2ed3888aa19d44c8409`; actual Media3 common/exoplayer/session select 1.10.1. Complete local source/tool/artifact receipts remain ignored under `.cache/android-playback/`.
+
+Corrected attempts remain evidence: the initial locked Gradle 8.14 build failed moving an immutable Windows transform. After verifying owned JVM exit, only its three exact cache directories were quarantined; no antivirus setting, shared daemon or global cache was changed. The owned build uses one worker within the agreed two-worker maximum. A subsequent APK compiled but its dependency-graph finalizer failed on ambiguous artifact variants; component-graph capture corrected that failure, and complete fresh builds subsequently passed. The SDK update then required seven transitive lock changes and a fresh resolution/test/build cycle, as recorded in [toolchain evidence](FLUTTER_TOOLCHAIN.md). A failed/partial attempt was never treated as a completed checkpoint.
+
+The successful updated-SDK build reports future-support warnings for Gradle 8.14, AGP 8.11.1 and Kotlin 2.2.20, plus existing Jetifier/deprecation diagnostics. No validation bypass or blanket suppression was added. Plan the coordinated build-stack migration separately.
+
+The operator approved WHPX enablement with `-NoRestart`. The elevated Windows operation completed on October 28 at 21:11:07 UTC: `HypervisorPlatform=Enabled`, `RestartNeeded=true`; WMI confirms enabled state. **No Windows restart has occurred or been authorized.** The exact local receipts remain ignored. No emulator, system image, owned AVD/ADB/native scenario or real Android decoder result is claimed at this checkpoint.
+
+Next: preserve/push this main checkpoint, obtain the separate operator restart handoff, then finish owned SDK/AVD/ADB provisioning and the complete real PostgreSQL/HTTP/FFmpeg/native scenarios, fault cases and verified cleanup. All required tests above remain acceptance gates. Normal production attachment/caps, other platforms and broader media remain deferred. No release is created.

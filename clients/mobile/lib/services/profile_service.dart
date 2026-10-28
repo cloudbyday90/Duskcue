@@ -34,6 +34,7 @@ class ProfileService {
     String profileId, {
     bool? rememberOnDevice,
   }) async {
+    _apiClient.fenceProfile();
     final response = await _apiClient.post<Map<String, Object?>>(
       '/api/v1/profiles/$profileId/switch',
       body: {
