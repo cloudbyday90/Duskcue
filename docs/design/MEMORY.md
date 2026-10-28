@@ -1,5 +1,9 @@
 # Memory Management
 
+## Proposed Flutter/relay ownership — October 28, 2026
+
+The concrete [Flutter migration](VOD_FLUTTER_CLIENT_MIGRATION.md), [relay](../security/FLUTTER_HLS_RELAY.md) and [Android qualification](../ci/ANDROID_PLAYBACK_QUALIFICATION.md) contracts await final confirmation. They retain actual native/storage/HTTP completion after observation timeout, isolate the four-KiB journal, bound socket admission before headers, use explicit request permits rather than SDK pending queues and separate application chunks from measured SDK/native overhead. Managed host reserves, backend I/O/SQL and root/pool 30/60-second limits remain unchanged. No application/resource qualification is claimed by this proposal.
+
 ## Pre-admission Start and client ownership — October 28, 2026
 
 [Start settlement](VOD_START_SETTLEMENT.md) binds durable preparation before I/O and retains actual blocking filesystem completion under the existing eight-operation owner. Timeout/cancellation/outer-future return cannot settle physical work. Intent/reservation pairs share existing quotas, bounded maintenance and seven regular/one reserved SQL operations; root/pool 30/60-second budgets are unchanged. The [shared player](VOD_CLIENT_MIGRATION.md) has one bounded journal/command owner, one in-flight renewal/checkpoint/status observation and bounded queues/deadlines. Current Windows/Linux/native evidence introduces no budget, dependency or Linux guard increase.

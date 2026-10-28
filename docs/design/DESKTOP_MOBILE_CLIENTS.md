@@ -1,5 +1,9 @@
 # Desktop and Mobile Clients
 
+## Flutter protocol-two successor — October 28, 2026
+
+The [Flutter migration proposal](VOD_FLUTTER_CLIENT_MIGRATION.md) records seven confirmed Android-first decisions and a concrete [relay](../security/FLUTTER_HLS_RELAY.md)/[qualification](../ci/ANDROID_PLAYBACK_QUALIFICATION.md) contract awaiting final review. Preserve existing native ambient/offline lifetimes and the initial legacy branch; normal production caps remain off. Read-only inspection found no attached device/emulator and an incomplete iOS target; prior metadata/skip checks do not establish current native playback. Actual Android qualification needs an operator-controlled WHPX handoff after code/APK preparation because that host feature is disabled. This section introduces no application build/runtime claim.
+
 ## Overview
 
 This document is the authoritative Phase 16a design for Duskcue's desktop and mobile client foundations. It captures the June 30, 2026 research pass required before implementation and defines the decisions that downstream Phase 16a tasks must follow.
