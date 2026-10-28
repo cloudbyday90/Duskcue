@@ -2,7 +2,9 @@
 
 ## Same-viewer output revisions — October 27, 2026
 
-The documented [reconfiguration contract](VOD_RECONFIGURATION.md) has ten confirmed choices and awaits complete-contract confirmation. It proposes one retained viewer owner with immutable direct/HLS output revisions, cleanup before replacement, exact revision URLs and reader groups, and retained explicit recovery/correction without another viewer/history row. Current/pending/uncertain revisions remain owned through Stop and root shutdown under this document's unchanged output/read/cache/deadline limits. Successful encoding remains playable; the proposed new lane would retain a failed viewer for explicit recovery after output cleanup. This is not yet implemented or qualified; existing runtime outcomes below remain authoritative until that increment is verified.
+The confirmed [reconfiguration implementation](VOD_RECONFIGURATION.md) adds one retained viewer owner with immutable direct/HLS output revisions, cleanup before replacement, revision-specific URLs/read groups, and explicit recovery/correction without another viewer/history row. Stop and root closure cancel every current/pending revision. Process cancellation and reader draining begin together; physical-generation ownership still prevents cache deletion before its I/O completes. Failed cleanup retains uncertainty, ownership and retry rather than freeing capacity.
+
+Successful encoding remains playable. A version-two failed worker leaves a counted, unavailable viewer after old-output cleanup, eligible for explicit recovery within its lease. This supersedes the first command lane's failed-worker viewer retirement for version two. All output/read/cache/deadline limits remain unchanged; the linked authority owns current qualification and rollout limits.
 
 ## Session-bound command integration — October 27, 2026
 

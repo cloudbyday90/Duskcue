@@ -1,8 +1,10 @@
 # Memory Management
 
-## Proposed VOD reconfiguration ownership — October 27, 2026
+## Version-two VOD ownership — October 27, 2026
 
-The [complete reconfiguration contract](VOD_RECONFIGURATION.md), with ten confirmed choices and final confirmation pending, preserves all existing output, I/O, SQL, compiler and root limits. It adds at most one pending operation per retained viewer, drain-before-replacement output groups and separately bounded operation storage; it introduces no queue or concurrent replacement generation. Additional 256/viewer, 8,192/household and 131,072/global operation quotas supplement parent receipt limits. Maintenance shares its existing reserved operation and 128-logical-receipt pass. Unknown cleanup/claims stay owned. These are proposed database/resource invariants, not new measured process-memory guarantees or qualified runtime changes.
+The confirmed [reconfiguration implementation](VOD_RECONFIGURATION.md) preserves existing output, I/O, SQL, compiler and root limits. Each retained viewer has at most one pending operation and at most two locally retained output owners while old cleanup and replacement are observed; there is no operation queue or overlapping replacement generation. Separate limits of 256/viewer, 8,192/household and 131,072/global operations supplement parent receipts. Maintenance shares its existing reserved operation and 128-logical-receipt budget, using an indexed bounded scan with a durable cursor. Unknown cleanup/claims remain owned.
+
+These are finite database/service bounds, not exact process-RSS or maximum storage-byte guarantees. Controlled full-size storage fixtures use smaller checkpointed batches within the unchanged PostgreSQL memory/filesystem limits. Production-wide viewer enforcement and all-client migration remain separate; current measurements and qualified platforms belong to the authority.
 
 ## VOD command ownership — October 27, 2026
 

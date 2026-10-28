@@ -2,7 +2,7 @@
 
 ## Same-viewer reconfiguration contract — October 27, 2026
 
-All ten choices for the next [VOD reconfiguration increment](VOD_RECONFIGURATION.md) are confirmed; the complete contract awaits final confirmation. It preserves one item/file/viewer/history through explicit seek, worker recovery, qualified decoder downgrade and track/quality changes. Old output drains before replacement, checkpoints stay separate from renewal, seeks/recovery preserve negotiated configuration, and explicit changes obtain a fresh currently permitted plan. Known failed replacements remain unavailable for explicit correction. This is not yet implemented or qualified; in particular it proposes replacing the first bound lane's failed-worker viewer-retirement behavior below. Production rollout, all-client adoption and legacy closure still follow separately.
+The user confirmed the complete [version-two contract](VOD_RECONFIGURATION.md) after `17970cb`; its modular backend implementation preserves one item/file/viewer/history through explicit seek, worker recovery, qualified decoder downgrade and track/quality changes. Old output drains before replacement; checkpoints remain separate from renewal. Seek/recovery preserve negotiated configuration, while explicit changes obtain a fresh currently permitted plan. Known failed replacements retain an unavailable viewer for explicit correction. Worker failure no longer ends the version-two viewer by itself. The authority owns qualification evidence and exceptions; production registration, online-client adoption and legacy delivery closure remain separate.
 
 ## VOD command/delivery implementation — October 27, 2026
 

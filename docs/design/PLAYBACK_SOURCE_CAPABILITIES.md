@@ -1,5 +1,7 @@
 # Source-specific playback capabilities and admission
 
+The confirmed [version-two backend successor](VOD_RECONFIGURATION.md) reuses these qualified source/recovery rules under one retained viewer, with immutable outputs, explicit recovery and separate checkpoints. It does not migrate the existing clients or change the legacy automatic-recovery behavior described below. The successor authority records its backend results, unchanged limits and deferred client/production work.
+
 Implementation commits: `77918259d4e8ead353d57362e3e21bf6f4986da8` and SSE lifecycle correction `63cf5f37c036c8e04e8fbd9fc63988e9169c4975` on `main`, without a release. Scoped final-image qualification and restored Compose evaluation passed on October 19, 2026. The outcome below retains incomplete attempts and coverage limits.
 
 ## Scope and confirmed decisions

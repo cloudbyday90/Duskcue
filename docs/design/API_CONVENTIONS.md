@@ -1,8 +1,10 @@
 # API Conventions
 
-## Proposed VOD reconfiguration — October 27, 2026
+## VOD version-two operations — October 27, 2026
 
-The [same-viewer contract](VOD_RECONFIGURATION.md) has ten confirmed product choices and awaits complete-contract confirmation before implementation. It proposes explicit `duskcue-vod-command/2` acknowledgement, GET/POST of the same configuration resource with strong If-Match, UUIDv7 operation/status identities, immutable revision-scoped file/HLS delivery and separate checkpoint reporting/observation. Checkpoints and status never renew or trigger implicit recovery. Existing X-Session-Context, cookie/bearer, no-store/problem and captured cleanup boundaries remain. Exact replay proves the original accepted operation before reconciling an old condition; new stale writes cannot execute. Production registration and existing client changes remain deferred. This entry documents a proposal, not currently mounted endpoints.
+The confirmed [same-viewer implementation](VOD_RECONFIGURATION.md) uses explicit `duskcue-vod-command/2` acknowledgement, GET/POST of one configuration resource with strong If-Match, UUIDv7 operation/status identities, immutable revision-specific file/HLS delivery and separate checkpoint reporting/observation. Checkpoints and status cannot renew or trigger recovery. Existing X-Session-Context, cookie/bearer, no-store/problem and captured cleanup boundaries remain. Exact replay proves the original accepted operation before reconciling its old condition; a new stale write cannot execute.
+
+New configuration/checkpoint bodies distinguish 413 oversize and 415 unsupported media type; missing configuration conditions use 428, stale conditions 412 and competing operations fixed 409. The earlier Start/renew/Stop body contract remains bounded and uses its existing fixed invalid-request response. The authority records current backend qualification; these normal-build services remain unmounted in production and existing online clients retain their contract.
 
 ## Current-session context — October 26, 2026
 

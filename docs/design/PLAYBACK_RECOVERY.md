@@ -1,5 +1,7 @@
 # Bounded playback recovery
 
+The confirmed [version-two backend successor](VOD_RECONFIGURATION.md) reuses these qualified source/recovery rules under one retained viewer, with immutable outputs, explicit recovery and separate checkpoints. It does not migrate the existing clients or change the legacy automatic-recovery behavior described below. The successor authority records its backend results, unchanged limits and deferred client/production work.
+
 Status: implemented, no-cache production image evaluated and real stalled-worker recovery qualified, 17 October 2026. This document owns recovery policy and qualification; [playback compatibility](PLAYBACK_COMPATIBILITY.md) owns format admission and stream planning.
 
 ## Scope and decisions

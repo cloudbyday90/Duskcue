@@ -2,7 +2,9 @@
 
 ## Operation-receipt contract — October 27, 2026
 
-The [same-viewer VOD contract](VOD_RECONFIGURATION.md) proposes independently bounded operation/output receipts, with the user-confirmed minimum 24 hours after terminal outcome and observed output cleanup and ceilings of 256/viewer, 8,192/household and 131,072/global. Existing parent quotas/windows remain unchanged. New operation IDs require their own replay/time checks; a parent receipt alone cannot prevent a deleted child ID from starting work again. The proposed maintenance shares at most 128 logical receipt deletions per existing reserved pass, prunes eligible operation/output pairs before their parent and prevents a large parent cascade. Pending/current/uncertain resources never age out. This complete contract awaits final confirmation and implementation; the qualified child-deletion rules below still describe the current runtime.
+The confirmed [same-viewer implementation](VOD_RECONFIGURATION.md) independently bounds operation/output receipts: at least 24 hours after terminal outcome and observed output cleanup, with 256/viewer, 8,192/household and 131,072/global ceilings. Existing parent quotas/windows remain unchanged. Child UUIDv7 IDs have their own monotonic replay cutoff; pruning cannot turn an old ID into new work. Counters, attribution, deletion and cascade guards are transactional.
+
+Maintenance retains its existing reserved operation and 128-logical-receipt budget. It samples at most 128 indexed candidates with one captured database time, advances a durable cyclic scan cursor, and prunes at most 64 eligible operation/output pairs before at most 64 parents; a pass deleting no operation may prune 128 parents. Still-current or locked evidence cannot permanently hold the scan at its oldest entries. Pending/current/uncertain resources never expire by age. A parent with retained operations cannot be deleted or cascade away those receipts. The reconfiguration authority owns full-size PostgreSQL plan/counter and platform results. History and instance/audit retention remain separate.
 
 ## VOD command child records — October 27, 2026
 

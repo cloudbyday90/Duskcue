@@ -2,7 +2,7 @@
 
 ## Same-viewer reconfiguration contract — October 27, 2026
 
-All ten choices for [VOD reconfiguration](VOD_RECONFIGURATION.md) are confirmed; its complete implementation contract awaits shared-understanding confirmation. The proposal preserves this ledger's immutable Start/actor attribution and one total viewer while adding separately attributed operations/output revisions and current/pending permission checks. Direct-to-encoded needs capacity; encoded-to-encoded keeps its claim through replacement/failure; encoded-to-direct releases its claim only after direct publication and verified old cleanup. Numeric cap reductions do not evict an existing authorized encoded viewer. Root Stop/revocation/fencing must cover every revision. This is a documented next increment, not a new qualified runtime behavior or production attachment.
+The user confirmed the complete [VOD reconfiguration contract](VOD_RECONFIGURATION.md) after `17970cb`. Its modular version-two implementation preserves immutable Start/actor attribution and one total viewer while adding independently attributed operations/output revisions, current/pending permission checks and retained transcode-viewer claims. Direct-to-encoded reserves capacity before disturbing old output; encoded-to-encoded retains its claim through cleanup, replacement and known failure; encoded-to-direct releases it after direct publication and verified old cleanup. Cap-only reductions preserve existing authorized viewers. Stop/revocation/fencing cover every revision. The authority records qualification outcomes and limits; production attachment, client migration and shared-cap enforcement remain separate.
 
 ## VOD command integration — October 27, 2026
 

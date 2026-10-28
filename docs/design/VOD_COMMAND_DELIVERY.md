@@ -1,5 +1,9 @@
 # VOD command and delivery protocol
 
+## Version-two successor
+
+The user confirmed the complete [same-viewer reconfiguration contract](VOD_RECONFIGURATION.md) after `17970cb`. Its modular implementation advances this isolated lane to explicit protocol two, preserving original Start/history attribution while adding conditional retained operations, immutable output revisions, separate checkpoints, shared recovery budgets and bounded child receipts. Version-one receipts retain their original evidence and cannot become new protocol-two starts. This document preserves the first increment's design and qualification history; the successor authority owns current implementation outcomes and limits. Normal production attachment, all-client migration and shared-cap enforcement remain deferred.
+
 ## Status and authority
 
 Research and design review, October 27, 2026, against `84fa21e` on main, published in `b2c32dd`. The user confirmed all seven product decisions and the complete concrete implementation contract. The confirmed contract is implemented and scoped qualification passes on native Windows and managed amd64 Linux. Verified runtime implementation: `e8914d12d880502de67e4ed1a4fe427bea2e5f4e` on main; documentation-only successors preserve its qualified source. Main only; no release, branch or PR merge.
@@ -177,4 +181,4 @@ GitHub MCP open-PR search returned zero candidates. No random patch or stale Dep
 
 The earlier documentation-only checkpoint covered seven Markdown files, 679 local links and 911 source headers; it claimed no runtime result. Final publication checks below apply to the implemented source.
 
-Next: all ten choices for [same-viewer reconfiguration](VOD_RECONFIGURATION.md) are confirmed. Its complete version-two contract preserves one viewer and original Start/history evidence, with conditional operations, output revisions, separate checkpoints, qualified recovery and bounded receipts; final contract confirmation precedes implementation. No new runtime qualification is claimed. Then migrate all online client families and close legacy bypasses before production caps. Live TV media output, provider-VOD connector/switches and recordings remain separate milestones.
+The confirmed [same-viewer successor](VOD_RECONFIGURATION.md) is qualified at `0bd3962a62660dc310b7e492b6776c8d63b072c1`. Next: migrate every online client family and close weaker online control/delivery paths before enabling production caps. Live TV media output, provider-VOD connector/switches and recordings remain separate milestones.
