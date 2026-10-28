@@ -1,0 +1,97 @@
+# Flutter interactive VOD client migration
+
+## Status and authority
+
+Research and design review, October 28, 2026, against `5576b032a0e80bc8a956d7dab8f51f4fed980971` on main. The next recommended item is the existing Flutter interactive player, following the qualified [shared browser/Tauri migration](VOD_CLIENT_MIGRATION.md) and [Start settlement](VOD_START_SETTLEMENT.md). This is a research checkpoint and provisional recommendation, not an approved implementation contract, application change or native runtime qualification. Initial mobile-specific questions are pending. No branch, release, dependency update, emulator installation or production enablement is included at this checkpoint.
+
+Preserve the qualified [protocol-two backend](VOD_RECONFIGURATION.md), [command/delivery](VOD_COMMAND_DELIVERY.md), [admission](PLAYBACK_ADMISSION.md), [retention](PLAYBACK_RECEIPT_RETENTION.md), [output lifecycle](VOD_OUTPUT_LIFECYCLE.md), [source capabilities](PLAYBACK_SOURCE_CAPABILITIES.md) and [memory](MEMORY.md) authorities. Local library, recording and provider source choices retain the separate [Local → Recording → approved provider VOD](IPTV_SOURCE_LIFECYCLE.md) policy; Watch live stays explicit. Migrating Flutter creates no new client app or household model.
+
+## Existing decisions carried forward
+
+Do not repeat the settled lifecycle interview. Positive complete acknowledgement selects protocol two; an initially unsupported server retains the legacy path; selected/uncertain new-lane work cannot downgrade. Capture exact origin/account/session/profile/context/credential/transport, generate UUIDv7 from authenticated database-time evidence, reuse one immutable identity/body per intended mutation and never automatically replay an uncertain command. Accepted work is server-owned.
+
+One logical viewer/history survives same-item/file seek, tracks/quality and recovery. Adopt only the current immutable output and its server-supplied source-time origin. Renewal is independent of sequenced actual-output checkpoints. Keep the sixty-second lease, conclusive exact-UUID Start withdrawal, bounded final checkpoint before cleanup, at-most-once-per-second/sixty-second status monitoring and explicit reconciliation after uncertainty. Profile-only changes may retain cleanup-only identity; stronger scope changes clear the local record and rely on server retirement. Clearing local data never proves release. Production mounting/advertisement/caps and remaining online families stay separate until qualified.
+
+## Repository and local-environment findings
+
+Two read-only fact explorations inspected the code and tooling under the repository grill-me procedure. They edited nothing, ran no builds/tests, installed/started no device, accessed no private feed and stopped no service. An already-running matching adb daemon was queried; zero devices were attached.
+
+| Boundary | Finding | Consequence |
+|---|---|---|
+| Interactive owner | [Screen](../../clients/mobile/lib/screens/playback_entry_screen.dart) combines online/offline controllers, Start, seek, restarts, telemetry, lifecycle and Stop. Returned playback identity is published only after decoder initialize/seek/play. | A failed or abandoned preparation can lose cleanup identity. Move new-lane ownership outside widget disposal and retain it before media initialization. |
+| Changes and Stop | Track/quality changes Stop then Start; seek first changes local decoder position; replacement always plays. Stop clears identity before the request and catches failures. | Adopt complete same-viewer conditional operations, correct output-origin mapping, explicit play intent and retained cleanup outcomes together. |
+| Renewal | Fifteen-second heartbeat begins after media initialization, can overlap, discards its reply and catches failures. | Separate one owned renewal, checkpoint and status observer; preparation/paused viewers still need renewal. |
+| Lifecycle | Screen pauses on inactive/paused/detached. Locked video_player also owns a lifecycle observer that can call Play on resume. | One protocol-two lifecycle authority must gate native resumption until current context/lease status is known. Process termination can skip all callbacks. |
+| HTTP/control | [API client](../../clients/mobile/lib/services/api_client.dart) exposes response metadata but uses mutable global origin/token, ordinary eager JSON and ten-/thirty-second connect/receive timeouts. | Add captured-credential, bounded streaming JSON and total observation deadlines/cancellation for the new lane. Do not globally change unrelated transports without justification. |
+| Media | [Playback service](../../clients/mobile/lib/services/playback_service.dart) accepts arbitrary absolute stream URIs and uses the token current at controller creation. | Validate selected origin/exact viewer/output URLs before attachment; scope native controller completion and disposal separately from JSON calls. Qualify bearer coverage on manifests, initialization and segments. |
+| Context | [Session store](../../clients/mobile/lib/stores/session_store.dart) and [auth DTO](../../clients/mobile/lib/models/auth_models.dart) hold cached user/profile and token, without server session/credential/context revisions. Existing `/api/v1/auth/session-context` supplies the needed authoritative fields. | Add typed bounded context capture and local credential/profile invalidation. No new backend identity contract is inherently needed. |
+| Negotiation | Current `/api/v1/playback/prepare` adds the complete command capability only for a compatible controlled owner/router. Flutter does not call it. | Reuse item-specific prepare acknowledgement; do not invent a server-global capability from cached profile state. Journal cleanup can use known IDs plus current-session context without stored media metadata. |
+| Tracks/source | Audio choices are collected across all item files. Mobile codec/HDR/resolution reports are static platform assumptions. | Keep server stream indices distinct from native track IDs and bind new-lane selection to the admitted file. Source-specific native observations must not be invented. |
+| Ambient | [Dart bridge](../../clients/mobile/lib/services/ambient_playback_service.dart) and Android/iOS native engines own independent legacy sessions. There is no interactive/ambient arbitration or acknowledged native cleanup. | Decide independent playback versus blocking/handoff explicitly. Today's native Stop cannot establish a conclusive handoff. Ambient migration is a separate implementation boundary. |
+| Persistence | [Secure storage](../../clients/mobile/lib/services/secure_storage_service.dart) already persists session/settings. There is no interactive command journal. | App-scoped recovery identity is a mobile product decision; no automatic playback restart should follow restoration. |
+
+Installed tooling is Flutter 3.44.4 stable/Dart 3.12.2 and Temurin JDK 17.0.19. The project-selected Android SDK contains API/build-tools 36, NDK 28.2.13676358 and platform-tools 37.0.0. Environment SDK variables disagree with the project SDK path, so a qualification driver must capture and use explicit tool identities. Neither SDK has an emulator executable or installed system image; the AVD directory is empty and no device is attached. An active Windows hypervisor is not proof of a usable emulator/decoder.
+
+The iOS project has an empty target list and no `PBXNativeTarget`, Podfile or shared scheme. Existing CI explicitly skips simulator packaging in that state. Windows lacks macOS/Xcode tooling; current iOS source/metadata checks are not compilation or playback evidence. Restoring its native scaffold and actual iOS qualification need their own scope and execution environment.
+
+Current Android packaging has no isolated qualification application ID/flavor or owned mobile runtime driver. Its Gradle file permits an eight-GiB heap, four-GiB metaspace and 512-MiB code cache; these are maxima, not observed consumption. There is no Flutter/Gradle/emulator preset in the managed test runner. Add measured serial admission/ownership rather than starting a large unmonitored toolchain. Preserve existing Windows reserve/deadline policies; qualify proposed per-tool budgets before treating them as enforcement. No existing service interruption is required or authorized merely by this research.
+
+## Decoder evidence boundary
+
+The backend already accepts exact-output `native_decode` evidence and server-positive worker recovery. It checks current offer/source/tracks, descriptor/saved limits and the shared two-replacement budget; copied video requires smooth support, direct video rejects browser-only `hls_media`. A new wire format is not inherently required.
+
+Locked video_player 2.11.1 with Android/AVFoundation implementations 2.10.0 flattens native failures into generic error text; the Dart value retains only the message. Android also internally handles a behind-live-window case. There is no exact-descriptor supported/smooth probe in this app. Parsing localized messages or reporting every `hasError` as a decoder failure would fabricate evidence. The provisional recommendation is server-positive worker recovery now, with generic media failure remaining unavailable/explicitly correctable; typed native decoder observation/probing is a separately qualified choice. The initial question asks the user to choose this scope.
+
+## Official research
+
+URLs were discovered with the connected MCP search service and retrieved or checked on October 28, 2026. Public latest documentation is guidance; inspected locked code governs version-specific behavior. No upgrade follows merely from a newer published version.
+
+| Primary source | Application |
+|---|---|
+| [Flutter architecture recommendations](https://docs.flutter.dev/app-architecture/recommendations) and [guide](https://docs.flutter.dev/app-architecture/guide) | Separate view state, app-owned domain state and endpoint services; inject services and test behavior through replaceable boundaries. Retain current Riverpod composition rather than introducing another state framework. |
+| [Flutter application lifecycle](https://api.flutter.dev/flutter/dart-ui/AppLifecycleState.html) | Notifications can be skipped, and inactive/paused/resumed are platform-specific. An exit callback or timer cannot prove resource release or a valid lease after suspension. |
+| [Dart Future timeout](https://api.dart.dev/dart-async/Future/timeout.html) | A timeout ends observation while the source future may complete later. Retain accepted native/storage/HTTP completion and prevent late adoption after scope changes. |
+| [Dart HttpClient](https://api.dart.dev/dart-io/HttpClient-class.html) and [automatic decompression](https://api.dart.dev/dart-io/HttpClient/autoUncompress.html) | Bound actual delivered response bytes, not compressed Content-Length alone; cancel and observe the response/adapter when observation ends. |
+| [Dio documentation](https://pub.dev/packages/dio) | Existing adapters support streamed responses, cancellation and response metadata. Use installed 5.10.0 behavior; avoid eager unrestricted JSON or automatic mutation retry. |
+| [Flutter video recipe](https://docs.flutter.dev/cookbook/plugins/play-video) and [video_player documentation](https://pub.dev/documentation/video_player/latest/) | Native playback and controller disposal need platform execution. A widget mock does not establish bearer delivery, decoder fidelity or real lifecycle behavior. |
+| [Android ExoPlayer troubleshooting](https://developer.android.com/media/media3/exoplayer/troubleshooting?hl=en) and [network stacks](https://developer.android.com/media/media3/exoplayer/network-stacks) | JSON and native media use distinct networking paths. Redirect behavior and headers need explicit qualification; URI validation alone does not establish native request scope. |
+| [Android emulator command line](https://developer.android.com/studio/run/emulator-commandline) and [acceleration](https://developer.android.com/studio/run/emulator-acceleration) | Isolate AVD data, app identity, ports and owned process lifetimes; verify acceleration and actual runtime rather than assuming a local SDK implies a device. |
+| [uuid 4.5.3](https://pub.dev/packages/uuid/versions/4.5.3) | Already locked/cached; its time/randomness injection can support server-time UUIDv7. A direct dependency declaration would reuse that exact version, subject to the final implementation contract. |
+| [WCAG 2.2](https://www.w3.org/TR/WCAG22/) and [WCAG2Mobile](https://www.w3.org/TR/wcag2mobile-22/) | Expose meaningful status, errors, focus and actionable recovery through Flutter semantics and controls. WCAG2Mobile is informative work in progress, not a normative mobile conformance standard. Native screen-reader/device claims require their own evidence. |
+
+These ownership, persistence, polling and rollout choices are engineering recommendations from the sources and inspected contracts. The sources do not prescribe Duskcue's journal policy, lease length or qualification order.
+
+## Alternatives and tradeoffs
+
+| Choice | Pros | Cons | Provisional recommendation |
+|---|---|---|---|
+| Migrate Flutter, native ambient and both mobile OS runtimes together | One broad application rollout boundary. | Couples missing iOS scaffold/macOS execution, new Android runtime and independent native queue ownership. | First settle a bounded interactive/Android slice. |
+| Extend the screen with every command state | Fewer new entry points. | Widget disposal and late asynchronous media completion still compete with resource ownership. | Compose focused injected services and a small screen adapter. |
+| One app-scoped bounded secure-storage journal | Exact lost-response/process-death cleanup can survive restart without another Start. | Needs strict scope, serialization, failure handling and no auto-resume; differs from tab lifetime. | Q2 recommends one record, at most four KiB, IDs/context only. |
+| Memory-only identity | Minimal persistence. | Restart loses reconciliation identity while server obligations remain counted. | Alternative for Q2; never claim release after loss. |
+| Treat generic video errors as decoder proof | Superficially automatic recovery. | Misclassifies network/auth/unsupported-source errors and violates evidence/budget boundaries. | Reject fabricated proof. |
+| Typed native decoder probe now | Can preserve qualified automatic downgrade on supported devices. | Native observer/probe and descriptor/device qualification become part of this increment. | Q3 recommends deferral while retaining server-positive worker recovery. |
+| Real Android emulator first | Exercises actual plugin, app storage, bearer HLS and lifecycle on this host. | Requires isolated SDK runtime provisioning, measured budgets and honest device-fidelity limits. | Initial Q1 recommends it; actual iOS remains separate. |
+| Unit/APK-only qualification | Fast initial feedback without a runtime install. | Cannot establish native playback, headers, restoration, interruption or cleanup. | Useful supporting evidence, insufficient for a native playback claim. |
+
+## Recommended stack and modular plan
+
+Keep Flutter 3.44.4/Dart 3.12.2, current Riverpod, Dio 5.10.0, secure storage 10.3.1, video_player 2.11.1 and their locked native implementations. Reuse the Rust/Axum/Tokio/SQLx/PostgreSQL/UUIDv7/FFmpeg backend unchanged unless inspection reveals a concrete contract gap. No general retry library, alternate media engine or new state-management framework is recommended. A direct `uuid` declaration can reuse locked 4.5.3.
+
+Separate typed context/schema, captured bounded transport, server-time UUIDv7, serialized journal, retained command/status owner, lease, checkpoint epochs, conditional changes/recovery, native media ownership and the widget adapter. App/session invalidation and provider composition must outlive route disposal. Preserve offline playback and current legacy behavior before positive new-lane selection. Avoid a second global orchestrator or shared mutable credential capture.
+
+After the design choices and final concrete contract are confirmed: implement focused units for exact scope/replay/uncertain outcomes, then widget semantics/navigation and actual native completion races; add managed toolchain/runtime ownership; build an isolated Android qualification app; exercise real PostgreSQL/FFmpeg Start/change/renew/checkpoint/withdrawal and bearer direct/HLS transport. Bind results to current source/app/tool identities and require verified cleanup. Decoder, source-format and iOS claims must match the selected scope. Existing backend source/root limits and normal production-off state remain unchanged.
+
+## Open decision tree and outcome
+
+Initial frontier questions were sent through the text question tool:
+
+1. Q1: Android interactive plus isolated emulator qualification first, versus protocol foundation only; iOS native scaffold/runtime, ambient, offline and production caps separate.
+2. Q2: One app-scoped, four-KiB secure-storage IDs/context journal with explicit restart status/cleanup, versus memory-only identity.
+3. Q3: Server-positive worker recovery with automatic decoder proof/downgrade deferred, versus adding typed native evidence/probe qualification now.
+
+No answer or final shared-understanding confirmation has been assumed. Subsequent scope-dependent decisions include interactive/ambient concurrency or handoff, background/resume play intent, source-format lanes and truthful native qualification boundaries. Existing accepted web/backend rules remain settled.
+
+GitHub MCP's repository-wide open-PR search returns zero candidates. There is no random local PR patch or stale Dependabot rebase to apply; prior [PR 5 cleanup](../operations/DEPENDABOT_MAINTENANCE.md) remains complete. No PR, alert or dependency was mutated. Supplied private IPTV feeds are unnecessary and unused.
+
+Only research/documentation is complete at this checkpoint. Application implementation and all new Flutter/native runtime results remain pending the required design review; no test, build, device or production claim follows from these notes.

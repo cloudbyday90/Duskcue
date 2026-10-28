@@ -10,6 +10,14 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 2026 Flutter interactive VOD migration (RESEARCH AND DESIGN REVIEW)
+
+**Authority:** [Flutter migration](docs/design/VOD_FLUTTER_CLIENT_MIGRATION.md), researched through official MCP sources against `5576b03` on main. Carry forward the qualified shared-player/backend rules. Initial mobile-specific questions cover Android/emulator scope, an app-scoped recovery journal and truthful decoder recovery; answers and final concrete-contract confirmation remain pending.
+
+**Findings:** the Flutter screen owns asynchronous playback and loses cleanup identity/outcomes; cached auth lacks exact server context, while the existing context endpoint already supplies it. Native ambient is independent legacy ownership. Installed plugin errors cannot prove decoder failure. No emulator/device is present, iOS has no native target, and managed mobile runtime tooling is absent. The authority records exact locked tools/packages, alternatives, security/accessibility implications and proposed modular services. Research/documentation only; no application/build/runtime claim. No open PR or stale Dependabot rebase applies.
+
+**Next:** resolve the mobile-specific decision frontier and concrete qualification contract, then implement the selected bounded slice on main. Preserve normal production-off/cap rollout and source-priority decisions; do not claim Android/iOS runtime qualification from source checks or APK builds.
+
 ## October 2026 shared web/Tauri VOD client migration (SCOPED QUALIFICATION COMPLETE)
 
 **Authority:** [Shared client](docs/design/VOD_CLIENT_MIGRATION.md) and [Start settlement](docs/design/VOD_START_SETTLEMENT.md). All nine choices and the complete contract were confirmed after `67c6efc`. Implementation: `577b95f6bb473a64a79b506b2020f56d653264ba` on main; documentation-only follow-up preserves it. Main only, locked dependencies/Rust 1.99.1, no release. The authorities own source/image/executable identities, corrected attempts, tradeoffs and limits.
