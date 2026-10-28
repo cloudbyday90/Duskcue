@@ -36,6 +36,17 @@ impl Fixture {
         db: &database::Database,
         owner_pool: Option<sqlx::PgPool>,
     ) -> anyhow::Result<Self> {
+        Self::with_options(db, owner_pool, false).await
+    }
+    #[cfg(target_os = "linux")]
+    pub async fn paced(db: &database::Database) -> anyhow::Result<Self> {
+        Self::with_options(db, None, true).await
+    }
+    async fn with_options(
+        db: &database::Database,
+        owner_pool: Option<sqlx::PgPool>,
+        paced: bool,
+    ) -> anyhow::Result<Self> {
         database::upgrade(&db.pool).await?;
         sqlx::query("CREATE TABLE play_sessions_commands_test PARTITION OF play_sessions DEFAULT")
             .execute(&db.pool)
@@ -54,7 +65,12 @@ impl Fixture {
             .bind(policy)
             .execute(&db.pool)
             .await?;
-        let input = PathBuf::from(std::env::var("DUSKCUE_TEST_PLAYBACK_SOURCE")?).canonicalize()?;
+        let input = PathBuf::from(std::env::var(if paced {
+            "DUSKCUE_TEST_CONFIGURATION_SOURCE"
+        } else {
+            "DUSKCUE_TEST_PLAYBACK_SOURCE"
+        })?)
+        .canonicalize()?;
         let metadata = tokio::fs::symlink_metadata(&input).await?;
         anyhow::ensure!(
             metadata.is_file()
@@ -100,6 +116,22 @@ impl Fixture {
         if let Some(pool) = owner_pool {
             base.state.pool = pool;
         }
+        #[cfg(target_os = "linux")]
+        if paced {
+            let source = source.canonicalize()?;
+            let input = crate::services::transcoding::qualification::OwnedPacedInput::new(
+                source.parent().unwrap(),
+                &source,
+            )
+            .await?;
+            base.state.transcode_manager = Arc::new(
+                base.state
+                    .transcode_manager
+                    .as_ref()
+                    .clone()
+                    .with_qualification_input(input),
+            );
+        }
         let owner = AdmissionOwner::attach(&base.state).await?;
         let app = playback::commands::router(base.state.clone())
             .merge(playback::router(base.state.clone()))
@@ -137,7 +169,7 @@ impl Fixture {
         })
     }
     pub fn start_body(&self, id: Uuid, hls: bool, encode: bool) -> Value {
-        json!({"request_id":id,"selection":{"media_item_id":self.item,"media_file_id":self.file,"force_hls":hls,"force_transcode":encode,"device_profile":{"video_codecs":["h264"],"audio_codecs":["aac"],"containers":["matroska","mp4"],"max_resolution":"1080p","max_bitrate_bps":20000000,"max_audio_channels":2}}})
+        json!({"protocol":"duskcue-vod-command/2","request_id":id,"selection":{"media_item_id":self.item,"media_file_id":self.file,"force_hls":hls,"force_transcode":encode,"device_profile":{"video_codecs":["h264"],"audio_codecs":["aac"],"containers":["matroska","mp4"],"max_resolution":"1080p","max_bitrate_bps":20000000,"max_audio_channels":2}}})
     }
     pub async fn response(
         &self,
@@ -191,7 +223,7 @@ impl Fixture {
             status == reqwest::StatusCode::ACCEPTED,
             "start refused: {value}"
         );
-        anyhow::ensure!(value["protocol"] == "duskcue-vod-command/1");
+        anyhow::ensure!(value["protocol"] == "duskcue-vod-command/2");
         if value["status"] == "preparing" {
             anyhow::ensure!(value["stream_url"].is_null() && value["ready"].is_null());
         }

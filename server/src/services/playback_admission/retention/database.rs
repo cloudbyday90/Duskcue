@@ -21,12 +21,14 @@ impl Ledger {
     pub(crate) async fn prune(&self) -> Result<MaintenanceReceipt, AdmissionError> {
         database::transaction(&self.pool, async |conn| {
             database::instance(conn, self.instance, true).await?;
+            let operations=crate::services::playback_admission::vod::revisions::retention::prune(conn).await?;
             let cutoff: DateTime<Utc> = sqlx::query_scalar("UPDATE playback_retention SET cutoff=greatest(cutoff,date_trunc('milliseconds',clock_timestamp())-interval '5 minutes') WHERE id RETURNING cutoff")
                 .fetch_one(&mut *conn).await?;
             let now: DateTime<Utc> = sqlx::query_scalar("SELECT date_trunc('milliseconds',clock_timestamp())")
                 .fetch_one(&mut *conn).await?;
-            let deleted = sqlx::query_scalar::<_, Uuid>(queries::PRUNE).bind(now).fetch_all(&mut *conn).await?;
-            Ok(MaintenanceReceipt { deleted: deleted.len(), cutoff })
+            let query=if operations==0 {queries::PRUNE}else{queries::PRUNE_SHARED};
+            let deleted = sqlx::query_scalar::<_, Uuid>(query).bind(now).fetch_all(&mut *conn).await?;
+            Ok(MaintenanceReceipt { deleted: deleted.len()+operations, cutoff })
         }).await
     }
 }

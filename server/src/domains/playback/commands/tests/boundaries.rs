@@ -89,6 +89,7 @@ pub(super) async fn retirement(db: &Database) -> anyhow::Result<()> {
             .vod_commands
             .get(hls)
             .ok_or_else(|| anyhow::anyhow!("missing HLS viewer"))?
+            .current()?
             .generation
             .unwrap();
         f.base
@@ -106,7 +107,23 @@ pub(super) async fn retirement(db: &Database) -> anyhow::Result<()> {
                 Some(json!({})),
             )
             .await?;
-        anyhow::ensure!(!renewal.0.is_success());
+        anyhow::ensure!(renewal.0 == StatusCode::OK);
+        let unavailable = f
+            .json(
+                Method::GET,
+                &format!("/api/v1/playback-commands/{hls}"),
+                None,
+            )
+            .await?;
+        anyhow::ensure!(
+            unavailable.1["status"] == "unavailable" && unavailable.1["stream_url"].is_null()
+        );
+        let held: bool =
+            sqlx::query_scalar("SELECT state='held' FROM playback_reservations WHERE id=$1")
+                .bind(hls)
+                .fetch_one(&db.pool)
+                .await?;
+        anyhow::ensure!(held);
         f.stop(hls).await?;
         for query in [
             "DELETE FROM playback_vod_commands WHERE reservation_id=$1",

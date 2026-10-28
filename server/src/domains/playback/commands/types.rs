@@ -9,11 +9,13 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 pub const BODY_LIMIT: usize = 32768;
-pub const PROTOCOL: &str = "duskcue-vod-command/1";
+pub const PROTOCOL: &str = "duskcue-vod-command/2";
+pub const LEGACY_PROTOCOL: &str = "duskcue-vod-command/1";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StartRequest {
+    pub protocol: String,
     pub request_id: Uuid,
     pub selection: serde_json::Value,
 }
@@ -43,7 +45,7 @@ impl StartRequest {
             "ambient_channel_id",
             "ambient_channel_updated_at",
         ];
-        if self.request_id.get_version_num() != 7 {
+        if self.protocol != PROTOCOL || self.request_id.get_version_num() != 7 {
             return Err(CommandError::Invalid);
         }
         let object = self
@@ -76,7 +78,7 @@ impl StartRequest {
             || selection
                 .max_streaming_bitrate
                 .is_some_and(|n| n == 0 || n > u64::from(u32::MAX))
-            || selection.direct_recovery_protocol.is_some_and(|v| v != 0)
+            || selection.direct_recovery_protocol.is_some_and(|v| v > 1)
             || selection
                 .quality_mode
                 .as_deref()
@@ -89,7 +91,8 @@ impl StartRequest {
             return Err(CommandError::Invalid);
         }
         let canonical = canonical(self.selection, 0, &mut 0)?;
-        let bytes = serde_json::to_vec(&canonical).map_err(|_| CommandError::Invalid)?;
+        let bytes =
+            serde_json::to_vec(&(PROTOCOL, canonical)).map_err(|_| CommandError::Invalid)?;
         if bytes.len() > BODY_LIMIT {
             return Err(CommandError::Invalid);
         }
@@ -105,7 +108,7 @@ impl StartRequest {
     }
 }
 
-fn canonical(
+pub(super) fn canonical(
     value: serde_json::Value,
     depth: usize,
     nodes: &mut usize,
@@ -135,6 +138,12 @@ fn canonical(
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ReadyResponse {
+    #[serde(default)]
+    pub output_revision: Option<Uuid>,
+    #[serde(default)]
+    pub position_ms: Option<i32>,
+    #[serde(default)]
+    pub recovery: Option<serde_json::Value>,
     pub session_id: Uuid,
     pub media_item_id: Uuid,
     pub media_file_id: Uuid,
@@ -189,6 +198,7 @@ pub struct RenewalResponse {
 
 #[derive(sqlx::FromRow)]
 pub(super) struct CommandRow {
+    pub protocol: i16,
     pub fingerprint: String,
     pub instance_id: Uuid,
     pub reservation_state: String,
@@ -196,10 +206,8 @@ pub(super) struct CommandRow {
     pub observed_at: DateTime<Utc>,
     pub intent_hash: Vec<u8>,
     pub state: String,
-    pub result: Option<serde_json::Value>,
     pub history_id: Option<Uuid>,
     pub history_started_at: Option<DateTime<Utc>>,
-    pub generation_id: Option<Uuid>,
     pub resources_completed: bool,
     pub cleanup_uncertain: bool,
 }

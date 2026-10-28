@@ -23,6 +23,16 @@ pub enum CommandError {
     Capacity,
     #[error("Playback is temporarily unavailable; reconcile explicitly")]
     Unavailable,
+    #[error("The current playback configuration condition is required")]
+    ConditionRequired,
+    #[error("The playback configuration condition changed")]
+    ConditionFailed,
+    #[error("The playback request body exceeds its limit")]
+    TooLarge,
+    #[error("The playback request requires application/json")]
+    MediaType,
+    #[error("A playback operation is already in progress")]
+    Busy,
 }
 impl IntoResponse for CommandError {
     fn into_response(self) -> Response {
@@ -33,6 +43,11 @@ impl IntoResponse for CommandError {
             Self::Expired => (StatusCode::GONE, "VOD_COMMAND_004"),
             Self::Capacity => (StatusCode::SERVICE_UNAVAILABLE, "VOD_COMMAND_005"),
             Self::Unavailable => (StatusCode::SERVICE_UNAVAILABLE, "VOD_COMMAND_006"),
+            Self::ConditionRequired => (StatusCode::PRECONDITION_REQUIRED, "VOD_COMMAND_007"),
+            Self::ConditionFailed => (StatusCode::PRECONDITION_FAILED, "VOD_COMMAND_008"),
+            Self::TooLarge => (StatusCode::PAYLOAD_TOO_LARGE, "VOD_COMMAND_009"),
+            Self::MediaType => (StatusCode::UNSUPPORTED_MEDIA_TYPE, "VOD_COMMAND_010"),
+            Self::Busy => (StatusCode::CONFLICT, "VOD_COMMAND_011"),
         };
         let mut response=(status,Json(serde_json::json!({"type":"about:blank","title":status.canonical_reason().unwrap_or("Playback command failure"),"status":status.as_u16(),"detail":self.to_string(),"code":code}))).into_response();
         response.headers_mut().insert(
@@ -58,6 +73,7 @@ impl From<AdmissionError> for CommandError {
                 Self::Forbidden
             }
             AdmissionError::Conflict => Self::Conflict,
+            AdmissionError::Precondition => Self::ConditionFailed,
             AdmissionError::Expired => Self::Expired,
             AdmissionError::RequestTime => Self::Invalid,
             AdmissionError::Capacity | AdmissionError::ReceiptCapacity => Self::Capacity,

@@ -7,6 +7,7 @@ import { join } from 'node:path';
 export async function runVodRuntime({ ownership, image, pg, databaseUrl, password, resourceId, directory, reserve }) {
     const cases = [
         ['commands','domains::playback::commands::tests::command_protocol_retains_scope_readiness_delivery_and_confirmed_cleanup',true,1],
+        ['configuration','domains::playback::commands::tests::same_viewer_operations_preserve_revisions_progress_claims_and_cleanup',true,1],
         ['retention', 'bounded_receipts_preserve_replay_accounting_and_owned_cleanup', true, 1, '/qualification/evidence/playback-retention'],
         ['maintenance-loss', 'services::playback_admission::owner::maintenance::tests::lost_maintenance_completion_is_retained_at_root', true, 1],
         ['owner', 'services::vod_lifecycle::tests::', false, 9],
@@ -25,9 +26,12 @@ export async function runVodRuntime({ ownership, image, pg, databaseUrl, passwor
             tmpfs: { '/tmp': 'rw,nosuid,nodev,noexec,size=67108864,uid=65532,gid=65532,mode=1770',
                 '/data': 'rw,nosuid,nodev,noexec,size=16777216,uid=65532,gid=65532,mode=1770',
                 '/cache': 'rw,nosuid,nodev,noexec,size=16777216,uid=65532,gid=65532,mode=1770' },
-            environment: { DUSKCUE_TEST_RESOURCE_ID: resourceId, DUSKCUE_DATABASE_URL: databaseUrl },
+            environment: {
+                DUSKCUE_TEST_RESOURCE_ID: resourceId, DUSKCUE_DATABASE_URL: databaseUrl,
+                ...(name === 'configuration' ? { DUSKCUE_TEST_PLAYBACK_SOURCE: '/qualification/vod-source/source.mkv' } : {}),
+            },
         });
-        const execution = await ownership.start(container, { log: join(directory, `vod-${name}.log`), redact: [databaseUrl, password], bytes: 16777216, timeoutMs: ['retention','commands'].includes(name) ? 660000 : 120000, abortSignal: reserve.signal });
+        const execution = await ownership.start(container, { log: join(directory, `vod-${name}.log`), redact: [databaseUrl, password], bytes: 16777216, timeoutMs: ['retention','commands','configuration'].includes(name) ? 660000 : 120000, abortSignal: reserve.signal });
         const observed = await ownership.inspect(container);
         const passed = execution.code === 0 && !execution.signal && observed.state.exitCode === 0 && !observed.state.oomKilled
             && execution.stdout.includes(`test result: ok. ${count} passed; 0 failed; 0 ignored;`);

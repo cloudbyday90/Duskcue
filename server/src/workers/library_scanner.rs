@@ -36,6 +36,11 @@ mod probe;
 mod scan_diff;
 use probe::probe_file;
 
+#[cfg(test)]
+pub(crate) async fn probe_qualification_source(path: &Path) -> Result<ProbeResult, ScannerError> {
+    probe_file(path).await
+}
+
 const MEDIA_VIDEO_EXTENSIONS: &[&str] = &[
     "mkv", "mp4", "avi", "ts", "m2ts", "wmv", "flv", "webm", "mov", "mpg", "mpeg", "m4v", "3gp",
     "ogv", "iso", "img",

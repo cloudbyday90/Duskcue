@@ -44,6 +44,7 @@ pub struct ProfileRow {
     pub updated_at: DateTime<Utc>,
 }
 
+#[derive(Clone)]
 pub struct AmbientChannelRow {
     pub id: Uuid,
     pub owner_user_id: Uuid,

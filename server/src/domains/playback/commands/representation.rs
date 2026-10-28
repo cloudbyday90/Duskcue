@@ -4,7 +4,7 @@
 
 use super::{
     database, delivery,
-    types::{CommandRow, PROTOCOL, ReadyResponse, StatusResponse},
+    types::{CommandRow, LEGACY_PROTOCOL, PROTOCOL, ReadyResponse, StatusResponse},
 };
 use crate::{
     domains::household_security::types::Scope,
@@ -97,51 +97,21 @@ pub(super) async fn status(
             "stopping"
         }
     } else if row.state == "ready" {
-        let local = state.vod_commands.get(id);
-        if local.is_none() {
-            "uncertain"
-        } else if local.as_ref().is_some_and(|viewer| !viewer.group.active()) {
-            "stopping"
-        } else if local
-            .as_ref()
-            .is_some_and(|viewer| !viewer.published.load(Ordering::Acquire))
-        {
-            "preparing"
-        } else {
-            let viewer = delivery::authorize(state, owner, request).await?;
-            let value: ReadyResponse =
-                serde_json::from_value(row.result.ok_or(AdmissionError::Storage)?)
-                    .map_err(|_| AdmissionError::Storage)?;
-            if Some(value.session_id) != row.history_id
-                || viewer.generation != row.generation_id
-                || value.media_item_id != viewer.prepared.plan.source.media_item_id
-                || value.media_file_id != viewer.prepared.plan.source.details.id
-                || value.delivery_mode != viewer.prepared.binding.mode.as_str()
-                || value.playback_mode != viewer.prepared.plan.source.playback_mode
-                || value.audio_stream_index != viewer.prepared.plan.source.tracks.audio_stream_index
-                || value.subtitle_stream_index
-                    != viewer.prepared.plan.source.tracks.subtitle_stream_index
-            {
-                return Err(AdmissionError::Storage);
-            }
-            stream_url = Some(format!(
-                "/api/v1/playback-commands/{id}/{}",
-                if viewer.generation.is_some() {
-                    "hls/manifest.m3u8"
-                } else {
-                    "file"
-                }
-            ));
-            ready = Some(value);
-            "ready"
-        }
+        let playing = current(state, owner, request, &row).await?;
+        ready = playing.ready;
+        stream_url = playing.url;
+        playing.status
     } else if row.state == "preparing" {
         "preparing"
     } else {
         "stopping"
     };
     Ok(StatusResponse {
-        protocol: PROTOCOL,
+        protocol: if row.protocol == 1 {
+            LEGACY_PROTOCOL
+        } else {
+            PROTOCOL
+        },
         request_id: id,
         status,
         status_url: format!("/api/v1/playback-commands/{id}"),
@@ -149,5 +119,100 @@ pub(super) async fn status(
         lease_deadline: (row.reservation_state == "held").then_some(row.deadline),
         stream_url,
         ready,
+    })
+}
+
+struct Playing {
+    status: &'static str,
+    ready: Option<ReadyResponse>,
+    url: Option<String>,
+}
+impl Playing {
+    fn state(status: &'static str) -> Self {
+        Self {
+            status,
+            ready: None,
+            url: None,
+        }
+    }
+}
+
+async fn current(
+    state: &AppState,
+    owner: &Arc<AdmissionOwner>,
+    request: Request,
+    original: &CommandRow,
+) -> Result<Playing, AdmissionError> {
+    let Some(viewer) = state.vod_commands.get(request.id) else {
+        return Ok(Playing::state("uncertain"));
+    };
+    if !viewer.group.active() {
+        return Ok(Playing::state("stopping"));
+    }
+    let (control, row) = owner
+        .active_sql(request, move |conn| {
+            Box::pin(async move {
+                let control =
+                    crate::services::playback_admission::vod::revisions::control(conn, request.id)
+                        .await?;
+                let row = crate::services::playback_admission::vod::revisions::output(
+                    conn,
+                    request.id,
+                    control
+                        .current_output
+                        .ok_or(AdmissionError::Indeterminate)?,
+                )
+                .await?;
+                Ok((control, row))
+            })
+        })
+        .await?;
+    match control.state.as_str() {
+        "changing" => return Ok(Playing::state("changing")),
+        "unavailable" => return Ok(Playing::state("unavailable")),
+        "uncertain" => return Ok(Playing::state("uncertain")),
+        "retiring" => return Ok(Playing::state("stopping")),
+        "preparing" => return Ok(Playing::state("preparing")),
+        "ready" => {}
+        _ => return Err(AdmissionError::Storage),
+    }
+    let output = viewer.current()?;
+    if output.id != row.id || !output.published.load(Ordering::Acquire) {
+        return Ok(Playing::state("preparing"));
+    }
+    if !output.group.active()
+        || output
+            .generation
+            .is_some_and(|id| !state.transcode_manager.output_usable(id))
+    {
+        return Ok(Playing::state("unavailable"));
+    }
+    let output = delivery::authorize(state, owner, request, row.id).await?;
+    let value: ReadyResponse = serde_json::from_value(row.result.ok_or(AdmissionError::Storage)?)
+        .map_err(|_| AdmissionError::Storage)?;
+    if value.output_revision != Some(output.id)
+        || Some(value.session_id) != original.history_id
+        || value.media_item_id != output.prepared.plan.source.media_item_id
+        || value.media_file_id != output.prepared.plan.source.details.id
+        || value.delivery_mode != output.prepared.binding.mode.as_str()
+        || value.playback_mode != output.prepared.plan.source.playback_mode
+        || value.audio_stream_index != output.prepared.plan.source.tracks.audio_stream_index
+        || value.subtitle_stream_index != output.prepared.plan.source.tracks.subtitle_stream_index
+    {
+        return Err(AdmissionError::Storage);
+    }
+    Ok(Playing {
+        status: "ready",
+        url: Some(format!(
+            "/api/v1/playback-commands/{}/outputs/{}/{}",
+            request.id,
+            output.id,
+            if output.generation.is_some() {
+                "hls/manifest.m3u8"
+            } else {
+                "file"
+            }
+        )),
+        ready: Some(value),
     })
 }

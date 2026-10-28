@@ -10,6 +10,11 @@ use super::PlaybackError;
 use crate::services::transcoding::{TranscodeManager, TranscodeRendition};
 
 use crate::services::vod_lifecycle::{Content, PLAYLIST, Prepared};
+type ScopedOutput = (
+    Uuid,
+    Uuid,
+    std::sync::Arc<crate::services::vod_lifecycle::Generation>,
+);
 use axum::{
     body::Body,
     http::{StatusCode, header},
@@ -45,10 +50,7 @@ pub async fn get_transcode_manifest(
 pub(super) async fn manifest_scoped(
     manager: &TranscodeManager,
     session_id: Uuid,
-    scope: Option<(
-        Uuid,
-        std::sync::Arc<crate::services::vod_lifecycle::Generation>,
-    )>,
+    scope: Option<ScopedOutput>,
 ) -> Result<Response, PlaybackError> {
     manager.output.ensure_open()?;
     let session = manager
@@ -58,7 +60,7 @@ pub(super) async fn manifest_scoped(
         .output
         .response_scoped(
             Some(session_id),
-            scope.as_ref().map(|scope| scope.1.clone()),
+            scope.as_ref().map(|scope| scope.2.clone()),
             move |ctx| {
                 Box::pin(async move {
                     let content = ctx
@@ -68,7 +70,7 @@ pub(super) async fn manifest_scoped(
                         &content,
                         session_id,
                         &session.rendition_name,
-                        scope.as_ref().map(|scope| scope.0),
+                        scope.as_ref().map(|scope| (scope.0, scope.1)),
                     )?;
                     if is_master(&content) {
                         for line in content
@@ -102,10 +104,7 @@ pub(super) async fn playlist_scoped(
     manager: &TranscodeManager,
     session_id: Uuid,
     rendition: &str,
-    scope: Option<(
-        Uuid,
-        std::sync::Arc<crate::services::vod_lifecycle::Generation>,
-    )>,
+    scope: Option<ScopedOutput>,
 ) -> Result<Response, PlaybackError> {
     manager.output.ensure_open()?;
     validate_rendition(rendition)?;
@@ -117,7 +116,7 @@ pub(super) async fn playlist_scoped(
         .output
         .response_scoped(
             Some(session_id),
-            scope.as_ref().map(|scope| scope.1.clone()),
+            scope.as_ref().map(|scope| scope.2.clone()),
             move |ctx| {
                 Box::pin(async move {
                     let manifest = ctx
@@ -138,7 +137,7 @@ pub(super) async fn playlist_scoped(
                         &content,
                         session_id,
                         &rendition,
-                        scope.as_ref().map(|scope| scope.0),
+                        scope.as_ref().map(|scope| (scope.0, scope.1)),
                     )?)
                 })
             },
@@ -160,10 +159,7 @@ pub(super) async fn segment_scoped(
     session_id: Uuid,
     rendition: &str,
     filename: &str,
-    scope: Option<(
-        Uuid,
-        std::sync::Arc<crate::services::vod_lifecycle::Generation>,
-    )>,
+    scope: Option<ScopedOutput>,
 ) -> Result<Response, PlaybackError> {
     manager.output.ensure_open()?;
     validate_rendition(rendition)?;
@@ -177,7 +173,7 @@ pub(super) async fn segment_scoped(
         .output
         .response_scoped(
             Some(session_id),
-            scope.as_ref().map(|scope| scope.1.clone()),
+            scope.as_ref().map(|scope| scope.2.clone()),
             move |ctx| {
                 Box::pin(async move {
                     let manifest = ctx
@@ -326,13 +322,13 @@ fn normalize_scoped(
     content: &str,
     session_id: Uuid,
     rendition: &str,
-    scope: Option<Uuid>,
+    scope: Option<(Uuid, Uuid)>,
 ) -> Result<String, PlaybackError> {
     let content = normalize_manifest(content, session_id, rendition)?;
     Ok(match scope {
-        Some(id) => content.replace(
+        Some((viewer, output)) => content.replace(
             &format!("/api/v1/transcode/{session_id}/"),
-            &format!("/api/v1/playback-commands/{id}/hls/"),
+            &format!("/api/v1/playback-commands/{viewer}/outputs/{output}/hls/"),
         ),
         None => content,
     })

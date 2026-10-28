@@ -134,10 +134,13 @@ COPY docker/qualification/direct-native-control.mjs /qualification/direct-native
 COPY docker/qualification/direct-format-control.mjs /qualification/direct-format-control.mjs
 COPY docker/qualification/format-*.mjs /qualification/docker/qualification/
 COPY scripts/qualification/format-codecs.mjs /qualification/scripts/qualification/format-codecs.mjs
+COPY scripts/qualification/vod-fixtures.mjs scripts/qualification/commands.mjs scripts/qualification/source.mjs /qualification/scripts/qualification/
+COPY docker/qualification/vod-configuration-fixture.mjs /qualification/vod-configuration-fixture.mjs
 RUN (cd /qualification/bin && sha256sum -c playback-stop-contract.sha256) \
     && if [ "$VOD_OUTPUT_MODE" = owned ]; then (cd /qualification/evidence && sha256sum -c vod-lib-tests.sha256 && sha256sum -c playback-retention.sha256); fi \
     && sha256sum -c /usr/local/libexec/duskcue-ffmpeg.sha256 \
     && node --max-old-space-size=64 /qualification/recovery-fixture.mjs \
+    && node --max-old-space-size=64 /qualification/vod-configuration-fixture.mjs \
     && chmod 0555 /qualification/bin/playback-stop-contract \
     && if [ "$VOD_OUTPUT_MODE" = owned ]; then chmod 0555 /qualification/evidence/vod-lib-tests /qualification/evidence/playback-retention; fi \
     && chmod 0444 /src/.cache/tonight-server-ffmpeg/* /qualification/cargo-artifacts.jsonl
@@ -155,6 +158,9 @@ RUN case "$FORMAT_CORPUS_MODE" in \
 ENV HOME=/tmp \
     DUSKCUE_TEST_FFMPEG_MODE=linux-local-managed \
     DUSKCUE_TEST_PLAYBACK_SOURCE=/src/.cache/tonight-server-ffmpeg/source.mkv \
+    DUSKCUE_TEST_CONFIGURATION_SOURCE=/qualification/vod-source/source.mkv \
+    DUSKCUE_TEST_CONFIGURATION_COPY=/qualification/vod-source/source.mp4 \
+    DUSKCUE_TEST_CONFIGURATION_CORPUS=/qualification/vod-source/corpus.json \
     DUSKCUE_TEST_PROGRESSIVE_PLAYBACK=event \
     DUSKCUE_TRANSCODE_ACCESS_TESTS=disposable \
     RUST_TEST_THREADS=1

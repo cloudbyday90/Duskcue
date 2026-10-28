@@ -613,7 +613,7 @@ pub async fn get_playback_info(
     let stream_decision: String = row.try_get("stream_decision").unwrap_or_default();
     let started_at: chrono::DateTime<chrono::Utc> = row.try_get("started_at").unwrap_or_default();
     let metadata: serde_json::Value = row.try_get("metadata").unwrap_or(serde_json::json!({}));
-    if metadata.get("vod_command_protocol") == Some(&serde_json::json!(1)) {
+    if metadata.get("vod_command_protocol").is_some() {
         return Err(PlaybackError::SessionNotFound);
     }
     if (super::direct::has_context(&metadata) || super::source_context::has_context(&metadata))

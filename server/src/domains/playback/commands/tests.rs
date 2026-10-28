@@ -20,16 +20,17 @@ mod faults;
 #[path = "../../../../tests/support/playback_admission_fixture.rs"]
 #[allow(dead_code)]
 mod fixture;
+mod reconfiguration;
 mod support;
 
 #[test]
 fn complete_intent_canonicalizes_objects_and_defaults_but_preserves_array_order() {
     let id = Uuid::now_v7();
     let item = Uuid::now_v7();
-    let a=StartRequest{request_id:id,selection:json!({"media_item_id":item,"device_profile":{"video_codecs":["h264","hevc"],"max_resolution":"1080p"}})}.intent().unwrap();
-    let b=StartRequest{request_id:id,selection:json!({"force_hls":false,"playback_mode":"interactive","media_item_id":item,"device_profile":{"max_resolution":"1080p","video_codecs":["h264","hevc"]}})}.intent().unwrap();
+    let a=StartRequest{protocol:super::types::PROTOCOL.into(),request_id:id,selection:json!({"media_item_id":item,"device_profile":{"video_codecs":["h264","hevc"],"max_resolution":"1080p"}})}.intent().unwrap();
+    let b=StartRequest{protocol:super::types::PROTOCOL.into(),request_id:id,selection:json!({"force_hls":false,"playback_mode":"interactive","media_item_id":item,"device_profile":{"max_resolution":"1080p","video_codecs":["h264","hevc"]}})}.intent().unwrap();
     assert_eq!(a.hash, b.hash);
-    let c=StartRequest{request_id:id,selection:json!({"media_item_id":item,"device_profile":{"video_codecs":["hevc","h264"],"max_resolution":"1080p"}})}.intent().unwrap();
+    let c=StartRequest{protocol:super::types::PROTOCOL.into(),request_id:id,selection:json!({"media_item_id":item,"device_profile":{"video_codecs":["hevc","h264"],"max_resolution":"1080p"}})}.intent().unwrap();
     assert_ne!(a.hash, c.hash);
 }
 
@@ -45,6 +46,7 @@ fn start_rejects_unsupported_and_unbounded_intent_before_registration() {
     ] {
         assert!(
             StartRequest {
+                protocol: super::types::PROTOCOL.into(),
                 request_id: Uuid::now_v7(),
                 selection
             }
@@ -54,12 +56,79 @@ fn start_rejects_unsupported_and_unbounded_intent_before_registration() {
     }
     assert!(
         StartRequest {
+            protocol: super::types::PROTOCOL.into(),
             request_id: Uuid::nil(),
             selection: json!({"media_item_id":item})
         }
         .intent()
         .is_err()
     );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires owned disposable PostgreSQL18 and actual FFmpeg source fixtures"]
+async fn same_viewer_operations_preserve_revisions_progress_claims_and_cleanup()
+-> anyhow::Result<()> {
+    tokio::time::timeout(std::time::Duration::from_secs(600), async {
+        database::run(reconfiguration::direct).await?;
+        println!("VOD_CONFIGURATION_CASE direct_checkpoints passed");
+        database::run(reconfiguration::encoded).await?;
+        println!("VOD_CONFIGURATION_CASE encoded_reconfiguration passed");
+        database::run(reconfiguration::adversity::tracks).await?;
+        println!("VOD_CONFIGURATION_CASE selected_tracks passed");
+        database::run(reconfiguration::conditions).await?;
+        println!("VOD_CONFIGURATION_CASE conditions_replay passed");
+        database::run(reconfiguration::adversity::contention).await?;
+        println!("VOD_CONFIGURATION_CASE contention_observer passed");
+        database::run(reconfiguration::adversity::correction).await?;
+        println!("VOD_CONFIGURATION_CASE failed_correction passed");
+        database::run(reconfiguration::adversity::recovery).await?;
+        println!("VOD_CONFIGURATION_CASE direct_recovery passed");
+        database::run(reconfiguration::copied::timing_and_fallback).await?;
+        println!("VOD_CONFIGURATION_CASE copied_timing_recovery passed");
+        reconfiguration::copied::formats().await?;
+        database::run(reconfiguration::adversity::boundaries).await?;
+        println!("VOD_CONFIGURATION_CASE protocol_stop passed");
+        database::run(reconfiguration::adversity::bodies).await?;
+        println!("VOD_CONFIGURATION_CASE bounded_http_bodies passed");
+        database::run(reconfiguration::actors::bearer).await?;
+        println!("VOD_CONFIGURATION_CASE bearer_profile_cleanup passed");
+        database::run(reconfiguration::storage::guards).await?;
+        println!("VOD_CONFIGURATION_CASE storage_retention passed");
+        database::run(reconfiguration::migration::backfill).await?;
+        println!("VOD_CONFIGURATION_CASE migration_backfill passed");
+        database::run(reconfiguration::migration::inconsistent).await?;
+        println!("VOD_CONFIGURATION_CASE migration_rollback passed");
+        database::run(reconfiguration::quotas::full).await?;
+        println!("VOD_CONFIGURATION_CASE full_storage_quotas passed");
+        #[cfg(target_os = "linux")]
+        {
+            database::run(reconfiguration::linux::worker).await?;
+            println!("VOD_CONFIGURATION_CASE actual_worker_stall passed");
+        }
+        for needle in [
+            &b"INSERT INTO playback_vod_operations"[..],
+            &b"UPDATE playback_vod_outputs SET state='ready'"[..],
+            &b"UPDATE playback_vod_outputs SET state='complete'"[..],
+            &b"UPDATE playback_vod_controls SET checkpoint_output"[..],
+        ] {
+            for before in [true, false] {
+                database::run(async |db| {
+                    reconfiguration::faults::wire(
+                        db,
+                        needle,
+                        before,
+                        needle.starts_with(b"UPDATE playback_vod_controls"),
+                    )
+                    .await
+                })
+                .await?;
+                println!("VOD_CONFIGURATION_CASE wire_fault passed");
+            }
+        }
+        Ok::<_, anyhow::Error>(())
+    })
+    .await?
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

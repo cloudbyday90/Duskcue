@@ -120,11 +120,7 @@ pub async fn renew(
         .await?
         .ok_or(CommandError::Conflict)?;
     if let Some(viewer) = state.vod_commands.get(id)
-        && (!viewer.group.active()
-            || (viewer.published.load(std::sync::atomic::Ordering::Acquire)
-                && viewer
-                    .generation
-                    .is_some_and(|generation| !state.transcode_manager.output_usable(generation))))
+        && !viewer.group.active()
     {
         owner.stop(id)?;
         return Err(CommandError::Conflict);

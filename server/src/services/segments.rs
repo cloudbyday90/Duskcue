@@ -618,7 +618,9 @@ pub async fn fingerprint_file(
         }
 
         let samples: Vec<i16> = buf[..n]
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| i16::from_le_bytes([c[0], c[1]]))
             .collect();
         if let Err(e) = fp.feed(&samples) {

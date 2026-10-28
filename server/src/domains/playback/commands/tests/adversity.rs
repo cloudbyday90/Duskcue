@@ -191,8 +191,14 @@ pub(super) async fn cleanup_retry(db: &Database) -> anyhow::Result<()> {
         tokio::time::sleep(Duration::from_millis(900)).await;
         let (state,completed):(String,bool)=sqlx::query_as("SELECT r.state,c.resources_completed FROM playback_reservations r JOIN playback_vod_commands c ON c.reservation_id=r.id WHERE r.id=$1").bind(id).fetch_one(&f.base.state.pool).await?;
         anyhow::ensure!(state=="retiring"&&!completed);
-        let uncertain=f.json(Method::GET,&format!("/api/v1/playback-commands/{id}/retirement"),None).await?;
-        anyhow::ensure!(uncertain.0==StatusCode::OK&&uncertain.1["status"]=="cleanup_uncertain");
+        tokio::time::timeout(Duration::from_secs(4),async {
+            loop {
+                let uncertain=f.json(Method::GET,&format!("/api/v1/playback-commands/{id}/retirement"),None).await?;
+                anyhow::ensure!(uncertain.0==StatusCode::OK);
+                if uncertain.1["status"]=="cleanup_uncertain" {return Ok::<_,anyhow::Error>(());}
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+        }).await??;
         block.rollback().await?;
         f.stop(id).await?;
         Ok(())

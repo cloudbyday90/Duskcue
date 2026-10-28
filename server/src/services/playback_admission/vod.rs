@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgConnection;
 use uuid::Uuid;
 
+pub(crate) mod revisions;
+
 pub(crate) async fn lock(conn: &mut PgConnection, user: Uuid) -> Result<(), AdmissionError> {
     super::policy::fence(conn).await?;
     super::database::household(conn, user).await
@@ -145,7 +147,7 @@ pub(super) async fn insert(
     id: Uuid,
     binding: Binding,
 ) -> Result<(), AdmissionError> {
-    sqlx::query("INSERT INTO playback_vod_commands(reservation_id,intent_hash,policy_hash,source_hash,delivery_mode,encodes,source_4k,ambient_channel_id,ambient_revision) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)")
+    sqlx::query("INSERT INTO playback_vod_commands(reservation_id,intent_hash,policy_hash,source_hash,delivery_mode,encodes,source_4k,ambient_channel_id,ambient_revision,protocol) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,2)")
         .bind(id).bind(binding.intent.as_slice()).bind(binding.policy.as_slice()).bind(binding.source.as_slice()).bind(binding.mode.as_str()).bind(binding.encodes).bind(binding.source_4k).bind(binding.ambient.map(|v|v.0)).bind(binding.ambient.map(|v|v.1)).execute(conn).await?;
     Ok(())
 }

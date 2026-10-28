@@ -17,6 +17,7 @@ use crate::{
 };
 use uuid::Uuid;
 
+#[derive(Clone)]
 pub(super) struct Prepared {
     pub source: ResolvedSource,
     pub decision: PlaybackDecision,

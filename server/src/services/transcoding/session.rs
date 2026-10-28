@@ -5,7 +5,7 @@
 use super::{StartSessionParams, TranscodeSession};
 
 impl TranscodeSession {
-    pub(super) fn restart_params(self, position_ms: i64) -> StartSessionParams {
+    pub(crate) fn restart_params(self, position_ms: i64) -> StartSessionParams {
         StartSessionParams {
             media_file_id: self.media_file_id,
             user_id: self.user_id,

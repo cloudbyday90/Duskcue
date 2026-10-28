@@ -18,6 +18,8 @@ pub enum AdmissionError {
     ReceiptCapacity,
     #[error("request identity conflicts")]
     Conflict,
+    #[error("playback configuration condition changed")]
+    Precondition,
     #[error("playback request is still in progress")]
     Pending,
     #[error("playback owner fenced or closed")]

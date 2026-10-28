@@ -10,6 +10,7 @@ import { setTimeout } from 'node:timers/promises';
 import { createGuardedDocker } from './guarded-docker.mjs';
 import { runBounded } from '../qualification/commands.mjs';
 import { qualificationSources, hashFile } from '../qualification/source.mjs';
+import { createVodSource } from '../qualification/vod-fixtures.mjs';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 
@@ -24,7 +25,8 @@ async function fixture(root, path, directory = false) {
 async function main() {
     const args = process.argv.slice(2);
     const commandsOnly=args[0]==='--commands-only';
-    if(commandsOnly) args.shift();
+    const configurationOnly=args[0]==='--configuration-only';
+    if(commandsOnly||configurationOnly) args.shift();
     if (args.length !== 6 || args[0] !== '--ffmpeg-bin' || args[2] !== '--source' || args[4] !== '--hls') throw new Error('Provide --ffmpeg-bin, --source and --hls ignored fixture paths.');
     const workflow = await createGuardedDocker(workspace);
     const cache = await realpath(join(workspace, '.cache'));
@@ -42,6 +44,7 @@ async function main() {
         return execution.stdout.trim();
     };
     let failure;
+    let postgresName;
     try {
         const endpoint = await checked(['context', 'inspect', '--format', '{{.Endpoints.docker.Host}}']);
         if (!endpoint.startsWith('npipe:') && !endpoint.startsWith('unix:///')) throw new Error('VOD PostgreSQL requires a local Docker engine.');
@@ -53,10 +56,12 @@ async function main() {
         if (Number(evidence.format?.duration) < 8 || Number(evidence.format?.duration) > 9 || !evidence.streams?.some((s) => s.index === 1 && s.codec_name === 'h264' && s.width === 320 && s.height === 180)) throw new Error('VOD qualification requires the established eight-second audio-first source.');
         result.source = await qualificationSources(workspace);
         result.driverSha256 = await hashFile(fileURLToPath(import.meta.url));
+        result.configurationFixture = await createVodSource(source, join(directory, 'source'), join(ffmpeg, 'ffmpeg.exe'));
         const image = JSON.parse(await checked(['image', 'inspect', 'postgres:18', '--format', '{{json .}}']));
         if (!/^sha256:[a-f0-9]{64}$/.test(image.Id || '') || image.Os !== 'linux') throw new Error('VOD PostgreSQL image must be immutable Linux PostgreSQL18.');
         result.postgresImage = image.Id;
         const name = `duskcue-playback-${randomUUID()}`;
+        postgresName = name;
         await appendFile(process.env.DUSKCUE_TEST_RESOURCE_CONTAINERS_FILE, `${JSON.stringify({ resourceId: workflow.resourceId, name })}\n`);
         const database = 'duskcue_transcode_test_vod';
         await checked(['run', '--detach', '--pull=never', '--name', name, '--label', `duskcue.test.resource-id=${workflow.resourceId}`,
@@ -76,9 +81,10 @@ async function main() {
             await setTimeout(100);
         }
         const url = `postgres://postgres:${password}@127.0.0.1:${port}/${database}`;
-        const env = { ...process.env, PATH: `${ffmpeg};${process.env.PATH}`, DUSKCUE_TEST_PLAYBACK_SOURCE: source, DUSKCUE_HLS_TEST_MEDIA_DIR: hls, DUSKCUE_DATABASE_URL: url, DUSKCUE_TRANSCODE_ACCESS_TESTS: 'disposable' };
+        const env = { ...process.env, PATH: `${ffmpeg};${process.env.PATH}`, DUSKCUE_TEST_PLAYBACK_SOURCE: source, DUSKCUE_TEST_CONFIGURATION_SOURCE: result.configurationFixture.path, DUSKCUE_TEST_CONFIGURATION_COPY: result.configurationFixture.copyPath, DUSKCUE_TEST_CONFIGURATION_CORPUS: result.configurationFixture.corpus, DUSKCUE_HLS_TEST_MEDIA_DIR: hls, DUSKCUE_DATABASE_URL: url, DUSKCUE_TRANSCODE_ACCESS_TESTS: 'disposable' };
         const cases = [
             ['commands','--lib','domains::playback::commands::tests::command_protocol_retains_scope_readiness_delivery_and_confirmed_cleanup',true],
+            ['configuration','--lib','domains::playback::commands::tests::same_viewer_operations_preserve_revisions_progress_claims_and_cleanup',true],
             ['retention', '--test', 'playback_retention', true],
             ['maintenance-loss', '--lib', 'lost_maintenance_completion_is_retained_at_root', true],
             ['owner', '--lib', 'services::vod_lifecycle::tests::', false],
@@ -91,10 +97,11 @@ async function main() {
             ['stop', '--test', 'playback_stop_contract', true],
         ];
         for (const [name, target, selector, ignored] of cases) {
-            if(commandsOnly&&name!=='commands')continue;
+            if(commandsOnly&&!['commands','configuration'].includes(name))continue;
+            if(configurationOnly&&name!=='configuration')continue;
             const args = ['test', '-p', 'duskcue', '--locked', '--offline', '-j', '2', target, selector, '--', ...(ignored ? ['--ignored'] : []), '--nocapture'];
             const execution = await runBounded('cargo.exe', args, { cwd: workspace, env, log: join(directory, `${name}.log`), redact: [password, url], timeoutMs: 1800000, bytes: 16777216,
-                onLine: ['retention','commands'].includes(name) ? (line) => { const marker = line.match(/\b(?:RETENTION_CASE|VOD_COMMAND_CASE) [a-z_]+ passed$/)?.[0]; if (marker) console.log(marker); } : undefined });
+                onLine: ['retention','commands','configuration'].includes(name) ? (line) => { const marker = line.match(/\b(?:RETENTION_CASE|VOD_COMMAND_CASE|VOD_CONFIGURATION_CASE) [a-z_]+ passed$/)?.[0]; if (marker) console.log(marker); } : undefined });
             const match = execution.stdout.match(/test result: ok\. (\d+) passed; 0 failed; 0 ignored;/);
             const passed = execution.code === 0 && !execution.signal && !!match && Number(match[1]) > 0 && (['owner', 'direct'].includes(name) || Number(match[1]) === 1);
             result.cases.push({ name, passed, tests: match ? Number(match[1]) : 0 });
@@ -105,6 +112,14 @@ async function main() {
         result.status = 'passed';
     } catch (error) { failure = error; result.status = 'failed'; result.error = error.message; }
     finally {
+        if (postgresName) {
+            try {
+                const observed = await workflow.command(['inspect', postgresName, '--format', '{{json .State}}']);
+                result.postgresState = JSON.parse(observed.stdout);
+                const logs = await workflow.command(['logs', '--tail', '40', postgresName]);
+                await writeFile(join(directory, 'postgres.log'), `${logs.stdout}\n${logs.stderr}`.replaceAll(password, '[redacted]'));
+            } catch { result.postgresObservationFailed = true; }
+        }
         try { await workflow.cleanup(); result.cleanup = true; }
         catch (error) { failure ||= error; result.status = 'failed'; }
         await writeFile(join(directory, 'result.json'), `${JSON.stringify(result, null, 2)}\n`);

@@ -323,21 +323,23 @@ pub async fn quotas(db: &Database) -> anyhow::Result<()> {
     sqlx::query("ANALYZE playback_reservations")
         .execute(&db.pool)
         .await?;
-    let mut explain = db.pool.begin().await?;
-    let plan: serde_json::Value = sqlx::query(AssertSqlSafe(format!(
-        "EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) {}",
-        super::queries::PRUNE
-    )))
-    .bind(Utc::now())
-    .fetch_one(&mut *explain)
-    .await?
-    .try_get(0)?;
-    explain.rollback().await?;
-    let plan = plan.to_string();
-    assert!(
-        plan.contains("playback_receipt_pruning"),
-        "prune candidate query must use its partial index: {plan}"
-    );
+    for query in [super::queries::PRUNE, super::queries::PRUNE_SHARED] {
+        let mut explain = db.pool.begin().await?;
+        let plan: serde_json::Value = sqlx::query(AssertSqlSafe(format!(
+            "EXPLAIN (ANALYZE,BUFFERS,FORMAT JSON) {}",
+            query
+        )))
+        .bind(Utc::now())
+        .fetch_one(&mut *explain)
+        .await?
+        .try_get(0)?;
+        explain.rollback().await?;
+        let plan = plan.to_string();
+        assert!(
+            plan.contains("playback_receipt_pruning"),
+            "prune candidate query must use its partial index: {plan}"
+        );
+    }
     fixture::close(&owner).await?;
     Ok(())
 }

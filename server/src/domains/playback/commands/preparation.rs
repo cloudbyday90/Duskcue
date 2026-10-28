@@ -22,11 +22,13 @@ use crate::{
 use std::{path::PathBuf, sync::Arc};
 use uuid::Uuid;
 
+#[derive(Clone)]
 pub(super) struct PreparedCommand {
     pub request: Request,
     pub binding: Binding,
     pub plan: Prepared,
     pub identity: playback::direct::FileIdentity,
+    pub selection: playback::types::StartPlaybackRequest,
 }
 
 pub(super) async fn prepare(
@@ -132,10 +134,15 @@ pub(super) async fn prepare(
         binding,
         plan,
         identity,
+        selection,
     })
 }
 
-fn validate(policy: &Policy, plan: &Prepared, binding: Binding) -> Result<(), AdmissionError> {
+pub(super) fn validate(
+    policy: &Policy,
+    plan: &Prepared,
+    binding: Binding,
+) -> Result<(), AdmissionError> {
     if !policy.permits(binding) {
         return Err(AdmissionError::Policy);
     }

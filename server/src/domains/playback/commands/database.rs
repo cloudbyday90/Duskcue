@@ -50,7 +50,7 @@ pub(super) async fn read_scoped(
     id: Uuid,
     user: Option<Uuid>,
 ) -> Result<Option<CommandRow>, AdmissionError> {
-    Ok(sqlx::query_as("SELECT r.fingerprint,r.instance_id,r.state AS reservation_state,r.deadline,clock_timestamp() AS observed_at,c.intent_hash,c.state,c.result,c.history_id,c.history_started_at,c.generation_id,c.resources_completed,c.cleanup_uncertain FROM playback_reservations r JOIN playback_vod_commands c ON c.reservation_id=r.id WHERE r.id=$1 AND ($2::uuid IS NULL OR r.household_id=$2) FOR UPDATE OF r,c")
+    Ok(sqlx::query_as("SELECT c.protocol,r.fingerprint,r.instance_id,r.state AS reservation_state,r.deadline,clock_timestamp() AS observed_at,c.intent_hash,c.state,c.result,c.history_id,c.history_started_at,c.generation_id,c.resources_completed,c.cleanup_uncertain FROM playback_reservations r JOIN playback_vod_commands c ON c.reservation_id=r.id WHERE r.id=$1 AND ($2::uuid IS NULL OR r.household_id=$2) FOR UPDATE OF r,c")
         .bind(id).bind(user).fetch_optional(conn).await?)
 }
 

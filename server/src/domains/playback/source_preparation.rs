@@ -14,6 +14,7 @@ use super::types::{PlaybackActor, StartPlaybackRequest, VALID_PLAYBACK_MODES};
 use crate::domains::profiles::{service as profiles, types::AmbientChannelRow};
 use crate::services::decision_engine::MediaFileInfo;
 
+#[derive(Clone)]
 pub(super) struct ResolvedSource {
     pub media_item_id: Uuid,
     pub library_id: Uuid,

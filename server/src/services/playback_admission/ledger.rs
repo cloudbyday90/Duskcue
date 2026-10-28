@@ -80,7 +80,7 @@ impl Ledger {
                 if !policy.permits(binding) || policy.hash()?!=binding.policy {return Err(AdmissionError::Policy);}
                 super::vod::ambient(conn,request,binding).await?;
                 if binding.encodes {
-                    let count:i64=sqlx::query_scalar("SELECT count(*) FROM playback_reservations r JOIN playback_vod_commands c ON c.reservation_id=r.id WHERE r.household_id=$1 AND r.state<>'released' AND c.encodes")
+                    let count:i64=sqlx::query_scalar("SELECT count(*) FROM playback_reservations r JOIN playback_vod_commands c ON c.reservation_id=r.id LEFT JOIN playback_vod_controls v ON v.reservation_id=r.id WHERE r.household_id=$1 AND r.state<>'released' AND COALESCE(v.claim_encodes,c.encodes)")
                         .bind(request.actor.user).fetch_one(&mut *conn).await?;
                     if !super::policy::allows(policy.transcode,count) {return Err(AdmissionError::Capacity);}
                 }
@@ -137,10 +137,8 @@ impl Ledger {
         super::vod::matches(conn, request.id, binding).await?;
         if let Some(binding) = binding {
             super::vod::ambient(conn, request, binding).await?;
-            if !super::vod::policy(conn, request.actor.user)
-                .await?
-                .permits(binding)
-            {
+            let policy = super::vod::policy(conn, request.actor.user).await?;
+            if !super::vod::revisions::permitted(conn, request.id, &policy).await? {
                 return Err(AdmissionError::Policy);
             }
         }
@@ -163,6 +161,7 @@ impl Ledger {
             let Some(row)=database::row(conn,request.id).await? else {return Ok(());};
             if row.instance_id!=self.instance || row.fingerprint!=fingerprint {return Err(AdmissionError::Conflict);}
             if release {
+                super::vod::revisions::complete(conn,request.id).await?;
                 sqlx::query("UPDATE playback_vod_commands SET resources_completed=true,state=CASE WHEN state='preparing' THEN 'failed' WHEN state='ready' THEN 'stopping' ELSE state END WHERE reservation_id=$1").bind(request.id).execute(&mut *conn).await?;
                 sqlx::query("UPDATE playback_reservations SET state='released',released_at=COALESCE(released_at,clock_timestamp()) WHERE id=$1").bind(request.id).execute(conn).await?;
             } else {

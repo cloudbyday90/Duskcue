@@ -96,6 +96,7 @@ pub(super) fn row_to_media_file_details(row: &sqlx::postgres::PgRow) -> MediaFil
     }
 }
 
+#[derive(Clone)]
 pub(super) struct SelectedTracks {
     pub(super) video_stream_index: Option<i32>,
     pub(super) audio_stream_index: Option<i32>,

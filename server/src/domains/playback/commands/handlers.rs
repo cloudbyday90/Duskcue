@@ -22,10 +22,10 @@ use axum::{
 };
 use uuid::Uuid;
 
-fn scope(user: &AuthenticatedUser, headers: &HeaderMap) -> Result<Scope, CommandError> {
+pub(super) fn scope(user: &AuthenticatedUser, headers: &HeaderMap) -> Result<Scope, CommandError> {
     context::scope(user, headers).map_err(|_| CommandError::Conflict)
 }
-fn target<T>(path: Result<Path<T>, PathRejection>) -> Result<T, CommandError> {
+pub(super) fn target<T>(path: Result<Path<T>, PathRejection>) -> Result<T, CommandError> {
     path.map(|Path(value)| value)
         .map_err(|_| CommandError::Invalid)
 }
@@ -132,38 +132,49 @@ pub async fn file(
     State(state): State<AppState>,
     user: AuthenticatedUser,
     headers: HeaderMap,
-    path: Result<Path<Uuid>, PathRejection>,
+    path: Result<Path<(Uuid, Uuid)>, PathRejection>,
 ) -> Result<Response, CommandError> {
-    delivery::file(&state, scope(&user, &headers)?, target(path)?, &headers).await
+    let (id, output) = target(path)?;
+    delivery::file(&state, scope(&user, &headers)?, id, output, &headers).await
 }
 pub async fn manifest(
     State(state): State<AppState>,
     user: AuthenticatedUser,
     headers: HeaderMap,
-    path: Result<Path<Uuid>, PathRejection>,
+    path: Result<Path<(Uuid, Uuid)>, PathRejection>,
 ) -> Result<Response, CommandError> {
-    delivery::hls(&state, scope(&user, &headers)?, target(path)?, None, None).await
+    let (id, output) = target(path)?;
+    delivery::hls(&state, scope(&user, &headers)?, id, output, None, None).await
 }
 pub async fn playlist(
     State(state): State<AppState>,
     user: AuthenticatedUser,
     headers: HeaderMap,
-    path: Result<Path<(Uuid, String)>, PathRejection>,
+    path: Result<Path<(Uuid, Uuid, String)>, PathRejection>,
 ) -> Result<Response, CommandError> {
-    let (id, rendition) = target(path)?;
-    delivery::hls(&state, scope(&user, &headers)?, id, Some(&rendition), None).await
+    let (id, output, rendition) = target(path)?;
+    delivery::hls(
+        &state,
+        scope(&user, &headers)?,
+        id,
+        output,
+        Some(&rendition),
+        None,
+    )
+    .await
 }
 pub async fn segment(
     State(state): State<AppState>,
     user: AuthenticatedUser,
     headers: HeaderMap,
-    path: Result<Path<(Uuid, String, String)>, PathRejection>,
+    path: Result<Path<(Uuid, Uuid, String, String)>, PathRejection>,
 ) -> Result<Response, CommandError> {
-    let (id, rendition, segment) = target(path)?;
+    let (id, output, rendition, segment) = target(path)?;
     delivery::hls(
         &state,
         scope(&user, &headers)?,
         id,
+        output,
         Some(&rendition),
         Some(&segment),
     )

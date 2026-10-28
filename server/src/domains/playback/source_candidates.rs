@@ -205,7 +205,7 @@ fn eligible(
         )
 }
 
-fn duration_ms(source: &ResolvedSource) -> Option<i64> {
+pub(super) fn duration_ms(source: &ResolvedSource) -> Option<i64> {
     let seconds = source.details.additional_streams["format"]["duration_seconds"].as_f64()?;
     let milliseconds = (seconds * 1000.0).floor();
     (seconds.is_finite() && (1.0..=f64::from(i32::MAX)).contains(&milliseconds))

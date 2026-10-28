@@ -29,6 +29,7 @@ pub async fn reconcile(
     database::transaction(pool,async |conn| {
         let valid:Option<bool>=sqlx::query_scalar("SELECT fenced AND revision=$2 FROM playback_instances WHERE id=$1 FOR UPDATE").bind(instance).bind(revision).fetch_optional(&mut *conn).await?;
         if valid!=Some(true) {return Err(AdmissionError::Conflict);}
+        sqlx::query("SELECT playback_vod_complete_outputs(id) FROM playback_reservations WHERE instance_id=$1 AND state<>'released' ORDER BY id").bind(instance).execute(&mut *conn).await?;
         sqlx::query("UPDATE playback_vod_commands c SET resources_completed=true,state=CASE WHEN c.state='preparing' THEN 'failed' WHEN c.state='ready' THEN 'stopping' ELSE c.state END FROM playback_reservations r WHERE r.id=c.reservation_id AND r.instance_id=$1 AND r.state<>'released'").bind(instance).execute(&mut *conn).await?;
         let count=sqlx::query("UPDATE playback_reservations SET state='released',released_at=clock_timestamp() WHERE instance_id=$1 AND state<>'released'").bind(instance).execute(&mut *conn).await?.rows_affected();
         sqlx::query("UPDATE playback_instances SET reconciled_at=clock_timestamp() WHERE id=$1").bind(instance).execute(&mut *conn).await?;

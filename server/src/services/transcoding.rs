@@ -308,6 +308,15 @@ pub struct TranscodeManager {
 }
 
 impl TranscodeManager {
+    #[cfg(test)]
+    pub(crate) fn reserve_fixture_capacity(
+        &self,
+    ) -> Result<tokio::sync::OwnedSemaphorePermit, tokio::sync::TryAcquireError> {
+        let permits = u32::try_from(self.semaphore.available_permits())
+            .map_err(|_| tokio::sync::TryAcquireError::NoPermits)?;
+        self.semaphore.clone().try_acquire_many_owned(permits)
+    }
+
     pub fn new(config: Arc<ArcSwap<RuntimeConfig>>) -> Self {
         let max_concurrent = config.load().resource_limits.max_concurrent_transcodes as usize;
 

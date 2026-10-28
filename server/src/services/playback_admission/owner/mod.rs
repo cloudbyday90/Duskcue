@@ -57,6 +57,12 @@ pub struct AdmissionOwner {
 }
 
 impl AdmissionOwner {
+    #[cfg(test)]
+    pub(crate) fn reserve_fixture_maintenance(
+        &self,
+    ) -> Result<tokio::sync::OwnedSemaphorePermit, tokio::sync::TryAcquireError> {
+        self.maintenance.clone().try_acquire_owned()
+    }
     pub async fn new(
         pool: PgPool,
         key: Arc<EncryptionKey>,
