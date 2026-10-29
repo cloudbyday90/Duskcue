@@ -21,18 +21,24 @@ class RelayPlaylists {
           !content.contains('\r') &&
           content.startsWith('#EXTM3U\n'),
     );
-    final master = path == 'manifest.m3u8';
+    final root = path == 'manifest.m3u8';
+    final master = content
+        .split('\n')
+        .any((line) => line.startsWith('#EXT-X-STREAM-INF:'));
+    require(!master || root);
+    String? rendition = root ? null : path.split('/').first;
     final refs = <String>{};
     var variants = 0;
     String reference(String value) {
       require(value.startsWith(upstreamPrefix));
       final suffix = value.substring(upstreamPrefix.length);
-      require(
-        master
-            ? RelayRequest.playlist.hasMatch(suffix)
-            : RelayRequest.binary.hasMatch(suffix) &&
-                  suffix.split('/').first == path.split('/').first,
-      );
+      if (master) {
+        require(RelayRequest.playlist.hasMatch(suffix));
+      } else {
+        require(RelayRequest.binary.hasMatch(suffix));
+        rendition ??= suffix.split('/').first;
+        require(suffix.split('/').first == rendition);
+      }
       refs.add(suffix);
       require(refs.length <= 8192);
       return '$localPrefix$suffix';
@@ -82,7 +88,7 @@ class RelayPlaylists {
     }
     require(!awaitingVariant && (!master || variants > 0));
     final next = {..._references, path: refs};
-    if (master) {
+    if (root) {
       next.removeWhere((key, _) => key != path && !refs.contains(key));
     }
     require(

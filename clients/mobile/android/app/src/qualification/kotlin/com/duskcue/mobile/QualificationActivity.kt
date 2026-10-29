@@ -13,6 +13,7 @@ class QualificationActivity : MainActivity() {
         super.configureFlutterEngine(flutterEngine)
         check(applicationContext.packageName == "com.duskcue.mobile.qualification")
         val bootstrap = File(noBackupFilesDir, "playback-bootstrap.json")
+        val storage = QualificationStorage(applicationContext)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "duskcue/qualification").setMethodCallHandler { call, result ->
             try {
                 when (call.method) {
@@ -27,6 +28,9 @@ class QualificationActivity : MainActivity() {
                         check(!bootstrap.exists())
                         result.success(null)
                     }
+                    "storageProbe" -> result.success(storage.probe())
+                    "storageCorrupt" -> result.success(storage.corrupt())
+                    "storageRestore" -> { storage.restore(); result.success(null) }
                     else -> result.notImplemented()
                 }
             } catch (_: Exception) { result.error("QUALIFICATION_BOOTSTRAP", "Private qualification bootstrap unavailable", null) }

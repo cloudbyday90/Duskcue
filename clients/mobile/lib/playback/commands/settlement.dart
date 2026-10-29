@@ -13,8 +13,7 @@ extension PlaybackSettlement on PlaybackCommands {
       lease.stop();
       busy = false;
       monitoring = false;
-      state = 'idle';
-      unawaited(journal.clear().catchError((Object _) {}));
+      if (error == null) state = 'idle';
       return;
     }
     final token = ++_epoch;

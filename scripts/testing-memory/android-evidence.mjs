@@ -45,7 +45,7 @@ export function installedAndroidApk(response, packageName) {
 
 export async function androidToolInputs(workspace) {
     const files = [];
-    for (const name of ['android-app.mjs', 'android-boot.mjs', 'android-evidence.mjs', 'android-owner.mjs',
+    for (const name of ['android-app.mjs', 'android-stage.mjs', 'android-boot.mjs', 'android-evidence.mjs', 'android-owner.mjs',
         'android-runtime.mjs', 'android-sdk.mjs', 'presets.mjs', 'qualify-vod-output.mjs', 'owned-process.mjs']) {
         files.push({ path: name, sha256: await hashFile(join(workspace, 'scripts/testing-memory', name)) });
     }

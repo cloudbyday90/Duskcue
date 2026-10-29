@@ -109,6 +109,14 @@ void main() {
     expect(await fixture.commands.open(androidSelection(fixture.item)), isTrue);
     expect(fixture.starts, 0);
     expect(fixture.commands.error, isNotNull);
+    final corrupt = fixture.storage.value;
+    await fixture.commands.close();
+    await fixture.commands.journal.operations.drain();
+    expect(fixture.storage.value, corrupt);
+    expect(fixture.storage.calls, isNot(contains('clear')));
+    expect(await fixture.commands.open(androidSelection(fixture.item)), isTrue);
+    expect(fixture.starts, 0);
+    expect(fixture.commands.error, isNotNull);
   });
   test(
     'Close fences an intended Start while its journal write is still pending',

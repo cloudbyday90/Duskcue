@@ -29,6 +29,39 @@ Future<String> fetch(Uri uri, {Map<String, String> headers = const {}}) async {
 
 void main() {
   test(
+    'root media playlists bind one rendition and reject mixed or nested playlist evidence atomically',
+    () {
+      final playlists = RelayPlaylists(prefix, '/secret/');
+      final media =
+          '#EXTM3U\n#EXT-X-MAP:URI="${prefix}v/init.mp4"\n#EXTINF:2,\n${prefix}v/seg_0.m4s\n#EXT-X-ENDLIST\n';
+      final result = utf8.decode(
+        playlists.rewrite(utf8.encode(media), 'manifest.m3u8'),
+      );
+      expect(result, contains('/secret/v/seg_0.m4s'));
+      expect(playlists.permits('v/init.mp4'), isTrue);
+      for (final invalid in [
+        media.replaceFirst('v/seg_0.m4s', 'other/seg_1.m4s'),
+        '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\n${prefix}v/index.m3u8\n${media.substring(8)}',
+      ]) {
+        expect(
+          () => playlists.rewrite(utf8.encode(invalid), 'manifest.m3u8'),
+          throwsA(isA<VodFailure>()),
+        );
+      }
+      expect(playlists.permits('other/seg_1.m4s'), isFalse);
+      expect(playlists.permits('v/seg_0.m4s'), isTrue);
+      expect(
+        () => playlists.rewrite(
+          utf8.encode(
+            '#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\n${prefix}v/index.m3u8\n',
+          ),
+          'v/index.m3u8',
+        ),
+        throwsA(isA<VodFailure>()),
+      );
+    },
+  );
+  test(
     'narrow parser rejects credentials, aliases, framing, duplicates and pipelines',
     () {
       const valid =

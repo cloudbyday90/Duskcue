@@ -21,6 +21,7 @@ import 'package:duskcue_mobile/playback/provider.dart';
 import 'package:duskcue_mobile/screens/command_playback_screen.dart';
 import 'package:video_player/video_player.dart';
 import 'authored_frame.dart';
+import 'storage_scenarios.dart';
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -47,6 +48,17 @@ void main() {
       PlaybackJournal(SecureJournalStorage()),
     );
     final coordinator = PlaybackCoordinator(commands);
+    if (fixture['scenario'] != 'baseline') {
+      await runStorageScenario(
+        tester,
+        binding,
+        channel,
+        fixture,
+        commands,
+        coordinator,
+      );
+      return;
+    }
     Future<void> until(bool Function() condition, {int seconds = 30}) async {
       final end = DateTime.now().add(Duration(seconds: seconds));
       while (!condition() && DateTime.now().isBefore(end)) {
@@ -141,6 +153,7 @@ void main() {
       await channel.invokeMethod<void>('clearBootstrap');
       binding.reportData = {
         ...?binding.reportData,
+        'scenario': 'baseline',
         'authored_picture': decoded,
         'protocol_two': true,
         'decoded_authored_frame': true,
