@@ -11,9 +11,9 @@ import { randomUUID } from 'node:crypto';
 import { runBounded } from '../qualification/commands.mjs';
 import { hashFile } from '../qualification/source.mjs';
 import { stopOwnedProcess } from './owned-process.mjs';
-import { validateAndroidHardware } from './android-evidence.mjs';
+import { validateAndroidHardware, validateAndroidAvd } from './android-evidence.mjs';
 
-const guestMiB = 2048;
+const guestMiB = 2560;
 
 async function portAvailable(port = 0) {
     const server = createServer();
@@ -55,7 +55,7 @@ function own(executable, args, env, log) {
 
 export async function createAndroidOwner(workspace, directory) {
     if (process.platform !== 'win32' || !process.env.DUSKCUE_TEST_RESOURCE_ID) throw new Error('Use the managed Windows native workflow.');
-    if (guestMiB < 2560) throw new Error('API 36 requires 2,560 MiB on the reviewed emulator; the 2,048-MiB contract adjustment awaits operator confirmation.');
+    if (guestMiB < 2560) throw new Error('Configured Android guest RAM is below the reviewed emulator minimum.');
     const installed = JSON.parse(await readFile(join(workspace, '.cache/android-playback/sdk/android-installed.json'), 'utf8'));
     const adb = join(installed.sdk, 'platform-tools/adb.exe');
     if (await hashFile(installed.emulator) !== installed.emulatorSha256 || await hashFile(adb) !== installed.adbSha256) throw new Error('Android executable identities changed.');
@@ -149,7 +149,9 @@ export async function createAndroidOwner(workspace, directory) {
             if (Date.now() >= bootDeadline) throw new Error('Owned Android boot deadline expired.');
             await delay(2000);
         }
-        if (await command(['emu', 'avd', 'name']) !== `${name}\nOK` && !(await command(['emu', 'avd', 'name'])).startsWith(`${name}\r\nOK`)) throw new Error('Connected emulator AVD identity differs from this owner.');
+        const identity = await command(['emu', 'avd', 'name']);
+        await writeFile(join(directory, 'avd-identity.json'), JSON.stringify({ expected: name, response: identity }));
+        validateAndroidAvd(identity, name);
         const properties = { api: await command(['shell', 'getprop', 'ro.build.version.sdk']), abi: await command(['shell', 'getprop', 'ro.product.cpu.abi']) };
         if (properties.api !== '36' || properties.abi !== 'x86_64') throw new Error('Booted Android platform differs from reviewed image.');
         await writeFile(join(directory, 'device.json'), JSON.stringify({ name, serial, adbPort, consolePort, properties,

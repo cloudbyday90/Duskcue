@@ -14,6 +14,7 @@ const mobile = join(workspace, 'clients/mobile');
 const expected = JSON.parse(await readFile(new URL('./flutter-toolchain.json', import.meta.url), 'utf8'));
 const [action, ...extra] = process.argv.slice(2);
 const commands = new Map([
+    ['storage-patch-source', ['pub', 'cache', 'add', 'flutter_secure_storage', '--version', '10.3.4']],
     ['pub', ['pub', 'get', '--offline']],
     ['analyze', ['analyze', '--no-pub']],
     ['test', ['test', '--no-pub', '--concurrency=1']],

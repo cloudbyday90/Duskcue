@@ -7,7 +7,13 @@ import { join } from 'node:path';
 import { hashFile } from '../qualification/source.mjs';
 
 export function redactAndroidOutput(text) {
-    return text.replace(/http:\/\/127\.0\.0\.1:\d+\/[A-Za-z0-9_-]{43}(?:\/[^\s'"<>)]*)?/g, '[redacted-relay-url]');
+    return text.replace(/(?:http|ws):\/\/(?:127\.0\.0\.1|localhost):\d+\/[A-Za-z0-9_=-]{8,44}\/(?:[^\s'"<>)]*)?/g, '[redacted-local-capability-url]');
+}
+
+export function androidFailure(error, token, depth = 0) {
+    const result = { message: redactAndroidOutput(String(error?.message || 'Android qualification failed').replaceAll(token, '[redacted]')).slice(0, 512) };
+    if (depth < 3 && Array.isArray(error?.errors)) result.causes = error.errors.slice(0, 8).map((cause) => androidFailure(cause, token, depth + 1));
+    return result;
 }
 
 export function validateAndroidHardware(text, guestMiB) {
@@ -21,6 +27,20 @@ export function validateAndroidHardware(text, guestMiB) {
     if (values.get('hw.ramSize') !== guestMiB || values.get('hw.cpu.ncore') !== 2) {
         throw new Error('Actual emulator exceeded or differs from the configured guest RAM/CPU budget.');
     }
+}
+
+export function validateAndroidAvd(response, name) {
+    if (typeof response !== 'string' || response.length > 1024) throw new Error('Invalid emulator identity response.');
+    const lines = response.replaceAll('\r', '').trim().split('\n');
+    if (lines.length !== 2 || lines[0] !== name || lines[1] !== 'OK') {
+        throw new Error('Connected emulator AVD identity differs from this owner.');
+    }
+}
+
+export function installedAndroidApk(response, packageName) {
+    const match = response.match(/^package:(\/data\/app\/([A-Za-z0-9_~+=.-]+)\/([A-Za-z0-9_~+=.-]+)\/base\.apk)$/);
+    if (!match || match[2] === '..' || !match[3].startsWith(`${packageName}-`)) throw new Error('Unexpected installed APK path.');
+    return match[1];
 }
 
 export async function androidToolInputs(workspace) {

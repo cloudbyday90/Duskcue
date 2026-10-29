@@ -3,12 +3,12 @@
 // Licensed under AGPL-3.0. See LICENSE for details.
 
 import { spawn } from 'node:child_process';
-import { readFile, realpath } from 'node:fs/promises';
+import { readFile, realpath, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { runBounded } from '../qualification/commands.mjs';
 import { hashFile } from '../qualification/source.mjs';
 import { flutterInputs } from './flutter-inputs.mjs';
-import { redactAndroidOutput } from './android-evidence.mjs';
+import { redactAndroidOutput, installedAndroidApk } from './android-evidence.mjs';
 
 const packageName = 'com.duskcue.mobile.qualification';
 
@@ -43,13 +43,19 @@ export async function runAndroidApplication(workspace, owner, fixture) {
     if (origin.origin !== fixture.origin || origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1' || !origin.port) throw new Error('Use the owned loopback backend.');
     let installed = false, reversed = false, failure;
     try {
-        if ((await owner.command(['install', '--no-streaming', artifact], { timeoutMs: 60000 })) !== 'Success') throw new Error('Owned APK install failed.');
+        const installation = await owner.command(['install', '--no-streaming', artifact], { timeoutMs: 60000 });
         installed = true;
+        await writeFile(join(owner.directory, 'install.log'), installation);
+        if (installation.replaceAll('\r', '').split('\n').at(-1) !== 'Success') throw new Error('Owned APK install failed.');
+        const packagePath = installedAndroidApk(await owner.command(['shell', 'pm', 'path', packageName]), packageName);
+        const digest = (await owner.command(['shell', 'sha256sum', packagePath])).split(/\s+/)[0];
+        await writeFile(join(owner.directory, 'apk-identity.json'), JSON.stringify({ packageName, packagePath, sha256: digest }));
+        if (digest !== receipt.apk) throw new Error('Installed APK identity differs from the verified artifact.');
         if (await owner.command(['shell', 'pm', 'clear', packageName]) !== 'Success') throw new Error('Owned app state did not clear.');
         await owner.command(['reverse', '--no-rebind', `tcp:${origin.port}`, `tcp:${origin.port}`]); reversed = true;
         await privateBootstrap(owner, Buffer.from(JSON.stringify(fixture)));
         const execution = await runBounded(dart, ['--old_gen_heap_size=1536', snapshot, '--suppress-analytics', 'drive',
-            '--no-pub', '--debug', '--flavor', 'qualification', '-d', owner.serial,
+            '--no-pub', '--debug', '--keep-app-running', '--flavor', 'qualification', '-d', owner.serial,
             '--driver=test_driver/vod_commands.dart', '--target=integration_test/vod_commands_test.dart',
             `--use-application-binary=${artifact}`], {
             cwd: join(workspace, 'clients/mobile'), env: { ...owner.env, FLUTTER_ROOT: sdk, CI: 'true',
@@ -70,6 +76,7 @@ export async function runAndroidApplication(workspace, owner, fixture) {
             try {
                 await owner.command(['shell', 'am', 'force-stop', packageName]);
                 if (await owner.command(['shell', `pidof ${packageName} || true`])) throw new Error('Owned application process remains.');
+                if (await owner.command(['shell', 'pm', 'clear', packageName]) !== 'Success') throw new Error('Owned app-private state clearing was not confirmed.');
                 if (await owner.command(['uninstall', packageName]) !== 'Success') throw new Error('Owned app credentials/bootstrap/journal removal was not confirmed.');
             } catch (error) { errors.push(error); }
         }

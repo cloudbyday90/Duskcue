@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createAndroidOwner } from './android-owner.mjs';
 import { runAndroidApplication } from './android-app.mjs';
-import { androidToolInputs } from './android-evidence.mjs';
+import { androidToolInputs, androidFailure } from './android-evidence.mjs';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 async function main() {
@@ -20,10 +20,10 @@ async function main() {
     let failure;
     const result = { status: 'in_progress', cleanup: false, tools: inputs };
     try { Object.assign(result, await runAndroidApplication(workspace, owner, fixture)); result.status = 'passed'; }
-    catch (error) { failure = error; result.status = 'failed'; result.error = error.message; }
+    catch (error) { failure = error; result.status = 'failed'; result.error = androidFailure(error, fixture.token); }
     finally {
         try { await owner.close(); result.cleanup = true; }
-        catch (error) { failure ||= error; result.status = 'failed'; result.cleanupError = error.message; }
+        catch (error) { failure ||= error; result.status = 'failed'; result.cleanupError = androidFailure(error, fixture.token); }
         if ((await androidToolInputs(workspace)).sha256 !== inputs.sha256) { failure ||= new Error('Android tooling changed during runtime.'); result.status = 'failed'; }
         await writeFile(join(directory, 'result.json'), JSON.stringify(result, null, 2));
     }
