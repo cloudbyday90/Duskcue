@@ -5,6 +5,10 @@
 // See LICENSE file for details.
 
 export const PRESETS = {
+    'android-tooling-test': { policy: 'unit', heapMiB: 128, command: 'node', args: ['--test', '--test-concurrency=1', 'scripts/testing-memory/android-tooling.test.mjs', 'scripts/testing-memory/presets.test.mjs', 'scripts/qualification/qualification.test.mjs'] },
+    'android-playback': { policy: 'native', heapMiB: 512, command: 'node', args: ['scripts/testing-memory/qualify-vod-output.mjs', '--android-only'] },
+    'android-boot': { policy: 'native', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/android-boot.mjs'] },
+    'android-sdk': { policy: 'build', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/android-sdk.mjs'] },
     'flutter-tooling-test': { policy: 'unit', heapMiB: 128, command: 'node', args: ['--test', '--test-concurrency=1', 'scripts/testing-memory/flutter-release.test.mjs'] },
     'flutter-sdk-update': { policy: 'build', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/flutter-sdk.mjs'] },
     'flutter-version': { policy: 'check', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/flutter-command.mjs', 'version'] },

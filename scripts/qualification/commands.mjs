@@ -8,11 +8,11 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { createInterface } from 'node:readline';
 
-export async function runBounded(executable, args, { cwd, env = process.env, log, bytes = 16777216, timeoutMs = 300000, onLine, redact = [], forward = false, captureBytes = 65536, abortSignal } = {}) {
+export async function runBounded(executable, args, { cwd, env = process.env, log, bytes = 16777216, timeoutMs = 300000, onLine, redact = [], sanitize, forward = false, captureBytes = 65536, abortSignal } = {}) {
     if (abortSignal?.aborted) throw new Error('Owned qualification command was cancelled before startup.');
     if (log) await mkdir(dirname(log), { recursive: true });
     const buffered = [];
-    const writer = log && !redact.length ? createWriteStream(log, { flags: 'wx' }) : null;
+    const writer = log && !redact.length && !sanitize ? createWriteStream(log, { flags: 'wx' }) : null;
     const written = writer ? new Promise((resolve, reject) => { writer.once('finish', resolve); writer.once('error', reject); }) : null;
     written?.catch(() => {});
     const child = spawn(executable, args, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true, detached: process.platform === 'linux' });
@@ -58,9 +58,9 @@ export async function runBounded(executable, args, { cwd, env = process.env, log
             total += chunk.length;
             if (total > bytes) { stop('Owned qualification command exceeded its log bound.'); return; }
             const drains = [];
-            if (redact.length) buffered.push(Buffer.from(chunk));
+            if (redact.length || sanitize) buffered.push(Buffer.from(chunk));
             else if (writer && !writer.write(chunk)) drains.push(writer);
-            if (forward && !redact.length) {
+            if (forward && !redact.length && !sanitize) {
                 const target = channel === 'stdout' ? process.stdout : process.stderr;
                 if (!target.write(chunk)) drains.push(target);
             }
@@ -79,12 +79,13 @@ export async function runBounded(executable, args, { cwd, env = process.env, log
     }
     const clean = (text) => {
         for (const value of redact) text = text.split(value).join('[redacted]');
-        return text.replace(/postgres(?:ql)?:\/\/[^\s'"<>]+/g, '[redacted-database-url]');
+        text = text.replace(/postgres(?:ql)?:\/\/[^\s'"<>]+/g, '[redacted-database-url]');
+        return sanitize ? sanitize(text) : text;
     };
     try {
         const result = await outcome;
         if (writer) { writer.end(); await written; }
-        if (log && redact.length) await writeFile(log, clean(Buffer.concat(buffered).toString('utf8')), { flag: 'wx' });
+        if (log && (redact.length || sanitize)) await writeFile(log, clean(Buffer.concat(buffered).toString('utf8')), { flag: 'wx' });
         if (failure) throw new Error(failure);
         return { ...result, stdout: clean(stdout), stderr: clean(stderr), bytes: total };
     } finally {

@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-Implementation and managed preparation checkpoint, October 28, 2026. The complete contract at `21cd8b1` is confirmed. The operator subsequently authorized the [Flutter/Dart update](FLUTTER_TOOLCHAIN.md), then separately approved WHPX enablement with `-NoRestart`. Actual emulator qualification is still pending; preparation/build results do not complete this phase.
+Post-reboot tooling checkpoint, October 28, 2026. The complete contract at `21cd8b1` is confirmed. The operator authorized the [Flutter/Dart update](FLUTTER_TOOLCHAIN.md), WHPX enablement with `-NoRestart`, then a separate Windows restart. The reboot and usable WHPX are verified. Actual Android playback qualification remains pending the guest-memory adjustment described below; preparation/build results do not complete this phase.
 
 Qualification covers the existing Flutter interactive Android player and bounded video-encoded HLS lane. Native ambient remains independent, offline remains separate and iOS scaffold/runtime, typed decoder probes, direct/copied video and broader devices/formats remain deferred. Normal production routes/owner/advertisement/caps remain off.
 
@@ -10,7 +10,7 @@ Qualification covers the existing Flutter interactive Android player and bounded
 
 Read-only inspection found Flutter 3.44.4 stable/Dart 3.12.2, JDK 17.0.19, existing Android API/build-tools 36, NDK 28.2.13676358 and platform-tools 37.0.0. The project SDK and environment SDK variables disagree, so every helper must capture/use explicit verified executable/SDK paths. No emulator executable, installed system image or attached device was present; the AVD directory was empty.
 
-Windows Hypervisor Platform (`HypervisorPlatform`, used for WHPX) is disabled. Hyper-V, Virtual Machine Platform and WSL are enabled; HypervisorPresent/firmware virtualization do not prove WHPX readiness. Enabling the missing feature changes the OS and may require restarting Windows. Prepare the application/tests/APK and exact prerequisite handoff first; request separate operator action before that OS change/restart. No silent feature change, reboot, service interruption or unsupported acceleration claim follows from approval of this implementation proposal.
+At initial inspection Windows Hypervisor Platform (`HypervisorPlatform`, used for WHPX) was disabled. Hyper-V, Virtual Machine Platform and WSL were enabled; HypervisorPresent/firmware virtualization alone did not prove WHPX readiness. The operator subsequently approved enablement and restart separately. Future OS changes still require their own operator handoff.
 
 Existing accepted SDK licenses match cached stable emulator 37.1.11 and API 36 image terms. Cached repository metadata is dated August 19, 2026. Installation must retrieve official package metadata, verify actual revision/archive/checksum/accepted-license identity and stop rather than accept changed terms or silently substitute another release. Reusing existing accepted terms does not authorize accepting new terms. No application dependency upgrade is required for emulator provisioning.
 
@@ -71,6 +71,36 @@ Corrected attempts remain evidence: the initial locked Gradle 8.14 build failed 
 
 The successful updated-SDK build reports future-support warnings for Gradle 8.14, AGP 8.11.1 and Kotlin 2.2.20, plus existing Jetifier/deprecation diagnostics. No validation bypass or blanket suppression was added. Plan the coordinated build-stack migration separately.
 
-The operator approved WHPX enablement with `-NoRestart`. The elevated Windows operation completed on October 28 at 21:11:07 UTC: `HypervisorPlatform=Enabled`, `RestartNeeded=true`; WMI confirms enabled state. **No Windows restart has occurred or been authorized.** The exact local receipts remain ignored. No emulator, system image, owned AVD/ADB/native scenario or real Android decoder result is claimed at this checkpoint.
+The WHPX enablement completed at 21:11:07 UTC with `RestartNeeded=true`. After separate explicit restart approval, Windows accepted `shutdown.exe /r /t 0`, without forced application closure. The observed new boot is October 29 at 00:42:33 UTC (October 28 locally), later than the restart request. WMI reports the feature enabled and the actual emulator reports `WHPX(10.0.26300) is installed and usable`. Ignored receipts preserve the exact request and installation evidence.
 
-Next: preserve/push this main checkpoint, obtain the separate operator restart handoff, then finish owned SDK/AVD/ADB provisioning and the complete real PostgreSQL/HTTP/FFmpeg/native scenarios, fault cases and verified cleanup. All required tests above remain acceptance gates. Normal production attachment/caps, other platforms and broader media remain deferred. No release is created.
+## Post-reboot SDK and runtime preparation
+
+Fresh official repository metadata selected stable emulator **37.2.12**, Windows build **16428233**, and API **36 default x86_64 revision 2**. SDK Manager installed only those packages with bounded JVM memory, closed stdin and no license-acceptance response. Both installed package manifests reference the already accepted `24333f8a63b6825ea9c5514f83c2829b004d1fee` license; the existing acceptance file remained byte-identical. The publisher advertises SHA-1 checksums in its HTTPS metadata; SDK Manager performs package verification. The local receipt additionally records SHA-256 executable identities. Repeated execution verifies/reuses the installed versions and refuses an unexpected version rather than updating it automatically.
+
+The modular host helpers separate SDK acquisition, AVD/ADB/process ownership, application/bootstrap/driver execution and bounded evidence. The new Rust test fixture mounts the existing qualified backend against disposable PostgreSQL and actual media; it compiles but has not executed. The driver uses the distinct qualification package, an app-private bootstrap supplied over stdin and exact owned ADB serial/reverse forwarding. Bootstrap, journal, native rendering, server settlement and resource-cleanup assertions still require actual runtime execution. No credentials or supplied Dispatcharr material are compiled into the APK or committed.
+
+Owned ADB initially refused a hostname in its listener socket. The corrected invocation uses `-L tcp:<owned-port> server nodaemon`, retaining loopback binding without `-a`; client requests retain their exact socket/serial. That corrected attempt reached operational WHPX/SwiftShader, but the emulator **increased requested guest RAM from 2,048 to 2,560 MiB**. The attempt was stopped; the owned emulator/QEMU and ADB processes exited. The pre-existing unrelated default ADB server was left running. This is failed boot-preparation evidence, not a completed Android boot or playback result.
+
+The actual generated `hardware-qemu.ini` established the mismatch. [Android's emulator implementation](https://android.googlesource.com/platform/external/qemu/+/emu-master-dev/android/android-emu/android/main-common.c) documents minimum-memory enforcement; the inspected binary's output is authoritative for this installation. No low-memory override or CPU software-emulation substitute was used. The current helper refuses before creating any device resources while its approved 2,048-MiB budget is below the observed minimum, and separately validates actual generated CPU/RAM settings. Raising the contract to 2,560 MiB is awaiting operator confirmation. Host admission/emergency thresholds, two CPUs, one emulator and all deadlines remain unchanged.
+
+| Option | Benefit | Cost / outcome |
+| --- | --- | --- |
+| Use the observed 2,560-MiB minimum | Qualify the selected stable API 36 lane without overriding its minimum | Adds 512 MiB of guest RAM; requires confirmation of the changed contract |
+| Keep the confirmed 2,048-MiB limit | Preserves the existing guest budget exactly | Actual native qualification remains pending |
+
+Recommendation: the first option, then the complete native scenarios and adversarial/fault/cleanup gates above. The proposed stack remains Flutter 3.47.8/Dart 3.13.7, the existing locked Android build stack, emulator 37.2.12/API 36 r2, WHPX and SwiftShader, backed by real PostgreSQL 18/HTTP/FFmpeg 8.1.2. Guest RAM does not describe total host RSS. Existing build-stack warnings need their own coordinated migration.
+
+| Fresh post-reboot check | Result / ignored memory receipt |
+| --- | --- |
+| SDK install and actual WHPX probe | Pass; `2026-10-29T00-57-46-876Z-924d1318-fc94-4a55-ae3d-e279d7cc18a8.jsonl` |
+| Installed SDK reuse/probe | Pass; `2026-10-29T01-20-52-045Z-16ce22a3-a5d4-4ec9-9830-514c17bae062.jsonl` |
+| Current qualification APK | Pass; `2026-10-29T01-06-16-156Z-3b93c7cd-d508-4bac-b6cf-e9fbafce005c.jsonl` |
+| Android backend fixture compilation | Pass, no execution; `2026-10-29T01-08-28-711Z-0ee12f48-6569-4d2f-ae40-d58700cc01f5.jsonl` |
+| Flutter analysis including driver | No issues; `2026-10-29T01-13-55-401Z-317b4a0c-7cfa-40ce-a5d0-39ac07763461.jsonl` |
+| Flutter suite | 52 pass; `2026-10-29T01-21-22-207Z-b1a8b58d-d334-4592-89fb-de8a3563b4c8.jsonl` |
+| Host tooling/qualification regression suite | 19 pass, two Linux-only skips; `2026-10-29T01-19-40-587Z-2c1b6a76-3d3c-4fac-be06-53c9b503c96b.jsonl` |
+| Pending-budget admission guard | Expected refusal before device creation; `2026-10-29T01-25-33-707Z-6581b2ee-81ff-416a-a5b7-6662d0bbd7c4.jsonl`; not native qualification |
+
+The new driver/input inventory is `6856c42df74f7072b50b44ba8a0aa8c1278b0e13cc76e216d368218c9a15956a`; the compiled APK and component-graph bytes remain identical to the prior checkpoint. Neither cache reuse nor source compilation substitutes for actual device tests. The earlier normal APK packaging result remains attributed to `08052e5`.
+
+Next: settle the one changed guest-memory limit, then complete real backend/native playback, recovery, lost-outcome, background/cold-restart, scope and cleanup qualification. After this Android gate, migrate native ambient playback through the complete command/output lifecycle before production caps. The [SvelteKit PR review](SVELTEKIT_3_UPGRADE_REVIEW.md) records a separate locally tested dependency migration prerequisite. Normal production attachment/caps, other platforms and broader media remain deferred. No release is created.

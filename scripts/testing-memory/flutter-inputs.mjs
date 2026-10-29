@@ -22,7 +22,7 @@ export async function flutterInputs(workspace) {
             files.push({ path, sha256: await hashFile(join(workspace, path)) });
         } else throw new Error('Flutter source inventory exceeded its finite limit.');
     }
-    for (const path of ['clients/mobile/lib', 'clients/mobile/test', 'clients/mobile/integration_test', 'clients/mobile/android',
+    for (const path of ['clients/mobile/lib', 'clients/mobile/test', 'clients/mobile/test_driver', 'clients/mobile/integration_test', 'clients/mobile/android',
         'clients/mobile/pubspec.yaml', 'clients/mobile/pubspec.lock', 'clients/mobile/analysis_options.yaml', 'scripts/testing-memory/flutter-command.mjs',
         'scripts/testing-memory/flutter-inputs.mjs', 'scripts/testing-memory/flutter-toolchain.json']) await visit(path);
     return { files, sha256: createHash('sha256').update(JSON.stringify(files)).digest('hex') };

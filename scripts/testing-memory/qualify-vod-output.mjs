@@ -30,7 +30,8 @@ async function main() {
     const configurationOnly=args[0]==='--configuration-only';
     const startOnly=args[0]==='--start-only';
     const clientOnly=args[0]==='--client-only';
-    if(commandsOnly||configurationOnly||clientOnly||startOnly) args.shift();
+    const androidOnly=args[0]==='--android-only';
+    if(commandsOnly||configurationOnly||clientOnly||startOnly||androidOnly) args.shift();
     let nativeManifest;
     if(clientOnly&&args[0]==='--native-manifest') {args.shift();nativeManifest=args.shift();if(!nativeManifest)throw new Error('Provide the owned native manifest.');}
     if (args.length !== 6 || args[0] !== '--ffmpeg-bin' || args[2] !== '--source' || args[4] !== '--hls') throw new Error('Provide --ffmpeg-bin, --source and --hls ignored fixture paths.');
@@ -96,6 +97,7 @@ async function main() {
         if (clientOnly) env.DUSKCUE_TEST_VOD_DAMAGED_COPY=result.damageFixture.path;
         if(nativeManifest)env.DUSKCUE_TEST_VOD_NATIVE_MANIFEST=nativeManifest;
         const cases = [
+            ['android','--lib','domains::playback::commands::tests::android::real_android_player_protocol_two',true],
             ['client','--lib','domains::playback::commands::tests::client::real_shared_player_protocol_two',true],
             ['commands','--lib','domains::playback::commands::tests::command_protocol_retains_scope_readiness_delivery_and_confirmed_cleanup',true],
             ['configuration','--lib','domains::playback::commands::tests::same_viewer_operations_preserve_revisions_progress_claims_and_cleanup',true],
@@ -111,6 +113,7 @@ async function main() {
             ['stop', '--test', 'playback_stop_contract', true],
         ];
         for (const [name, target, selector, ignored] of cases) {
+            if(androidOnly ? name!=='android' : name==='android')continue;
             if(clientOnly&&name!=='client'||!clientOnly&&name==='client')continue;
             if(commandsOnly&&!['commands','configuration'].includes(name))continue;
             if(startOnly&&name!=='commands')continue;

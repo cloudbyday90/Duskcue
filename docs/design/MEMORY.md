@@ -916,6 +916,10 @@ Memory limit errors return standard error codes:
 
 ---
 
+## Android qualification guest memory
+
+The [Android qualification authority](../ci/ANDROID_PLAYBACK_QUALIFICATION.md#post-reboot-sdk-and-runtime-preparation) owns the separate test-VM budget. After the approved Windows restart, emulator 37.2.12 enforced 2,560 MiB despite the confirmed 2,048-MiB request. The attempt was stopped and owned processes exited. The additional 512 MiB awaits confirmation; the helper refuses further device creation in the meantime and validates actual generated CPU/RAM settings. Existing Windows admission/emergency thresholds, one emulator, two CPUs, backend/root limits and deadlines remain unchanged. Guest RAM is not total host RSS. This changes no Rust allocator or production memory policy.
+
 ## Research Sources
 
 - Tokio 1.52.3 Runtime shutdown: https://docs.rs/tokio/1.52.3/tokio/runtime/struct.Runtime.html

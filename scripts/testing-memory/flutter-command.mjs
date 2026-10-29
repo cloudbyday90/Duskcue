@@ -30,7 +30,7 @@ async function main() {
     if (extra.length > 24 || extra.some((arg) => arg.length > 512 || !/^[a-zA-Z0-9_./=-]+$/.test(arg))) throw new Error('Invalid managed Flutter arguments.');
     if (action !== 'test' && !format && extra.length) throw new Error('This Flutter action accepts no extra arguments.');
     if (extra.some((arg) => arg.startsWith('-') || arg.includes('..') || isAbsolute(arg)
-        || !/^(?:test|lib|integration_test)\//.test(arg))) throw new Error('Only scoped Flutter source/test paths are allowed.');
+        || !/^(?:test|test_driver|lib|integration_test)\//.test(arg))) throw new Error('Only scoped Flutter source/test paths are allowed.');
     const properties = await readFile(join(mobile, 'android/local.properties'), 'utf8');
     const declared = properties.match(/^flutter\.sdk=(.+)$/m)?.[1]?.trim().replaceAll('\\\\', '\\');
     if (!declared || !isAbsolute(declared)) throw new Error('The existing explicit Flutter SDK is required.');
