@@ -43,6 +43,20 @@ export function installedAndroidApk(response, packageName) {
     return match[1];
 }
 
+export function androidTcpMapping(response, port, serial) {
+    if (typeof response !== 'string' || response.length > 65536 || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error('Invalid owned Android mapping evidence.');
+    const lines = response.trim() ? response.trim().split(/\r?\n/) : [];
+    if (lines.length > 128) throw new Error('Android mapping inventory exceeded its bound.');
+    const matches = [];
+    for (const line of lines) {
+        const fields = line.trim().split(/\s+/);
+        if (fields.length !== 3 || !/^[!-~]{1,128}$/.test(fields[0]) || fields.slice(1).some((value) => !/^tcp:[1-9][0-9]{0,4}$/.test(value) || Number(value.slice(4)) > 65535)) throw new Error('Unexpected Android mapping table.');
+        if (fields[1] === `tcp:${port}`) matches.push(fields);
+    }
+    if (matches.length > 1 || matches.some((fields) => fields[2] !== `tcp:${port}` || serial && fields[0] !== serial)) throw new Error('Owned Android mapping changed identity.');
+    return matches.length === 1;
+}
+
 export async function androidToolInputs(workspace) {
     const files = [];
     for (const name of ['android-app.mjs', 'android-stage.mjs', 'android-boot.mjs', 'android-evidence.mjs', 'android-owner.mjs',

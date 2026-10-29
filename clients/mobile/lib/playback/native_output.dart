@@ -106,7 +106,7 @@ class NativeOutput extends ChangeNotifier {
         rethrow;
       }
     },
-    timeout: const Duration(seconds: 5),
+    timeout: const Duration(seconds: 30),
     cancel: () {
       quarantined = true;
       unawaited(retire().catchError((Object _) {}));

@@ -94,7 +94,16 @@ void exactKeys(Wire value, Set<String> keys) {
   require(value.length == keys.length && value.keys.every(keys.contains));
 }
 
-Wire decodeWire(List<int> bytes, {int limit = 32768}) {
+Wire decodeWire(List<int> bytes, {int limit = 32768}) =>
+    object(_decodeJson(bytes, limit));
+
+List<Wire> decodeFileList(List<int> bytes) {
+  final value = _decodeJson(bytes, 32768);
+  require(value is List && value.length <= 128);
+  return (value as List).map(object).toList(growable: false);
+}
+
+Object? _decodeJson(List<int> bytes, int limit) {
   require(bytes.length <= limit);
   final source = utf8.decode(bytes, allowMalformed: false);
   var depth = 0;
@@ -120,7 +129,7 @@ Wire decodeWire(List<int> bytes, {int limit = 32768}) {
     }
   }
   require(!quoted && depth == 0);
-  return object(jsonDecode(source));
+  return jsonDecode(source);
 }
 
 bool commandCapability(Object? value) {

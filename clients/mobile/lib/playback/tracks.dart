@@ -22,18 +22,12 @@ Future<List<PlaybackTrack>> playbackTracks(
         !commands.cleanupOnly &&
         const {'ready', 'unavailable'}.contains(commands.state),
   );
-  final reply = await commands.transport.call(
-    'GET',
-    '/api/v1/media-items/${ready!.item}/files',
-    record!.scope,
-  );
+  final files = await commands.transport.files(ready!.item, record!.scope);
   require(
     commands.admitted?.file == ready.file &&
         commands.record?.start == record.start,
   );
-  final files = reply.body['items'];
-  require(files is List && files.length <= 128);
-  final matches = (files as List)
+  final matches = files
       .where((file) => object(file)['id'] == ready.file)
       .toList();
   require(matches.length == 1);

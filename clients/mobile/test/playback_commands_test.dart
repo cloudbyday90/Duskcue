@@ -56,6 +56,9 @@ class CommandFixture {
   PlaybackIdentity? identity;
   int starts = 0, withdrawals = 0, changes = 0, checkpoint = 0;
   bool lostStart = false, supported = true, fenced = false;
+  Object? filePayload;
+  String contextRevision = '1';
+  String? fileContextRevision;
   late String start;
   final requests = <String>[];
   Wire get capability => {
@@ -93,6 +96,13 @@ class CommandFixture {
             ? <String, Object?>{}
             : object(jsonDecode(raw));
         final path = request.uri.path;
+        if (path.endsWith('/files')) {
+          contextRevision = fileContextRevision ?? contextRevision;
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(jsonEncode(filePayload ?? []));
+          await request.response.close();
+          return;
+        }
         Wire value;
         final now = DateTime.now().toUtc();
         if (path.endsWith('/session-context')) {
@@ -101,7 +111,7 @@ class CommandFixture {
             'session_id': session,
             'profile_id': profile,
             'credential_revision': '1',
-            'profile_context_revision': '1',
+            'profile_context_revision': contextRevision,
             'context_id': 'sc1.${'a' * 43}',
             'transport': 'bearer',
             'profile_selection_required': false,

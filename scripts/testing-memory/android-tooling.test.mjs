@@ -7,8 +7,32 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, realpath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname, basename } from 'node:path';
+import { createServer } from 'node:net';
 import { runBounded } from '../qualification/commands.mjs';
-import { redactAndroidOutput, validateAndroidHardware, validateAndroidAvd, installedAndroidApk, androidFailure } from './android-evidence.mjs';
+import { redactAndroidOutput, validateAndroidHardware, validateAndroidAvd, installedAndroidApk, androidFailure, androidTcpMapping } from './android-evidence.mjs';
+import { portAvailable, listening } from './android-owner.mjs';
+
+test('mapping evidence distinguishes observed absence from replaced, duplicate or malformed ownership', () => {
+    assert.equal(androidTcpMapping('', 51234, 'emulator-5580'), false);
+    assert.equal(androidTcpMapping('emulator-5580 tcp:51234 tcp:51234\n', 51234, 'emulator-5580'), true);
+    assert.equal(androidTcpMapping('emulator-5580 tcp:51235 tcp:51235', 51234), false);
+    for (const table of ['emulator-5580 tcp:51234 tcp:51235', 'emulator-5582 tcp:51234 tcp:51234',
+        'emulator-5580 tcp:51234 tcp:51234\nemulator-5580 tcp:51234 tcp:51234', 'unexpected header',
+        'emulator-5580 tcp:51234 tcp:65536', 'emulator-5580 tcp:51234 tcp:051234']) {
+        assert.throws(() => androidTcpMapping(table, 51234, 'emulator-5580'));
+    }
+});
+
+test('owned loopback service probes distinguish active listeners from completed closure', async () => {
+    const port = await portAvailable();
+    assert.equal(await listening(port), false);
+    const server = createServer((socket) => socket.destroy());
+    try {
+        await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
+        assert.equal(await listening(port), true);
+    } finally { await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve())); }
+    assert.equal(await listening(port), false);
+});
 
 test('nested failures remain bounded and redact both media and VM-service capabilities', () => {
     const secret = 'private-token';

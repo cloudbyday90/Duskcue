@@ -4,9 +4,10 @@
 
 import { readFile, realpath, writeFile, mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { hashFile } from '../qualification/source.mjs';
 import { flutterInputs } from './flutter-inputs.mjs';
-import { installedAndroidApk } from './android-evidence.mjs';
+import { installedAndroidApk, androidTcpMapping } from './android-evidence.mjs';
 
 import { runAndroidStage } from './android-stage.mjs';
 
@@ -46,6 +47,7 @@ export async function runAndroidApplication(workspace, owner, fixture) {
                 artifact, sdk, dart, snapshot, directory,
             });
             stages.push(result);
+            if (scenario === 'cold-retain') await delay(65000);
             if (scenario.endsWith('-retain')) expectedStart = result.start;
             if (scenario.endsWith('-restore')) {
                 if (result.start !== expectedStart) throw new Error('Cold journal changed the retained Start identity.');
@@ -65,7 +67,11 @@ export async function runAndroidApplication(workspace, owner, fixture) {
                 if (await owner.command(['uninstall', packageName]) !== 'Success') throw new Error('Owned app credentials/bootstrap/journal removal was not confirmed.');
             } catch (error) { errors.push(error); }
         }
-        if (reversed) try { await owner.command(['reverse', '--remove', `tcp:${origin.port}`]); } catch (error) { errors.push(error); }
+        if (reversed) try {
+            const key = `tcp:${origin.port}`;
+            if (androidTcpMapping(await owner.command(['reverse', '--list']), Number(origin.port))) await owner.command(['reverse', '--remove', key]);
+            if (androidTcpMapping(await owner.command(['reverse', '--list']), Number(origin.port))) throw new Error('Owned backend reverse remains.');
+        } catch (error) { errors.push(error); }
         if (errors.length) throw new AggregateError([...(failure ? [failure] : []), ...errors], 'Android app cleanup is unconfirmed.');
     }
 }

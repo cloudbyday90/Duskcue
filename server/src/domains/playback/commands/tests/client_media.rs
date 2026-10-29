@@ -13,15 +13,21 @@ pub(super) async fn clean(db: &Database, f: &Fixture) -> anyhow::Result<(Uuid, U
     install(db, f, "DUSKCUE_TEST_CONFIGURATION_COPY").await
 }
 
+pub(super) async fn subtitled(db: &Database, f: &Fixture) -> anyhow::Result<(Uuid, Uuid)> {
+    install(db, f, "DUSKCUE_TEST_CONFIGURATION_SOURCE").await
+}
+
 async fn install(db: &Database, f: &Fixture, input: &str) -> anyhow::Result<(Uuid, Uuid)> {
     let item = Uuid::now_v7();
     let file = Uuid::now_v7();
-    let source = f
-        .base
-        .state
-        .bootstrap
-        .data_dir
-        .join(format!("fixture-{file}.mp4"));
+    let source = f.base.state.bootstrap.data_dir.join(format!(
+        "fixture-{file}.{}",
+        if input == "DUSKCUE_TEST_CONFIGURATION_SOURCE" {
+            "mkv"
+        } else {
+            "mp4"
+        }
+    ));
     tokio::fs::copy(std::env::var(input)?, &source).await?;
     let metadata = tokio::fs::metadata(&source).await?;
     let modified: chrono::DateTime<chrono::Utc> = metadata.modified()?.into();

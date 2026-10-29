@@ -15,7 +15,7 @@ import { validateAndroidHardware, validateAndroidAvd } from './android-evidence.
 
 const guestMiB = 2560;
 
-async function portAvailable(port = 0) {
+export async function portAvailable(port = 0) {
     const server = createServer();
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen({ host: '127.0.0.1', port, exclusive: true }, resolve); });
     const selected = server.address().port;
@@ -23,7 +23,7 @@ async function portAvailable(port = 0) {
     return selected;
 }
 
-async function listening(port) {
+export async function listening(port) {
     return new Promise((resolve) => {
         const socket = connect({ host: '127.0.0.1', port });
         let done = false;
@@ -153,11 +153,13 @@ export async function createAndroidOwner(workspace, directory) {
         await writeFile(join(directory, 'avd-identity.json'), JSON.stringify({ expected: name, response: identity }));
         validateAndroidAvd(identity, name);
         const properties = { api: await command(['shell', 'getprop', 'ro.build.version.sdk']), abi: await command(['shell', 'getprop', 'ro.product.cpu.abi']) };
+        const bootId = await command(['shell', 'cat', '/proc/sys/kernel/random/boot_id']);
+        if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(bootId)) throw new Error('Owned Android boot identity is invalid.');
         if (properties.api !== '36' || properties.abi !== 'x86_64') throw new Error('Booted Android platform differs from reviewed image.');
         await writeFile(join(directory, 'device.json'), JSON.stringify({ name, serial, adbPort, consolePort, properties,
-            emulatorPid: emulator.child.pid, adbPid: server.child.pid, acceleration: installed.acceleration, graphics: 'swiftshader', guestMiB, cores: 2 }, null, 2));
+            emulatorPid: emulator.child.pid, adbPid: server.child.pid, acceleration: installed.acceleration, graphics: 'swiftshader', guestMiB, cores: 2, bootId }, null, 2));
         ownership.status = 'booted';
         await persistOwner();
-        return { command, env, serial, installed, adb, directory, close };
+        return { command, env, serial, installed, adb, directory, close, bootId };
     } catch (error) { try { await close(); } catch (cleanup) { throw new AggregateError([error, cleanup]); } throw error; }
 }

@@ -131,6 +131,29 @@ Future<void> runStorageScenario(
     expect(commands.lease.running, isFalse);
     expect(coordinator.native.generation, isNull);
     expect(coordinator.native.controller, isNull);
+    if (scenario == 'cold-restore') {
+      final reply = await commands.transport.call(
+        'GET',
+        commandPath(commands.record!.start),
+        commands.record!.scope,
+      );
+      expect({
+        'stopping',
+        'released',
+        'failed',
+        'cleanup_uncertain',
+      }, contains(reply.body['status']));
+      expect(reply.body['ready'], isNull);
+      expect(reply.body['stream_url'], isNull);
+      if (reply.body['lease_deadline'] != null) {
+        expect(
+          instant(
+            reply.body['lease_deadline'],
+          ).isAfter(instant(reply.body['observed_at'])),
+          isFalse,
+        );
+      }
+    }
     await coordinator.close();
     expect(commands.record, isNull);
     expect(commands.error, isNull);
@@ -148,6 +171,7 @@ Future<void> runStorageScenario(
       'cleanup_only_restore': true,
       'namespaces_intact': true,
       'confirmed_cleanup': true,
+      if (scenario == 'cold-restore') 'missed_lease_refused_delivery': true,
     };
   } finally {
     if (!retained) {

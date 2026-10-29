@@ -99,6 +99,20 @@ class PlaybackTransport {
     );
   }
 
+  Future<List<Wire>> files(String item, PlaybackScope scope) async {
+    require(current(scope), 'scope_changed');
+    final reply = await _send(
+      'GET',
+      '/api/v1/media-items/${entity(item)}/files',
+      _bound!.identity,
+      scope: scope,
+      fileCollection: true,
+    );
+    final observed = await context();
+    require(observed.scope.matches(scope), 'scope_changed');
+    return (reply.body['items'] as List).cast<Wire>();
+  }
+
   Future<VodReply> _send(
     String method,
     String path,
@@ -107,6 +121,7 @@ class PlaybackTransport {
     Wire? body,
     String? etag,
     bool forCleanup = false,
+    bool fileCollection = false,
     Duration timeout = const Duration(seconds: 5),
   }) {
     require(timeout.inMilliseconds > 0 && timeout.inMilliseconds <= 5000);
@@ -192,7 +207,9 @@ class PlaybackTransport {
           require(type.split(';').first == 'application/json');
           return VodReply(
             status,
-            decodeWire(payload),
+            fileCollection
+                ? {'items': decodeFileList(payload)}
+                : decodeWire(payload),
             began,
             etag: response.headers.value('etag'),
             location: response.headers.value('location'),

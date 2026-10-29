@@ -18,6 +18,7 @@ import 'package:duskcue_mobile/playback/commands/transport.dart';
 import 'package:duskcue_mobile/playback/commands/wire.dart';
 import 'package:duskcue_mobile/playback/coordinator.dart';
 import 'package:duskcue_mobile/playback/provider.dart';
+import 'package:duskcue_mobile/playback/tracks.dart';
 import 'package:duskcue_mobile/screens/command_playback_screen.dart';
 import 'package:video_player/video_player.dart';
 import 'authored_frame.dart';
@@ -59,6 +60,22 @@ void main() {
       );
       return;
     }
+    final attachmentClock = Stopwatch();
+    var maximumAttachmentMs = 0;
+    void observeAttachment() {
+      if (coordinator.attaching && !attachmentClock.isRunning) {
+        attachmentClock
+          ..reset()
+          ..start();
+      } else if (!coordinator.attaching && attachmentClock.isRunning) {
+        attachmentClock.stop();
+        if (attachmentClock.elapsedMilliseconds > maximumAttachmentMs) {
+          maximumAttachmentMs = attachmentClock.elapsedMilliseconds;
+        }
+      }
+    }
+
+    coordinator.addListener(observeAttachment);
     Future<void> until(bool Function() condition, {int seconds = 30}) async {
       final end = DateTime.now().add(Duration(seconds: seconds));
       while (!condition() && DateTime.now().isBefore(end)) {
@@ -71,6 +88,7 @@ void main() {
             'Bounded native observation failed: state=${commands.state}, '
             'code=${commands.error?.code}, busy=${commands.busy}, '
             'monitoring=${commands.monitoring}, attaching=${coordinator.attaching}, '
+            'attachmentMs=${attachmentClock.elapsedMilliseconds}, '
             'nativeInitialized=${coordinator.native.controller?.value.isInitialized}',
       );
     }
@@ -90,22 +108,30 @@ void main() {
       );
       await until(
         () =>
+            commands.deliverable &&
+            !coordinator.native.quarantined &&
+            coordinator.native.generation?.disposed == false &&
             coordinator.native.controller?.value.isInitialized == true &&
             !coordinator.attaching,
       );
+      final firstGeneration = coordinator.native.generation!;
       final start = commands.record!.start,
           history = commands.receipt!.ready!.history;
       await until(
         () =>
-            coordinator.native.controller!.value.position.inMilliseconds >= 500,
+            identical(coordinator.native.generation, firstGeneration) &&
+            !firstGeneration.disposed &&
+            firstGeneration.player.value.position.inMilliseconds >= 500,
       );
       await binding.convertFlutterSurfaceToImage();
       await tester.pump();
-      final beforeMs =
-          coordinator.native.controller!.value.position.inMilliseconds;
+      final beforeMs = firstGeneration.player.value.position.inMilliseconds;
       final frame = await binding.takeScreenshot('android-decoded-frame');
-      final afterMs =
-          coordinator.native.controller!.value.position.inMilliseconds;
+      final afterMs = firstGeneration.player.value.position.inMilliseconds;
+      require(
+        identical(coordinator.native.generation, firstGeneration) &&
+            !firstGeneration.disposed,
+      );
       require(frame.length <= 16 * 1024 * 1024);
       final codec = await ui.instantiateImageCodec(Uint8List.fromList(frame));
       final image = (await codec.getNextFrame()).image;
@@ -139,11 +165,46 @@ void main() {
       expect(coordinator.native.controller!.value.isPlaying, isFalse);
       expect(commands.record!.start, start);
       expect(commands.receipt!.ready!.history, history);
-      coordinator.lifecycle(false);
-      await tester.pump();
-      coordinator.lifecycle(true);
-      await tester.pump();
+      final audio = await playbackTracks(commands, audio: true);
+      final subtitles = await playbackTracks(commands, audio: false);
+      expect(audio.length, 2);
+      expect(subtitles.length, 2);
+      final changedFrom = commands.record!.output;
+      final selectedAudio = audio
+          .firstWhere((track) => track.index != commands.admitted!.audio)
+          .index;
+      await coordinator.configure(
+        audio: selectedAudio,
+        subtitle: subtitles.last.index,
+        resolution: 480,
+      );
+      await until(
+        () =>
+            !coordinator.attaching &&
+            coordinator.native.ready?.output == commands.record?.output &&
+            commands.record?.output != changedFrom,
+      );
+      expect(commands.admitted!.audio, selectedAudio);
+      expect(commands.admitted!.subtitle, subtitles.last.index);
+      expect(coordinator.native.controller!.value.isPlaying, isFalse);
+      expect(commands.record!.start, start);
+      expect(commands.receipt!.ready!.history, history);
+      final oldOwner = coordinator.native.generation!;
+      var observedBackground = false;
+      void observeLifecycle() {
+        if (coordinator.background) observedBackground = true;
+      }
+
+      coordinator.addListener(observeLifecycle);
+      debugPrint('ANDROID_PHASE background');
+      await until(
+        () => observedBackground && !coordinator.background,
+        seconds: 15,
+      );
+      await until(() => oldOwner.disposed, seconds: 15);
+      coordinator.removeListener(observeLifecycle);
       expect(coordinator.requiresPlay, isTrue);
+      expect(coordinator.native.generation, isNull);
       await until(() => commands.canAct);
       await coordinator.play();
       await until(() => coordinator.native.controller?.value.isPlaying == true);
@@ -159,10 +220,13 @@ void main() {
         'decoded_authored_frame': true,
         'same_viewer': true,
         'paused_seek': true,
+        'paused_tracks_quality': true,
         'explicit_background_play': true,
         'confirmed_cleanup': true,
+        'maximum_native_attachment_ms': maximumAttachmentMs,
       };
     } finally {
+      coordinator.removeListener(observeAttachment);
       await coordinator.close();
       coordinator.dispose();
     }
