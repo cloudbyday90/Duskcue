@@ -13,7 +13,7 @@ import 'relay/service.dart';
 
 class NativeGeneration {
   NativeGeneration(this.output, this.relay, this.player) {
-    initialized = player.initialize();
+    initialized = Future<void>.sync(player.initialize);
     initialized.then((_) {}, onError: (Object _) {});
   }
   final String output;
@@ -36,7 +36,20 @@ class NativeGeneration {
 }
 
 class NativeOutput extends ChangeNotifier {
-  NativeOutput(this.transport, this.current, this.onSample, this.onFailure);
+  NativeOutput(
+    this.transport,
+    this.current,
+    this.onSample,
+    this.onFailure, {
+    VideoPlayerController Function(Uri)? createPlayer,
+  }) : createPlayer = createPlayer ?? _createPlayer;
+  final VideoPlayerController Function(Uri) createPlayer;
+  static VideoPlayerController _createPlayer(Uri uri) =>
+      VideoPlayerController.networkUrl(
+        uri,
+        formatHint: VideoFormat.hls,
+        videoPlayerOptions: VideoPlayerOptions(allowBackgroundPlayback: true),
+      );
   final PlaybackTransport transport;
   final bool Function(String) current;
   final void Function(String, int, String) onSample;
@@ -53,7 +66,7 @@ class NativeOutput extends ChangeNotifier {
   Future<void> attach(
     VodRecord record,
     VodReceipt receipt, {
-    required bool play,
+    required bool Function() play,
   }) => operations.run(
     () async {
       require(_retiring == null && !quarantined, 'native_cleanup_pending');
@@ -78,11 +91,13 @@ class NativeOutput extends ChangeNotifier {
         await relay.close();
         throw const VodFailure('scope_changed');
       }
-      final player = VideoPlayerController.networkUrl(
-        relay.uri,
-        formatHint: VideoFormat.hls,
-        videoPlayerOptions: VideoPlayerOptions(allowBackgroundPlayback: true),
-      );
+      late final VideoPlayerController player;
+      try {
+        player = createPlayer(relay.uri);
+      } catch (_) {
+        await relay.close();
+        rethrow;
+      }
       final owner = NativeGeneration(value.output, relay, player);
       generation = owner;
       ready = value;
@@ -94,7 +109,8 @@ class NativeOutput extends ChangeNotifier {
         final relative = (value.position - value.offset).clamp(0, 2147483647);
         if (relative > 0) await player.seekTo(Duration(milliseconds: relative));
         require(epoch == _epoch && current(value.output), 'scope_changed');
-        if (play) await player.play();
+        if (play()) await player.play();
+        require(epoch == _epoch && current(value.output), 'scope_changed');
         notifyListeners();
       } catch (_) {
         await owner.close();

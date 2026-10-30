@@ -29,7 +29,7 @@ async function privateBootstrap(owner, bytes) {
     finally { clearTimeout(deadline); }
 }
 
-export async function runAndroidStage(workspace, owner, { fixture, artifact, sdk, dart, snapshot, directory }) {
+export async function runAndroidStage(workspace, owner, { fixture, artifact, sdk, dart, snapshot, directory, onPhase }) {
     if (await owner.command(['shell', 'cat', '/proc/sys/kernel/random/boot_id']) !== owner.bootId) throw new Error('Owned Android guest rebooted between stages.');
     const port = await portAvailable();
     await writeFile(join(directory, 'vm-port.json'), JSON.stringify({ port, bootId: owner.bootId }));
@@ -49,6 +49,7 @@ export async function runAndroidStage(workspace, owner, { fixture, artifact, sdk
                 DUSKCUE_ANDROID_SCENARIO: fixture.scenario, DUSKCUE_ANDROID_EVIDENCE: directory },
             timeoutMs: 240000, bytes: 16777216, log: join(directory, 'flutter-drive.log'), redact: [fixture.token], sanitize: redactAndroidOutput,
             onLine(line) {
+                onPhase?.(line);
                 if (fixture.scenario !== 'baseline' || !line.endsWith('ANDROID_PHASE background')) return;
                 if (background) throw new Error('Duplicate native background phase.');
                 background = (async () => {
@@ -82,6 +83,8 @@ export async function runAndroidStage(workspace, owner, { fixture, artifact, sdk
     if (result.scenario !== fixture.scenario) throw new Error('Native scenario attribution differs.');
     const required = fixture.scenario === 'baseline'
         ? ['protocol_two', 'decoded_authored_frame', 'same_viewer', 'paused_seek', 'paused_tracks_quality', 'explicit_background_play', 'confirmed_cleanup']
+        : fixture.scenario === 'lost-outcomes'
+            ? ['lost_start_reconciled', 'lost_change_reconciled', 'lost_renew_reconciled', 'lost_withdraw_settled', 'same_viewer', 'paused_intent', 'confirmed_cleanup']
         : fixture.scenario.endsWith('-retain')
             ? ['journal_read_back', 'namespaces_intact', 'retained_for_process_death']
             : fixture.scenario === 'corrupt-refuse'

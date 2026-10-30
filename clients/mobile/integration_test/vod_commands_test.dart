@@ -23,6 +23,7 @@ import 'package:duskcue_mobile/screens/command_playback_screen.dart';
 import 'package:video_player/video_player.dart';
 import 'authored_frame.dart';
 import 'storage_scenarios.dart';
+import 'lost_outcomes.dart';
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -49,6 +50,17 @@ void main() {
       PlaybackJournal(SecureJournalStorage()),
     );
     final coordinator = PlaybackCoordinator(commands);
+    if (fixture['scenario'] == 'lost-outcomes') {
+      await runLostOutcomes(
+        tester,
+        binding,
+        channel,
+        fixture,
+        commands,
+        coordinator,
+      );
+      return;
+    }
     if (fixture['scenario'] != 'baseline') {
       await runStorageScenario(
         tester,

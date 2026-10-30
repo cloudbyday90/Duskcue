@@ -10,6 +10,7 @@ import { flutterInputs } from './flutter-inputs.mjs';
 import { installedAndroidApk, androidTcpMapping } from './android-evidence.mjs';
 
 import { runAndroidStage } from './android-stage.mjs';
+import { runAndroidFaultStage } from './android-fault-stage.mjs';
 
 const packageName = 'com.duskcue.mobile.qualification';
 
@@ -54,6 +55,7 @@ export async function runAndroidApplication(workspace, owner, fixture) {
                 expectedStart = undefined;
             }
         }
+        stages.push(await runAndroidFaultStage(workspace, owner, { fixture, artifact, sdk, dart, snapshot }));
         if ((await flutterInputs(workspace)).sha256 !== inputs.sha256) throw new Error('Android sources changed during execution.');
         return { stages, apk: receipt.apk, source: inputs.sha256 };
     } catch (error) { failure = error; throw error; }

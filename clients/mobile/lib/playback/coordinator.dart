@@ -4,13 +4,17 @@
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:video_player/video_player.dart';
 import 'commands/controller.dart';
 import 'commands/selection.dart';
 import 'commands/wire.dart';
 import 'native_output.dart';
 
 class PlaybackCoordinator extends ChangeNotifier {
-  PlaybackCoordinator(this.commands) {
+  PlaybackCoordinator(
+    this.commands, {
+    VideoPlayerController Function(Uri)? createPlayer,
+  }) {
     native = NativeOutput(
       commands.transport,
       (output) =>
@@ -20,6 +24,7 @@ class PlaybackCoordinator extends ChangeNotifier {
           commands.receipt?.ready?.output == output,
       commands.observe,
       _workerFailure,
+      createPlayer: createPlayer,
     );
     commands.addListener(_changed);
     native.addListener(notifyListeners);
@@ -28,7 +33,8 @@ class PlaybackCoordinator extends ChangeNotifier {
   late final NativeOutput native;
   bool background = false, requiresPlay = false, playingIntent = true;
   bool _attaching = false, _recovering = false, _disposed = false;
-  bool _opening = false;
+  bool _opening = false, _resuming = false;
+  String? _resumeStart;
   Future<void>? _closing;
   int height = 1080;
   bool get attaching => _attaching;
@@ -51,15 +57,24 @@ class PlaybackCoordinator extends ChangeNotifier {
         androidSelection(item),
         resume: true,
       );
-      if (selected &&
-          !commands.cleanupOnly &&
-          commands.deliverable &&
-          commands.resumePosition > 0) {
-        await seek(commands.resumePosition);
+      if (selected && !commands.cleanupOnly && commands.resumePosition > 0) {
+        _resumeStart = commands.record?.start;
+        if (commands.deliverable && commands.canAct) await _resume();
       }
       return selected;
     } finally {
       _opening = false;
+      _changed();
+    }
+  }
+
+  Future<void> _resume() async {
+    _resuming = true;
+    _resumeStart = null;
+    try {
+      await seek(commands.resumePosition);
+    } finally {
+      _resuming = false;
       _changed();
     }
   }
@@ -72,29 +87,33 @@ class PlaybackCoordinator extends ChangeNotifier {
               commands.fail(const VodFailure('native_cleanup_pending')),
         ),
       );
-    } else if (!_opening &&
-        !_attaching &&
-        native.ready?.output != commands.receipt!.ready!.output) {
-      unawaited(_attach());
+    } else if (!_opening && !_resuming && !_attaching && commands.canAct) {
+      if (_resumeStart == commands.record?.start) {
+        unawaited(_resume());
+      } else if (native.ready?.output != commands.receipt!.ready!.output) {
+        unawaited(_attach());
+      }
     }
     _notify();
   }
 
   Future<void> _attach() async {
     if (_attaching) return;
+    final record = commands.record!, receipt = commands.receipt!;
     _attaching = true;
     _notify();
     try {
-      await native.attach(
-        commands.record!,
-        commands.receipt!,
-        play: playingIntent,
-      );
+      await native.attach(record, receipt, play: () => playingIntent);
     } catch (failure) {
-      commands.fail(failure);
+      if (!_disposed &&
+          commands.record?.start == record.start &&
+          commands.receipt?.ready?.output == receipt.ready?.output &&
+          commands.transport.current(record.scope)) {
+        commands.fail(failure);
+      }
     } finally {
       _attaching = false;
-      _notify();
+      if (!_disposed) _changed();
     }
   }
 

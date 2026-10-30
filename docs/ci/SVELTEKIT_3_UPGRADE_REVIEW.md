@@ -33,3 +33,7 @@ The official [SvelteKit 3 migration guide](https://svelte.dev/docs/kit/migrating
 Recommendation: retain the current graph for this Android checkpoint, then implement a separately reviewed coordinated migration. Move the existing adapter/preprocessing configuration into Vite, reconcile cookie/runtime/type requirements and affected scripts/imports, compare application diagnostics, and test both Node web and static Tauri builds plus relevant auth/navigation/playback behavior. Rebase the bot PR only if it actually becomes stale; do not confuse an application migration failure with a merge conflict.
 
 The [Android runtime gate](ANDROID_PLAYBACK_QUALIFICATION.md) remains the immediate playback prerequisite. No security, accessibility or native-runtime success is inferred from this dependency trial.
+
+## October 30 retrial
+
+GitHub MCP again returned only PR #6, at the same immutable head, open, mergeable and unmerged. Its exact patch applied on current main. Managed install passed (`2026-10-30T09-07-44-425Z-273d77c0-7a08-481f-adee-7e0c3dbdeb3c.jsonl`); application check again failed at `config_file_unsupported` (`2026-10-30T09-08-17-998Z-e215747b-61ef-4fc5-afb3-6b62de7bb694.jsonl`). Byte-preserved dependency files and the original installed graph were restored successfully (`2026-10-30T09-13-43-322Z-47476763-0d6a-4bf4-9927-5ba0e002a8f5.jsonl`). No conflict/stale rebase or merge applies. The coordinated migration recommendation stands.

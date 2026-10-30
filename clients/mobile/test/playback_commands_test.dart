@@ -120,6 +120,12 @@ class CommandFixture {
                 .add(const Duration(hours: 1))
                 .toIso8601String(),
           };
+        } else if (path.endsWith('/watch-data')) {
+          value = {
+            'media_item_id': item,
+            'is_watched': false,
+            'resume_position_ms': 1200,
+          };
         } else if (path.endsWith('/prepare')) {
           expect(body['capability_protocol'], 1);
           expect(body['force_transcode'], true);
@@ -259,8 +265,8 @@ class CommandFixture {
     });
   }
 
-  Future<void> close() async {
-    commands.dispose();
+  Future<void> close({bool disposeCommands = true}) async {
+    if (disposeCommands) commands.dispose();
     await transport.dispose();
     await server.close(force: true);
   }
