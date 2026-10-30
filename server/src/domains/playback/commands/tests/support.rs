@@ -41,6 +41,10 @@ impl Fixture {
     pub async fn browser(db: &database::Database) -> anyhow::Result<Self> {
         Self::with_options(db, None, false, true).await
     }
+    #[cfg(target_os = "windows")]
+    pub async fn browser_paced(db: &database::Database) -> anyhow::Result<Self> {
+        Self::with_options(db, None, true, true).await
+    }
     #[cfg(target_os = "linux")]
     pub async fn paced(db: &database::Database) -> anyhow::Result<Self> {
         Self::with_options(db, None, true, false).await
@@ -69,7 +73,9 @@ impl Fixture {
             .bind(policy)
             .execute(&db.pool)
             .await?;
-        let input = PathBuf::from(std::env::var(if paced {
+        let input = PathBuf::from(std::env::var(if paced && cfg!(target_os = "windows") {
+            "DUSKCUE_TEST_WINDOWS_PACED_SOURCE"
+        } else if paced {
             "DUSKCUE_TEST_CONFIGURATION_SOURCE"
         } else {
             "DUSKCUE_TEST_PLAYBACK_SOURCE"
@@ -85,6 +91,11 @@ impl Fixture {
         tokio::fs::create_dir_all(&base.state.bootstrap.data_dir).await?;
         let source = base.state.bootstrap.data_dir.join("source.mkv");
         tokio::fs::copy(input, &source).await?;
+        let source = if paced {
+            source.canonicalize()?
+        } else {
+            source
+        };
         let metadata = tokio::fs::metadata(&source).await?;
         let modified: chrono::DateTime<chrono::Utc> = metadata.modified()?.into();
         let streams = json!({"video":{"index":1,"width":320,"height":180,"bit_depth":8,"frame_rate":24,"profile":"High","level":31},"audio":[{"index":0,"codec":"aac","channels":2,"bitrate":96000,"disposition":{"default":1}}],"subtitles":[]});
@@ -120,7 +131,7 @@ impl Fixture {
         if let Some(pool) = owner_pool {
             base.state.pool = pool;
         }
-        #[cfg(target_os = "linux")]
+        #[cfg(any(target_os = "linux", target_os = "windows"))]
         if paced {
             let source = source.canonicalize()?;
             let input = crate::services::transcoding::qualification::OwnedPacedInput::new(
@@ -309,6 +320,11 @@ impl Fixture {
             let output = self.base.state.transcode_manager.drain().await;
             admission?;
             output?;
+            #[cfg(target_os = "windows")]
+            self.base
+                .state
+                .transcode_manager
+                .confirm_qualification_stopped()?;
             Ok::<_, anyhow::Error>(())
         })
         .await?

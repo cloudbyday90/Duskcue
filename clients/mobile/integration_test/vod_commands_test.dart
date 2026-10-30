@@ -24,6 +24,7 @@ import 'package:video_player/video_player.dart';
 import 'authored_frame.dart';
 import 'storage_scenarios.dart';
 import 'lost_outcomes.dart';
+import 'worker_recovery.dart';
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -50,6 +51,17 @@ void main() {
       PlaybackJournal(SecureJournalStorage()),
     );
     final coordinator = PlaybackCoordinator(commands);
+    if (fixture['scenario'] == 'worker-recovery') {
+      await runWorkerRecovery(
+        tester,
+        binding,
+        channel,
+        fixture,
+        commands,
+        coordinator,
+      );
+      return;
+    }
     if (fixture['scenario'] == 'lost-outcomes') {
       await runLostOutcomes(
         tester,

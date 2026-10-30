@@ -56,6 +56,9 @@ export async function runAndroidApplication(workspace, owner, fixture) {
             }
         }
         stages.push(await runAndroidFaultStage(workspace, owner, { fixture, artifact, sdk, dart, snapshot }));
+        const workerDirectory = join(owner.directory, 'worker-recovery');
+        await mkdir(workerDirectory);
+        stages.push(await runAndroidStage(workspace, owner, { fixture: { ...fixture, scenario: 'worker-recovery' }, artifact, sdk, dart, snapshot, directory: workerDirectory }));
         if ((await flutterInputs(workspace)).sha256 !== inputs.sha256) throw new Error('Android sources changed during execution.');
         return { stages, apk: receipt.apk, source: inputs.sha256 };
     } catch (error) { failure = error; throw error; }

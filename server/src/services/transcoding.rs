@@ -40,6 +40,9 @@ pub mod plan;
 pub mod progress;
 #[cfg(all(target_os = "linux", any(test, feature = "playback-qualification")))]
 pub mod qualification;
+#[cfg(all(target_os = "windows", any(test, feature = "playback-qualification")))]
+#[path = "transcoding/qualification_windows.rs"]
+pub mod qualification;
 mod readiness;
 pub mod recovery;
 mod session;
@@ -303,7 +306,10 @@ pub struct TranscodeManager {
     pub(crate) output: Arc<crate::services::vod_lifecycle::VodLifecycle>,
     config: Arc<ArcSwap<RuntimeConfig>>,
     hw_detection: Arc<std::sync::RwLock<HwAccelDetectionResult>>,
-    #[cfg(all(target_os = "linux", any(test, feature = "playback-qualification")))]
+    #[cfg(all(
+        any(target_os = "linux", target_os = "windows"),
+        any(test, feature = "playback-qualification")
+    ))]
     qualification_input: Option<Arc<qualification::OwnedPacedInput>>,
 }
 
@@ -331,7 +337,10 @@ impl TranscodeManager {
             output: crate::services::vod_lifecycle::VodLifecycle::new(),
             config,
             hw_detection: Arc::new(std::sync::RwLock::new(detection)),
-            #[cfg(all(target_os = "linux", any(test, feature = "playback-qualification")))]
+            #[cfg(all(
+                any(target_os = "linux", target_os = "windows"),
+                any(test, feature = "playback-qualification")
+            ))]
             qualification_input: None,
         }
     }

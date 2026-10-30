@@ -89,7 +89,7 @@ pub fn build_hls_output_args(
     ]
 }
 
-fn hls_output_path(path: &str) -> String {
+pub(super) fn hls_output_path(path: &str) -> String {
     #[cfg(windows)]
     {
         let path = path.replace('\\', "/");

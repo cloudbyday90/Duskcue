@@ -12,6 +12,7 @@ import { runBounded } from '../qualification/commands.mjs';
 import { qualificationSources, hashFile } from '../qualification/source.mjs';
 import { createVodSource } from '../qualification/vod-fixtures.mjs';
 import { vodClientSources } from '../qualification/vod-client-source.mjs';
+import { createAndroidWorkerMedia } from '../qualification/android-worker-media.mjs';
 import { authorVodDamage } from '../qualification/vod-damaged-source.mjs';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
@@ -31,7 +32,8 @@ async function main() {
     const startOnly=args[0]==='--start-only';
     const clientOnly=args[0]==='--client-only';
     const androidOnly=args[0]==='--android-only';
-    if(commandsOnly||configurationOnly||clientOnly||startOnly||androidOnly) args.shift();
+    const androidWorkerOnly=args[0]==='--android-worker-only';
+    if(commandsOnly||configurationOnly||clientOnly||startOnly||androidOnly||androidWorkerOnly) args.shift();
     let nativeManifest;
     if(clientOnly&&args[0]==='--native-manifest') {args.shift();nativeManifest=args.shift();if(!nativeManifest)throw new Error('Provide the owned native manifest.');}
     if (args.length !== 6 || args[0] !== '--ffmpeg-bin' || args[2] !== '--source' || args[4] !== '--hls') throw new Error('Provide --ffmpeg-bin, --source and --hls ignored fixture paths.');
@@ -66,6 +68,7 @@ async function main() {
         if (clientOnly) result.clientSource = await vodClientSources(workspace);
         result.driverSha256 = await hashFile(fileURLToPath(import.meta.url));
         result.configurationFixture = await createVodSource(source, join(directory, 'source'), join(ffmpeg, 'ffmpeg.exe'));
+        if (androidOnly || androidWorkerOnly) result.workerFixture = await createAndroidWorkerMedia(directory, result.configurationFixture.path, join(ffmpeg, 'ffmpeg.exe'), join(ffmpeg, 'ffprobe.exe'));
         if (clientOnly) result.damageFixture = await authorVodDamage(result.configurationFixture.copyPath, join(directory, 'source', 'damaged.mp4'), join(ffmpeg, 'ffprobe.exe'));
         const image = JSON.parse(await checked(['image', 'inspect', 'postgres:18', '--format', '{{json .}}']));
         if (!/^sha256:[a-f0-9]{64}$/.test(image.Id || '') || image.Os !== 'linux') throw new Error('VOD PostgreSQL image must be immutable Linux PostgreSQL18.');
@@ -91,12 +94,14 @@ async function main() {
             await setTimeout(100);
         }
         const url = `postgres://postgres:${password}@127.0.0.1:${port}/${database}`;
-        const env = { ...process.env, PATH: `${ffmpeg};${process.env.PATH}`, DUSKCUE_TEST_PLAYBACK_SOURCE: source, DUSKCUE_TEST_CONFIGURATION_SOURCE: result.configurationFixture.path, DUSKCUE_TEST_CONFIGURATION_COPY: result.configurationFixture.copyPath, DUSKCUE_TEST_CONFIGURATION_CORPUS: result.configurationFixture.corpus, DUSKCUE_HLS_TEST_MEDIA_DIR: hls, DUSKCUE_DATABASE_URL: url, DUSKCUE_TRANSCODE_ACCESS_TESTS: 'disposable' };
+        const env = { ...process.env, PATH: `${ffmpeg};${process.env.PATH}`, DUSKCUE_TEST_PLAYBACK_SOURCE: source, DUSKCUE_TEST_FFMPEG_EXE: join(ffmpeg, 'ffmpeg.exe'), DUSKCUE_TEST_CONFIGURATION_SOURCE: result.configurationFixture.path, DUSKCUE_TEST_CONFIGURATION_COPY: result.configurationFixture.copyPath, DUSKCUE_TEST_CONFIGURATION_CORPUS: result.configurationFixture.corpus, DUSKCUE_HLS_TEST_MEDIA_DIR: hls, DUSKCUE_DATABASE_URL: url, DUSKCUE_TRANSCODE_ACCESS_TESTS: 'disposable' };
+        if (result.workerFixture) env.DUSKCUE_TEST_WINDOWS_PACED_SOURCE = result.workerFixture.path;
         delete env.DUSKCUE_TEST_VOD_NATIVE_MANIFEST;
         delete env.DUSKCUE_TEST_VOD_DAMAGED_COPY;
         if (clientOnly) env.DUSKCUE_TEST_VOD_DAMAGED_COPY=result.damageFixture.path;
         if(nativeManifest)env.DUSKCUE_TEST_VOD_NATIVE_MANIFEST=nativeManifest;
         const cases = [
+            ['android-worker','--lib','domains::playback::commands::tests::android_worker::windows_owned_encoder_stall',true],
             ['android','--lib','domains::playback::commands::tests::android::real_android_player_protocol_two',true],
             ['client','--lib','domains::playback::commands::tests::client::real_shared_player_protocol_two',true],
             ['commands','--lib','domains::playback::commands::tests::command_protocol_retains_scope_readiness_delivery_and_confirmed_cleanup',true],
@@ -113,7 +118,7 @@ async function main() {
             ['stop', '--test', 'playback_stop_contract', true],
         ];
         for (const [name, target, selector, ignored] of cases) {
-            if(androidOnly ? name!=='android' : name==='android')continue;
+            if (androidWorkerOnly ? name !== 'android-worker' : androidOnly ? !['android-worker', 'android'].includes(name) : ['android-worker', 'android'].includes(name)) continue;
             if(clientOnly&&name!=='client'||!clientOnly&&name==='client')continue;
             if(commandsOnly&&!['commands','configuration'].includes(name))continue;
             if(startOnly&&name!=='commands')continue;

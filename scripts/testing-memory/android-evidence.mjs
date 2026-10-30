@@ -63,6 +63,7 @@ export async function androidToolInputs(workspace) {
         'android-runtime.mjs', 'android-fault-stage.mjs', 'android-fault-gateway.mjs', 'android-fault-policy.mjs', 'android-sdk.mjs', 'presets.mjs', 'qualify-vod-output.mjs', 'owned-process.mjs']) {
         files.push({ path: name, sha256: await hashFile(join(workspace, 'scripts/testing-memory', name)) });
     }
+    files.push({ path: 'android-worker-media.mjs', sha256: await hashFile(join(workspace, 'scripts/qualification/android-worker-media.mjs')) });
     files.push({ path: 'commands.mjs', sha256: await hashFile(join(workspace, 'scripts/qualification/commands.mjs')) });
     return { files, sha256: createHash('sha256').update(JSON.stringify(files)).digest('hex') };
 }

@@ -37,3 +37,6 @@ The [Android runtime gate](ANDROID_PLAYBACK_QUALIFICATION.md) remains the immedi
 ## October 30 retrial
 
 GitHub MCP again returned only PR #6, at the same immutable head, open, mergeable and unmerged. Its exact patch applied on current main. Managed install passed (`2026-10-30T09-07-44-425Z-273d77c0-7a08-481f-adee-7e0c3dbdeb3c.jsonl`); application check again failed at `config_file_unsupported` (`2026-10-30T09-08-17-998Z-e215747b-61ef-4fc5-afb3-6b62de7bb694.jsonl`). Byte-preserved dependency files and the original installed graph were restored successfully (`2026-10-30T09-13-43-322Z-47476763-0d6a-4bf4-9927-5ba0e002a8f5.jsonl`). No conflict/stale rebase or merge applies. The coordinated migration recommendation stands.
+
+
+The subsequent Windows-worker review on October 30 again finds only PR #6, open/unmerged/mergeable at the same head `b14d4aeaf556bf657b0627f91d208bc9c320ccb0`. Web source/dependency inputs relevant to the already executed trial are unchanged, so its documented configuration failure remains applicable; the dependency-only patch is not adopted. No conflicting stale rebase, merge, remote message or release applies.

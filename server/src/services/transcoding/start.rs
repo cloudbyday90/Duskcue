@@ -286,6 +286,20 @@ impl TranscodeManager {
             }
         };
 
+        #[cfg(all(test, target_os = "windows"))]
+        let qualification_capture = self
+            .qualification_input
+            .as_ref()
+            .map(|input| {
+                input.capture(
+                    session_id,
+                    spawned.handle.id(),
+                    &source_path,
+                    &manifest_path,
+                    &args,
+                )
+            })
+            .transpose();
         let mut session = TranscodeSession {
             id: session_id,
             media_file_id,
@@ -362,6 +376,13 @@ impl TranscodeManager {
             },
         );
         self.preparations.remove(&session_id);
+        #[cfg(all(test, target_os = "windows"))]
+        if let Err(error) = qualification_capture {
+            self.stop_owned(session_id).await?;
+            return Err(PlaybackError::FfmpegFailed(format!(
+                "qualification spawn observation failed: {error}"
+            )));
+        }
 
         *observation = self
             .workers
@@ -440,7 +461,10 @@ impl TranscodeManager {
         source_path: &Path,
     ) -> Result<Vec<String>, PlaybackError> {
         let ordinary = build_ffmpeg_input_args(seek_position_ms, source_path);
-        #[cfg(all(target_os = "linux", any(test, feature = "playback-qualification")))]
+        #[cfg(all(
+            any(target_os = "linux", target_os = "windows"),
+            any(test, feature = "playback-qualification")
+        ))]
         if let Some(input) = &self.qualification_input
             && input.applies(source_path).await.map_err(|error| {
                 PlaybackError::FfmpegFailed(format!(

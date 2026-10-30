@@ -83,6 +83,8 @@ export async function runAndroidStage(workspace, owner, { fixture, artifact, sdk
     if (result.scenario !== fixture.scenario) throw new Error('Native scenario attribution differs.');
     const required = fixture.scenario === 'baseline'
         ? ['protocol_two', 'decoded_authored_frame', 'same_viewer', 'paused_seek', 'paused_tracks_quality', 'explicit_background_play', 'confirmed_cleanup']
+        : fixture.scenario === 'worker-recovery'
+            ? ['native_checkpoint', 'automatic_worker_recovery', 'same_viewer', 'preserved_configuration', 'one_recovery', 'confirmed_cleanup']
         : fixture.scenario === 'lost-outcomes'
             ? ['lost_start_reconciled', 'lost_change_reconciled', 'lost_renew_reconciled', 'lost_withdraw_settled', 'same_viewer', 'paused_intent', 'confirmed_cleanup']
         : fixture.scenario.endsWith('-retain')

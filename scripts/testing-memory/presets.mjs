@@ -7,6 +7,7 @@
 export const PRESETS = {
     'flutter-storage-patch-source': { policy: 'check', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/flutter-command.mjs', 'storage-patch-source'] },
     'android-tooling-test': { policy: 'unit', heapMiB: 128, command: 'node', args: ['--test', '--test-concurrency=1', 'scripts/testing-memory/android-tooling.test.mjs', 'scripts/testing-memory/android-fault-gateway.test.mjs', 'scripts/testing-memory/presets.test.mjs', 'scripts/qualification/qualification.test.mjs'] },
+    'android-worker': { policy: 'cargo', heapMiB: 512, command: 'node', args: ['scripts/testing-memory/qualify-vod-output.mjs', '--android-worker-only'] },
     'android-playback': { policy: 'native', heapMiB: 512, command: 'node', args: ['scripts/testing-memory/qualify-vod-output.mjs', '--android-only'] },
     'android-boot': { policy: 'native', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/android-boot.mjs'] },
     'android-sdk': { policy: 'build', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/android-sdk.mjs'] },

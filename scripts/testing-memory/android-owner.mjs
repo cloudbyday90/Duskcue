@@ -135,7 +135,7 @@ export async function createAndroidOwner(workspace, directory) {
         }
         emulator = own(installed.emulator, ['-avd', name, '-ports', `${consolePort},${consolePort + 1}`,
             '-no-window', '-no-snapshot', '-no-boot-anim', '-no-audio', '-cores', '2', '-memory', String(guestMiB),
-            '-gpu', 'swiftshader', '-accel', 'on', '-no-metrics'], env, join(directory, 'emulator.log'));
+            '-gpu', 'swiftshader', '-feature', '-Vulkan', '-accel', 'on', '-no-metrics'], env, join(directory, 'emulator.log'));
         ownership.emulatorPid = emulator.child.pid;
         await persistOwner();
         const bootDeadline = Date.now() + 600000;
@@ -157,7 +157,7 @@ export async function createAndroidOwner(workspace, directory) {
         if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(bootId)) throw new Error('Owned Android boot identity is invalid.');
         if (properties.api !== '36' || properties.abi !== 'x86_64') throw new Error('Booted Android platform differs from reviewed image.');
         await writeFile(join(directory, 'device.json'), JSON.stringify({ name, serial, adbPort, consolePort, properties,
-            emulatorPid: emulator.child.pid, adbPid: server.child.pid, acceleration: installed.acceleration, graphics: 'swiftshader', guestMiB, cores: 2, bootId }, null, 2));
+            emulatorPid: emulator.child.pid, adbPid: server.child.pid, acceleration: installed.acceleration, graphics: 'swiftshader', requestedFeatureFlags: ['-Vulkan'], guestMiB, cores: 2, bootId }, null, 2));
         ownership.status = 'booted';
         await persistOwner();
         return { command, env, serial, installed, adb, directory, close, bootId };

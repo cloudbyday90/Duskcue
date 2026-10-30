@@ -23,10 +23,22 @@ pub(super) async fn probe(db: &Database, f: &Fixture) -> anyhow::Result<()> {
 pub(super) async fn probe_source(db: &Database, f: &Fixture, name: &str) -> anyhow::Result<()> {
     probe_path(db, f, &std::path::PathBuf::from(std::env::var(name)?)).await
 }
-pub(super) async fn probe_path(
+pub(in super::super) async fn probe_path(
     db: &Database,
     f: &Fixture,
     source: &std::path::Path,
+) -> anyhow::Result<()> {
+    probe_duration(db, f, source, 8.0..9.0).await
+}
+#[cfg(target_os = "windows")]
+pub(in super::super) async fn probe_worker(db: &Database, f: &Fixture) -> anyhow::Result<()> {
+    probe_duration(db, f, &f.source, 39.5..41.0).await
+}
+async fn probe_duration(
+    db: &Database,
+    f: &Fixture,
+    source: &std::path::Path,
+    expected: std::ops::Range<f64>,
 ) -> anyhow::Result<()> {
     let source = source.canonicalize()?;
     let metadata = tokio::fs::symlink_metadata(&source).await?;
@@ -45,7 +57,7 @@ pub(super) async fn probe_path(
     anyhow::ensure!(
         probe.additional_streams["format"]["duration_seconds"]
             .as_f64()
-            .is_some_and(|n| (8.0..9.0).contains(&n))
+            .is_some_and(|n| expected.contains(&n))
     );
     sqlx::query("UPDATE media_files SET container_format=$2,video_codec=$3,video_resolution=$4,video_bitrate=$5,video_dynamic_range=$6,audio_codec=$7,audio_channels=$8,audio_bitrate=$9,runtime_seconds=$10,additional_streams=$11 WHERE id=$1")
         .bind(f.file).bind(probe.container_format).bind(probe.video_codec).bind(probe.video_resolution).bind(probe.video_bitrate).bind(probe.video_dynamic_range).bind(probe.audio_codec).bind(probe.audio_channels).bind(probe.audio_bitrate).bind(probe.runtime_seconds).bind(probe.additional_streams).execute(&db.pool).await?;

@@ -6,7 +6,7 @@ pub(super) mod actors;
 pub(super) mod adversity;
 pub(super) mod copied;
 pub(super) mod faults;
-mod harness;
+pub(super) mod harness;
 #[cfg(target_os = "linux")]
 pub(super) mod linux;
 mod media;
