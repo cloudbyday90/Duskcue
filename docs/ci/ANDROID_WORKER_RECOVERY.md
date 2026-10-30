@@ -28,6 +28,8 @@ Recommendation stack: existing locked Rust/Tokio process owner and watchdog; bou
 
 ## Outcome
 
+Implementation checkpoint: `a4de435` on main. Documentation-only successors preserve the tested source. The backend fixture is qualified; the reproduced native recovery failure and pending behavior review below keep the overall Android phase open. No release.
+
 The modular Windows file/process/thread adapter, exact spawn observation, safe handoff on observation failure, truthful source authoring/probe and backend-only guard are implemented. Four real backend runs confirm the temporary freeze/resume and final freeze across 47 threads, then the unchanged watchdog's Stalled classification, physical exit, normal Stop and root/file/database cleanup. No native checkpoint is synthesized in this guard; that remains an independent Android requirement.
 
 | Check | Outcome / ignored receipt |
