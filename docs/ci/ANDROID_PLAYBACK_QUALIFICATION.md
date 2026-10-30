@@ -195,6 +195,8 @@ The current storage/startup/lifecycle checkpoint is qualified. Positive worker r
 
 ## October 30 attachment and accepted-response loss checkpoint
 
+Verified implementation: `528002d` on main. Documentation-only successors preserve the qualified source; no release.
+
 The [documented increment](../design/VOD_FLUTTER_CLIENT_MIGRATION.md#october-30-attachment-and-lost-response-increment) is qualified on the locked stack. Current Play intent is sampled after initialization/seek. An old attachment's failure cannot invalidate a newer output, and the coordinator attaches the current output after actual old completion. Initial resume survives a lost Start response through one conditional seek before attachment. A small injected controller factory permits delayed native completion tests; the production factory and media engine are unchanged.
 
 Five meaningful regressions exercise Pause during initialization, replacement while old initialization/disposal remains owned, scope invalidation, lost-Start resume and the real thirty-second attachment timeout with retained capacity/quarantine until actual completion. The first regression attempt failed because its test cleanup disposed the command owner twice (`2026-10-30T09-21-47-701Z-09543ef9-c34c-45f0-882d-101fc11e8852.jsonl`). The fixture was corrected; that attempt is not passing evidence.
