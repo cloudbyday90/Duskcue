@@ -1,0 +1,6 @@
+interface:
+  display_name: "Duskcue Repository Cleanup"
+  short_description: "Maintain repository disk usage and artifact cleanup"
+  default_prompt: "Use $duskcue-repository-cleanup to inventory Duskcue repository disk usage, clean approved stale development artifacts, and verify reclaimed space."
+policy:
+  allow_implicit_invocation: true

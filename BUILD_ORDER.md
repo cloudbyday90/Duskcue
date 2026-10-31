@@ -10,6 +10,14 @@ This document defines the implementation sequence for Duskcue. Each phase is dep
 
 Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTEXT.md). Before finalizing a feature or domain design, resolve open decisions through [Design review with grill-me](CONTEXT.md#design-review-with-grill-me). Start with `$grill-me` and the phase or plan to examine, or load the [local skill](.agents/skills/grill-me/SKILL.md) directly. Record the confirmed decisions in that phase's authoritative documents before implementing them. Continue already agreed work without repeating settled questions unless new evidence changes the design.
 
+## October 31 repository cleanup (COMPLETE)
+
+**Authority:** [Development storage maintenance](docs/operations/DEVELOPMENT_STORAGE.md) and the installed, versioned [repository-cleanup skill](.agents/skills/duskcue-repository-cleanup/SKILL.md). The operator scoped this to repository/build/test artifacts, selected Duskcue-only images and approved one brief Docker restart. Routine maintenance is now referenced from AGENTS.md and CONTEXT.md; it adds no runtime cleanup feature or scheduler.
+
+**Outcome:** package-scoped Cargo cleanup reports 218 GiB removed; the native manager removes 22 owned AVDs; exact Docker cleanup removes 130 stale Duskcue image references and four cache records. Logs/results, SDK/APKs, current images and all volumes remain. C: observed free space rises by 284.658 GiB to 984.730 GiB. Docker restarts with exact service/image/mount/running-set identity and both services healthy. Its VHD logical length remains unchanged. The authority records shared-engine activity, retained uncertain paths, review rejection, before/after measurements and required rebuild implications. No release.
+
+**Next:** return to the pending positive worker-evidence observer design below; maintenance does not settle that behavior or complete Android qualification. Rebuild removed server/test artifacts under the existing guard when qualification needs them; old receipts do not establish that a cleaned executable remains available. SDK/APK identities are retained.
+
 ## October 2026 Flutter interactive VOD migration (IMPLEMENTATION — NATIVE GATE PENDING)
 
 **Authority:** [Flutter migration](docs/design/VOD_FLUTTER_CLIENT_MIGRATION.md), [relay](docs/security/FLUTTER_HLS_RELAY.md), [Android qualification](docs/ci/ANDROID_PLAYBACK_QUALIFICATION.md) and [updated toolchain](docs/ci/FLUTTER_TOOLCHAIN.md). The complete contract at `21cd8b1` is confirmed. The operator subsequently requested Flutter 3.47.8/Dart 3.13.7 and approved WHPX enablement with `-NoRestart`.

@@ -71,6 +71,10 @@ The underlying system must be secure by design. Security decisions are opt-in an
 
 After completing code changes, run build and lint commands to verify correctness. If the correct commands are unknown, ask before proceeding.
 
+## Development storage hygiene
+
+Use the [Duskcue repository-cleanup skill](.agents/skills/duskcue-repository-cleanup/SKILL.md) at the start/end of substantial build or qualification series and when storage growth is reported. Inventory and retire identified disposable Duskcue artifacts after actual owner completion; retain compact receipts and diagnostics. Follow [development storage policy](docs/operations/DEVELOPMENT_STORAGE.md) for current image/artifact retention, ownership checks, scoped native cleanup, WSL reclamation and before/after measurement. A cleanup skill does not authorize application-data deletion, unrelated-project cleanup or future service interruptions.
+
 ## Key Reference Documents
 
 | Document | Purpose |
