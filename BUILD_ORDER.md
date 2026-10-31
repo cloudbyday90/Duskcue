@@ -18,6 +18,14 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **Next at the maintenance checkpoint:** review the positive worker-evidence observer below. That subsequent confirmed increment is now scoped-qualified: the cleaned Rust package was rebuilt under the unchanged guard, the full eight-stage native repeat passes and two new AVDs are retired. Maintenance itself did not authorize or qualify that behavior. Current compiler/SDK/APK inputs and compact evidence remain.
 
+## October 31 Android scope/cancellation ownership (RESEARCH — SCOPE REVIEW PENDING)
+
+**Authority:** [scope/cancellation research and proposed contract](docs/design/FLUTTER_SCOPE_CANCELLATION.md). Official Dart/Flutter/Dio/Android and W3C sources were discovered through MCP. Existing profile-only cleanup, stronger-boundary clearing, explicit Play/no replay and retained completion rules remain settled. Source inspection identifies pending-Start journal invalidation, per-owner storage overlap, status-read completion and late callback candidates; the existing eight native stages bypass production provider scope wiring. Static candidates are not claimed as reproduced defects.
+
+**Recommendation:** modular app-lifetime journal/native ownership, exact scope/epoch/Start/output fencing, retained cancellation/completion and real production-provider/native qualification under unchanged locked dependencies and resource budgets. Q1 asks whether to complete this scope or stop first at deterministic tests; its answer and the final shared implementation contract remain pending. No application code or new application-test claim yet. Only Dependabot #6 is open; its two-commit stale branch is rebased to `e97644e9f8afdd8b3bb2bfde0e11bebaaf5f6756`, unmerged, with unchanged already-trialed package files. Main only; no release.
+
+**Next:** settle the review, implement/qualify this increment and clean its new owned artifacts, then complete the remaining relay adversarial/backpressure/output-format evidence before ambient. Preserve current compiler/SDK/APK inputs and compact evidence; no service interruption is authorized by research.
+
 ## October 31 Flutter worker-evidence observer (SCOPED QUALIFICATION COMPLETE)
 
 **Authority:** implementation `06d1d50c816b80d20b387c79c6bf5dc7365dd145` on main; [confirmed observer design and outcomes](docs/design/FLUTTER_WORKER_RECOVERY_OBSERVER.md). Documentation-only attribution follows without changing qualified inputs. Modular monotonic observation continues successful negative reads at most once per second for sixty seconds, retains per-read cancellation/completion, preserves independent renewal and issues one conditional Recover only after positive current evidence and a confirmed checkpoint. Failed delivery detaches; Pause/Close remain available; stale context, failed evidence or refused recovery requires explicit reconciliation/Play. Locked dependencies and every resource/root/deadline limit remain unchanged.
