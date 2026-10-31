@@ -62,6 +62,8 @@ After this gate, complete the pending Android scope/control/read cancellation an
 
 ## Implementation and verification
 
+Qualified implementation: `06d1d50c816b80d20b387c79c6bf5dc7365dd145` on main. Documentation-only attribution preserves the source/tool/APK identities below. Final whitespace, local document links, staged private-fixture/artifact scope, 1,043-file copyright compliance and both current APK/input identities pass. No release.
+
 The implementation composes a bounded `WorkerEvidenceObserver`, command-controller recovery part, retained per-read transport handle and shared configuration parser. The coordinator binds native failures to their exact output, detaches delivery, preserves Pause intent and fences background/Close/new-context completion. A refused or uncertain Recover also requires explicit Play after reconciliation, including checkpoint refusal before any mutation. The earlier unused immediate-read recovery helper is removed. Screen status uses the existing live region; Pause and Close remain reachable while competing controls are disabled. No dependency, backend rule, production advertisement or resource budget changed.
 
 | Check | Outcome / ignored receipt |
