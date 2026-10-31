@@ -11,6 +11,7 @@ class VodConfiguration {
   final Wire value;
   final String etag;
   String get output => value['output_revision'] as String;
+  String get state => value['state'] as String;
   bool get workerRecovery => value['worker_recovery'] == true;
   static Future<VodConfiguration> read(
     PlaybackTransport transport,
@@ -21,6 +22,10 @@ class VodConfiguration {
       commandPath(record.start, '/configuration'),
       record.scope,
     );
+    return parse(reply, record);
+  }
+
+  static VodConfiguration parse(VodReply reply, VodRecord record) {
     final value = reply.body;
     require(
       value['protocol'] == vodProtocol &&
@@ -34,6 +39,7 @@ class VodConfiguration {
             'retiring',
           }.contains(value['state']) &&
           value['worker_recovery'] is bool &&
+          value.containsKey('pending_operation') &&
           reply.etag != null &&
           RegExp(r'^"vod-config-[a-f0-9]{64}"$').hasMatch(reply.etag!),
     );

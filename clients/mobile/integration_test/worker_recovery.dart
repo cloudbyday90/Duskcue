@@ -68,6 +68,7 @@ Future<void> runWorkerRecovery(
       seconds: 90,
     );
     expect(first.disposed, isTrue);
+    expect(commands.workerObserver.negatives, greaterThan(0));
     expect(coordinator.playingIntent, isTrue);
     expect(coordinator.native.controller!.value.isPlaying, isTrue);
     expect(commands.record!.start, start);
@@ -95,6 +96,8 @@ Future<void> runWorkerRecovery(
       'start': start,
       'native_checkpoint': true,
       'automatic_worker_recovery': true,
+      'negative_then_positive': true,
+      'negative_reads': commands.workerObserver.negatives,
       'same_viewer': true,
       'preserved_configuration': true,
       'one_recovery': true,

@@ -63,7 +63,7 @@ class PlaybackTransport {
       '/api/v1/auth/session-context',
       local!,
       forCleanup: forCleanup,
-    );
+    ).result;
     require(local.matches(identity(), cleanup: true), 'scope_changed');
     require(reply.status == 200);
     final value = PlaybackContext.parse(
@@ -96,7 +96,16 @@ class PlaybackTransport {
       etag: etag,
       forCleanup: forCleanup,
       timeout: timeout,
-    );
+    ).result;
+  }
+
+  RetainedOperation<VodReply> read(
+    String path,
+    PlaybackScope scope, {
+    Duration timeout = const Duration(seconds: 5),
+  }) {
+    require(current(scope), 'scope_changed');
+    return _send('GET', path, _bound!.identity, scope: scope, timeout: timeout);
   }
 
   Future<List<Wire>> files(String item, PlaybackScope scope) async {
@@ -107,13 +116,13 @@ class PlaybackTransport {
       _bound!.identity,
       scope: scope,
       fileCollection: true,
-    );
+    ).result;
     final observed = await context();
     require(observed.scope.matches(scope), 'scope_changed');
     return (reply.body['items'] as List).cast<Wire>();
   }
 
-  Future<VodReply> _send(
+  RetainedOperation<VodReply> _send(
     String method,
     String path,
     PlaybackIdentity local, {
@@ -143,7 +152,7 @@ class PlaybackTransport {
     );
     final cancel = CancelToken();
     final began = clock.now;
-    return (forCleanup ? cleanup : regular).run(
+    return (forCleanup ? cleanup : regular).retain(
       () async {
         _tokens.add(cancel);
         try {

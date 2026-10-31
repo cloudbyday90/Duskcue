@@ -32,7 +32,8 @@ class PlaybackCoordinator extends ChangeNotifier {
   final PlaybackCommands commands;
   late final NativeOutput native;
   bool background = false, requiresPlay = false, playingIntent = true;
-  bool _attaching = false, _recovering = false, _disposed = false;
+  bool _attaching = false, _disposed = false;
+  int _recoveryRevision = 0;
   bool _opening = false, _resuming = false;
   String? _resumeStart;
   Future<void>? _closing;
@@ -51,6 +52,8 @@ class PlaybackCoordinator extends ChangeNotifier {
 
   Future<bool> open(String item) async {
     require(!_opening, 'command_busy');
+    _recoveryRevision++;
+    commands.cancelWorkerObservation();
     _opening = true;
     try {
       final selected = await commands.open(
@@ -133,12 +136,14 @@ class PlaybackCoordinator extends ChangeNotifier {
 
   Future<void> pause() async {
     playingIntent = false;
-    await native.setPlaying(false);
+    if (!commands.workerObserving) await native.setPlaying(false);
     _notify();
   }
 
   void lifecycle(bool active) {
     if (!active) {
+      _recoveryRevision++;
+      commands.cancelWorkerObservation();
       background = true;
       requiresPlay = true;
       playingIntent = false;
@@ -185,18 +190,39 @@ class PlaybackCoordinator extends ChangeNotifier {
     if (commands.error == null) height = chosen;
   }
 
-  void _workerFailure() {
-    if (_recovering || !commands.canAct) return;
-    _recovering = true;
+  void _workerFailure(String output) {
+    if (!commands.canAct ||
+        commands.workerObserver.pending ||
+        _closing != null ||
+        background ||
+        requiresPlay ||
+        commands.record?.output != output) {
+      return;
+    }
+    final revision = ++_recoveryRevision, captured = commands.record!;
+    bool current() =>
+        !_disposed &&
+        revision == _recoveryRevision &&
+        commands.record?.start == captured.start &&
+        commands.record?.output == output &&
+        commands.transport.current(captured.scope);
     () async {
       try {
-        if (!await commands.recoverWorker()) {
-          commands.fail(const VodFailure('media_unavailable'));
-        }
+        await commands.observeWorkerFailure(
+          output,
+          active: () =>
+              current() && !background && !requiresPlay && _closing == null,
+          detach: native.retire,
+          unavailable: () {
+            if (current()) requiresPlay = true;
+          },
+        );
       } catch (failure) {
-        commands.fail(failure);
+        if (current()) {
+          requiresPlay = true;
+          commands.fail(failure);
+        }
       } finally {
-        _recovering = false;
         _notify();
       }
     }();
@@ -204,6 +230,8 @@ class PlaybackCoordinator extends ChangeNotifier {
 
   Future<void> close() => _closing ??=
       () async {
+        _recoveryRevision++;
+        commands.cancelWorkerObservation();
         final local = native.retire();
         local.then((_) {}, onError: (Object _) {});
         await commands.close();
@@ -216,6 +244,7 @@ class PlaybackCoordinator extends ChangeNotifier {
         _closing = null;
       });
   void invalidate() {
+    _recoveryRevision++;
     requiresPlay = true;
     playingIntent = false;
     commands.invalidate();
@@ -225,6 +254,7 @@ class PlaybackCoordinator extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _recoveryRevision++;
     commands.removeListener(_changed);
     native.removeListener(notifyListeners);
     unawaited(native.retire().catchError((Object _) {}));

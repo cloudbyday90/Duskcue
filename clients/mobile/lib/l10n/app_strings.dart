@@ -52,7 +52,8 @@ class AppStrings {
   String get pullToRefresh => 'Pull to refresh';
   String get loadMore => 'Load more';
   String get retry => 'Retry';
-  String get serverUnavailable => 'The server is unavailable. Check your connection and try again.';
+  String get serverUnavailable =>
+      'The server is unavailable. Check your connection and try again.';
   String get signedOut => 'Your session expired. Sign in again.';
   String get searchHint => 'Movies, episodes, people, genres';
   String get searchEmpty => 'Search your Duskcue libraries.';
@@ -64,24 +65,36 @@ class AppStrings {
   String get close => 'Close';
   String get checkPlaybackStatus => 'Check status';
   String get stopPlayback => 'Stop and close';
-  String get progressUnconfirmed => 'Recent progress could not be confirmed. Cleanup can still continue.';
+  String get progressUnconfirmed =>
+      'Recent progress could not be confirmed. Cleanup can still continue.';
   String commandState(String state) => switch (state) {
     'idle' || 'checking' => 'Checking playback support…',
+    'checking_worker' => 'Checking playback status…',
     'starting' || 'preparing' => 'Preparing playback…',
     'changing' => 'Preparing the replacement source…',
     'ready' => 'Playback ready',
     'settled' => 'Playback cleanup confirmed',
     'cleanup' => 'A previous playback needs status or cleanup review.',
-    'withdrawing' || 'pending' || 'stopping' => 'Waiting for confirmed cleanup…',
+    'withdrawing' ||
+    'pending' ||
+    'stopping' => 'Waiting for confirmed cleanup…',
     _ => 'Playback is unavailable. Check status or stop playback.',
   };
   String commandError(String code) => switch (code) {
-    'storage_unavailable' || 'storage_busy' => 'Playback recovery storage is unavailable. No command will be repeated.',
-    'lease_uncertain' => 'The viewing lease could not be confirmed. Check status before playing.',
-    'scope_changed' => 'Your session or profile changed. Playback has detached.',
-    'native_cleanup_pending' => 'Device cleanup is unconfirmed. A new player cannot attach yet.',
-    'checkpoint_required' => 'Confirmed playback progress is required before this change.',
-    _ => 'The playback outcome could not be confirmed. Check status or stop; the command will not be repeated.',
+    'storage_unavailable' || 'storage_busy' =>
+      'Playback recovery storage is unavailable. No command will be repeated.',
+    'lease_uncertain' =>
+      'The viewing lease could not be confirmed. Check status before playing.',
+    'scope_changed' =>
+      'Your session or profile changed. Playback has detached.',
+    'native_cleanup_pending' =>
+      'Device cleanup is unconfirmed. A new player cannot attach yet.',
+    'checkpoint_required' =>
+      'Confirmed playback progress is required before this change.',
+    'worker_status_required' =>
+      'Playback recovery needs review. Check status, change playback settings or stop playback.',
+    _ =>
+      'The playback outcome could not be confirmed. Check status or stop; the command will not be repeated.',
   };
   String get audio => 'Audio';
   String get subtitles => 'Subtitles';
@@ -95,7 +108,8 @@ class AppStrings {
   String get delete => 'Delete';
   String get deleteAll => 'Delete all';
   String get buffering => 'Buffering';
-  String get playbackFailed => 'Playback failed. Try another quality or stream option.';
+  String get playbackFailed =>
+      'Playback failed. Try another quality or stream option.';
   String skipSegment(String segmentType) => 'Skip $segmentType';
   String get markAllRead => 'Mark all read';
   String get unread => 'Unread';
@@ -114,7 +128,9 @@ class AppStringsDelegate extends LocalizationsDelegate<AppStrings> {
 
   @override
   bool isSupported(Locale locale) {
-    return AppStrings.supportedLocales.any((supported) => supported.languageCode == locale.languageCode);
+    return AppStrings.supportedLocales.any(
+      (supported) => supported.languageCode == locale.languageCode,
+    );
   }
 
   @override

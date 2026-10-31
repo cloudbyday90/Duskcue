@@ -2,6 +2,8 @@
 
 ## Scope and authority
 
+The backend fixture and subsequent client observer are now scoped-qualified. The [October 31 observer authority](../design/FLUTTER_WORKER_RECOVERY_OBSERVER.md#passing-real-native-repeat-and-final-boundary) supersedes the historical pending automatic-recovery result below: 94 Flutter tests, both APKs and the full eight-stage real native repeat pass, with seventeen negative reads before positive evidence, one same-viewer Recover and confirmed final cleanup. An earlier resource-guard interruption is retained separately. Overall Android scope/I/O/relay qualification remains open; production attachment/caps stay off.
+
 This implements the positive worker-recovery gate of the confirmed [Flutter contract](../design/VOD_FLUTTER_CLIENT_MIGRATION.md), following the [response-loss checkpoint](ANDROID_PLAYBACK_QUALIFICATION.md#october-30-attachment-and-accepted-response-loss-checkpoint). It changes qualification mechanics, not product policy. Work stays on main with locked dependencies and no release. Normal production attachment/caps, decoder evidence, ambient/offline/iOS and remaining relay/scope gates stay separate.
 
 Capture the actual spawned FFmpeg child ID, exact source/manifest/arguments and a retained Windows process handle before handing it into the existing worker owner. Any capture refusal must still hand off, terminate and observe the spawned child before failing preparation. No process-name search, arbitrary PID input, production fault route, synthetic failure label or shortened watchdog is permitted.

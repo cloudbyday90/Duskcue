@@ -168,6 +168,7 @@ class _CommandPlaybackScreenState extends ConsumerState<CommandPlaybackScreen>
                   children: [
                     if (commands.busy ||
                         commands.monitoring ||
+                        commands.workerObserving ||
                         service.attaching ||
                         _leaving)
                       const LinearProgressIndicator(),
@@ -242,24 +243,29 @@ class _CommandPlaybackScreenState extends ConsumerState<CommandPlaybackScreen>
                       children: [
                         FilledButton.icon(
                           onPressed:
-                              enabled &&
+                              (enabled ||
+                                      commands.workerObserving && !_leaving) &&
                                   commands.record != null &&
                                   !commands.cleanupOnly
                               ? () => unawaited(
                                   _action(
-                                    available && player?.value.isPlaying == true
+                                    commands.workerObserving ||
+                                            available &&
+                                                player?.value.isPlaying == true
                                         ? service.pause
                                         : service.play,
                                   ),
                                 )
                               : null,
                           icon: Icon(
-                            available && player?.value.isPlaying == true
+                            commands.workerObserving ||
+                                    available && player?.value.isPlaying == true
                                 ? Icons.pause
                                 : Icons.play_arrow,
                           ),
                           label: Text(
-                            available && player?.value.isPlaying == true
+                            commands.workerObserving ||
+                                    available && player?.value.isPlaying == true
                                 ? strings.pause
                                 : strings.play,
                           ),
@@ -271,7 +277,7 @@ class _CommandPlaybackScreenState extends ConsumerState<CommandPlaybackScreen>
                           child: Text(strings.checkPlaybackStatus),
                         ),
                         OutlinedButton(
-                          onPressed: enabled && commands.record != null
+                          onPressed: !_leaving && commands.record != null
                               ? _close
                               : null,
                           child: Text(strings.stopPlayback),

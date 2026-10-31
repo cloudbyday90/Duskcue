@@ -6,6 +6,7 @@ part of 'controller.dart';
 
 extension PlaybackSettlement on PlaybackCommands {
   Future<void> close() async {
+    cancelWorkerObservation();
     final current = record;
     if (current == null) {
       _epoch++;

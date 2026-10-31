@@ -202,7 +202,7 @@ void main() {
         fixture.transport,
         (_) => true,
         (_, _, _) {},
-        () {},
+        (_) {},
         createPlayer: (uri) => player = DelayedPlayer(uri),
       );
       try {

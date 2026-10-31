@@ -53,7 +53,7 @@ class NativeOutput extends ChangeNotifier {
   final PlaybackTransport transport;
   final bool Function(String) current;
   final void Function(String, int, String) onSample;
-  final void Function() onFailure;
+  final void Function(String) onFailure;
   final operations = RetainedOperations(1);
   final commands = RetainedOperations(2);
   NativeGeneration? generation;
@@ -139,7 +139,7 @@ class NativeOutput extends ChangeNotifier {
     final value = owner.player.value;
     if (value.hasError && !_failed) {
       _failed = true;
-      onFailure();
+      onFailure(source.output);
     }
     if (!value.isInitialized || value.hasError) return;
     final absolute = value.position.inMilliseconds + source.offset;

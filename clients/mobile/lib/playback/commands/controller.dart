@@ -14,9 +14,11 @@ import 'scope.dart';
 import 'status_reader.dart';
 import 'transport.dart';
 import 'wire.dart';
+import 'worker_observer.dart';
 
 part 'controls.dart';
 part 'settlement.dart';
+part 'worker_recovery.dart';
 
 class PlaybackCommands extends ChangeNotifier {
   PlaybackCommands(
@@ -24,6 +26,10 @@ class PlaybackCommands extends ChangeNotifier {
     this.journal, {
     Future<void> Function(Duration)? wait,
   }) {
+    workerObserver = WorkerEvidenceObserver(
+      () => transport.clock.now,
+      wait ?? Future<void>.delayed,
+    );
     reader = PlaybackStatusReader(
       transport,
       _owns,
@@ -58,6 +64,10 @@ class PlaybackCommands extends ChangeNotifier {
   late final PlaybackStatusReader reader;
   late final PlaybackLease lease;
   late final PlaybackCheckpoints checkpoints;
+  late final WorkerEvidenceObserver workerObserver;
+  Object? _workerOwner;
+  void Function()? _workerUnavailable;
+  bool workerObserving = false;
   VodRecord? record;
   VodReceipt? receipt;
   VodReady? admitted;
@@ -88,7 +98,11 @@ class PlaybackCommands extends ChangeNotifier {
     }
   }
 
-  bool get canAct => !busy && !monitoring && transport.clock.now >= retryAt;
+  bool get canAct =>
+      !busy &&
+      !monitoring &&
+      !workerObserving &&
+      transport.clock.now >= retryAt;
   bool _owns(int token, String start) =>
       !_disposed && _epoch == token && record?.start == start;
   void _emit() {
@@ -96,6 +110,8 @@ class PlaybackCommands extends ChangeNotifier {
   }
 
   void fail(Object problem) {
+    _requireWorkerPlay();
+    cancelWorkerObservation();
     error = problem is VodFailure
         ? problem
         : const VodFailure('command_uncertain');
@@ -422,6 +438,7 @@ class PlaybackCommands extends ChangeNotifier {
   void invalidate() {
     final current = record;
     _epoch++;
+    cancelWorkerObservation();
     transport.cancel();
     _retry?.cancel();
     busy = false;
@@ -455,6 +472,7 @@ class PlaybackCommands extends ChangeNotifier {
     _disposed = true;
     _retry?.cancel();
     _epoch++;
+    cancelWorkerObservation();
     lease.stop();
     transport.cancel();
     unawaited(transport.dispose());

@@ -79,14 +79,4 @@ extension PlaybackControls on PlaybackCommands {
     }
     if (token == _epoch && error == null) await check();
   }
-
-  Future<bool> recoverWorker() async {
-    if (!canAct || cleanupOnly || record == null || record!.operation != null) {
-      return false;
-    }
-    final config = await VodConfiguration.read(transport, record!);
-    if (!config.workerRecovery || config.output != record!.output) return false;
-    await change({'kind': 'recover'});
-    return true;
-  }
 }

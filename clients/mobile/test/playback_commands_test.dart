@@ -55,6 +55,14 @@ class CommandFixture {
   String output = const Uuid().v7();
   PlaybackIdentity? identity;
   int starts = 0, withdrawals = 0, changes = 0, checkpoint = 0;
+  int configurationReads = 0, renewals = 0;
+  bool workerRecovery = false, lostChange = false;
+  String configurationState = 'ready';
+  String? configurationOutput, pendingConfiguration;
+  String? configurationRaw;
+  int? configurationStatus;
+  Future<void> Function()? beforeConfiguration;
+  Future<void> Function()? beforeRenewal;
   bool lostStart = false, supported = true, fenced = false;
   Object? filePayload;
   String contextRevision = '1';
@@ -70,7 +78,7 @@ class CommandFixture {
       'lease-observation',
     ],
   };
-  Future<void> open() async {
+  Future<void> open({PlaybackClock? clock}) async {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     final origin = Uri.parse('http://127.0.0.1:${server.port}');
     identity = PlaybackIdentity(
@@ -84,7 +92,7 @@ class CommandFixture {
     );
     transport = PlaybackTransport(
       identity: () => identity,
-      clock: PlaybackClock(),
+      clock: clock ?? PlaybackClock(),
     );
     commands = PlaybackCommands(transport, PlaybackJournal(storage));
     server.listen((request) async {
@@ -172,6 +180,10 @@ class CommandFixture {
             if (request.method == 'POST') {
               changes++;
               output = const Uuid().v7();
+              if (lostChange) {
+                (await request.response.detachSocket()).destroy();
+                return;
+              }
               value = {
                 'protocol': vodProtocol,
                 'request_id': start,
@@ -184,14 +196,29 @@ class CommandFixture {
                 ),
               };
             } else {
+              configurationReads++;
+              await beforeConfiguration?.call();
+              if (configurationRaw != null) {
+                request.response.headers.contentType = ContentType.json;
+                request.response.write(configurationRaw);
+                await request.response.close();
+                return;
+              }
+              if (configurationStatus != null) {
+                request.response.statusCode = configurationStatus!;
+                request.response.headers.contentType = ContentType.json;
+                request.response.write('{}');
+                await request.response.close();
+                return;
+              }
               value = {
                 'protocol': vodProtocol,
                 'request_id': start,
-                'output_revision': output,
+                'output_revision': configurationOutput ?? output,
                 'revision': '1',
-                'state': 'ready',
-                'pending_operation': null,
-                'worker_recovery': false,
+                'state': configurationState,
+                'pending_operation': pendingConfiguration,
+                'worker_recovery': workerRecovery,
                 'configuration': {},
               };
             }
@@ -215,6 +242,8 @@ class CommandFixture {
               'playback_state': body['playback_state'] ?? 'paused',
             };
           } else if (path.endsWith('/renew')) {
+            renewals++;
+            await beforeRenewal?.call();
             value = {
               'protocol': vodProtocol,
               'request_id': start,
