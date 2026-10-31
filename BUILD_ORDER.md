@@ -12,7 +12,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## October 31 repository cleanup (COMPLETE)
 
-**Authority:** [Development storage maintenance](docs/operations/DEVELOPMENT_STORAGE.md) and the installed, versioned [repository-cleanup skill](.agents/skills/duskcue-repository-cleanup/SKILL.md). The operator scoped this to repository/build/test artifacts, selected Duskcue-only images and approved one brief Docker restart. Routine maintenance is now referenced from AGENTS.md and CONTEXT.md; it adds no runtime cleanup feature or scheduler.
+**Authority:** checkpoint `501dd4e` on main; [development storage maintenance](docs/operations/DEVELOPMENT_STORAGE.md) and the installed, versioned [repository-cleanup skill](.agents/skills/duskcue-repository-cleanup/SKILL.md). The operator scoped this to repository/build/test artifacts, selected Duskcue-only images and approved one brief Docker restart. Routine maintenance is now referenced from AGENTS.md and CONTEXT.md; it adds no runtime cleanup feature or scheduler.
 
 **Outcome:** package-scoped Cargo cleanup reports 218 GiB removed; the native manager removes 22 owned AVDs; exact Docker cleanup removes 130 stale Duskcue image references and four cache records. Logs/results, SDK/APKs, current images and all volumes remain. C: observed free space rises by 284.658 GiB to 984.730 GiB. Docker restarts with exact service/image/mount/running-set identity and both services healthy. Its VHD logical length remains unchanged. The authority records shared-engine activity, retained uncertain paths, review rejection, before/after measurements and required rebuild implications. No release.
 

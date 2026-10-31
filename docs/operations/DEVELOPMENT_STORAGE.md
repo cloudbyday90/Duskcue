@@ -40,6 +40,8 @@ The newer Android CLI did not enumerate these externally created scoped AVDs, so
 
 ### Verified outcome
 
+Maintenance/skill checkpoint: `501dd4e` on main. Documentation-only successors preserve its instructions and evidence attribution. No application code, dependency upgrade or release is included.
+
 | Resource | Before | After / action |
 | --- | --- | --- |
 | Cargo target directory | 263.33 GiB | 46.060 GiB; scoped Cargo cleanup reports 218.0 GiB / 66,934 files removed |
@@ -55,7 +57,7 @@ The approved `docker desktop restart --timeout 240` completed. The exact origina
 
 The shared Docker engine also exhibited changes to twelve named Classifarr image references during this interval, outside this task's Duskcue-only mutation journal. Aggregate engine changes are therefore not attributed wholly to this task. The observed post-restart engine summary is 699 images / 351.3 GB, 6,629 cache records / 313.7 GB and unchanged 306 volumes / 27.96 GB. Shared layers, retained records and other-project storage explain why object sizes are not host bytes recovered. Further reclamation must preserve the user-selected project boundary; this task neither changes shared GC settings nor performs manual VHD compaction.
 
-The installed skill is `$duskcue-repository-cleanup`, discovered through a local directory link to the versioned repository skill. Its old name was removed from repository instructions and metadata. Automatic review rejected the operation that would remove the old installed directory link with “blocked by policy”; that command made no changes. Explicit file patches renamed the two repository files and a new discovery link was created. The retained old empty link has no `SKILL.md` and does not provide an executable skill. No alternate unlink or permission bypass was attempted.
+The installed skill is `$duskcue-repository-cleanup`, discovered through a local directory link to the versioned repository skill. Its old name was removed from repository instructions and metadata. Automatic review rejected the operation that would remove the old installed directory link with “blocked by policy”; that command made no changes. Explicit file patches renamed the two repository files and a new discovery link was created. The retained old empty link has no `SKILL.md`; the renamed skill is available through the new entry. No alternate unlink or permission bypass was attempted.
 
 Private inventories, exact removal journals, Cargo/native-manager results, cache allowlists, service restoration evidence and before/after measurements remain ignored under `.cache/disk-cleanup/`. Only sanitized outcomes are published here. The skill/frontmatter, repository links, whitespace and current APK identity are verified separately from the live cleanup operations.
 
