@@ -2,6 +2,8 @@
 
 ## Status and review boundary
 
+Implementation checkpoint: `010b8f2b48c399034e833f51b4aca63b863e840d` on main. Scope behavior is verified; the overall native driver gate remains pending. Documentation attribution follows without changing qualified application inputs.
+
 Research checkpoint `720388e`, October 31, 2026, following qualified observer implementation `06d1d50` and attribution `07bd206`. The operator confirmed the complete implementation contract at `c787784`, including Q1 and the Q2/Q3 refinements below. Modular application ownership and command/screen fences are implemented. Both actual-provider native scope journeys pass on the current APK, including exact four-viewer/four-history/zero-unsettled SQL checks. Overall current-source native acceptance remains pending: seven original journeys pass before the host driver loses its connection, before the eighth journey begins. [Memory attribution](../ci/QUALIFICATION_MEMORY_ATTRIBUTION.md) distinguishes that failure from earlier host exhaustion. No production enablement or release.
 
 The [repository design review](../../.agents/skills/grilling/SKILL.md) requires shared understanding before acting on a newly reviewed plan. Q1 selects the full ownership and real-provider/native qualification increment. Q2 retains unfinished journal/native ownership across coordinator recreation and account/server changes, blocking new interactive playback while login/navigation remain usable. Q3 clears a proven undispatched Start after pending storage settles; accepted or possibly dispatched Starts retain existing profile-only cleanup versus stronger-boundary clearing. No earlier product policy is reopened.
