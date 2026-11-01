@@ -18,6 +18,16 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **Next at the maintenance checkpoint:** review the positive worker-evidence observer below. That subsequent confirmed increment is now scoped-qualified: the cleaned Rust package was rebuilt under the unchanged guard, the full eight-stage native repeat passes and two new AVDs are retired. Maintenance itself did not authorize or qualify that behavior. Current compiler/SDK/APK inputs and compact evidence remain.
 
+## October 31 Android relay matrix (DESIGN REVIEW — IMPLEMENTATION PENDING)
+
+**Authority:** [relay research, recommendations and complete implementation contract](docs/ci/ANDROID_RELAY_QUALIFICATION.md). Official Dart/Android/IETF/IANA/W3C sources were discovered through MCP and checked against the locked SDK. Source review identifies discarded refusal closes, unobserved upstream transport teardown, missing disconnect cancellation, final-write behavior, HLS attribute/publication defects, binary MIME admission and missing actual resolution/stereo evidence. The unchanged seven-test relay baseline passes; this is not matrix acceptance.
+
+**Confirmed choices:** pause native acceptance at eight accepted/closing sockets; keep the SDK HTTP parser through an owned public raw-socket adapter; require owned public-operation completion and confirmed returned TCP-handle destruction for HTTPS without claiming a private TLS-filter join. All three are operator-confirmed. Complete-contract confirmation precedes implementation. Preserve current resource/deadline/root limits and the original ten native journeys; add two separately attributed real relay/format companion journeys under the same shared native deadline. Locked versions, production attachment/caps and release state remain unchanged.
+
+**PR and maintenance:** only Dependabot #6 is open. Its one authorized stale rebase produces head `ccf372d71b3ce8bcc14640ac843aeda75cd2fd35`, zero behind/one ahead of main `ba80071`; package files and relevant web/desktop inputs remain identical to the previously failed local trial. No merge/adoption or repeated identical installation. Current compiler/SDK/APKs and compact evidence remain; no native artifact is created in research. The older policy-blocked TEMP deletion stays untouched.
+
+**Next:** confirm the concrete contract, implement modularly, qualify the complete host/socket/TLS and real twelve-journey Android matrix, retire owned artifacts, and record outcomes before native ambient. No production enablement or release.
+
 ## October 31 Android driver bootstrap (SCOPED QUALIFICATION COMPLETE)
 
 **Verified implementation:** `6710eae38c94b163aba098bc8729d83481f8af27` on main; documentation-only attribution preserves the qualified inputs. No release.

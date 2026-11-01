@@ -1,5 +1,11 @@
 # SvelteKit 3 dependency PR review
 
+## October 31 relay review
+
+GitHub MCP again identifies only PR #6, open/unmerged/mergeable at `e97644e9f8afdd8b3bb2bfde0e11bebaaf5f6756`. A single-ref fetch shows six commits behind main `ba8007176448be4daf754ed282217cf0c7fdb194`. The requested stale-PR cleanup uses the same process-scoped saved-login CLI rebase, without a comment, merge or local feature branch. Verified head `ccf372d71b3ce8bcc14640ac843aeda75cd2fd35` is zero behind/one ahead of that main checkpoint.
+
+Both package files are byte-identical to the previously applied and tested patch. Web/desktop inputs have no changes since `07bd206`; therefore the documented local install/configuration failure and restoration remain applicable. Do not rerun an identical install merely to manufacture new activity. The dependency patch remains unadopted while relay research proceeds; the coordinated SvelteKit configuration/runtime/cookie migration stays separate. The existing native compiler/SDK/APK checkpoints are retained. No release.
+
 ## Scope and evidence
 
 On October 28, 2026, GitHub MCP identified one open candidate, [Dependabot PR #6](https://github.com/cloudbyday90/Duskcue/pull/6). Its base was the current main checkpoint `08052e5fff05c24c07ae4ff1064bbbb2babe75fa`; head `b14d4aeaf556bf657b0627f91d208bc9c320ccb0` was open, mergeable and unmerged. It was fresh rather than a stale PR requiring rebase. Previous Dependabot #5 cleanup remains separate and complete.

@@ -1,5 +1,11 @@
 # Flutter protocol-two HLS relay
 
+## Current qualification review
+
+The [bootstrap checkpoint](../ci/ANDROID_DRIVER_BOOTSTRAP.md) qualifies both scope journeys and all eight original journeys, including decoded playback and worker recovery. The complete relay adversarial/backpressure/format matrix remains open. [Current research and implementation contract](../ci/ANDROID_RELAY_QUALIFICATION.md) records concrete ownership/parser/MIME and format-evidence gaps; the existing seven relay tests pass but do not establish that missing coverage. All three new design choices are confirmed; complete-contract confirmation and implementation remain pending.
+
+The selected admission policy pauses native acceptance at eight accepted/closing sockets until observed release, replacing the earlier always-immediate excess-socket refusal. Outbound ownership will retain the SDK HTTP parser through a bounded public raw-socket adapter. HTTPS completion means all owned public operations settled plus awaited destruction of returned raw TCP handles; no public API proves a join of the SDK's private TLS filter, and no such claim is made. Normal trust/name verification and all guards remain. This review authorizes no plaintext downgrade or certificate bypass. Until implemented and qualified, source behavior retains the gaps explicitly listed in the successor authority.
+
 ## Status and authority
 
 Implementation checkpoint, October 28, 2026. Q7 and the complete contract at `21cd8b1` are confirmed. The existing player now uses modular owned loopback relay services; current unit/socket and APK preparation results are recorded below. Actual Android transport/decoder/backpressure qualification is still pending. Production enablement is not claimed.
@@ -37,7 +43,7 @@ Only allowlisted successful media headers/status are forwarded; do not expose up
 | Resource | Bound |
 |---|---|
 | Output ownership | One current relay/native owner and at most one retiring owner retained for completion; no overlapping replacement attachment or queue of generations. |
-| Accepted sockets | Eight total, including incomplete headers; immediate refusal/closure above the cap, held until observed completion. OS backlog is not the accounting mechanism. |
+| Accepted sockets | Eight accepted/closing sockets total, including incomplete headers; the confirmed successor pauses native acceptance while full and resumes after observed release. Excess peers can wait in the finite OS backlog, which is not counted as accepted application ownership. Implementation/qualification is pending in the successor authority. |
 | Local request framing | Eight KiB total header block, 2,048-byte request target, one request/connection, no body; absolute five-second header deadline. |
 | Upstream media requests | Four active/connecting/closing requests; explicit admission before HttpClient invocation, no pending-request queue. Caller permits remain held through completion. |
 | Playlist/reference state | One MiB per validated playlist, at most sixteen rendition entries and 8,192 resource references for the current output. No unbounded refresh/history accumulation. |
