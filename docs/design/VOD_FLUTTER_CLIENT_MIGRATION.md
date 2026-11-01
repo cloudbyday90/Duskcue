@@ -1,6 +1,12 @@
 # Flutter interactive VOD client migration
 
-## Current qualified boundary
+## November 1 qualified Android boundary
+
+The [complete relay outcome](../ci/ANDROID_RELAY_QUALIFICATION.md#final-complete-regression) closes the reviewed interactive Android scope, transport and encoded-output gates: all twelve real journeys plus the Windows worker guard pass, preserving the original ten and their exact assertions. Generated 1080p/720p/480p H.264/AAC stereo BT.709 output is probed and presented through the actual player with authored-frame evidence. Modular owned raw transport retains cancellation and final-write/close completion; strict HLS projection refuses stale/malformed evidence. The SDK HTTP parser, ordinary TLS checks and explicit private TLS-housekeeping limit remain.
+
+Analysis, 141 full Flutter cases plus two overflow cases, 46 host-tool checks/two Linux skips, both APKs and final owned cleanup pass. The authority retains the failed memory-interrupted attempt, final fingerprints, unchanged strict-Clippy baseline and six-AVD maintenance separately. Resource and deadline limits, locked dependencies and production-off behavior are unchanged. The next increment is native Android ambient playback; iOS scaffolding/device proof, offline, broader media and final all-client production rollout remain separate. Historical pending checkpoints below are superseded within this scoped boundary.
+
+## Bootstrap checkpoint — October 31
 
 The [driver-bootstrap outcome](../ci/ANDROID_DRIVER_BOOTSTRAP.md#implementation-and-qualification-outcome) closes the current-source scope/native gate: both provider/scope journeys and every original eight-stage assertion pass, including actual decoded media, background/renewal loss, private journals, lost outcomes and worker recovery with confirmed cleanup. Current verification includes 120 Flutter tests, clean analysis, 44 host checks/two Linux skips and both verified APK builds. This follow-up preserves application APK bytes, locked versions, all process/root/resource limits and production-off behavior. Eight disposable AVDs are retired with compact evidence retained.
 

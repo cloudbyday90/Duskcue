@@ -33,7 +33,7 @@ void main() {
     () {
       final playlists = RelayPlaylists(prefix, '/secret/');
       final media =
-          '#EXTM3U\n#EXT-X-MAP:URI="${prefix}v/init.mp4"\n#EXTINF:2,\n${prefix}v/seg_0.m4s\n#EXT-X-ENDLIST\n';
+          '#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MAP:URI="${prefix}v/init.mp4"\n#EXTINF:2,\n${prefix}v/seg_0.m4s\n#EXT-X-ENDLIST\n';
       final result = utf8.decode(
         playlists.rewrite(utf8.encode(media), 'manifest.m3u8'),
       );
@@ -112,7 +112,9 @@ void main() {
       ]) {
         expect(
           () => playlists.rewrite(
-            utf8.encode('#EXTM3U\n#EXT-X-MAP:URI="$target"\n'),
+            utf8.encode(
+              '#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MAP:URI="$target"\n',
+            ),
             'v/index.m3u8',
           ),
           throwsA(isA<VodFailure>()),
@@ -128,7 +130,7 @@ void main() {
       expect(playlists.permits('v/init.mp4'), isFalse);
       playlists.rewrite(
         utf8.encode(
-          '#EXTM3U\n#EXT-X-MAP:URI="${prefix}v/init.mp4"\n#EXTINF:2,\n${prefix}v/seg_0.m4s\n',
+          '#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MAP:URI="${prefix}v/init.mp4"\n#EXTINF:2,\n${prefix}v/seg_0.m4s\n',
         ),
         'v/index.m3u8',
       );
@@ -164,9 +166,13 @@ void main() {
           );
         } else if (request.uri.path.endsWith('index.m3u8')) {
           request.response.write(
-            '#EXTM3U\n#EXT-X-MAP:URI="${prefix}v/init.mp4"\n#EXTINF:2,\n${prefix}v/seg_0.m4s\n#EXT-X-ENDLIST\n',
+            '#EXTM3U\n#EXT-X-TARGETDURATION:2\n#EXT-X-MAP:URI="${prefix}v/init.mp4"\n#EXTINF:2,\n${prefix}v/seg_0.m4s\n#EXT-X-ENDLIST\n',
           );
         } else {
+          request.response.headers.contentType = ContentType(
+            'video',
+            request.uri.path.endsWith('init.mp4') ? 'mp4' : 'iso.segment',
+          );
           request.response.add([1, 2, 3]);
         }
         await request.response.close();

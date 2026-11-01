@@ -5,94 +5,83 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
 import '../commands/wire.dart';
+import 'raw_io.dart';
 
 class RelayConnection {
-  RelayConnection(this.socket) {
-    socket.writeEventsEnabled = false;
-    _subscription = socket.listen(
-      _event,
-      onError: (Object _) => cancel(),
-      onDone: () {
-        _closed = true;
-        _wake();
-        if (!_headers.isCompleted) {
-          _headers.completeError(const VodFailure('socket_closed'));
+  RelayConnection(
+    RawSocket socket, {
+    void Function()? active,
+    Timer Function(Duration, void Function())? createTimer,
+  }) {
+    io = RelayRawIo(
+      socket,
+      active: () {
+        require(!_closed, 'socket_closed');
+        active?.call();
+      },
+      readLimit: () => _headers.isCompleted ? 1 : 8193 - _bytes.length,
+    );
+    _input = io.input.listen(
+      (bytes) {
+        try {
+          require(!_headers.isCompleted, 'pipelining');
+          _bytes.addAll(bytes);
+          require(_bytes.length <= 8192);
+          final length = _bytes.length;
+          if (length >= 4 &&
+              _bytes[length - 4] == 13 &&
+              _bytes[length - 3] == 10 &&
+              _bytes[length - 2] == 13 &&
+              _bytes.last == 10) {
+            _headerTimer.cancel();
+            _headers.complete(List.of(_bytes));
+            _bytes.clear();
+          }
+        } catch (_) {
+          cancel();
         }
       },
+      onError: (Object _) {
+        cancel();
+      },
+      onDone: cancel,
     );
-    _headerTimer = Timer(const Duration(seconds: 5), cancel);
-    _totalTimer = Timer(const Duration(seconds: 75), cancel);
+    final timer = createTimer ?? Timer.new;
+    _headerTimer = timer(const Duration(seconds: 5), cancel);
+    _totalTimer = timer(const Duration(seconds: 75), cancel);
   }
-  final RawSocket socket;
-  late final StreamSubscription<RawSocketEvent> _subscription;
+  late final RelayRawIo io;
+  late final StreamSubscription<List<int>> _input;
   late final Timer _headerTimer, _totalTimer;
   final _headers = Completer<List<int>>();
   final _bytes = <int>[];
-  Completer<void>? _writable;
-  bool _closed = false, _responding = false;
+  final Set<void Function()> _cancellation = {};
+  bool _closed = false, _responding = false, _chunked = false;
   Future<void>? _closing;
   Future<List<int>> get headers => _headers.future;
-  void _wake() {
-    final pending = _writable;
-    _writable = null;
-    if (pending != null && !pending.isCompleted) pending.complete();
-  }
-
-  void _event(RawSocketEvent event) {
-    if (event == RawSocketEvent.write) {
-      socket.writeEventsEnabled = false;
-      _wake();
-    }
-    if (event == RawSocketEvent.readClosed || event == RawSocketEvent.closed) {
-      cancel();
-      return;
-    }
-    if (event != RawSocketEvent.read) return;
-    try {
-      final chunk = socket.read(8193 - _bytes.length);
-      if (chunk == null) return;
-      require(!_headers.isCompleted, 'pipelining');
-      _bytes.addAll(chunk);
-      require(_bytes.length <= 8192);
-      final end =
-          _bytes.length >= 4 &&
-          _bytes[_bytes.length - 4] == 13 &&
-          _bytes[_bytes.length - 3] == 10 &&
-          _bytes[_bytes.length - 2] == 13 &&
-          _bytes.last == 10;
-      if (end) {
-        _headerTimer.cancel();
-        _headers.complete(List.of(_bytes));
-      }
-    } catch (_) {
-      cancel();
+  bool get closed => _closed;
+  void onCancel(void Function() callback) {
+    if (_closed) {
+      callback();
+    } else {
+      _cancellation.add(callback);
     }
   }
 
-  Future<void> write(List<int> bytes) async {
-    for (var start = 0; start < bytes.length; start += 65536) {
-      final end = (start + 65536).clamp(0, bytes.length);
-      final part = Uint8List.fromList(bytes.sublist(start, end));
-      var offset = 0;
-      while (offset < part.length) {
-        require(!_closed, 'socket_closed');
-        final count = socket.write(part, offset, part.length - offset);
-        if (count == 0) {
-          final wake = _writable ??= Completer<void>();
-          socket.writeEventsEnabled = true;
-          try {
-            await wake.future.timeout(const Duration(seconds: 10));
-          } catch (_) {
-            cancel();
-            rethrow;
-          }
-        } else {
-          offset += count;
-        }
-      }
+  void removeCancel(void Function() callback) => _cancellation.remove(callback);
+  Future<void> write(List<int> bytes) => io.writer.write(bytes);
+  Future<void> body(List<int> bytes) async {
+    if (_chunked && bytes.isNotEmpty) {
+      await write(ascii.encode('${bytes.length.toRadixString(16)}\r\n'));
     }
+    await write(bytes);
+    if (_chunked && bytes.isNotEmpty) await write(const [13, 10]);
+  }
+
+  Future<void> finish() async {
+    if (_chunked) await write(ascii.encode('0\r\n\r\n'));
+    await io.writer.completion;
   }
 
   Future<void> respond(
@@ -103,6 +92,7 @@ class RelayConnection {
   }) async {
     require(!_responding);
     _responding = true;
+    _chunked = length == null;
     final label = code == 200
         ? 'OK'
         : code == 206
@@ -113,7 +103,8 @@ class RelayConnection {
     await write(
       ascii.encode(
         'HTTP/1.1 $code $label\r\nConnection: close\r\nCache-Control: no-store\r\nContent-Type: $type\r\n'
-        '${length == null ? '' : 'Content-Length: $length\r\n'}${contentRange == null ? '' : 'Content-Range: $contentRange\r\n'}'
+        '${length == null ? 'Transfer-Encoding: chunked\r\n' : 'Content-Length: $length\r\n'}'
+        '${contentRange == null ? '' : 'Content-Range: $contentRange\r\n'}'
         '${code == 503 ? 'Retry-After: 1\r\n' : ''}\r\n',
       ),
     );
@@ -128,18 +119,28 @@ class RelayConnection {
   }
 
   void cancel() {
-    unawaited(close());
+    unawaited(close().catchError((Object _) {}));
   }
 
-  Future<void> close() => _closing ??= () async {
+  Future<void> close() {
+    if (_closing case final work?) return work;
+    final completion = Completer<void>();
+    _closing = completion.future;
+    _dispose().then(completion.complete, onError: completion.completeError);
+    return completion.future;
+  }
+
+  Future<void> _dispose() async {
     _closed = true;
     _headerTimer.cancel();
     _totalTimer.cancel();
-    _wake();
+    for (final cancel in List.of(_cancellation)) {
+      cancel();
+    }
+    _cancellation.clear();
     if (!_headers.isCompleted) {
       _headers.completeError(const VodFailure('socket_closed'));
     }
-    await socket.close();
-    await _subscription.cancel();
-  }();
+    await Future.wait<void>([_input.cancel(), io.close()]);
+  }
 }

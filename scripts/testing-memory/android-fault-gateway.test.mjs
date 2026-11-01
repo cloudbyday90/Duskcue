@@ -8,9 +8,40 @@ import { createServer, request } from 'node:http';
 import { once } from 'node:events';
 import { createFaultGateway } from './android-fault-gateway.mjs';
 import { faultRoute, fixedOrigin } from './android-fault-policy.mjs';
+import { createRelayWitness } from './android-relay-witness.mjs';
 
 const id = '019a35de-1234-7000-8000-123456789abc';
 const root = `/api/v1/playback-commands/${id}`;
+
+test('relay probe is qualification-only, credential-bound and never forwarded as a backend route', async () => {
+    let calls = 0, hits = 0;
+    const source = await backend((request, response) => { hits++; response.end(); });
+    const gateway = await createFaultGateway({ origin: source.origin, token: 'fixture-only' }, { relayWitness: {
+        async probe(body, headers) { assert.equal(headers['x-session-context'], 'bound-context'); calls++; return { height: body.height }; },
+        path(path) { return path; }, manifest(_, bytes) { return bytes; },
+    } });
+    try {
+        const path = '/api/v1/qualification/relay-output';
+        assert.equal((await call(gateway.origin, 'POST', path, 'fixture-only', {}, { height: 720 })).body, '{"height":720}');
+        assert.equal((await call(gateway.origin, 'POST', path, 'wrong', {}, {})).status, 401);
+        assert.equal((await call(gateway.origin, 'GET', path)).status, 404);
+        assert.equal((await call(gateway.origin, 'POST', `${path}?target=outside`, 'fixture-only', {}, {})).status, 404);
+        assert.equal(calls, 1); assert.equal(hits, 0);
+    } finally { await gateway.close(); await source.close(); }
+});
+
+test('generated output probe refuses bad identities/order before issuing any network work', async () => {
+    let hits = 0;
+    const source = await backend((request, response) => { hits++; response.end(); });
+    const witness = createRelayWitness({ origin: source.origin, token: 'fixture-only' }, '.');
+    try {
+        for (const body of [{}, { start: id, output: id, height: 720 }, { start: id, output: 'other', height: 1080 },
+            { start: id, output: id, height: 1080, target: 'https://canary.invalid' }]) {
+            await assert.rejects(witness.probe(body, {}, new AbortController().signal), /attribution/);
+        }
+        assert.equal(hits, 0); assert.equal(witness.probes.length, 0);
+    } finally { await witness.close(); await source.close(); }
+});
 async function backend(handler) {
     const server = createServer(handler);
     server.listen(0, '127.0.0.1');

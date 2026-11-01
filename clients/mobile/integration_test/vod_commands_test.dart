@@ -26,6 +26,7 @@ import 'storage_scenarios.dart';
 import 'lost_outcomes.dart';
 import 'worker_recovery.dart';
 import 'scope_journeys.dart';
+import 'relay_journeys.dart';
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -56,6 +57,17 @@ void main() {
       PlaybackJournal(SecureJournalStorage()),
     );
     final coordinator = PlaybackCoordinator(commands);
+    if (fixture['suite'] == 'relay') {
+      await runRelayJourney(
+        tester,
+        binding,
+        channel,
+        fixture,
+        commands,
+        coordinator,
+      );
+      return;
+    }
     if (fixture['scenario'] == 'worker-recovery') {
       await runWorkerRecovery(
         tester,

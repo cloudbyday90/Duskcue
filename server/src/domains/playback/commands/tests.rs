@@ -10,6 +10,8 @@ mod actors;
 mod adversity;
 mod android;
 #[cfg(target_os = "windows")]
+mod android_relay;
+#[cfg(target_os = "windows")]
 mod android_scope;
 #[cfg(target_os = "windows")]
 mod android_worker;

@@ -2,13 +2,13 @@
 
 ## Status and scope
 
-Research checkpoint, October 31, 2026, against main `ba8007176448be4daf754ed282217cf0c7fdb194`. The [bootstrap increment](ANDROID_DRIVER_BOOTSTRAP.md) has qualified both scope journeys and all eight original journeys. This successor examines the remaining [relay matrix](../security/FLUTTER_HLS_RELAY.md). All three design decisions below are confirmed. No new relay implementation or native acceptance is claimed here; implementation follows confirmation of the complete contract at the end of this document.
+Research was completed October 31, 2026, against main `ba8007176448be4daf754ed282217cf0c7fdb194`. Implementation and scoped qualification are complete on November 1. The confirmed contract at `03ff653` is implemented; the final guarded run passes all twelve Android journeys plus the standalone Windows worker, with exact SQL attribution and complete owned cleanup. Historical research and interrupted attempts remain separately attributed below.
 
 Keep the approved interactive Android lane: video-encoded HLS, H.264/AAC, BT.709 SDR, at most stereo and 1080p. Compatible AAC may be copied; forcing video transcode is not proof that audio is encoded. Direct/copied video, HDR, multichannel, new codecs, ambient, offline, iOS, provider/DVR work and production advertisement/attachment/shared caps remain separate. Work stays on main, without a release, SDK/dependency-version change, OS operation or larger resource/deadline allowance.
 
-## Source-supported gaps
+## Reviewed baseline findings
 
-Read-only review distinguishes source defects and missing evidence from demonstrated exploits. No credential escape or application memory leak has been established.
+These findings describe the reviewed baseline; implementation and qualified outcomes below supersede their pending corrections. No credential escape or application memory leak has been established.
 
 | Boundary | Current evidence / required correction |
 | --- | --- |
@@ -51,9 +51,9 @@ The locked SDK adds important details that public API signatures alone do not es
 2. **Outbound transport architecture — confirmed:** keep the SDK HTTP parser with an owned, bounded public-interface raw-socket adapter. This avoids a new HTTP response parser and retains standard framing behavior, at the cost of qualifying another stream/sink owner. Do not substitute a new response parser or private SDK constructor as an unreviewed implementation shortcut.
 3. **HTTPS completion guarantee — confirmed:** require every owned public connect/handshake/HTTP operation to settle and await close for every returned underlying raw TCP handle. Explicitly exclude a join of private SDK TLS housekeeping from that claim, retain normal certificate/hostname checks and measure the process under unchanged guards. This is a public-operation/transport completion guarantee, not proof of every internal native worker's termination or an exact RSS ceiling. Never replace HTTPS with plaintext, accept a bad certificate or imply an unobservable join.
 
-The operator explicitly confirmed all three choices. The [design-review skill](../../.agents/skills/grilling/SKILL.md) still requires shared understanding of the complete implementation scope before dependent implementation. Existing approved grant, journal, scope, command/replay, lease and recovery rules are not reopened.
+The operator explicitly confirmed all three choices and the complete implementation scope at `03ff653`. The [design-review skill](../../.agents/skills/grilling/SKILL.md) confirmation requirement is satisfied. Existing approved grant, journal, scope, command/replay, lease and recovery rules are not reopened.
 
-## Proposed qualification structure
+## Qualification structure
 
 Keep composable owners for acceptance, raw connection/stream adaptation, partial/final writing, upstream request lifetime, response validation, playlist parsing/publication and evidence. Avoid a process-wide singleton. Owner close becomes sticky and idempotent: stop admission, request cancellation, join actual owned operations/transport completion, and retain/quarantine failures rather than deriving release from counters or timeouts.
 
@@ -93,7 +93,7 @@ GitHub MCP finds only [Dependabot PR #6](https://github.com/cloudbyday90/Duskcue
 
 Initial C: free space is 971.51 GiB, with no active guard or new AVD. Current compiler/SDK/APK checkpoints and compact prior evidence remain. No cleanup or restart of other services is needed for this research. The previously policy-blocked TEMP fixture remains untouched. Any new build/native series must retire its verified disposable artifacts after actual ownership completion under the [repository policy](../operations/DEVELOPMENT_STORAGE.md).
 
-## Complete implementation contract — awaiting confirmation
+## Complete implementation contract — confirmed
 
 1. Complete this Android relay increment on the locked stack with modular acceptance, raw transport/stream adapter, writer, upstream-lifetime, response and playlist-publication services. Keep the SDK HTTP parser. Add no resolved dependency, SDK patch, private SDK access, global I/O override, OS change, production bypass or release. Existing legal-header authorization applies; add no explanatory code comments.
 2. Implement confirmed Q1: pause raw acceptance at eight accepted/closing sockets, retain all accepted sockets, and resume only after actual release. OS backlog waiting replaces the impossible always-immediate ninth-socket refusal. Keep four upstream obligations, including creation/cancellation/closing, with no pending upstream queue. Do not lower serving capacity or add an uncounted close obligation.
@@ -108,4 +108,54 @@ Initial C: free space is 971.51 GiB, with no active guard or new AVD. Current co
 11. Retain compact redacted input/executable/result/failure/cleanup evidence, current reusable compiler/SDK/APKs and actual memory attribution. Retire new disposable native artifacts only after observed owner/listener completion under the repository-cleanup policy. Leave the older policy-blocked TEMP deletion untouched and do not interrupt other services or remove unrelated images/data.
 12. Update the authoritative outcomes and phase status from actual results, commit and push all task changes on main without a release. Record PR #6's completed single stale rebase and unchanged failed local trial; no merge/adoption or repeated rebase chasing documentation commits. After this relay matrix passes, proceed to the next reviewed native ambient increment; production caps/attachment and other platform/provider/DVR work remain separate.
 
-Implementation and final acceptance remain pending complete-contract confirmation. Normal production attachment/shared caps still require the remaining client/platform migration and rollout work.
+The operator confirmed this complete contract at `03ff653` on November 1, 2026. It is implemented and scoped-qualified below. Normal production attachment/shared caps still require the remaining client/platform migration and rollout work.
+
+## Implementation and host qualification — November 1
+
+The relay now has separate acceptance, raw-I/O, writer, socket-adapter, dial/TLS, response-validation, attribute and playlist-publication owners. Eight accepted/closing connections pause native acceptance. Four upstream slots include issued connection creation and cancellation through retained cleanup. Local cancellation aborts the issued HTTP request and destroys its owned transport; close completion is retained before callbacks to prevent cancellation re-entry. Input cancellation and transport destruction start together and both remain observed.
+
+The adapter uses public `Socket`/`SecureSocket` interfaces and the SDK HTTP parser. It does not invoke private SDK members; unsupported interface operations fail explicitly. Send half-close preserves the receiving stream. HTTPS performs the verified secure upgrade before handing a socket to HTTP. Cancellation during handshake shuts down reception so the SDK can settle its public handshake before final TCP destruction. The agreed private TLS-housekeeping limitation remains. Pure stream-controller close notifications to an absent consumer are not native completion evidence; HTTP work, raw events, writer work and actual TCP destruction remain separately owned.
+
+Partial and final writes observe readiness, including the final Windows overlapped write. At most two 64-KiB application chunks are admitted. Current authority is checked before adoption, between partial writes and after waits. The coordinator directly retires invalid scope/output generations; a 100-ms relay check additionally closes an otherwise idle owner when its current predicate becomes false. Failed cleanup remains counted and quarantined.
+
+The supported HLS grammar rejects unknown tags, duplicate/unsupported attributes, malformed `MAP`, nested/mixed rendition resources, exhausted limits and stale root revisions. Root and variant publication is atomic. Response projection validates current MIME/status/coding/range and finite body limits. Successful unknown-length media receives a terminal local chunk only after successful upstream completion. The SDK normalizes Transfer-Encoding precedence by removing Content-Length; tests confirm that local output never reproduces the conflicting framing, and malformed/truncated chunked input remains incomplete. This is SDK-framing evidence, not a claim to inspect headers that the SDK has already normalized.
+
+Host results:
+
+- Clean analysis; **141 full Flutter tests**, followed by **two additional real overflow tests**, pass. Full receipt: `2026-11-01T11-06-00-245Z-f887e3ae-48a1-4b5a-b8b1-67509fa5a435.jsonl`; overflow receipt: `2026-11-01T11-13-50-458Z-407a0833-e49d-4364-93df-af1ea7b5ab82.jsonl`.
+- **46 tooling tests pass; two existing Linux-only cases skip on Windows.** Receipt after adding the focused companion selector: `2026-11-01T11-31-08-208Z-f65516dc-2b2e-4fcc-a41e-6053f05ca1fe.jsonl`.
+- Real Windows TCP/HTTP/TLS covers admission/backlog, EOF, pending-header cancellation, scope loss, canonical framing, ranges, malformed/truncated/coded/oversized responses, redirect isolation, normal trust/name refusal and stalled TLS cancellation. Controlled operations separately cover late dial/close settlement, sticky close failure, partial/final readiness and scope loss between writes. A fake close Future proves retained ownership of that future, not blocked physical kernel I/O.
+- Real five-second header/connect observations, ten-second idle and sixty-second body cancellation pass. The whole-request timer's exact seventy-five-second registration and retained destruction are tested with a controlled timer. No observer deadline frees a pending close.
+- Qualification and production APKs build and their installed-package identities are checked. Flutter input fingerprint: `446517d909be39ee3e54daa9e63c26cfc69a47034628664e24e35c0deb38064a`; qualification APK: `aa3702bdf448e5f209e5ae3b787d0f6d7b133be0e216212534e01cd9f8f05cd5`; production APK: `877ebcaeb9a40e220efdbaf468fdb33b559599520b7223dd67f270bc737dc3a7`.
+
+The locked Gradle/Kotlin stack still emits its existing upcoming-support warnings. No validation bypass, SDK/dependency upgrade or OS change was made to obtain these results. The committed localhost TLS key/certificate are explicitly public test fixtures, isolated to test trust and absent from production configuration.
+
+The new companion owns a fresh database and two native journeys. Its authored eight-second source is actually 1920×1080 H.264/AAC stereo BT.709 SDR. A fixed-origin qualification witness probes the generated initialization/segments and supplies a master wrapper for separately attributed variant-path consumption. It follows no provider URL or redirect and adds no production endpoint. `android-relay` runs only this companion for diagnosis under the same limits; the final `android-playback` acceptance still requires the worker, original ten journeys and companion together.
+
+## Native attempts and remaining acceptance
+
+Full attempt `581a5334-8fa9-49c2-99f8-245a99460807` passes the standalone Windows worker and both scope journeys with exact four-viewer/four-history/zero-unsettled attribution. Seven original journeys complete before the unchanged guard stops worker recovery. This attempt is **failed**, and neither complete original-eight acceptance nor companion acceptance follows from its partial evidence.
+
+At the stop, system commit jumps by about **6.35 GiB** between two samples while observed test-private memory is nearly flat. Commit reaches **94.777%** of **76.920 GiB**; peak test-private allocation is **6.955 GiB**. Two-second sampling and post-stop process peaks do not establish which process, shared allocation or kernel component caused the jump. It is not evidence that the relay leaked that amount, and it does not rule out test-related shared allocations. Receipt: `2026-11-01T11-15-28-907Z-f6edee5e-45b8-4a10-8a80-44af2849f784.jsonl`; bounded private process evidence remains in `relay-memory-stop.json`.
+
+The guard removes its PostgreSQL container. Exact owner-image/PID, named-QEMU and listener checks confirm that its ADB, VM, backend and FFmpeg processes are gone; interrupted application-level Stop is not claimed. Native-manager cleanup retires both AVDs: **7.060 GiB logical**, **6.991 GiB observed host recovery**, with compact evidence retained in `relay-first-cleanup-receipt.json`. Current compiler/SDK/APKs remain, the older policy-blocked TEMP fixture is untouched, and no unrelated service or application is stopped. The operator frees host memory before a guarded retry.
+
+Focused companion `78ed4855-7fbb-44b3-a94c-8afa013110dc` **passes** both journeys and exact two-viewer/two-history/zero-unsettled/two-operation SQL attribution. Generated output probes report **1920×1080, 1280×720 and 854×480**, each H.264/AAC, two audio channels and BT.709 SDR. Native authored frame IDs **28, 37 and 46** accompany advancing source positions and the same format viewer/history. The fixed-origin witness observes two root-media, two master and two variant requests. Its master wrappers qualify relay consumption; this is not backend multi-encoder ABR or physical-device/speaker qualification.
+
+The focused owner confirms app/driver/ADB/VM/backend/container cleanup. Peak test-private allocation is **6.344 GiB**, peak system commit **66.186/76.920 GiB**, and minimum available physical memory **19.544 GiB**, with no memory stop. Receipt: `2026-11-01T11-31-25-184Z-08376ea7-7e29-4c50-bfc9-dda9c2cf4d8f.jsonl`. Its AVD is subsequently removed through the same verified native manager; compact probes, frames and results remain. This focused pass is followed by the complete regression below.
+
+## Final complete regression
+
+Resource **`a7e2c0c0-5466-4af2-a23e-ee59024a79a7`** passes all four Rust entrypoints: standalone owned Windows worker, two scope journeys, eight original journeys and two relay/format journeys. The original assertions remain unchanged. Scope attribution is four released viewers/four histories/zero unsettled Starts; original attribution is five/five/zero; companion attribution is two/two/zero with exactly two quality operations. Both retained-journal pairs retain their intended process-death semantics rather than claiming early cleanup.
+
+The companion again probes **1920×1080, 1280×720 and 854×480**, each H.264/AAC stereo BT.709 SDR. Native frame IDs **22, 31 and 41** accompany source positions **851, 1272 and 1646 ms**, with one format viewer/history throughout. The HTTP witness observes four root-media, two master and two variant requests. Synthetic stress bytes establish socket/backpressure behavior separately from the actual generated-media and native-picture evidence.
+
+One guest runs at a time under the unchanged shared thirty-minute native deadline. App, driver/logs, private ADB, VM, backend, FFmpeg and PostgreSQL-container completion are confirmed. No memory stop occurs. Peak test-private allocation is **6.804 GiB**; peak system commit is **65.893/76.920 GiB**; minimum available physical memory is **21.631 GiB**. The interrupted run's sharp commit jump is not reproduced or attributed by this success. Bounded scope/worker process snapshots remain private; no command lines or environments are captured.
+
+Receipt: `2026-11-01T11-44-21-122Z-7ccb874d-4f3a-4736-8d05-1d4a1cc36316.jsonl`. Qualification source fingerprint: `d93bdf9acf34e2fbce8a723d7d07b6da0c50335905b4c93cd2b687a97fb9a6ab`; runner: `dd151c65ffe2507cf08cd63f42d16f4553ea4158ebb04512c09f904ed6b821a1`; executed Rust library-test binary: `afe407b1bc9da21eaf77675f1114a2d3f38736bf35c765be52f2eb58a216884e`. Flutter/APK fingerprints above are unchanged in the final native run.
+
+Rust/Dart formatting, clean Flutter analysis, copyright and diff checks pass. Strict Clippy remains failing on the existing **27 library/31 library-test diagnostics**, with none in the changed Rust helper/module files and no suppression added. Exact diagnostic evidence is retained in `relay-clippy.log`; receipt: `2026-11-01T11-42-09-633Z-010789ab-31ed-41d6-a368-7aab297ad769.jsonl`. This is a retained baseline, not a clean strict-lint result.
+
+Native-manager cleanup retires all six new AVDs across the interrupted, focused and final runs: **21.129 GiB logical**, **20.822 GiB observed host recovery during deletion**. The final three alone recover **10.364 GiB**, leaving **989.326 GiB** free on C:. Current compiler/SDK/APKs, source fixtures, probes, frames and compact success/failure records remain. The older policy-blocked TEMP fixture remains untouched; no service restart, other-project cleanup, volume deletion or WSL operation occurs.
+
+Adopt the recommendation stack above: locked SDK/player/storage; modular public socket ownership with SDK HTTP parsing and normal TLS; narrow canonical HLS/response projection; real guarded socket/TLS/backend/Android qualification and routine owned-artifact cleanup. The cost is adapter and fixture maintenance, with an explicit public-TLS-completion boundary. Next: review and migrate native Android ambient playback through retained commands, renewal and confirmed Stop/output cleanup. iOS, offline, additional codecs/devices, provider/DVR work and production attachment/shared-cap rollout remain separate. No release.

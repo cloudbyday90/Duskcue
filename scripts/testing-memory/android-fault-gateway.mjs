@@ -8,7 +8,7 @@ import { pipeline } from 'node:stream/promises';
 import { once } from 'node:events';
 import { boundedBody, faultRoute, fixedOrigin, requestHeaders, responseHeaders } from './android-fault-policy.mjs';
 
-export async function createFaultGateway(fixture, { scopeTokens } = {}) {
+export async function createFaultGateway(fixture, { scopeTokens, relayWitness } = {}) {
     const origin = fixedOrigin(fixture.origin);
     if (typeof fixture.token !== 'string' || !fixture.token || fixture.token.length > 2048 || /[\r\n]/.test(fixture.token)) throw new Error('A captured fixture credential is required.');
     const credentials = scopeTokens ?? [fixture.token];
@@ -18,6 +18,7 @@ export async function createFaultGateway(fixture, { scopeTokens } = {}) {
     let closing = false, failure, completion, renewArmedAt = 0;
     let armed = false, held = false, cancelled = false, release;
     const routeFor = (method, path) => {
+        if (relayWitness && method === 'POST' && path === '/api/v1/qualification/relay-output') return { media: false };
         if (scopeTokens && (method === 'POST' && (/^\/api\/v1\/profiles\/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/switch$/.test(path) || path === '/api/v1/auth/logout') || path === '/qualification/scope' && ['GET', 'POST'].includes(method))) return { media: false };
         return faultRoute(method, path);
     };
@@ -34,6 +35,12 @@ export async function createFaultGateway(fixture, { scopeTokens } = {}) {
         try {
             const body = await boundedBody(request, 32768);
             if (request.method === 'GET' && body.length) throw new Error('GET body is outside qualification.');
+            if (relayWitness && request.url === '/api/v1/qualification/relay-output') {
+                const result = await relayWitness.probe(JSON.parse(body.toString('utf8')), request.headers, controller.signal);
+                response.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+                response.end(JSON.stringify(result));
+                await once(response, 'close'); entry.complete = true; entry.status = 200; return;
+            }
             if (scopeTokens && request.url === '/qualification/scope') {
                 if (request.method === 'POST') {
                     const action = JSON.parse(body.toString('utf8')).action;
@@ -49,7 +56,7 @@ export async function createFaultGateway(fixture, { scopeTokens } = {}) {
             }
             const headers = Object.fromEntries(requestHeaders.filter((key) => request.headers[key] !== undefined).map((key) => [key, request.headers[key]]));
             headers['content-length'] = body.length;
-            upstream = httpRequest({ hostname: origin.hostname, port: origin.port, path: request.url,
+            upstream = httpRequest({ hostname: origin.hostname, port: origin.port, path: relayWitness?.path(request.url) ?? request.url,
                 method: request.method, headers, agent: false, signal: controller.signal, maxHeaderSize: 8192 });
             upstreams.add(upstream);
             ended = new Promise((resolve) => upstream.once('close', resolve));
@@ -85,6 +92,12 @@ export async function createFaultGateway(fixture, { scopeTokens } = {}) {
                     response.end(bytes);
                     await once(response, 'close');
                 }
+            } else if (relayWitness && request.url.endsWith('.m3u8') && incoming.statusCode === 200) {
+                const bytes = await boundedBody(incoming, 1048576);
+                const published = relayWitness.manifest(request.url, bytes);
+                delete copied['content-length'];
+                response.writeHead(200, { ...copied, 'content-length': published.length });
+                response.end(published); await once(response, 'close'); entry.complete = true;
             } else {
                 let bytes = 0;
                 const limit = new Transform({ transform(chunk, encoding, callback) {

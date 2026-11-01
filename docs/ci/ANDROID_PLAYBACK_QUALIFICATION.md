@@ -1,6 +1,14 @@
 # Android interactive playback qualification
 
-## Current bootstrap and scope acceptance
+## November 1 relay and complete native acceptance
+
+The [relay authority](ANDROID_RELAY_QUALIFICATION.md#final-complete-regression) owns the latest qualified boundary and exact fingerprints. All twelve journeys pass on resource `a7e2c0c0-5466-4af2-a23e-ee59024a79a7`, plus the standalone Windows worker guard. The original ten and their SQL assertions remain unchanged; the fresh companion proves two released viewers/two histories/zero unsettled Starts, two explicit quality changes and actual 1920×1080, 1280×720 and 854×480 H.264/AAC stereo BT.709 output with native authored frames. One unchanged guest at a time remains inside the shared thirty-minute deadline.
+
+Clean analysis, 141 full Flutter tests plus two focused overflow cases, 46 host-tool checks/two Linux skips and both verified APKs pass. All owned processes, listeners and PostgreSQL are closed; six new AVDs across all attempts are retired with compact evidence retained. The first full attempt stops at the unchanged memory guard and remains failed. Final peak test-private allocation is 6.804 GiB, system commit 65.893/76.920 GiB, with no guard stop. Strict Clippy retains its existing 31 diagnostics. No SDK/dependency/OS change or release occurs.
+
+Next is native Android ambient migration, after design review of its independent service lifetime and conclusive cleanup. Normal production advertisement/attachment/shared caps, iOS, offline, broader codecs/devices and provider/DVR work remain separate. Historical checkpoints below are not the latest status.
+
+## Bootstrap and scope checkpoint — October 31
 
 The [confirmed bootstrap outcome](ANDROID_DRIVER_BOOTSTRAP.md#implementation-and-qualification-outcome) completes the current-source scope/native gate: 120 Flutter tests, clean analysis, 44 host passes/two Linux skips, both APK builds, both real scope journeys and all eight original journeys pass. Resource `bd8e217e-d2b7-4eea-a1d1-a6f3380966cb` preserves exact SQL, authored-frame, real background/renewal-loss, cold/corrupt journal and worker-recovery evidence with complete owned cleanup. All resource, native-attachment, stage/result and shared-suite deadlines are unchanged. The SDK's public driver API disables raw communication-file logging; current versions stay locked. Private ADB discovery avoids the default scan range without stopping the unrelated server. Historical failures remain attributed below and in the authority.
 

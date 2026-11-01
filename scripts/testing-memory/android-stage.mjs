@@ -97,7 +97,9 @@ export async function runAndroidStage(workspace, owner, { fixture, sdk, dart, dr
     if (resultBytes.length > 4096) throw new Error('Native result exceeded its evidence bound.');
     const result = JSON.parse(resultBytes);
     if (result.scenario !== fixture.scenario) throw new Error('Native scenario attribution differs.');
-    const required = fixture.scenario.startsWith('scope-')
+    const required = fixture.scenario.startsWith('relay-')
+        ? ['same_viewer', 'confirmed_cleanup', ...(fixture.scenario === 'relay-boundary' ? ['eight_socket_gate', 'native_backpressure'] : ['generated_outputs', 'three_authored_frames', 'explicit_quality_changes'])]
+        : fixture.scenario.startsWith('scope-')
         ? ['real_provider', 'old_output_refused', 'no_replay', 'confirmed_cleanup', ...(fixture.scenario === 'scope-profile' ? ['profile_cleanup_only', 'http_cancelled'] : ['unsent_cleared', 'native_barrier', 'strong_scope_clear'])]
         : fixture.scenario === 'baseline'
         ? ['protocol_two', 'decoded_authored_frame', 'same_viewer', 'paused_seek', 'paused_tracks_quality', 'explicit_background_play', 'confirmed_cleanup']

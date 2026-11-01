@@ -17,7 +17,11 @@ pub(super) async fn subtitled(db: &Database, f: &Fixture) -> anyhow::Result<(Uui
     install(db, f, "DUSKCUE_TEST_CONFIGURATION_SOURCE").await
 }
 
-async fn install(db: &Database, f: &Fixture, input: &str) -> anyhow::Result<(Uuid, Uuid)> {
+pub(super) async fn install(
+    db: &Database,
+    f: &Fixture,
+    input: &str,
+) -> anyhow::Result<(Uuid, Uuid)> {
     let item = Uuid::now_v7();
     let file = Uuid::now_v7();
     let source = f.base.state.bootstrap.data_dir.join(format!(

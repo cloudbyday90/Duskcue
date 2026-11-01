@@ -11,6 +11,7 @@ import 'connection.dart';
 import 'playlist.dart';
 import 'request.dart';
 import 'upstream.dart';
+import 'transport.dart';
 
 class PlaybackRelay {
   PlaybackRelay._(
@@ -29,6 +30,9 @@ class PlaybackRelay {
         unawaited(close());
       },
     );
+    _scope = Timer.periodic(const Duration(milliseconds: 100), (_) {
+      if (!current()) unawaited(close().catchError((Object _) {}));
+    });
   }
   final Uri origin;
   final String prefix, token, context, capability;
@@ -37,11 +41,17 @@ class PlaybackRelay {
   late final StreamSubscription<RawSocket> _subscription;
   late final RelayPlaylists playlists;
   final Map<RelayConnection, Future<void>> _connections = {};
-  final Set<HttpClient> clients = {};
+  final Set<RelayTransport> clients = {};
+  late final Timer _scope;
+  bool quarantined = false;
   bool closing = false;
   Future<void>? _completion;
   int get sockets => _connections.length;
   int get upstream => clients.length;
+  int get peakQueuedChunks => _connections.keys.fold(
+    0,
+    (maximum, connection) => max(maximum, connection.io.writer.peakQueued),
+  );
   Uri get uri =>
       Uri.parse('http://127.0.0.1:${_listener.port}/$capability/manifest.m3u8');
   static Future<PlaybackRelay> bind({
@@ -92,16 +102,25 @@ class PlaybackRelay {
   }
 
   void _accept(RawSocket socket) {
-    if (closing || !current() || sockets >= 8) {
-      unawaited(socket.close());
-      return;
-    }
-    final connection = RelayConnection(socket);
+    final connection = RelayConnection(
+      socket,
+      active: () => require(!closing && current(), 'scope_changed'),
+    );
     final work = _serve(connection);
     _connections[connection] = work;
+    if (sockets >= 8) _subscription.pause();
+    if (closing || !current()) connection.cancel();
     work.then(
-      (_) => _connections.remove(connection),
-      onError: (Object _) => _connections.remove(connection),
+      (_) {
+        _connections.remove(connection);
+        if (!closing && !quarantined && _subscription.isPaused && sockets < 8) {
+          _subscription.resume();
+        }
+      },
+      onError: (Object _) {
+        quarantined = true;
+        unawaited(close().catchError((Object _) {}));
+      },
     );
   }
 
@@ -126,15 +145,17 @@ class PlaybackRelay {
 
   Future<void> close() => _completion ??= () async {
     closing = true;
+    _scope.cancel();
     await _listener.close();
     await _subscription.cancel();
     for (final client in List.of(clients)) {
-      client.close(force: true);
+      client.cancel();
     }
     for (final connection in List.of(_connections.keys)) {
       connection.cancel();
     }
     await Future.wait(List.of(_connections.values));
+    await Future.wait(List.of(clients).map((client) => client.close()));
     playlists.clear();
   }();
 }

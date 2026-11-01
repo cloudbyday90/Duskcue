@@ -48,7 +48,7 @@ export async function runAndroidApplication(workspace, owner, fixture) {
         }
         const stages = [];
         let expectedStart;
-        for (const scenario of fixture.suite === 'scope' ? ['scope-profile', 'scope-session'] : ['baseline', 'cold-retain', 'cold-restore', 'corrupt-retain', 'corrupt-refuse', 'corrupt-restore']) {
+        for (const scenario of fixture.suite === 'scope' ? ['scope-profile', 'scope-session'] : fixture.suite === 'relay' ? ['relay-boundary', 'relay-formats'] : ['baseline', 'cold-retain', 'cold-restore', 'corrupt-retain', 'corrupt-refuse', 'corrupt-restore']) {
             const directory = join(owner.directory, scenario);
             await mkdir(directory);
             const result = await runAndroidStage(workspace, owner, {
@@ -63,7 +63,7 @@ export async function runAndroidApplication(workspace, owner, fixture) {
                 expectedStart = undefined;
             }
         }
-        if (fixture.suite !== 'scope') {
+        if (!fixture.suite) {
             stages.push(await runAndroidFaultStage(workspace, owner, { fixture, sdk, dart, driverInputs }));
             const workerDirectory = join(owner.directory, 'worker-recovery');
             await mkdir(workerDirectory);

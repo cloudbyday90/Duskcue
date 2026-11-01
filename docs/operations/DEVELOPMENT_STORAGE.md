@@ -92,3 +92,16 @@ The [bootstrap increment](../ci/ANDROID_DRIVER_BOOTSTRAP.md#implementation-and-q
 After all owners report closed, exact path/reparse, image/PID, named-QEMU and listener checks precede installed-manager named deletion. All eight new AVDs are removed: **28.037 GiB logical storage**, with **27.562 GiB observed host free-space recovery during deletion**. C: free space rises from 943.957 to **971.518 GiB** across those cleanup operations; shared host activity and sparse allocation prevent equating logical size with physical recovery. Per-run native-manager receipts and `.cache/android-playback/bootstrap-cleanup-receipt.json` retain exact measurements and names.
 
 Current compiler/dependency/SDK/APK checkpoints, authored frame evidence, compact private fixtures and all corrected/passing diagnostics remain. The old SDK raw communication log is retained as private historical evidence, not appended by the new public-API wrapper. The previously policy-blocked TEMP fixture remains untouched. No application media/database/volume, unrelated-project image, global builder cache or WSL disk is deleted or compacted. No service restart occurs; the unrelated default ADB server retains its PID, and Classifarr remains healthy. Ownership exit and AVD cleanup do not substitute for the separate successful native test receipts.
+
+## Relay qualification maintenance — November 1
+
+The [relay increment](../ci/ANDROID_RELAY_QUALIFICATION.md#final-complete-regression) maintains artifacts after each bounded series. The interrupted full run's two AVDs, focused companion's one AVD and passing final run's three AVDs are removed only after exact owner-image/PID, named-QEMU, listener, path and reparse checks. Installed-manager registration/name/path checks and successful named deletion establish removal; per-run manager logs and compact cleanup receipts remain ignored.
+
+| Series | AVDs | Removed logical GiB | Observed host recovery GiB |
+| --- | ---: | ---: | ---: |
+| Guard-interrupted full run | 2 | 7.060 | 6.991 |
+| Focused companion | 1 | 3.526 | 3.467 |
+| Passing complete regression | 3 | 10.543 | 10.364 |
+| Total | 6 | 21.129 | 20.822 |
+
+The final deletion interval leaves **989.326 GiB** free on C:. These are deletion-interval observations, not attribution of every host disk change or an equation between sparse logical bytes and physical recovery. Reusable Cargo/SDK/dependency/APK checkpoints, current authored media, generated-output probes, screenshots and compact success/failure/guard records remain. The earlier policy-blocked TEMP fixture is untouched. No other-project image, application database/volume/media, global cache or WSL disk is removed or compacted; no Docker/service restart occurs. Physical cleanup of an interrupted test does not turn it into a passing test. The complete final regression has separate successful application/backend/host evidence.
