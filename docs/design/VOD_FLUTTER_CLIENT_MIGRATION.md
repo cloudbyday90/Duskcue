@@ -1,5 +1,11 @@
 # Flutter interactive VOD client migration
 
+## Current qualified boundary
+
+The [driver-bootstrap outcome](../ci/ANDROID_DRIVER_BOOTSTRAP.md#implementation-and-qualification-outcome) closes the current-source scope/native gate: both provider/scope journeys and every original eight-stage assertion pass, including actual decoded media, background/renewal loss, private journals, lost outcomes and worker recovery with confirmed cleanup. Current verification includes 120 Flutter tests, clean analysis, 44 host checks/two Linux skips and both verified APK builds. This follow-up preserves application APK bytes, locked versions, all process/root/resource limits and production-off behavior. Eight disposable AVDs are retired with compact evidence retained.
+
+The complete Android migration remains open for the remaining relay adversarial/backpressure/output-format matrix. That is the next increment before ambient; iOS/offline/broader formats and normal production attachment/shared caps remain separate. Older pending results below are historical checkpoints, superseded for this particular native gate by the linked current evidence.
+
 ## Status and authority
 
 Implementation in progress, October 28, 2026. The complete contract at `21cd8b1` was confirmed by the operator. Modular Android application code, unit/HTTP/socket/widget tests and separate qualification/normal APK packaging are implemented; actual Android runtime qualification remains incomplete. The operator subsequently requested Flutter and Dart updates: the selected stable toolchain is Flutter 3.47.8/Dart 3.13.7; see [toolchain evidence](../ci/FLUTTER_TOOLCHAIN.md). WHPX enablement and the subsequent Windows restart were separately authorized and completed. The separately confirmed 2,560-MiB guest budget now boots and shuts down with actual WHPX/SwiftShader; all other limits remain unchanged. The approved [10.3.4-only storage patch](../security/FLUTTER_JOURNAL_STORAGE.md) passes native storage and initial lifecycle qualification. The approved native-only thirty-second attachment observer passes the current six-stage native qualification. Remaining fault/transport gates block overall phase completion.

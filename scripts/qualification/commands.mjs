@@ -8,7 +8,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import { dirname } from 'node:path';
 import { createInterface } from 'node:readline';
 
-export async function runBounded(executable, args, { cwd, env = process.env, log, bytes = 16777216, timeoutMs = 300000, onLine, redact = [], sanitize, forward = false, captureBytes = 65536, abortSignal } = {}) {
+export async function runBounded(executable, args, { cwd, env = process.env, log, bytes = 16777216, timeoutMs = 300000, onLine, onChunk, outputBudget, redact = [], sanitize, forward = false, captureBytes = 65536, abortSignal } = {}) {
     if (abortSignal?.aborted) throw new Error('Owned qualification command was cancelled before startup.');
     if (log) await mkdir(dirname(log), { recursive: true });
     const buffered = [];
@@ -57,6 +57,8 @@ export async function runBounded(executable, args, { cwd, env = process.env, log
         stream.on('data', (chunk) => {
             total += chunk.length;
             if (total > bytes) { stop('Owned qualification command exceeded its log bound.'); return; }
+            try { outputBudget?.consume(chunk.length); onChunk?.(chunk, channel); }
+            catch (error) { stop(error.message); return; }
             const drains = [];
             if (redact.length || sanitize) buffered.push(Buffer.from(chunk));
             else if (writer && !writer.write(chunk)) drains.push(writer);

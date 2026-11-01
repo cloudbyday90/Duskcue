@@ -11,6 +11,7 @@ import { installedAndroidApk, androidTcpMapping } from './android-evidence.mjs';
 
 import { runAndroidStage } from './android-stage.mjs';
 import { runAndroidFaultStage } from './android-fault-stage.mjs';
+import { androidDriverInputs } from './android-driver-inputs.mjs';
 
 const packageName = 'com.duskcue.mobile.qualification';
 
@@ -24,6 +25,8 @@ export async function runAndroidApplication(workspace, owner, fixture) {
     const dart = join(sdk, 'bin/cache/dart-sdk/bin/dart.exe');
     const snapshot = join(sdk, 'bin/cache/flutter_tools.snapshot');
     if (await hashFile(dart) !== receipt.tools.dart || await hashFile(snapshot) !== receipt.tools.flutter) throw new Error('APK and driver toolchains differ.');
+    const driverInputs = await androidDriverInputs(workspace, sdk, dart);
+    await writeFile(join(owner.directory, 'driver-inputs.json'), JSON.stringify(driverInputs));
     const origin = new URL(fixture.origin);
     if (origin.origin !== fixture.origin || origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1' || !origin.port) throw new Error('Use the owned loopback backend.');
     let installed = false, reversed = false, failure;
@@ -50,7 +53,7 @@ export async function runAndroidApplication(workspace, owner, fixture) {
             await mkdir(directory);
             const result = await runAndroidStage(workspace, owner, {
                 fixture: { ...fixture, scenario, ...(expectedStart ? { expected_start: expectedStart } : {}) },
-                artifact, sdk, dart, snapshot, directory,
+                sdk, dart, driverInputs, directory,
             });
             stages.push(result);
             if (scenario === 'cold-retain') await delay(65000);
@@ -61,12 +64,13 @@ export async function runAndroidApplication(workspace, owner, fixture) {
             }
         }
         if (fixture.suite !== 'scope') {
-            stages.push(await runAndroidFaultStage(workspace, owner, { fixture, artifact, sdk, dart, snapshot }));
+            stages.push(await runAndroidFaultStage(workspace, owner, { fixture, sdk, dart, driverInputs }));
             const workerDirectory = join(owner.directory, 'worker-recovery');
             await mkdir(workerDirectory);
-            stages.push(await runAndroidStage(workspace, owner, { fixture: { ...fixture, scenario: 'worker-recovery' }, artifact, sdk, dart, snapshot, directory: workerDirectory }));
+            stages.push(await runAndroidStage(workspace, owner, { fixture: { ...fixture, scenario: 'worker-recovery' }, sdk, dart, driverInputs, directory: workerDirectory }));
         }
         if ((await flutterInputs(workspace)).sha256 !== inputs.sha256) throw new Error('Android sources changed during execution.');
+        if ((await androidDriverInputs(workspace, sdk, dart)).sha256 !== driverInputs.sha256) throw new Error('Android SDK driver inputs changed during execution.');
         return { stages, apk: receipt.apk, source: inputs.sha256 };
     } catch (error) { failure = error; throw error; }
     finally {

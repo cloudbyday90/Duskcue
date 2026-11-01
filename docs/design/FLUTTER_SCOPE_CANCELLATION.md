@@ -2,7 +2,7 @@
 
 ## Status and review boundary
 
-Implementation checkpoint: `010b8f2b48c399034e833f51b4aca63b863e840d` on main. Scope behavior is verified; the overall native driver gate remains pending. Documentation attribution follows without changing qualified application inputs.
+Implementation checkpoint: `010b8f2b48c399034e833f51b4aca63b863e840d` on main. **Scoped qualification is complete:** the subsequent [driver-bootstrap outcome](../ci/ANDROID_DRIVER_BOOTSTRAP.md#implementation-and-qualification-outcome) passes both actual scope journeys and all eight original journeys with complete cleanup. Application APK bytes remain unchanged. Earlier pending/failure records below describe the implementation checkpoint before that follow-up.
 
 Research checkpoint `720388e`, October 31, 2026, following qualified observer implementation `06d1d50` and attribution `07bd206`. The operator confirmed the complete implementation contract at `c787784`, including Q1 and the Q2/Q3 refinements below. Modular application ownership and command/screen fences are implemented. Both actual-provider native scope journeys pass on the current APK, including exact four-viewer/four-history/zero-unsettled SQL checks. Overall current-source native acceptance remains pending: seven original journeys pass before the host driver loses its connection, before the eighth journey begins. [Memory attribution](../ci/QUALIFICATION_MEMORY_ATTRIBUTION.md) distinguishes that failure from earlier host exhaustion. No production enablement or release.
 
@@ -74,7 +74,7 @@ Run managed serial tests/analysis/format, relevant host checks, both APKs and th
 
 GitHub MCP identifies only [Dependabot PR #6](https://github.com/cloudbyday90/Duskcue/pull/6), open and unmerged. A single-ref fetch found it two commits behind main at `07bd206`. The connector has no rebase operation; the installed [GitHub CLI rebase](https://cli.github.com/manual/gh_pr_update-branch) completes under the user's maintenance request. Verified head `e97644e9f8afdd8b3bb2bfde0e11bebaaf5f6756` is zero behind/one ahead of that checkpoint. Its two package files are unchanged from the [exact local trial](../ci/SVELTEKIT_3_UPGRADE_REVIEW.md); relevant web/desktop inputs are unchanged. That trial fails framework configuration, consistent with the official [SvelteKit 3 migration guide](https://svelte.dev/docs/kit/migrating-to-sveltekit-3). Reuse the precise applicability evidence; no merge, dependency adoption or repeat installation applies to this Android-only proposal.
 
-Next immediate step: review the focused [driver-bootstrap contract](../ci/ANDROID_DRIVER_BOOTSTRAP.md) and complete overall current-source native acceptance. After that gate passes, complete remaining relay adversarial/backpressure/output-format evidence before ambient. Normal production attachment/caps remain disabled.
+Current next step: the [confirmed driver-bootstrap outcome](../ci/ANDROID_DRIVER_BOOTSTRAP.md) completes overall current-source native acceptance. Complete remaining relay adversarial/backpressure/output-format evidence before ambient. Normal production attachment/caps remain disabled.
 
 ## Complete shared contract — confirmed at c787784
 

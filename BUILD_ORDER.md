@@ -18,15 +18,25 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **Next at the maintenance checkpoint:** review the positive worker-evidence observer below. That subsequent confirmed increment is now scoped-qualified: the cleaned Rust package was rebuilt under the unchanged guard, the full eight-stage native repeat passes and two new AVDs are retired. Maintenance itself did not authorize or qualify that behavior. Current compiler/SDK/APK inputs and compact evidence remain.
 
-## October 31 Android scope/cancellation ownership (SCOPE VERIFIED — DRIVER GATE PENDING)
+## October 31 Android driver bootstrap (SCOPED QUALIFICATION COMPLETE)
 
-**Implementation checkpoint:** `010b8f2b48c399034e833f51b4aca63b863e840d` on main. The code and independently attributed scope evidence are committed; overall current-source native acceptance remains pending as described below. No release.
+**Authority:** [confirmed bootstrap design and outcomes](docs/ci/ANDROID_DRIVER_BOOTSTRAP.md), including the separately confirmed public-SDK logging refinement. Modular host ownership now covers exact app/process/VM/forward identity, paused readiness, current SDK/package inputs, retained bounded/redacted logs and private ADB discovery outside the default scan range. The existing SDK driver implementation is reused through its public API; `flutter_driver` receives a direct declaration of its already locked SDK dependency. No SDK/package-version/OS or resource-limit change.
+
+**Verification:** 120 Flutter tests, clean analysis, 44 host checks/two existing Linux skips and both verified APK builds pass. Fresh resource `bd8e217e-d2b7-4eea-a1d1-a6f3380966cb` passes the standalone Windows worker, both real provider/scope journeys and all eight original journeys against PostgreSQL/HTTP/FFmpeg. Exact scope four-viewer/four-history/zero-unsettled and original five-viewer/five-history/zero-unsettled checks pass. Worker recovery proves 18 negatives then positive evidence, one Recover, a 531-ms checkpoint, 47-thread Stalled/physical exit and complete cleanup. Corrected failures remain separately attributed; no replay obtains the pass.
+
+**Maintenance:** eight owned AVDs removed, 28.037 GiB logical and 27.562 GiB observed host recovery; current compiler/SDK/APKs and compact evidence retained. Peak test-private memory is 6.800 GiB, system commit 68.665/76.920 GiB, with no guard stop. Other services and the default ADB server remain untouched; the older policy-blocked TEMP fixture remains. [Memory](docs/ci/QUALIFICATION_MEMORY_ATTRIBUTION.md) and [storage](docs/operations/DEVELOPMENT_STORAGE.md) own detailed outcomes. Dependabot #6 remains unmerged/unadopted after its documented local failure and stale-branch rebase. Main only; no release.
+
+**Next:** complete remaining Android relay adversarial/backpressure/output-format qualification before native ambient. Production protocol-two advertisement/attachment/shared caps and other platform/provider/DVR work stay separate. The authority records immutable source/tool/artifact identities and receipts.
+
+## October 31 Android scope/cancellation ownership (SCOPED QUALIFICATION COMPLETE)
+
+**Implementation checkpoint:** `010b8f2b48c399034e833f51b4aca63b863e840d` on main. The subsequent bootstrap checkpoint above closes the complete current-source native gate, preserving the application APK bytes and every original assertion. Earlier pending/failure evidence below remains historical. No release.
 
 **Authority:** [confirmed scope/cancellation contract and outcomes](docs/design/FLUTTER_SCOPE_CANCELLATION.md). Official Dart/Flutter/Dio/Android and W3C sources were discovered through MCP. Modular ownership, pending-Start clearing and exact command/screen fences are implemented; legacy fallback also honors the cleanup barrier. 117 Flutter tests, clean analysis, host checks and both current APKs pass. Both actual-provider native scope journeys pass with four released viewers/four histories/zero unsettled Starts. The latest current-source run then passes seven original journeys before a pre-test driver connection failure; overall native acceptance stays pending. The earlier full eight-stage pass, memory interruption and subsequent driver/helper failures remain independently attributed.
 
 **Confirmed decisions:** The operator confirmed the [complete contract at c787784](docs/design/FLUTTER_SCOPE_CANCELLATION.md#complete-shared-contract--confirmed-at-c787784). Q1 selects complete scope/cancellation ownership and real-provider qualification; Q2 preserves the local cleanup barrier across coordinator/account/server changes while login/navigation remain usable; Q3 clears proven-unsent intents after their pending storage work settles, preserving accepted/uncertain Start rules. Modular ownership, command/screen tickets and independently attributed scope journeys are implemented; final qualification is in progress. Existing eight-stage assertions remain intact. Only Dependabot #6 is open; its stale branch is rebased to `e97644e9f8afdd8b3bb2bfde0e11bebaaf5f6756`, unmerged, with unchanged already-trialed package files. Main only; no release.
 
-**Next:** review the concrete [driver-bootstrap ownership contract](docs/ci/ANDROID_DRIVER_BOOTSTRAP.md), then qualify both scope journeys plus all eight original journeys under the same shared deadline. [Memory attribution](docs/ci/QUALIFICATION_MEMORY_ATTRIBUTION.md) identifies host/model pressure separately from the healthy-memory driver failure; six owned AVDs are retired and reusable artifacts remain. Overall native acceptance remains required before marking this increment complete. Then complete the relay adversarial/backpressure/output-format evidence before ambient. No service interruption, SDK/dependency or memory-limit change is authorized.
+**Current outcome/next:** the [confirmed driver-bootstrap increment](docs/ci/ANDROID_DRIVER_BOOTSTRAP.md) completes both scope journeys plus all eight original journeys under the same shared deadline. Its exact ownership, corrective attempts, host-memory evidence and routine artifact retirement are recorded separately. Continue with the relay adversarial/backpressure/output-format matrix before ambient; no production enablement.
 
 ## October 31 Flutter worker-evidence observer (SCOPED QUALIFICATION COMPLETE)
 
@@ -36,7 +46,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **Next:** qualify Android scope transitions and pending control/read cancellation, then remaining relay adversarial/backpressure/output-format cases before native ambient. Overall Android migration, production advertisement/attachment/caps, iOS, offline changes and broader media remain separate.
 
-## October 2026 Flutter interactive VOD migration (IMPLEMENTATION — NATIVE GATE PENDING)
+## October 2026 Flutter interactive VOD migration (IMPLEMENTATION — REMAINING RELAY GATES PENDING)
 
 **Authority:** [Flutter migration](docs/design/VOD_FLUTTER_CLIENT_MIGRATION.md), [relay](docs/security/FLUTTER_HLS_RELAY.md), [Android qualification](docs/ci/ANDROID_PLAYBACK_QUALIFICATION.md) and [updated toolchain](docs/ci/FLUTTER_TOOLCHAIN.md). The complete contract at `21cd8b1` is confirmed. The operator subsequently requested Flutter 3.47.8/Dart 3.13.7 and approved WHPX enablement with `-NoRestart`.
 

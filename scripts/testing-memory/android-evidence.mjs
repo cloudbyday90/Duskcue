@@ -7,7 +7,7 @@ import { join } from 'node:path';
 import { hashFile } from '../qualification/source.mjs';
 
 export function redactAndroidOutput(text) {
-    return text.replace(/(?:http|ws):\/\/(?:127\.0\.0\.1|localhost):\d+\/[A-Za-z0-9_=-]{8,44}\/(?:[^\s'"<>)]*)?/g, '[redacted-local-capability-url]');
+    return text.replace(/(?:http|ws):\/\/(?:127\.0\.0\.1|localhost):\d+\/[^\s'"<>)]*/g, '[redacted-local-capability-url]');
 }
 
 export function androidFailure(error, token, depth = 0) {
@@ -60,7 +60,9 @@ export function androidTcpMapping(response, port, serial) {
 export async function androidToolInputs(workspace) {
     const files = [];
     for (const name of ['android-app.mjs', 'android-stage.mjs', 'android-boot.mjs', 'android-evidence.mjs', 'android-owner.mjs',
-        'android-runtime.mjs', 'android-scope-app.mjs', 'android-diagnostics.mjs', 'android-fault-stage.mjs', 'android-fault-gateway.mjs', 'android-fault-policy.mjs', 'android-sdk.mjs', 'presets.mjs', 'qualify-vod-output.mjs', 'owned-process.mjs']) {
+        'android-runtime.mjs', 'android-scope-app.mjs', 'android-diagnostics.mjs', 'android-driver-bootstrap.mjs', 'android-driver-inputs.mjs',
+        'android-stage-budget.mjs', 'android-vm-identity.mjs', 'android-vm-probe.mjs', 'android-app-logs.mjs', 'android-adb-policy.mjs',
+        'android-fault-stage.mjs', 'android-fault-gateway.mjs', 'android-fault-policy.mjs', 'android-sdk.mjs', 'presets.mjs', 'qualify-vod-output.mjs', 'owned-process.mjs']) {
         files.push({ path: name, sha256: await hashFile(join(workspace, 'scripts/testing-memory', name)) });
     }
     files.push({ path: 'android-worker-media.mjs', sha256: await hashFile(join(workspace, 'scripts/qualification/android-worker-media.mjs')) });

@@ -1,5 +1,11 @@
 # Android interactive playback qualification
 
+## Current bootstrap and scope acceptance
+
+The [confirmed bootstrap outcome](ANDROID_DRIVER_BOOTSTRAP.md#implementation-and-qualification-outcome) completes the current-source scope/native gate: 120 Flutter tests, clean analysis, 44 host passes/two Linux skips, both APK builds, both real scope journeys and all eight original journeys pass. Resource `bd8e217e-d2b7-4eea-a1d1-a6f3380966cb` preserves exact SQL, authored-frame, real background/renewal-loss, cold/corrupt journal and worker-recovery evidence with complete owned cleanup. All resource, native-attachment, stage/result and shared-suite deadlines are unchanged. The SDK's public driver API disables raw communication-file logging; current versions stay locked. Private ADB discovery avoids the default scan range without stopping the unrelated server. Historical failures remain attributed below and in the authority.
+
+Eight new AVDs are retired after observed owner completion, with 27.562 GiB host recovery; current reusable SDK/compiler/APK inputs and compact receipts remain. Remaining relay adversarial/backpressure/output-format qualification precedes ambient and production rollout. This is a scoped pass, not overall Android playback completion.
+
 ## Status and authority
 
 Native first-use checkpoint, October 28, 2026. The complete contract at `21cd8b1` is confirmed. The operator authorized the [Flutter/Dart update](FLUTTER_TOOLCHAIN.md), WHPX enablement with `-NoRestart`, then a separate Windows restart. The reboot and usable WHPX are verified. The operator subsequently confirmed 2,560 MiB guest RAM, replacing 2,048 MiB while preserving every other resource/deadline limit. Boot and installed-APK identity now pass; actual application execution exposed a [locked secure-storage defect](../security/FLUTTER_JOURNAL_STORAGE.md). Playback qualification remains incomplete.

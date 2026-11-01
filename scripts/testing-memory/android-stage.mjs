@@ -7,75 +7,84 @@ import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { setTimeout as delay } from 'node:timers/promises';
 import { runBounded } from '../qualification/commands.mjs';
-import { redactAndroidOutput, androidTcpMapping } from './android-evidence.mjs';
-import { portAvailable, listening } from './android-owner.mjs';
+import { redactAndroidOutput } from './android-evidence.mjs';
+import { portAvailable } from './android-owner.mjs';
 import { captureAndroidFailure } from './android-diagnostics.mjs';
+import { androidStageBudget } from './android-stage-budget.mjs';
+import { bootstrapAndroidDriver } from './android-driver-bootstrap.mjs';
+import { androidDriverInputs } from './android-driver-inputs.mjs';
 
 const packageName = 'com.duskcue.mobile.qualification';
 
-async function privateBootstrap(owner, bytes) {
+async function privateBootstrap(owner, bytes, budget) {
     if (bytes.length > 4096) throw new Error('Private bootstrap exceeds four KiB.');
-    const child = spawn(owner.adb, ['-s', owner.serial, 'shell', '-T',
+    const timeoutMs = Math.min(15000, budget.remaining(true));
+    const child = spawn(owner.adb, ['-P', String(owner.adbPort), '-s', owner.serial, 'shell', '-T',
         `run-as ${packageName} sh -c 'umask 077; mkdir -p no_backup; cat > no_backup/playback-bootstrap.json'`], {
         env: owner.env, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'],
     });
-    let size = 0, failed = false;
+    let size = 0, failed = false, force;
+    const stop = () => { failed = true; child.kill(); force ||= setTimeout(() => child.kill('SIGKILL'), 1000); };
     const result = new Promise((resolve, reject) => { child.once('error', reject); child.once('close', (code, signal) => resolve({ code, signal })); });
     result.catch(() => {});
-    for (const stream of [child.stdout, child.stderr]) stream.on('data', (data) => { size += data.length; if (size > 65536) { failed = true; child.kill(); } });
-    child.stdin.on('error', () => { failed = true; });
-    const deadline = setTimeout(() => { failed = true; child.kill(); }, 15000);
+    for (const stream of [child.stdout, child.stderr]) stream.on('data', (data) => {
+        try { budget.consume(data.length); size += data.length; if (size > 65536) throw new Error('Bootstrap output exceeded its bound.'); }
+        catch { stop(); }
+    });
+    child.stdin.on('error', stop);
+    const deadline = setTimeout(stop, timeoutMs);
+    const cancel = stop;
+    budget.signal.addEventListener('abort', cancel, { once: true });
+    if (budget.signal.aborted) cancel();
     child.stdin.end(bytes);
     try { const exit = await result; if (failed || exit.code !== 0 || exit.signal) throw new Error('Owned private bootstrap transfer failed.'); }
-    finally { clearTimeout(deadline); }
+    finally { clearTimeout(deadline); clearTimeout(force); budget.signal.removeEventListener('abort', cancel); }
 }
 
-export async function runAndroidStage(workspace, owner, { fixture, artifact, sdk, dart, snapshot, directory, onPhase }) {
+export async function runAndroidStage(workspace, owner, { fixture, sdk, dart, driverInputs, directory, onPhase }) {
     const remaining = fixture.native_deadline - Date.now();
     if (!Number.isSafeInteger(remaining) || remaining <= 0) throw new Error('Shared native suite deadline expired.');
-    if (await owner.command(['shell', 'cat', '/proc/sys/kernel/random/boot_id']) !== owner.bootId) throw new Error('Owned Android guest rebooted between stages.');
     const port = await portAvailable();
-    await writeFile(join(directory, 'vm-port.json'), JSON.stringify({ port, bootId: owner.bootId }));
-    await privateBootstrap(owner, Buffer.from(JSON.stringify({ ...fixture, vm_service_port: port })));
+    const budget = androidStageBudget(fixture.native_deadline);
     let background;
     let backgroundError;
     let execution;
     let driverFailure;
+    let bootstrap;
     try {
-        execution = await runBounded(dart, ['--old_gen_heap_size=1536', snapshot, '--suppress-analytics', 'drive',
-            '--no-pub', '--debug', '--no-dds', '--keep-app-running', '--flavor', 'qualification', '-d', owner.serial,
-            '--driver=test_driver/vod_commands.dart', '--target=integration_test/vod_commands_test.dart',
-            `--host-vmservice-port=${port}`, `--device-vmservice-port=${port}`,
-            `--use-application-binary=${artifact}`], {
-            cwd: join(workspace, 'clients/mobile'), env: { ...owner.env, FLUTTER_ROOT: sdk, CI: 'true',
-                FLUTTER_SUPPRESS_ANALYTICS: 'true', DART_SUPPRESS_ANALYTICS: 'true',
-                DUSKCUE_ANDROID_SCENARIO: fixture.scenario, DUSKCUE_ANDROID_EVIDENCE: directory },
-            timeoutMs: Math.min(240000, remaining), bytes: 16777216, log: join(directory, 'flutter-drive.log'), redact: [fixture.token, fixture.peer_token, fixture.other_token].filter(Boolean), sanitize: redactAndroidOutput,
-            onLine(line) {
+        await writeFile(join(directory, 'vm-port.json'), JSON.stringify({ port, bootId: owner.bootId }));
+        if ((await androidDriverInputs(workspace, sdk, dart)).sha256 !== driverInputs.sha256) throw new Error('Android SDK driver inputs changed before its stage.');
+        await privateBootstrap(owner, Buffer.from(JSON.stringify({ ...fixture, vm_service_port: port })), budget);
+        bootstrap = await bootstrapAndroidDriver(owner, { fixture, directory, port, budget,
+            onPhase(line) {
                 onPhase?.(line);
                 if (fixture.scenario !== 'baseline' || !line.endsWith('ANDROID_PHASE background')) return;
                 if (background) throw new Error('Duplicate native background phase.');
                 background = (async () => {
-                    await owner.command(['shell', 'input', 'keyevent', 'KEYCODE_HOME']);
+                    const command = (args) => owner.command(args, { timeoutMs: Math.min(15000, budget.remaining()), bytes: 65536, outputBudget: budget, abortSignal: budget.signal });
+                    await command(['shell', 'input', 'keyevent', 'KEYCODE_HOME']);
                     await delay(3000);
-                    await owner.command(['shell', 'am', 'start', '-W', '-n', `${packageName}/com.duskcue.mobile.QualificationActivity`]);
-                })().catch((error) => { backgroundError = error; });
+                    await command(['shell', 'am', 'start', '-W', '-n', `${packageName}/com.duskcue.mobile.QualificationActivity`]);
+                })().catch((error) => { backgroundError = error; budget.fail(error); });
             },
+        });
+        const env = { ...owner.env, FLUTTER_ROOT: sdk, CI: 'true',
+                FLUTTER_SUPPRESS_ANALYTICS: 'true', DART_SUPPRESS_ANALYTICS: 'true', VM_SERVICE_URL: bootstrap.uri,
+                DUSKCUE_ANDROID_SCENARIO: fixture.scenario, DUSKCUE_ANDROID_EVIDENCE: directory };
+        delete env.FLUTTER_WEB_TEST;
+        execution = await runBounded(dart, ['--old_gen_heap_size=1536', `--packages=${driverInputs.config}`, 'test_driver/vod_commands.dart'], {
+            cwd: join(workspace, 'clients/mobile'), env,
+            timeoutMs: budget.remaining(), outputBudget: budget, abortSignal: budget.signal,
+            log: join(directory, 'sdk-driver.log'), redact: [fixture.token, fixture.peer_token, fixture.other_token].filter(Boolean), sanitize: redactAndroidOutput,
         });
     } catch (error) { driverFailure = error; }
     await background;
-    const failures = [driverFailure, backgroundError].filter(Boolean);
+    const failures = [driverFailure, backgroundError, budget.failure].filter(Boolean);
     if (execution && (execution.code !== 0 || execution.signal)) failures.unshift(new Error(`Actual Android ${fixture.scenario} failed; inspect the bounded owned log.`));
-    try {
-        const before = await owner.command(['forward', '--list']);
-        if (androidTcpMapping(before, port, owner.serial)) await owner.command(['forward', '--remove', `tcp:${port}`]);
-        const after = await owner.command(['forward', '--list']);
-        const present = androidTcpMapping(after, port, owner.serial);
-        await writeFile(join(directory, 'debug-mappings.json'), JSON.stringify({ before, after, port }));
-        const deadline = Date.now() + 5000;
-        while (await listening(port) && Date.now() < deadline) await delay(50);
-        if (present || await listening(port)) throw new Error('Owned Flutter debug forwarding remains.');
-    } catch (error) { failures.push(error); }
+    try { await bootstrap?.close(); } catch (error) { failures.push(error); }
+    if (budget.failure && !failures.includes(budget.failure)) failures.push(budget.failure);
+    budget.close();
+    await writeFile(join(directory, 'stage-budget.json'), JSON.stringify({ bytes: budget.bytes, deadline: budget.deadline, bootstrapDeadline: budget.bootstrapDeadline, failed: failures.length !== 0 }));
     if (failures.length) {
         try { await captureAndroidFailure(owner, directory, fixture); }
         catch (error) { failures.push(error); }

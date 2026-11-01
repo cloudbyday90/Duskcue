@@ -12,6 +12,7 @@ import { runBounded } from '../qualification/commands.mjs';
 import { hashFile } from '../qualification/source.mjs';
 import { stopOwnedProcess } from './owned-process.mjs';
 import { validateAndroidHardware, validateAndroidAvd } from './android-evidence.mjs';
+import { androidConsolePorts, androidAdbEnvironment } from './android-adb-policy.mjs';
 
 const guestMiB = 2560;
 
@@ -79,15 +80,15 @@ export async function createAndroidOwner(workspace, directory) {
     ].join('\n'));
     const adbPort = await portAvailable();
     let consolePort;
-    for (let port = 5580; port < 5680; port += 2) {
+    for (const port of androidConsolePorts) {
         try { await portAvailable(port); await portAvailable(port + 1); consolePort = port; break; } catch {}
     }
     if (!consolePort) throw new Error('No isolated emulator port pair is available.');
     const serial = `emulator-${consolePort}`;
-    const env = { ...process.env, ANDROID_HOME: installed.sdk, ANDROID_SDK_ROOT: installed.sdk,
+    const env = androidAdbEnvironment({ ...process.env, ANDROID_HOME: installed.sdk, ANDROID_SDK_ROOT: installed.sdk,
         ANDROID_USER_HOME: user, ANDROID_EMULATOR_HOME: user, ANDROID_AVD_HOME: avdRoot,
-        ANDROID_ADB_SERVER_PORT: String(adbPort), ADB_SERVER_SOCKET: `tcp:127.0.0.1:${adbPort}`, ANDROID_SERIAL: serial };
-    const server = own(adb, ['-L', `tcp:${adbPort}`, 'server', 'nodaemon'], env, join(directory, 'adb-server.log'));
+    }, adbPort, consolePort);
+    const server = own(adb, ['-L', `tcp:${adbPort}`, '--one-device', serial, 'server', 'nodaemon'], env, join(directory, 'adb-server.log'));
     let emulator;
     let closed = false;
     const ownership = { name, serial, adbPort, consolePort, adbPid: server.child.pid, status: 'starting', cleanup: false };
@@ -160,6 +161,6 @@ export async function createAndroidOwner(workspace, directory) {
             emulatorPid: emulator.child.pid, adbPid: server.child.pid, acceleration: installed.acceleration, graphics: 'swiftshader', requestedFeatureFlags: ['-Vulkan'], guestMiB, cores: 2, bootId }, null, 2));
         ownership.status = 'booted';
         await persistOwner();
-        return { command, env, serial, installed, adb, directory, close, bootId };
+        return { command, env, serial, adbPort, installed, adb, directory, close, bootId };
     } catch (error) { try { await close(); } catch (cleanup) { throw new AggregateError([error, cleanup]); } throw error; }
 }
