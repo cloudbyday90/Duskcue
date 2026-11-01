@@ -146,6 +146,8 @@ The focused owner confirms app/driver/ADB/VM/backend/container cleanup. Peak tes
 
 ## Final complete regression
 
+Verified implementation: **`33f25abe34e26b35921cc98a314fadc0fd650cb8`** on main. The attribution successor changes documentation only. Qualified source, tool and Flutter fingerprints remain identical after commit; no release is created.
+
 Resource **`a7e2c0c0-5466-4af2-a23e-ee59024a79a7`** passes all four Rust entrypoints: standalone owned Windows worker, two scope journeys, eight original journeys and two relay/format journeys. The original assertions remain unchanged. Scope attribution is four released viewers/four histories/zero unsettled Starts; original attribution is five/five/zero; companion attribution is two/two/zero with exactly two quality operations. Both retained-journal pairs retain their intended process-death semantics rather than claiming early cleanup.
 
 The companion again probes **1920×1080, 1280×720 and 854×480**, each H.264/AAC stereo BT.709 SDR. Native frame IDs **22, 31 and 41** accompany source positions **851, 1272 and 1646 ms**, with one format viewer/history throughout. The HTTP witness observes four root-media, two master and two variant requests. Synthetic stress bytes establish socket/backpressure behavior separately from the actual generated-media and native-picture evidence.

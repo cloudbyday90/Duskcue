@@ -20,6 +20,8 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## November 1 Android relay matrix (SCOPED QUALIFICATION COMPLETE)
 
+**Verified implementation:** `33f25abe34e26b35921cc98a314fadc0fd650cb8` on main. Documentation-only attribution preserves the qualified source and artifacts; no release.
+
 **Authority:** [relay research, recommendations and qualified outcome](docs/ci/ANDROID_RELAY_QUALIFICATION.md). The complete contract is confirmed at `03ff653`. Modular acceptance, raw-I/O/writer, public socket/TLS adapter, canonical response and strict HLS publication owners retain actual completion, prevent cancellation re-entry and fence stale references. Official MCP research and the locked SDK support the adopted design.
 
 **Verification:** clean analysis; 141 full Flutter tests plus two overflow cases; 46 host checks/two Linux skips; both verified APKs; all twelve actual Android/PostgreSQL/HTTP/FFmpeg journeys plus the Windows worker guard. Original ten and exact assertions remain. The fresh two-viewer/history companion proves native backpressure and actual 1080p/720p/480p stereo BT.709 output with advancing authored frames and two same-viewer quality changes. Final resource `a7e2c0c0-5466-4af2-a23e-ee59024a79a7` has complete owned cleanup, 6.804-GiB peak test-private allocation and no memory stop. Strict Clippy retains 31 existing diagnostics. Every agreed resource, root, guest and deadline limit is unchanged; HTTPS claims public-operation/TCP completion, not private TLS-filter termination.
