@@ -2,6 +2,8 @@
 
 ## Status and problem
 
+Verified implementation: `6710eae38c94b163aba098bc8729d83481f8af27` on main. Documentation-only attribution follows without changing qualified runtime inputs.
+
 **Scoped qualification complete.** The operator confirmed the focused contract at `18570e8`, October 31, 2026, and the public-API logging refinement below. The modular implementation passes both actual scope journeys and all eight original journeys on the current inputs, with observed cleanup. The [scope-ownership implementation](../design/FLUTTER_SCOPE_CANCELLATION.md) now has its complete current-source native gate. Production attachment/caps and the remaining relay matrix stay separate; no release.
 
 At review, the unchanged original suite reached seven passing journeys, then `flutter drive` lost its VM-service connection before the worker journey began. A previous attempt lost that connection before journey four. Those earlier results remain separately attributed; the passing controlled repeat below supersedes the pending gate.
