@@ -100,8 +100,10 @@ async function main() {
         delete env.DUSKCUE_TEST_VOD_DAMAGED_COPY;
         if (clientOnly) env.DUSKCUE_TEST_VOD_DAMAGED_COPY=result.damageFixture.path;
         if(nativeManifest)env.DUSKCUE_TEST_VOD_NATIVE_MANIFEST=nativeManifest;
+        if(androidOnly)env.DUSKCUE_ANDROID_DEADLINE_FILE=join(directory,'native-deadline.txt');
         const cases = [
             ['android-worker','--lib','domains::playback::commands::tests::android_worker::windows_owned_encoder_stall',true],
+            ['android-scope','--lib','domains::playback::commands::tests::android_scope::real_android_scope_ownership',true],
             ['android','--lib','domains::playback::commands::tests::android::real_android_player_protocol_two',true],
             ['client','--lib','domains::playback::commands::tests::client::real_shared_player_protocol_two',true],
             ['commands','--lib','domains::playback::commands::tests::command_protocol_retains_scope_readiness_delivery_and_confirmed_cleanup',true],
@@ -118,7 +120,7 @@ async function main() {
             ['stop', '--test', 'playback_stop_contract', true],
         ];
         for (const [name, target, selector, ignored] of cases) {
-            if (androidWorkerOnly ? name !== 'android-worker' : androidOnly ? !['android-worker', 'android'].includes(name) : ['android-worker', 'android'].includes(name)) continue;
+            if (androidWorkerOnly ? name !== 'android-worker' : androidOnly ? !['android-worker', 'android', 'android-scope'].includes(name) : ['android-worker', 'android', 'android-scope'].includes(name)) continue;
             if(clientOnly&&name!=='client'||!clientOnly&&name==='client')continue;
             if(commandsOnly&&!['commands','configuration'].includes(name))continue;
             if(startOnly&&name!=='commands')continue;

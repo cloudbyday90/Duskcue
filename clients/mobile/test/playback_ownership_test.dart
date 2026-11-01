@@ -133,9 +133,12 @@ void main() {
       }
       expect(fixture.storage.calls, contains('write'));
       await fixture.commands.close();
+      expect(fixture.withdrawals, 1);
+      expect(fixture.commands.record, isNotNull);
       fixture.storage.gate!.complete();
       await open;
-      await fixture.commands.journal.operations.drain();
+      await fixture.commands.journal.drain();
+      await fixture.commands.check(once: true);
       expect(fixture.starts, 0);
       expect(fixture.commands.record, isNull);
       expect(fixture.commands.busy, isFalse);

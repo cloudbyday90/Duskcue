@@ -15,6 +15,7 @@ class DelayedPlayer extends VideoPlayerController {
   DelayedPlayer(super.uri) : super.networkUrl();
   final initialized = Completer<void>();
   Completer<void>? disposal;
+  Completer<void>? pauseGate;
   int plays = 0, pauses = 0;
   bool disposed = false;
   @override
@@ -35,6 +36,7 @@ class DelayedPlayer extends VideoPlayerController {
   @override
   Future<void> pause() async {
     pauses++;
+    await pauseGate?.future;
     value = value.copyWith(isPlaying: false);
   }
 
@@ -107,13 +109,16 @@ void main() {
         await until(() => players.isNotEmpty);
         final old = players.single;
         old.disposal = Completer<void>();
-        await coordinator.seek(2000);
-        final output = fixture.commands.record!.output;
+        final seeking = coordinator.seek(2000);
+        await until(() => fixture.commands.state == 'changing');
         old.initialized.complete();
         await Future<void>.delayed(const Duration(milliseconds: 20));
         expect(players.length, 1);
         expect(coordinator.native.operations.count, 1);
+        expect(fixture.changes, 0);
         old.disposal!.complete();
+        await seeking;
+        final output = fixture.commands.record!.output;
         await until(() => players.length == 2);
         players.last.initialized.complete();
         await until(() => !coordinator.attaching);

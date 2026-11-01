@@ -1,5 +1,9 @@
 # Memory Management
 
+## Qualification host attribution — October 31, 2026
+
+The [measured host investigation](../ci/QUALIFICATION_MEMORY_ATTRIBUTION.md) distinguishes Windows commit, resident RAM, test descendants, shared WSL/cache and other host applications. The current native attempt peaks at 7.458 GiB test-private memory and 65.94/76.92 GiB system commit; post-cleanup system commit is 58.731 GiB with no owned emulator/server/FFmpeg processes. Earlier local model allocations total about 12.5 GiB. These observations do not establish an application leak. Preserve current guard/compiler/guest/root limits; do not infer permission to stop services or alter page files/WSL settings. The authority records official counter definitions, raw-evidence boundaries, tradeoffs and the separate unresolved driver connection failure.
+
 ## Proposed Flutter/relay ownership — October 28, 2026
 
 The concrete [Flutter migration](VOD_FLUTTER_CLIENT_MIGRATION.md), [relay](../security/FLUTTER_HLS_RELAY.md) and [Android qualification](../ci/ANDROID_PLAYBACK_QUALIFICATION.md) contracts await final confirmation. They retain actual native/storage/HTTP completion after observation timeout, isolate the four-KiB journal, bound socket admission before headers, use explicit request permits rather than SDK pending queues and separate application chunks from measured SDK/native overhead. Managed host reserves, backend I/O/SQL and root/pool 30/60-second limits remain unchanged. No application/resource qualification is claimed by this proposal.

@@ -214,7 +214,7 @@ void main() {
       gate.complete();
       await f.commands.workerObserver.drain();
       expect(f.changes, 0);
-      expect(f.commands.cleanupOnly, isTrue);
+      expect(f.commands.cleanupOnly, isFalse);
       expect(f.commands.workerObserving, isFalse);
       expect(f.commands.record, isNull);
       expect(f.commands.state, 'scope_changed');

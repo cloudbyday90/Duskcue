@@ -25,6 +25,19 @@ class _CommandPlaybackScreenState extends ConsumerState<CommandPlaybackScreen>
     with WidgetsBindingObserver {
   late final PlaybackCoordinator service;
   bool legacy = false, _allowPop = false, _leaving = false;
+  bool _rejected = false;
+  int? _ownerEpoch;
+  String? _start;
+  int _routeRevision = 0;
+  Route<dynamic>? _route;
+  DialogRoute<int>? _dialog;
+  NavigatorState? _dialogNavigator;
+  bool get _owns =>
+      !_rejected && _ownerEpoch != null && service.owns(_ownerEpoch!, _start);
+  bool get _canClose =>
+      !_rejected &&
+      _ownerEpoch != null &&
+      service.canClose(_ownerEpoch!, _start);
   @override
   void initState() {
     super.initState();
@@ -35,77 +48,220 @@ class _CommandPlaybackScreenState extends ConsumerState<CommandPlaybackScreen>
   }
 
   void _changed() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    if (_start == null &&
+        _ownerEpoch != null &&
+        service.owns(_ownerEpoch!, null)) {
+      _start = service.commands.record?.start;
+    }
+    if (!_owns) _dismissDialog();
+    setState(() {});
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _route ??= ModalRoute.of(context);
+  }
+
+  @override
+  void didUpdateWidget(CommandPlaybackScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.itemId == widget.itemId) return;
+    final revision = ++_routeRevision;
+    _dismissDialog();
+    unawaited(
+      () async {
+        if (_canClose) {
+          final closing = service.close();
+          _ownerEpoch = service.epoch;
+          await closing;
+        }
+        if (!mounted || revision != _routeRevision) return;
+        if (service.commands.record != null ||
+            service.commands.lifetime.native.held ||
+            service.commands.journal.blocked) {
+          setState(() {});
+          return;
+        }
+        legacy = false;
+        _start = null;
+        _allowPop = false;
+        await _open();
+      }().catchError((Object _) {}),
+    );
+  }
+
+  void _dismissDialog() {
+    final dialog = _dialog, navigator = _dialogNavigator;
+    _dialog = null;
+    _dialogNavigator = null;
+    if (dialog == null || navigator == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (navigator.mounted && dialog.isActive) navigator.removeRoute(dialog);
+    });
   }
 
   Future<void> _open() async {
+    final revision = _routeRevision;
+    if (!service.canOpen) {
+      setState(() => _rejected = true);
+      return;
+    }
+    _rejected = false;
+    final opening = service.open(widget.itemId);
+    final token = service.epoch;
+    _ownerEpoch = token;
     try {
-      final selected = await service.open(widget.itemId);
-      if (!selected && mounted) setState(() => legacy = true);
+      final selected = await opening;
+      if (!mounted ||
+          revision != _routeRevision ||
+          !service.owns(token, null)) {
+        return;
+      }
+      _start = service.commands.record?.start;
+      if (!selected) setState(() => legacy = true);
     } catch (failure) {
-      service.commands.fail(failure);
+      if (mounted && revision == _routeRevision) {
+        service.failIfCurrent(failure, token, _start);
+      }
     }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (!legacy) service.lifecycle(state == AppLifecycleState.resumed);
+    if (!legacy && _owns) service.lifecycle(state == AppLifecycleState.resumed);
   }
 
   Future<void> _action(Future<void> Function() action) async {
+    if (!mounted || !_owns) return;
+    final token = service.epoch, start = service.commands.record?.start;
     try {
       await action();
     } catch (failure) {
-      service.commands.fail(failure);
+      service.failIfCurrent(failure, token, start);
     }
   }
 
+  Future<void> _checkStatus() async {
+    if (!_owns && !_canClose) return;
+    await service.commands.check().catchError((Object _) {});
+  }
+
   Future<void> _close() async {
-    if (_leaving) return;
+    if (!mounted || _leaving) return;
     setState(() => _leaving = true);
-    await _action(service.close);
+    final revision = _routeRevision;
+    if (!_canClose) {
+      _popOwnedRoute(revision);
+      return;
+    }
+    final stopping = service.close();
+    final token = service.epoch;
+    _ownerEpoch = token;
+    try {
+      await stopping;
+    } catch (failure) {
+      service.failIfCurrent(failure, token, _start);
+    }
     if (!mounted) return;
+    if (!service.owns(token, null)) {
+      _popOwnedRoute(revision);
+      return;
+    }
     if (service.commands.record == null &&
         service.native.generation == null &&
-        !service.native.quarantined) {
-      setState(() => _allowPop = true);
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) Navigator.of(context).pop();
-      });
+        !service.native.quarantined &&
+        !service.commands.lifetime.native.held) {
+      _popOwnedRoute(revision);
     } else {
       setState(() => _leaving = false);
     }
   }
 
+  void _popOwnedRoute(int revision) {
+    if (!mounted || revision != _routeRevision) return;
+    final route = _route, navigator = Navigator.of(context);
+    setState(() => _allowPop = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          revision != _routeRevision ||
+          route == null ||
+          !route.isCurrent) {
+        return;
+      }
+      if (navigator.canPop()) navigator.pop();
+    });
+  }
+
   Future<void> _tracks(bool audio) async {
+    if (!mounted || !_owns) return;
     final strings = AppStrings.of(context);
     await _action(() async {
       final output = service.commands.record?.output;
+      final token = service.epoch, start = service.commands.record?.start;
       final tracks = await playbackTracks(service.commands, audio: audio);
-      if (!mounted) return;
-      final selected = await showDialog<int>(
+      if (!mounted ||
+          !_owns ||
+          !service.owns(token, start) ||
+          output != service.commands.record?.output) {
+        return;
+      }
+      final navigator = Navigator.of(context, rootNavigator: true);
+      late final DialogRoute<int> dialog;
+      void select(int? selected) {
+        if (mounted &&
+            _owns &&
+            service.owns(token, start) &&
+            output == service.commands.record?.output &&
+            dialog.isCurrent) {
+          navigator.pop(selected);
+        }
+      }
+
+      dialog = DialogRoute<int>(
         context: context,
-        builder: (context) => SimpleDialog(
-          title: Text(audio ? strings.audio : strings.subtitles),
-          children: [
-            if (!audio)
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, -1),
-                child: Text(strings.trackOff),
-              ),
-            for (final track in tracks)
-              SimpleDialogOption(
-                onPressed: () => Navigator.pop(context, track.index),
-                child: Text(track.label),
-              ),
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: Text(strings.cancel),
-            ),
-          ],
+        builder: (context) => AnimatedBuilder(
+          animation: service,
+          builder: (context, _) =>
+              !_owns ||
+                  !service.owns(token, start) ||
+                  output != service.commands.record?.output
+              ? const SizedBox.shrink()
+              : SimpleDialog(
+                  title: Text(audio ? strings.audio : strings.subtitles),
+                  children: [
+                    if (!audio)
+                      SimpleDialogOption(
+                        onPressed: () => select(-1),
+                        child: Text(strings.trackOff),
+                      ),
+                    for (final track in tracks)
+                      SimpleDialogOption(
+                        onPressed: () => select(track.index),
+                        child: Text(track.label),
+                      ),
+                    TextButton(
+                      onPressed: () => select(null),
+                      child: Text(strings.cancel),
+                    ),
+                  ],
+                ),
         ),
       );
-      if (selected == null) return;
+      _dialog = dialog;
+      _dialogNavigator = navigator;
+      final selected = await navigator.push(dialog);
+      if (identical(_dialog, dialog)) {
+        _dialog = null;
+        _dialogNavigator = null;
+      }
+      if (selected == null ||
+          !mounted ||
+          !_owns ||
+          !service.owns(token, start)) {
+        return;
+      }
       require(
         output == service.commands.record?.output && service.configurable,
         'scope_changed',
@@ -124,13 +280,33 @@ class _CommandPlaybackScreenState extends ConsumerState<CommandPlaybackScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (legacy) return LegacyPlaybackEntryScreen(itemId: widget.itemId);
+    if (legacy && _owns) {
+      return LegacyPlaybackEntryScreen(itemId: widget.itemId);
+    }
     final strings = AppStrings.of(context),
         commands = service.commands,
         player = service.native.controller;
+    if (_rejected || _ownerEpoch != null && !_owns && !_canClose) {
+      return Scaffold(
+        appBar: AppBar(
+          title: Text(strings.playbackEntry),
+          leading: IconButton(
+            tooltip: strings.close,
+            icon: const Icon(Icons.close),
+            onPressed: _close,
+          ),
+        ),
+        body: Semantics(
+          liveRegion: true,
+          child: Text(
+            strings.commandError(_rejected ? 'command_busy' : 'scope_changed'),
+          ),
+        ),
+      );
+    }
     final available =
         commands.deliverable && !service.attaching && !service.requiresPlay;
-    final enabled = commands.canAct && !_leaving;
+    final enabled = _owns && commands.canAct && !_leaving;
     return PopScope(
       canPop: _allowPop,
       onPopInvokedWithResult: (popped, _) {
@@ -271,11 +447,24 @@ class _CommandPlaybackScreenState extends ConsumerState<CommandPlaybackScreen>
                           ),
                         ),
                         OutlinedButton(
-                          onPressed: enabled && commands.record != null
-                              ? () => unawaited(_action(() => commands.check()))
+                          onPressed:
+                              (enabled || _canClose && commands.canAct) &&
+                                  commands.record != null
+                              ? () => unawaited(_checkStatus())
                               : null,
                           child: Text(strings.checkPlaybackStatus),
                         ),
+                        if (commands.record == null &&
+                            (commands.journal.blocked ||
+                                commands.lifetime.native.held))
+                          OutlinedButton(
+                            onPressed: enabled
+                                ? () => unawaited(
+                                    _action(commands.checkLocalCleanup),
+                                  )
+                                : null,
+                            child: Text(strings.checkDeviceCleanup),
+                          ),
                         OutlinedButton(
                           onPressed: !_leaving && commands.record != null
                               ? _close
@@ -322,9 +511,11 @@ class _CommandPlaybackScreenState extends ConsumerState<CommandPlaybackScreen>
 
   @override
   void dispose() {
+    _routeRevision++;
+    _dismissDialog();
     service.removeListener(_changed);
     WidgetsBinding.instance.removeObserver(this);
-    if (!legacy && !_allowPop && !service.commands.cleanupOnly) {
+    if (!legacy && !_allowPop && _owns && !service.commands.cleanupOnly) {
       unawaited(service.close().catchError((Object _) {}));
     }
     super.dispose();

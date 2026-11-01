@@ -64,6 +64,7 @@ class AppStrings {
   String get trackOff => 'Off';
   String get close => 'Close';
   String get checkPlaybackStatus => 'Check status';
+  String get checkDeviceCleanup => 'Check device cleanup';
   String get stopPlayback => 'Stop and close';
   String get progressUnconfirmed =>
       'Recent progress could not be confirmed. Cleanup can still continue.';
@@ -81,6 +82,8 @@ class AppStrings {
     _ => 'Playback is unavailable. Check status or stop playback.',
   };
   String commandError(String code) => switch (code) {
+    'storage_busy' =>
+      'Device playback cleanup is still pending. Check device cleanup before starting another video.',
     'storage_unavailable' || 'storage_busy' =>
       'Playback recovery storage is unavailable. No command will be repeated.',
     'lease_uncertain' =>

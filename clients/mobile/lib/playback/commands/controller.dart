@@ -5,6 +5,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter/foundation.dart';
+import '../lifetime.dart';
 import 'checkpoints.dart';
 import 'configuration.dart';
 import 'journal.dart';
@@ -19,13 +20,22 @@ import 'worker_observer.dart';
 part 'controls.dart';
 part 'settlement.dart';
 part 'worker_recovery.dart';
+part 'ownership.dart';
 
 class PlaybackCommands extends ChangeNotifier {
   PlaybackCommands(
     this.transport,
     this.journal, {
     Future<void> Function(Duration)? wait,
-  }) {
+    PlaybackLifetime? lifetime,
+  }) : lifetime =
+           lifetime ??
+           PlaybackLifetime(
+             journal,
+             regular: transport.regular,
+             cleanup: transport.cleanup,
+           ) {
+    _journalClaim = journal.claim();
     workerObserver = WorkerEvidenceObserver(
       () => transport.clock.now,
       wait ?? Future<void>.delayed,
@@ -61,6 +71,13 @@ class PlaybackCommands extends ChangeNotifier {
   }
   final PlaybackTransport transport;
   final PlaybackJournal journal;
+  final PlaybackLifetime lifetime;
+  late int _journalClaim;
+  VodRecord? _pendingStart;
+  bool _dispatched = false;
+  Future<void> Function()? retireLocal;
+  int get epoch => _epoch;
+  bool ownsEpoch(int token) => !_disposed && token == _epoch;
   late final PlaybackStatusReader reader;
   late final PlaybackLease lease;
   late final PlaybackCheckpoints checkpoints;
@@ -99,6 +116,7 @@ class PlaybackCommands extends ChangeNotifier {
   }
 
   bool get canAct =>
+      !_disposed &&
       !busy &&
       !monitoring &&
       !workerObserving &&
@@ -152,13 +170,15 @@ class PlaybackCommands extends ChangeNotifier {
 
   Future<void> _save(VodRecord next) async {
     final token = _epoch;
-    await journal.write(next);
+    require(!_disposed && journal.current(_journalClaim), 'scope_changed');
+    await journal.write(next, claim: _journalClaim);
     require(!_disposed && token == _epoch, 'scope_changed');
     record = next;
   }
 
   Future<bool> open(Wire selection, {bool resume = false}) async {
     require(canAct && record == null, 'command_busy');
+    _epoch++;
     admitted = null;
     selection = decodeWire(utf8.encode(jsonEncode(selection)));
     busy = true;
@@ -166,14 +186,22 @@ class PlaybackCommands extends ChangeNotifier {
     state = 'checking';
     _emit();
     final token = _epoch;
+    final identity = transport.identity();
+    bool current() =>
+        ownsEpoch(token) &&
+        identity != null &&
+        identity.matches(transport.identity());
     try {
-      final restored = await journal.read();
+      final restored = await journal.read(claim: _journalClaim);
+      require(current(), 'scope_changed');
       late final PlaybackContext context;
       try {
         context = await transport.context();
       } on VodFailure catch (failure) {
         if (restored == null &&
             (failure.status == 404 || failure.status == 405)) {
+          require(current(), 'scope_changed');
+          lifetime.requirePreparation();
           return false;
         }
         rethrow;
@@ -183,18 +211,20 @@ class PlaybackCommands extends ChangeNotifier {
             context.scope.profile == context.identity.profile,
         'scope_changed',
       );
-      require(token == _epoch, 'scope_changed');
+      require(current(), 'scope_changed');
       if (restored != null) {
         if (!context.scope.matches(restored.scope, cleanup: true)) {
-          await journal.clear();
-          require(token == _epoch, 'scope_changed');
+          await journal.clear(claim: _journalClaim);
+          require(current(), 'scope_changed');
         } else {
           record = restored;
+          _dispatched = true;
           cleanupOnly = true;
           state = 'cleanup';
           return true;
         }
       }
+      lifetime.requirePreparation();
       resumePosition = 0;
       if (resume) {
         final item = entity(selection['media_item_id']);
@@ -203,6 +233,7 @@ class PlaybackCommands extends ChangeNotifier {
           '/api/v1/items/$item/watch-data',
           context.scope,
         );
+        require(current(), 'scope_changed');
         require(
           watch.body['media_item_id'] == item &&
               watch.body['is_watched'] is bool,
@@ -219,11 +250,19 @@ class PlaybackCommands extends ChangeNotifier {
           body: {'capability_protocol': 1, ...selection},
         );
       } on VodFailure catch (failure) {
-        if (failure.status == 404 || failure.status == 405) return false;
+        require(current(), 'scope_changed');
+        if (failure.status == 404 || failure.status == 405) {
+          lifetime.requirePreparation();
+          return false;
+        }
         rethrow;
       }
+      require(current() && transport.current(context.scope), 'scope_changed');
       require(prepared.body['protocol'] == 1);
-      if (!commandCapability(prepared.body['command_capability'])) return false;
+      if (!commandCapability(prepared.body['command_capability'])) {
+        lifetime.requirePreparation();
+        return false;
+      }
       require(
         token == _epoch && transport.current(context.scope),
         'scope_changed',
@@ -238,10 +277,14 @@ class PlaybackCommands extends ChangeNotifier {
           ? null
           : entity(selection['media_file_id']);
       _history = null;
+      _pendingStart = next;
+      _dispatched = false;
       await _save(next);
       state = 'starting';
       _emit();
       require(_owns(token, next.start), 'scope_changed');
+      _dispatched = true;
+      _pendingStart = null;
       final reply = await transport.call(
         'POST',
         '/api/v1/playback-commands',
@@ -264,7 +307,12 @@ class PlaybackCommands extends ChangeNotifier {
         _emit();
       }
     }
-    if (record != null && state != 'uncertain' && !cleanupOnly) await check();
+    if (ownsEpoch(token) &&
+        record != null &&
+        state != 'uncertain' &&
+        !cleanupOnly) {
+      await check();
+    }
     return true;
   }
 
@@ -355,6 +403,7 @@ class PlaybackCommands extends ChangeNotifier {
         until = transport.clock.now + 60000;
     try {
       final context = await transport.context(forCleanup: cleanupOnly);
+      require(_owns(token, current.start), 'scope_changed');
       require(
         context.scope.matches(current.scope, cleanup: cleanupOnly),
         'scope_changed',
@@ -372,6 +421,7 @@ class PlaybackCommands extends ChangeNotifier {
           cleanup: cleanupOnly,
         );
         if (reply == null) break;
+        require(_owns(token, current.start), 'scope_changed');
         if (cleanupOnly) {
           final result = VodSettlement.parse(
             reply.body,
@@ -420,6 +470,7 @@ class PlaybackCommands extends ChangeNotifier {
       }
     }
     if (current.operation != null &&
+        _owns(token, current.start) &&
         record != null &&
         record!.operation == null &&
         error == null) {
@@ -434,37 +485,10 @@ class PlaybackCommands extends ChangeNotifier {
   }
 
   Future<void> close() => PlaybackSettlement(this).close();
+  Future<void> checkLocalCleanup() => _checkLocalCleanup();
 
   void invalidate() {
-    final current = record;
-    _epoch++;
-    cancelWorkerObservation();
-    transport.cancel();
-    _retry?.cancel();
-    busy = false;
-    monitoring = false;
-    if (current == null) {
-      state = 'scope_changed';
-      _emit();
-      return;
-    }
-    lease.stop();
-    checkpoints.reset();
-    admitted = null;
-    receipt = null;
-    deadline = null;
-    busy = false;
-    monitoring = false;
-    cleanupOnly = true;
-    state = 'cleanup';
-    final bound = transport.bound;
-    if (bound == null ||
-        !bound.identity.matches(transport.identity(), cleanup: true)) {
-      record = null;
-      state = 'scope_changed';
-      unawaited(journal.clear().catchError((Object _) {}));
-    }
-    _emit();
+    _invalidateScope();
   }
 
   @override
@@ -472,8 +496,11 @@ class PlaybackCommands extends ChangeNotifier {
     _disposed = true;
     _retry?.cancel();
     _epoch++;
+    _retireJournal(discard: _pendingStart != null && !_dispatched);
     cancelWorkerObservation();
+    reader.cancel();
     lease.stop();
+    checkpoints.reset();
     transport.cancel();
     unawaited(transport.dispose());
     super.dispose();

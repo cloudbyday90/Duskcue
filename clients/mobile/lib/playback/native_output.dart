@@ -10,15 +10,24 @@ import 'commands/retained.dart';
 import 'commands/transport.dart';
 import 'commands/wire.dart';
 import 'relay/service.dart';
+import 'native_ownership.dart';
 
 class NativeGeneration {
-  NativeGeneration(this.output, this.relay, this.player) {
+  NativeGeneration(
+    this.output,
+    this.relay,
+    this.player,
+    this.claim,
+    this.drainControls,
+  ) {
     initialized = Future<void>.sync(player.initialize);
     initialized.then((_) {}, onError: (Object _) {});
   }
   final String output;
   final PlaybackRelay relay;
   final VideoPlayerController player;
+  final NativeClaim claim;
+  final Future<void> Function() drainControls;
   late final Future<void> initialized;
   Future<void>? _closing;
   bool disposed = false;
@@ -28,10 +37,12 @@ class NativeGeneration {
       try {
         await initialized;
       } catch (_) {}
+      await drainControls();
       await player.dispose();
     }();
     await Future.wait([network, native]);
     disposed = true;
+    claim.release();
   }();
 }
 
@@ -42,7 +53,10 @@ class NativeOutput extends ChangeNotifier {
     this.onSample,
     this.onFailure, {
     VideoPlayerController Function(Uri)? createPlayer,
-  }) : createPlayer = createPlayer ?? _createPlayer;
+    NativeOwnership? ownership,
+  }) : createPlayer = createPlayer ?? _createPlayer,
+       ownership = ownership ?? NativeOwnership();
+  final NativeOwnership ownership;
   final VideoPlayerController Function(Uri) createPlayer;
   static VideoPlayerController _createPlayer(Uri uri) =>
       VideoPlayerController.networkUrl(
@@ -71,53 +85,82 @@ class NativeOutput extends ChangeNotifier {
     () async {
       require(_retiring == null && !quarantined, 'native_cleanup_pending');
       await retire();
-      final value = receipt.ready!;
-      final epoch = ++_epoch;
-      require(
-        current(value.output) && transport.current(record.scope),
-        'scope_changed',
-      );
-      final relay = await PlaybackRelay.bind(
-        origin: record.scope.origin,
-        prefix: commandPath(record.start, '/outputs/${value.output}/hls/'),
-        token: transport.bound!.identity.token,
-        context: record.scope.context,
-        current: () =>
-            epoch == _epoch &&
-            current(value.output) &&
-            transport.current(record.scope),
-      );
-      if (epoch != _epoch || !current(value.output)) {
-        await relay.close();
-        throw const VodFailure('scope_changed');
-      }
-      late final VideoPlayerController player;
+      final claim = ownership.acquire(retire);
+      NativeGeneration? created;
+      PlaybackRelay? network;
       try {
-        player = createPlayer(relay.uri);
+        final value = receipt.ready!;
+        final epoch = ++_epoch;
+        require(
+          current(value.output) && transport.current(record.scope),
+          'scope_changed',
+        );
+        final relay = await PlaybackRelay.bind(
+          origin: record.scope.origin,
+          prefix: commandPath(record.start, '/outputs/${value.output}/hls/'),
+          token: transport.bound!.identity.token,
+          context: record.scope.context,
+          current: () =>
+              epoch == _epoch &&
+              current(value.output) &&
+              transport.current(record.scope),
+        );
+        network = relay;
+        if (epoch != _epoch || !current(value.output)) {
+          await relay.close();
+          throw const VodFailure('scope_changed');
+        }
+        late final VideoPlayerController player;
+        try {
+          player = createPlayer(relay.uri);
+        } catch (_) {
+          await relay.close();
+          rethrow;
+        }
+        final owner = NativeGeneration(
+          value.output,
+          relay,
+          player,
+          claim,
+          commands.drain,
+        );
+        created = owner;
+        generation = owner;
+        ready = value;
+        _failed = false;
+        player.addListener(_sample);
+        try {
+          await owner.initialized;
+          require(epoch == _epoch && current(value.output), 'scope_changed');
+          final relative = (value.position - value.offset).clamp(0, 2147483647);
+          if (relative > 0) {
+            await commands.run(
+              () => player.seekTo(Duration(milliseconds: relative)),
+              timeout: const Duration(seconds: 30),
+            );
+          }
+          require(epoch == _epoch && current(value.output), 'scope_changed');
+          if (play()) {
+            await commands.run(
+              player.play,
+              timeout: const Duration(seconds: 30),
+            );
+          }
+          require(epoch == _epoch && current(value.output), 'scope_changed');
+          notifyListeners();
+        } catch (_) {
+          await owner.close();
+          if (identical(generation, owner)) {
+            generation = null;
+            ready = null;
+            quarantined = false;
+          }
+          rethrow;
+        }
       } catch (_) {
-        await relay.close();
-        rethrow;
-      }
-      final owner = NativeGeneration(value.output, relay, player);
-      generation = owner;
-      ready = value;
-      _failed = false;
-      player.addListener(_sample);
-      try {
-        await owner.initialized;
-        require(epoch == _epoch && current(value.output), 'scope_changed');
-        final relative = (value.position - value.offset).clamp(0, 2147483647);
-        if (relative > 0) await player.seekTo(Duration(milliseconds: relative));
-        require(epoch == _epoch && current(value.output), 'scope_changed');
-        if (play()) await player.play();
-        require(epoch == _epoch && current(value.output), 'scope_changed');
-        notifyListeners();
-      } catch (_) {
-        await owner.close();
-        if (identical(generation, owner)) {
-          generation = null;
-          ready = null;
-          quarantined = false;
+        if (created == null) {
+          await network?.close();
+          claim.release();
         }
         rethrow;
       }

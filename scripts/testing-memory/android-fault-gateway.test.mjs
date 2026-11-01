@@ -19,7 +19,7 @@ async function backend(handler) {
         server.close((error) => error ? reject(error) : resolve()); server.closeAllConnections();
     }) };
 }
-function call(origin, method, path, token = 'fixture-only', headers = {}) {
+function call(origin, method, path, token = 'fixture-only', headers = {}, body) {
     return new Promise((resolve, reject) => {
         const outgoing = request(origin + path, { method, agent: false, headers: { authorization: `Bearer ${token}`, 'x-session-context': 'bound-context', ...headers } }, (incoming) => {
             const parts = [];
@@ -28,9 +28,36 @@ function call(origin, method, path, token = 'fixture-only', headers = {}) {
             incoming.on('end', () => resolve({ status: incoming.statusCode, body: Buffer.concat(parts).toString(), headers: incoming.headers }));
         });
         outgoing.on('error', reject);
-        outgoing.end();
+        outgoing.end(body === undefined ? undefined : JSON.stringify(body));
     });
 }
+
+test('scope witness observes real socket cancellation and confines extra credentials and routes', async () => {
+    const seen = [];
+    const upstream = await backend((req, res) => { seen.push(req.url); res.setHeader('content-type', 'application/json'); res.end('{}'); });
+    const gateway = await createFaultGateway({ ...upstream, token: 'fixture-only' }, { scopeTokens: ['fixture-only', 'peer-only'] });
+    let held;
+    try {
+        await call(gateway.origin, 'POST', '/qualification/scope', 'fixture-only', {}, { action: 'arm' });
+        held = request(gateway.origin + root, { headers: { authorization: 'Bearer fixture-only' }, agent: false });
+        held.on('error', () => {});
+        held.end();
+        const deadline = Date.now() + 5000;
+        while (!JSON.parse((await call(gateway.origin, 'GET', '/qualification/scope')).body).held) {
+            assert.ok(Date.now() < deadline); await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        const closed = new Promise((resolve) => held.once('close', resolve)); held.destroy(); await closed;
+        while (!JSON.parse((await call(gateway.origin, 'GET', '/qualification/scope')).body).cancelled) {
+            assert.ok(Date.now() < deadline); await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+        assert.equal((await call(gateway.origin, 'POST', `/api/v1/profiles/${id}/switch`, 'peer-only')).status, 200);
+        assert.equal((await call(gateway.origin, 'GET', '/qualification/scope', 'unapproved')).status, 401);
+        assert.equal((await call(gateway.origin, 'POST', '/api/v1/auth/arbitrary', 'peer-only')).status, 404);
+        assert.deepEqual(seen, [root, `/api/v1/profiles/${id}/switch`]);
+        gateway.verifyScope(0, true);
+        assert.ok(!JSON.stringify(gateway.trace).includes('peer-only'));
+    } finally { held?.destroy(); await gateway.close(); await upstream.close(); }
+});
 
 test('real accepted responses are lost once, without a retry or credential-bearing trace', async () => {
     const seen = [];

@@ -29,12 +29,20 @@ class PlaybackTransport {
     required this.identity,
     required this.clock,
     Dio Function()? createClient,
-  }) : _client = (createClient ?? _defaultClient)();
+    RetainedOperations? regularBudget,
+    RetainedOperations? cleanupBudget,
+  }) : _client = (createClient ?? _defaultClient)(),
+       regular = regularBudget ?? RetainedOperations(3),
+       cleanup = cleanupBudget ?? RetainedOperations(2),
+       _shared = regularBudget != null || cleanupBudget != null;
   final PlaybackIdentity? Function() identity;
   final PlaybackClock clock;
   final Dio _client;
-  final regular = RetainedOperations(3);
-  final cleanup = RetainedOperations(2);
+  final RetainedOperations regular, cleanup;
+  final bool _shared;
+  bool _closed = false;
+  int _epoch = 0;
+  final Set<Future<void>> _pending = {};
   final Set<CancelToken> _tokens = {};
   PlaybackContext? _bound;
   PlaybackContext? get bound => _bound;
@@ -56,6 +64,7 @@ class PlaybackTransport {
   }
 
   Future<PlaybackContext> context({bool forCleanup = false}) async {
+    final token = _epoch;
     final local = identity();
     require(local != null && local.token.isNotEmpty, 'scope_changed');
     final reply = await _send(
@@ -64,7 +73,12 @@ class PlaybackTransport {
       local!,
       forCleanup: forCleanup,
     ).result;
-    require(local.matches(identity(), cleanup: true), 'scope_changed');
+    require(
+      !_closed &&
+          token == _epoch &&
+          local.matches(identity(), cleanup: forCleanup),
+      'scope_changed',
+    );
     require(reply.status == 200);
     final value = PlaybackContext.parse(
       reply.body,
@@ -103,12 +117,21 @@ class PlaybackTransport {
     String path,
     PlaybackScope scope, {
     Duration timeout = const Duration(seconds: 5),
+    bool forCleanup = false,
   }) {
-    require(current(scope), 'scope_changed');
-    return _send('GET', path, _bound!.identity, scope: scope, timeout: timeout);
+    require(current(scope, forCleanup: forCleanup), 'scope_changed');
+    return _send(
+      'GET',
+      path,
+      _bound!.identity,
+      scope: scope,
+      timeout: timeout,
+      forCleanup: forCleanup,
+    );
   }
 
   Future<List<Wire>> files(String item, PlaybackScope scope) async {
+    final token = _epoch;
     require(current(scope), 'scope_changed');
     final reply = await _send(
       'GET',
@@ -117,6 +140,7 @@ class PlaybackTransport {
       scope: scope,
       fileCollection: true,
     ).result;
+    require(token == _epoch && current(scope), 'scope_changed');
     final observed = await context();
     require(observed.scope.matches(scope), 'scope_changed');
     return (reply.body['items'] as List).cast<Wire>();
@@ -133,6 +157,7 @@ class PlaybackTransport {
     bool fileCollection = false,
     Duration timeout = const Duration(seconds: 5),
   }) {
+    require(!_closed, 'scope_changed');
     require(timeout.inMilliseconds > 0 && timeout.inMilliseconds <= 5000);
     require(
       path.startsWith('/api/v1/') &&
@@ -152,7 +177,7 @@ class PlaybackTransport {
     );
     final cancel = CancelToken();
     final began = clock.now;
-    return (forCleanup ? cleanup : regular).retain(
+    final retained = (forCleanup ? cleanup : regular).retain(
       () async {
         _tokens.add(cancel);
         try {
@@ -235,20 +260,27 @@ class PlaybackTransport {
       timeout: timeout,
       cancel: () => cancel.cancel(),
     );
+    _pending.add(retained.completion);
+    retained.completion.then((_) => _pending.remove(retained.completion));
+    return retained;
   }
 
   void cancel() {
+    _epoch++;
     for (final token in List.of(_tokens)) {
       token.cancel();
     }
   }
 
   Future<void> dispose() async {
+    _closed = true;
     cancel();
-    regular.closed = true;
-    cleanup.closed = true;
+    if (!_shared) {
+      regular.closed = true;
+      cleanup.closed = true;
+    }
     _client.close(force: true);
-    await Future.wait([regular.drain(), cleanup.drain()]);
+    await Future.wait(List.of(_pending));
   }
 }
 

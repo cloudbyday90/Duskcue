@@ -16,6 +16,7 @@ Future<List<PlaybackTrack>> playbackTracks(
   required bool audio,
 }) async {
   final ready = commands.admitted, record = commands.record;
+  final token = commands.epoch;
   require(
     ready != null &&
         record != null &&
@@ -24,8 +25,11 @@ Future<List<PlaybackTrack>> playbackTracks(
   );
   final files = await commands.transport.files(ready!.item, record!.scope);
   require(
-    commands.admitted?.file == ready.file &&
-        commands.record?.start == record.start,
+    commands.ownsEpoch(token) &&
+        commands.transport.current(record.scope) &&
+        commands.admitted?.file == ready.file &&
+        commands.record?.start == record.start &&
+        commands.record?.output == record.output,
   );
   final matches = files
       .where((file) => object(file)['id'] == ready.file)

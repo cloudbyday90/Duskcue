@@ -14,16 +14,25 @@ extension PlaybackControls on PlaybackCommands {
     busy = true;
     error = null;
     final token = _epoch;
+    final captured = record!;
     try {
       if (transport.clock.stale) {
         final context = await transport.context();
-        require(context.scope.matches(record!.scope), 'scope_changed');
+        require(
+          _owns(token, captured.start) && context.scope.matches(captured.scope),
+          'scope_changed',
+        );
       }
-      final config = await VodConfiguration.read(transport, record!);
-      require(config.output == record!.output);
+      final config = await VodConfiguration.read(transport, captured);
+      require(
+        _owns(token, captured.start) && transport.current(captured.scope),
+        'scope_changed',
+      );
+      require(config.output == captured.output);
       if (action['kind'] == 'recover') {
         require(config.workerRecovery, 'recovery_ineligible');
         await checkpoints.reconcile();
+        require(_owns(token, captured.start), 'scope_changed');
         final sample = checkpoints.confirmed;
         require(
           sample != null &&
@@ -38,6 +47,16 @@ extension PlaybackControls on PlaybackCommands {
         };
       }
       require(token == _epoch, 'scope_changed');
+      if (retireLocal != null) {
+        state = 'changing';
+        _emit();
+        await retireLocal!().timeout(
+          const Duration(seconds: 5),
+          onTimeout: () => throw const VodFailure('native_cleanup_pending'),
+        );
+        require(_owns(token, captured.start), 'scope_changed');
+      }
+      require(!lifetime.native.held, 'native_cleanup_pending');
       final next = record!.copy(
         operation: transport.clock.id(),
         phase: 'uncertain',

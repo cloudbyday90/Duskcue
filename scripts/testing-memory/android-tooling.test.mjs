@@ -11,6 +11,31 @@ import { createServer } from 'node:net';
 import { runBounded } from '../qualification/commands.mjs';
 import { redactAndroidOutput, validateAndroidHardware, validateAndroidAvd, installedAndroidApk, androidFailure, androidTcpMapping } from './android-evidence.mjs';
 import { portAvailable, listening } from './android-owner.mjs';
+import { captureAndroidFailure } from './android-diagnostics.mjs';
+
+test('native failure diagnostics remain bounded, credential-free and never retry application work', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'duskcue-android-evidence-'));
+    const calls = [];
+    try {
+        await captureAndroidFailure({ command: async (args, limits) => {
+            calls.push({ args, limits });
+            if (calls.length === 2) throw new Error('transport closed');
+            return 'Bearer private-token http://127.0.0.1:12345/abcdefghijk=/v/index.m3u8';
+        } }, directory, { token: 'private-token' });
+        const result = JSON.parse(await readFile(join(directory, 'failure-diagnostics.json'), 'utf8'));
+        assert.equal(calls.length, 2);
+        assert.ok(calls.every(({ limits }) => limits.timeoutMs === 5000 && limits.bytes === 65536));
+        assert.ok(!JSON.stringify(result).includes('private-token'));
+        assert.ok(!JSON.stringify(result).includes('abcdefghijk='));
+        assert.match(result.appExit, /unavailable/);
+        assert.deepEqual(calls.map(({ args }) => args[0]), ['logcat', 'shell']);
+    } finally {
+        const target = await realpath(directory);
+        assert.equal(dirname(target), await realpath(tmpdir()));
+        assert.ok(basename(target).startsWith('duskcue-android-evidence-'));
+        await rm(target, { recursive: true });
+    }
+});
 
 test('mapping evidence distinguishes observed absence from replaced, duplicate or malformed ownership', () => {
     assert.equal(androidTcpMapping('', 51234, 'emulator-5580'), false);

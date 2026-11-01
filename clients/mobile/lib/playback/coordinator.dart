@@ -25,9 +25,12 @@ class PlaybackCoordinator extends ChangeNotifier {
       commands.observe,
       _workerFailure,
       createPlayer: createPlayer,
+      ownership: commands.lifetime.native,
     );
+    commands.retireLocal = native.retire;
     commands.addListener(_changed);
     native.addListener(notifyListeners);
+    commands.lifetime.addListener(_notify);
   }
   final PlaybackCommands commands;
   late final NativeOutput native;
@@ -39,6 +42,34 @@ class PlaybackCoordinator extends ChangeNotifier {
   Future<void>? _closing;
   int height = 1080;
   bool get attaching => _attaching;
+  bool get canOpen => !_opening && commands.canAct && commands.record == null;
+  int get epoch => commands.epoch;
+  bool owns(int token, String? start) =>
+      !_disposed &&
+      commands.ownsEpoch(token) &&
+      (start == null || commands.record?.start == start);
+  bool canClose(int token, String? start) =>
+      owns(token, start) ||
+      !_disposed &&
+          start != null &&
+          commands.cleanupOnly &&
+          commands.record?.start == start &&
+          commands.transport.current(commands.record!.scope, forCleanup: true);
+  void failIfCurrent(Object failure, int token, String? start) {
+    if (owns(token, start)) commands.fail(failure);
+  }
+
+  Future<void> _retire() {
+    final token = epoch, start = commands.record?.start;
+    return native.retire().catchError(
+      (Object _) => failIfCurrent(
+        const VodFailure('native_cleanup_pending'),
+        token,
+        start,
+      ),
+    );
+  }
+
   bool get configurable =>
       commands.canAct &&
       commands.admitted != null &&
@@ -51,45 +82,44 @@ class PlaybackCoordinator extends ChangeNotifier {
   }
 
   Future<bool> open(String item) async {
-    require(!_opening, 'command_busy');
+    require(canOpen, 'command_busy');
     _recoveryRevision++;
     commands.cancelWorkerObservation();
     _opening = true;
+    final opening = commands.open(androidSelection(item), resume: true);
+    final token = epoch;
     try {
-      final selected = await commands.open(
-        androidSelection(item),
-        resume: true,
-      );
-      if (selected && !commands.cleanupOnly && commands.resumePosition > 0) {
+      final selected = await opening;
+      if (owns(token, null) &&
+          selected &&
+          !commands.cleanupOnly &&
+          commands.resumePosition > 0) {
         _resumeStart = commands.record?.start;
         if (commands.deliverable && commands.canAct) await _resume();
       }
+      require(owns(token, null), 'scope_changed');
       return selected;
     } finally {
       _opening = false;
-      _changed();
+      if (owns(token, null)) _changed();
     }
   }
 
   Future<void> _resume() async {
+    final token = epoch, start = commands.record?.start;
     _resuming = true;
     _resumeStart = null;
     try {
       await seek(commands.resumePosition);
     } finally {
       _resuming = false;
-      _changed();
+      if (owns(token, start)) _changed();
     }
   }
 
   void _changed() {
     if (!commands.deliverable || background || requiresPlay) {
-      unawaited(
-        native.retire().catchError(
-          (Object _) =>
-              commands.fail(const VodFailure('native_cleanup_pending')),
-        ),
-      );
+      unawaited(_retire());
     } else if (!_opening && !_resuming && !_attaching && commands.canAct) {
       if (_resumeStart == commands.record?.start) {
         unawaited(_resume());
@@ -103,12 +133,16 @@ class PlaybackCoordinator extends ChangeNotifier {
   Future<void> _attach() async {
     if (_attaching) return;
     final record = commands.record!, receipt = commands.receipt!;
+    final token = epoch;
     _attaching = true;
     _notify();
     try {
       await native.attach(record, receipt, play: () => playingIntent);
     } catch (failure) {
-      if (!_disposed &&
+      if (owns(token, record.start) &&
+          commands.deliverable &&
+          !background &&
+          !requiresPlay &&
           commands.record?.start == record.start &&
           commands.receipt?.ready?.output == receipt.ready?.output &&
           commands.transport.current(record.scope)) {
@@ -122,8 +156,9 @@ class PlaybackCoordinator extends ChangeNotifier {
 
   Future<void> play() async {
     require(!background && !_attaching, 'command_busy');
+    final token = epoch, start = commands.record?.start;
     await commands.check(once: true);
-    require(commands.deliverable, 'viewer_unavailable');
+    require(owns(token, start) && commands.deliverable, 'viewer_unavailable');
     requiresPlay = false;
     playingIntent = true;
     if (native.ready?.output != commands.receipt!.ready!.output) {
@@ -147,16 +182,18 @@ class PlaybackCoordinator extends ChangeNotifier {
       background = true;
       requiresPlay = true;
       playingIntent = false;
-      unawaited(
-        native.retire().catchError(
-          (Object _) =>
-              commands.fail(const VodFailure('native_cleanup_pending')),
-        ),
-      );
+      unawaited(_retire());
     } else {
       background = false;
       if (commands.record != null && commands.canAct && !commands.cleanupOnly) {
-        unawaited(commands.check(once: true).catchError(commands.fail));
+        final token = epoch, start = commands.record?.start;
+        unawaited(
+          commands
+              .check(once: true)
+              .catchError(
+                (Object failure) => failIfCurrent(failure, token, start),
+              ),
+        );
       }
     }
     _notify();
@@ -165,6 +202,7 @@ class PlaybackCoordinator extends ChangeNotifier {
   Future<void> seek(int position) =>
       commands.change({'kind': 'seek', 'position_ms': integer(position)});
   Future<void> configure({int? audio, int? subtitle, int? resolution}) async {
+    final token = epoch, start = commands.record?.start;
     final ready = commands.admitted;
     final sample = commands.checkpoints.confirmed;
     require(configurable && ready != null, 'viewer_unavailable');
@@ -187,7 +225,7 @@ class PlaybackCoordinator extends ChangeNotifier {
           : integer(sample['position_ms']),
       'selection': selection,
     });
-    if (commands.error == null) height = chosen;
+    if (owns(token, start) && commands.error == null) height = chosen;
   }
 
   void _workerFailure(String output) {
@@ -234,11 +272,20 @@ class PlaybackCoordinator extends ChangeNotifier {
         commands.cancelWorkerObservation();
         final local = native.retire();
         local.then((_) {}, onError: (Object _) {});
-        await commands.close();
+        final stopping = commands.close();
+        final token = epoch;
+        await stopping;
         try {
-          await local.timeout(const Duration(seconds: 5));
+          await Future.wait([
+            local,
+            commands.lifetime.native.drain(),
+          ]).timeout(const Duration(seconds: 5));
         } catch (_) {
-          commands.fail(const VodFailure('native_cleanup_pending'));
+          failIfCurrent(
+            const VodFailure('native_cleanup_pending'),
+            token,
+            null,
+          );
         }
       }().whenComplete(() {
         _closing = null;
@@ -257,6 +304,7 @@ class PlaybackCoordinator extends ChangeNotifier {
     _recoveryRevision++;
     commands.removeListener(_changed);
     native.removeListener(notifyListeners);
+    commands.lifetime.removeListener(_notify);
     unawaited(native.retire().catchError((Object _) {}));
     commands.dispose();
     super.dispose();

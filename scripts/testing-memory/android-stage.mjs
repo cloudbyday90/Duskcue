@@ -9,6 +9,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { runBounded } from '../qualification/commands.mjs';
 import { redactAndroidOutput, androidTcpMapping } from './android-evidence.mjs';
 import { portAvailable, listening } from './android-owner.mjs';
+import { captureAndroidFailure } from './android-diagnostics.mjs';
 
 const packageName = 'com.duskcue.mobile.qualification';
 
@@ -30,6 +31,8 @@ async function privateBootstrap(owner, bytes) {
 }
 
 export async function runAndroidStage(workspace, owner, { fixture, artifact, sdk, dart, snapshot, directory, onPhase }) {
+    const remaining = fixture.native_deadline - Date.now();
+    if (!Number.isSafeInteger(remaining) || remaining <= 0) throw new Error('Shared native suite deadline expired.');
     if (await owner.command(['shell', 'cat', '/proc/sys/kernel/random/boot_id']) !== owner.bootId) throw new Error('Owned Android guest rebooted between stages.');
     const port = await portAvailable();
     await writeFile(join(directory, 'vm-port.json'), JSON.stringify({ port, bootId: owner.bootId }));
@@ -47,7 +50,7 @@ export async function runAndroidStage(workspace, owner, { fixture, artifact, sdk
             cwd: join(workspace, 'clients/mobile'), env: { ...owner.env, FLUTTER_ROOT: sdk, CI: 'true',
                 FLUTTER_SUPPRESS_ANALYTICS: 'true', DART_SUPPRESS_ANALYTICS: 'true',
                 DUSKCUE_ANDROID_SCENARIO: fixture.scenario, DUSKCUE_ANDROID_EVIDENCE: directory },
-            timeoutMs: 240000, bytes: 16777216, log: join(directory, 'flutter-drive.log'), redact: [fixture.token], sanitize: redactAndroidOutput,
+            timeoutMs: Math.min(240000, remaining), bytes: 16777216, log: join(directory, 'flutter-drive.log'), redact: [fixture.token, fixture.peer_token, fixture.other_token].filter(Boolean), sanitize: redactAndroidOutput,
             onLine(line) {
                 onPhase?.(line);
                 if (fixture.scenario !== 'baseline' || !line.endsWith('ANDROID_PHASE background')) return;
@@ -73,7 +76,11 @@ export async function runAndroidStage(workspace, owner, { fixture, artifact, sdk
         while (await listening(port) && Date.now() < deadline) await delay(50);
         if (present || await listening(port)) throw new Error('Owned Flutter debug forwarding remains.');
     } catch (error) { failures.push(error); }
-    if (failures.length) throw new AggregateError(failures, 'Android driver or owned debug cleanup failed.');
+    if (failures.length) {
+        try { await captureAndroidFailure(owner, directory, fixture); }
+        catch (error) { failures.push(error); }
+        throw new AggregateError(failures, 'Android driver or owned debug cleanup failed.');
+    }
     if (execution.code !== 0 || execution.signal) throw new Error(`Actual Android ${fixture.scenario} failed; inspect the bounded owned log.`);
     if (fixture.scenario === 'baseline' && !background) throw new Error('Actual Android OS background phase was not observed.');
     if (await owner.command(['shell', 'cat', '/proc/sys/kernel/random/boot_id']) !== owner.bootId) throw new Error('Owned Android guest rebooted during its stage.');
@@ -81,7 +88,9 @@ export async function runAndroidStage(workspace, owner, { fixture, artifact, sdk
     if (resultBytes.length > 4096) throw new Error('Native result exceeded its evidence bound.');
     const result = JSON.parse(resultBytes);
     if (result.scenario !== fixture.scenario) throw new Error('Native scenario attribution differs.');
-    const required = fixture.scenario === 'baseline'
+    const required = fixture.scenario.startsWith('scope-')
+        ? ['real_provider', 'old_output_refused', 'no_replay', 'confirmed_cleanup', ...(fixture.scenario === 'scope-profile' ? ['profile_cleanup_only', 'http_cancelled'] : ['unsent_cleared', 'native_barrier', 'strong_scope_clear'])]
+        : fixture.scenario === 'baseline'
         ? ['protocol_two', 'decoded_authored_frame', 'same_viewer', 'paused_seek', 'paused_tracks_quality', 'explicit_background_play', 'confirmed_cleanup']
         : fixture.scenario === 'worker-recovery'
             ? ['native_checkpoint', 'automatic_worker_recovery', 'negative_then_positive', 'same_viewer', 'preserved_configuration', 'one_recovery', 'confirmed_cleanup']

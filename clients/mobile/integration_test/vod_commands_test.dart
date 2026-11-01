@@ -25,6 +25,7 @@ import 'authored_frame.dart';
 import 'storage_scenarios.dart';
 import 'lost_outcomes.dart';
 import 'worker_recovery.dart';
+import 'scope_journeys.dart';
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -35,6 +36,10 @@ void main() {
     final raw = await channel.invokeMethod<String>('bootstrap');
     require(raw != null && utf8.encode(raw).length <= 4096);
     final fixture = decodeWire(utf8.encode(raw!));
+    if (fixture['suite'] == 'scope') {
+      await runScopeJourney(tester, binding, channel, fixture);
+      return;
+    }
     final origin = Uri.parse(text(fixture['origin']));
     require(origin.host == '127.0.0.1' && origin.scheme == 'http');
     final identity = PlaybackIdentity(

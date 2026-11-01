@@ -38,9 +38,14 @@ export async function runAndroidApplication(workspace, owner, fixture) {
         if (digest !== receipt.apk) throw new Error('Installed APK identity differs from the verified artifact.');
         if (await owner.command(['shell', 'pm', 'clear', packageName]) !== 'Success') throw new Error('Owned app state did not clear.');
         await owner.command(['reverse', '--no-rebind', `tcp:${origin.port}`, `tcp:${origin.port}`]); reversed = true;
+        if (fixture.alternate_origin) {
+            const alternate = new URL(fixture.alternate_origin);
+            if (alternate.origin !== fixture.alternate_origin || alternate.protocol !== 'http:' || alternate.hostname !== '127.0.0.1' || !alternate.port || alternate.port === origin.port) throw new Error('Use a distinct owned alternate loopback origin.');
+            await owner.command(['reverse', '--no-rebind', `tcp:${alternate.port}`, `tcp:${alternate.port}`]);
+        }
         const stages = [];
         let expectedStart;
-        for (const scenario of ['baseline', 'cold-retain', 'cold-restore', 'corrupt-retain', 'corrupt-refuse', 'corrupt-restore']) {
+        for (const scenario of fixture.suite === 'scope' ? ['scope-profile', 'scope-session'] : ['baseline', 'cold-retain', 'cold-restore', 'corrupt-retain', 'corrupt-refuse', 'corrupt-restore']) {
             const directory = join(owner.directory, scenario);
             await mkdir(directory);
             const result = await runAndroidStage(workspace, owner, {
@@ -55,10 +60,12 @@ export async function runAndroidApplication(workspace, owner, fixture) {
                 expectedStart = undefined;
             }
         }
-        stages.push(await runAndroidFaultStage(workspace, owner, { fixture, artifact, sdk, dart, snapshot }));
-        const workerDirectory = join(owner.directory, 'worker-recovery');
-        await mkdir(workerDirectory);
-        stages.push(await runAndroidStage(workspace, owner, { fixture: { ...fixture, scenario: 'worker-recovery' }, artifact, sdk, dart, snapshot, directory: workerDirectory }));
+        if (fixture.suite !== 'scope') {
+            stages.push(await runAndroidFaultStage(workspace, owner, { fixture, artifact, sdk, dart, snapshot }));
+            const workerDirectory = join(owner.directory, 'worker-recovery');
+            await mkdir(workerDirectory);
+            stages.push(await runAndroidStage(workspace, owner, { fixture: { ...fixture, scenario: 'worker-recovery' }, artifact, sdk, dart, snapshot, directory: workerDirectory }));
+        }
         if ((await flutterInputs(workspace)).sha256 !== inputs.sha256) throw new Error('Android sources changed during execution.');
         return { stages, apk: receipt.apk, source: inputs.sha256 };
     } catch (error) { failure = error; throw error; }
@@ -72,10 +79,10 @@ export async function runAndroidApplication(workspace, owner, fixture) {
                 if (await owner.command(['uninstall', packageName]) !== 'Success') throw new Error('Owned app credentials/bootstrap/journal removal was not confirmed.');
             } catch (error) { errors.push(error); }
         }
-        if (reversed) try {
-            const key = `tcp:${origin.port}`;
-            if (androidTcpMapping(await owner.command(['reverse', '--list']), Number(origin.port))) await owner.command(['reverse', '--remove', key]);
-            if (androidTcpMapping(await owner.command(['reverse', '--list']), Number(origin.port))) throw new Error('Owned backend reverse remains.');
+        if (reversed) for (const value of [fixture.origin, fixture.alternate_origin].filter(Boolean)) try {
+            const port = Number(new URL(value).port), key = `tcp:${port}`;
+            if (androidTcpMapping(await owner.command(['reverse', '--list']), port)) await owner.command(['reverse', '--remove', key]);
+            if (androidTcpMapping(await owner.command(['reverse', '--list']), port)) throw new Error('Owned backend reverse remains.');
         } catch (error) { errors.push(error); }
         if (errors.length) throw new AggregateError([...(failure ? [failure] : []), ...errors], 'Android app cleanup is unconfirmed.');
     }

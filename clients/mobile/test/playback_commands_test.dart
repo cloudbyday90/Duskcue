@@ -69,6 +69,7 @@ class CommandFixture {
   String? fileContextRevision;
   late String start;
   final requests = <String>[];
+  Future<void> Function(HttpRequest)? beforeReply;
   Wire get capability => {
     'protocol': vodProtocol,
     'features': [
@@ -161,6 +162,7 @@ class CommandFixture {
             request.response.headers.set('Location', commandPath(start));
           }
           if (path.endsWith('/withdraw') || path.endsWith('/settlement')) {
+            start = path.split('/')[4];
             if (request.method == 'POST') {
               withdrawals++;
               fenced = true;
@@ -283,9 +285,14 @@ class CommandFixture {
             };
           }
         }
+        await beforeReply?.call(request);
         request.response.headers.contentType = ContentType.json;
         request.response.write(jsonEncode(value));
         await request.response.close();
+      } on HttpException {
+        await request.response.close().catchError((Object _) {});
+      } on SocketException {
+        await request.response.close().catchError((Object _) {});
       } catch (_) {
         request.response.statusCode = 500;
         await request.response.close();

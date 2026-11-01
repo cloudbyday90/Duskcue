@@ -7,10 +7,11 @@ part of 'controller.dart';
 extension PlaybackSettlement on PlaybackCommands {
   Future<void> close() async {
     cancelWorkerObservation();
-    final current = record;
+    final current = record ?? _pendingStart;
     if (current == null) {
       _epoch++;
       transport.cancel();
+      reader.cancel();
       lease.stop();
       busy = false;
       monitoring = false;
@@ -18,6 +19,11 @@ extension PlaybackSettlement on PlaybackCommands {
       return;
     }
     final token = ++_epoch;
+    record = current;
+    _pendingStart = null;
+    _dispatched = true;
+    _retireJournal(discard: false);
+    reader.cancel();
     transport.cancel();
     lease.stop();
     monitoring = false;
@@ -44,7 +50,8 @@ extension PlaybackSettlement on PlaybackCommands {
       }
       final context = await transport.context(forCleanup: true);
       require(
-        context.scope.matches(current.scope, cleanup: true),
+        _owns(token, current.start) &&
+            context.scope.matches(current.scope, cleanup: true),
         'scope_changed',
       );
       final reply = await _call(
@@ -73,9 +80,12 @@ extension PlaybackSettlement on PlaybackCommands {
   }
 
   Future<void> _settled(int token) async {
-    await journal.clear();
+    require(ownsEpoch(token), 'scope_changed');
+    await journal.clear(claim: _journalClaim);
     require(token == _epoch, 'scope_changed');
     record = null;
+    _pendingStart = null;
+    _dispatched = false;
     receipt = null;
     admitted = null;
     deadline = null;
