@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed acceptance contract, November 8, 2026. [Design](../design/VOD_ANDROID_AMBIENT_MIGRATION.md) records confirmed Q1–Q8 and proposed implementation. [Security](../security/ANDROID_AMBIENT_TRANSPORT.md) owns native transport limits and the accepted public-completion guarantee. Complete-contract confirmation, code and runtime evidence remain pending. Earlier interactive/relay passes do not qualify native ambient.
+Proposed acceptance contract, November 8, 2026. [Design](../design/VOD_ANDROID_AMBIENT_MIGRATION.md#complete-shared-contract--awaiting-confirmation) records confirmed Q1–Q9 and the complete implementation contract awaiting confirmation. [Security](../security/ANDROID_AMBIENT_TRANSPORT.md) owns native transport limits and the accepted public-completion guarantee, including private audio/codec housekeeping exclusions. Complete-contract confirmation, code and runtime evidence remain pending. Earlier interactive/relay passes do not qualify native ambient.
 
 ## Preserved infrastructure
 

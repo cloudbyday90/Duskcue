@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-Research and decision checkpoint, November 8, 2026. Q1–Q8 below are confirmed; Q9's additional private audio/codec cleanup boundary is awaiting an answer. The complete implementation contract still requires shared-understanding confirmation under [CONTEXT.md](../../CONTEXT.md#design-review-with-grill-me). No application implementation or new runtime qualification is claimed by this document.
+Complete design checkpoint, November 8, 2026. All nine decisions below are confirmed, including Q9's private audio/codec cleanup boundary. The complete implementation contract still requires shared-understanding confirmation under [CONTEXT.md](../../CONTEXT.md#design-review-with-grill-me). No application implementation or new runtime qualification is claimed by this document.
 
 This follows the [qualified Android relay increment](../ci/ANDROID_RELAY_QUALIFICATION.md). Ambient means the existing curated local-media channels, including foreground video and background audio. It does not mean IPTV channels, provider VOD, recordings or audio-only media. The [existing ambient authority](PROFILES_AND_AMBIENT_CHANNELS.md) continues to govern eligibility and exclusion from personal history.
 
@@ -49,7 +49,7 @@ Sources were discovered and read through MCP search/GitHub on November 8. The de
 7. **Q7:** First delivery is fully encoded HLS, H.264/AAC, SDR, stereo, up to 1080p, requiring transcode permission, viewer capacity and encoder capacity. Direct/copied video and broader formats are separate.
 8. **Q8:** Use owned native HTTP and a small Media3 data source with exact-server/output checks, no redirects, ordinary TLS and finite budgets. Join owned public requests/streams/loaders/playback work; do not claim physical socket destruction or termination of private Android HTTP/TLS pooling.
 
-**Q9 pending:** tagged Media3 also schedules private asynchronous AudioTrack/codec cleanup without a public join. The proposed guarantee requires successful public ExoPlayer release without timeout/error and joined application-owned work, excluding private audio/codec as well as HTTP/TLS housekeeping. Release callbacks are supporting observations, not proof that all private workers have exited. This refinement must be explicitly confirmed before implementation.
+9. **Q9:** Cleanup requires successful public ExoPlayer release without timeout/error and joined application-owned requests, storage, loaders and playback threads. Private AudioTrack/codec workers, HTTP/TLS pooling and other SDK housekeeping remain outside the physical-completion guarantee. Release callbacks are supporting observations, not proof that all private workers have exited. Release errors/timeouts retain quarantine and ownership; do not erase failures or widen this guarantee.
 
 ## Alternatives and recommendation stack
 
@@ -112,6 +112,20 @@ Implementation is accepted only after meaningful native/storage/transport/contro
 
 ## Current outcome and next step
 
-Eight product/ownership decisions are confirmed; the discovered Q9 cleanup refinement, complete-contract confirmation and implementation are pending. Source exploration and official research are complete for this proposal. The open Dependabot patch is tracked separately in [its review](../ci/SVELTEKIT_3_UPGRADE_REVIEW.md). This checkpoint does not change application behavior, dependencies, SDKs, OS configuration or test limits and creates no release.
+All nine product/ownership decisions are confirmed. Complete-contract confirmation, implementation and qualification are pending. Source exploration and official research are complete for this design. The open Dependabot patch is tracked separately in [its review](../ci/SVELTEKIT_3_UPGRADE_REVIEW.md); that cleanup is complete and is not repeated for documentation-only successors. This checkpoint does not change application behavior, dependencies, SDKs, OS configuration or test limits and creates no release.
+
+## Complete shared contract — awaiting confirmation
+
+Implement the design above together with its linked [transport](../security/ANDROID_AMBIENT_TRANSPORT.md) and [qualification](../ci/ANDROID_AMBIENT_QUALIFICATION.md) contracts after confirmation of shared understanding:
+
+1. Build a modular native Android protocol-two owner behind the existing Media3 service and thin Flutter bridge. Preserve foreground video, active background playback through Home/lock/task dismissal, independent interactive/ambient lifetimes and zero personal-history mutation. No new server queue or separate application.
+2. Implement explicit negotiation; exact current scope/context; server-timed UUIDv7 Start and same-item seek; independent renewal/checkpoints; retained status/Stop/withdrawal and confirmed cleanup before queue advancement or channel replacement. No uncertain mutation replay, automatic restart or post-dispatch downgrade. Expose only Play/Pause/Stop/same-item seek through the shared app/system controller owner.
+3. Add the independent 4-KiB non-secret journal in app-private backup-excluded atomic storage, with serialized retained off-main work, strict bounds/read-back, corruption refusal and authenticated restart reconciliation. Preserve profile-only cleanup versus stronger-boundary revocation, proven-unsent clearing and an ambient-only barrier across service/Flutter recreation. Keep the interactive encrypted journal unchanged.
+4. Qualify encoded H.264/AAC stereo SDR HLS up to 1080p using bounded native HTTP/data-source/parser/loader owners, exact-server/output authority, no redirects and ordinary TLS. Reuse locked versions; add only the direct 1.10.1 declaration for the already-resolved HLS module. Preserve existing host/backend/root budgets and the explicitly documented new ambient-client limits.
+5. Require successful public player release without timeout/error plus actual completion of all application-owned requests, streams, storage, loaders and playback threads. Retain timeout/error quarantine. Exclude private Media3/Android audio/codec/HTTP/TLS housekeeping from physical-destruction claims, as explicitly accepted in Q8/Q9.
+6. Complete behavioral/fault tests and separately attributed real Android/PostgreSQL/HTTP/TLS/FFmpeg ambient journeys. Preserve the twelve existing native journeys and worker guard, exact source/artifact attribution, shared deadlines and memory guards. Prove zero ambient personal-history changes, independent concurrent viewers and actual owned cleanup; report failures and public-SDK/physical-device limits honestly.
+7. Retire newly owned disposable artifacts through the repository cleanup process, preserving application data, private feeds, current reusable artifacts and compact evidence. Update domain/status/outcome documents, commit and push all task changes on main, use approved legal headers only, and create no release. No service interruption or OS/SDK change is included.
+
+Track/quality pickers, automatic ambient worker/decoder recovery, iOS/offline, direct/copied video, broader formats/devices, provider/DVR and normal production advertisement/attachment/shared-cap enablement remain separate. The principal tradeoff is a second native protocol/transport implementation with a deliberately public-SDK cleanup boundary, in exchange for independently owned background playback without a new Flutter-engine lifetime.
 
 Next: confirm this complete contract and its linked security/qualification boundaries, then implement and qualify the native Android owner. After that scoped qualification, review remaining platform-player migrations before any all-client production attachment/shared-cap rollout. Track/quality selection, automatic ambient recovery, iOS/offline, broader devices/formats and provider/DVR work stay separate.
