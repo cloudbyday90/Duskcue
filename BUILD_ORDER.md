@@ -18,6 +18,14 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **Next at the maintenance checkpoint:** review the positive worker-evidence observer below. That subsequent confirmed increment is now scoped-qualified: the cleaned Rust package was rebuilt under the unchanged guard, the full eight-stage native repeat passes and two new AVDs are retired. Maintenance itself did not authorize or qualify that behavior. Current compiler/SDK/APK inputs and compact evidence remain.
 
+## November 8 Android ambient command owner (RESEARCH / DESIGN REVIEW)
+
+**Authority:** [Android ambient migration](docs/design/VOD_ANDROID_AMBIENT_MIGRATION.md), [native transport](docs/security/ANDROID_AMBIENT_TRANSPORT.md) and [qualification](docs/ci/ANDROID_AMBIENT_QUALIFICATION.md). Q1–Q8 confirm native background ownership, cleanup-gated advancement, an independent four-KiB journal, existing background behavior, bounded controls, an ambient-only retained barrier, encoded H.264/AAC stereo SDR HLS and a public-operation transport guarantee. A newly verified private audio/codec cleanup limit is under Q9 review; the complete contract still needs shared-understanding confirmation. No application implementation or new native pass is claimed.
+
+**Research and maintenance:** official MCP search and tagged Media3 1.10.1 inspection support public data-source/parser/executor injection, ordinary TLS, no redirects and bounded native work. The recommendation retains existing versions, adding only a direct declaration for already-resolved HLS. Dependabot #6 is rebased once onto main `9102cd4`; its package files are byte-identical to the already locally trialed failure and remain unadopted/unmerged. Repository free space is approximately 1,000 GiB; current artifacts are retained and no build, VM or cleanup series is started by research.
+
+**Next:** complete design confirmation, then implement and qualify the modular native owner and separately attributed ambient journeys, preserving all twelve original journeys, backend/root/host limits and zero ambient personal-history mutation. iOS/offline, track/quality pickers, automatic ambient recovery, broader formats/devices, provider/DVR and production attachment/shared caps remain separate. Main only; no release.
+
 ## November 1 Android relay matrix (SCOPED QUALIFICATION COMPLETE)
 
 **Verified implementation:** `33f25abe34e26b35921cc98a314fadc0fd650cb8` on main. Documentation-only attribution preserves the qualified source and artifacts; no release.

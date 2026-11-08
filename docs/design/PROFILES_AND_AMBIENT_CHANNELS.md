@@ -1,5 +1,9 @@
 # Household Profiles, Kids Mode, and Ambient Channels
 
+## Android ambient command migration review — November 8, 2026
+
+The [new migration authority](VOD_ANDROID_AMBIENT_MIGRATION.md) begins the next planned item after the qualified Android relay. Q1–Q8 preserve native background ownership and independent interactive/ambient lifetimes while adding protocol-two identity/renewal/settlement, cleanup-gated queue advancement and a separate minimal journal. Ambient remains curated local media and must not mutate personal history. Complete-contract confirmation and the additional private audio/codec cleanup boundary remain under review; no application implementation or native pass is claimed. [Transport security](../security/ANDROID_AMBIENT_TRANSPORT.md) and [qualification](../ci/ANDROID_AMBIENT_QUALIFICATION.md) own their proposed limits and evidence. Historical native completion below describes the legacy owner, not qualification of this new lane.
+
 ## Assignment-owned Live TV choices — October 24, 2026
 
 [Encrypted IPTV assignment](IPTV_ASSIGNMENT.md) owns standard-profile Live TV choices in a separate assignment/profile table. They do not reuse ambient/search/download flags or become fields on the generic profile-update DTO. Missing/new profile policy is disabled; Kids remain ineligible until channel/current-programme evidence and exception policy are qualified. Composite ownership keys prevent cross-household bindings. Existing profile deletion cascades the assignment-owned setting. The domain authority owns administrator delegation, proof, revocation and exact qualification outcomes.

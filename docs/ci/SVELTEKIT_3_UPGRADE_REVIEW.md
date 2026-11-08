@@ -1,5 +1,11 @@
 # SvelteKit 3 dependency PR review
 
+## November 8 ambient research review
+
+GitHub MCP returns exactly one open PR, [Dependabot #6](https://github.com/cloudbyday90/Duskcue/pull/6), still unmerged and mergeable. It is the only candidate for the requested random open-PR review. Compare evidence establishes three main commits since its previous base `ba8007176448be4daf754ed282217cf0c7fdb194`. The connector has no branch-rebase action; the authorized installed CLI rebases the existing PR once, using the previously approved saved login only in the request process and restoring its environment afterward. No comment or merge is sent.
+
+Verified head `de5310dcabfa52cdd5c17528683e6327edf6fd6d` is zero behind/one ahead of main `9102cd4ffae932d6157e25b5084de737077be07e`. A single-ref fetch and exact Git comparison confirm both package files are byte-identical to the previously locally applied/tested patch. Relevant `clients/web` and `clients/desktop` inputs also remain unchanged since `07bd206`. The existing `config_file_unsupported` failure and restoration therefore remain applicable; there is no new local install or passing application migration claim. Keep the current dependency graph, retain this PR unmerged/unadopted and plan the coordinated SvelteKit migration separately. Do not chase this research checkpoint's later documentation commits with repeated rebases. Main only; no release.
+
 ## October 31 relay review
 
 GitHub MCP again identifies only PR #6, open/unmerged/mergeable at `e97644e9f8afdd8b3bb2bfde0e11bebaaf5f6756`. A single-ref fetch shows six commits behind main `ba8007176448be4daf754ed282217cf0c7fdb194`. The requested stale-PR cleanup uses the same process-scoped saved-login CLI rebase, without a comment, merge or local feature branch. Verified head `ccf372d71b3ce8bcc14640ac843aeda75cd2fd35` is zero behind/one ahead of that main checkpoint.
