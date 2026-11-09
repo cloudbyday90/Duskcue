@@ -56,6 +56,8 @@ Update this authority with actual results, failed attempts, hashes, cleanup and 
 
 ## Implementation and verification checkpoint
 
+Source checkpoint `e97833b` on main records the unqualified draft. Documentation-only successors preserve that implementation attribution. Do not treat the checkpoint commit as a native qualification result or completed migration.
+
 The new `ambient` companion is isolated from the original twelve journeys and their SQL assertions. Seven native stages represent background, controls, advancement/replacement, cold retain, cold restore, scope and concurrency. `android-playback` includes this companion after the existing worker/scope/base/relay groups under the same shared deadline; `android-ambient` is a focused diagnostic, not a substitute for complete acceptance. Expected companion attribution is nine ambient viewers, one independent interactive viewer, ten released reservations/operational sessions, one seek, zero unsettled Starts, one new interactive personal-history row and an unchanged full ambient history sentinel. These counts are frozen draft assertions, not observed evidence.
 
 Qualification-only native probes exercise strict JSON/UTF-8/size rules, UUIDv7 time fencing, atomic HLS publication, retained lane timeout, joined loader termination, atomic journal corruption/write failures, actual platform HTTP framing/redirect/lost-POST/cancellation, injected public-I/O/late-handle/failed-close races and normal platform TLS/name rejection. The public fixture CA is a qualification-flavor resource only; normal TLS validation remains enabled. Dart fixture requests separately trust that same test root without a certificate callback bypass. Production artifact exclusion still requires a fresh verified APK check.

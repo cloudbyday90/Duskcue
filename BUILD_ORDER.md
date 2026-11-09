@@ -20,6 +20,8 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## November 8 Android ambient command owner (IMPLEMENTATION — QUALIFICATION PENDING)
 
+**Source checkpoint:** `e97833b` on main is an unqualified work-in-progress implementation. The pending compiler, analysis, formatter, adversarial and native gates below remain required; this is not phase completion or a release.
+
 **Authority:** [Android ambient migration](docs/design/VOD_ANDROID_AMBIENT_MIGRATION.md#complete-shared-contract--confirmed-at-8c8cb53), [native transport](docs/security/ANDROID_AMBIENT_TRANSPORT.md) and [qualification](docs/ci/ANDROID_AMBIENT_QUALIFICATION.md). The complete contract published at `8c8cb53` and all nine decisions are confirmed. Q8/Q9 require successful public player release and joined application-owned work, excluding private SDK audio/codec/HTTP/TLS housekeeping while retaining failures. The operator permits qualification to wait for memory; no current-source native pass is claimed.
 
 **Research and maintenance:** official MCP search and tagged Media3 1.10.1 inspection support public data-source/parser/executor injection, ordinary TLS, no redirects and bounded native work. The recommendation retains existing versions, adding only a direct declaration for already-resolved HLS. Dependabot #6 is rebased once onto main `9102cd4`; its package files are byte-identical to the already locally trialed failure and remain unadopted/unmerged. Repository free space is approximately 1,000 GiB; current artifacts are retained and no build, VM or cleanup series is started by research.
