@@ -15,6 +15,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:duskcue_mobile/models/auth_models.dart';
 import 'package:duskcue_mobile/models/server_profile.dart';
@@ -249,6 +250,7 @@ class AuthService {
   }
 
   Future<void> logout() async {
+    unawaited(_ambientPlayback.fenceForLogout().catchError((Object _) {}));
     try {
       await _apiClient.post<Object?>('/api/v1/auth/logout');
     } finally {
@@ -257,6 +259,7 @@ class AuthService {
   }
 
   Future<void> logoutAll() async {
+    unawaited(_ambientPlayback.fenceForLogout().catchError((Object _) {}));
     try {
       await _apiClient.post<Object?>('/api/v1/auth/logout-all');
     } finally {
@@ -265,6 +268,7 @@ class AuthService {
   }
 
   Future<void> clearLocalSession() async {
+    unawaited(_ambientPlayback.fenceForLogout().catchError((Object _) {}));
     try {
       await _ambientPlayback.clear();
     } catch (_) {}

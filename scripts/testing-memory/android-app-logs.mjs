@@ -24,10 +24,11 @@ export function ownAndroidAppLogs(owner, { pid, port, directory, fixture, budget
             if (uri) throw new Error('Duplicate Android VM-service announcement.');
             uri = found; resolveUri(found);
         }
-        const phase = message.match(/^ANDROID_PHASE (background|renew-loss)$/)?.[1];
+        const phase = message.match(/^ANDROID_PHASE (background|renew-loss|ambient-background)$/)?.[1];
         if (phase) {
             if (phases.has(phase) || phase === 'background' && fixture.scenario !== 'baseline'
-                || phase === 'renew-loss' && fixture.scenario !== 'lost-outcomes') throw new Error('Unexpected or repeated Android lifecycle phase.');
+                || phase === 'renew-loss' && fixture.scenario !== 'lost-outcomes'
+                || phase === 'ambient-background' && fixture.scenario !== 'ambient-background') throw new Error('Unexpected or repeated Android lifecycle phase.');
             phases.add(phase); onPhase(message);
         }
     });

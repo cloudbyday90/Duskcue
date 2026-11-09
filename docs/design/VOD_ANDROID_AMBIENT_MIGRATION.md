@@ -2,7 +2,7 @@
 
 ## Status and scope
 
-Complete design checkpoint, November 8, 2026. All nine decisions below are confirmed, including Q9's private audio/codec cleanup boundary. The complete implementation contract still requires shared-understanding confirmation under [CONTEXT.md](../../CONTEXT.md#design-review-with-grill-me). No application implementation or new runtime qualification is claimed by this document.
+Implementation in progress, November 8, 2026. The operator confirmed all nine decisions and the complete shared contract published at `8c8cb53`. Source work is authorized; the operator explicitly allows qualification to wait for host memory. Current source is not yet compiled or runtime-qualified. Earlier native passes do not qualify this increment.
 
 This follows the [qualified Android relay increment](../ci/ANDROID_RELAY_QUALIFICATION.md). Ambient means the existing curated local-media channels, including foreground video and background audio. It does not mean IPTV channels, provider VOD, recordings or audio-only media. The [existing ambient authority](PROFILES_AND_AMBIENT_CHANNELS.md) continues to govern eligibility and exclusion from personal history.
 
@@ -110,13 +110,19 @@ The linked transport and qualification documents define finite new ambient-clien
 
 Implementation is accepted only after meaningful native/storage/transport/control tests, actual ambient background/seek/advancement/uncertainty/scope/concurrency journeys, preserved original Android regressions, exact zero ambient personal-history mutation and confirmed owned cleanup. Document every failed attempt separately and retire newly owned disposable artifacts. Physical-device, private SDK housekeeping and broader format claims stay limited to the evidence actually obtained.
 
-## Current outcome and next step
+## Current implementation and next step
 
-All nine product/ownership decisions are confirmed. Complete-contract confirmation, implementation and qualification are pending. Source exploration and official research are complete for this design. The open Dependabot patch is tracked separately in [its review](../ci/SVELTEKIT_3_UPGRADE_REVIEW.md); that cleanup is complete and is not repeated for documentation-only successors. This checkpoint does not change application behavior, dependencies, SDKs, OS configuration or test limits and creates no release.
+The modular Kotlin draft separates protocol/schema/context/clock, retained operations, journal, queue/controls/monitoring/lease, HTTP/HLS, output/loaders and the sanitized MediaSession player. The service is a lifecycle adapter; the old service is retained as explicit unadvertised-protocol fallback. The Flutter bridge binds requests to the current native identity and retains pending platform work, with independent Stop and metadata status admission. The existing screen reports failures and requires confirmed Stop before navigation.
 
-## Complete shared contract — awaiting confirmation
+Source review adds an epoch fence for Stop racing accepted Start or natural advancement, coalesced scope cleanup, output-bound controller callbacks, Pause intent across advancement and joined public open/read/close completion before HTTP permit reuse. A failed public HTTP close retains capacity and the ambient barrier. A definite pre-Start `PLAY_019` refusal may refresh the selection once; generic conflicts and dispatched commands are not replayed. These are source changes awaiting current-source compilation and behavioral qualification, not established runtime outcomes.
 
-Implement the design above together with its linked [transport](../security/ANDROID_AMBIENT_TRANSPORT.md) and [qualification](../ci/ANDROID_AMBIENT_QUALIFICATION.md) contracts after confirmation of shared understanding:
+The companion harness drafts seven stages for the six agreed journeys, with cold retention/restoration split across process death. It adds native owner/storage/HLS/HTTP fault probes, normal TLS with a qualification-only fixture CA, real backend channels, exact expected viewer/operation counts, a full personal-history sentinel and independently attributed interactive playback. Missing fault/controller/task-dismissal coverage remains an acceptance gate in [qualification](../ci/ANDROID_AMBIENT_QUALIFICATION.md#implementation-and-verification-checkpoint).
+
+The open Dependabot patch is tracked separately in [its review](../ci/SVELTEKIT_3_UPGRADE_REVIEW.md); the one-time rebase and unchanged local incompatibility decision remain complete. No SDK/version, OS, memory/deadline limit or production capability changes are made. HLS receives only its already-resolved direct declaration. No release.
+
+## Complete shared contract — confirmed at 8c8cb53
+
+The operator confirmed implementation of the design above together with its linked [transport](../security/ANDROID_AMBIENT_TRANSPORT.md) and [qualification](../ci/ANDROID_AMBIENT_QUALIFICATION.md) contracts:
 
 1. Build a modular native Android protocol-two owner behind the existing Media3 service and thin Flutter bridge. Preserve foreground video, active background playback through Home/lock/task dismissal, independent interactive/ambient lifetimes and zero personal-history mutation. No new server queue or separate application.
 2. Implement explicit negotiation; exact current scope/context; server-timed UUIDv7 Start and same-item seek; independent renewal/checkpoints; retained status/Stop/withdrawal and confirmed cleanup before queue advancement or channel replacement. No uncertain mutation replay, automatic restart or post-dispatch downgrade. Expose only Play/Pause/Stop/same-item seek through the shared app/system controller owner.
@@ -128,4 +134,4 @@ Implement the design above together with its linked [transport](../security/ANDR
 
 Track/quality pickers, automatic ambient worker/decoder recovery, iOS/offline, direct/copied video, broader formats/devices, provider/DVR and normal production advertisement/attachment/shared-cap enablement remain separate. The principal tradeoff is a second native protocol/transport implementation with a deliberately public-SDK cleanup boundary, in exchange for independently owned background playback without a new Flutter-engine lifetime.
 
-Next: confirm this complete contract and its linked security/qualification boundaries, then implement and qualify the native Android owner. After that scoped qualification, review remaining platform-player migrations before any all-client production attachment/shared-cap rollout. Track/quality selection, automatic ambient recovery, iOS/offline, broader devices/formats and provider/DVR work stay separate.
+Next: compile and correct the current draft, complete the remaining adversarial/control matrix, and run the complete guarded native acceptance suite. After that scoped qualification, review remaining platform-player migrations before any all-client production attachment/shared-cap rollout. Track/quality selection, automatic ambient recovery, iOS/offline, broader devices/formats and provider/DVR work stay separate.

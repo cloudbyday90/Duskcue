@@ -139,7 +139,7 @@ test('retained app producer attributes real phases, redacts split secrets, and c
 
 test('producer failure and duplicate/wrong-stage phases cancel observation without a driver retry', async () => {
     for (const payload of ['I/flutter (123): ANDROID_PHASE background\nI/flutter (123): ANDROID_PHASE background\n',
-        'I/flutter (123): ANDROID_PHASE renew-loss\n', 'I/flutter (124): no\n', 'incomplete']) {
+        'I/flutter (123): ANDROID_PHASE renew-loss\n', 'I/flutter (123): ANDROID_PHASE ambient-background\n', 'I/flutter (124): no\n', 'incomplete']) {
         await temporary(async (directory) => {
             const budget = androidStageBudget(Date.now() + 10000);
             const logs = ownAndroidAppLogs({ env: process.env }, { pid: 123, port: 12345, directory, fixture: { scenario: 'baseline' }, budget, onPhase() {} },

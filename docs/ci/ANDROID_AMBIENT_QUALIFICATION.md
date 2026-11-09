@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed acceptance contract, November 8, 2026. [Design](../design/VOD_ANDROID_AMBIENT_MIGRATION.md#complete-shared-contract--awaiting-confirmation) records confirmed Q1–Q9 and the complete implementation contract awaiting confirmation. [Security](../security/ANDROID_AMBIENT_TRANSPORT.md) owns native transport limits and the accepted public-completion guarantee, including private audio/codec housekeeping exclusions. Complete-contract confirmation, code and runtime evidence remain pending. Earlier interactive/relay passes do not qualify native ambient.
+Confirmed acceptance contract, November 8, 2026. [Design](../design/VOD_ANDROID_AMBIENT_MIGRATION.md#complete-shared-contract--confirmed-at-8c8cb53) records Q1–Q9 and the complete implementation contract confirmed by the operator. [Security](../security/ANDROID_AMBIENT_TRANSPORT.md) owns native transport limits and the accepted public-completion guarantee, including private audio/codec housekeeping exclusions. Implementation is in progress; current-source compilation and runtime qualification remain pending. The operator permits qualification to wait for host memory. Earlier interactive/relay passes do not qualify native ambient.
 
 ## Preserved infrastructure
 
@@ -53,3 +53,27 @@ Pass native host tests, Flutter analysis/tests, both verified APK/package checks
 Observe exact app/driver/log/forward/ADB/emulator/backend/FFmpeg/HTTP/PostgreSQL cleanup. Capture memory attribution without assigning shared/system growth to an actor unsupported by evidence. Use the [repository-cleanup skill](../../.agents/skills/duskcue-repository-cleanup/SKILL.md) to remove newly owned AVD disks after exact process/listener completion, preserving current compiler/SDK/APK checkpoints and compact results. Do not touch private Dispatcharr fixtures, application volumes, unrelated services or the earlier policy-blocked TEMP fixture.
 
 Update this authority with actual results, failed attempts, hashes, cleanup and remaining limitations before marking the increment qualified. Emulator passes do not establish physical-device battery/thermal/audio/TalkBack results. iOS/offline, direct/copied video, broad formats, provider/DVR, track/quality pickers and automatic ambient recovery remain separate. No release or production attachment/shared-cap enablement.
+
+## Implementation and verification checkpoint
+
+The new `ambient` companion is isolated from the original twelve journeys and their SQL assertions. Seven native stages represent background, controls, advancement/replacement, cold retain, cold restore, scope and concurrency. `android-playback` includes this companion after the existing worker/scope/base/relay groups under the same shared deadline; `android-ambient` is a focused diagnostic, not a substitute for complete acceptance. Expected companion attribution is nine ambient viewers, one independent interactive viewer, ten released reservations/operational sessions, one seek, zero unsettled Starts, one new interactive personal-history row and an unchanged full ambient history sentinel. These counts are frozen draft assertions, not observed evidence.
+
+Qualification-only native probes exercise strict JSON/UTF-8/size rules, UUIDv7 time fencing, atomic HLS publication, retained lane timeout, joined loader termination, atomic journal corruption/write failures, actual platform HTTP framing/redirect/lost-POST/cancellation, injected public-I/O/late-handle/failed-close races and normal platform TLS/name rejection. The public fixture CA is a qualification-flavor resource only; normal TLS validation remains enabled. Dart fixture requests separately trust that same test root without a certificate callback bypass. Production artifact exclusion still requires a fresh verified APK check.
+
+Observed attempts, retained privately in `.cache`:
+
+| Attempt | Actual outcome |
+| --- | --- |
+| `2026-11-09T00-31-18-896Z-b56fc448-18a9-4057-b7e7-c97635ff6b8e.jsonl` | Preliminary APK compiled before the later ownership/harness changes. Source hash `905cb9d723048f553495c125ad6fbca1706f25407f35f9a7495d7ef361ea5f8e`; this artifact is stale for current inputs. |
+| `2026-11-09T00-43-00-588Z-38b1c145-83ea-4380-9428-f4b1c48e5fdf.jsonl` | Eight focused Flutter tests passed at that source checkpoint. Later changes require fresh tests. |
+| `2026-11-09T00-52-25-866Z-e3aa3e91-dc9f-4799-b4a4-aff85ba3ae0c.jsonl` | APK rebuild refused before compilation by the unchanged memory admission policy. |
+| `2026-11-09T01-03-29-302Z-0f05f1a4-8c6f-4700-9e71-c8f8867a3598.jsonl` | Formatting refused before execution by the unchanged check policy. |
+| `2026-11-09T01-03-37-089Z-4ce52390-9675-4c34-b0c2-b4a46bef6687.jsonl` | Full Flutter regression interrupted at 97.259% system commit. Fifty-nine tests had passed; no complete-suite pass is claimed. |
+| `2026-11-09T01-07-11-529Z-5a725117-7b9a-47a9-9161-f8d043fa5fed.jsonl` | Forty-seven host tooling tests passed with two existing Linux skips, including real host TLS/channel confinement. Later phase-wiring changes require repetition. |
+| `2026-11-09T01-28-55-589Z-ea448a2e-1360-452e-b58a-79ff070a54f1.jsonl` | Fifteen current Dart ambient tests pass: exact binding/control scope, coalesced reads, concurrent Stop, stale bind/result refusal, truthful cleanup, RTL focus, large text/semantics and existing legacy bridge behaviors. This does not compile the new integration/native files. |
+| `2026-11-09T01-29-25-434Z-b81dbd13-16d8-4929-8f15-a96d9230917c.jsonl` | Current host tooling repeat passes 47 tests with two existing Linux skips, including phase rejection and real host TLS/channel confinement. |
+| `2026-11-09T01-29-37-128Z-a0a9c584-7ab1-43af-bd63-f4cee5a3ae2f.jsonl` | Current formatting remains refused before execution at 75.15/86.84 GiB commit. Guard limits are unchanged. |
+
+No actual ambient emulator journey has run. Current-source formatting, analysis, both APKs, native compilation/probes, complete Flutter regression, real PostgreSQL/native HTTP/TLS/FFmpeg journeys and exact cleanup remain required. Complete the accepted-response-loss, stale-selection/refusal/capacity, revocation, controller/headset/task-dismissal, pending-scope/storage/release and full transport adversarial matrix; the current draft does not yet establish those gates. Do not turn host checks or source assertions into a native pass. See [memory attribution](QUALIFICATION_MEMORY_ATTRIBUTION.md#november-8-ambient-source-work) for the interrupted attempt.
+
+The source checkpoint is deliberately unqualified. Source-wiring verification, staged copyright compliance (1,070 files), changed host JavaScript syntax, whitespace and private-LAN/cache exclusion checks pass. They do not substitute for the pending compiler/formatter/analysis/native gates. [Maintenance](../operations/DEVELOPMENT_STORAGE.md#ambient-source-work-maintenance--november-8) retains current reusable artifacts and compact evidence without creating/deleting a VM or interrupting a service. Commit/push records the work in progress on main; it is not a release or a completed migration.

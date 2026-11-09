@@ -189,7 +189,17 @@ class NativeAmbientPlaybackStatus {
     this.mediaItemId,
     this.positionMs = 0,
     this.isPlaying = false,
+    this.isBuffering = false,
     this.error,
+    this.protocol = 'legacy',
+    this.state = 'idle',
+    this.busy = false,
+    this.cleanupPending = false,
+    this.requiresPlay = false,
+    this.durationMs = 0,
+    this.requestId,
+    this.outputRevision,
+    this.videoFrames = 0,
   });
 
   final bool isActive;
@@ -198,20 +208,54 @@ class NativeAmbientPlaybackStatus {
   final String? mediaItemId;
   final int positionMs;
   final bool isPlaying;
+  final bool isBuffering;
   final String? error;
+  final String protocol, state;
+  final bool busy, cleanupPending, requiresPlay;
+  final int durationMs, videoFrames;
+  final String? requestId, outputRevision;
 
   factory NativeAmbientPlaybackStatus.fromJson(Map<Object?, Object?> json) {
+    if (json.length > 32 || json.values.any((value) => value is String && value.length > 256)) {
+      throw const FormatException('Ambient status exceeds its limits.');
+    }
+    int bounded(Object? value) {
+      if (value == null) return 0;
+      if (value is! int || value < 0 || value > 2147483647) throw const FormatException('Invalid ambient position.');
+      return value;
+    }
+    bool flag(String key) {
+      final value = json[key];
+      if (value == null) return false;
+      if (value is! bool) throw const FormatException('Invalid ambient status flag.');
+      return value;
+    }
     final position = json['position_ms'];
+    final protocol = json['protocol'] as String? ?? 'legacy';
+    final state = json['state'] as String? ?? (json['is_active'] == true ? json['is_playing'] == true ? 'ready' : 'preparing' : 'idle');
+    if (protocol != 'legacy' && protocol != 'duskcue-vod-command/2' ||
+        !const {'idle', 'checking', 'starting', 'preparing', 'ready', 'changing', 'uncertain', 'stopping', 'cleanup',
+          'settled', 'unavailable', 'unknown', 'released', 'failed', 'withdrawing', 'withdrawn', 'cleanup_uncertain'}.contains(state)) {
+      throw const FormatException('Invalid ambient state.');
+    }
     return NativeAmbientPlaybackStatus(
-      isActive: json['is_active'] == true,
+      isActive: flag('is_active'),
       channelId: json['channel_id'] as String?,
       channelName: json['channel_name'] as String?,
       mediaItemId: json['media_item_id'] as String?,
-      positionMs: position is num
-          ? position.toInt()
-          : int.tryParse(position?.toString() ?? '') ?? 0,
-      isPlaying: json['is_playing'] == true,
+      positionMs: bounded(position),
+      isPlaying: flag('is_playing'),
+      isBuffering: flag('is_buffering'),
       error: json['error'] as String?,
+      protocol: protocol,
+      state: state,
+      busy: flag('busy'),
+      cleanupPending: flag('cleanup_pending'),
+      requiresPlay: flag('requires_play'),
+      durationMs: bounded(json['duration_ms']),
+      requestId: json['request_id'] as String?,
+      outputRevision: json['output_revision'] as String?,
+      videoFrames: bounded(json['video_frames']),
     );
   }
 }

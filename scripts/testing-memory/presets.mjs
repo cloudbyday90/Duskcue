@@ -10,6 +10,7 @@ export const PRESETS = {
     'android-worker': { policy: 'cargo', heapMiB: 512, command: 'node', args: ['scripts/testing-memory/qualify-vod-output.mjs', '--android-worker-only'] },
     'android-playback': { policy: 'native', heapMiB: 512, command: 'node', args: ['scripts/testing-memory/qualify-vod-output.mjs', '--android-only'] },
     'android-relay': { policy: 'native', heapMiB: 512, command: 'node', args: ['scripts/testing-memory/qualify-vod-output.mjs', '--android-relay-only'] },
+    'android-ambient': { policy: 'native', heapMiB: 512, command: 'node', args: ['scripts/testing-memory/qualify-vod-output.mjs', '--android-ambient-only'] },
     'android-boot': { policy: 'native', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/android-boot.mjs'] },
     'android-sdk': { policy: 'build', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/android-sdk.mjs'] },
     'flutter-tooling-test': { policy: 'unit', heapMiB: 128, command: 'node', args: ['--test', '--test-concurrency=1', 'scripts/testing-memory/flutter-release.test.mjs'] },

@@ -25,7 +25,7 @@ Validate scheme/host/effective port and canonical authority, rejecting user-info
 
 Use a per-request connection with redirects disabled, explicit no-store/identity encoding, finite request bodies and no automatic POST retry. Supply bearer only after target admission. Refuse challenges/redirects rather than invoking a credential discovery flow. Do not install global authenticator, proxy, cookie, hostname-verifier, socket-factory or trust-manager overrides. The isolated qualification CA must never enter production trust or the normal package. Preserve user-selected HTTP/HTTPS deployment policy; HTTPS uses normal platform trust and name checks.
 
-## Proposed finite ambient budgets
+## Confirmed finite ambient budgets
 
 These limits apply to the new ambient owner. Existing interactive limits stay unchanged. Simultaneous interactive/ambient playback can therefore own both separately bounded clients; these are public-operation bounds, not a hard process-RSS, native-socket or private-framework-thread ceiling.
 
@@ -64,4 +64,8 @@ The confirmed Q9 guarantee requires successful public ExoPlayer release without 
 
 ## Current outcome
 
-Research establishes feasible public injection points and the precise cleanup boundary accepted in Q8/Q9. Complete-contract confirmation, implementation, adversarial HTTP/TLS/storage/worker tests and actual Android evidence remain pending under [the qualification contract](../ci/ANDROID_AMBIENT_QUALIFICATION.md). No dependency/version/OS or production setting changes are made by this checkpoint.
+The operator confirmed the complete contract at `8c8cb53`. The draft registers ownership before public creation, uses explicit method/path templates and fixed-length JSON POST bodies, and retains public I/O plus close completion before returning permits. Failed close retains the registry entry and ambient barrier. HLS publication is epoch/revision-bound; the controller facade exposes sanitized metadata and routes controls to the exact viewer/output. These properties still require current-source compilation and the adversarial/native qualification in [the acceptance contract](../ci/ANDROID_AMBIENT_QUALIFICATION.md#implementation-and-verification-checkpoint).
+
+Additional official MCP inspection checks [Android's October 5 platform tag](https://android.googlesource.com/platform/external/okhttp/+/refs/tags/android-security-16.0.0_r9), commit `d26562d0a3213285901ca701ef1b63267305d720`. Its URLConnection adapter disables request-body buffering in fixed-length mode; HttpEngine/StreamAllocation refuse recovery of an already-dispatched non-retryable body. This supports the chosen fixed-length request strategy on that implementation, not a universal OEM replay guarantee. An actual API 36 lost-response witness must still observe one POST. No reflection or global retry switch is introduced.
+
+[Android's trust configuration](https://developer.android.com/privacy-and-security/security-config?authuser=96) supports explicit domain trust anchors. Only the qualification flavor includes the public localhost fixture certificate; production uses its existing system trust. Successful name verification remains required, including in fixture tests. [MediaSessionService guidance](https://developer.android.com/media/media3/session/background-playback) supports SDK-managed notifications and foreground transitions; application code uses the public notification trigger rather than directly invoking the callback. No SDK/version, OS, host-limit or production capability change is included; only the already-resolved HLS module gains a direct declaration.

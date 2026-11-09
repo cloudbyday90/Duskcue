@@ -5,13 +5,44 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, request } from 'node:http';
+import { request as httpsRequest } from 'node:https';
+import { readFile } from 'node:fs/promises';
 import { once } from 'node:events';
 import { createFaultGateway } from './android-fault-gateway.mjs';
 import { faultRoute, fixedOrigin } from './android-fault-policy.mjs';
 import { createRelayWitness } from './android-relay-witness.mjs';
+import { ambientFlags, ambientStages } from './android-ambient-policy.mjs';
 
 const id = '019a35de-1234-7000-8000-123456789abc';
 const root = `/api/v1/playback-commands/${id}`;
+
+test('ambient gateway confines channels and uses verified TLS without changing normal routes', async () => {
+    const seen = [];
+    const source = await backend((req, res) => { seen.push(req.url); res.setHeader('content-type', 'application/json'); res.end('{}'); });
+    const cert = await readFile(new URL('../../clients/mobile/test/fixtures/relay-localhost-cert.pem', import.meta.url));
+    const key = await readFile(new URL('../../clients/mobile/test/fixtures/relay-localhost-key.pem', import.meta.url));
+    const gateway = await createFaultGateway({ ...source, token: 'fixture-only' }, { ambientChannels: [id], tls: { key, cert } }).catch(async (error) => { await source.close(); throw error; });
+    async function secure(path, { trusted = true, hostname = 'localhost' } = {}) {
+        return new Promise((resolve, reject) => {
+            const outgoing = httpsRequest(gateway.origin + path, { method: 'POST', agent: false,
+                ca: trusted ? cert : undefined, servername: hostname, lookup: (_, options, callback) => callback(null, options.all ? [{ address: '127.0.0.1', family: 4 }] : '127.0.0.1', 4),
+                headers: { authorization: 'Bearer fixture-only' } }, (incoming) => { incoming.resume(); incoming.on('end', () => resolve(incoming.statusCode)); incoming.on('error', reject); });
+            outgoing.on('error', reject); outgoing.end('{}');
+        });
+    }
+    try {
+        assert.equal(await secure(`/api/v1/ambient-channels/${id}/next`), 200);
+        assert.equal(await secure(`/api/v1/ambient-channels/${id}/next?target=other`), 404);
+        assert.equal(await secure(`/api/v1/ambient-channels/${id.replace(/.$/, 'd')}/next`), 404);
+        await assert.rejects(secure(`/api/v1/ambient-channels/${id}/next`, { trusted: false }));
+        await assert.rejects(secure(`/api/v1/ambient-channels/${id}/next`, { hostname: 'canary.invalid' }));
+        assert.deepEqual(seen, [`/api/v1/ambient-channels/${id}/next`]);
+        assert.equal(ambientStages.length, 7);
+        assert.ok(!ambientFlags('ambient-cold-retain').includes('confirmed_cleanup'));
+        assert.ok(ambientFlags('ambient-cold-restore').includes('confirmed_cleanup'));
+        assert.throws(() => ambientFlags('unknown'));
+    } finally { await gateway.close(); await source.close(); }
+});
 
 test('relay probe is qualification-only, credential-bound and never forwarded as a backend route', async () => {
     let calls = 0, hits = 0;

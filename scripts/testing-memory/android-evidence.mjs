@@ -60,7 +60,7 @@ export function androidTcpMapping(response, port, serial) {
 export async function androidToolInputs(workspace) {
     const files = [];
     for (const name of ['android-app.mjs', 'android-stage.mjs', 'android-boot.mjs', 'android-evidence.mjs', 'android-owner.mjs',
-        'android-runtime.mjs', 'android-scope-app.mjs', 'android-relay-app.mjs', 'android-relay-witness.mjs', 'android-diagnostics.mjs', 'android-driver-bootstrap.mjs', 'android-driver-inputs.mjs',
+        'android-runtime.mjs', 'android-scope-app.mjs', 'android-relay-app.mjs', 'android-relay-witness.mjs', 'android-ambient-app.mjs', 'android-ambient-policy.mjs', 'android-diagnostics.mjs', 'android-driver-bootstrap.mjs', 'android-driver-inputs.mjs',
         'android-stage-budget.mjs', 'android-vm-identity.mjs', 'android-vm-probe.mjs', 'android-app-logs.mjs', 'android-adb-policy.mjs',
         'android-fault-stage.mjs', 'android-fault-gateway.mjs', 'android-fault-policy.mjs', 'android-sdk.mjs', 'presets.mjs', 'qualify-vod-output.mjs', 'owned-process.mjs']) {
         files.push({ path: name, sha256: await hashFile(join(workspace, 'scripts/testing-memory', name)) });

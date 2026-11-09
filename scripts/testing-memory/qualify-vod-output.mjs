@@ -35,7 +35,8 @@ async function main() {
     const androidOnly=args[0]==='--android-only';
     const androidWorkerOnly=args[0]==='--android-worker-only';
     const androidRelayOnly=args[0]==='--android-relay-only';
-    if(commandsOnly||configurationOnly||clientOnly||startOnly||androidOnly||androidWorkerOnly||androidRelayOnly) args.shift();
+    const androidAmbientOnly=args[0]==='--android-ambient-only';
+    if(commandsOnly||configurationOnly||clientOnly||startOnly||androidOnly||androidWorkerOnly||androidRelayOnly||androidAmbientOnly) args.shift();
     let nativeManifest;
     if(clientOnly&&args[0]==='--native-manifest') {args.shift();nativeManifest=args.shift();if(!nativeManifest)throw new Error('Provide the owned native manifest.');}
     if (args.length !== 6 || args[0] !== '--ffmpeg-bin' || args[2] !== '--source' || args[4] !== '--hls') throw new Error('Provide --ffmpeg-bin, --source and --hls ignored fixture paths.');
@@ -71,7 +72,7 @@ async function main() {
         result.driverSha256 = await hashFile(fileURLToPath(import.meta.url));
         result.configurationFixture = await createVodSource(source, join(directory, 'source'), join(ffmpeg, 'ffmpeg.exe'));
         if (androidOnly || androidRelayOnly) result.relayFixture = await createAndroidRelayMedia(join(directory, 'relay-source'), join(ffmpeg, 'ffmpeg.exe'), join(ffmpeg, 'ffprobe.exe'));
-        if (androidOnly || androidWorkerOnly || androidRelayOnly) result.workerFixture = await createAndroidWorkerMedia(directory, result.configurationFixture.path, join(ffmpeg, 'ffmpeg.exe'), join(ffmpeg, 'ffprobe.exe'));
+        if (androidOnly || androidWorkerOnly || androidRelayOnly || androidAmbientOnly) result.workerFixture = await createAndroidWorkerMedia(directory, result.configurationFixture.path, join(ffmpeg, 'ffmpeg.exe'), join(ffmpeg, 'ffprobe.exe'));
         if (clientOnly) result.damageFixture = await authorVodDamage(result.configurationFixture.copyPath, join(directory, 'source', 'damaged.mp4'), join(ffmpeg, 'ffprobe.exe'));
         const image = JSON.parse(await checked(['image', 'inspect', 'postgres:18', '--format', '{{json .}}']));
         if (!/^sha256:[a-f0-9]{64}$/.test(image.Id || '') || image.Os !== 'linux') throw new Error('VOD PostgreSQL image must be immutable Linux PostgreSQL18.');
@@ -104,12 +105,13 @@ async function main() {
         delete env.DUSKCUE_TEST_VOD_DAMAGED_COPY;
         if (clientOnly) env.DUSKCUE_TEST_VOD_DAMAGED_COPY=result.damageFixture.path;
         if(nativeManifest)env.DUSKCUE_TEST_VOD_NATIVE_MANIFEST=nativeManifest;
-        if(androidOnly||androidRelayOnly)env.DUSKCUE_ANDROID_DEADLINE_FILE=join(directory,'native-deadline.txt');
+        if(androidOnly||androidRelayOnly||androidAmbientOnly)env.DUSKCUE_ANDROID_DEADLINE_FILE=join(directory,'native-deadline.txt');
         const cases = [
             ['android-worker','--lib','domains::playback::commands::tests::android_worker::windows_owned_encoder_stall',true],
             ['android-scope','--lib','domains::playback::commands::tests::android_scope::real_android_scope_ownership',true],
             ['android','--lib','domains::playback::commands::tests::android::real_android_player_protocol_two',true],
             ['android-relay','--lib','domains::playback::commands::tests::android_relay::real_android_relay_and_formats',true],
+            ['android-ambient','--lib','domains::playback::commands::tests::android_ambient::real_android_ambient_ownership',true],
             ['client','--lib','domains::playback::commands::tests::client::real_shared_player_protocol_two',true],
             ['commands','--lib','domains::playback::commands::tests::command_protocol_retains_scope_readiness_delivery_and_confirmed_cleanup',true],
             ['configuration','--lib','domains::playback::commands::tests::same_viewer_operations_preserve_revisions_progress_claims_and_cleanup',true],
@@ -125,7 +127,7 @@ async function main() {
             ['stop', '--test', 'playback_stop_contract', true],
         ];
         for (const [name, target, selector, ignored] of cases) {
-            if (androidRelayOnly ? name !== 'android-relay' : androidWorkerOnly ? name !== 'android-worker' : androidOnly ? !['android-worker', 'android', 'android-scope', 'android-relay'].includes(name) : ['android-worker', 'android', 'android-scope', 'android-relay'].includes(name)) continue;
+            if (androidAmbientOnly ? name !== 'android-ambient' : androidRelayOnly ? name !== 'android-relay' : androidWorkerOnly ? name !== 'android-worker' : androidOnly ? !['android-worker', 'android', 'android-scope', 'android-relay', 'android-ambient'].includes(name) : ['android-worker', 'android', 'android-scope', 'android-relay', 'android-ambient'].includes(name)) continue;
             if(clientOnly&&name!=='client'||!clientOnly&&name==='client')continue;
             if(commandsOnly&&!['commands','configuration'].includes(name))continue;
             if(startOnly&&name!=='commands')continue;

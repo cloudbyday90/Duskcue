@@ -12,6 +12,7 @@ import { installedAndroidApk, androidTcpMapping } from './android-evidence.mjs';
 import { runAndroidStage } from './android-stage.mjs';
 import { runAndroidFaultStage } from './android-fault-stage.mjs';
 import { androidDriverInputs } from './android-driver-inputs.mjs';
+import { ambientStages } from './android-ambient-policy.mjs';
 
 const packageName = 'com.duskcue.mobile.qualification';
 
@@ -28,7 +29,7 @@ export async function runAndroidApplication(workspace, owner, fixture) {
     const driverInputs = await androidDriverInputs(workspace, sdk, dart);
     await writeFile(join(owner.directory, 'driver-inputs.json'), JSON.stringify(driverInputs));
     const origin = new URL(fixture.origin);
-    if (origin.origin !== fixture.origin || origin.protocol !== 'http:' || origin.hostname !== '127.0.0.1' || !origin.port) throw new Error('Use the owned loopback backend.');
+    if (origin.origin !== fixture.origin || !origin.port || !(origin.protocol === 'http:' && origin.hostname === '127.0.0.1' || fixture.suite === 'ambient' && origin.protocol === 'https:' && origin.hostname === 'localhost')) throw new Error('Use the owned loopback backend.');
     let installed = false, reversed = false, failure;
     try {
         const installation = await owner.command(['install', '--no-streaming', artifact], { timeoutMs: 60000 });
@@ -41,22 +42,22 @@ export async function runAndroidApplication(workspace, owner, fixture) {
         if (digest !== receipt.apk) throw new Error('Installed APK identity differs from the verified artifact.');
         if (await owner.command(['shell', 'pm', 'clear', packageName]) !== 'Success') throw new Error('Owned app state did not clear.');
         await owner.command(['reverse', '--no-rebind', `tcp:${origin.port}`, `tcp:${origin.port}`]); reversed = true;
-        if (fixture.alternate_origin) {
-            const alternate = new URL(fixture.alternate_origin);
-            if (alternate.origin !== fixture.alternate_origin || alternate.protocol !== 'http:' || alternate.hostname !== '127.0.0.1' || !alternate.port || alternate.port === origin.port) throw new Error('Use a distinct owned alternate loopback origin.');
+        for (const value of [fixture.alternate_origin, fixture.suite === 'ambient' ? fixture.http_origin : null].filter(Boolean)) {
+            const alternate = new URL(value);
+            if (alternate.origin !== value || alternate.protocol !== 'http:' || alternate.hostname !== '127.0.0.1' || !alternate.port || alternate.port === origin.port) throw new Error('Use a distinct owned alternate loopback origin.');
             await owner.command(['reverse', '--no-rebind', `tcp:${alternate.port}`, `tcp:${alternate.port}`]);
         }
         const stages = [];
         let expectedStart;
-        for (const scenario of fixture.suite === 'scope' ? ['scope-profile', 'scope-session'] : fixture.suite === 'relay' ? ['relay-boundary', 'relay-formats'] : ['baseline', 'cold-retain', 'cold-restore', 'corrupt-retain', 'corrupt-refuse', 'corrupt-restore']) {
+        for (const scenario of fixture.suite === 'ambient' ? ambientStages : fixture.suite === 'scope' ? ['scope-profile', 'scope-session'] : fixture.suite === 'relay' ? ['relay-boundary', 'relay-formats'] : ['baseline', 'cold-retain', 'cold-restore', 'corrupt-retain', 'corrupt-refuse', 'corrupt-restore']) {
             const directory = join(owner.directory, scenario);
             await mkdir(directory);
             const result = await runAndroidStage(workspace, owner, {
-                fixture: { ...fixture, scenario, ...(expectedStart ? { expected_start: expectedStart } : {}) },
+                fixture: { ...fixture, ...(scenario === 'ambient-controls' ? { origin: fixture.http_origin } : {}), scenario, ...(expectedStart ? { expected_start: expectedStart } : {}) },
                 sdk, dart, driverInputs, directory,
             });
             stages.push(result);
-            if (scenario === 'cold-retain') await delay(65000);
+            if (scenario === 'cold-retain' || scenario === 'ambient-cold-retain') await delay(65000);
             if (scenario.endsWith('-retain')) expectedStart = result.start;
             if (scenario.endsWith('-restore')) {
                 if (result.start !== expectedStart) throw new Error('Cold journal changed the retained Start identity.');
@@ -83,7 +84,7 @@ export async function runAndroidApplication(workspace, owner, fixture) {
                 if (await owner.command(['uninstall', packageName]) !== 'Success') throw new Error('Owned app credentials/bootstrap/journal removal was not confirmed.');
             } catch (error) { errors.push(error); }
         }
-        if (reversed) for (const value of [fixture.origin, fixture.alternate_origin].filter(Boolean)) try {
+        if (reversed) for (const value of [fixture.origin, fixture.alternate_origin, fixture.suite === 'ambient' ? fixture.http_origin : null].filter(Boolean)) try {
             const port = Number(new URL(value).port), key = `tcp:${port}`;
             if (androidTcpMapping(await owner.command(['reverse', '--list']), port)) await owner.command(['reverse', '--remove', key]);
             if (androidTcpMapping(await owner.command(['reverse', '--list']), port)) throw new Error('Owned backend reverse remains.');

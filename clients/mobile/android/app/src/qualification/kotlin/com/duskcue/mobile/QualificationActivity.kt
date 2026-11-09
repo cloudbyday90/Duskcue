@@ -9,8 +9,14 @@ import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.embedding.engine.FlutterShellArgs
 import io.flutter.plugin.common.MethodChannel
 import org.json.JSONObject
+import com.duskcue.mobile.ambient.AmbientNativeProbe
+import com.duskcue.mobile.ambient.AmbientFailure
+import android.os.Handler
+import android.os.Looper
+import java.util.concurrent.atomic.AtomicBoolean
 
 class QualificationActivity : MainActivity() {
+    private val ambientProbePending = AtomicBoolean()
     private fun privateBootstrap(): String {
         val bootstrap = File(noBackupFilesDir, "playback-bootstrap.json")
         check(bootstrap.isFile && bootstrap.length() in 1..4096)
@@ -46,6 +52,17 @@ class QualificationActivity : MainActivity() {
                     "storageProbe" -> result.success(storage.probe())
                     "storageCorrupt" -> result.success(storage.corrupt())
                     "storageRestore" -> { storage.restore(); result.success(null) }
+                    "ambientFixtureCa" -> result.success(resources.openRawResource(R.raw.ambient_fixture_ca).use { it.readNBytes(4096) })
+                    "ambientProbe" -> {
+                        check(ambientProbePending.compareAndSet(false, true))
+                        Thread({
+                            val outcome = runCatching { AmbientNativeProbe(applicationContext).run(JSONObject(privateBootstrap())) }
+                            Handler(Looper.getMainLooper()).post {
+                                ambientProbePending.set(false)
+                                outcome.fold({ result.success(it) }, { result.error((it as? AmbientFailure)?.code ?: "AMBIENT_PROBE", "Native ambient probe failed", null) })
+                            }
+                        }, "ambient-probe-owner").start()
+                    }
                     else -> result.notImplemented()
                 }
             } catch (_: Exception) { result.error("QUALIFICATION_BOOTSTRAP", "Private qualification bootstrap unavailable", null) }

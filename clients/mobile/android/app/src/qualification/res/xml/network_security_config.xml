@@ -1,0 +1,13 @@
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors><certificates src="system" /></trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain>localhost</domain>
+        <domain>127.0.0.1</domain>
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="@raw/ambient_fixture_ca" />
+        </trust-anchors>
+    </domain-config>
+</network-security-config>

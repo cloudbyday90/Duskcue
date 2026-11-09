@@ -3,12 +3,13 @@
 // Licensed under AGPL-3.0. See LICENSE for details.
 
 import { createServer, request as httpRequest } from 'node:http';
+import { createServer as createTlsServer } from 'node:https';
 import { Transform } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import { once } from 'node:events';
 import { boundedBody, faultRoute, fixedOrigin, requestHeaders, responseHeaders } from './android-fault-policy.mjs';
 
-export async function createFaultGateway(fixture, { scopeTokens, relayWitness } = {}) {
+export async function createFaultGateway(fixture, { scopeTokens, relayWitness, ambientChannels, tls } = {}) {
     const origin = fixedOrigin(fixture.origin);
     if (typeof fixture.token !== 'string' || !fixture.token || fixture.token.length > 2048 || /[\r\n]/.test(fixture.token)) throw new Error('A captured fixture credential is required.');
     const credentials = scopeTokens ?? [fixture.token];
@@ -18,6 +19,7 @@ export async function createFaultGateway(fixture, { scopeTokens, relayWitness } 
     let closing = false, failure, completion, renewArmedAt = 0;
     let armed = false, held = false, cancelled = false, release;
     const routeFor = (method, path) => {
+        if (ambientChannels?.some((channel) => method === 'POST' && path === `/api/v1/ambient-channels/${channel}/next`)) return { media: false };
         if (relayWitness && method === 'POST' && path === '/api/v1/qualification/relay-output') return { media: false };
         if (scopeTokens && (method === 'POST' && (/^\/api\/v1\/profiles\/[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\/switch$/.test(path) || path === '/api/v1/auth/logout') || path === '/qualification/scope' && ['GET', 'POST'].includes(method))) return { media: false };
         return faultRoute(method, path);
@@ -122,7 +124,7 @@ export async function createFaultGateway(fixture, { scopeTokens, relayWitness } 
             }
         }
     }
-    const server = createServer({ maxHeaderSize: 8192, headersTimeout: 5000, requestTimeout: 30000 }, (request, response) => {
+    const server = (tls ? createTlsServer : createServer)({ ...tls, maxHeaderSize: 8192, headersTimeout: 5000, requestTimeout: 30000 }, (request, response) => {
         if (closing || failure || active.size >= 8 || trace.length >= 2048) return refuse(response, 503);
         if (!credentials.some((token) => request.headers.authorization === `Bearer ${token}`)) return refuse(response, 401);
         try { routeFor(request.method, request.url); } catch { return refuse(response, 404); }
@@ -141,7 +143,7 @@ export async function createFaultGateway(fixture, { scopeTokens, relayWitness } 
     server.on('clientError', (_, socket) => socket.destroy());
     await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
     return {
-        origin: `http://127.0.0.1:${server.address().port}`, trace,
+        origin: `${tls ? 'https://localhost' : 'http://127.0.0.1'}:${server.address().port}`, trace,
         verifyScope(starts, requireCancellation) {
             if (!scopeTokens || failure || active.size || armed || held) throw new Error('Scope witness did not settle.');
             const entries = trace.filter((entry) => entry.method === 'POST' && entry.path === '/api/v1/playback-commands');

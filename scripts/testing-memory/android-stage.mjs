@@ -13,6 +13,7 @@ import { captureAndroidFailure } from './android-diagnostics.mjs';
 import { androidStageBudget } from './android-stage-budget.mjs';
 import { bootstrapAndroidDriver } from './android-driver-bootstrap.mjs';
 import { androidDriverInputs } from './android-driver-inputs.mjs';
+import { ambientFlags } from './android-ambient-policy.mjs';
 
 const packageName = 'com.duskcue.mobile.qualification';
 
@@ -58,6 +59,19 @@ export async function runAndroidStage(workspace, owner, { fixture, sdk, dart, dr
         bootstrap = await bootstrapAndroidDriver(owner, { fixture, directory, port, budget,
             onPhase(line) {
                 onPhase?.(line);
+                if (fixture.scenario === 'ambient-background' && line.endsWith('ANDROID_PHASE ambient-background')) {
+                    if (background) throw new Error('Duplicate ambient background phase.');
+                    background = (async () => {
+                        const command = (args) => owner.command(args, { timeoutMs: Math.min(15000, budget.remaining()), bytes: 65536, outputBudget: budget, abortSignal: budget.signal });
+                        await command(['shell', 'input', 'keyevent', 'KEYCODE_HOME']);
+                        await command(['shell', 'input', 'keyevent', 'KEYCODE_SLEEP']);
+                        await delay(18000, undefined, { signal: budget.signal });
+                        await command(['shell', 'input', 'keyevent', 'KEYCODE_WAKEUP']);
+                        await command(['shell', 'wm', 'dismiss-keyguard']);
+                        await command(['shell', 'am', 'start', '-W', '-n', `${packageName}/com.duskcue.mobile.QualificationActivity`]);
+                    })().catch((error) => { backgroundError = error; budget.fail(error); });
+                    return;
+                }
                 if (fixture.scenario !== 'baseline' || !line.endsWith('ANDROID_PHASE background')) return;
                 if (background) throw new Error('Duplicate native background phase.');
                 background = (async () => {
@@ -92,12 +106,13 @@ export async function runAndroidStage(workspace, owner, { fixture, sdk, dart, dr
     }
     if (execution.code !== 0 || execution.signal) throw new Error(`Actual Android ${fixture.scenario} failed; inspect the bounded owned log.`);
     if (fixture.scenario === 'baseline' && !background) throw new Error('Actual Android OS background phase was not observed.');
+    if (fixture.scenario === 'ambient-background' && !background) throw new Error('Actual ambient Home/lock phase was not observed.');
     if (await owner.command(['shell', 'cat', '/proc/sys/kernel/random/boot_id']) !== owner.bootId) throw new Error('Owned Android guest rebooted during its stage.');
     const resultBytes = await readFile(join(directory, 'native-result.json'));
     if (resultBytes.length > 4096) throw new Error('Native result exceeded its evidence bound.');
     const result = JSON.parse(resultBytes);
     if (result.scenario !== fixture.scenario) throw new Error('Native scenario attribution differs.');
-    const required = fixture.scenario.startsWith('relay-')
+    const required = fixture.scenario.startsWith('ambient-') ? ambientFlags(fixture.scenario) : fixture.scenario.startsWith('relay-')
         ? ['same_viewer', 'confirmed_cleanup', ...(fixture.scenario === 'relay-boundary' ? ['eight_socket_gate', 'native_backpressure'] : ['generated_outputs', 'three_authored_frames', 'explicit_quality_changes'])]
         : fixture.scenario.startsWith('scope-')
         ? ['real_provider', 'old_output_refused', 'no_replay', 'confirmed_cleanup', ...(fixture.scenario === 'scope-profile' ? ['profile_cleanup_only', 'http_cancelled'] : ['unsent_cleared', 'native_barrier', 'strong_scope_clear'])]

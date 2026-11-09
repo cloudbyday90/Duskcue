@@ -21,27 +21,65 @@ import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.StandardMessageCodec
 import io.flutter.plugin.platform.PlatformView
 import io.flutter.plugin.platform.PlatformViewFactory
+import com.duskcue.mobile.ambient.AmbientApplication
+import com.duskcue.mobile.ambient.AmbientIdentity
+import com.duskcue.mobile.ambient.AmbientOwner
+import com.duskcue.mobile.ambient.demand
 
 object AmbientPlaybackBridge {
     private const val CHANNEL = "duskcue/ambient_player"
     private const val VIEW_TYPE = "duskcue/ambient_player_view"
+    private fun bound(owner: AmbientOwner, arguments: Any?) {
+        val value = (arguments as? Map<*, *>)?.get("runtime") as? Map<*, *>
+        val supplied = value?.let(::AmbientIdentity)
+        demand(if (supplied == null) owner.identity == null else supplied.same(owner.identity), "scope_changed")
+    }
 
     fun register(context: Context, flutterEngine: FlutterEngine) {
         flutterEngine.platformViewsController.registry.registerViewFactory(VIEW_TYPE, AmbientPlayerViewFactory())
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
-            when (call.method) {
+            try { when (call.method) {
                 "start" -> {
                     val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any?>()
-                    AmbientPlaybackService.start(context.applicationContext, args)
+                    AmbientApplication.start(context.applicationContext, args)
                     result.success(null)
                 }
                 "stop", "clear" -> {
-                    AmbientPlaybackService.stop(context.applicationContext)
-                    result.success(null)
+                    val owner = AmbientApplication.owner(context)
+                    bound(owner, call.arguments)
+                    AmbientApplication.cancelPending()
+                    if (owner.legacyMode) {
+                        LegacyAmbientPlaybackService.stop(context)
+                        result.success(null)
+                    } else owner.stop().whenComplete { _, error ->
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            if (error == null) result.success(null) else result.error("ambient_cleanup_pending", "Ambient cleanup is not confirmed", null)
+                        }
+                    }
                 }
-                "status" -> result.success(AmbientPlaybackService.status())
+                "bind" -> AmbientApplication.fence(context, call.arguments as? Map<*, *>).whenComplete { _, error ->
+                    android.os.Handler(android.os.Looper.getMainLooper()).post {
+                        if (error == null) result.success(null) else result.error("ambient_cleanup_pending", "Ambient reconciliation is not confirmed", null)
+                    }
+                }
+                "status" -> {
+                    val owner = AmbientApplication.owner(context)
+                    bound(owner, call.arguments)
+                    result.success(if (owner.legacyMode) LegacyAmbientPlaybackService.status() else owner.status())
+                }
+                "play", "pause", "check", "seek" -> {
+                    val owner = AmbientApplication.owner(context)
+                    bound(owner, call.arguments)
+                    if (call.method == "pause") AmbientApplication.pausePending()
+                    val position = (call.arguments as? Map<*, *>)?.get("position_ms") as? Number
+                    owner.action(call.method, position?.toLong()).whenComplete { _, error ->
+                        android.os.Handler(android.os.Looper.getMainLooper()).post {
+                            if (error == null) result.success(null) else result.error("ambient_control_unavailable", "Check ambient playback status", null)
+                        }
+                    }
+                }
                 else -> result.notImplemented()
-            }
+            } } catch (_: Exception) { result.error("ambient_unavailable", "Ambient playback is unavailable; check status", null) }
         }
     }
 }
@@ -57,12 +95,14 @@ private class AmbientPlayerPlatformView(context: Context) : PlatformView {
 
     init {
         playerView.useController = true
-        AmbientPlaybackService.attach(playerView)
+        val owner = AmbientApplication.owner(context)
+        if (owner.legacyMode) LegacyAmbientPlaybackService.attach(playerView) else owner.attachView(playerView)
     }
 
     override fun getView() = playerView
 
     override fun dispose() {
-        AmbientPlaybackService.detach(playerView)
+        AmbientApplication.owner(playerView.context).detachView(playerView)
+        LegacyAmbientPlaybackService.detach(playerView)
     }
 }

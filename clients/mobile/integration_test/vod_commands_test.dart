@@ -27,6 +27,7 @@ import 'lost_outcomes.dart';
 import 'worker_recovery.dart';
 import 'scope_journeys.dart';
 import 'relay_journeys.dart';
+import 'ambient_journeys.dart';
 
 void main() {
   final binding = IntegrationTestWidgetsFlutterBinding.ensureInitialized();
@@ -37,6 +38,10 @@ void main() {
     final raw = await channel.invokeMethod<String>('bootstrap');
     require(raw != null && utf8.encode(raw).length <= 4096);
     final fixture = decodeWire(utf8.encode(raw!));
+    if (fixture['suite'] == 'ambient') {
+      await runAmbientJourney(tester, binding, channel, fixture);
+      return;
+    }
     if (fixture['suite'] == 'scope') {
       await runScopeJourney(tester, binding, channel, fixture);
       return;

@@ -18,7 +18,8 @@ const flutterService = read('clients/mobile/lib/services/ambient_playback_servic
 const flutterScreen = read('clients/mobile/lib/screens/ambient_player_screen.dart');
 const profileScreen = read('clients/mobile/lib/screens/profile_selection_screen.dart');
 const authService = read('clients/mobile/lib/services/auth_service.dart');
-const androidService = read('clients/mobile/android/app/src/main/kotlin/com/duskcue/mobile/AmbientPlaybackService.kt');
+const androidService = read('clients/mobile/android/app/src/main/kotlin/com/duskcue/mobile/LegacyAmbientPlaybackService.kt');
+const commandService = read('clients/mobile/android/app/src/main/kotlin/com/duskcue/mobile/AmbientPlaybackService.kt');
 const androidBridge = read('clients/mobile/android/app/src/main/kotlin/com/duskcue/mobile/AmbientPlaybackBridge.kt');
 const androidManifest = read('clients/mobile/android/app/src/main/AndroidManifest.xml');
 const androidGradleProperties = read('clients/mobile/android/gradle.properties');
@@ -30,13 +31,15 @@ const fixture = read('docs/api/fixtures/playback/v1/ambient-channel-revision.jso
 assert.match(flutterService, /MethodChannel\('duskcue\/ambient_player'\)/);
 assert.match(flutterService, /'server_origin': origin\.toString\(\)/);
 assert.match(flutterService, /'bearer_token': token/);
-assert.match(flutterService, /invokeMapMethod<Object\?, Object\?>\('status'\)/);
+assert.match(flutterService, /invokeMapMethod<Object\?, Object\?>\('status',/);
 assert.match(flutterScreen, /AndroidView\(viewType: 'duskcue\/ambient_player_view'\)/);
 assert.match(flutterScreen, /UiKitView\(viewType: 'duskcue\/ambient_player_view'\)/);
 assert.match(profileScreen, /ambientPlaybackServiceProvider\)\.clear\(\)/);
-assert.match(authService, /_ambientPlayback\.clear\(\)/);
+assert.match(authService, /_ambientPlayback\.fenceForLogout\(\)/);
 
-assert.match(androidService, /class AmbientPlaybackService : MediaSessionService\(\)/);
+assert.match(androidService, /class LegacyAmbientPlaybackService : MediaSessionService\(\)/);
+assert.match(commandService, /class AmbientPlaybackService : MediaSessionService\(\)/);
+assert.match(commandService, /triggerNotificationUpdate\(\)/);
 assert.match(androidGradleProperties, /org\.gradle\.jvmargs=-Xmx8G/);
 assert.match(androidGradleProperties, /android\.useAndroidX=true/);
 assert.match(androidGradleProperties, /android\.enableJetifier=true/);
@@ -69,4 +72,4 @@ assert.match(contracts, /PLAY_019/);
 assert.match(contracts, /must never persist a stream URL, bearer\/signed token/);
 assert.match(fixture, /"client_action": "discard pending selection and call next again"/);
 
-console.log('Verified Flutter/native ambient queue ownership, revision safety, lifecycle cleanup, and restoration boundaries.');
+console.log('Verified ambient legacy fallback and command-service source wiring. Native behavior requires separate qualification.');

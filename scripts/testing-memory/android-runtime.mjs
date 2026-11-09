@@ -10,6 +10,7 @@ import { runAndroidApplication } from './android-app.mjs';
 import { androidToolInputs, androidFailure } from './android-evidence.mjs';
 import { runAndroidScopeApplication } from './android-scope-app.mjs';
 import { runAndroidRelayApplication } from './android-relay-app.mjs';
+import { runAndroidAmbientApplication } from './android-ambient-app.mjs';
 
 const workspace = fileURLToPath(new URL('../../', import.meta.url));
 async function main() {
@@ -17,7 +18,7 @@ async function main() {
     const fixtureBytes = await readFile(process.env.DUSKCUE_VOD_CLIENT_FIXTURE);
     if (fixtureBytes.length > 4096) throw new Error('Private Android fixture is oversized.');
     const fixture = JSON.parse(fixtureBytes);
-    if (fixture.suite !== undefined && !['scope', 'relay'].includes(fixture.suite)) throw new Error('Unknown native suite.');
+    if (fixture.suite !== undefined && !['scope', 'relay', 'ambient'].includes(fixture.suite)) throw new Error('Unknown native suite.');
     const directory = join(workspace, '.cache/android-playback', `native-${process.env.DUSKCUE_TEST_RESOURCE_ID}${fixture.suite ? `-${fixture.suite}` : ''}`);
     const deadlinePath = process.env.DUSKCUE_ANDROID_DEADLINE_FILE;
     if (!deadlinePath) throw new Error('Use the shared managed native deadline.');
@@ -29,7 +30,7 @@ async function main() {
     const owner = await createAndroidOwner(workspace, directory);
     let failure;
     const result = { status: 'in_progress', cleanup: false, tools: inputs };
-    try { Object.assign(result, await (fixture.suite === 'scope' ? runAndroidScopeApplication : fixture.suite === 'relay' ? runAndroidRelayApplication : runAndroidApplication)(workspace, owner, fixture)); result.status = 'passed'; }
+    try { Object.assign(result, await (fixture.suite === 'scope' ? runAndroidScopeApplication : fixture.suite === 'relay' ? runAndroidRelayApplication : fixture.suite === 'ambient' ? runAndroidAmbientApplication : runAndroidApplication)(workspace, owner, fixture)); result.status = 'passed'; }
     catch (error) { failure = error; result.status = 'failed'; result.error = androidFailure(error, fixture.token); }
     finally {
         try { await owner.close(); result.cleanup = true; }

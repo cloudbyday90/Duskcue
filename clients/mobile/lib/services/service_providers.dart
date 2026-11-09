@@ -34,6 +34,7 @@ import 'package:duskcue_mobile/services/realtime_service.dart';
 import 'package:duskcue_mobile/services/secure_storage_service.dart';
 import 'package:duskcue_mobile/services/server_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:duskcue_mobile/stores/session_store.dart';
 
 final secureStorageProvider = Provider<SecureStorageService>((ref) {
   return const SecureStorageService();
@@ -69,7 +70,22 @@ final nativePasskeyProvider = Provider<NativePasskeyService>((ref) {
 });
 
 final ambientPlaybackServiceProvider = Provider<AmbientPlaybackService>((ref) {
-  return AmbientPlaybackService(apiClient: ref.watch(apiClientProvider));
+  final service = AmbientPlaybackService(
+    apiClient: ref.watch(apiClientProvider),
+    scope: () {
+      final session = ref.read(sessionProvider);
+      final user = session.user;
+      return user == null || !session.isAuthenticated ? null : AmbientClientScope(
+        user.id, user.activeProfileId, ready: session.isProfileScopeReady,
+      );
+    },
+  );
+  ref.listen(sessionProvider, (previous, next) {
+    if (previous?.user?.id != next.user?.id || previous?.user?.activeProfileId != next.user?.activeProfileId ||
+        previous?.isProfileScopeReady != next.isProfileScopeReady || previous?.server != next.server) service.scopeChanged();
+  });
+  ref.onDispose(service.dispose);
+  return service;
 });
 
 final authServiceProvider = Provider<AuthService>((ref) {
