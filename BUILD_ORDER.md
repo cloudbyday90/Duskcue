@@ -22,6 +22,8 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **Authority:** [SvelteKit 2 patch design, Astra review and qualification](docs/security/SVELTEKIT_2_SECURITY_PATCH.md). The selected candidate raises Kit to 2.70.4 and adapter-static to 3.0.11 without changing the framework major, configuration, adapter-node, cookie override or Android stack. Published registry/tagged-source metadata agrees; only two root floors and two lock distribution identities change, with 188 other package nodes preserved.
 
+**Source candidate:** `67be9361d67dff3bbe9760e6a3fc60e89cbf3a31` on main; documentation-only successors preserve this uninstalled/unqualified attribution.
+
 **Outcome:** source preparation and independent boundary/compatibility review complete; actual installed packages remain Kit 2.70.2/static 3.0.10. Both baseline and candidate guarded `web-install` attempts refuse before execution. Updated-package trigger tests, analysis, units, Node/static builds and browser qualification have not run. This is not a verified security fix or a production release. The authority corrects the cache-header advisory's stale 3.0-only interpretation using the 2.70.4 backport, without claiming provider alert closure or a demonstrated application exploit.
 
 **PR/maintenance:** GitHub MCP finds only #6. Its branch is rebased once to the starting main `c70b29a`, verified at `6c739a8798b698f9d57da587e17ac79bea91d360`, with its known-failing major patch unchanged and unmerged. No install, generated build, VM, image deletion, app/model/service interruption or limit change occurs. Preserve compact refusal evidence and current reusable outputs.

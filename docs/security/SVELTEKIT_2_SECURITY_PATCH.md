@@ -4,6 +4,8 @@
 
 November 14, 2026 continuation from `c70b29a` on main. The selected maintenance item is the compatible `@sveltejs/kit` 2.70.2 → 2.70.4 and `@sveltejs/adapter-static` 3.0.10 → 3.0.11 pair. Raise their manifest minimums and exact lockfile nodes, retaining every other version, dependency range, override, configuration and platform contract. No framework major migration, Android change, production capability rollout or release is included.
 
+Source candidate: `67be9361d67dff3bbe9760e6a3fc60e89cbf3a31` on main. Documentation-only successors preserve this source attribution. The candidate is uninstalled and behaviorally unqualified.
+
 The operator requested Astra evaluation. Astra and a fresh independent read-only boundary investigator reviewed the application, upstream patches and compatibility. No product/API decision is reopened by these routine dependency patches. Current host commit pressure prevents the guarded clean-install prerequisite. Source preparation may continue, but security verification is **blocked** until the ordered checks below pass; installing a patched version alone is not a verified application fix.
 
 ## Official research
