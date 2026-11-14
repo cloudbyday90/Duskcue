@@ -90,6 +90,8 @@ After pushing implementation and documentation checkpoint `561545410f72f0dc967bd
 
 ### Remaining dependency maintenance
 
+November 14 continuation: the [compatible Kit/static patch authority](SVELTEKIT_2_SECURITY_PATCH.md) supersedes the historical 3.0-only cache-header interpretation below. Tagged Kit 2.70.4 backports escaping and other framework boundaries, while current provider alert metadata is stale/ambiguous for that low alert. Kit 2.70.4/static 3.0.11 are prepared as exact source metadata changes with no other graph change; actual packages remain uninstalled because the unchanged memory guard refuses clean installation. No new application exploitation, verified fix, runtime pass or alert closure is claimed. The enhanced-form and deepmerge reports remain separate. Preserve the existing override and do not force a major migration.
+
 October 26 post-push status: authenticated GitHub reads report only the two already documented low SvelteKit alerts, [33](https://github.com/cloudbyday90/Duskcue/security/dependabot/33) and [32](https://github.com/cloudbyday90/Duskcue/security/dependabot/32), naming the web lockfile and first patched version 3.0.0. The [qualified management client](../design/IPTV_MANAGEMENT_CLIENT.md) adds no enhanced form actions, `$app/forms` or `setHeaders`; the current source search finds none. Existing applicability limits and the separate major-compatibility review below remain. No dismissal, suppression or forced upgrade was performed. This is a provider-status receipt, not a new framework audit.
 
 

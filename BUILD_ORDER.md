@@ -18,6 +18,16 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **Next at the maintenance checkpoint:** review the positive worker-evidence observer below. That subsequent confirmed increment is now scoped-qualified: the cleaned Rust package was rebuilt under the unchanged guard, the full eight-stage native repeat passes and two new AVDs are retired. Maintenance itself did not authorize or qualify that behavior. Current compiler/SDK/APK inputs and compact evidence remain.
 
+## November 14 compatible web security patches (CANDIDATE — QUALIFICATION BLOCKED)
+
+**Authority:** [SvelteKit 2 patch design, Astra review and qualification](docs/security/SVELTEKIT_2_SECURITY_PATCH.md). The selected candidate raises Kit to 2.70.4 and adapter-static to 3.0.11 without changing the framework major, configuration, adapter-node, cookie override or Android stack. Published registry/tagged-source metadata agrees; only two root floors and two lock distribution identities change, with 188 other package nodes preserved.
+
+**Outcome:** source preparation and independent boundary/compatibility review complete; actual installed packages remain Kit 2.70.2/static 3.0.10. Both baseline and candidate guarded `web-install` attempts refuse before execution. Updated-package trigger tests, analysis, units, Node/static builds and browser qualification have not run. This is not a verified security fix or a production release. The authority corrects the cache-header advisory's stale 3.0-only interpretation using the 2.70.4 backport, without claiming provider alert closure or a demonstrated application exploit.
+
+**PR/maintenance:** GitHub MCP finds only #6. Its branch is rebased once to the starting main `c70b29a`, verified at `6c739a8798b698f9d57da587e17ac79bea91d360`, with its known-failing major patch unchanged and unmerged. No install, generated build, VM, image deletion, app/model/service interruption or limit change occurs. Preserve compact refusal evidence and current reusable outputs.
+
+**Next:** complete guarded clean installation and exact installed-graph validation, then the production-boundary and legitimate-flow checks in the authority. Existing Vite-dev browser tests cannot alone prove the built adapter-node malformed-path fix. Review the remaining low alerts separately. After web qualification, resume the unqualified Android ambient compiler/native gates below before expanding platforms or enabling production caps.
+
 ## November 8 Android ambient command owner (IMPLEMENTATION — QUALIFICATION PENDING)
 
 **Source checkpoints:** `e97833b` is the initial unqualified draft; `562145f5d818d9543ce3ccb6352822480a7caaf3` records the November 14 Astra ownership corrections on main. Both remain unqualified. Documentation-only successors preserve source attribution. The pending compiler, analysis, formatter, adversarial and native gates below remain required; this is not phase completion or a release.
@@ -30,7 +40,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **Next:** compile/correct the current draft, complete the remaining matrix and qualify the native owner and ambient journeys while preserving all twelve original journeys, backend/root/host limits and zero ambient personal-history mutation. iOS/offline, track/quality pickers, automatic ambient recovery, broader formats/devices, provider/DVR and production attachment/shared caps remain separate. Main only; no release.
 
-**New security follow-up:** the November 14 push exposes five existing web dependency alerts. [The alert inventory](docs/ci/SVELTEKIT_3_UPGRADE_REVIEW.md#dependency-alert-follow-up) records two moderate/three low reports and primary sources. Review and qualify compatible Kit 2.70.4/adapter-static 3.0.11 patches before further platform expansion; separately assess the remaining low alerts and coordinated major migration. PR #6's proposed 3.1.0/4.0.0 versions are themselves affected by the moderate advisories. No dependency fix, application-exposure validation or alert closure is claimed. Current-source Android and web qualification both remain subject to unchanged host admission.
+**Security follow-up:** the November 14 push reports five existing web dependency alerts. [The alert inventory](docs/ci/SVELTEKIT_3_UPGRADE_REVIEW.md#dependency-alert-follow-up) records two moderate/three low reports and primary sources. The compatible Kit 2.70.4/static 3.0.11 source candidate above is prepared but remains uninstalled/unqualified. PR #6's 3.1.0/4.0.0 targets are themselves affected. Separate remaining-alert/major-migration review and unchanged host admission still apply; no verified fix or alert closure is claimed.
 
 ## November 1 Android relay matrix (SCOPED QUALIFICATION COMPLETE)
 
