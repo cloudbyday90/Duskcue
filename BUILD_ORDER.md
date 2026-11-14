@@ -20,7 +20,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## November 8 Android ambient command owner (IMPLEMENTATION — QUALIFICATION PENDING)
 
-**Source checkpoint:** `e97833b` on main is an unqualified work-in-progress implementation. The pending compiler, analysis, formatter, adversarial and native gates below remain required; this is not phase completion or a release.
+**Source checkpoints:** `e97833b` is the initial unqualified draft; `562145f5d818d9543ce3ccb6352822480a7caaf3` records the November 14 Astra ownership corrections on main. Both remain unqualified. Documentation-only successors preserve source attribution. The pending compiler, analysis, formatter, adversarial and native gates below remain required; this is not phase completion or a release.
 
 **Authority:** [Android ambient migration](docs/design/VOD_ANDROID_AMBIENT_MIGRATION.md#complete-shared-contract--confirmed-at-8c8cb53), [native transport](docs/security/ANDROID_AMBIENT_TRANSPORT.md) and [qualification](docs/ci/ANDROID_AMBIENT_QUALIFICATION.md). The complete contract published at `8c8cb53` and all nine decisions are confirmed. Q8/Q9 require successful public player release and joined application-owned work, excluding private SDK audio/codec/HTTP/TLS housekeeping while retaining failures. The operator permits qualification to wait for memory; no current-source native pass is claimed.
 
