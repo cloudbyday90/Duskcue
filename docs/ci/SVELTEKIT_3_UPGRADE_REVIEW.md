@@ -1,5 +1,11 @@
 # SvelteKit 3 dependency PR review
 
+## November 14 Astra continuation
+
+GitHub MCP identifies exactly one open candidate, [Dependabot #6](https://github.com/cloudbyday90/Duskcue/pull/6). Thus the requested random choice has one member. The old head `de5310dcabfa52cdd5c17528683e6327edf6fd6d` was four commits behind/one ahead of main `883cd4c`. The connector has no rebase action. Under the existing stale-PR and saved-login authorization, the installed CLI rebases the existing PR once with only its request-process environment tokens bypassed and restored afterward; no comment, merge or local feature branch is created.
+
+A single-ref fetch verifies new head `5d7f013e183d1dc35b263ee7e78e2925fccff407`, zero behind/one ahead of that main checkpoint. Exact comparison against the old head shows no changes to either package file. Relevant web/desktop inputs remain unchanged since `07bd206`. The previous local application/install trial and `config_file_unsupported` failure therefore remain applicable; this continuation performs no redundant installation and claims no new migration pass. Retain the locked graph and unmerged PR pending a coordinated SvelteKit configuration/runtime/cookie migration. Do not repeatedly rebase to chase this task's later source/documentation commits. No release.
+
 ## November 8 ambient research review
 
 GitHub MCP returns exactly one open PR, [Dependabot #6](https://github.com/cloudbyday90/Duskcue/pull/6), still unmerged and mergeable. It is the only candidate for the requested random open-PR review. Compare evidence establishes three main commits since its previous base `ba8007176448be4daf754ed282217cf0c7fdb194`. The connector has no branch-rebase action; the authorized installed CLI rebases the existing PR once, using the previously approved saved login only in the request process and restoring its environment afterward. No comment or merge is sent.

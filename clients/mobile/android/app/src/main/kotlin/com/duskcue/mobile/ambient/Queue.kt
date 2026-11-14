@@ -139,7 +139,12 @@ internal fun AmbientOwner.advance(rt: AmbientRuntime) {
     }
     val after = rt.selection?.item
     var owned = rt
-    val work = try { commands.run(timeoutMs = 60000, cancel = http::cancelCommands) {
+    val work = try { commands.run(timeoutMs = 60000, cancel = http::cancelCommands, publish = { outcome ->
+        rt.advancing = false
+        rt.busy = false
+        outcome.exceptionOrNull()?.let { fail(owned, it) }
+        emit()
+    }) {
         demand(current(rt), "scope_changed")
         settle(rt, send = true, continuing = true)
         val next = synchronized(lock) {
@@ -155,5 +160,4 @@ internal fun AmbientOwner.advance(rt: AmbientRuntime) {
         Unit
     } } catch (error: Throwable) { rt.advancing = false; rt.busy = false; fail(rt, error); return }
     work.result.whenComplete { _, error -> if (error != null) fail(owned, error) }
-    work.actual.whenComplete { _, _ -> rt.advancing = false; rt.busy = false; emit() }
 }

@@ -38,6 +38,7 @@ class _AmbientPlayerScreenState extends ConsumerState<AmbientPlayerScreen> {
   );
   bool _stopping = false;
   bool _reading = false, _failedRead = false;
+  bool _hasStatus = false;
   String? _problem;
   double? _seekDraft;
   int? _seekEpoch;
@@ -65,12 +66,13 @@ class _AmbientPlayerScreenState extends ConsumerState<AmbientPlayerScreen> {
     try {
       final status = await _service.status();
       if (!mounted || epoch != _service.epoch) return;
-      setState(() { _status = status; _failedRead = false; _problem = null; });
+      setState(() { _status = status; _hasStatus = true; _failedRead = false; _problem = null; });
       _statusTimer?.cancel();
       _statusTimer = Timer(const Duration(seconds: 2), _refreshStatus);
     } catch (_) {
       if (mounted && epoch == _service.epoch) setState(() {
         _failedRead = true;
+        _hasStatus = false;
         _problem = 'Playback status could not be confirmed. Check status or stop the channel.';
         _status = const NativeAmbientPlaybackStatus(isActive: false);
       });
@@ -83,6 +85,7 @@ class _AmbientPlayerScreenState extends ConsumerState<AmbientPlayerScreen> {
       _seekDraft = null;
       _seekEpoch = null;
       _status = const NativeAmbientPlaybackStatus(isActive: false);
+      _hasStatus = false;
       _failedRead = true;
       _problem = 'The viewing session changed. Check status to review any remaining cleanup.';
     });
@@ -124,7 +127,7 @@ class _AmbientPlayerScreenState extends ConsumerState<AmbientPlayerScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final platformView = _failedRead ? const ColoredBox(color: Colors.black) : Platform.isAndroid
+    final platformView = _failedRead || !_hasStatus || !_status.isActive || _status.cleanupPending || _status.requiresPlay ? const ColoredBox(color: Colors.black) : Platform.isAndroid
         ? const AndroidView(viewType: 'duskcue/ambient_player_view')
         : Platform.isIOS
         ? const UiKitView(viewType: 'duskcue/ambient_player_view')

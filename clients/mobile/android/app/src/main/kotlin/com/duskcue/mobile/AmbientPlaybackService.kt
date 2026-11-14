@@ -15,10 +15,13 @@ import androidx.media3.session.DefaultMediaNotificationProvider
 import com.duskcue.mobile.ambient.AmbientApplication
 import com.duskcue.mobile.ambient.AmbientHost
 import com.duskcue.mobile.ambient.AmbientOwner
+import com.duskcue.mobile.ambient.AmbientStopIntents
 
 class AmbientPlaybackService : MediaSessionService(), AmbientHost {
     private lateinit var owner: AmbientOwner
     private var registered: MediaSession? = null
+    private var stopAction: PendingIntent? = null
+    private var latestStartId = 0
     override fun onCreate() {
         super.onCreate()
         owner = AmbientApplication.owner(applicationContext)
@@ -29,6 +32,8 @@ class AmbientPlaybackService : MediaSessionService(), AmbientHost {
         changed()
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        latestStartId = startId
+        super.onStartCommand(intent, flags, startId)
         when (intent?.action) {
             START -> {
                 val args = AmbientApplication.take(intent.getLongExtra("ticket", -1))
@@ -38,7 +43,12 @@ class AmbientPlaybackService : MediaSessionService(), AmbientHost {
                 }
                 else if (owner.runtime == null && !AmbientApplication.hasPending()) stopped()
             }
-            STOP -> { AmbientApplication.cancelPending(); owner.stop() }
+            STOP -> synchronized(owner.lock) {
+                if (AmbientStopIntents.matches(intent, owner.epochs.get(), AmbientApplication.pendingTicket())) {
+                    AmbientApplication.cancelPending()
+                    owner.stop()
+                } else stopped()
+            }
         }
         return START_NOT_STICKY
     }
@@ -53,11 +63,14 @@ class AmbientPlaybackService : MediaSessionService(), AmbientHost {
             session?.let { addSession(it) }
         }
         if (session != null) {
+            stopAction?.cancel()
+            stopAction = null
             triggerNotificationUpdate()
             return
         }
-        val pending = PendingIntent.getService(this, 0, Intent(this, AmbientPlaybackService::class.java).setAction(STOP),
-            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
+        val pending = AmbientStopIntents.pending(this, owner.epochs.get(), AmbientApplication.pendingTicket())
+        if (stopAction != pending) stopAction?.cancel()
+        stopAction = pending
         val launch = packageManager.getLaunchIntentForPackage(packageName)
         val open = launch?.let { PendingIntent.getActivity(this, 0, it, PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT) }
         val state = owner.status()["state"] as? String ?: "checking"
@@ -69,16 +82,20 @@ class AmbientPlaybackService : MediaSessionService(), AmbientHost {
     }
     override fun stopped() {
         if (owner.runtime != null || AmbientApplication.hasPending()) return
+        stopAction?.cancel()
+        stopAction = null
         stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        stopSelfResult(latestStartId)
     }
     override fun legacy(args: Map<*, *>) { LegacyAmbientPlaybackService.start(applicationContext, args); stopped() }
     override fun onTaskRemoved(rootIntent: Intent?) {
-        val state = owner.status()
-        if (state["is_playing"] != true) owner.stop()
+        if (isPlaybackOngoing && owner.backgroundPlaying()) return
+        owner.stop()
         super.onTaskRemoved(rootIntent)
     }
     override fun onDestroy() {
+        stopAction?.cancel()
+        stopAction = null
         if (owner.host === this) {
             owner.host = null
             if (!owner.legacyMode) owner.stop()

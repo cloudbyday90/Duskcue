@@ -48,7 +48,7 @@ internal class NativeLane(private val name: String, val capacity: Int, private v
     }.apply { allowCoreThreadTimeOut(true) }
     private val pending = mutableSetOf<CompletableFuture<Unit>>()
     @Synchronized fun count() = pending.size
-    fun <T> run(timeoutMs: Long = 5000, cancel: () -> Unit = {}, action: () -> T): NativeWork<T> {
+    fun <T> run(timeoutMs: Long = 5000, cancel: () -> Unit = {}, publish: (Result<T>) -> Unit = {}, action: () -> T): NativeWork<T> {
         val result = CompletableFuture<T>()
         val actual = CompletableFuture<T>()
         val complete = CompletableFuture<Unit>()
@@ -63,20 +63,26 @@ internal class NativeLane(private val name: String, val capacity: Int, private v
         catch (error: Exception) { synchronized(this) { pending.remove(complete) }; complete.complete(Unit); throw error }
         try {
             executor.execute {
-                val outcome = try { runCatching(action) } finally {
-                    ended.set(true)
-                    timer.close()
-                    synchronized(this) { pending.remove(complete) }
-                    complete.complete(Unit)
+                val computed = runCatching(action)
+                ended.set(true)
+                val outcome = try { publish(computed); computed } catch (error: Throwable) {
+                    val failure = computed.exceptionOrNull() ?: error
+                    if (failure !== error) failure.addSuppressed(error)
+                    Result.failure<T>(failure)
                 }
+                timer.close()
+                synchronized(this) { pending.remove(complete) }
+                complete.complete(Unit)
                 outcome.fold({ actual.complete(it); result.complete(it) }, { actual.completeExceptionally(it); result.completeExceptionally(it) })
             }
         } catch (_: Exception) {
+            val rejected = AmbientFailure("operation_busy")
+            val failure = try { publish(Result.failure(rejected)); rejected } catch (error: Throwable) { error }
             timer.close()
             synchronized(this) { pending.remove(complete) }
             complete.complete(Unit)
-            actual.completeExceptionally(AmbientFailure("operation_busy"))
-            result.completeExceptionally(AmbientFailure("operation_busy"))
+            actual.completeExceptionally(failure)
+            result.completeExceptionally(failure)
         }
         return NativeWork(result, actual, complete, cancellation)
     }

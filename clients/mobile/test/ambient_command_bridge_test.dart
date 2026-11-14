@@ -83,8 +83,7 @@ void main() {
     expect(runtime['scope_epoch'], '1:0');
     expect(runtime['user_id'], '019a6000-0000-7000-8000-000000000002');
     await service.fenceForLogout();
-    expect(calls.last.method, 'bind');
-    expect(calls.last.arguments, isNull);
+    expect(calls.where((call) => call.method == 'fence').last.arguments, isNull);
     await expectLater(service.start(lineup), throwsStateError);
     expect(calls.where((call) => call.method == 'start').length, 1);
   });
@@ -137,5 +136,112 @@ void main() {
       expect(runtime['user_id'], '019a6000-0000-7000-8000-000000000002');
     }
     expect((calls.firstWhere((call) => call.method == 'seek').arguments as Map)['position_ms'], 1234);
+  });
+
+  for (final change in ['account', 'profile', 'server', 'logout']) {
+    test('$change fences native playback before the old bind settles', () async {
+      final held = Completer<Object?>();
+      final calls = <MethodCall>[];
+      var binds = 0;
+      messenger.setMockMethodCallHandler(channel, (call) async {
+        calls.add(call);
+        if (call.method == 'bind' && binds++ == 0) return held.future;
+        return null;
+      });
+      final client = api();
+      var user = '019a6000-0000-7000-8000-000000000002';
+      final service = create(client, android: true, scope: () => AmbientClientScope(
+        user, '019a6000-0000-7000-8000-000000000003', ready: true));
+      try {
+        await Future<void>.delayed(Duration.zero);
+        switch (change) {
+          case 'account':
+            user = '019a6000-0000-7000-8000-000000000004';
+            client.setBearerToken('new-account-token');
+          case 'profile': client.fenceProfile();
+          case 'server': client.configure(Uri.parse('https://replacement.example'), bearerToken: 'new-server-token');
+          case 'logout': await service.fenceForLogout();
+        }
+        await Future<void>.delayed(Duration.zero);
+        expect(held.isCompleted, isFalse);
+        expect(calls.map((call) => call.method), ['bind', 'fence']);
+        final runtime = calls.last.arguments as Map?;
+        if (change == 'logout') expect(runtime, isNull);
+        if (change == 'account') expect(runtime?['user_id'], user);
+        if (change == 'profile') expect(runtime?['scope_epoch'], '1:1');
+        if (change == 'server') expect(runtime?['server_origin'], 'https://replacement.example');
+      } finally {
+        held.complete(null);
+        await Future<void>.delayed(Duration.zero);
+      }
+    });
+  }
+
+  test('coalesced fences keep restoration closed until the newest fence is acknowledged', () async {
+    final first = Completer<Object?>(), last = Completer<Object?>();
+    final calls = <MethodCall>[];
+    var fences = 0;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      if (call.method == 'fence') return ++fences == 1 ? first.future : last.future;
+      return null;
+    });
+    final client = api();
+    create(client, android: true, scope: () => const AmbientClientScope(
+      '019a6000-0000-7000-8000-000000000002', '019a6000-0000-7000-8000-000000000003', ready: true));
+    await Future<void>.delayed(Duration.zero);
+    client.setBearerToken('intermediate-token');
+    client.setBearerToken('latest-token');
+    await Future<void>.delayed(Duration.zero);
+    expect(fences, 1);
+    first.complete(null);
+    await Future<void>.delayed(Duration.zero);
+    expect(fences, 2);
+    expect(calls.where((call) => call.method == 'bind').length, 1);
+    expect((calls.last.arguments as Map)['bearer_token'], 'latest-token');
+    last.complete(null);
+    await Future<void>.delayed(Duration.zero);
+    expect(calls.where((call) => call.method == 'bind').length, 2);
+  });
+
+  test('unchanged wrapper recreation binds without forcing a native fence', () async {
+    final calls = <String>[];
+    messenger.setMockMethodCallHandler(channel, (call) async { calls.add(call.method); return null; });
+    final client = api();
+    AmbientClientScope scope() => const AmbientClientScope(
+      '019a6000-0000-7000-8000-000000000002', '019a6000-0000-7000-8000-000000000003', ready: true);
+    final previous = create(client, android: true, scope: scope);
+    await Future<void>.delayed(Duration.zero);
+    previous.dispose();
+    services.remove(previous);
+    create(client, android: true, scope: scope);
+    await Future<void>.delayed(Duration.zero);
+    expect(calls, ['bind', 'bind']);
+  });
+
+  test('logout waits for its null fence rather than an older acknowledgement', () async {
+    final older = Completer<Object?>(), logout = Completer<Object?>();
+    final calls = <MethodCall>[];
+    var fences = 0;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call);
+      if (call.method == 'fence') return ++fences == 1 ? older.future : logout.future;
+      return null;
+    });
+    final client = api();
+    final service = create(client, android: true, scope: () => const AmbientClientScope(
+      '019a6000-0000-7000-8000-000000000002', '019a6000-0000-7000-8000-000000000003', ready: true));
+    await Future<void>.delayed(Duration.zero);
+    client.fenceProfile();
+    var confirmed = false;
+    final pending = service.fenceForLogout().then((_) => confirmed = true);
+    older.complete(null);
+    await Future<void>.delayed(Duration.zero);
+    expect(fences, 2);
+    expect(calls.last.arguments, isNull);
+    expect(confirmed, isFalse);
+    logout.complete(null);
+    await pending;
+    expect(confirmed, isTrue);
   });
 }

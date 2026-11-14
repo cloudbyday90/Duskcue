@@ -61,6 +61,7 @@ internal class AmbientOwner(context: Context) {
     val epochs = AtomicLong()
     val outputs = mutableSetOf<AmbientOutput>()
     @Volatile var identity: AmbientIdentity? = null
+    private var bindingInitialized = false
     @Volatile var runtime: AmbientRuntime? = null
     @Volatile var host: AmbientHost? = null
     @Volatile var quarantined = false
@@ -73,6 +74,7 @@ internal class AmbientOwner(context: Context) {
     private var stopping: NativeWork<Unit>? = null
     var scopeFence: CompletableFuture<Unit>? = null
     private var view: PlayerView? = null
+    private var viewIdentity: AmbientIdentity? = null
 
     fun current(rt: AmbientRuntime, forCleanup: Boolean = false): Boolean =
         if (forCleanup) rt.identity.cleanupSame(identity)
@@ -113,7 +115,7 @@ internal class AmbientOwner(context: Context) {
         val channel = entity(args["channel_id"] as? String ?: "")
         val name = (args["channel_name"] as? String)?.takeIf { it.length in 1..256 } ?: throw AmbientFailure("invalid_channel")
         synchronized(lock) {
-            demand(scopeFence?.isDone != false && commands.count() == 0 && cleanup.count() == 0 && !quarantined && !http.failed && !journal.pending() && !journal.failed, "ambient_cleanup_pending")
+            demand(scopeFence?.isDone != false && commands.count() == 0 && cleanup.count() == 0 && !quarantined && !http.failed && !journal.pending() && !journal.failed && outputs.all { it === runtime?.output }, "ambient_cleanup_pending")
             demand(identity == null || identity!!.same(nextIdentity), "scope_changed")
             identity = nextIdentity
             lastError = null
@@ -127,7 +129,12 @@ internal class AmbientOwner(context: Context) {
             rt.protocol = AmbientProtocol(nextIdentity, http, clock) { current(rt, it) }
             rt.busy = true
             fallback = args.toMap()
-            val work = commands.run(timeoutMs = 60000, cancel = http::cancelCommands) {
+            val work = commands.run(timeoutMs = 60000, cancel = http::cancelCommands, publish = { outcome ->
+                rt.busy = false
+                previous?.busy = false
+                outcome.exceptionOrNull()?.let { fail(if (runtime === previous && previous != null) previous else rt, it) }
+                emit()
+            }) {
                 if (previous != null) settle(previous, send = true)
                 synchronized(lock) {
                     demand(epoch == epochs.get() && nextIdentity.same(identity), "scope_changed")
@@ -137,12 +144,6 @@ internal class AmbientOwner(context: Context) {
                 Unit
             }
             work.result.whenComplete { _, error -> if (error != null) fail(if (runtime === previous && previous != null) previous else rt, error) }
-            work.actual.whenComplete { _, error ->
-                rt.busy = false
-                previous?.busy = false
-                if (error != null) fail(if (runtime === previous && previous != null) previous else rt, error)
-                emit()
-            }
         }
         emit()
     }
@@ -157,16 +158,28 @@ internal class AmbientOwner(context: Context) {
         if (action == "stop") return stop()
         demand(action in setOf("play", "check", "seek") && current(rt, action == "check" && rt.cleanupOnly) && !quarantined && !rt.busy && clock.now() >= rt.retryAt, "control_unavailable")
         rt.busy = true
-        val work = try { commands.run(timeoutMs = 60000, cancel = http::cancelCommands) {
+        val work = try { commands.run(timeoutMs = 60000, cancel = http::cancelCommands, publish = { outcome ->
+            rt.busy = false
+            outcome.exceptionOrNull()?.let { fail(rt, it) }
+            emit()
+        }) {
             when (action) {
                 "seek" -> seek(rt, position ?: throw AmbientFailure("invalid_position"))
-                "play" -> { rt.protocol.context(); monitor(rt, once = true); demand(rt.ready != null && rt.phase == "ready", "viewer_unavailable"); rt.requiresPlay = false; rt.playIntent = true; attach(rt) }
+                "play" -> {
+                    rt.protocol.context()
+                    monitor(rt, once = true)
+                    demand(rt.ready != null && rt.phase == "ready", "viewer_unavailable")
+                    rt.requiresPlay = false
+                    rt.playIntent = true
+                    attach(rt)
+                    demand(outputCurrent(rt, rt.ready!!.output) && !quarantined && !http.failed, "viewer_unavailable")
+                    rt.error = null
+                }
                 "check" -> if (rt.cleanupOnly) settle(rt, send = false) else { rt.protocol.context(); monitor(rt, once = false) }
             }
             Unit
         } } catch (error: Throwable) { rt.busy = false; throw error }
         work.result.whenComplete { _, error -> if (error != null) fail(rt, error) }
-        work.actual.whenComplete { _, error -> rt.busy = false; if (error != null) fail(rt, error); emit() }
         emit()
         return work.result
     }
@@ -190,8 +203,9 @@ internal class AmbientOwner(context: Context) {
         }
         http.cancelCommands()
         rt?.output?.let { retireOutput(rt, it) }
-        val work = cleanup.run(timeoutMs = 60000) {
+        val work = cleanup.run(timeoutMs = 60000, publish = { rt?.busy = false; emit() }) {
             commands.drain().get()
+            retireTrackedOutputs()
             val captured = rt ?: runtime
             if (captured != null) settle(captured, send = true) else {
                 demand(!journalPresent && !quarantined && outputs.isEmpty() && !journal.pending() && !journal.failed, "ambient_cleanup_pending")
@@ -210,17 +224,30 @@ internal class AmbientOwner(context: Context) {
                 emit()
             }
         }
-        work.actual.whenComplete { _, _ -> rt?.busy = false; emit() }
         work.result
     }
 
     fun bind(args: Map<*, *>?): CompletableFuture<Unit> = synchronized(lock) {
         val next = args?.let(::AmbientIdentity)
-        val previous = identity
-        if (previous?.same(next) == true) return scopeFence?.takeIf { !it.isDone }?.thenCompose { restore() } ?: restore()
+        if (!bindingInitialized) { bindingInitialized = true; identity = next }
+        demand(next?.same(identity) == true || next == null && identity == null, "scope_changed")
+        val epoch = epochs.get()
+        val settled = scopeFence ?: CompletableFuture.completedFuture(Unit)
+        return settled.thenCompose {
+            synchronized(lock) {
+                demand(epoch == epochs.get() && (next?.same(identity) == true || next == null && identity == null), "scope_changed")
+                restore()
+            }
+        }
+    }
+
+    fun fence(args: Map<*, *>?): CompletableFuture<Unit> = synchronized(lock) {
+        val next = args?.let(::AmbientIdentity)
+        bindingInitialized = true
         identity = next
         epochs.incrementAndGet()
         http.cancel()
+        onMain { view?.player = null; view = null; viewIdentity = null; Unit }
         runtime?.let { rt ->
             rt.cleanupOnly = true
             rt.requiresPlay = true
@@ -231,23 +258,45 @@ internal class AmbientOwner(context: Context) {
         }
         fenceScope()
         emit()
-        return scopeFence!!.thenCompose { restore() }
+        return scopeFence!!
     }
 
-    fun retireOutput(rt: AmbientRuntime, output: AmbientOutput): CompletableFuture<Unit> {
+    fun retireOutput(rt: AmbientRuntime?, output: AmbientOutput): CompletableFuture<Unit> {
         onMain { view?.let { output.detachView(it) }; Unit }
-        return output.retire(cleanup).whenComplete { _, error ->
-            if (error != null) quarantined = true
+        return output.retire(cleanup) { outcome ->
+            if (outcome.isFailure) quarantined = true
             else {
                 synchronized(lock) { outputs.remove(output) }
-                if (rt.output === output) rt.output = null
+                if (rt != null && rt.output === output) rt.output = null
             }
             emit()
         }
     }
-    fun attachView(value: PlayerView) { view?.let { if (it !== value) it.player = null }; view = value; runtime?.output?.attachView(value) }
-    fun detachView(value: PlayerView) { value.player = null; if (view === value) view = null }
-    fun showOutput(rt: AmbientRuntime) { onMain { if (runtime === rt) view?.let { rt.output?.attachView(it) }; host?.changed(); Unit } }
+    fun retireTrackedOutputs() {
+        val captured = synchronized(lock) { outputs.toList() }
+        captured.forEach { retireOutput(runtime, it).get() }
+        synchronized(lock) { demand(outputs.isEmpty() && !quarantined, "ambient_cleanup_pending") }
+    }
+    fun backgroundPlaying(): Boolean {
+        val rt = runtime ?: return false
+        return rt.phase == "ready" && rt.output?.backgroundPlaying() == true
+    }
+    fun attachView(value: PlayerView) {
+        val rt = runtime
+        if (rt == null || !current(rt)) { value.player = null; return }
+        view?.let { if (it !== value) it.player = null }
+        view = value
+        viewIdentity = rt.identity
+        rt.output?.attachView(value)
+    }
+    fun detachView(value: PlayerView) { value.player = null; if (view === value) { view = null; viewIdentity = null } }
+    fun showOutput(rt: AmbientRuntime) {
+        onMain {
+            if (current(rt) && viewIdentity?.same(rt.identity) == true) view?.let { rt.output?.attachView(it) }
+            host?.changed()
+            Unit
+        }
+    }
     fun mediaSession(): MediaSession? = runtime?.output?.session
     fun status(): Map<String, Any?> {
         val rt = runtime

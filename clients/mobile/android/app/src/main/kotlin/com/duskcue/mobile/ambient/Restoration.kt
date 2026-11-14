@@ -13,7 +13,10 @@ internal fun AmbientOwner.restore(force: Boolean = false): CompletableFuture<Uni
         demand(commands.count() == 0 && cleanup.count() == 0 && !journal.pending(), "ambient_cleanup_pending")
         val captured = identity!!
         val epoch = epochs.get()
-        val work = commands.run {
+        val work = commands.run(publish = { outcome ->
+            if (outcome.isFailure && epoch == epochs.get()) lastError = "ambient_reconciliation_required"
+            emit()
+        }) {
             val record = journal.read().result.get()
             demand(epoch == epochs.get() && captured.same(identity), "scope_changed")
             journalPresent = record != null
@@ -41,10 +44,6 @@ internal fun AmbientOwner.restore(force: Boolean = false): CompletableFuture<Uni
             Unit
         }
         restoring = work
-        work.actual.whenComplete { _, error ->
-            if (error != null && epoch == epochs.get()) lastError = "ambient_reconciliation_required"
-            emit()
-        }
         return work.result
     }
 }

@@ -140,12 +140,17 @@ internal class AmbientOutput(
     }
     fun attachView(view: PlayerView) = onMain { view.player = facade; Unit }
     fun detachView(view: PlayerView) = onMain { if (view.player === facade) view.player = null; Unit }
-    @Synchronized fun retire(lane: NativeLane): CompletableFuture<Unit> {
+    fun backgroundPlaying(): Boolean {
+        val native = player ?: return false
+        return alive.get() && current() && playIntent() && native.playWhenReady &&
+            native.playbackState in setOf(Player.STATE_READY, Player.STATE_BUFFERING)
+    }
+    @Synchronized fun retire(lane: NativeLane, publish: (Result<Unit>) -> Unit): CompletableFuture<Unit> {
         retiring?.let { return it }
         alive.set(false)
         source.cancel()
         prepared.completeExceptionally(AmbientFailure("output_retired"))
-        val work = lane.run(timeoutMs = 30000) {
+        val work = lane.run(timeoutMs = 30000, publish = publish) {
             try { created.get() } catch (_: Exception) { }
             onMain {
                 try { session?.release(); facade?.release(); player?.release() }

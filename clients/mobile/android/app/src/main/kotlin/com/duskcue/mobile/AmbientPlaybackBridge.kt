@@ -25,10 +25,13 @@ import com.duskcue.mobile.ambient.AmbientApplication
 import com.duskcue.mobile.ambient.AmbientIdentity
 import com.duskcue.mobile.ambient.AmbientOwner
 import com.duskcue.mobile.ambient.demand
+import com.duskcue.mobile.ambient.ambientFailure
+import java.util.concurrent.atomic.AtomicLong
 
 object AmbientPlaybackBridge {
     private const val CHANNEL = "duskcue/ambient_player"
     private const val VIEW_TYPE = "duskcue/ambient_player_view"
+    private val registrations = AtomicLong()
     private fun bound(owner: AmbientOwner, arguments: Any?) {
         val value = (arguments as? Map<*, *>)?.get("runtime") as? Map<*, *>
         val supplied = value?.let(::AmbientIdentity)
@@ -36,9 +39,12 @@ object AmbientPlaybackBridge {
     }
 
     fun register(context: Context, flutterEngine: FlutterEngine) {
-        flutterEngine.platformViewsController.registry.registerViewFactory(VIEW_TYPE, AmbientPlayerViewFactory())
+        val registration = registrations.incrementAndGet()
+        flutterEngine.platformViewsController.registry.registerViewFactory(VIEW_TYPE, AmbientPlayerViewFactory { registration == registrations.get() })
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, CHANNEL).setMethodCallHandler { call, result ->
-            try { when (call.method) {
+            try {
+                demand(registration == registrations.get(), "scope_changed")
+                when (call.method) {
                 "start" -> {
                     val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any?>()
                     AmbientApplication.start(context.applicationContext, args)
@@ -57,9 +63,13 @@ object AmbientPlaybackBridge {
                         }
                     }
                 }
-                "bind" -> AmbientApplication.fence(context, call.arguments as? Map<*, *>).whenComplete { _, error ->
+                "fence" -> {
+                    AmbientApplication.fence(context, call.arguments as? Map<*, *>).whenComplete { _, _ -> Unit }
+                    result.success(null)
+                }
+                "bind" -> AmbientApplication.owner(context).bind(call.arguments as? Map<*, *>).whenComplete { _, error ->
                     android.os.Handler(android.os.Looper.getMainLooper()).post {
-                        if (error == null) result.success(null) else result.error("ambient_cleanup_pending", "Ambient reconciliation is not confirmed", null)
+                        if (error == null) result.success(null) else result.error(ambientFailure(error)?.code ?: "ambient_cleanup_pending", "Ambient reconciliation is not confirmed", null)
                     }
                 }
                 "status" -> {
@@ -79,13 +89,14 @@ object AmbientPlaybackBridge {
                     }
                 }
                 else -> result.notImplemented()
-            } } catch (_: Exception) { result.error("ambient_unavailable", "Ambient playback is unavailable; check status", null) }
+            } } catch (error: Exception) { result.error(ambientFailure(error)?.code ?: "ambient_unavailable", "Ambient playback is unavailable; check status", null) }
         }
     }
 }
 
-private class AmbientPlayerViewFactory : PlatformViewFactory(StandardMessageCodec.INSTANCE) {
+private class AmbientPlayerViewFactory(private val current: () -> Boolean) : PlatformViewFactory(StandardMessageCodec.INSTANCE) {
     override fun create(context: Context, viewId: Int, args: Any?): PlatformView {
+        demand(current(), "scope_changed")
         return AmbientPlayerPlatformView(context)
     }
 }

@@ -22,7 +22,7 @@ Future<void> runAmbientJourney(WidgetTester tester, IntegrationTestWidgetsFlutte
     switch (scenario) {
       case 'ambient-background':
         final probes = await channel.invokeMapMethod<String, Object?>('ambientProbe');
-        for (final key in ['strict_wire', 'uuidv7_clock', 'atomic_hls', 'retained_operations', 'joined_loaders', 'atomic_journal', 'native_http', 'native_tls', 'retained_io', 'tls_name_refused']) {
+        for (final key in ['strict_wire', 'uuidv7_clock', 'atomic_hls', 'retained_operations', 'joined_loaders', 'atomic_journal', 'native_http', 'native_tls', 'retained_io', 'terminal_publication', 'notification_identity', 'tls_name_refused']) {
           expect(probes?[key], isTrue, reason: key);
         }
         expect(probes?['lost_post_count'], 1);

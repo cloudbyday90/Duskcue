@@ -32,10 +32,28 @@ internal class AmbientNativeProbe(private val context: Context) {
             var requests = 0
             verify("http") { requests = AmbientHttpProbe(timers).run() }
             verify("io") { AmbientIoProbe(timers).run() }
+            verify("publication") { AmbientPublicationProbe(context, timers).run() }
+            verify("notification") {
+                val old = AmbientStopIntents.pending(context, 101, -1)
+                val next = AmbientStopIntents.pending(context, 102, -1)
+                val queued = AmbientStopIntents.pending(context, 102, 7)
+                val captured = AmbientStopIntents.intent(context, 101, -1)
+                val otherProcess = if (captured.getStringExtra("ambient_incarnation") == "a".repeat(32)) "b".repeat(32) else "a".repeat(32)
+                val restarted = AmbientStopIntents.pending(context, 101, -1, otherProcess)
+                try {
+                    check(old != next && next != queued && old != restarted)
+                    val intent = AmbientStopIntents.intent(context, 101, -1)
+                    check(AmbientStopIntents.matches(intent, 101, -1))
+                    check(!AmbientStopIntents.matches(intent, 102, -1))
+                    check(!AmbientStopIntents.matches(intent, 101, 7))
+                    check(!AmbientStopIntents.matches(AmbientStopIntents.intent(context, 101, -1, otherProcess), 101, -1))
+                } finally { old.cancel(); next.cancel(); queued.cancel(); restarted.cancel() }
+            }
             verify("tls") { ambientTlsProbe(fixture, timers) }
             return mapOf("strict_wire" to true, "uuidv7_clock" to true, "atomic_hls" to true,
                 "retained_operations" to true, "joined_loaders" to true, "atomic_journal" to true,
-                "native_http" to true, "native_tls" to true, "retained_io" to true, "tls_name_refused" to true, "lost_post_count" to requests)
+                "native_http" to true, "native_tls" to true, "retained_io" to true, "terminal_publication" to true, "notification_identity" to true,
+                "tls_name_refused" to true, "lost_post_count" to requests)
         } finally { timers.close().get(5, TimeUnit.SECONDS) }
     }
     private fun wire() {

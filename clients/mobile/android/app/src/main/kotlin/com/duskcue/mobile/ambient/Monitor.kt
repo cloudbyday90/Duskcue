@@ -80,11 +80,18 @@ internal fun AmbientOwner.sendCheckpoint(rt: AmbientRuntime) {
     val sequence = ++rt.checkpointSequence
     val body = JSONObject().put("protocol", PROTOCOL).put("output_revision", ready.output).put("sequence", sequence)
         .put("position_ms", sample.position).put("playback_state", state)
-    checkpoints.run {
+    fun failed() {
+        if (runtime === rt && rt.identity.same(identity) && rt.record?.output == ready.output &&
+            (rt.token == epochs.get() || rt.cleanupToken == epochs.get())) {
+            rt.progressUncertain = true
+            emit()
+        }
+    }
+    checkpoints.run(publish = { outcome -> if (outcome.isFailure) failed() }) {
         val reply = rt.protocol.call("POST", commandPath(record.start, "/checkpoint"), body)
         demand(current(rt) && rt.record?.output == ready.output, "stale_output")
         val value = reply.body
         demand(value.text("protocol") == PROTOCOL && value.uuid("request_id", true) == record.start && value.uuid("output_revision", true) == ready.output &&
             value.number("sequence", 9007199254740991) == sequence && value.number("position_ms") == sample.position && value.text("playback_state") == state)
-    }.result.whenComplete { _, error -> if (error != null && current(rt)) { rt.progressUncertain = true; emit() } }
+    }.result.whenComplete { _, error -> if (error != null) failed() }
 }

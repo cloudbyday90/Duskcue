@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-Proposed implementation/security contract, November 8, 2026, linked from [Android ambient migration](../design/VOD_ANDROID_AMBIENT_MIGRATION.md). Confirmed Q8/Q9 select successful public player release plus owned request/stream/storage/worker completion, excluding private Android audio/codec and HTTP/TLS housekeeping. Complete-contract confirmation and runtime qualification remain pending. This document does not claim a production transport fix has shipped.
+Implementation/security contract, November 8, 2026, linked from [Android ambient migration](../design/VOD_ANDROID_AMBIENT_MIGRATION.md). The complete contract is confirmed at `8c8cb53`. Q8/Q9 select successful public player release plus owned request/stream/storage/worker completion, excluding private Android audio/codec and HTTP/TLS housekeeping. Implementation and runtime qualification remain incomplete. This document does not claim a production transport fix has shipped.
 
 The qualified [Dart relay](FLUTTER_HLS_RELAY.md) remains interactive. Do not infer its background lifetime or its confirmed raw-TCP closure guarantee for a different Kotlin transport. Native ambient needs no loopback listener or bearer transfer to a separately running player.
 
@@ -65,6 +65,18 @@ The confirmed Q9 guarantee requires successful public ExoPlayer release without 
 ## Current outcome
 
 The operator confirmed the complete contract at `8c8cb53`. The draft registers ownership before public creation, uses explicit method/path templates and fixed-length JSON POST bodies, and retains public I/O plus close completion before returning permits. Failed close retains the registry entry and ambient barrier. HLS publication is epoch/revision-bound; the controller facade exposes sanitized metadata and routes controls to the exact viewer/output. These properties still require current-source compilation and the adversarial/native qualification in [the acceptance contract](../ci/ANDROID_AMBIENT_QUALIFICATION.md#implementation-and-verification-checkpoint).
+
+## November 14 ownership corrections
+
+The [Astra review](../design/ANDROID_AMBIENT_HARDENING_REVIEW.md) corrects source defects without widening this guarantee. Terminal ownership state is published synchronously before a lane removes its pending marker; drain establishes ended/published work, not success. Output failure remains quarantined, and cleanup checks actual sequential retirement of every tracked output before clearing stronger-scope recovery state. The externally observed scope-fence promise completes after its cleanup operation retires; it coalesces newer epochs before allowing restoration.
+
+Native fencing now runs independently of a slow Flutter bind. After initial bootstrap, a bind cannot change native identity. Acknowledging a local fence means the newest scope is fenced; it does not prove journal, transport, player or server cleanup. Exact identity/epoch checks, retained cleanup and new-playback barriers continue until their own completion. Unchanged wrapper recreation does not fence healthy background playback. Visible surfaces require confirmed current status and native view identity.
+
+A cold non-secret plaintext journal may predate the identity being bound. If a fence interrupts restoration before authenticated adoption, keep that unknown evidence until a later current context can reconcile or establish mismatch. A null runtime alone does not establish which scope owns it or authorize deleting it. Stronger-boundary clearing applies to an adopted recovery identity after owned work settles; retained evidence never permits dispatching requests with old credentials.
+
+Custom notification Stop operations use immutable explicit intents with a process nonce, owner epoch and pending ticket in the intent identity and checked extras. Superseded tokens are cancelled. The nonce is an ephemeral anti-aliasing value, not a durable entity identifier or an authentication credential; durable IDs remain UUIDv7. A stale action cannot authorize stopping a newer runtime or clear a recovery journal. It may retire only an otherwise idle service. Media3 still receives its own intents and applies controller authorization. Actual notification/headset/task-dismissal and hostile-controller evidence remains required; token identity probes alone do not establish it.
+
+These corrections are unqualified source. Normal TLS, finite budgets, SDK-private housekeeping exclusions and default-off production behavior remain unchanged. [The current qualification record](../ci/ANDROID_AMBIENT_QUALIFICATION.md#november-14-astra-corrections--unqualified) records the guarded test refusals rather than a passing security or native result.
 
 Additional official MCP inspection checks [Android's October 5 platform tag](https://android.googlesource.com/platform/external/okhttp/+/refs/tags/android-security-16.0.0_r9), commit `d26562d0a3213285901ca701ef1b63267305d720`. Its URLConnection adapter disables request-body buffering in fixed-length mode; HttpEngine/StreamAllocation refuse recovery of an already-dispatched non-retryable body. This supports the chosen fixed-length request strategy on that implementation, not a universal OEM replay guarantee. An actual API 36 lost-response witness must still observe one POST. No reflection or global retry switch is introduced.
 

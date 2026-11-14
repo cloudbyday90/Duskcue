@@ -31,13 +31,17 @@ internal class AmbientLease(
         if (!pending && (clock.now() - last >= 15000 || left <= 15000)) {
             pending = true
             last = clock.now()
-            val work = try { lane.run { renew() } } catch (error: Exception) { pending = false; stop(); uncertain(error); return }
+            val work = try { lane.run(publish = { outcome ->
+                synchronized(this) {
+                    pending = false
+                    outcome.exceptionOrNull()?.let { if (expected == epoch) { stop(); uncertain(it) } }
+                }
+            }) { renew() } } catch (error: Exception) { pending = false; stop(); uncertain(error); return }
             work.result.whenComplete { _, error ->
                 synchronized(this) {
                     if (error != null && expected == epoch) { stop(); uncertain(error) }
                 }
             }
-            work.completion.whenComplete { _, _ -> synchronized(this) { pending = false } }
         }
         if (expected == epoch) schedule(expected)
     }

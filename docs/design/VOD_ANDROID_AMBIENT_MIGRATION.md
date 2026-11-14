@@ -120,6 +120,8 @@ The companion harness drafts seven stages for the six agreed journeys, with cold
 
 The open Dependabot patch is tracked separately in [its review](../ci/SVELTEKIT_3_UPGRADE_REVIEW.md); the one-time rebase and unchanged local incompatibility decision remain complete. No SDK/version, OS, memory/deadline limit or production capability changes are made. HLS receives only its already-resolved direct declaration. No release.
 
+The requested [November 14 Astra review](ANDROID_AMBIENT_HARDENING_REVIEW.md) adds source corrections within this contract: terminal publication before lane retirement; prompt latest-scope fencing independent of slow restoration; exact view and notification Stop identity; preserved Media3 intent handling; acknowledged transient-error clearing; actual task-dismissal playback evidence. New regression cases and native probes are written but unrun. The final independent source pass finds no additional definite blocker; it does not establish compilation or native behavior. Current guarded analysis and focused-test attempts refuse admission under Windows commit pressure, as recorded in [qualification](../ci/ANDROID_AMBIENT_QUALIFICATION.md#november-14-astra-corrections--unqualified). Earlier passing tests remain attributed to their earlier inputs.
+
 ## Complete shared contract — confirmed at 8c8cb53
 
 The operator confirmed implementation of the design above together with its linked [transport](../security/ANDROID_AMBIENT_TRANSPORT.md) and [qualification](../ci/ANDROID_AMBIENT_QUALIFICATION.md) contracts:

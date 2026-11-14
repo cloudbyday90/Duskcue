@@ -18,7 +18,7 @@ internal object AmbientApplication {
     @Synchronized fun owner(context: Context): AmbientOwner = instance ?: AmbientOwner(context).also { instance = it }
     @Synchronized fun start(context: Context, args: Map<*, *>) {
         val owner = owner(context)
-        AmbientIdentity(args)
+        demand(AmbientIdentity(args).same(owner.identity), "scope_changed")
         demand(pending == null && owner.scopeFence?.isDone != false && owner.commands.count() == 0 && owner.cleanup.count() == 0 && !owner.quarantined && !owner.http.failed &&
             !owner.journal.pending() && !owner.journal.failed, "ambient_cleanup_pending")
         val ticket = tickets.incrementAndGet()
@@ -38,9 +38,10 @@ internal object AmbientApplication {
         pending = null
         val owner = owner(context)
         if (owner.legacyMode) LegacyAmbientPlaybackService.stop(context)
-        return owner.bind(args)
+        return owner.fence(args)
     }
     @Synchronized fun cancelPending() { pending = null }
     @Synchronized fun hasPending() = pending != null
+    @Synchronized fun pendingTicket() = pending?.first ?: -1L
     @Synchronized fun pausePending() { pending = pending?.let { it.first to (it.second + mapOf("start_paused" to true)) } }
 }
