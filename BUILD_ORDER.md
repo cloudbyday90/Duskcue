@@ -30,6 +30,8 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **Next:** compile/correct the current draft, complete the remaining matrix and qualify the native owner and ambient journeys while preserving all twelve original journeys, backend/root/host limits and zero ambient personal-history mutation. iOS/offline, track/quality pickers, automatic ambient recovery, broader formats/devices, provider/DVR and production attachment/shared caps remain separate. Main only; no release.
 
+**New security follow-up:** the November 14 push exposes five existing web dependency alerts. [The alert inventory](docs/ci/SVELTEKIT_3_UPGRADE_REVIEW.md#dependency-alert-follow-up) records two moderate/three low reports and primary sources. Review and qualify compatible Kit 2.70.4/adapter-static 3.0.11 patches before further platform expansion; separately assess the remaining low alerts and coordinated major migration. PR #6's proposed 3.1.0/4.0.0 versions are themselves affected by the moderate advisories. No dependency fix, application-exposure validation or alert closure is claimed. Current-source Android and web qualification both remain subject to unchanged host admission.
+
 ## November 1 Android relay matrix (SCOPED QUALIFICATION COMPLETE)
 
 **Verified implementation:** `33f25abe34e26b35921cc98a314fadc0fd650cb8` on main. Documentation-only attribution preserves the qualified source and artifacts; no release.
