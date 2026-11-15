@@ -6,6 +6,8 @@ Confirmed acceptance contract, November 8, 2026. [Design](../design/VOD_ANDROID_
 
 ## Current seven-journey outcome
 
+Verified implementation source: **`3392fa486fcf44760b0e701bf5fbf32884b47504`** on main. Documentation-only successors preserve that source attribution. The aggregate/APK identities below bind the executed content; this commit is a bounded milestone, not complete ambient acceptance or a release.
+
 Focused resource **`3278d13c-25ab-4631-a255-b0c510f0138d`**, private UTC receipt **`2026-11-15T03-46-07-533Z-2a8fa2df-5dba-46bd-9850-04dcf834d56b.jsonl`**, passes background, controls, advancement/replacement, cold retain, cold restore, scope and independent concurrency. Exact PostgreSQL assertions pass: **ten viewers, nine ambient and one interactive; one new interactive personal-history row; unchanged full ambient sentinel; zero unsettled Starts; resources released**. Actual SDK stale/current notification delivery, advancing frames, paused renewal, seek, real Home/lock/task dismissal and the existing cold-process/lease tests execute. This is observed evidence, not a substitute for unexecuted fault cases.
 
 The executed backend aggregate is **`b75049d0e1513be68d9f2b0daf0b47e7ea4c21adff4ce4be081d825070030a47`**. Current mobile aggregate is **`cbe803c556008ab1f4963253aeff07a4227f7f710cf20ade20a11b2e7b73c8c2`**. Both current APK receipts bind that mobile aggregate:

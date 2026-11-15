@@ -56,7 +56,7 @@ This is the historical source-only checkpoint. The executed November 15 qualific
 
 ## November 8 Android ambient command owner (IMPLEMENTATION — QUALIFICATION PENDING)
 
-**Source checkpoints:** `e97833b` is the initial unqualified draft; `562145f5d818d9543ce3ccb6352822480a7caaf3` records the November 14 Astra ownership corrections on main. The resumed continuation executes compiler/static gates and actual native attempts, correcting SDK integration failures. Complete native/adversarial qualification remains required; this is not phase completion or a release.
+**Source checkpoints:** `e97833b` is the initial unqualified draft; `562145f5d818d9543ce3ccb6352822480a7caaf3` records the November 14 Astra ownership corrections. **`3392fa486fcf44760b0e701bf5fbf32884b47504`** on main records the verified seven-journey and combined-regression milestone, including runtime corrections and artifact maintenance. Documentation-only successors preserve that executed source. Complete native/adversarial qualification remains required; this is not phase completion or a release.
 
 **Authority:** [Android ambient migration](docs/design/VOD_ANDROID_AMBIENT_MIGRATION.md#complete-shared-contract--confirmed-at-8c8cb53), [native transport](docs/security/ANDROID_AMBIENT_TRANSPORT.md) and [qualification](docs/ci/ANDROID_AMBIENT_QUALIFICATION.md). The complete contract published at `8c8cb53` and all nine decisions are confirmed. Q8/Q9 require successful public player release and joined application-owned work, excluding private SDK audio/codec/HTTP/TLS housekeeping while retaining failures. Seven current-source ambient journeys now pass; the complete owner/adversarial matrix remains pending.
 
