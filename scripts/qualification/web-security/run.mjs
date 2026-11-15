@@ -24,6 +24,7 @@ process.on('SIGTERM', interrupt);
 const owners = new ProcessOwners({ signal: controller.signal });
 const requests = new LoopbackRequests();
 const fixture = new OwnedFixture(web, nonce);
+const browser = { current: undefined };
 let inputs;
 try {
     const result = await qualifyBoundaries({
@@ -34,12 +35,12 @@ try {
             await build.wait();
         },
         run: async (selected, signal) => {
-            const result = await runCases(selected, fixture, owners, requests, nonce, signal);
+            const result = await runCases(selected, fixture, owners, requests, nonce, signal, browser, (error) => controller.abort(error));
             assert.deepEqual(await installedInputs(web, signal), selected, 'Qualification input identity changed.');
             return result;
         },
         dispose: async () => {
-            const settled = await Promise.allSettled([observe(requests.close(), 10000, 'HTTP cleanup is unconfirmed; fixture retained.'), owners.close()]);
+            const settled = await Promise.allSettled([observe(requests.close(), 10000, 'HTTP cleanup is unconfirmed; fixture retained.'), owners.close(), browser.current?.close()]);
             const failures = settled.filter((item) => item.status === 'rejected').map((item) => item.reason);
             if (failures.length) throw new AggregateError(failures, 'Owned cleanup is unconfirmed; fixture retained.');
             await fixture.remove();

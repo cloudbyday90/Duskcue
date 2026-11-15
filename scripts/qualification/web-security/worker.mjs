@@ -19,9 +19,16 @@ if (kind === 'static') {
         },
         getAppPath: () => '_app',
     });
-} else if (kind === 'server') {
-    const { server } = await import(pathToFileURL(join(process.cwd(), 'build/index.js')).href);
-    const native = server.server;
+} else if (kind === 'server' || kind === 'preview') {
+    let native;
+    if (kind === 'server') {
+        const { server } = await import(pathToFileURL(join(process.cwd(), 'build/index.js')).href);
+        native = server.server;
+    } else {
+        const { preview } = await import(pathToFileURL(join(web, 'node_modules/vite/dist/node/index.js')).href);
+        const selected = await preview({ root: process.cwd(), configFile: 'vite.config.js', configLoader: 'native', preview: { host: '127.0.0.1', port: 0, strictPort: true } });
+        native = selected.httpServer;
+    }
     if (!native.listening) await once(native, 'listening');
     const address = native.address();
     if (!address || typeof address === 'string' || address.address !== '127.0.0.1') throw new Error('Unexpected fixture listener.');

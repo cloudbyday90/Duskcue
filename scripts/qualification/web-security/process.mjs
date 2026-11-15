@@ -49,6 +49,13 @@ export class ProcessOwners {
     get tail() { return this.#tail.toString('utf8'); }
     assertHealthy() { if (this.#failure) throw this.#failure; }
 
+    acceptOutput(chunk) {
+        this.assertHealthy();
+        this.#bytes += chunk.length;
+        this.#tail = Buffer.concat([this.#tail, chunk.subarray(-65536)]).subarray(-65536);
+        if (this.#bytes > this.#outputLimit) throw new Error('Shared child output budget exceeded.');
+    }
+
     start(args, { cwd, env = fixtureEnvironment(), nonce } = {}) {
         if (this.#closing) throw new Error('Process admission is closed.');
         if (this.#entries.size) throw new Error('An owned process is still pending.');
@@ -94,9 +101,7 @@ export class ProcessOwners {
         const cancelled = () => stopAfterFailure(this.#signal.reason || new Error('Qualification cancelled.'));
         for (const stream of [child.stdout, child.stderr]) stream.on('data', (chunk) => {
             if (this.#failure) return;
-            this.#bytes += chunk.length;
-            this.#tail = Buffer.concat([this.#tail, chunk]).subarray(-65536);
-            if (this.#bytes > this.#outputLimit) stopAfterFailure(new Error('Shared child output budget exceeded.'));
+            try { this.acceptOutput(chunk); } catch (failure) { stopAfterFailure(failure); }
         });
         child.on('message', (message) => {
             try {

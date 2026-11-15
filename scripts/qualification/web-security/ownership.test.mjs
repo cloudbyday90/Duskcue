@@ -10,7 +10,7 @@ import { mkdir, mkdtemp, readFile, writeFile, rmdir, symlink, unlink } from 'nod
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { qualifyBoundaries, observe } from './lifecycle.mjs';
-import { EXPECTED, validateInstallation } from './prerequisite.mjs';
+import { EXPECTED, SUPPORT, validateInstallation } from './prerequisite.mjs';
 import { ProcessOwners } from './process.mjs';
 import { OwnedFixture, CACHE_VALUE } from './fixture.mjs';
 import { routeMatches, assertLiteralPatterns } from './patterns.mjs';
@@ -106,7 +106,7 @@ test('an observer timeout retains the underlying operation until actual completi
 });
 
 test('installed identities and every supporting version must match the locked candidate', () => {
-    const versions = { ...EXPECTED, vite: '8.1.6', svelte: '5.56.4', '@sveltejs/vite-plugin-svelte': '7.1.2' };
+    const versions = { ...EXPECTED, ...Object.fromEntries(SUPPORT.map((name) => [name, '1.2.3'])) };
     const manifest = { dependencies: { '@sveltejs/adapter-static': '^3.0.11' }, devDependencies: { '@sveltejs/kit': '^2.70.4' } };
     const lock = { lockfileVersion: 3, packages: { '': structuredClone(manifest), ...Object.fromEntries(Object.entries(versions).map(([name, version]) => [`node_modules/${name}`, { version }])) } };
     const installed = Object.fromEntries(Object.entries(versions).map(([name, version]) => [name, { name, version }]));
@@ -258,7 +258,7 @@ test('fixture cleanup refuses a changed owner and a reparse path without touchin
     const outside = join(web, 'outside');
     const original = JSON.stringify({ nonce, pid: process.pid });
     try {
-        await fixture.prepare({ versions: {} });
+        await fixture.prepare({ web, versions: {} });
         await writeFile(join(fixture.path, '.owner.json'), '{}');
         await assert.rejects(fixture.remove());
         await writeFile(join(fixture.path, '.owner.json'), original);
