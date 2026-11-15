@@ -13,6 +13,8 @@ import { validateMatrix } from './evidence.mjs';
 import { assertSentinelPaths } from './preview.mjs';
 import { LoopbackRequests } from './http.mjs';
 import { ProcessOwners } from './process.mjs';
+import { assertSseResponse } from './sse.mjs';
+import { applicationEntryPaths } from './application-assets.mjs';
 
 const tick = () => new Promise((resolve) => setImmediate(resolve));
 const deferred = () => { let resolve; const promise = new Promise((done) => { resolve = done; }); return { promise, resolve }; };
@@ -20,6 +22,7 @@ const deferred = () => { let resolve; const promise = new Promise((done) => { re
 function ledger(platform = 'win32') {
     return [
         { id: 'reroute', status: 'passed', malformedPaths: 4, healthyRequests: 7 },
+        { id: 'immutable-sse', status: 'passed', immutable: true, mutable: true, healthyRequests: 2, ordinaryHeaderAbsent: true },
         { id: 'static-patterns', status: 'passed', literalPatterns: 21 },
         { id: 'cache-attribute', status: 'passed', artifactChecked: true },
         { id: 'cache-browser', status: 'passed', inlineControl: 1, markerAbsent: true, dialogs: 0, cleanupConfirmed: true },
@@ -46,6 +49,7 @@ test('missing, duplicate, unknown and skipped case identities are refused', () =
 test('positive controls, exact fetch sequences, nonce and cleanup are mandatory', () => {
     for (const [id, key, value] of [['cache-browser', 'inlineControl', 0], ['cache-browser', 'dialogs', 1], ['client-origin', 'healthyRouteRequests', 0],
         ['client-origin', 'hostileRouteRequests', 0], ['client-origin', 'foreignRequests', 1], ['client-origin', 'cleanupConfirmed', false],
+        ['immutable-sse', 'immutable', false], ['immutable-sse', 'ordinaryHeaderAbsent', false],
         ['preview-windows', 'sentinelVerified', false], ['preview-windows', 'positiveData', 0], ['fetch-asset', 'requests', ['/asset.txt', '/target']],
         ['fetch-error', 'body', 'jump-stale'], ['fetch-external', 'httpStatus', 302], ['fetch-rerouted', 'sinkCleanupConfirmed', false]]) {
         const rows = ledger(); rows.find((row) => row.id === id)[key] = value;
@@ -54,6 +58,20 @@ test('positive controls, exact fetch sequences, nonce and cleanup are mandatory'
 });
 
 test('both raw Windows traversal probes reach the real parent sentinel on vulnerable path joining', () => { assertSentinelPaths(); });
+
+test('SSE regression requires exact body, media type and Node buffering header', () => {
+    const response = { status: 200, headers: { 'content-type': 'text/event-stream', 'x-accel-buffering': 'no' }, body: 'data: nonce\n\n' };
+    assertSseResponse(response, 'nonce');
+    for (const changed of [{ ...response, status: 500 }, { ...response, body: 'wrong' }, { ...response, headers: {} }]) assert.throws(() => assertSseResponse(changed, 'nonce'));
+});
+
+test('application smoke uses exact SSR-referenced same-origin entry assets', () => {
+    const origin = 'http://127.0.0.1:12345';
+    const html = 'Promise.all([import("../_app/immutable/entry/start.hash.js"),import("../_app/immutable/entry/app.hash.js")])';
+    assert.deepEqual(applicationEntryPaths(html, origin), ['/_app/immutable/entry/start.hash.js', '/_app/immutable/entry/app.hash.js']);
+    for (const changed of ['', html.replace('app.hash.js', 'other.hash.js'), html + 'import("../_app/immutable/entry/app.duplicate.js")',
+        html.replace('../_app/immutable/entry/start.hash.js', 'https://foreign.invalid/_app/immutable/entry/start.hash.js')]) assert.throws(() => applicationEntryPaths(changed, origin));
+});
 
 function fakeBrowser(changes = {}) {
     const child = new EventEmitter();

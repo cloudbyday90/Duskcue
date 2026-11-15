@@ -2,11 +2,11 @@
 
 ## Scope and current status
 
-November 14, 2026 continuation from `c70b29a` on main. The selected maintenance item is the compatible `@sveltejs/kit` 2.70.2 → 2.70.4 and `@sveltejs/adapter-static` 3.0.10 → 3.0.11 pair. Raise their manifest minimums and exact lockfile nodes, retaining every other version, dependency range, override, configuration and platform contract. No framework major migration, Android change, production capability rollout or release is included.
+November 14–15, 2026 continuation from `c70b29a` on main. The initial maintenance item is the compatible `@sveltejs/kit` 2.70.2 → 2.70.4 and `@sveltejs/adapter-static` 3.0.10 → 3.0.11 pair. The subsequent [Node adapter review](SVELTEKIT_NODE_SECURITY_PATCH.md) raises 5.5.7 to its compatible 5.5.8 backport. Other versions, consumer metadata, overrides, configuration and platform contracts remain unchanged. No framework major migration, Android change, production capability rollout or release is included.
 
-Source candidate: `67be9361d67dff3bbe9760e6a3fc60e89cbf3a31` on main. Documentation-only successors preserve this source attribution. The candidate is uninstalled and behaviorally unqualified.
+Initial source candidate: `67be9361d67dff3bbe9760e6a3fc60e89cbf3a31` on main. The [November executed qualification](../ci/SVELTEKIT_SECURITY_BOUNDARIES.md#november-executed-qualification) supersedes the historical uninstalled status: clean installation and exact identities now pass, the actual Windows synthetic matrix passes thirteen cases, analysis has zero diagnostics, web units and both application builds pass. Application/browser and native evidence limits remain explicit in that authority.
 
-The operator requested Astra evaluation. Astra and a fresh independent read-only boundary investigator reviewed the application, upstream patches and compatibility. No product/API decision is reopened by these routine dependency patches. Current host commit pressure prevents the guarded clean-install prerequisite. Source preparation may continue, but security verification is **blocked** until the ordered checks below pass; installing a patched version alone is not a verified application fix.
+The operator requested Astra evaluation. Astra and a fresh independent read-only boundary investigator reviewed the application, upstream patches and compatibility. Astra's execution review also corrects Node/static output consumption order and the browser navigation observer. No product/API decision is reopened by routine maintenance patches. Initial host commit pressure prevents installation; after operator cleanup the unchanged guard admits actual qualification. Installation alone still does not establish a verified application fix.
 
 ## Official research
 
@@ -54,8 +54,8 @@ When guarded resolution cannot run, source preparation may replace only each nod
 
 ## Ordered qualification
 
-1. Inspect the exact manifest/lock diff and published metadata. Confirm only two root floors and two package nodes change; preserve all peer, override, runtime and adapter requirements. Validate JSON and unchanged-node identity.
-2. Run `node scripts/testing-memory/run.mjs web-install`, then check actual installed package versions and the exact locked graph. Run guarded `web-check`, `web-unit`, `web-build` and `desktop-build` serially. Missing installation blocks meaningful updated-package tests; an old installed graph cannot validate the candidate.
+1. Inspect the exact manifest/lock diff and published metadata. The original Kit/static pair changes only two root floors and package nodes; the separately reviewed Node 5.5.8 backport adds one floor/distribution change. Preserve all other nodes and consumer/peer/override requirements. Validate JSON and published identities.
+2. Run `node scripts/testing-memory/run.mjs web-install`, then check actual installed package versions and the exact locked graph. Run guarded `web-check` and `web-unit`, then `web-build` and actual built-Node application smoke **before** `desktop-build` and its static checks. The adapters share `clients/web/build/client`; rebuild Node before consuming its output after a static build. Follow the [Astra-reviewed execution order](../ci/SVELTEKIT_SECURITY_BOUNDARIES.md#execution-gate-and-build-output-ordering). Missing installation blocks meaningful updated-package tests; an old installed graph cannot validate the candidate.
 3. Exercise actual built adapter-node malformed paths followed by healthy requests. Separately use a minimal isolated production fixture with a deliberate malformed-to-valid reroute so the vulnerable branch is actually exercised. Require a controlled 400 and continued service. Add alternate malformed encodings and an ordinary localized route. Existing Playwright launches Vite dev, which can reject before Kit, so its pass alone cannot prove this fix.
 4. Exercise the installed static generator's literal-path patterns with metacharacters/trailing slashes and negative sibling matches. Include cache-header escaping, Windows preview path containment and route/self-fetch origin/redirect behavior relevant to the complete backport. Keep synthetic fixtures out of production routes.
 5. Preserve existing browser localization/navigation, auth/session-cookie, proxy/redirect, household/profile, desktop startup and playback smoke behavior. Focus/status checks supplement source inspection; no full native Tauri or accessibility certification is inferred.
@@ -63,7 +63,7 @@ When guarded resolution cannot run, source preparation may replace only each nod
 
 All existing memory, emergency, worker and deadline limits remain. No user app/model/service is stopped. Do not replay an identical known-incompatible major trial, suppress validation or weaken a guard to produce a pass.
 
-## Outcome
+## Initial source-only outcome
 
 Research and independent pre-patch review are complete. The candidate changes `clients/web/package.json` and `clients/web/package-lock.json`: two root minimums and exactly two nodes' version/distribution/integrity fields, preserving 188 other package nodes, all consumer metadata and the override. JSON/graph comparison against `c70b29a` and fresh published-registry comparison pass. Actual installed packages still report Kit 2.70.2 and static 3.0.10. No application runtime code, fixture route or new regression test is introduced; the existing checks and the required focused production fixtures remain to run after installation.
 

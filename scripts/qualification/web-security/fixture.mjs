@@ -55,6 +55,8 @@ export class OwnedFixture {
             'src/routes/nav/two/+page.svelte': '<h1>Navigation two</h1>',
             'src/routes/self-fetch/+server.js': `import { create_fetch } from ${JSON.stringify(fetchPath)}; import { exerciseSelfFetch } from ${JSON.stringify(exercisePath)}; export async function GET({ request }) { return Response.json(await exerciseSelfFetch(create_fetch, ${JSON.stringify(this.#nonce)}, request.signal)); }\n`,
             'src/routes/healthy/+server.js': `export function GET() { return new Response(${JSON.stringify(`healthy-${this.#nonce}`)}, { headers: { 'content-type': 'text/plain' } }); }\n`,
+            'src/routes/immutable-sse/+server.js': `export function GET() { return fetch(${JSON.stringify(`data:text/event-stream,data: ${this.#nonce}%0A%0A`)}); }\n`,
+            'src/routes/mutable-sse/+server.js': `export function GET() { return new Response(${JSON.stringify(`data: ${this.#nonce}\n\n`)}, { headers: { 'content-type': 'text/event-stream' } }); }\n`,
             'src/routes/cache/+page.js': `export const prerender = true; export function load({ setHeaders }) { setHeaders({ 'cache-control': ${JSON.stringify(CACHE_VALUE)} }); return {}; }\n`,
             'src/routes/cache/+page.svelte': '<h1>Cache fixture</h1><p>Ordinary prerendered content remains available.</p>',
         };

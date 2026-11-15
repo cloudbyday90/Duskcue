@@ -18,7 +18,21 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **Next at the maintenance checkpoint:** review the positive worker-evidence observer below. That subsequent confirmed increment is now scoped-qualified: the cleaned Rust package was rebuilt under the unchanged guard, the full eight-stage native repeat passes and two new AVDs are retired. Maintenance itself did not authorize or qualify that behavior. Current compiler/SDK/APK inputs and compact evidence remain.
 
+## November 15 web security qualification (SCOPED WEB QUALIFICATION COMPLETE)
+
+**Authority:** [executed Windows/application qualification](docs/ci/SVELTEKIT_SECURITY_BOUNDARIES.md#november-executed-qualification), [Kit/static patch](docs/security/SVELTEKIT_2_SECURITY_PATCH.md) and [Node adapter patch](docs/security/SVELTEKIT_NODE_SECURITY_PATCH.md). Initial memory refusals are retained; after operator cleanup, the unchanged guard admits exact installation and real execution. Astra reviews compatibility, Node/static output ordering, browser navigation and application evidence limits.
+
+**Implementation:** selected Kit **2.70.4**, static **3.0.11**, Node **5.5.8**, with other versions/configuration/cookie and platform contracts unchanged. Only the additional Node floor/distribution changes relative to `ddbd7ac`; 189 other lock nodes remain. Modular generated SSE controls, mandatory thirteen-case evidence, navigation ownership and SSR-reference application smoke supplement the prior runner. No product route or release is added.
+
+**Verification:** affected Node 5.5.7 actually crashes in the isolated immutable-SSE baseline. The patched exact regression, controls and **all thirteen actual Windows boundary cases pass**, with owned cleanup. Final graph has zero analysis errors/warnings, **37 Node plus 582 Vitest**, **48 orchestration** and **165 browser passes**; three existing caption-artifact skips remain. Node and static application builds and actual production SSR/proxy smoke pass, with a fresh Node rebuild before the strengthened HTML/client pairing check. No admitted workflow is memory-stopped. Receipts, precise limits and source attribution are in the authority.
+
+**PR/maintenance:** only open PR #6 is rebased once, verified at `7ba19d1fbc843d0c13e13b7752a6f99765c2f810`, parented to starting `ddbd7ac`, with identical major-upgrade package blobs. Its earlier configuration failure remains applicable; unmerged/unadopted. Owned test resources are gone; current Node/dependency/compiler artifacts and compact evidence remain. No service/model/OS/resource-policy change occurs.
+
+**Limits and next:** npm reports zero moderate/high/critical and six low affected-package entries spanning three advisory identities; no dismissal or forced override. Native Tauri, real Rust authentication, caption-HLS qualification and Android ambient are not newly qualified by these web checks. Resume the confirmed Android ambient compiler/analysis/formatter/tests/APK/native journey gates below, then review the remaining low advisories separately. Production playback attachment/shared caps, provider/DVR and release work stay deferred.
+
 ## November 14 compatible web security patches (CANDIDATE — QUALIFICATION BLOCKED)
+
+This is the historical source-only checkpoint. The executed November 15 qualification above supersedes its uninstalled/blocked status.
 
 **Authority:** [SvelteKit 2 patch design, Astra review and qualification](docs/security/SVELTEKIT_2_SECURITY_PATCH.md). The selected candidate raises Kit to 2.70.4 and adapter-static to 3.0.11 without changing the framework major, configuration, adapter-node, cookie override or Android stack. Published registry/tagged-source metadata agrees; only two root floors and two lock distribution identities change, with 188 other package nodes preserved.
 
@@ -28,7 +42,9 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **Runner source:** `6bf5cb038e340493d2874b8039fc73b17c615754`; later documentation-only attribution does not change unit-tested code or close pending framework/application gates.
 
-**Current matrix source:** this continuation extends that earlier runner, retaining the locked stack, all root/resource policies and explicit incomplete full-matrix status. [Current receipts](docs/ci/SVELTEKIT_SECURITY_BOUNDARIES.md#current-source-outcome) distinguish the earlier 30 cases from the new 46-case source. PR #6 is rebased once to starting main `78686c1`, verified at `397b4f30ecceddd53624cb05333a16f26cc4d152` with identical dependency blobs, unmerged/unadopted. Owned unit files/helpers are cleaned; no install/build/browser or service change occurs.
+**Current matrix source:** `ddbd7ac76e56a23548fbd60c3cea787328d979b9` extends that earlier runner, retaining the locked stack, all root/resource policies and explicit incomplete full-matrix status. [Current receipts](docs/ci/SVELTEKIT_SECURITY_BOUNDARIES.md#current-source-outcome) distinguish the earlier 30 cases from the new 46-case source. Owned unit files/helpers are cleaned; no install/build/browser or service change occurs.
+
+**Execution-gate continuation:** a fresh clean-install preflight again refuses at 91.180% commit, before execution. Astra finds no further definite harness blocker and identifies shared Node/static client-output reuse as an execution-order hazard: consume the real Node app build before the desktop build, or rebuild Node before using it afterward. [The serial execution order](docs/ci/SVELTEKIT_SECURITY_BOUNDARIES.md#execution-gate-and-build-output-ordering) remains pending; the 46-unit pass is not rerun or promoted. PR #6 is rebased once to starting `ddbd7ac`, verified at `7ba19d1fbc843d0c13e13b7752a6f99765c2f810` with identical package blobs, unmerged/unadopted. No runtime source, host service or guard changes.
 
 **Outcome:** source preparation and independent boundary/compatibility review complete; actual installed packages remain Kit 2.70.2/static 3.0.10. Both baseline and candidate guarded `web-install` attempts refuse before execution. Updated-package trigger tests, analysis, units, Node/static builds and browser qualification have not run. This is not a verified security fix or a production release. The authority corrects the cache-header advisory's stale 3.0-only interpretation using the 2.70.4 backport, without claiming provider alert closure or a demonstrated application exploit.
 
@@ -48,7 +64,7 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 **Next:** compile/correct the current draft, complete the remaining matrix and qualify the native owner and ambient journeys while preserving all twelve original journeys, backend/root/host limits and zero ambient personal-history mutation. iOS/offline, track/quality pickers, automatic ambient recovery, broader formats/devices, provider/DVR and production attachment/shared caps remain separate. Main only; no release.
 
-**Security follow-up:** the November 14 push reports five existing web dependency alerts. [The alert inventory](docs/ci/SVELTEKIT_3_UPGRADE_REVIEW.md#dependency-alert-follow-up) records two moderate/three low reports and primary sources. The compatible Kit 2.70.4/static 3.0.11 source candidate above is prepared but remains uninstalled/unqualified. PR #6's 3.1.0/4.0.0 targets are themselves affected. Separate remaining-alert/major-migration review and unchanged host admission still apply; no verified fix or alert closure is claimed.
+**Security follow-up:** the historical November 14 alert inventory triggers the now executed web qualification above. Kit 2.70.4/static 3.0.11/Node 5.5.8 and the scoped Windows/application checks pass. PR #6's original major targets remain affected/unadopted. The three remaining low advisory identities, coordinated future major migration and unchanged Android admission/qualification contract remain separate.
 
 ## November 1 Android relay matrix (SCOPED QUALIFICATION COMPLETE)
 

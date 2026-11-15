@@ -7,7 +7,7 @@ import { readFile, lstat, realpath } from 'node:fs/promises';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 
-export const EXPECTED = Object.freeze({ '@sveltejs/kit': '2.70.4', '@sveltejs/adapter-static': '3.0.11', '@sveltejs/adapter-node': '5.5.7' });
+export const EXPECTED = Object.freeze({ '@sveltejs/kit': '2.70.4', '@sveltejs/adapter-static': '3.0.11', '@sveltejs/adapter-node': '5.5.8' });
 export const SUPPORT = Object.freeze(['vite', 'svelte', '@sveltejs/vite-plugin-svelte', '@playwright/test', 'playwright', 'playwright-core']);
 
 export async function readJson(path, limit = 65536, signal) {

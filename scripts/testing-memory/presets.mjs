@@ -41,6 +41,7 @@ export const PRESETS = {
     'vite-editor-qualify': { policy: 'unit', heapMiB: 128, command: 'node', args: ['--test', '--test-concurrency=1', 'clients/web/tests/unit/vite-editor-security.test.mjs'] },
     'web-security-unit': { policy: 'unit', heapMiB: 128, command: 'node', args: ['--test', '--test-concurrency=1', 'scripts/qualification/web-security/ownership.test.mjs', 'scripts/qualification/web-security/http.test.mjs', 'scripts/qualification/web-security/matrix.test.mjs', 'scripts/testing-memory/presets.test.mjs'] },
     'web-security-boundaries': { policy: 'build', heapMiB: 3072, command: 'node', args: ['scripts/qualification/web-security/run.mjs'] },
+    'web-security-app': { policy: 'build', heapMiB: 3072, command: 'node', args: ['scripts/qualification/web-security/app-smoke.mjs'] },
     'web-unit': { policy: 'unit', heapMiB: 1536, args: ['--prefix', 'clients/web', 'run', 'test:unit', '--', '--run', '--maxWorkers=1'] },
     'web-install': { policy: 'build', heapMiB: 1536, args: ['--prefix', 'clients/web', 'ci', '--ignore-scripts'] },
     'desktop-install': { policy: 'build', heapMiB: 1536, args: ['--prefix', 'clients/desktop', 'ci', '--ignore-scripts'] },

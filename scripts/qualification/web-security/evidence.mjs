@@ -5,7 +5,7 @@
 import assert from 'node:assert/strict';
 import { FETCH_CASES, validateFetchRows } from './self-fetch.mjs';
 
-export const MATRIX_IDS = Object.freeze(['reroute', 'static-patterns', 'cache-attribute', 'cache-browser', 'client-origin', 'preview-windows', ...FETCH_CASES.map((item) => item.id)]);
+export const MATRIX_IDS = Object.freeze(['reroute', 'immutable-sse', 'static-patterns', 'cache-attribute', 'cache-browser', 'client-origin', 'preview-windows', ...FETCH_CASES.map((item) => item.id)]);
 
 export function validateMatrix(rows, nonce, platform = process.platform) {
     assert.equal(rows.length, MATRIX_IDS.length, 'Incomplete synthetic matrix.');
@@ -13,6 +13,8 @@ export function validateMatrix(rows, nonce, platform = process.platform) {
     const row = (id) => rows.find((item) => item.id === id);
     for (const item of rows) assert.equal(item.status, item.id === 'preview-windows' && platform !== 'win32' ? 'not-qualified' : 'passed');
     assert.equal(row('reroute').malformedPaths, 4); assert.equal(row('reroute').healthyRequests, 7);
+    const sse = row('immutable-sse');
+    assert.equal(sse.immutable, true); assert.equal(sse.mutable, true); assert.equal(sse.healthyRequests, 2); assert.equal(sse.ordinaryHeaderAbsent, true);
     assert.equal(row('static-patterns').literalPatterns, 21); assert.equal(row('cache-attribute').artifactChecked, true);
     const browser = row('cache-browser');
     assert.equal(browser.inlineControl, 1); assert.equal(browser.markerAbsent, true); assert.equal(browser.dialogs, 0); assert.equal(browser.cleanupConfirmed, true);

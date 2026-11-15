@@ -37,6 +37,8 @@ test('web security fixture compilation retains build admission and units cannot 
     assert.equal(PRESETS['web-security-boundaries'].policy, 'build');
     assert.equal(PRESETS['web-security-boundaries'].heapMiB, PRESETS['web-build'].heapMiB);
     assert.deepEqual(PRESETS['web-security-boundaries'].args, ['scripts/qualification/web-security/run.mjs']);
+    assert.equal(PRESETS['web-security-app'].policy, 'build');
+    assert.equal(PRESETS['web-security-app'].heapMiB, PRESETS['web-build'].heapMiB);
     assert.equal(PRESETS['web-security-unit'].policy, 'unit');
     assert.equal(PRESETS['web-security-unit'].heapMiB, 128);
     assert.ok(PRESETS['web-security-unit'].args.includes('--test-concurrency=1'));

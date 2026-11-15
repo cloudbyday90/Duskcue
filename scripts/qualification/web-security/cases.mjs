@@ -14,6 +14,7 @@ import { runBrowserCases } from './browser-cases.mjs';
 import { runPreview } from './preview.mjs';
 import { validateFetchRows } from './self-fetch.mjs';
 import { validateMatrix } from './evidence.mjs';
+import { runSseCases } from './sse.mjs';
 
 const worker = fileURLToPath(new URL('./worker.mjs', import.meta.url));
 
@@ -49,6 +50,7 @@ export async function runCases(inputs, fixture, owners, requests, nonce, signal,
         }
         await healthy('/alias');
         await healthy('/fr/healthy');
+        rows.push(await runSseCases(origin, requests, server, nonce, signal));
         const artifact = join(fixture.path, '.svelte-kit/output/prerendered/pages/cache.html');
         assert.ok((await lstat(artifact)).size <= 1048576, 'Prerendered fixture exceeded its bound.');
         assertCacheAttribute(await readFile(artifact, { encoding: 'utf8', signal }));

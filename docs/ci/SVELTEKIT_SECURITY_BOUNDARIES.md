@@ -4,9 +4,42 @@
 
 November 2026 continuation of the [compatible patch qualification](../security/SVELTEKIT_2_SECURITY_PATCH.md). Astra's renewed read-only review recommends real installed-package and production-adapter evidence with independent orchestration tests. Routine test implementation needs no new product/API decision. Clean installation is still the first package prerequisite; an old installed graph must refuse before package imports, fixture writes, listeners or compilation.
 
-Implement bounded synthetic cases: actual built adapter-node malformed-to-valid reroute handling and healthy/localized controls; installed static-generator literal patterns; prerendered cache attributes and browser execution; server-resolution client origin confinement; Windows page/data preview containment; and all five server-fetch fallbacks plus an external-follow control. Keep synthetic routes entirely inside an owned ignored fixture, with no application route, dependency/version change, installer, symlink or network fallback.
+Implement bounded synthetic cases: actual built adapter-node malformed-to-valid reroute handling and healthy/localized controls; installed static-generator literal patterns; prerendered cache attributes and browser execution; server-resolution client origin confinement; Windows page/data preview containment; all five server-fetch fallbacks plus an external-follow control; and the [Node adapter immutable-SSE regression](../security/SVELTEKIT_NODE_SECURITY_PATCH.md). Keep synthetic routes entirely inside an owned ignored fixture, with no application route, installer, symlink or network fallback. The selected installed stack is now Kit 2.70.4/static 3.0.11/Node 5.5.8.
 
-This source does **not** complete the security matrix. Actual package installation, fixture compilation/execution, existing application checks/builds/browser flows and provider status remain mandatory. No final security result can be inferred from a synthetic-run exit code or passing orchestration tests.
+The synthetic driver always retains `completeSecurityMatrix: false`: it does not aggregate application, native-platform or provider gates. Current executed outcomes are recorded below; no final security result can be inferred from its exit code or passing orchestration tests alone.
+
+## November executed qualification
+
+Source `ddbd7ac` had 46 passing orchestration tests but no actual framework execution. Initial install admission again refuses, then the operator frees host memory and the unchanged guard admits a clean install. Exact installed metadata confirms the selected Kit/static graph. Analysis passes with zero diagnostics and web units pass 37 Node plus 582 Vitest cases on the preceding Node 5.5.7 graph.
+
+Fresh npm audit identifies the additional moderate Node adapter advisory. Astra independently confirms its 5.5.8 backport and the precise immutable-response regression; the [Node patch authority](../security/SVELTEKIT_NODE_SECURITY_PATCH.md) owns research, tradeoffs and scope. A generated-only baseline SSE request crashes the actual 5.5.7 server with `TypeError: immutable`/ECONNRESET. After the narrow adapter update and clean installation, that case and controls pass. The first browser run exposes a harness-only execution-context race during safe same-origin full navigation. Starting the exact URL wait before scheduling real `goto` fixes the observer without relaxing the foreign-request or positive-resolution controls; Astra reviews the correction.
+
+| Gate / private memory receipt | Actual outcome |
+| --- | --- |
+| Initial admitted install, Node 5.5.7; `2026-11-15T01-04-04-527Z-8de781e0-5ecc-4e5b-88b4-59cc206fc4d0.jsonl` | Pass; exact metadata and unchanged manifest/lock identity. |
+| Baseline production fixture; `2026-11-15T01-08-10-865Z-de475f94-0bab-495b-92d5-ba93295d5a38.jsonl` | Build succeeds; actual SSE trigger crashes affected 5.5.7. Owned processes/files settle and are cleaned. This is expected baseline failure, not a passing matrix. |
+| Final-graph clean install; `2026-11-15T01-09-06-644Z-7b630bc3-e11c-4acf-9578-0a8a77e20533.jsonl` | Pass; Kit 2.70.4/static 3.0.11/Node 5.5.8. One additional root floor/lock distribution changes; 189 unrelated nodes preserved. |
+| First patched matrix; `2026-11-15T01-09-48-211Z-cd854663-9c5c-4b3d-9db8-f243962698ed.jsonl` | SSE/other earlier cases pass; full run fails on the browser observer's destroyed evaluation context. Cleanup completes. |
+| Corrected Windows matrix; `2026-11-15T01-10-48-154Z-ce8ff51b-1fd6-460f-b432-158f68469afa.jsonl` | **All thirteen case identities pass**, actual Windows preview/browser/fetch execution, zero foreign requests and confirmed process/socket/fixture cleanup. |
+| Final-graph `web-check`; `2026-11-15T01-13-12-891Z-9a704228-7aec-4ae0-a474-eba38e2c8ee3.jsonl` | **Zero errors, zero warnings.** |
+| Final-graph `web-unit`; `2026-11-15T01-13-59-934Z-4cc7c16c-a7ff-4408-aa4e-f58fbec4ea4d.jsonl` | **37 Node and 582 Vitest tests pass**, 44 Vitest files. |
+| Node application build; `2026-11-15T01-14-25-399Z-5d3f5864-23f6-47e3-b24f-43c813a28c1e.jsonl` | Pass. |
+| Initial application smoke; `2026-11-15T01-15-11-834Z-4cfe9523-8bd5-4447-9a02-be3e5ccb4711.jsonl` | Actual Node SSR shell, entry files and real proxy-hook JSON/cookie/query/redirect/SSE checks pass. This earlier version did not tie entry filenames to returned HTML. |
+| Static desktop build; `2026-11-15T01-15-26-986Z-dc9da369-08af-4f1c-811e-15238c5f530e.jsonl` | Pass after consuming Node output; static fallback and actual entry files verified. |
+| Application browser suite; `2026-11-15T01-16-06-450Z-8c45fc1d-2d2d-4136-80b8-b4b18883743e.jsonl` | **165 pass, three unchanged burned-caption skips**, 6.2 minutes. Those skips require a separately supplied qualified caption-HLS artifact. |
+| Fresh Node rebuild; `2026-11-15T01-22-50-110Z-38751710-6b70-485f-b1e7-e5e385527f24.jsonl` | Pass; required because the static build replaced shared client assets. |
+| Strengthened application smoke; `2026-11-15T01-23-15-369Z-ad797e4a-cf19-4be7-ac49-ead10fa18ead.jsonl` | **Pass**, actual SSR shell paired to both referenced app/start assets; JSON/query/cookie/redirect/SSE hook controls and cleanup confirmed. |
+| Final orchestration units; `2026-11-15T01-23-29-532Z-c35f9033-2528-4cf6-8390-b2972f4feb69.jsonl` | **48 pass**, zero skipped/failed/cancelled. Includes SSE, exact SSR-asset pairing and application-lane policy checks. |
+
+The final lock SHA-256 is `64c1c98109286fc0064ff010042c95f88e7b79d7cbba35e87a8baa19fa7f2a80`. Final npm audit has zero moderate/high/critical reports and six low affected-package reports spanning three advisory identities; cache-header metadata still disagrees with its tested backport. No alert is dismissed and no force update occurs.
+
+Astra correctly distinguishes the actual application's SSR/loading shell from client-rendered login/hydration. The strengthened smoke result uses `ssrShell` and fetches the exact app/start import paths referenced by its returned HTML, requiring the same owned origin. Its final rebuild/repeat and browser-suite outcomes pass as recorded above. Existing browser tests use Vite dev, mocked API/device boundaries and real browser/media paths; they are not a fresh native Tauri, real authenticated Rust-backend or Android ambient qualification. W3C keyboard/focus/reflow/status regressions remain scoped checks, not a complete accessibility certification.
+
+All admitted workflows finish without a memory stop or interruption under unchanged policies. The Windows synthetic matrix peaks at **1,222,774,784 bytes** observed owned private allocation; the browser suite peaks at **3,275,694,080 bytes**. These are sampled workflow allocations, not whole-host commit attribution. No user model/service is stopped by the agent. [Maintenance](../operations/DEVELOPMENT_STORAGE.md#qualified-web-security-maintenance) confirms the active marker, owned runner processes, fixture runs and test listener are gone; current outputs and compact evidence remain. The final shared application output is Node, because the stronger smoke required a rebuild after static verification. Rebuild static before a later native desktop consumer needs that artifact.
+
+The scoped web qualification is complete. Keep the three low advisory identities, unchanged caption-fixture skips and native-platform/backend limits explicit. Next resume the confirmed Android ambient compile/analysis/test/native gates under their existing contract; no production attachment, shared cap, provider/DVR or release is enabled here.
+
+Closing source checks pass: syntax for twenty runner/test modules and both preset files; copyright compliance over 1,090 files; 23 added local Markdown links/anchors; exact published lock delta and installed graph; staged whitespace and private-LAN/cache exclusion. Application source is unchanged apart from the selected package files. These checks supplement the actual execution above.
 
 ## Research and recommendations
 
@@ -19,7 +52,7 @@ Official MCP research on November 14 rechecks the [upstream backport](https://gi
 | Copying patched implementations or accepting any malformed-path error | Cheap to run | Can pass without executing the repaired boundary or preserving service health | Reject |
 | Treating partial fixture results as complete security verification | Simple status | Hides browser/platform/backport proof gaps | Reject |
 
-Stack: existing Node 24/npm, selected Kit 2.70.4/static 3.0.11, unchanged Node adapter and supporting graph; direct installed Vite CLI for fixture build; builtin Node HTTP/process owners; existing guarded workflow. [W3C status-message guidance](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html?trk=article-ssr-frontend-pulse_little-text-block), focus and localized-navigation acceptance remain in the existing browser matrix; no application UI or accessibility certification is introduced.
+Stack: existing Node 24/npm, selected Kit 2.70.4/static 3.0.11/Node 5.5.8 and unchanged supporting graph; direct installed Vite CLI for fixture build; builtin Node HTTP/process owners; existing guarded workflow. [W3C status-message guidance](https://www.w3.org/WAI/WCAG22/Understanding/status-messages.html?trk=article-ssr-frontend-pulse_little-text-block), focus and localized-navigation acceptance remain in the existing browser matrix; no application UI or accessibility certification is introduced.
 
 ## Ownership and budgets
 
@@ -60,7 +93,7 @@ The existing [W3C status-message guidance](https://www.w3.org/WAI/WCAG22/Underst
 
 ### Current-source outcome
 
-All planned synthetic lanes now have source implementation. Astra finds two concrete issues: stalled graceful browser closure could prevent native termination, and the default headless launch could use a different executable from admission. The corrections observe one retained graceful chain, independently request owned termination on failure/timeout, join actual child closure and late public completion, preserve sticky failure, and forward the exact validated executable. Browser child environment selection excludes inherited credentials. New tests cover held launch/context creation, stalled context/server closure, connection failure, actual-close ownership, executable forwarding, shared output bounds and strict evidence refusal.
+This is the earlier source-only checkpoint at `ddbd7ac`, superseded by the executed qualification above. All then-planned synthetic lanes have source implementation. Astra finds two concrete issues: stalled graceful browser closure could prevent native termination, and the default headless launch could use a different executable from admission. The corrections observe one retained graceful chain, independently request owned termination on failure/timeout, join actual child closure and late public completion, preserve sticky failure, and forward the exact validated executable. Browser child environment selection excludes inherited credentials. New tests cover held launch/context creation, stalled context/server closure, connection failure, actual-close ownership, executable forwarding, shared output bounds and strict evidence refusal.
 
 | Command / private memory receipt (UTC November 15) | Actual outcome |
 | --- | --- |
@@ -75,7 +108,34 @@ No installed-package fixture build, actual browser/preview/fetch case, ordinary 
 
 Closing checks pass: syntax for all seventeen runner/test modules plus the preset, copyright compliance over 1,087 files, nine added local Markdown links/anchors, staged whitespace and private-LAN/cache exclusion. Application runtime files and package manifests/lockfile are unchanged by this increment. These checks do not execute the patched framework.
 
-Next: obtain unchanged build admission, clean-install and validate the exact graph, run the complete synthetic fixture on Windows, then guarded application analysis/units, Node/static builds and existing browser flows. Resume Android ambient compilation/native qualification only after this prerequisite. Main only; no release or production enablement.
+Next: follow the serial execution order below once unchanged build admission is available. Resume Android ambient compilation/native qualification only after the web gates pass. Main only; no release or production enablement.
+
+## Execution gate and build-output ordering
+
+Renewed November MCP research confirms the [npm clean-install contract](https://docs.npmjs.com/cli/commands/npm-ci/), [Playwright browser identity/connection contract](https://playwright.dev/docs/api/class-browsertype) and [Windows commit/physical-memory distinction](https://learn.microsoft.com/en-us/windows/win32/api/winbase/ns-winbase-memorystatus). Frozen `npm ci --ignore-scripts` preserves the lockfile and suppresses install scripts; it also replaces `node_modules`. Do not purge the current installation before guarded admission or substitute `npm install`/an old graph for the required clean install. The current Windows sampler already uses the newer memory APIs; this research does not change it or authorize page-file/OS changes.
+
+Astra finds no additional definite harness source blocker after the prior browser corrections. It finds one qualification-order hazard in repository configuration: both Node and desktop builds write `clients/web/build/client`. `clients/desktop/scripts/build-web-static.mjs` runs the web build with `DUSKCUE_WEB_ADAPTER=static`; `clients/web/svelte.config.js` selects static pages/assets in that same client directory. Static assets can therefore replace a Node build's client files while an earlier `build/index.js` remains. This is a source-based finding, not an observed mixed-output runtime failure.
+
+Use this serial order:
+
+1. Guarded `web-install`; confirm the actual installed graph and unchanged manifest/lock identities before package execution.
+2. Guarded `web-check` and `web-unit` on that graph.
+3. Guarded `web-build`, then immediately consume that exact output in actual built-Duskcue Node application smoke checks. Observe server/reader completion before another build writes the shared directory.
+4. Guarded `desktop-build`, then its static-output checks. If Node smoke must run afterward, rebuild Node first; never combine an old server entry with later static client output.
+5. Guarded `web-security-boundaries` on Windows: all twelve exact cases, positive controls and owned cleanup are required. Its generated build is isolated from application output.
+6. Existing localization/navigation, authentication/session-cookie, proxy/redirect, household/profile, desktop and playback browser regressions. The existing Playwright configuration starts Vite dev; it supplements, but cannot replace, actual production-application smoke.
+
+| Approach | Pros | Cons / qualification limit |
+| --- | --- | --- |
+| Consume each application's build before another adapter writes its client output | Avoids stale mixed-adapter evidence without product/configuration changes | Requires explicit serial execution; a later Node repeat needs a rebuild |
+| Keep the locked stack, isolated security fixture and current guards | Preserves the selected backport and finite owned resources | Requires both synthetic boundary execution and ordinary application checks |
+| Expand source-only harnesses while runtime admission is refused | Could add more source assertions | Does not resolve installation/compilation uncertainty; no additional expansion is warranted by this review |
+
+Recommendation: retain the existing Node/npm, selected Kit/static maintenance patches, unchanged Node adapter/Vite/Playwright and resource policies; correct execution order and perform real qualification when admitted. The internal fetch import/generated aliases still need their first actual compilation. Missing Chromium, refused admission or compilation failure remains a failed/blocked gate. Preserve the existing W3C focus/status acceptance without claiming new UI/accessibility results.
+
+The actual-application smoke driver will reuse the existing installed-identity, direct-Node process and bounded HTTP owners under unchanged build admission. Consume `clients/web/build/index.js` immediately after the Node build, with a single owned literal-loopback backend fixture and sixty-second observer. Check login HTML/locale placeholders, two actual built entry assets, malformed-path refusal and continued service, and the real application hook's finite JSON/cookie/redirect/SSE proxy behavior. No real backend credential, production fixture route, database or application source change is needed. Join owned listener/socket/process completion before publishing; no synthetic proxy fixture is an authenticated Rust/backend or full accessibility qualification.
+
+Initial `web-install` receipt **`2026-11-15T00-58-45-791Z-ceb9f8cc-887d-4332-a055-8b68c1377d3f.jsonl`** refuses before execution at **91.180%**, **83.18/91.23 GiB** system commit, **8.05 GiB** headroom and **13.73 GiB** physical availability. The next operator-requested check, `2026-11-15T01-03-19-003Z-3c36d6e3-99bb-4762-a1e0-b78a4e15e213.jsonl`, meets the twelve-GiB reserve but still refuses at 86.366%. A subsequent fresh sample drops below 85% and the guard admits the successful installs/qualification above. No reserve, percentage, OS or service setting is changed. [Maintenance](../operations/DEVELOPMENT_STORAGE.md#web-execution-gate-maintenance) records targeted resource inventory and preservation of running services/models.
 
 ## Status and next gate
 

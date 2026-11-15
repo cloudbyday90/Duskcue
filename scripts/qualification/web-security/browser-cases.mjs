@@ -52,7 +52,10 @@ export async function runBrowserCases(inputs, origin, holder, owners, signal, fa
         await page.evaluate(() => globalThis.__duskcueGoto('/nav/two'));
         assert.equal(await page.locator('h1').textContent(), 'Navigation two');
         assert.ok(healthyRouteRequests >= 1, 'The positive control did not exercise server route resolution.');
-        await page.evaluate(() => globalThis.__duskcueGoto('/nav/..//foreign.invalid/x').catch(() => {}));
+        await Promise.all([
+            page.waitForURL((url) => url.origin === origin && url.pathname === '//foreign.invalid/x', { waitUntil: 'domcontentloaded' }),
+            page.evaluate(() => { setTimeout(() => { globalThis.__duskcueGoto('/nav/..//foreign.invalid/x').catch(() => {}); }, 0); }),
+        ]);
         assert.ok(hostileRouteRequests >= 1, 'The hostile path did not exercise the same-origin resolution request.');
         assert.equal(new URL(page.url()).origin, origin);
         assert.equal(await page.evaluate(() => globalThis.__duskcueOriginExecuted === undefined), true);
