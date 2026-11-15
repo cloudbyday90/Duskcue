@@ -1,5 +1,15 @@
 # SvelteKit 3 dependency PR review
 
+## November 14 boundary-runner continuation
+
+GitHub MCP finds only open/unmerged PR #6. Head `6c739a8798b698f9d57da587e17ac79bea91d360` is two commits behind/one ahead of starting main `13bd049`. Its unchanged major patch remains inapplicable to the compatible-patch qualification: the prior exact local trial fails configuration, and its proposed major versions are themselves affected by the moderate advisories. No redundant trial or major adoption is performed.
+
+The installed CLI's authorized automatic rebase refuses due to conflicts with the new package floors. A narrowly scoped conflict resolution uses an isolated temporary Git index, preserving both existing PR package blobs exactly and taking every other file from starting main. It creates a new commit parented to `13bd049`, with original bot authorship and the current committer, without checkout, worktree or new branch. Before publishing, exact file/blob, parent, repository, current remote head and unchanged main working-tree/index checks pass. The existing PR branch alone is updated with a force-with-lease bound to its exact old head. This is the requested history rewrite; main is not force-pushed. No comment or merge is sent.
+
+Remote verification establishes new head **`6a8fb603027b1c373dce5d410676a8cd8fc3f57e`**, zero behind/one ahead of that starting main. Both dependency contents remain identical to the previously trialed PR. The temporary index is removed through exact native file operations and its empty directory is retired. Do not chase this task's subsequent main commits with another rebase. A coordinated, patched-major migration remains separate; the PR is unmerged/unadopted.
+
+Authenticated provider reads now show alerts **37/36 fixed at `2026-11-14T23:16:04Z`**, while low alerts **34/33/32** remain open. No alert is manually dismissed. This confirms dependency-graph status only; [local updated-package verification](../security/SVELTEKIT_2_SECURITY_PATCH.md#production-boundary-runner-continuation) is still blocked. [The boundary runner](SVELTEKIT_SECURITY_BOUNDARIES.md) has 30 passing infrastructure cases; it does not establish production framework behavior or complete security qualification. No release.
+
 ## November 14 compatible-patch continuation
 
 GitHub MCP again identifies only PR #6, open and unmerged. The requested random selection therefore has one candidate. A single-ref fetch establishes head `5d7f013e183d1dc35b263ee7e78e2925fccff407` is three behind/one ahead of starting main `c70b29a`. The connector has no rebase operation; the installed CLI rebases the existing branch once under the standing authorization, using the saved login only within the request process and restoring environment tokens afterward. No remote comment, merge or local feature branch is created.

@@ -32,3 +32,13 @@ test('real owner browser qualification retains the guarded browser and compiler 
     assert.deepEqual(preset.args, ['test', '-p', 'duskcue', '--locked', '-j', '2', '--test', 'household_client', '--', '--ignored', '--nocapture']);
     assert.equal(workloadEnvironment(preset, {}).RUST_TEST_THREADS, '1');
 });
+
+test('web security fixture compilation retains build admission and units cannot compile packages', () => {
+    assert.equal(PRESETS['web-security-boundaries'].policy, 'build');
+    assert.equal(PRESETS['web-security-boundaries'].heapMiB, PRESETS['web-build'].heapMiB);
+    assert.deepEqual(PRESETS['web-security-boundaries'].args, ['scripts/qualification/web-security/run.mjs']);
+    assert.equal(PRESETS['web-security-unit'].policy, 'unit');
+    assert.equal(PRESETS['web-security-unit'].heapMiB, 128);
+    assert.ok(PRESETS['web-security-unit'].args.includes('--test-concurrency=1'));
+    assert.ok(PRESETS['web-security-unit'].args.every((arg) => !arg.endsWith('/run.mjs')));
+});

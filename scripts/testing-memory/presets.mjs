@@ -39,6 +39,8 @@ export const PRESETS = {
     'cargo-iptv-clippy': { policy: 'cargo', command: 'cargo.exe', args: ['clippy', '-p', 'duskcue', '--features', 'playback-qualification', '--all-targets', '--locked', '-j', '2', '--', '-D', 'warnings'] },
     'iptv-transport-qualify': { policy: 'build', heapMiB: 128, command: 'node', args: ['scripts/testing-memory/qualify-live-transport.mjs'] },
     'vite-editor-qualify': { policy: 'unit', heapMiB: 128, command: 'node', args: ['--test', '--test-concurrency=1', 'clients/web/tests/unit/vite-editor-security.test.mjs'] },
+    'web-security-unit': { policy: 'unit', heapMiB: 128, command: 'node', args: ['--test', '--test-concurrency=1', 'scripts/qualification/web-security/ownership.test.mjs', 'scripts/qualification/web-security/http.test.mjs', 'scripts/testing-memory/presets.test.mjs'] },
+    'web-security-boundaries': { policy: 'build', heapMiB: 3072, command: 'node', args: ['scripts/qualification/web-security/run.mjs'] },
     'web-unit': { policy: 'unit', heapMiB: 1536, args: ['--prefix', 'clients/web', 'run', 'test:unit', '--', '--run', '--maxWorkers=1'] },
     'web-install': { policy: 'build', heapMiB: 1536, args: ['--prefix', 'clients/web', 'ci', '--ignore-scripts'] },
     'desktop-install': { policy: 'build', heapMiB: 1536, args: ['--prefix', 'clients/desktop', 'ci', '--ignore-scripts'] },
