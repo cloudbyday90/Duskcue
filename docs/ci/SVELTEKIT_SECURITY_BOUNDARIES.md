@@ -10,6 +10,8 @@ The synthetic driver always retains `completeSecurityMatrix: false`: it does not
 
 ## November executed qualification
 
+Verified source: `6835c88aeb44adb937db92ef3f64733465d05c37` on main. Documentation-only attribution preserves the exact tested implementation and installed lock identity.
+
 Source `ddbd7ac` had 46 passing orchestration tests but no actual framework execution. Initial install admission again refuses, then the operator frees host memory and the unchanged guard admits a clean install. Exact installed metadata confirms the selected Kit/static graph. Analysis passes with zero diagnostics and web units pass 37 Node plus 582 Vitest cases on the preceding Node 5.5.7 graph.
 
 Fresh npm audit identifies the additional moderate Node adapter advisory. Astra independently confirms its 5.5.8 backport and the precise immutable-response regression; the [Node patch authority](../security/SVELTEKIT_NODE_SECURITY_PATCH.md) owns research, tradeoffs and scope. A generated-only baseline SSE request crashes the actual 5.5.7 server with `TypeError: immutable`/ECONNRESET. After the narrow adapter update and clean installation, that case and controls pass. The first browser run exposes a harness-only execution-context race during safe same-origin full navigation. Starting the exact URL wait before scheduling real `goto` fixes the observer without relaxing the foreign-request or positive-resolution controls; Astra reviews the correction.

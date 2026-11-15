@@ -540,6 +540,8 @@ Migration of users and watch data from Plex, Jellyfin, and Emby is documented in
 
 ## Current Implementation Status
 
+Current qualified web security source: `6835c88aeb44adb937db92ef3f64733465d05c37` on main. Later documentation attribution does not change its tested package/runner inputs.
+
 | Phase | Status | Commit |
 |---|---|---|
 | Web security boundary runner | **Scoped Windows/application qualification complete.** [Authority](docs/ci/SVELTEKIT_SECURITY_BOUNDARIES.md#november-executed-qualification) records all **thirteen actual boundary cases**, **48 orchestration passes**, exact installed graph and confirmed cleanup. Actual Node SSR/proxy smoke pairs returned HTML to its client entry assets; both application builds pass in safe consumption order. Browser suite has **165 passes/three existing caption skips**. Astra reviews navigation, build ownership and evidence limits; no new native Tauri/backend-auth/accessibility certification. | Verified source on main; no release |

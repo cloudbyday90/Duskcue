@@ -20,6 +20,8 @@ Follow the Research → Document → Implement methodology in [CONTEXT.md](CONTE
 
 ## November 15 web security qualification (SCOPED WEB QUALIFICATION COMPLETE)
 
+**Verified source:** `6835c88aeb44adb937db92ef3f64733465d05c37` on main. This documentation-only attribution preserves the executed source and receipts; no release.
+
 **Authority:** [executed Windows/application qualification](docs/ci/SVELTEKIT_SECURITY_BOUNDARIES.md#november-executed-qualification), [Kit/static patch](docs/security/SVELTEKIT_2_SECURITY_PATCH.md) and [Node adapter patch](docs/security/SVELTEKIT_NODE_SECURITY_PATCH.md). Initial memory refusals are retained; after operator cleanup, the unchanged guard admits exact installation and real execution. Astra reviews compatibility, Node/static output ordering, browser navigation and application evidence limits.
 
 **Implementation:** selected Kit **2.70.4**, static **3.0.11**, Node **5.5.8**, with other versions/configuration/cookie and platform contracts unchanged. Only the additional Node floor/distribution changes relative to `ddbd7ac`; 189 other lock nodes remain. Modular generated SSE controls, mandatory thirteen-case evidence, navigation ownership and SSR-reference application smoke supplement the prior runner. No product route or release is added.

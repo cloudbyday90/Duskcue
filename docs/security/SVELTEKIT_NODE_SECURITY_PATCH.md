@@ -22,6 +22,8 @@ First attempt the new case against installed 5.5.7 in the isolated build, retain
 
 ## Outcome
 
+Verified source: `6835c88aeb44adb937db92ef3f64733465d05c37` on main; the later documentation-only attribution changes no executed source or package inputs.
+
 The manifest floor is now `^5.5.8`; the lock node uses the published 5.5.8 distribution/integrity. Exact graph comparison preserves **189 other package nodes**, consumer dependency/peer metadata and all overrides. The guarded clean install confirms Kit 2.70.4/static 3.0.11/Node 5.5.8 and lock SHA-256 `64c1c98109286fc0064ff010042c95f88e7b79d7cbba35e87a8baa19fa7f2a80`.
 
 The actual generated production baseline on Node adapter 5.5.7 crashes with `TypeError: immutable` in the adapter handler and the client observes ECONNRESET. After installation/rebuild with 5.5.8, the exact immutable Fetch SSE route returns 200, the nonce-bearing body and `x-accel-buffering: no`; the mutable and non-SSE controls and same-server healthy requests also pass. The final actual Windows matrix passes all thirteen cases and confirms owned cleanup. This is scoped runtime evidence for the adapter repair; it does not demonstrate that the inspected Duskcue proxy was exploitable.
