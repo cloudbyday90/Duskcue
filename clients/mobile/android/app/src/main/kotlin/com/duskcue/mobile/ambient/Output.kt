@@ -11,7 +11,6 @@ import android.os.Looper
 import android.os.Process
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
-import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.PlaybackException
@@ -22,6 +21,7 @@ import androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy
 import androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy
 import androidx.media3.session.MediaSession
 import androidx.media3.ui.PlayerView
+import java.util.UUID
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
@@ -53,6 +53,7 @@ internal class AmbientOutput(
     private val failed: (Throwable) -> Unit,
 ) {
     private val alive = AtomicBoolean(true)
+    private val sessionIdentity = UUID.randomUUID().toString()
     private val releaseFailed = AtomicBoolean()
     private val frames = AtomicLong()
     private val loaders = AmbientLoaders()
@@ -76,10 +77,12 @@ internal class AmbientOutput(
                     .setLoadControl(DefaultLoadControl.Builder().setBufferDurationsMs(5000, 15000, 500, 1000)
                         .setTargetBufferBytes(8 * 1024 * 1024).setPrioritizeTimeOverSizeThresholds(false).build()).build()
                 player = native
+                native.trackSelectionParameters = native.trackSelectionParameters.buildUpon()
+                    .setTrackTypeDisabled(C.TRACK_TYPE_METADATA, true).setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
                 native.setAudioAttributes(AudioAttributes.Builder().setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(), true)
                 native.setHandleAudioBecomingNoisy(true)
                 val view = CommandPlayer(native, ready, title, controls).also { facade = it }
-                session = MediaSession.Builder(context, view).setCallback(object : MediaSession.Callback {
+                session = MediaSession.Builder(context, view).setId(sessionIdentity).setCallback(object : MediaSession.Callback {
                     override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
                         return if (controller.uid == Process.myUid() || controller.isTrusted)
                             MediaSession.ConnectionResult.AcceptedResultBuilder(session).build()
@@ -90,9 +93,17 @@ internal class AmbientOutput(
                 native.addListener(object : Player.Listener {
                     override fun onEvents(player: Player, events: Player.Events) { view.changed() }
                     override fun onPlaybackStateChanged(state: Int) {
-                        if (state == Player.STATE_READY && !prepared.isDone) {
-                            if (alive.get() && current()) { if (playIntent()) native.play(); prepared.complete(Unit) }
-                            else prepared.completeExceptionally(AmbientFailure("stale_output"))
+                        if (state == Player.STATE_READY) {
+                            if (!alive.get() || !current()) {
+                                prepared.completeExceptionally(AmbientFailure("stale_output"))
+                                return
+                            }
+                            val refusal = ambientRequiredFormatsFailure(ambientSelectedFormats(native.currentTracks))
+                            if (refusal != null) { prepared.completeExceptionally(AmbientFailure(refusal)); if (alive.get() && current()) failed(AmbientFailure(refusal)) }
+                            else if (!prepared.isDone) {
+                                if (alive.get() && current()) { if (playIntent()) native.play(); prepared.complete(Unit) }
+                                else prepared.completeExceptionally(AmbientFailure("stale_output"))
+                            }
                         }
                         if (state == Player.STATE_ENDED && alive.get() && current()) ended()
                     }
@@ -102,19 +113,19 @@ internal class AmbientOutput(
                         if (alive.get() && current()) failed(error)
                     }
                     override fun onTracksChanged(tracks: androidx.media3.common.Tracks) {
+                        if (!alive.get() || !current()) return
+                        if (native.playbackState == Player.STATE_READY) {
+                            val refusal = ambientRequiredFormatsFailure(ambientSelectedFormats(tracks))
+                            if (refusal != null) { prepared.completeExceptionally(AmbientFailure(refusal)); if (alive.get() && current()) failed(AmbientFailure(refusal)) }
+                        }
                         for (group in tracks.groups) for (index in 0 until group.length) if (group.isTrackSelected(index)) {
                             val format = group.getTrackFormat(index)
-                            val valid = when (group.type) {
-                                C.TRACK_TYPE_VIDEO -> format.sampleMimeType == "video/avc" && format.height in 1..1080 && format.width in 1..1920 &&
-                                    (format.colorInfo == null || format.colorInfo?.colorTransfer in setOf(C.COLOR_TRANSFER_SDR, Format.NO_VALUE))
-                                C.TRACK_TYPE_AUDIO -> format.sampleMimeType == "audio/mp4a-latm" && format.channelCount in 1..2
-                                else -> false
-                            }
-                            if (!valid) { prepared.completeExceptionally(AmbientFailure("unqualified_output")); if (current()) failed(AmbientFailure("unqualified_output")) }
+                            val failure = ambientFormatFailure(group.type, format)
+                            if (failure != null) { prepared.completeExceptionally(AmbientFailure(failure)); if (alive.get() && current()) failed(AmbientFailure(failure)) }
                         }
                     }
                 })
-                val media = HlsMediaSource.Factory(source).setDownloadExecutor { loaders.create() }
+                val media = HlsMediaSource.Factory(source).setAllowChunklessPreparation(false).setDownloadExecutor { loaders.create() }
                     .setLoadErrorHandlingPolicy(object : DefaultLoadErrorHandlingPolicy(0) {
                         override fun getRetryDelayMsFor(loadErrorInfo: LoadErrorHandlingPolicy.LoadErrorInfo): Long = C.TIME_UNSET
                         override fun getFallbackSelectionFor(options: LoadErrorHandlingPolicy.FallbackOptions, info: LoadErrorHandlingPolicy.LoadErrorInfo): LoadErrorHandlingPolicy.FallbackSelection? = null

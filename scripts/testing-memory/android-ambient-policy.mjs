@@ -5,8 +5,8 @@
 export const ambientStages = Object.freeze(['ambient-background', 'ambient-controls', 'ambient-advance',
     'ambient-cold-retain', 'ambient-cold-restore', 'ambient-scope', 'ambient-concurrency']);
 const flags = Object.freeze({
-    'ambient-background': ['native_http_tls', 'negative_tls', 'owned_probe_completion', 'background_renewal'],
-    'ambient-controls': ['paused_renewal', 'same_viewer_seek', 'paused_intent'],
+    'ambient-background': ['native_http_tls', 'negative_tls', 'owned_probe_completion', 'background_renewal', 'unsupported_sources_refused', 'strict_formats'],
+    'ambient-controls': ['paused_renewal', 'same_viewer_seek', 'paused_intent', 'stale_sdk_notifications_refused', 'current_sdk_notifications_applied'],
     'ambient-advance': ['natural_advance', 'replacement_cleanup'],
     'ambient-cold-retain': ['retained_for_process_death'],
     'ambient-cold-restore': ['cleanup_only_restore', 'missed_lease_refused'],

@@ -36,7 +36,7 @@ internal fun AmbientOwner.monitor(rt: AmbientRuntime, once: Boolean) {
             val state = value.text("status", 32)
             demand(state in setOf("unknown", "accepted", "preparing", "completed", "failed", "retiring", "cancelled", "uncertain"))
             val complete = value.flag("cleanup_complete")
-            if (state in setOf("completed", "failed", "cancelled") && complete) {
+            if (state == "completed" || state in setOf("failed", "cancelled") && complete) {
                 save(rt, record.copy(operation = null))
                 adopt(rt, rt.protocol.receipt(statusRead(rt), record.start))
                 return
@@ -50,13 +50,13 @@ internal fun AmbientOwner.monitor(rt: AmbientRuntime, once: Boolean) {
 
 internal fun AmbientOwner.scheduleSamples(rt: AmbientRuntime) {
     rt.sampleTimer?.close()
-    if (!current(rt) || rt.output == null) return
+    if (!current(rt) || rt.output == null || rt.phase != "ready") return
     rt.sampleTimer = timers.after(1000) {
-        if (!current(rt) || rt.output == null) return@after
+        if (!current(rt) || rt.output == null || rt.phase != "ready") return@after
         val output = rt.output!!
         val work = try { sampling.run { output.sample().get() } } catch (error: Throwable) { fail(rt, error); return@after }
         work.actual.whenComplete { value, error ->
-            if (current(rt) && rt.output === output) {
+            if (current(rt) && rt.output === output && rt.phase == "ready") {
                 if (error != null) fail(rt, error) else {
                     rt.sample = value
                     sendCheckpoint(rt)
@@ -69,29 +69,31 @@ internal fun AmbientOwner.scheduleSamples(rt: AmbientRuntime) {
 }
 
 internal fun AmbientOwner.sendCheckpoint(rt: AmbientRuntime) {
-    val ready = rt.ready ?: return
-    val sample = rt.sample ?: return
-    val state = if (sample.buffering) "buffering" else if (!rt.playIntent || !sample.playing) "paused" else "playing"
-    if (!outputCurrent(rt, ready.output) || rt.progressUncertain || checkpoints.count() > 0 ||
-        clock.now() - rt.checkpointAt < 15000 && state == rt.checkpointState) return
-    rt.checkpointState = state
-    rt.checkpointAt = clock.now()
-    val record = rt.record ?: return
-    val sequence = ++rt.checkpointSequence
-    val body = JSONObject().put("protocol", PROTOCOL).put("output_revision", ready.output).put("sequence", sequence)
-        .put("position_ms", sample.position).put("playback_state", state)
-    fun failed() {
-        if (runtime === rt && rt.identity.same(identity) && rt.record?.output == ready.output &&
-            (rt.token == epochs.get() || rt.cleanupToken == epochs.get())) {
-            rt.progressUncertain = true
-            emit()
+    synchronized(lock) {
+        val ready = rt.ready ?: return
+        val sample = rt.sample ?: return
+        val state = if (sample.buffering) "buffering" else if (!rt.playIntent || !sample.playing) "paused" else "playing"
+        if (rt.busy || rt.phase != "ready" || !outputCurrent(rt, ready.output) || rt.progressUncertain || checkpoints.count() > 0 ||
+            clock.now() - rt.checkpointAt < 15000 && state == rt.checkpointState) return
+        rt.checkpointState = state
+        rt.checkpointAt = clock.now()
+        val record = rt.record ?: return
+        val sequence = ++rt.checkpointSequence
+        val body = JSONObject().put("protocol", PROTOCOL).put("output_revision", ready.output).put("sequence", sequence)
+            .put("position_ms", sample.position).put("playback_state", state)
+        fun failed() {
+            if (runtime === rt && rt.identity.same(identity) && rt.record?.output == ready.output &&
+                (rt.token == epochs.get() || rt.cleanupToken == epochs.get())) {
+                rt.progressUncertain = true
+                emit()
+            }
         }
+        checkpoints.run(publish = { outcome -> if (outcome.isFailure) failed() }) {
+            val reply = rt.protocol.call("POST", commandPath(record.start, "/checkpoint"), body)
+            demand(current(rt) && rt.record?.output == ready.output, "stale_output")
+            val value = reply.body
+            demand(value.text("protocol") == PROTOCOL && value.uuid("request_id", true) == record.start && value.uuid("output_revision", true) == ready.output &&
+                value.number("sequence", 9007199254740991) == sequence && value.number("position_ms") == sample.position && value.text("playback_state") == state)
+        }.result.whenComplete { _, error -> if (error != null) failed() }
     }
-    checkpoints.run(publish = { outcome -> if (outcome.isFailure) failed() }) {
-        val reply = rt.protocol.call("POST", commandPath(record.start, "/checkpoint"), body)
-        demand(current(rt) && rt.record?.output == ready.output, "stale_output")
-        val value = reply.body
-        demand(value.text("protocol") == PROTOCOL && value.uuid("request_id", true) == record.start && value.uuid("output_revision", true) == ready.output &&
-            value.number("sequence", 9007199254740991) == sequence && value.number("position_ms") == sample.position && value.text("playback_state") == state)
-    }.result.whenComplete { _, error -> if (error != null) failed() }
 }

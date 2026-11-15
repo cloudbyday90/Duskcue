@@ -156,8 +156,10 @@ internal class AmbientOwner(context: Context) {
             return (rt.output?.setPlaying(false) ?: CompletableFuture.completedFuture(Unit)).whenComplete { _, _ -> emit() }
         }
         if (action == "stop") return stop()
-        demand(action in setOf("play", "check", "seek") && current(rt, action == "check" && rt.cleanupOnly) && !quarantined && !rt.busy && clock.now() >= rt.retryAt, "control_unavailable")
-        rt.busy = true
+        synchronized(lock) {
+            demand(action in setOf("play", "check", "seek") && current(rt, action == "check" && rt.cleanupOnly) && !quarantined && !rt.busy && clock.now() >= rt.retryAt, "control_unavailable")
+            rt.busy = true
+        }
         val work = try { commands.run(timeoutMs = 60000, cancel = http::cancelCommands, publish = { outcome ->
             rt.busy = false
             outcome.exceptionOrNull()?.let { fail(rt, it) }

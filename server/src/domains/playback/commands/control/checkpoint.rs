@@ -49,6 +49,7 @@ pub(super) async fn report(
     body: CheckpointRequest,
 ) -> Result<CheckpointResponse, CommandError> {
     if scope.binding.is_none() {
+        tracing::debug!(stage="binding", "VOD checkpoint refused");
         return Err(CommandError::Conflict);
     }
     if body.protocol != PROTOCOL
@@ -78,14 +79,14 @@ pub(super) async fn report(
             if identity.as_ref()!=Some(&current.prepared.identity) {return Err(CommandError::Forbidden);}
             owner.active_sql(request,move|conn|Box::pin(async move {
                 let row=revisions::control(conn,id).await?;
-                if row.current_output!=Some(body.output_revision) || row.pending_operation.is_some() || !matches!(row.state.as_str(),"ready"|"unavailable") || !viewer.group.active() {return Err(AdmissionError::Conflict);}
+                if row.current_output!=Some(body.output_revision) || row.pending_operation.is_some() || !matches!(row.state.as_str(),"ready"|"unavailable") || !viewer.group.active() {tracing::debug!(stage="current_output",output_matches=row.current_output==Some(body.output_revision),pending=row.pending_operation.is_some(),state_ready=matches!(row.state.as_str(),"ready"|"unavailable"),active=viewer.group.active(),"VOD checkpoint refused");return Err(AdmissionError::Conflict);}
                 let seq=i64::try_from(body.sequence).map_err(|_|AdmissionError::Conflict)?;
                 if seq==row.checkpoint_sequence && row.checkpoint_output==Some(body.output_revision) && row.checkpoint_position==Some(body.position_ms) && row.playback_state==body.playback_state {return Ok(response(id,row));}
-                if seq<=row.checkpoint_sequence {return Err(AdmissionError::Conflict);}
+                if seq<=row.checkpoint_sequence {tracing::debug!(stage="sequence","VOD checkpoint refused");return Err(AdmissionError::Conflict);}
                 let parent=super::super::database::read(conn,id).await?.ok_or(AdmissionError::Storage)?;
                 let (history,started)=parent.history_id.zip(parent.history_started_at).ok_or(AdmissionError::Retired)?;
                 let published:bool=sqlx::query_scalar("SELECT published_at IS NOT NULL FROM playback_vod_outputs WHERE id=$1 AND reservation_id=$2").bind(body.output_revision).bind(id).fetch_one(&mut *conn).await?;
-                if !published {return Err(AdmissionError::Conflict);}
+                if !published {tracing::debug!(stage="publication","VOD checkpoint refused");return Err(AdmissionError::Conflict);}
                 if sqlx::query("UPDATE play_sessions SET metadata=metadata||jsonb_build_object('current_position_ms',$4::integer,'current_state',$5::text,'last_heartbeat_at',clock_timestamp(),'checkpoint_output',$6::uuid,'checkpoint_sequence',$7::bigint) WHERE id=$1 AND started_at=$2 AND user_id=$3 AND stopped_at IS NULL")
                     .bind(history).bind(started).bind(request.actor.user).bind(body.position_ms).bind(&body.playback_state).bind(body.output_revision).bind(seq).execute(&mut *conn).await?.rows_affected()!=1 {return Err(AdmissionError::Retired);}
                 if current.prepared.plan.source.playback_mode=="interactive" {

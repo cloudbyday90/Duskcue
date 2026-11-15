@@ -75,14 +75,22 @@ final ambientPlaybackServiceProvider = Provider<AmbientPlaybackService>((ref) {
     scope: () {
       final session = ref.read(sessionProvider);
       final user = session.user;
-      return user == null || !session.isAuthenticated ? null : AmbientClientScope(
-        user.id, user.activeProfileId, ready: session.isProfileScopeReady,
-      );
+      return user == null || !session.isAuthenticated
+          ? null
+          : AmbientClientScope(
+              user.id,
+              user.activeProfileId,
+              ready: session.isProfileScopeReady,
+            );
     },
   );
   ref.listen(sessionProvider, (previous, next) {
-    if (previous?.user?.id != next.user?.id || previous?.user?.activeProfileId != next.user?.activeProfileId ||
-        previous?.isProfileScopeReady != next.isProfileScopeReady || previous?.server != next.server) service.scopeChanged();
+    if (previous?.user?.id != next.user?.id ||
+        previous?.user?.activeProfileId != next.user?.activeProfileId ||
+        previous?.isProfileScopeReady != next.isProfileScopeReady ||
+        previous?.server != next.server) {
+      service.scopeChanged();
+    }
   });
   ref.onDispose(service.dispose);
   return service;

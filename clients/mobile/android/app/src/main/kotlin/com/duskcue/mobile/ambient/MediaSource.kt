@@ -24,10 +24,7 @@ internal class AmbientMediaSource(
     val requests = HttpRequests(4)
     private val playlists = AmbientPlaylists(prefix, current)
     @Volatile private var closed = false
-    override fun createDataSource(dataType: Int): DataSource {
-        demand(dataType in setOf(C.DATA_TYPE_MANIFEST, C.DATA_TYPE_MEDIA, C.DATA_TYPE_MEDIA_INITIALIZATION), "unsupported_resource")
-        return Source(dataType)
-    }
+    override fun createDataSource(dataType: Int): DataSource = Source(dataType)
     fun cancel() { closed = true; playlists.clear(); requests.cancel() }
     fun drain() = requests.drain()
     private inner class Source(private val type: Int) : DataSource {
@@ -39,6 +36,7 @@ internal class AmbientMediaSource(
         override fun getResponseHeaders(): Map<String, List<String>> = emptyMap()
         override fun open(dataSpec: DataSpec): Long {
             try {
+                demand(type in setOf(C.DATA_TYPE_MANIFEST, C.DATA_TYPE_MEDIA, C.DATA_TYPE_MEDIA_INITIALIZATION), "unsupported_resource")
                 demand(exchange == null && buffer == null && dataSpec.httpMethod == DataSpec.HTTP_METHOD_GET && dataSpec.httpBody == null)
                 demand(current() && !closed, "stale_output")
                 val raw = dataSpec.uri.toString()

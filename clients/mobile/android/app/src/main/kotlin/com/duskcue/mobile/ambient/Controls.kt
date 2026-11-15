@@ -9,6 +9,11 @@ import java.util.concurrent.TimeUnit
 
 internal fun AmbientOwner.seek(rt: AmbientRuntime, position: Long) {
     demand(position in 0..2147483647 && current(rt) && rt.record?.operation == null && rt.ready != null, "invalid_position")
+    rt.phase = "changing"
+    rt.sampleTimer?.close()
+    emit()
+    sampling.drain().get()
+    checkpoints.drain().get()
     if (clock.stale()) rt.protocol.context()
     val old = rt.record!!
     val configReply = rt.protocol.call("GET", commandPath(old.start, "/configuration"))
@@ -17,9 +22,6 @@ internal fun AmbientOwner.seek(rt: AmbientRuntime, position: Long) {
         config.uuid("output_revision", true) == old.output && config.isNull("pending_operation"))
     val etag = configReply.etag ?: throw AmbientFailure("invalid_configuration")
     demand(Regex("\"vod-config-[a-f0-9]{64}\"").matches(etag))
-    rt.phase = "changing"
-    emit()
-    rt.sampleTimer?.close()
     rt.output?.let { retireOutput(rt, it).get(5, TimeUnit.SECONDS) }
     demand(current(rt) && rt.output == null && !quarantined, "ambient_cleanup_pending")
     val next = old.copy(operation = clock.id(), phase = "uncertain")

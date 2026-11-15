@@ -45,7 +45,7 @@ class AmbientPlaybackService extends ChangeNotifier {
   final AmbientClientScope? Function()? _scope;
   final bool _android;
   late final StreamSubscription<void> _subscription;
-  int _epoch = 0, _bindRevision = 0, _boundRevision = -1;
+  int _epoch = 0, _bindRevision = 0, _boundRevision = -1, _bindingRevision = -1;
   int? _logoutCredential;
   bool _disposed = false, _bindingFailed = false, _fenceRequired = false;
   Future<void>? _binding, _fencing, _command, _cleanup, _checking, _pause;
@@ -57,8 +57,14 @@ class AmbientPlaybackService extends ChangeNotifier {
     final origin = _apiClient.serverOrigin;
     final token = _apiClient.bearerToken;
     final scope = _scope?.call();
-    if (origin == null || token == null || token.isEmpty || scope == null ||
-        !scope.ready || _logoutCredential == _apiClient.credentialEpoch) return null;
+    if (origin == null ||
+        token == null ||
+        token.isEmpty ||
+        scope == null ||
+        !scope.ready ||
+        _logoutCredential == _apiClient.credentialEpoch) {
+      return null;
+    }
     return {
       'server_origin': origin.origin,
       'bearer_token': token,
@@ -79,60 +85,88 @@ class AmbientPlaybackService extends ChangeNotifier {
 
   void _requireFence() {
     _fenceRequired = true;
-    if (_fenceSettlement == null || _fenceSettlement!.isCompleted) _fenceSettlement = Completer<void>();
+    if (_fenceSettlement == null || _fenceSettlement!.isCompleted) {
+      _fenceSettlement = Completer<void>();
+    }
     _fence();
   }
 
   Future<void> _waitFence() async {
     final revision = _bindRevision;
     await _fenceSettlement?.future.timeout(const Duration(seconds: 5));
-    if (_disposed || revision != _bindRevision || _fenceRequired || _bindingFailed) {
+    if (_disposed ||
+        revision != _bindRevision ||
+        _fenceRequired ||
+        _bindingFailed) {
       throw StateError('The current native playback fence is not confirmed.');
     }
   }
 
   void _fence() {
     if (_fencing != null || _disposed) return;
-    if (_fenceSettlement == null || _fenceSettlement!.isCompleted) _fenceSettlement = Completer<void>();
+    if (_fenceSettlement == null || _fenceSettlement!.isCompleted) {
+      _fenceSettlement = Completer<void>();
+    }
     final revision = _bindRevision;
     _bindingFailed = false;
-    final work = _channel.invokeMethod<void>('fence', _runtime()).then((_) {
-      if (!_disposed && revision == _bindRevision) _fenceRequired = false;
-    }, onError: (Object _) {
-      if (!_disposed && revision == _bindRevision) _bindingFailed = true;
-    });
+    final work = _channel
+        .invokeMethod<void>('fence', _runtime())
+        .then(
+          (_) {
+            if (!_disposed && revision == _bindRevision) _fenceRequired = false;
+          },
+          onError: (Object _) {
+            if (!_disposed && revision == _bindRevision) _bindingFailed = true;
+          },
+        );
     _fencing = work;
     work.whenComplete(() {
       if (identical(_fencing, work)) _fencing = null;
       if (_disposed) return;
-      if (revision != _bindRevision) _fence();
-      else {
-        if (_fenceSettlement?.isCompleted == false) _fenceSettlement!.complete();
+      if (revision != _bindRevision) {
+        _fence();
+      } else {
+        if (_fenceSettlement?.isCompleted == false) {
+          _fenceSettlement!.complete();
+        }
         if (!_fenceRequired && !_bindingFailed) _bind();
       }
     });
   }
 
   void _bind() {
-    if (_binding != null || _fencing != null || _fenceRequired || _disposed) return;
+    if (_binding != null || _fencing != null || _fenceRequired || _disposed) {
+      return;
+    }
     final revision = _bindRevision;
-    final work = _channel.invokeMethod<void>('bind', _runtime()).then((_) {
-      if (!_disposed && revision == _bindRevision) {
-        _bindingFailed = false;
-        _boundRevision = revision;
-      }
-    }, onError: (Object error) {
-      if (!_disposed && revision == _bindRevision) {
-        _bindingFailed = true;
-        if (error is PlatformException && error.code == 'scope_changed') {
-          _requireFence();
-        }
-      }
-    });
+    final work = _channel
+        .invokeMethod<void>('bind', _runtime())
+        .then(
+          (_) {
+            if (!_disposed && revision == _bindRevision) {
+              _bindingFailed = false;
+              _boundRevision = revision;
+            }
+          },
+          onError: (Object error) {
+            if (!_disposed && revision == _bindRevision) {
+              _bindingFailed = true;
+              if (error is PlatformException && error.code == 'scope_changed') {
+                _requireFence();
+              }
+            }
+          },
+        );
+    _bindingRevision = revision;
     _binding = work;
     work.whenComplete(() {
       if (identical(_binding, work)) _binding = null;
-      if (!_disposed && !_fenceRequired && !_bindingFailed && _boundRevision != _bindRevision) _bind();
+      if (!_disposed &&
+          !_fenceRequired &&
+          !_bindingFailed &&
+          _boundRevision != _bindRevision) {
+        _bind();
+      }
     });
   }
 
@@ -150,16 +184,27 @@ class AmbientPlaybackService extends ChangeNotifier {
       'pause' => _pause,
       _ => _command,
     };
-    if (current != null) throw StateError('Ambient playback is still checking the previous action.');
+    if (current != null) {
+      throw StateError(
+        'Ambient playback is still checking the previous action.',
+      );
+    }
     final supplied = _android && method != 'start'
-        ? <String, Object?>{'runtime': _runtime(), if (arguments is Map<String, Object?>) ...arguments}
+        ? <String, Object?>{
+            'runtime': _runtime(),
+            if (arguments is Map<String, Object?>) ...arguments,
+          }
         : arguments;
     final work = _channel.invokeMethod<void>(method, supplied);
     switch (method) {
-      case 'stop': _cleanup = work;
-      case 'check': _checking = work;
-      case 'pause': _pause = work;
-      default: _command = work;
+      case 'stop':
+        _cleanup = work;
+      case 'check':
+        _checking = work;
+      case 'pause':
+        _pause = work;
+      default:
+        _command = work;
     }
     void finished() {
       if (identical(_command, work)) _command = null;
@@ -167,6 +212,7 @@ class AmbientPlaybackService extends ChangeNotifier {
       if (identical(_checking, work)) _checking = null;
       if (identical(_pause, work)) _pause = null;
     }
+
     work.then((_) => finished(), onError: (Object _) => finished());
     await work.timeout(const Duration(seconds: 5));
     if (captured != _epoch) throw StateError('The playback session changed.');
@@ -182,14 +228,25 @@ class AmbientPlaybackService extends ChangeNotifier {
       );
     }
     if (_android) {
+      if (_binding != null && _bindingRevision != _bindRevision) {
+        throw StateError(
+          'The previous native session binding is still settling.',
+        );
+      }
       if (_fenceRequired) {
         _fence();
         await _waitFence();
       }
       _bind();
       await _binding?.timeout(const Duration(seconds: 5));
-      if (_fenceRequired || _bindingFailed || _boundRevision != _bindRevision || captured != _epoch || _runtime() == null) {
-        throw StateError('Resolve the current profile before ambient playback.');
+      if (_fenceRequired ||
+          _bindingFailed ||
+          _boundRevision != _bindRevision ||
+          captured != _epoch ||
+          _runtime() == null) {
+        throw StateError(
+          'Resolve the current profile before ambient playback.',
+        );
       }
     }
     await _invoke('start', {
@@ -219,7 +276,9 @@ class AmbientPlaybackService extends ChangeNotifier {
   Future<void> pause() => _invoke('pause');
   Future<void> check() => _invoke('check');
   Future<void> seek(int positionMs) {
-    if (positionMs < 0 || positionMs > 2147483647) throw ArgumentError.value(positionMs);
+    if (positionMs < 0 || positionMs > 2147483647) {
+      throw ArgumentError.value(positionMs);
+    }
     return _invoke('seek', {'position_ms': positionMs});
   }
 
@@ -227,14 +286,22 @@ class AmbientPlaybackService extends ChangeNotifier {
     if (_status != null) return _status!.timeout(const Duration(seconds: 5));
     final captured = _epoch;
     final work = () async {
-      final data = await _channel.invokeMapMethod<Object?, Object?>('status', _android ? {'runtime': _runtime()} : null);
+      final data = await _channel.invokeMapMethod<Object?, Object?>(
+        'status',
+        _android ? {'runtime': _runtime()} : null,
+      );
       if (captured != _epoch) throw StateError('The playback session changed.');
       return NativeAmbientPlaybackStatus.fromJson(data ?? const {});
     }();
     _status = work;
-    work.then((_) { if (identical(_status, work)) _status = null; }, onError: (Object _) {
-      if (identical(_status, work)) _status = null;
-    });
+    work.then(
+      (_) {
+        if (identical(_status, work)) _status = null;
+      },
+      onError: (Object _) {
+        if (identical(_status, work)) _status = null;
+      },
+    );
     return work.timeout(const Duration(seconds: 5));
   }
 

@@ -5,6 +5,11 @@
 package com.duskcue.mobile.ambient
 
 import android.content.Context
+import androidx.media3.common.C
+import androidx.media3.common.Format
+import androidx.media3.common.ColorInfo
+import androidx.media3.datasource.DataSpec
+import java.io.IOException
 import org.json.JSONObject
 import java.io.File
 import java.util.UUID
@@ -26,6 +31,8 @@ internal class AmbientNativeProbe(private val context: Context) {
             verify("wire", ::wire)
             verify("clock", ::clock)
             verify("hls", ::playlists)
+            verify("unsupported_sources") { unsupportedSources(timers) }
+            verify("formats", ::formats)
             verify("operations") { lanes(timers) }
             verify("loaders", ::loaders)
             verify("journal") { journal(timers) }
@@ -53,8 +60,47 @@ internal class AmbientNativeProbe(private val context: Context) {
             return mapOf("strict_wire" to true, "uuidv7_clock" to true, "atomic_hls" to true,
                 "retained_operations" to true, "joined_loaders" to true, "atomic_journal" to true,
                 "native_http" to true, "native_tls" to true, "retained_io" to true, "terminal_publication" to true, "notification_identity" to true,
-                "tls_name_refused" to true, "lost_post_count" to requests)
+                "tls_name_refused" to true, "unsupported_sources_refused" to true, "strict_formats" to true, "lost_post_count" to requests)
         } finally { timers.close().get(5, TimeUnit.SECONDS) }
+    }
+    private fun formats() {
+        val video = Format.Builder().setSampleMimeType("video/avc").setWidth(1920).setHeight(1080).build()
+        val audio = Format.Builder().setSampleMimeType("audio/mp4a-latm").setChannelCount(2).build()
+        val selectedVideo = C.TRACK_TYPE_VIDEO to video
+        val selectedAudio = C.TRACK_TYPE_AUDIO to audio
+        check(ambientRequiredFormatsFailure(listOf(selectedVideo, selectedAudio)) == null)
+        for (selection in listOf(emptyList(), listOf(selectedVideo), listOf(selectedAudio))) {
+            check(ambientRequiredFormatsFailure(selection) == "missing_required_tracks")
+        }
+        check(ambientFormatFailure(C.TRACK_TYPE_VIDEO, video) == null)
+        check(ambientFormatFailure(C.TRACK_TYPE_AUDIO, audio) == null)
+        check(ambientFormatFailure(C.TRACK_TYPE_AUDIO, audio.buildUpon().setChannelCount(Format.NO_VALUE).build()) == "unqualified_audio_channels")
+        check(ambientFormatFailure(C.TRACK_TYPE_AUDIO, audio.buildUpon().setChannelCount(6).build()) == "unqualified_audio_channels")
+        check(ambientFormatFailure(C.TRACK_TYPE_AUDIO, audio.buildUpon().setSampleMimeType("audio/ac3").build()) == "unqualified_audio_codec")
+        check(ambientFormatFailure(C.TRACK_TYPE_VIDEO, video.buildUpon().setWidth(3840).build()) == "unqualified_video_size")
+        check(ambientFormatFailure(C.TRACK_TYPE_VIDEO, video.buildUpon().setHeight(Format.NO_VALUE).build()) == "unqualified_video_size")
+        check(ambientFormatFailure(C.TRACK_TYPE_VIDEO, video.buildUpon().setSampleMimeType("video/hevc").build()) == "unqualified_video_codec")
+        val hdr = ColorInfo.Builder().setColorTransfer(C.COLOR_TRANSFER_ST2084).build()
+        check(ambientFormatFailure(C.TRACK_TYPE_VIDEO, video.buildUpon().setColorInfo(hdr).build()) == "unqualified_video_color")
+        check(ambientFormatFailure(C.TRACK_TYPE_METADATA, Format.Builder().setSampleMimeType("application/id3").build()) == "unqualified_track_type")
+    }
+    private fun unsupportedSources(timers: AmbientTimers) {
+        val identity = AmbientIdentity(mapOf("server_origin" to "http://127.0.0.1:12345", "bearer_token" to "media-probe",
+            "user_id" to "019a6275-6000-7000-8000-000000000001", "profile_id" to "019a6275-6000-7000-8000-000000000002", "scope_epoch" to "1:1"))
+        val scope = AmbientScope(fingerprint(identity.origin), identity.account, "019a6275-6000-7000-8000-000000000003", "1", identity.profile, "1", "sc1." + "a".repeat(43))
+        val prefix = commandPath("019a6275-6000-7000-8000-000000000004", "/outputs/019a6275-6000-7000-8000-000000000005/hls/")
+        val cancellation = HttpCancellation()
+        val source = AmbientMediaSource(identity, scope, prefix, timers, cancellation) { true }
+        try {
+            for (type in listOf(C.DATA_TYPE_DRM, C.DATA_TYPE_UNKNOWN, 1357911)) {
+                val data = source.createDataSource(type)
+                val error = runCatching { data.open(DataSpec.Builder().setUri(identity.origin + prefix + "manifest.m3u8").build()) }.exceptionOrNull()
+                check(error is IOException && (error.cause as? AmbientFailure)?.code == "unsupported_resource")
+                check(data.uri == null && source.requests.count() == 0)
+                data.close(); data.close()
+                source.drain().get(2, TimeUnit.SECONDS)
+            }
+        } finally { source.cancel(); source.drain().get(2, TimeUnit.SECONDS); cancellation.close().get(2, TimeUnit.SECONDS) }
     }
     private fun wire() {
         check(Wire.parse("{\"ok\":true}".toByteArray()).flag("ok"))

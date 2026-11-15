@@ -31,8 +31,10 @@ export async function runAndroidAmbientApplication(workspace, owner, fixture) {
             starts: starts.length, http: http.trace, https: secure.trace,
         }));
         return result;
-    } finally { await Promise.allSettled([http.close(), secure?.close()]).then((results) => {
+    } finally { await Promise.allSettled([http.close(), secure?.close()]).then(async (results) => {
         const failures = results.filter((result) => result.status === 'rejected');
+        try { await writeFile(join(owner.directory, 'ambient-http-final.json'), JSON.stringify({ http: http.trace, https: secure?.trace ?? [] })); }
+        catch (reason) { failures.push({ status: 'rejected', reason }); }
         if (failures.length) throw new AggregateError(failures.map((result) => result.reason), 'Ambient gateway cleanup is unconfirmed.');
     }); }
 }

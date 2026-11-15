@@ -10,9 +10,28 @@ use uuid::Uuid;
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires managed isolated Android emulator, PostgreSQL18 and actual FFmpeg media"]
 async fn real_android_ambient_ownership() -> anyhow::Result<()> {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter("duskcue::domains::playback::commands::control=debug")
+        .with_ansi(false)
+        .try_init();
     database::run(async |db| {
-        let mut f = support::Fixture::browser_paced(db).await?;
+        let mut f = support::Fixture::browser(db).await?;
         let result = async {
+            let input = std::path::PathBuf::from(std::env::var("DUSKCUE_TEST_WINDOWS_PACED_SOURCE")?).canonicalize()?;
+            let source = tokio::fs::symlink_metadata(&input).await?;
+            anyhow::ensure!(source.is_file() && !source.file_type().is_symlink() && source.len() > 0 && source.len() <= 16 * 1024 * 1024);
+            tokio::fs::copy(input, &f.source).await?;
+            let metadata = tokio::fs::metadata(&f.source).await?;
+            let modified: chrono::DateTime<chrono::Utc> = metadata.modified()?.into();
+            let probe = crate::workers::library_scanner::probe_qualification_source(&f.source).await?;
+            anyhow::ensure!(probe.additional_streams["format"]["duration_seconds"].as_f64()
+                .is_some_and(|seconds| seconds.is_finite() && seconds > 5.0 && seconds <= 1800.0),
+                "ambient fixture requires actual bounded duration covering its seek");
+            let updated = sqlx::query("UPDATE media_files SET container_format=$2,video_codec=$3,video_resolution=$4,video_bitrate=$5,video_dynamic_range=$6,audio_codec=$7,audio_channels=$8,audio_bitrate=$9,runtime_seconds=$10,additional_streams=$11,file_size=$12,file_modified_at=$13,updated_at=clock_timestamp() WHERE id=$1")
+                .bind(f.file).bind(probe.container_format).bind(probe.video_codec).bind(probe.video_resolution).bind(probe.video_bitrate)
+                .bind(probe.video_dynamic_range).bind(probe.audio_codec).bind(probe.audio_channels).bind(probe.audio_bitrate)
+                .bind(probe.runtime_seconds).bind(probe.additional_streams).bind(i64::try_from(metadata.len())?).bind(modified).execute(&db.pool).await?;
+            anyhow::ensure!(updated.rows_affected() == 1, "ambient fixture metadata target changed");
             let (first, _) = super::client_media::subtitled(db, &f).await?;
             let (second, _) = super::client_media::subtitled(db, &f).await?;
             let (interactive, _) = super::client_media::subtitled(db, &f).await?;

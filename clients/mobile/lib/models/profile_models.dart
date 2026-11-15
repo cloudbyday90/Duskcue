@@ -216,26 +216,56 @@ class NativeAmbientPlaybackStatus {
   final String? requestId, outputRevision;
 
   factory NativeAmbientPlaybackStatus.fromJson(Map<Object?, Object?> json) {
-    if (json.length > 32 || json.values.any((value) => value is String && value.length > 256)) {
+    if (json.length > 32 ||
+        json.values.any((value) => value is String && value.length > 256)) {
       throw const FormatException('Ambient status exceeds its limits.');
     }
     int bounded(Object? value) {
       if (value == null) return 0;
-      if (value is! int || value < 0 || value > 2147483647) throw const FormatException('Invalid ambient position.');
+      if (value is! int || value < 0 || value > 2147483647) {
+        throw const FormatException('Invalid ambient position.');
+      }
       return value;
     }
+
     bool flag(String key) {
       final value = json[key];
       if (value == null) return false;
-      if (value is! bool) throw const FormatException('Invalid ambient status flag.');
+      if (value is! bool) {
+        throw const FormatException('Invalid ambient status flag.');
+      }
       return value;
     }
+
     final position = json['position_ms'];
     final protocol = json['protocol'] as String? ?? 'legacy';
-    final state = json['state'] as String? ?? (json['is_active'] == true ? json['is_playing'] == true ? 'ready' : 'preparing' : 'idle');
+    final state =
+        json['state'] as String? ??
+        (json['is_active'] == true
+            ? json['is_playing'] == true
+                  ? 'ready'
+                  : 'preparing'
+            : 'idle');
     if (protocol != 'legacy' && protocol != 'duskcue-vod-command/2' ||
-        !const {'idle', 'checking', 'starting', 'preparing', 'ready', 'changing', 'uncertain', 'stopping', 'cleanup',
-          'settled', 'unavailable', 'unknown', 'released', 'failed', 'withdrawing', 'withdrawn', 'cleanup_uncertain'}.contains(state)) {
+        !const {
+          'idle',
+          'checking',
+          'starting',
+          'preparing',
+          'ready',
+          'changing',
+          'uncertain',
+          'stopping',
+          'cleanup',
+          'settled',
+          'unavailable',
+          'unknown',
+          'released',
+          'failed',
+          'withdrawing',
+          'withdrawn',
+          'cleanup_uncertain',
+        }.contains(state)) {
       throw const FormatException('Invalid ambient state.');
     }
     return NativeAmbientPlaybackStatus(

@@ -3,7 +3,6 @@
 // Licensed under AGPL-3.0. See LICENSE for details.
 
 import 'dart:io';
-import 'dart:typed_data';
 import 'package:dio/dio.dart';
 import 'package:dio/io.dart';
 import 'package:flutter/material.dart';
@@ -22,64 +21,161 @@ import 'scope_support.dart';
 
 class AmbientHarness {
   AmbientHarness._(this.tester, this.fixture, this.api, this.dio) {
-    container = ProviderContainer(overrides: [apiClientProvider.overrideWithValue(api)]);
+    container = ProviderContainer(
+      overrides: [apiClientProvider.overrideWithValue(api)],
+    );
     adopt(entity(fixture['profile']));
     service = container.read(ambientPlaybackServiceProvider);
   }
-  static Future<AmbientHarness> create(WidgetTester tester, MethodChannel channel, Wire fixture) async {
+  static Future<AmbientHarness> create(
+    WidgetTester tester,
+    MethodChannel channel,
+    Wire fixture,
+  ) async {
     final ca = await channel.invokeMethod<Uint8List>('ambientFixtureCa');
     require(ca != null && ca.length <= 4096);
-    final trust = SecurityContext(withTrustedRoots: true)..setTrustedCertificatesBytes(ca!);
-    final dio = Dio()..httpClientAdapter = IOHttpClientAdapter(createHttpClient: () => HttpClient(context: trust));
-    final api = DuskcueApiClient(dio: dio)..configure(Uri.parse(text(fixture['origin'])), bearerToken: text(fixture['token']));
+    final trust = SecurityContext(withTrustedRoots: true)
+      ..setTrustedCertificatesBytes(ca!);
+    final dio = Dio()
+      ..httpClientAdapter = IOHttpClientAdapter(
+        createHttpClient: () => HttpClient(context: trust),
+      );
+    final api = DuskcueApiClient(dio: dio)
+      ..configure(
+        Uri.parse(text(fixture['origin'])),
+        bearerToken: text(fixture['token']),
+      );
     return AmbientHarness._(tester, fixture, api, dio);
   }
+
   final WidgetTester tester;
   final Wire fixture;
   final DuskcueApiClient api;
   final Dio dio;
   late final ProviderContainer container;
   late final AmbientPlaybackService service;
-  NativeAmbientPlaybackStatus status = const NativeAmbientPlaybackStatus(isActive: false);
+  NativeAmbientPlaybackStatus status = const NativeAmbientPlaybackStatus(
+    isActive: false,
+  );
 
   void adopt(String profile) {
-    container.read(sessionProvider.notifier).setAuthenticated(UserSummary(id: entity(fixture['user']), username: 'qualification',
-      displayName: 'Qualification', role: 'member', capabilities: const ['play_media'], hasAllLibraryAccess: true, activeProfileId: profile));
-    container.read(sessionProvider.notifier).resolveProfileScope(activeProfileId: profile, profileSelectionRequired: false);
+    container
+        .read(sessionProvider.notifier)
+        .setAuthenticated(
+          UserSummary(
+            id: entity(fixture['user']),
+            username: 'qualification',
+            displayName: 'Qualification',
+            role: 'member',
+            capabilities: const ['play_media'],
+            hasAllLibraryAccess: true,
+            activeProfileId: profile,
+          ),
+        );
+    container
+        .read(sessionProvider.notifier)
+        .resolveProfileScope(
+          activeProfileId: profile,
+          profileSelectionRequired: false,
+        );
   }
-  Future<void> screen() => tester.pumpWidget(UncontrolledProviderScope(container: container, child: const MaterialApp(home: AmbientPlayerScreen())));
-  Future<void> until(bool Function(NativeAmbientPlaybackStatus) predicate, {int seconds = 30}) async {
+
+  Future<void> screen() => tester.pumpWidget(
+    UncontrolledProviderScope(
+      container: container,
+      child: const MaterialApp(home: AmbientPlayerScreen()),
+    ),
+  );
+  Future<void> until(
+    bool Function(NativeAmbientPlaybackStatus) predicate, {
+    int seconds = 30,
+  }) async {
     final deadline = DateTime.now().add(Duration(seconds: seconds));
     do {
       status = await service.status();
       if (predicate(status)) return;
       await tester.pump(const Duration(milliseconds: 200));
     } while (DateTime.now().isBefore(deadline));
-    fail('Ambient evidence incomplete: ${status.state}/${status.error}');
+    fail(
+      'Ambient evidence incomplete: ${status.state}/${status.error}; '
+      'frames=${status.videoFrames}, position=${status.positionMs}, '
+      'playing=${status.isPlaying}, busy=${status.busy}, '
+      'cleanup=${status.cleanupPending}, requiresPlay=${status.requiresPlay}',
+    );
   }
+
   Future<void> open({String? channel}) async {
-    await service.start(AmbientChannelSummary(id: channel ?? entity(fixture['channel']), name: 'Qualification', audience: 'standard', isEnabled: true, itemCount: 2));
+    await service.start(
+      AmbientChannelSummary(
+        id: channel ?? entity(fixture['channel']),
+        name: 'Qualification',
+        audience: 'standard',
+        isEnabled: true,
+        itemCount: 2,
+      ),
+    );
     await screen();
-    await until((s) => s.state == 'ready' && !s.busy && s.videoFrames > 2 && s.positionMs >= 250);
+    if (find
+        .text(
+          'The viewing session changed. Check status to review any remaining cleanup.',
+        )
+        .evaluate()
+        .isNotEmpty) {
+      expect(find.byType(AndroidView), findsNothing);
+      final recovery = find.text('Check status');
+      expect(recovery, findsOneWidget);
+      await tester.ensureVisible(recovery);
+      await tester.tap(recovery);
+      await tester.pump();
+    }
+    await until(
+      (s) =>
+          s.state == 'ready' &&
+          !s.busy &&
+          s.videoFrames > 2 &&
+          s.positionMs >= 250,
+    );
     expect(status.protocol, 'duskcue-vod-command/2');
     expect(status.error, isNull);
   }
+
   Future<Wire> serverStatus(String start, {String suffix = ''}) async {
     final origin = Uri.parse(text(fixture['http_origin']));
     final token = api.bearerToken!;
-    final context = (await scopeHttp(origin, token, '/api/v1/auth/session-context')).$2;
-    final reply = await scopeHttp(origin, token, '/api/v1/playback-commands/$start$suffix', context: text(context['context_id']));
+    final context = (await scopeHttp(
+      origin,
+      token,
+      '/api/v1/auth/session-context',
+    )).$2;
+    final reply = await scopeHttp(
+      origin,
+      token,
+      '/api/v1/playback-commands/$start$suffix',
+      context: text(context['context_id']),
+    );
     expect(reply.$1, 200);
     return reply.$2;
   }
+
   Future<void> stop() async {
     final start = status.requestId;
     await service.stop();
     await until((s) => !s.isActive && !s.cleanupPending);
-    if (start != null) expect((await serverStatus(start, suffix: '/settlement'))['status'], 'settled');
+    if (start != null) {
+      expect(
+        (await serverStatus(start, suffix: '/settlement'))['status'],
+        'settled',
+      );
+    }
   }
+
   Future<void> dispose({bool retain = false}) async {
-    try { if (!retain) await stop(); }
-    finally { await tester.pumpWidget(const SizedBox.shrink()); container.dispose(); dio.close(force: true); }
+    try {
+      if (!retain) await stop();
+    } finally {
+      await tester.pumpWidget(const SizedBox.shrink());
+      container.dispose();
+      dio.close(force: true);
+    }
   }
 }

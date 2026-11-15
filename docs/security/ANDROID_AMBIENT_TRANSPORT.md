@@ -2,7 +2,7 @@
 
 ## Status and authority
 
-Implementation/security contract, November 8, 2026, linked from [Android ambient migration](../design/VOD_ANDROID_AMBIENT_MIGRATION.md). The complete contract is confirmed at `8c8cb53`. Q8/Q9 select successful public player release plus owned request/stream/storage/worker completion, excluding private Android audio/codec and HTTP/TLS housekeeping. Implementation and runtime qualification remain incomplete. This document does not claim a production transport fix has shipped.
+Implementation/security contract, November 2026, linked from [Android ambient migration](../design/VOD_ANDROID_AMBIENT_MIGRATION.md). The complete contract is confirmed at `8c8cb53`. Q8/Q9 select successful public player release plus owned request/stream/storage/worker completion, excluding private Android audio/codec and HTTP/TLS housekeeping. [Seven actual ambient journeys](../ci/ANDROID_AMBIENT_QUALIFICATION.md#current-seven-journey-outcome) now pass with exact cleanup/history evidence; the remaining actual-owner and adversarial matrix is incomplete. This document does not claim a production transport fix has shipped.
 
 The qualified [Dart relay](FLUTTER_HLS_RELAY.md) remains interactive. Do not infer its background lifetime or its confirmed raw-TCP closure guarantee for a different Kotlin transport. Native ambient needs no loopback listener or bearer transfer to a separately running player.
 
@@ -26,6 +26,8 @@ Validate scheme/host/effective port and canonical authority, rejecting user-info
 Use a per-request connection with redirects disabled, explicit no-store/identity encoding, finite request bodies and no automatic POST retry. Supply bearer only after target admission. Refuse challenges/redirects rather than invoking a credential discovery flow. Do not install global authenticator, proxy, cookie, hostname-verifier, socket-factory or trust-manager overrides. The isolated qualification CA must never enter production trust or the normal package. Preserve user-selected HTTP/HTTPS deployment policy; HTTPS uses normal platform trust and name checks.
 
 ## Confirmed finite ambient budgets
+
+The [resumed native qualification](../ci/ANDROID_AMBIENT_QUALIFICATION.md#resumed-compiler-and-native-qualification) corrects an eager SDK source-factory exception without permitting DRM/key requests. Source construction is inert; unsupported data types fail at the start of `open` through the I/O exception boundary, before creating HTTP ownership. Native probes check exact refusal, zero HTTP owners, null URI, repeated close and joined drain. Format policy remains AVC/AAC, bounded dimensions/channels and the existing SDR predicate. Prepare from extracted media, disable unused text/metadata selection, and keep unknown A/V properties refused. SDK instance notification identity is ephemeral and distinct from durable UUIDv7 command/entity IDs. No URL, controller, TLS, transport, resource or private-housekeeping guarantee is broadened.
 
 These limits apply to the new ambient owner. Existing interactive limits stay unchanged. Simultaneous interactive/ambient playback can therefore own both separately bounded clients; these are public-operation bounds, not a hard process-RSS, native-socket or private-framework-thread ceiling.
 

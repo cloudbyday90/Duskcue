@@ -28,6 +28,7 @@ export async function createFaultGateway(fixture, { scopeTokens, relayWitness, a
     async function forward(request, response) {
         const route = routeFor(request.method, request.url);
         const entry = { method: request.method, path: request.url, status: null, complete: false, dropped: false };
+        if (ambientChannels) entry.contextBound = typeof request.headers['x-session-context'] === 'string';
         trace.push(entry);
         const controller = new AbortController();
         const abort = () => controller.abort();
@@ -72,6 +73,11 @@ export async function createFaultGateway(fixture, { scopeTokens, relayWitness, a
             copied['cache-control'] = 'no-store';
             if (!route.media) {
                 const bytes = await boundedBody(incoming, 32768);
+                if (ambientChannels && incoming.statusCode >= 400) {
+                    try { const code = JSON.parse(bytes.toString('utf8')).code;
+                        if (typeof code === 'string' && /^VOD_COMMAND_(?:00[1-9]|01[01])$/.test(code)) entry.problemCode = code;
+                    } catch { }
+                }
                 entry.complete = true;
                 if (scopeTokens && armed && request.method === 'GET' && /^\/api\/v1\/playback-commands\/[0-9a-f-]{36}$/.test(request.url)) {
                     armed = false; held = true;

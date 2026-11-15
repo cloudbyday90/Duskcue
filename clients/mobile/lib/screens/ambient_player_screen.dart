@@ -66,29 +66,42 @@ class _AmbientPlayerScreenState extends ConsumerState<AmbientPlayerScreen> {
     try {
       final status = await _service.status();
       if (!mounted || epoch != _service.epoch) return;
-      setState(() { _status = status; _hasStatus = true; _failedRead = false; _problem = null; });
+      setState(() {
+        _status = status;
+        _hasStatus = true;
+        _failedRead = false;
+        _problem = null;
+      });
       _statusTimer?.cancel();
       _statusTimer = Timer(const Duration(seconds: 2), _refreshStatus);
     } catch (_) {
-      if (mounted && epoch == _service.epoch) setState(() {
-        _failedRead = true;
-        _hasStatus = false;
-        _problem = 'Playback status could not be confirmed. Check status or stop the channel.';
-        _status = const NativeAmbientPlaybackStatus(isActive: false);
-      });
-    } finally { _reading = false; }
+      if (mounted && epoch == _service.epoch) {
+        setState(() {
+          _failedRead = true;
+          _hasStatus = false;
+          _problem =
+              'Playback status could not be confirmed. Check status or stop the channel.';
+          _status = const NativeAmbientPlaybackStatus(isActive: false);
+        });
+      }
+    } finally {
+      _reading = false;
+    }
   }
 
   void _scopeChanged() {
     _statusTimer?.cancel();
-    if (mounted) setState(() {
-      _seekDraft = null;
-      _seekEpoch = null;
-      _status = const NativeAmbientPlaybackStatus(isActive: false);
-      _hasStatus = false;
-      _failedRead = true;
-      _problem = 'The viewing session changed. Check status to review any remaining cleanup.';
-    });
+    if (mounted) {
+      setState(() {
+        _seekDraft = null;
+        _seekEpoch = null;
+        _status = const NativeAmbientPlaybackStatus(isActive: false);
+        _hasStatus = false;
+        _failedRead = true;
+        _problem =
+            'The viewing session changed. Check status to review any remaining cleanup.';
+      });
+    }
   }
 
   Future<void> _control(Future<void> Function() action) async {
@@ -99,10 +112,13 @@ class _AmbientPlayerScreenState extends ConsumerState<AmbientPlayerScreen> {
       setState(() => _problem = null);
       await _refreshStatus();
     } catch (_) {
-      if (mounted && epoch == _service.epoch) setState(() {
-        _problem = 'That action is not yet confirmed. Check status or stop the channel.';
-        _failedRead = true;
-      });
+      if (mounted && epoch == _service.epoch) {
+        setState(() {
+          _problem =
+              'That action is not yet confirmed. Check status or stop the channel.';
+          _failedRead = true;
+        });
+      }
       _statusTimer?.cancel();
     }
   }
@@ -115,10 +131,13 @@ class _AmbientPlayerScreenState extends ConsumerState<AmbientPlayerScreen> {
       await _service.stop();
       if (mounted && epoch == _service.epoch) context.go('/ambient');
     } catch (_) {
-      if (mounted && epoch == _service.epoch) setState(() {
-        _problem = 'Channel cleanup is not yet confirmed. Check status or try Stop again.';
-        _failedRead = true;
-      });
+      if (mounted && epoch == _service.epoch) {
+        setState(() {
+          _problem =
+              'Channel cleanup is not yet confirmed. Check status or try Stop again.';
+          _failedRead = true;
+        });
+      }
     } finally {
       if (mounted) setState(() => _stopping = false);
     }
@@ -127,7 +146,14 @@ class _AmbientPlayerScreenState extends ConsumerState<AmbientPlayerScreen> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final platformView = _failedRead || !_hasStatus || !_status.isActive || _status.cleanupPending || _status.requiresPlay ? const ColoredBox(color: Colors.black) : Platform.isAndroid
+    final platformView =
+        _failedRead ||
+            !_hasStatus ||
+            !_status.isActive ||
+            _status.cleanupPending ||
+            _status.requiresPlay
+        ? const ColoredBox(color: Colors.black)
+        : Platform.isAndroid
         ? const AndroidView(viewType: 'duskcue/ambient_player_view')
         : Platform.isIOS
         ? const UiKitView(viewType: 'duskcue/ambient_player_view')
@@ -150,74 +176,113 @@ class _AmbientPlayerScreenState extends ConsumerState<AmbientPlayerScreen> {
                 child: SizedBox.expand(child: platformView),
               ),
             ),
-            Flexible(child: SingleChildScrollView(child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Semantics(
-                    liveRegion: true,
-                    child: Text(
-                      _failedRead ? 'Playback status unavailable' : _label(),
-                      style: theme.textTheme.titleMedium,
-                    ),
-                  ),
-                  if (_status.error != null || _problem != null) ...[
-                    const SizedBox(height: 8),
-                    Text(
-                      _problem ?? 'Playback needs attention. Check status or stop the channel.',
-                      style: TextStyle(color: theme.colorScheme.error),
-                    ),
-                  ],
-                  const SizedBox(height: 12),
-                  if (_status.protocol != 'legacy') ...[
-                    Wrap(
-                      spacing: 12,
-                      runSpacing: 8,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: _stopping || !_status.isActive || _status.busy || _status.cleanupPending ? null : () => _control(_service.play),
-                          icon: const Icon(Icons.play_arrow), label: const Text('Play'),
-                        ),
-                        OutlinedButton.icon(
-                          onPressed: _stopping ? null : () => _control(_service.pause),
-                          icon: const Icon(Icons.pause), label: const Text('Pause'),
-                        ),
-                      ],
-                    ),
-                    if (!_failedRead && _status.durationMs > 0 && !_status.requiresPlay && !_status.cleanupPending)
+            Flexible(
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
                       Semantics(
-                        label: 'Playback position',
-                        child: Slider(
-                          value: (_seekDraft ?? _status.positionMs.toDouble()).clamp(0, _status.durationMs).toDouble(),
-                          max: _status.durationMs.toDouble(),
-                          label: '${_status.positionMs ~/ 1000} seconds',
-                          onChangeStart: _status.busy || _stopping ? null : (_) { _seekEpoch = _service.epoch; },
-                          onChanged: _status.busy || _stopping ? null : (value) => setState(() => _seekDraft = value),
-                          onChangeEnd: _status.busy || _stopping ? null : (value) {
-                            setState(() => _seekDraft = null);
-                            final epoch = _seekEpoch;
-                            _seekEpoch = null;
-                            if (epoch != _service.epoch) return;
-                            _control(() => _service.seek(value.round()));
-                          },
+                        liveRegion: true,
+                        child: Text(
+                          _failedRead
+                              ? 'Playback status unavailable'
+                              : _label(),
+                          style: theme.textTheme.titleMedium,
                         ),
                       ),
-                    const SizedBox(height: 8),
-                  ],
-                  OutlinedButton.icon(
-                    onPressed: _stopping || _reading ? null : () => _status.protocol == 'legacy' || _status.busy ? _refreshStatus() : _control(_service.check),
-                    icon: const Icon(Icons.refresh), label: const Text('Check status'),
+                      if (_status.error != null || _problem != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          _problem ??
+                              'Playback needs attention. Check status or stop the channel.',
+                          style: TextStyle(color: theme.colorScheme.error),
+                        ),
+                      ],
+                      const SizedBox(height: 12),
+                      if (_status.protocol != 'legacy') ...[
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 8,
+                          children: [
+                            OutlinedButton.icon(
+                              onPressed:
+                                  _stopping ||
+                                      !_status.isActive ||
+                                      _status.busy ||
+                                      _status.cleanupPending
+                                  ? null
+                                  : () => _control(_service.play),
+                              icon: const Icon(Icons.play_arrow),
+                              label: const Text('Play'),
+                            ),
+                            OutlinedButton.icon(
+                              onPressed: _stopping
+                                  ? null
+                                  : () => _control(_service.pause),
+                              icon: const Icon(Icons.pause),
+                              label: const Text('Pause'),
+                            ),
+                          ],
+                        ),
+                        if (!_failedRead &&
+                            _status.durationMs > 0 &&
+                            !_status.requiresPlay &&
+                            !_status.cleanupPending)
+                          Semantics(
+                            label: 'Playback position',
+                            child: Slider(
+                              value:
+                                  (_seekDraft ?? _status.positionMs.toDouble())
+                                      .clamp(0, _status.durationMs)
+                                      .toDouble(),
+                              max: _status.durationMs.toDouble(),
+                              label: '${_status.positionMs ~/ 1000} seconds',
+                              onChangeStart: _status.busy || _stopping
+                                  ? null
+                                  : (_) {
+                                      _seekEpoch = _service.epoch;
+                                    },
+                              onChanged: _status.busy || _stopping
+                                  ? null
+                                  : (value) =>
+                                        setState(() => _seekDraft = value),
+                              onChangeEnd: _status.busy || _stopping
+                                  ? null
+                                  : (value) {
+                                      setState(() => _seekDraft = null);
+                                      final epoch = _seekEpoch;
+                                      _seekEpoch = null;
+                                      if (epoch != _service.epoch) return;
+                                      _control(
+                                        () => _service.seek(value.round()),
+                                      );
+                                    },
+                            ),
+                          ),
+                        const SizedBox(height: 8),
+                      ],
+                      OutlinedButton.icon(
+                        onPressed: _stopping || _reading
+                            ? null
+                            : () => _status.protocol == 'legacy' || _status.busy
+                                  ? _refreshStatus()
+                                  : _control(_service.check),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('Check status'),
+                      ),
+                      const SizedBox(height: 8),
+                      FilledButton.icon(
+                        onPressed: _stopping ? null : _stop,
+                        icon: const Icon(Icons.stop_circle_outlined),
+                        label: Text(_stopping ? 'Stopping…' : 'Stop channel'),
+                      ),
+                    ],
                   ),
-                  const SizedBox(height: 8),
-                  FilledButton.icon(
-                    onPressed: _stopping ? null : _stop,
-                    icon: const Icon(Icons.stop_circle_outlined),
-                    label: Text(_stopping ? 'Stopping…' : 'Stop channel'),
-                  ),
-                ],
+                ),
               ),
-            ))),
+            ),
           ],
         ),
       ),
@@ -225,16 +290,26 @@ class _AmbientPlayerScreenState extends ConsumerState<AmbientPlayerScreen> {
   }
 
   String _label() {
-    if (_status.cleanupPending && _status.state == 'idle') return 'Channel cleanup is not yet confirmed';
+    if (_status.cleanupPending && _status.state == 'idle') {
+      return 'Channel cleanup is not yet confirmed';
+    }
     return switch (_status.state) {
-    'ready' => _status.isBuffering ? 'Buffering channel' : _status.isPlaying ? 'Playing' : _status.requiresPlay ? 'Ready. Select Play to continue.' : 'Paused',
-    'changing' => 'Changing playback',
-    'checking' => 'Checking playback status',
-    'starting' || 'preparing' => 'Preparing channel playback',
-    'stopping' || 'withdrawing' => 'Stopping channel',
-    'cleanup' || 'cleanup_uncertain' => 'Channel cleanup is not yet confirmed',
-    'settled' || 'released' || 'withdrawn' || 'idle' => 'Channel stopped',
-    _ => 'Playback needs attention',
-  };
+      'ready' =>
+        _status.isBuffering
+            ? 'Buffering channel'
+            : _status.isPlaying
+            ? 'Playing'
+            : _status.requiresPlay
+            ? 'Ready. Select Play to continue.'
+            : 'Paused',
+      'changing' => 'Changing playback',
+      'checking' => 'Checking playback status',
+      'starting' || 'preparing' => 'Preparing channel playback',
+      'stopping' || 'withdrawing' => 'Stopping channel',
+      'cleanup' ||
+      'cleanup_uncertain' => 'Channel cleanup is not yet confirmed',
+      'settled' || 'released' || 'withdrawn' || 'idle' => 'Channel stopped',
+      _ => 'Playback needs attention',
+    };
   }
 }

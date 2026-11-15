@@ -18,37 +18,87 @@ class FakeAmbient extends AmbientPlaybackService {
   bool refuseStop = true, refuseRead = false;
   int reads = 0, stops = 0;
   Completer<void>? stopGate;
-  @override Future<NativeAmbientPlaybackStatus> status() async {
+  @override
+  Future<NativeAmbientPlaybackStatus> status() async {
     reads++;
     if (refuseRead) throw StateError('Unavailable');
-    return const NativeAmbientPlaybackStatus(isActive: true, protocol: 'duskcue-vod-command/2', state: 'ready',
-      channelName: 'Channel', positionMs: 1000, durationMs: 9000);
+    return const NativeAmbientPlaybackStatus(
+      isActive: true,
+      protocol: 'duskcue-vod-command/2',
+      state: 'ready',
+      channelName: 'Channel',
+      positionMs: 1000,
+      durationMs: 9000,
+    );
   }
-  @override Future<void> stop() async { stops++; await stopGate?.future; if (refuseStop) throw StateError('Unconfirmed'); }
-  @override Future<void> check() async { }
+
+  @override
+  Future<void> stop() async {
+    stops++;
+    await stopGate?.future;
+    if (refuseStop) throw StateError('Unconfirmed');
+  }
+
+  @override
+  Future<void> check() async {}
 }
 
 void main() {
-  Future<GoRouter> show(WidgetTester tester, FakeAmbient service, {double scale = 1, bool rtl = false}) async {
-    final router = GoRouter(initialLocation: '/ambient/player', routes: [
-      GoRoute(path: '/ambient/player', builder: (_, _) => const AmbientPlayerScreen()),
-      GoRoute(path: '/ambient', builder: (_, _) => const Scaffold(body: Text('Channels page'))),
-    ]);
-    await tester.pumpWidget(ProviderScope(overrides: [ambientPlaybackServiceProvider.overrideWithValue(service)],
-      child: MaterialApp.router(routerConfig: router, builder: (context, child) => MediaQuery(
-        data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)), child: Directionality(textDirection: rtl ? TextDirection.rtl : TextDirection.ltr, child: child!)))));
+  Future<GoRouter> show(
+    WidgetTester tester,
+    FakeAmbient service, {
+    double scale = 1,
+    bool rtl = false,
+  }) async {
+    final router = GoRouter(
+      initialLocation: '/ambient/player',
+      routes: [
+        GoRoute(
+          path: '/ambient/player',
+          builder: (_, _) => const AmbientPlayerScreen(),
+        ),
+        GoRoute(
+          path: '/ambient',
+          builder: (_, _) => const Scaffold(body: Text('Channels page')),
+        ),
+      ],
+    );
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [ambientPlaybackServiceProvider.overrideWithValue(service)],
+        child: MaterialApp.router(
+          routerConfig: router,
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: TextScaler.linear(scale)),
+            child: Directionality(
+              textDirection: rtl ? TextDirection.rtl : TextDirection.ltr,
+              child: child!,
+            ),
+          ),
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     return router;
   }
 
-  testWidgets('failed Stop stays visible; confirmed Stop permits navigation', (tester) async {
+  testWidgets('failed Stop stays visible; confirmed Stop permits navigation', (
+    tester,
+  ) async {
     final service = FakeAmbient();
     final router = await show(tester, service);
     await tester.ensureVisible(find.text('Stop channel'));
     await tester.tap(find.text('Stop channel'));
     await tester.pumpAndSettle();
     expect(router.routeInformationProvider.value.uri.path, '/ambient/player');
-    expect(find.text('Channel cleanup is not yet confirmed. Check status or try Stop again.'), findsOneWidget);
+    expect(
+      find.text(
+        'Channel cleanup is not yet confirmed. Check status or try Stop again.',
+      ),
+      findsOneWidget,
+    );
     service.refuseStop = false;
     await tester.ensureVisible(find.text('Stop channel'));
     await tester.tap(find.text('Stop channel'));
@@ -56,10 +106,13 @@ void main() {
     expect(router.routeInformationProvider.value.uri.path, '/ambient');
     expect(service.stops, 2);
     await tester.pumpWidget(const SizedBox());
-    router.dispose(); service.dispose();
+    router.dispose();
+    service.dispose();
   });
 
-  testWidgets('failed status stops automatic polling and clears the channel', (tester) async {
+  testWidgets('failed status stops automatic polling and clears the channel', (
+    tester,
+  ) async {
     final service = FakeAmbient()..refuseRead = true;
     final router = await show(tester, service);
     expect(find.text('Playback status unavailable'), findsOneWidget);
@@ -72,10 +125,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Channel'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
-    router.dispose(); service.dispose();
+    router.dispose();
+    service.dispose();
   });
 
-  testWidgets('large text keeps controls scrollable without overflow', (tester) async {
+  testWidgets('large text keeps controls scrollable without overflow', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(320, 600);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.resetPhysicalSize);
@@ -88,11 +144,16 @@ void main() {
     await expectLater(tester, meetsGuideline(labeledTapTargetGuideline));
     semantics.dispose();
     await tester.pumpWidget(const SizedBox());
-    router.dispose(); service.dispose();
+    router.dispose();
+    service.dispose();
   });
 
-  testWidgets('late confirmed Stop cannot navigate a newer viewing session', (tester) async {
-    final service = FakeAmbient()..refuseStop = false..stopGate = Completer<void>();
+  testWidgets('late confirmed Stop cannot navigate a newer viewing session', (
+    tester,
+  ) async {
+    final service = FakeAmbient()
+      ..refuseStop = false
+      ..stopGate = Completer<void>();
     final router = await show(tester, service);
     await tester.ensureVisible(find.text('Stop channel'));
     await tester.tap(find.text('Stop channel'));
@@ -101,12 +162,20 @@ void main() {
     service.stopGate!.complete();
     await tester.pumpAndSettle();
     expect(router.routeInformationProvider.value.uri.path, '/ambient/player');
-    expect(find.text('The viewing session changed. Check status to review any remaining cleanup.'), findsOneWidget);
+    expect(
+      find.text(
+        'The viewing session changed. Check status to review any remaining cleanup.',
+      ),
+      findsOneWidget,
+    );
     await tester.pumpWidget(const SizedBox());
-    router.dispose(); service.dispose();
+    router.dispose();
+    service.dispose();
   });
 
-  testWidgets('RTL status recovery preserves the focused control', (tester) async {
+  testWidgets('RTL status recovery preserves the focused control', (
+    tester,
+  ) async {
     final service = FakeAmbient();
     final router = await show(tester, service, rtl: true);
     await tester.ensureVisible(find.text('Check status'));
@@ -119,6 +188,7 @@ void main() {
     expect(focus.hasFocus, isTrue);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
-    router.dispose(); service.dispose();
+    router.dispose();
+    service.dispose();
   });
 }

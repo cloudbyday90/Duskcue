@@ -16,6 +16,32 @@ import { ambientFlags, ambientStages } from './android-ambient-policy.mjs';
 const id = '019a35de-1234-7000-8000-123456789abc';
 const root = `/api/v1/playback-commands/${id}`;
 
+test('ambient refusal evidence preserves only a categorical code and context presence', async () => {
+    let count = 0;
+    const contexts = [];
+    const source = await backend((req, res) => {
+        contexts.push(req.headers['x-session-context']);
+        res.writeHead(409, { 'content-type': 'application/problem+json' });
+        res.end(JSON.stringify({ code: count++ === 0 ? 'VOD_COMMAND_002' : 'SENSITIVE_CONTEXT_VALUE', detail: 'fixture-only bound-context' }));
+    });
+    const gateway = await createFaultGateway({ ...source, token: 'fixture-only' }, { ambientChannels: [id] });
+    try {
+        for (let index = 0; index < 2; index++) {
+            const response = await call(gateway.origin, 'POST', `${root}/configuration`, 'fixture-only', {}, {});
+            assert.equal(response.status, 409);
+            assert.equal(JSON.parse(response.body).code, index === 0 ? 'VOD_COMMAND_002' : 'SENSITIVE_CONTEXT_VALUE');
+        }
+        assert.equal(count, 2);
+        assert.deepEqual(contexts, ['bound-context', 'bound-context']);
+        assert.equal(gateway.trace[0].problemCode, 'VOD_COMMAND_002');
+        assert.ok(gateway.trace.every((entry) => entry.contextBound === true && entry.complete && !entry.dropped));
+        assert.ok(!Object.hasOwn(gateway.trace[1], 'problemCode'));
+        assert.ok(!JSON.stringify(gateway.trace).includes('bound-context'));
+        assert.ok(!JSON.stringify(gateway.trace).includes('fixture-only'));
+        assert.ok(!JSON.stringify(gateway.trace).includes('SENSITIVE_CONTEXT_VALUE'));
+    } finally { await gateway.close(); await source.close(); }
+});
+
 test('ambient gateway confines channels and uses verified TLS without changing normal routes', async () => {
     const seen = [];
     const source = await backend((req, res) => { seen.push(req.url); res.setHeader('content-type', 'application/json'); res.end('{}'); });
