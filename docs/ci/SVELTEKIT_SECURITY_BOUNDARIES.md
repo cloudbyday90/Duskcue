@@ -33,6 +33,8 @@ Generate below `clients/web/.cache` so package resolution uses the existing web 
 
 ## Status and next gate
 
+Source checkpoint: `6bf5cb038e340493d2874b8039fc73b17c615754` on main. Documentation-only successors preserve this unit-tested infrastructure attribution; the actual framework fixture remains uncompiled and unqualified.
+
 Implemented focused prerequisite, lifecycle, process, HTTP, fixture, pattern, worker and case modules with a thin driver. Prerequisite validation covers the exact three framework/adapter identities and locked supporting packages. Fixture imports resolve through the existing web installation; generation uses no installer or symlink. The driver rechecks input identity after cases, preserves retained cleanup, and always returns `completeSecurityMatrix: false`. A successful exit can qualify only this named subset.
 
 Astra's implementation review found one concrete race: cancellation during held final disposal could be promoted to a partial pass after the last child closed. The lifecycle now checks cancellation after disposal settles, preserving cleanup and refusing that result. A new held-disposal regression covers the correction. Other reviewed ownership, fixture-root, adapter-export, HTTP and pattern/cache boundaries have no additional definite source blocker; this is not a compiled-framework or complete security pass.
